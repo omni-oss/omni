@@ -16,7 +16,7 @@ pub(crate) mod utils;
 mod validate;
 
 pub use discover::*;
-pub use gen_session::{DeltaSaveOutcome, GenSession};
+pub use gen_session::{DataImpl, DeltaSaveOutcome, GenSession};
 pub use import_scan::*;
 pub use run::*;
 pub use scoping::*;

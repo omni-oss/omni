@@ -13,13 +13,19 @@ use value_bag::{OwnedValueBag, ValueBag};
 
 #[derive(Debug, Default)]
 pub struct GenSession {
-    data: Mutex<UnorderedMap<String, DataImpl>>,
+    inner: Mutex<GenSessionData>,
+}
+
+#[derive(Debug, Default, Clone, PartialEq)]
+struct GenSessionData {
+    generators: UnorderedMap<String, DataImpl>,
+    shared: DataImpl,
 }
 
 impl GenSession {
     pub fn new() -> Self {
         Self {
-            data: Mutex::new(UnorderedMap::default()),
+            inner: Mutex::new(GenSessionData::default()),
         }
     }
 
@@ -28,12 +34,15 @@ impl GenSession {
         targets: UnorderedMap<String, OmniPath>,
         inputs: UnorderedMap<String, serde_json::Value>,
     ) -> Self {
-        let data = UnorderedMap::from_iter([(
+        let generators = UnorderedMap::from_iter([(
             generator_name.into(),
             DataImpl { inputs, targets },
         )]);
         Self {
-            data: Mutex::new(data),
+            inner: Mutex::new(GenSessionData {
+                generators,
+                shared: DataImpl::default(),
+            }),
         }
     }
 
@@ -47,9 +56,12 @@ impl GenSession {
     {
         let result: SessionFile =
             omni_file_data_serde::read_async(path, sys).await?;
+        let SessionFileV1_0_0 {
+            generators, shared, ..
+        } = result.into_v1();
 
         Ok(Self {
-            data: Mutex::new(result.generators),
+            inner: Mutex::new(GenSessionData { generators, shared }),
         })
     }
 }
@@ -61,9 +73,10 @@ impl GenSession {
         key: impl Into<String>,
         value: impl Into<OmniPath>,
     ) {
-        self.data
+        self.inner
             .lock()
             .await
+            .generators
             .entry(generator.into())
             .or_insert_with(DataImpl::default)
             .targets
@@ -75,9 +88,10 @@ impl GenSession {
         generator: impl AsRef<str>,
         key: impl AsRef<str>,
     ) -> Option<OmniPath> {
-        self.data
+        self.inner
             .lock()
             .await
+            .generators
             .get(generator.as_ref())
             .and_then(|d| d.targets.get(key.as_ref()))
             .cloned()
@@ -89,9 +103,10 @@ impl GenSession {
         key: impl Into<String>,
         value: impl Into<serde_json::Value>,
     ) {
-        self.data
+        self.inner
             .lock()
             .await
+            .generators
             .entry(generator.into())
             .or_insert_with(DataImpl::default)
             .inputs
@@ -104,9 +119,10 @@ impl GenSession {
         key: impl Into<String>,
         value: impl Serialize,
     ) -> Result<(), serde_json::Error> {
-        self.data
+        self.inner
             .lock()
             .await
+            .generators
             .entry(generator.into())
             .or_insert_with(DataImpl::default)
             .inputs
@@ -119,9 +135,10 @@ impl GenSession {
         generator: impl AsRef<str>,
         key: impl AsRef<str>,
     ) -> Option<serde_json::Value> {
-        self.data
+        self.inner
             .lock()
             .await
+            .generators
             .get(generator.as_ref())
             .and_then(|d| d.inputs.get(key.as_ref()))
             .cloned()
@@ -132,9 +149,10 @@ impl GenSession {
         generator: impl AsRef<str>,
         key: impl AsRef<str>,
     ) -> Option<Result<T, serde_json::Error>> {
-        self.data
+        self.inner
             .lock()
             .await
+            .generators
             .get(generator.as_ref())
             .and_then(|d| d.inputs.get(key.as_ref()))
             .map(|p| serde_json::from_value(p.clone()))
@@ -145,9 +163,10 @@ impl GenSession {
         generator: impl Into<String>,
         inputs: UnorderedMap<String, serde_json::Value>,
     ) {
-        self.data
+        self.inner
             .lock()
             .await
+            .generators
             .entry(generator.into())
             .or_insert_with(DataImpl::default)
             .inputs = inputs;
@@ -173,25 +192,113 @@ impl GenSession {
         generator: impl Into<String>,
         targets: UnorderedMap<String, OmniPath>,
     ) {
-        self.data
+        self.inner
             .lock()
             .await
+            .generators
             .entry(generator.into())
             .or_insert_with(DataImpl::default)
             .targets = targets;
     }
 
     pub async fn merge(&self, other: GenSession) {
-        let mut data = self.data.lock().await;
-        let other = other.data.lock().await;
+        let mut inner = self.inner.lock().await;
+        let other = other.inner.lock().await;
 
-        for (generator, other_data) in other.iter() {
-            let data = data
+        for (generator, other_data) in other.generators.iter() {
+            let data = inner
+                .generators
                 .entry(generator.clone())
                 .or_insert_with(DataImpl::default);
             data.targets.extend(other_data.targets.clone());
             data.inputs.extend(other_data.inputs.clone());
         }
+    }
+
+    /// Collapse the shared block and this generator's specific entry into one
+    /// `DataImpl`, with the generator-specific values overriding shared.
+    pub async fn resolved_for(&self, generator: impl AsRef<str>) -> DataImpl {
+        let inner = self.inner.lock().await;
+        let mut resolved = inner.shared.clone();
+        if let Some(specific) = inner.generators.get(generator.as_ref()) {
+            resolved.targets.extend(specific.targets.clone());
+            resolved.inputs.extend(specific.inputs.clone());
+        }
+        resolved
+    }
+
+    /// Clone the shared block on its own (used to seed the baseline with the
+    /// output directory file's own shared values).
+    pub async fn shared_dataimpl(&self) -> DataImpl {
+        self.inner.lock().await.shared.clone()
+    }
+
+    /// Fold a resolved `DataImpl` into this generator's entry, with the incoming
+    /// (deeper) values overriding what is already present.
+    pub async fn overlay_generator(
+        &self,
+        generator: impl Into<String>,
+        data: DataImpl,
+    ) {
+        let mut inner = self.inner.lock().await;
+        let entry = inner
+            .generators
+            .entry(generator.into())
+            .or_insert_with(DataImpl::default);
+        entry.targets.extend(data.targets);
+        entry.inputs.extend(data.inputs);
+    }
+
+    pub async fn set_shared_target(
+        &self,
+        key: impl Into<String>,
+        value: impl Into<OmniPath>,
+    ) {
+        self.inner
+            .lock()
+            .await
+            .shared
+            .targets
+            .insert(key.into(), value.into());
+    }
+
+    pub async fn set_shared_input_raw(
+        &self,
+        key: impl Into<String>,
+        value: impl Into<serde_json::Value>,
+    ) {
+        self.inner
+            .lock()
+            .await
+            .shared
+            .inputs
+            .insert(key.into(), value.into());
+    }
+
+    pub async fn get_shared_target(
+        &self,
+        key: impl AsRef<str>,
+    ) -> Option<OmniPath> {
+        self.inner
+            .lock()
+            .await
+            .shared
+            .targets
+            .get(key.as_ref())
+            .cloned()
+    }
+
+    pub async fn get_shared_input_raw(
+        &self,
+        key: impl AsRef<str>,
+    ) -> Option<serde_json::Value> {
+        self.inner
+            .lock()
+            .await
+            .shared
+            .inputs
+            .get(key.as_ref())
+            .cloned()
     }
 
     pub async fn restore_targets(
@@ -200,8 +307,8 @@ impl GenSession {
         targets: &mut UnorderedMap<String, OmniPath>,
         override_existing: bool,
     ) {
-        let data = self.data.lock().await;
-        let data = data.get(generator.as_ref()).map(|d| &d.targets);
+        let inner = self.inner.lock().await;
+        let data = inner.generators.get(generator.as_ref()).map(|d| &d.targets);
 
         if let Some(data) = data {
             for (k, v) in data {
@@ -218,8 +325,8 @@ impl GenSession {
         inputs: &mut UnorderedMap<String, serde_json::Value>,
         override_existing: bool,
     ) {
-        let data = self.data.lock().await;
-        let data = data.get(generator.as_ref()).map(|d| &d.inputs);
+        let inner = self.inner.lock().await;
+        let data = inner.generators.get(generator.as_ref()).map(|d| &d.inputs);
 
         if let Some(data) = data {
             for (k, v) in data {
@@ -236,8 +343,8 @@ impl GenSession {
         inputs: &mut UnorderedMap<String, OwnedValueBag>,
         override_existing: bool,
     ) {
-        let data = self.data.lock().await;
-        let data = data.get(generator.as_ref()).map(|d| &d.inputs);
+        let inner = self.inner.lock().await;
+        let data = inner.generators.get(generator.as_ref()).map(|d| &d.inputs);
 
         if let Some(data) = data {
             for (k, v) in data {
@@ -260,8 +367,14 @@ impl GenSession {
         TSys: FsWriteAsync + Send + Sync,
         TPath: AsRef<Path>,
     {
-        let data = self.data.lock().await.clone();
-        omni_file_data_serde::write_async(path, &data, sys).await?;
+        let inner = self.inner.lock().await;
+        let out = SessionFile::V1_0_0(SessionFileV1_0_0 {
+            root: false,
+            generators: inner.generators.clone(),
+            shared: inner.shared.clone(),
+        });
+        drop(inner);
+        omni_file_data_serde::write_async(path, &out, sys).await?;
 
         Ok(())
     }
@@ -271,8 +384,9 @@ impl GenSession {
         generator: impl Into<String>,
         keys: impl IntoIterator<Item = impl AsRef<str>>,
     ) {
-        let mut data = self.data.lock().await;
-        if let Some(data) = data.get_mut(generator.into().as_str()) {
+        let mut inner = self.inner.lock().await;
+        if let Some(data) = inner.generators.get_mut(generator.into().as_str())
+        {
             for key in keys {
                 data.targets.remove(key.as_ref());
             }
@@ -284,8 +398,9 @@ impl GenSession {
         generator: impl Into<String>,
         keys: impl IntoIterator<Item = impl AsRef<str>>,
     ) {
-        let mut data = self.data.lock().await;
-        if let Some(data) = data.get_mut(generator.into().as_str()) {
+        let mut inner = self.inner.lock().await;
+        if let Some(data) = inner.generators.get_mut(generator.into().as_str())
+        {
             for key in keys {
                 data.inputs.remove(key.as_ref());
             }
@@ -293,12 +408,12 @@ impl GenSession {
     }
 
     pub async fn is_empty(&self) -> bool {
-        let data = self.data.lock().await;
-        if data.is_empty() {
+        let inner = self.inner.lock().await;
+        if inner.generators.is_empty() {
             return true;
         }
 
-        for data in data.values() {
+        for data in inner.generators.values() {
             if !data.targets.is_empty() || !data.inputs.is_empty() {
                 return false;
             }
@@ -316,16 +431,16 @@ impl GenSession {
         TSys: FsReadAsync + Send + Sync,
         TPath: AsRef<Path>,
     {
-        let data = self.data.lock().await.clone();
+        let inner = self.inner.lock().await;
         let original: SessionFile =
             omni_file_data_serde::read_async(serialized_file_path, sys).await?;
-        let original = original.generators;
+        let original = original.into_v1().generators;
 
-        if data.len() != original.len() {
+        if inner.generators.len() != original.len() {
             return Ok(true);
         }
 
-        for (generator, data) in data.iter() {
+        for (generator, data) in inner.generators.iter() {
             let original = original.get(generator);
             if original.is_none() {
                 return Ok(true);
@@ -350,7 +465,10 @@ impl GenSession {
         TSys: FsReadAsync + FsMetadataAsync + Send + Sync,
         TPath: AsRef<Path>,
     {
-        Ok(SessionFile::load_or_default(path, sys).await?.root)
+        Ok(SessionFile::load_or_default(path, sys)
+            .await?
+            .into_v1()
+            .root)
     }
 
     pub async fn retain_delta_against(
@@ -359,17 +477,19 @@ impl GenSession {
         pinned_inputs: &UnorderedSet<String>,
         pinned_targets: &UnorderedSet<String>,
     ) {
-        let mut data = self.data.lock().await;
-        let baseline = baseline.data.lock().await;
+        let mut inner = self.inner.lock().await;
+        let baseline = baseline.inner.lock().await;
 
-        let generator_names: Vec<String> = data.keys().cloned().collect();
+        let generator_names: Vec<String> =
+            inner.generators.keys().cloned().collect();
 
         for generator in generator_names {
-            let Some(base) = baseline.get(&generator) else {
+            let Some(base) = baseline.generators.get(&generator) else {
                 continue;
             };
 
-            let entry = data
+            let entry = inner
+                .generators
                 .get_mut(&generator)
                 .expect("generator name taken from this map");
 
@@ -396,7 +516,7 @@ impl GenSession {
             }
 
             if entry.targets.is_empty() && entry.inputs.is_empty() {
-                data.remove(&generator);
+                inner.generators.remove(&generator);
             }
         }
     }
@@ -410,9 +530,10 @@ impl GenSession {
         TSys: FsReadAsync + FsMetadataAsync + Send + Sync,
         TPath: AsRef<Path>,
     {
-        let existing = SessionFile::load_or_default(&path, sys).await?;
-        let data = self.data.lock().await;
-        Ok(*data != existing.generators)
+        let existing =
+            SessionFile::load_or_default(&path, sys).await?.into_v1();
+        let inner = self.inner.lock().await;
+        Ok(inner.generators != existing.generators)
     }
 
     pub async fn write_delta_or_prune<TSys>(
@@ -431,27 +552,29 @@ impl GenSession {
             + Sync,
     {
         let path = session_file_path.as_ref();
-        let existing = SessionFile::load_or_default(path, sys).await?;
-        let data = self.data.lock().await;
+        let existing = SessionFile::load_or_default(path, sys).await?.into_v1();
+        let inner = self.inner.lock().await;
 
-        if *data == existing.generators {
+        if inner.generators == existing.generators {
             return Ok(DeltaSaveOutcome::Unchanged);
         }
 
-        let is_empty = data
+        let is_empty = inner
+            .generators
             .values()
             .all(|d| d.targets.is_empty() && d.inputs.is_empty());
 
-        if is_empty && !existing.root {
+        if is_empty && existing.shared.is_empty() && !existing.root {
             sys.fs_remove_file_async(path).await?;
             return Ok(DeltaSaveOutcome::Pruned);
         }
 
-        let out = SessionFile {
+        let out = SessionFile::V1_0_0(SessionFileV1_0_0 {
             root: existing.root,
-            generators: data.clone(),
-        };
-        drop(data);
+            generators: inner.generators.clone(),
+            shared: existing.shared,
+        });
+        drop(inner);
 
         sys.fs_create_dir_all_async(gen_dir.as_ref()).await?;
         omni_file_data_serde::write_async(path, &out, sys).await?;
@@ -470,28 +593,59 @@ pub enum DeltaSaveOutcome {
 #[derive(
     Clone, serde::Serialize, serde::Deserialize, Default, Debug, PartialEq,
 )]
-struct DataImpl {
+pub struct DataImpl {
     #[serde(default)]
     targets: UnorderedMap<String, OmniPath>,
     #[serde(default, alias = "prompts")]
     inputs: UnorderedMap<String, serde_json::Value>,
 }
 
+impl DataImpl {
+    fn is_empty(&self) -> bool {
+        self.targets.is_empty() && self.inputs.is_empty()
+    }
+}
+
 fn is_false(value: &bool) -> bool {
     !*value
+}
+
+fn map_is_empty<K, V>(map: &UnorderedMap<K, V>) -> bool {
+    map.is_empty()
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
+#[serde(tag = "version", rename_all = "kebab-case")]
+enum SessionFile {
+    #[serde(rename = "1.0.0")]
+    V1_0_0(SessionFileV1_0_0),
+}
+
+impl Default for SessionFile {
+    fn default() -> Self {
+        Self::V1_0_0(SessionFileV1_0_0::default())
+    }
 }
 
 #[derive(
     serde::Serialize, serde::Deserialize, Debug, Clone, Default, PartialEq,
 )]
-struct SessionFile {
+struct SessionFileV1_0_0 {
     #[serde(default, skip_serializing_if = "is_false")]
     root: bool,
-    #[serde(flatten)]
+    #[serde(default, skip_serializing_if = "map_is_empty")]
     generators: UnorderedMap<String, DataImpl>,
+    #[serde(default, skip_serializing_if = "DataImpl::is_empty")]
+    shared: DataImpl,
 }
 
 impl SessionFile {
+    fn into_v1(self) -> SessionFileV1_0_0 {
+        match self {
+            SessionFile::V1_0_0(v) => v,
+        }
+    }
+
     async fn load_or_default<TPath, TSys>(
         path: TPath,
         sys: &TSys,
@@ -1701,21 +1855,62 @@ mod tests {
         assert!(session.is_empty().await);
     }
 
-    // ── SessionFile envelope: format compatibility and root ───────────────────
+    // ── SessionFile envelope: versioned format, root, shared ─────────────────
 
     #[tokio::test]
-    async fn test_legacy_bare_map_parses_with_root_false() {
+    async fn test_legacy_bare_map_fails_to_parse() {
         let (sys, path) = make_sys();
         let legacy =
             br#"{ "gen_a": { "targets": {}, "inputs": { "k": "v" } } }"#;
         sys.fs_write_async(path, legacy.to_vec()).await.unwrap();
 
-        let file = SessionFile::load_or_default(path, &sys).await.unwrap();
-        assert!(!file.root);
-        assert_eq!(
-            file.generators.get("gen_a").and_then(|g| g.inputs.get("k")),
-            Some(&serde_json::json!("v"))
-        );
+        assert!(SessionFile::load_or_default(path, &sys).await.is_err());
+        assert!(GenSession::from_disk(path, &sys).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_rev1_flattened_file_fails_to_parse() {
+        let (sys, path) = make_sys();
+        let rev1 = br#"{ "root": true, "gen_a": { "inputs": { "k": "v" } } }"#;
+        sys.fs_write_async(path, rev1.to_vec()).await.unwrap();
+
+        assert!(SessionFile::load_or_default(path, &sys).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_empty_envelope_serializes_with_version_only() {
+        let json = serde_json::to_string(&SessionFile::default()).unwrap();
+        assert_eq!(json, r#"{"version":"1.0.0"}"#);
+    }
+
+    #[tokio::test]
+    async fn test_versioned_envelope_round_trip() {
+        let full = SessionFile::V1_0_0(SessionFileV1_0_0 {
+            root: true,
+            generators: UnorderedMap::from_iter([(
+                "react-lib".to_string(),
+                DataImpl {
+                    targets: UnorderedMap::default(),
+                    inputs: UnorderedMap::from_iter([(
+                        "name".to_string(),
+                        serde_json::json!("widgets"),
+                    )]),
+                },
+            )]),
+            shared: DataImpl {
+                targets: UnorderedMap::default(),
+                inputs: UnorderedMap::from_iter([(
+                    "scope".to_string(),
+                    serde_json::json!("@acme"),
+                )]),
+            },
+        });
+
+        let json = serde_json::to_string(&full).unwrap();
+        assert!(json.contains(r#""version":"1.0.0""#));
+
+        let back: SessionFile = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, full);
     }
 
     #[tokio::test]
@@ -1724,21 +1919,25 @@ mod tests {
         let json = serde_json::to_string(&without_root).unwrap();
         assert!(!json.contains("root"));
 
-        let with_root = SessionFile {
+        let with_root = SessionFile::V1_0_0(SessionFileV1_0_0 {
             root: true,
             generators: UnorderedMap::default(),
-        };
+            shared: DataImpl::default(),
+        });
         let json = serde_json::to_string(&with_root).unwrap();
-        assert!(json.contains("\"root\":true"));
+        assert!(json.contains(r#""root":true"#));
     }
 
     #[tokio::test]
     async fn test_hand_written_entry_without_targets_parses() {
         let (sys, path) = make_sys();
-        let raw = br#"{ "root": true, "scaffold": { "inputs": { "scope": "@acme" } } }"#;
+        let raw = br#"{ "version": "1.0.0", "root": true, "generators": { "scaffold": { "inputs": { "scope": "@acme" } } } }"#;
         sys.fs_write_async(path, raw.to_vec()).await.unwrap();
 
-        let file = SessionFile::load_or_default(path, &sys).await.unwrap();
+        let file = SessionFile::load_or_default(path, &sys)
+            .await
+            .unwrap()
+            .into_v1();
         assert!(file.root);
         let entry = file.generators.get("scaffold").unwrap();
         assert!(entry.targets.is_empty());
@@ -1749,36 +1948,46 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_top_level_root_key_is_not_read_as_generator() {
+    async fn test_shared_block_parses_and_round_trips() {
         let (sys, path) = make_sys();
-        let raw = br#"{ "root": true, "gen_a": { "targets": {}, "inputs": { "k": "v" } } }"#;
-        sys.fs_write_async(path, raw.to_vec()).await.unwrap();
-
-        let file = SessionFile::load_or_default(path, &sys).await.unwrap();
-        assert!(file.root);
-        assert_eq!(file.generators.len(), 1);
-        assert!(file.generators.contains_key("gen_a"));
-        assert!(!file.generators.contains_key("root"));
-    }
-
-    #[tokio::test]
-    async fn test_from_disk_ignores_top_level_root_key() {
-        let (sys, path) = make_sys();
-        let raw = br#"{ "root": true, "gen_a": { "targets": {}, "inputs": { "k": "v" } } }"#;
+        let raw = br#"{ "version": "1.0.0", "generators": { "gen_a": { "inputs": { "name": "widget" } } }, "shared": { "inputs": { "scope": "@acme" } } }"#;
         sys.fs_write_async(path, raw.to_vec()).await.unwrap();
 
         let session = GenSession::from_disk(path, &sys).await.unwrap();
         assert_eq!(
-            session.get_input_raw("gen_a", "k").await,
-            Some(serde_json::json!("v"))
+            session.get_input_raw("gen_a", "name").await,
+            Some(serde_json::json!("widget"))
         );
-        assert_eq!(session.get_input_raw("root", "k").await, None);
+        assert_eq!(
+            session.get_shared_input_raw("scope").await,
+            Some(serde_json::json!("@acme"))
+        );
     }
 
     #[tokio::test]
-    async fn test_has_changes_reads_file_with_top_level_root_key() {
+    async fn test_generator_named_like_reserved_keys_round_trips() {
         let (sys, path) = make_sys();
-        let raw = br#"{ "root": true, "gen_a": { "targets": {}, "inputs": { "k": "v" } } }"#;
+        let session = GenSession::new();
+        for name in ["root", "version", "shared", "generators"] {
+            session
+                .set_input_raw(name, "k", serde_json::json!(name))
+                .await;
+        }
+        session.write_to_disk(path, &sys).await.unwrap();
+
+        let reloaded = GenSession::from_disk(path, &sys).await.unwrap();
+        for name in ["root", "version", "shared", "generators"] {
+            assert_eq!(
+                reloaded.get_input_raw(name, "k").await,
+                Some(serde_json::json!(name))
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_has_changes_reads_versioned_file() {
+        let (sys, path) = make_sys();
+        let raw = br#"{ "version": "1.0.0", "root": true, "generators": { "gen_a": { "inputs": { "k": "v" } } } }"#;
         sys.fs_write_async(path, raw.to_vec()).await.unwrap();
 
         let session = GenSession::from_disk(path, &sys).await.unwrap();
@@ -1790,12 +1999,131 @@ mod tests {
         assert!(session.has_changes(path, &sys).await.unwrap());
     }
 
+    // ── resolved_for() / overlay_generator() / cascade ────────────────────────
+
+    #[tokio::test]
+    async fn test_resolved_for_shared_only() {
+        let session = GenSession::new();
+        session
+            .set_shared_input_raw("scope", serde_json::json!("@acme"))
+            .await;
+
+        let resolved = session.resolved_for("gen_a").await;
+        assert_eq!(
+            resolved.inputs.get("scope"),
+            Some(&serde_json::json!("@acme"))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_resolved_for_specific_overrides_shared_within_file() {
+        let session = GenSession::new();
+        session
+            .set_shared_input_raw("color", serde_json::json!("shared"))
+            .await;
+        session
+            .set_input_raw("gen_a", "color", serde_json::json!("specific"))
+            .await;
+
+        let resolved = session.resolved_for("gen_a").await;
+        assert_eq!(
+            resolved.inputs.get("color"),
+            Some(&serde_json::json!("specific"))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_resolved_for_no_data_is_empty() {
+        let session = GenSession::new();
+        assert!(session.resolved_for("gen_a").await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_cascade_nearer_shared_beats_farther_specific() {
+        let farther = GenSession::new();
+        farther
+            .set_input_raw(
+                "gen_a",
+                "color",
+                serde_json::json!("farther-specific"),
+            )
+            .await;
+
+        let nearer = GenSession::new();
+        nearer
+            .set_shared_input_raw("color", serde_json::json!("nearer-shared"))
+            .await;
+
+        let effective = GenSession::new();
+        effective
+            .overlay_generator("gen_a", farther.resolved_for("gen_a").await)
+            .await;
+        effective
+            .overlay_generator("gen_a", nearer.resolved_for("gen_a").await)
+            .await;
+
+        assert_eq!(
+            effective.get_input_raw("gen_a", "color").await,
+            Some(serde_json::json!("nearer-shared"))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_root_and_shared_survive_delta_save() {
+        let (sys, path) = make_sys();
+        let raw = br#"{ "version": "1.0.0", "root": true, "generators": { "gen_a": { "inputs": { "k": "v" } } }, "shared": { "inputs": { "scope": "@acme" } } }"#;
+        sys.fs_write_async(path, raw.to_vec()).await.unwrap();
+
+        let session = GenSession::new();
+        let outcome = session
+            .write_delta_or_prune(path, Path::new("/sessions"), &sys)
+            .await
+            .unwrap();
+        assert_eq!(outcome, DeltaSaveOutcome::Wrote);
+
+        let reloaded = SessionFile::load_or_default(path, &sys)
+            .await
+            .unwrap()
+            .into_v1();
+        assert!(reloaded.root);
+        assert!(reloaded.generators.is_empty());
+        assert_eq!(
+            reloaded.shared.inputs.get("scope"),
+            Some(&serde_json::json!("@acme"))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_prune_retains_shared_only_file() {
+        let (sys, path) = make_sys();
+        let raw = br#"{ "version": "1.0.0", "generators": { "gen_a": { "inputs": { "k": "v" } } }, "shared": { "inputs": { "scope": "@acme" } } }"#;
+        sys.fs_write_async(path, raw.to_vec()).await.unwrap();
+
+        let session = GenSession::new();
+        let outcome = session
+            .write_delta_or_prune(path, Path::new("/sessions"), &sys)
+            .await
+            .unwrap();
+        assert_eq!(outcome, DeltaSaveOutcome::Wrote);
+        assert!(sys.fs_exists_no_err_async(path).await);
+
+        let reloaded = SessionFile::load_or_default(path, &sys)
+            .await
+            .unwrap()
+            .into_v1();
+        assert!(reloaded.generators.is_empty());
+        assert_eq!(
+            reloaded.shared.inputs.get("scope"),
+            Some(&serde_json::json!("@acme"))
+        );
+    }
+
     // ── is_root_marked() ──────────────────────────────────────────────────────
 
     #[tokio::test]
     async fn test_is_root_marked_true() {
         let (sys, path) = make_sys();
-        let raw = br#"{ "root": true }"#;
+        let raw = br#"{ "version": "1.0.0", "root": true }"#;
         sys.fs_write_async(path, raw.to_vec()).await.unwrap();
         assert!(GenSession::is_root_marked(path, &sys).await.unwrap());
     }
@@ -1803,7 +2131,7 @@ mod tests {
     #[tokio::test]
     async fn test_is_root_marked_false_for_bare_file() {
         let (sys, path) = make_sys();
-        let raw = br#"{ "gen_a": { "targets": {}, "inputs": {} } }"#;
+        let raw = br#"{ "version": "1.0.0", "generators": { "gen_a": { "inputs": {} } } }"#;
         sys.fs_write_async(path, raw.to_vec()).await.unwrap();
         assert!(!GenSession::is_root_marked(path, &sys).await.unwrap());
     }
@@ -1973,7 +2301,7 @@ mod tests {
     #[tokio::test]
     async fn test_write_delta_unchanged_when_matching_disk() {
         let (sys, path) = make_sys();
-        let raw = br#"{ "gen_a": { "targets": {}, "inputs": { "k": "v" } } }"#;
+        let raw = br#"{ "version": "1.0.0", "generators": { "gen_a": { "inputs": { "k": "v" } } } }"#;
         sys.fs_write_async(path, raw.to_vec()).await.unwrap();
 
         let session = GenSession::new();
@@ -1992,7 +2320,7 @@ mod tests {
     #[tokio::test]
     async fn test_write_delta_prunes_emptied_non_root_file() {
         let (sys, path) = make_sys();
-        let raw = br#"{ "gen_a": { "targets": {}, "inputs": { "k": "v" } } }"#;
+        let raw = br#"{ "version": "1.0.0", "generators": { "gen_a": { "inputs": { "k": "v" } } } }"#;
         sys.fs_write_async(path, raw.to_vec()).await.unwrap();
 
         let session = GenSession::new();
@@ -2008,7 +2336,7 @@ mod tests {
     #[tokio::test]
     async fn test_write_delta_preserves_root_seal_when_generators_emptied() {
         let (sys, path) = make_sys();
-        let raw = br#"{ "root": true, "gen_a": { "targets": {}, "inputs": { "k": "v" } } }"#;
+        let raw = br#"{ "version": "1.0.0", "root": true, "generators": { "gen_a": { "inputs": { "k": "v" } } } }"#;
         sys.fs_write_async(path, raw.to_vec()).await.unwrap();
 
         let session = GenSession::new();
@@ -2020,7 +2348,10 @@ mod tests {
         assert_eq!(outcome, DeltaSaveOutcome::Wrote);
         assert!(sys.fs_exists_no_err_async(path).await);
 
-        let reloaded = SessionFile::load_or_default(path, &sys).await.unwrap();
+        let reloaded = SessionFile::load_or_default(path, &sys)
+            .await
+            .unwrap()
+            .into_v1();
         assert!(reloaded.root);
         assert!(reloaded.generators.is_empty());
     }
