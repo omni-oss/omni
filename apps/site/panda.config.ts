@@ -1,12 +1,12 @@
 import { defineConfig } from "@pandacss/dev";
 import basePreset from "@pandacss/preset-base";
-import createPandaPreset from "@pandacss/preset-panda";
+import pandaPreset from "@pandacss/preset-panda";
 import { createTypographyPreset } from "@pandacss/preset-typography";
 
 export default defineConfig({
     presets: [
         basePreset,
-        createPandaPreset,
+        pandaPreset,
         // This beta exports a factory (default export is a function), so the
         // bare "@pandacss/preset-typography" string can't resolve to an object.
         createTypographyPreset(),

@@ -16,7 +16,7 @@ export default mergeConfig(baseConfig, {
                 test: {
                     name: "client",
                     environment: "jsdom",
-                    include: ["src/**/*.test.tsx"],
+                    include: ["src/**/*.{test,spec}.tsx"],
                 },
             },
             {
@@ -24,7 +24,7 @@ export default mergeConfig(baseConfig, {
                 test: {
                     name: "server",
                     environment: "node",
-                    include: ["src/server/**/*.test.ts"],
+                    include: ["src/server/**/*.{test,spec}.ts"],
                     // Inline the framework so the aliases below decide which build
                     // loads (externalized modules resolve through node instead).
                     server: { deps: { inline: [/@solidjs[+/]web/] } },

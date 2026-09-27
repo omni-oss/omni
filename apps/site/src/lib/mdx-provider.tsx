@@ -38,7 +38,6 @@ export function MDXProvider(props: {
         <MDXContext
             value={{
                 ...parent,
-                // oxlint-disable-next-line solid/reactivity
                 ...props.components,
             }}
         >

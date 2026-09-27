@@ -74,6 +74,14 @@ Don't load the session from the output directory
 
 - **Possible values:** `true`, `false`
 
+### `--inherit-session`
+
+Merge session files from the output directory up to the workspace root when restoring (deeper files win). Use --inherit-session=false to read and write only the output directory's own session file.
+
+- **Required:** No
+
+- **Possible values:** `true`, `false`
+
 ### `--max-depth`
 
 Maximum run-generator nesting depth before the run is aborted. Omit to use the default. Raise it if a generator legitimately nests deeper than the default.

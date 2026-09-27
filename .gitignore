@@ -1,7 +1,7 @@
 target
 dist
 .env
-.env.*
+.env*.local
 
 # coverage
 **/coverage

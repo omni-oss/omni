@@ -19,7 +19,8 @@
         "skipLibCheck": true,
         "types": ["vite/client"],
         "paths": {
-          "$/*": ["./styled-system/*"]
+          "$*": ["./styled-system/*"],
+          "#*": ["./src/*"],
         }
     }
 }

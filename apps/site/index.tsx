@@ -1,8 +1,8 @@
-import { css } from "$css";
+import { css } from "$/styled-system/css";
 import { createFileRoute } from "@tanstack/solid-router";
 
-import { Main } from "#components/main";
-import logo from "#logo.svg";
+import { Main } from "../components/main";
+import logo from "../logo.svg";
 
 const logoStyle = css({
     animation: "logo-spin infinite 20s linear",

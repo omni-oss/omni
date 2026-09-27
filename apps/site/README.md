@@ -94,7 +94,7 @@ Runs both test projects: the component test and the session suite.
 The built server entry exposes one adapter-agnostic web `Request -> Response` handler in two forms:
 
 ```js
-import app, { handleRequest } from "./dist/server/server.js";
+import app, { handleRequest } from './dist/server/server.js';
 // serve dist/client statically; everything else:
 const response = await handleRequest(request);
 const sameResponse = await app.fetch(request);

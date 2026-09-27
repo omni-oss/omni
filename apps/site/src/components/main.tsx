@@ -1,7 +1,6 @@
+import { css } from "$css";
+import type { SystemStyleObject } from "$types";
 import type { ParentProps } from "solid-js";
-
-import { css } from "../../styled-system/css";
-import type { SystemStyleObject } from "../../styled-system/types";
 
 // The shared page container styles: the `main` padding plus the styling for
 // links rendered inside it (formerly the global `main a` / `a:focus-visible`
