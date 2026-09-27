@@ -10,7 +10,6 @@ pub(crate) struct LexerOptions {
 }
 
 pub(crate) struct Lexer {
-    source: String,
     chars: Vec<char>,
     current: usize,
     start: usize,
@@ -27,7 +26,6 @@ impl Lexer {
         let source = source.into();
         Self {
             chars: source.chars().collect(),
-            source,
             current: 0,
             start: 0,
             line: 1,
@@ -45,7 +43,7 @@ impl Lexer {
     }
 
     fn at_end(&self) -> bool {
-        self.current >= self.source.len()
+        self.current >= self.chars.len()
     }
 
     fn at_start(&self) -> bool {
@@ -126,7 +124,7 @@ impl Lexer {
             self.advance()?;
         }
 
-        Ok(self.source[current_pos..last_pos].chars().collect())
+        Ok(self.chars[current_pos..last_pos].iter().collect())
     }
 
     fn get_while(
@@ -150,7 +148,7 @@ impl Lexer {
             self.advance()?;
         }
 
-        Ok(self.source[current_pos..last_pos].chars().collect())
+        Ok(self.chars[current_pos..last_pos].iter().collect())
     }
 
     #[inline(always)]
@@ -360,6 +358,66 @@ mod tests {
 
         assert_eq!(tokens[3].token_type, TokenType::Eof);
         assert_eq!(tokens[3].lexeme, "");
+    }
+
+    #[test]
+    fn test_lex_value_with_trailing_equals() {
+        // Regression: a base64-style value ending in '=' (e.g. a session
+        // secret) used to make the lexer read past the end of input.
+        let mut lexer = Lexer::new(
+            "SESSION_SECRET=btIwer7KDKnhXByETGBubZR45LEWVHnyjE+z5Ye7m0w=\n",
+            None,
+        );
+        let tokens = lexer.analyze().unwrap();
+
+        assert_eq!(tokens[0].token_type, TokenType::Identifier);
+        assert_eq!(tokens[0].lexeme, "SESSION_SECRET");
+
+        assert_eq!(tokens[1].token_type, TokenType::Equal);
+        assert_eq!(tokens[1].lexeme, "=");
+
+        assert_eq!(tokens[2].token_type, TokenType::UnqoutedString);
+        assert_eq!(
+            tokens[2].lexeme,
+            "btIwer7KDKnhXByETGBubZR45LEWVHnyjE+z5Ye7m0w="
+        );
+
+        assert_eq!(tokens[3].token_type, TokenType::Eol);
+        assert_eq!(tokens.last().unwrap().token_type, TokenType::Eof);
+    }
+
+    #[test]
+    fn test_lex_non_ascii_in_value() {
+        // Regression: a multi-byte UTF-8 char made `at_end` (which used the
+        // byte length) disagree with the char-indexed cursor, panicking with
+        // "Should have current".
+        let mut lexer = Lexer::new("SECRET=café\n", None);
+        let tokens = lexer.analyze().unwrap();
+
+        assert_eq!(tokens[0].token_type, TokenType::Identifier);
+        assert_eq!(tokens[0].lexeme, "SECRET");
+        assert_eq!(tokens[1].token_type, TokenType::Equal);
+        assert_eq!(tokens[2].token_type, TokenType::UnqoutedString);
+        assert_eq!(tokens[2].lexeme, "café");
+        assert_eq!(tokens[3].token_type, TokenType::Eol);
+        assert_eq!(tokens.last().unwrap().token_type, TokenType::Eof);
+    }
+
+    #[test]
+    fn test_lex_non_ascii_in_comment() {
+        // Regression: a multi-byte UTF-8 char inside a comment (e.g. an em
+        // dash) triggered the same out-of-bounds panic.
+        let mut lexer =
+            Lexer::new("# server vars — at boot\nSECRET=value\n", None);
+        let tokens = lexer.analyze().unwrap();
+
+        assert_eq!(tokens[0].token_type, TokenType::Eol);
+        assert_eq!(tokens[1].token_type, TokenType::Identifier);
+        assert_eq!(tokens[1].lexeme, "SECRET");
+        assert_eq!(tokens[2].token_type, TokenType::Equal);
+        assert_eq!(tokens[3].token_type, TokenType::UnqoutedString);
+        assert_eq!(tokens[3].lexeme, "value");
+        assert_eq!(tokens.last().unwrap().token_type, TokenType::Eof);
     }
 
     #[test]
