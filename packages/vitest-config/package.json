@@ -17,7 +17,7 @@
         "unplugin-dts": "catalog:"
     },
     "peerDependencies": {
-        "vite": "^7.3.1",
-        "vitest": "^4.0.18"
+        "vite": "catalog:",
+        "vitest": "catalog:"
     }
 }
