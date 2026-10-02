@@ -22,10 +22,10 @@ authors = ["Clarence Manuel <rencedm112@gmail.com>"]
 serde = { version = "^1.0.229", features = ["derive", "rc", "alloc"] }
 serde-untagged = { version = "^0.1.9" }
 serde_path_to_error = { version = "^0.1.20" }
-sys_traits = { version = "^0.1.28", features = ["real"] }
+sys_traits = { version = "^0.1.29", features = ["real"] }
 system_traits = { path = "./crates/system_traits" }
-async-trait = { version = "^0.1.89" }
-serde_json = { version = "^1.0.150" }
+async-trait = { version = "^0.1.92" }
+serde_json = { version = "^1.0.151" }
 serde_bytes = { version = "^0.11.19" }
 trace = { path = "./crates/trace" }
 tracing = { version = "^0.1.44" }
@@ -35,17 +35,17 @@ tracing-subscriber = { version = "^0.3.23", features = ["json"] }
 test-log = { version = "=0.2.20", default-features = false, features = [
     "trace",
 ] }
-futures = { version = "^0.3.32" }
-thiserror = "^2.0.18"
-eyre = "^0.6.12"
+futures = { version = "^0.3.34" }
+thiserror = "^2.0.21"
+eyre = "^0.6.14"
 color-eyre = "^0.6.5"
 # pin this for now, it's causing a coherence conflict with other crates
-time = { version = "^0.3.49", features = ["serde", "serde-human-readable"] }
+time = { version = "^0.3.55", features = ["serde", "serde-human-readable"] }
 derive_more = { version = "^2.1.1", features = ["full"] }
 derive-new = { version = "^0.7.0" }
 strum = { version = "^0.28.0", features = ["derive"] }
 merge = { version = "0.2.0" }
-tokio = { version = "^1.52.3", features = [
+tokio = { version = "^1.53.1", features = [
     "rt",
     "rt-multi-thread",
     "tracing",
@@ -59,9 +59,9 @@ tokio = { version = "^1.52.3", features = [
     "io-std",
     "io-util",
 ] }
-tokio-stream = { version = "^0.1.18", features = ["full"] }
-tokio-util = { version = "^0.7.18", features = ["compat"] }
-reqwest = { version = "^0.13.3", features = [
+tokio-stream = { version = "^0.1.19", features = ["full"] }
+tokio-util = { version = "^0.7.19", features = ["compat"] }
+reqwest = { version = "^0.13.5", features = [
     "charset",
     "blocking",
     "rustls",
@@ -70,32 +70,32 @@ reqwest = { version = "^0.13.3", features = [
 ], default-features = false }
 reqwest-middleware = { version = "^0.5.2" }
 reqwest-tracing = { version = "^0.7.1" }
-http = { version = "^1.4.0" }
-http-body = { version = "^1.0.1" }
-clap = { version = "^4.6.1", features = ["derive", "env", "string"] }
-clap_complete = { version = "^4.6.5" }
+http = { version = "^1.5.0" }
+http-body = { version = "^1.1.0" }
+clap = { version = "^4.6.7", features = ["derive", "env", "string"] }
+clap_complete = { version = "^4.6.11" }
 globset = { version = "^0.4" }
 shadow-rs = { version = "^2.0.0", default-features = false }
-embed-manifest = { version = "^1.3" }
+embed-manifest = { version = "^1.5" }
 convert_case = { version = "^0.12.0" }
-schemars = { version = "^1.2.1", features = ["indexmap2", "either1", "url2"] }
+schemars = { version = "^1.2.2", features = ["indexmap2", "either1", "url2"] }
 noyalib = { version = "^0.0.51" }
-ignore = { version = "^0.4.25" }
-regex = { version = "^1.12.3" }
-lazy-regex = { version = "^3.6.0" }
+ignore = { version = "^0.4.33" }
+regex = { version = "^1.13.1" }
+lazy-regex = { version = "^3.6.1" }
 env = { path = "./crates/env" }
 env_loader = { path = "./crates/env_loader" }
 petgraph = { version = "^0.8.3", features = ["serde-1", "rayon"] }
 omni_core = { path = "./crates/omni_core" }
 config_utils = { path = "./crates/config_utils" }
-toml = { version = "^1.1.2" }
-uuid = { version = "^1.23.1", features = ["v4", "v7", "serde"] }
+toml = { version = "^1.1.6" }
+uuid = { version = "^1.26.1", features = ["v4", "v7", "serde"] }
 url = { version = "^2.5.8", features = ["serde"] }
 parking_lot = { version = "^0.12.5" }
 bincode-next = { version = "^3.1.1", features = ["serde"] }
 dir_walker = { path = "./crates/dir_walker" }
-which = { version = "^8.0.2" }
-tera = { version = "2.3.0" }
+which = { version = "^8.0.6" }
+tera = { version = "2.4.0" }
 tera-contrib = { version = "^0.3.0", features = [
     "base64",
     "date",
@@ -113,17 +113,17 @@ rmp-serde = { version = "^1.3.1" }
 rmpv = { version = "^1.3.1", features = ["with-serde"] }
 defer = { version = "^0.2.1" }
 mockall = { version = "^0.15.0" }
-ntest = { version = "^0.9.5" }
-bytes = { version = "^1.11.1" }
+ntest = { version = "^0.10.0" }
+bytes = { version = "^1.12.1" }
 byteorder = { version = "^1.5.0" }
-rust-embed = { version = "8.11.0", features = [
+rust-embed = { version = "8.12.0", features = [
     "compression",
     "include-exclude",
     "deterministic-timestamps",
 ] }
 garde = { version = "^0.23.0", features = ["full"] }
 os_pipe = { version = "^1.2.3" }
-indexmap = { version = "^2.14.0", features = ["serde", "rayon"] }
+indexmap = { version = "^2.14.2", features = ["serde", "rayon"] }
 dashmap = { version = "^6.2.1", features = ["serde", "rayon"] }
 ahash = { version = "^0.8.12" }
 maps = { path = "./crates/maps" }
@@ -133,20 +133,20 @@ dhat = { version = "^0.3.3" }
 enum-map = { version = "^3.1.0", features = ["serde", "bytemuck"] }
 portable-pty = { version = "^0.9.0" }
 terminal_size = { version = "^0.4.4" }
-rmcp = { version = "^3.1.3", features = ["server", "macros", "transport-io"] }
+rmcp = { version = "^3.5.0", features = ["server", "macros", "transport-io"] }
 rs_merkle = { version = "^1.5.0" }
 omni_cache = { path = "./crates/omni_cache" }
 omni_hasher = { path = "./crates/omni_hasher" }
 derive_builder = { version = "^0.20.2" }
-blake3 = { version = "^1.8.5" }
+blake3 = { version = "^1.8.7" }
 tempfile = { version = "^3.27.0" }
 bs58 = { version = "^0.5.1" }
-yoke = { version = "^0.8.2", features = ["derive"] }
-owo-colors = { version = "^4.3.0" }
+yoke = { version = "^0.8.3", features = ["derive"] }
+owo-colors = { version = "^4.4.0" }
 tiny-gradient = { version = "^0.1.0" }
 omni_expressions = { path = "./crates/omni_expressions" }
 omni_cli_core = { path = "./crates/omni_cli_core" }
-cel = { version = "^0.14.0", features = [
+cel = { version = "^0.14.5", features = [
     "chrono",
     "json",
     "regex",
@@ -154,7 +154,7 @@ cel = { version = "^0.14.0", features = [
     "structs",
 ] }
 omni_test_utils = { path = "./crates/omni_test_utils" }
-crossbeam-channel = { version = "^0.5.15" }
+crossbeam-channel = { version = "^0.5.17" }
 shlex = { version = "^2.0.1" }
 path-clean = { version = "^1.0.1" }
 num_cpus = { version = "^1.17.0" }
@@ -166,7 +166,7 @@ omni_context = { path = "./crates/omni_context" }
 omni_task_executor = { path = "./crates/omni_task_executor" }
 bridge_rpc_router = { path = "crates/bridge_rpc_router" }
 omni_config_types = { path = "crates/omni_config_types" }
-log = { version = "^0.4.29", features = ["kv", "kv_serde", "kv_std"] }
+log = { version = "^0.4.34", features = ["kv", "kv_serde", "kv_std"] }
 omni_git_utils = { path = "crates/omni_git_utils" }
 omni_lockfile = { path = "crates/omni_lockfile" }
 omni_remote_source = { path = "crates/omni_remote_source" }
@@ -178,10 +178,10 @@ omni_mcp_core = { path = "crates/omni_mcp_core" }
 omni_input_schema = { path = "crates/omni_input_schema" }
 omni_task_output_logs = { path = "crates/omni_task_output_logs" }
 omni_workspace_gen = { path = "crates/omni_workspace_gen" }
-wasm-bindgen = { version = "^0.2.100" }
+wasm-bindgen = { version = "^0.2.129" }
 serde-wasm-bindgen = { version = "^0.6.5" }
 console_error_panic_hook = { version = "^0.1.7" }
-wasm-bindgen-test = { version = "^0.3.50" }
+wasm-bindgen-test = { version = "^0.3.79" }
 omni_command_config = { path = "crates/omni_command_config" }
 omni_capabilities = { path = "crates/omni_capabilities" }
 omni_capability_enforcement = { path = "crates/omni_capability_enforcement" }
@@ -207,13 +207,13 @@ omni_process = { path = "./crates/omni_process" }
 nix = { version = "^0.31.3" }
 base64 = { version = "^0.23.1" }
 clap_declspec = { path = "./crates/clap_declspec" }
-getset = { version = "^0.1.6" }
-either = { version = "^1.16.0", features = ["serde"] }
+getset = { version = "^0.1.7" }
+either = { version = "^1.18.0", features = ["serde"] }
 # Pinned to 0.30.0: ratatui 0.30.1 requires ratatui-widgets ^0.3.1, whose
 # blanket `impl<T: Into<Text>> From<T>` triggers a coherence conflict with the
 # `time` crate. 0.30.0 uses the working ratatui-widgets 0.3.0. Revisit once the
 # upstream issue is resolved.
-ratatui = { version = "^0.30.1" }
+ratatui = { version = "^0.30.2" }
 crossterm = { version = "^0.29.0" }
 omni_term_ui = { path = "./crates/omni_term_ui" }
 clap_utils = { path = "./crates/clap_utils" }
@@ -221,8 +221,8 @@ vte = { version = "^0.15.0" }
 unicode-width = "^0.2.2" # hard requirement for ratatui
 enumflags2 = { version = "^0.7.12" }
 omni_tracing_subscriber = { path = "./crates/omni_tracing_subscriber" }
-bytesize = { version = "^2.3.1", features = ["serde"] }
-humantime = { version = "^2.3.0" }
+bytesize = { version = "^2.7.0", features = ["serde"] }
+humantime = { version = "^2.4.0" }
 humantime-serde = { version = "^1.1.1" }
 itertools = { version = "^0.15.0" }
 omni_execution_plan = { path = "./crates/omni_execution_plan" }
@@ -241,8 +241,8 @@ omni_discovery = { path = "./crates/omni_discovery" }
 omni_tera = { path = "./crates/omni_tera" }
 axum = { version = "^0.8.9", features = ["macros", "http2", "multipart"] }
 tower = { version = "^0.5.3" }
-tower-http = { version = "^0.6.11", features = ["trace", "catch-panic"] }
-axum-valid = { version = "^0.24.0", default-features = false, features = [
+tower-http = { version = "^0.7.1", features = ["trace", "catch-panic"] }
+axum-valid = { version = "^0.25.0", default-features = false, features = [
     "full_garde",
 ] }
 axum-extra = { version = "^0.12.6", features = [
@@ -253,13 +253,13 @@ axum-extra = { version = "^0.12.6", features = [
     "file-stream",
     "error-response",
 ] }
-axum-test = { version = "^20.0.0", features = ["all"] }
-aws-config = { version = "^1.8.17" }
-aws-sdk-s3 = { version = "^1.133.0" }
-aws-credential-types = { version = "^1.2.14" }
-aws-types = { version = "^1.3.16" }
-lru = { version = "^0.18.0" }
-utoipa = { version = "^5.5.0", features = [
+axum-test = { version = "^21.1.0", features = ["all"] }
+aws-config = { version = "^1.12.0" }
+aws-sdk-s3 = { version = "^1.152.0" }
+aws-credential-types = { version = "^1.3.0" }
+aws-types = { version = "^1.6.0" }
+lru = { version = "^0.18.5" }
+utoipa = { version = "^6.0.0", features = [
     "indexmap",
     "url",
     "time",
@@ -270,40 +270,40 @@ utoipa = { version = "^5.5.0", features = [
     "repr",
     "non_strict_integers",
 ] }
-utoipa-scalar = { version = "^0.3.0", features = ["axum"] }
+utoipa-scalar = { version = "^0.4.0", features = ["axum"] }
 omni_path_utils = { path = "./crates/omni_path_utils" }
 async-stream = { version = "^0.3.6" }
-flate2 = { version = "^1.1.9", features = [
+flate2 = { version = "^1.1.10", features = [
     "zlib-rs",
 ], default-features = false }
 tar = { version = "^0.4.46" }
 keyring-core = { version = "^1.0.0", features = ["sample"] }
-apple-native-keyring-store = { version = "^1.0.0", features = ["keychain"] }
-windows-native-keyring-store = { version = "^1.0.0" }
-zbus-secret-service-keyring-store = { version = "^1.0.0", features = [
+apple-native-keyring-store = { version = "^1.0.2", features = ["keychain"] }
+windows-native-keyring-store = { version = "^1.1.0" }
+zbus-secret-service-keyring-store = { version = "^1.0.1", features = [
     "crypto-rust",
 ] }
 linux-keyutils-keyring-store = { version = "^1.0.0" }
 machine-uid = { version = "^0.6.0" }
-rand = { version = "^0.10.1" }
+rand = { version = "^0.10.3" }
 ring = { version = "^0.17.14" }
 gix = { version = "^0.88.0", features = [
     "blocking-network-client",
     "blocking-http-transport-reqwest-rust-tls",
 ] }
-requestty = { version = "^0.6.3", features = [
+requestty = { version = "^0.7.0", features = [
     "crossterm",
     "smallvec",
     "macros",
 ] }
-value-bag = { version = "^1.12.0", features = [
+value-bag = { version = "^1.14.1", features = [
     "serde",
     "error",
     "seq",
     "owned",
 ] }
 serde_validate = { path = "./crates/serde_validate" }
-serde_repr = { version = "^0.1.20" }
+serde_repr = { version = "^0.1.21" }
 heck = { version = "^0.5.0" }
 bridge_rpc_core = { path = "./crates/bridge_rpc_core" }
 sqlx = { version = "^0.9.0", features = [
@@ -319,17 +319,17 @@ sqlx = { version = "^0.9.0", features = [
 cruet = { version = "^1.0.0" }
 scopeguard = { version = "^1.2.0" }
 mimalloc = { version = "^0.1.52", default-features = false }
-bon = { version = "^3.9.1" }
+bon = { version = "^3.10.1" }
 paste = { version = "^1.0" }
-rstest = { version = "^0.26.1" }
+rstest = { version = "^0.27.0" }
 rstest_reuse = { version = "^0.7.0" }
-fastrand = { version = "^2.4.1" }
+fastrand = { version = "^2.5.0" }
 directories = { version = "^6.0.0" }
 target-lexicon = { version = "^0.13.5" }
 # nom = { version = "^8.0.0" }
-enumset = { version = "^1.1.13", features = ["serde", "proc-macro-crate"] }
-indicatif = { version = "^0.18.4" }
-comfy-table = { version = "^8.0.0", features = ["custom_styling"] }
+enumset = { version = "^1.1.14", features = ["serde", "proc-macro-crate"] }
+indicatif = { version = "^0.18.6" }
+comfy-table = { version = "^8.0.1", features = ["custom_styling"] }
 
 
 [patch.crates-io]
