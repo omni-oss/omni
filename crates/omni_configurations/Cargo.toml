@@ -35,7 +35,6 @@ garde = { workspace = true }
 system_traits = { workspace = true }
 lazy-regex = { workspace = true }
 humantime = { workspace = true }
-humantime-serde = { workspace = true }
 omni_config_types = { workspace = true }
 omni_glob_config = { workspace = true }
 omni_experimental_features = { workspace = true }

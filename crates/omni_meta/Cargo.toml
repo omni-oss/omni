@@ -16,7 +16,6 @@ url = { workspace = true }
 eyre = { workspace = true }
 thiserror = { workspace = true }
 strum = { workspace = true }
-bon = { workspace = true }
 derive-new = { workspace = true }
 
 [dev-dependencies]

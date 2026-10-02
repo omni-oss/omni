@@ -6,7 +6,6 @@ repository.workspace = true
 version = "0.2.0"
 
 [dependencies]
-omni_configurations = { workspace = true }
 omni_projection_configurations = { workspace = true }
 omni_constants = { workspace = true }
 system_traits = { workspace = true, features = [

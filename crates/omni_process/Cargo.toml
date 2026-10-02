@@ -14,7 +14,6 @@ eyre = { workspace = true }
 thiserror = { workspace = true }
 strum = { workspace = true }
 tokio = { workspace = true }
-tokio-util = { workspace = true }
 omni_core = { workspace = true }
 portable-pty = { workspace = true }
 terminal_size = { workspace = true }
@@ -22,7 +21,6 @@ atty = { workspace = true }
 trace = { workspace = true }
 log = { workspace = true }
 tracing = { workspace = true }
-omni_hasher = { workspace = true }
 system_traits = { workspace = true }
 bytes = { workspace = true }
 derive-new = { workspace = true }

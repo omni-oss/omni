@@ -18,7 +18,6 @@ trace = { workspace = true }
 log = { workspace = true }
 tracing = { workspace = true, optional = true }
 serde = { workspace = true }
-derive_builder = { workspace = true }
 derive-new = { workspace = true }
 tokio = { workspace = true }
 gix = { workspace = true }

@@ -17,15 +17,12 @@ thiserror = { workspace = true }
 strum = { workspace = true }
 serde = { workspace = true }
 derive-new = { workspace = true }
-derive_builder = { workspace = true }
-omni_hasher = { workspace = true }
 trace = { workspace = true }
 log = { workspace = true }
 tracing = { workspace = true }
 ratatui = { workspace = true }
 crossterm = { workspace = true }
 tokio = { workspace = true }
-tokio-util = { workspace = true }
 maps = { workspace = true }
 parking_lot = { workspace = true }
 vte = { workspace = true }

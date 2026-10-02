@@ -25,7 +25,6 @@ strum = { workspace = true }
 trace = { workspace = true }
 tracing = { workspace = true, optional = true }
 log = { workspace = true }
-bon = { workspace = true }
 derive-new = { workspace = true }
 omni_input_schema = { workspace = true }
 omni_capabilities = { workspace = true }

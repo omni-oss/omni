@@ -37,7 +37,6 @@ system_traits = { workspace = true, features = [
     "memory-sync",
     "memory-async",
 ] }
-requestty = { workspace = true }
 value-bag = { workspace = true }
 maps = { workspace = true }
 sets = { workspace = true }
