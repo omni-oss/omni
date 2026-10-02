@@ -41,7 +41,6 @@ rust-embed = { workspace = true, features = [
 utoipa = { workspace = true }
 utoipa-scalar = { workspace = true }
 shadow-rs = { workspace = true }
-bs58 = { workspace = true }
 tokio-util = { workspace = true }
 tokio-stream = { workspace = true }
 omni_path_utils = { workspace = true }
@@ -49,7 +48,6 @@ schemars = { workspace = true }
 maps = { workspace = true }
 sets = { workspace = true }
 time = { workspace = true }
-axum-test = { workspace = true }
 sqlx = { workspace = true }
 
 [dev-dependencies]

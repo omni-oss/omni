@@ -59,7 +59,6 @@ system_traits = { workspace = true, features = [
 dir_walker = { workspace = true, features = ["ignore", "memory"] }
 petgraph = { workspace = true }
 thiserror = { workspace = true }
-defer = { workspace = true }
 strum = { workspace = true }
 garde = { workspace = true }
 env_loader = { workspace = true }

@@ -12,7 +12,6 @@ enable-tracing = ["trace/enabled", "dep:tracing"]
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
-toml = { workspace = true }
 schemars = { workspace = true }
 derive_more = { workspace = true }
 thiserror = { workspace = true }
@@ -23,13 +22,10 @@ strum = { workspace = true }
 derive-new = { workspace = true }
 maps = { workspace = true }
 merge = { workspace = true }
-omni_core = { workspace = true }
-omni_expressions = { workspace = true }
 config_utils = { workspace = true }
 omni_types = { workspace = true }
 garde = { workspace = true }
 system_traits = { workspace = true }
-lazy-regex = { workspace = true }
 omni_input_schema = { workspace = true }
 omni_capabilities = { workspace = true }
 omni_glob_config = { workspace = true }

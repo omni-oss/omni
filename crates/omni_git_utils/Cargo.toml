@@ -20,7 +20,6 @@ strum = { workspace = true }
 trace = { workspace = true }
 tracing = { workspace = true, optional = true }
 log = { workspace = true }
-derive_builder = { workspace = true }
 derive-new = { workspace = true }
 gix = { workspace = true }
 system_traits = { workspace = true }
