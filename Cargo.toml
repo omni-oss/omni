@@ -240,9 +240,6 @@ omni_tera = { path = "./crates/omni_tera" }
 axum = { version = "^0.8.9", features = ["macros", "http2", "multipart"] }
 tower = { version = "^0.5.3" }
 tower-http = { version = "^0.7.1", features = ["trace", "catch-panic"] }
-axum-valid = { version = "^0.25.0", default-features = false, features = [
-    "full_garde",
-] }
 axum-extra = { version = "^0.12.6", features = [
     "async-read-body",
     "typed-header",
@@ -268,7 +265,6 @@ utoipa = { version = "^6.0.0", features = [
     "repr",
     "non_strict_integers",
 ] }
-utoipa-scalar = { version = "^0.4.0", features = ["axum"] }
 omni_path_utils = { path = "./crates/omni_path_utils" }
 flate2 = { version = "^1.1.10", features = [
     "zlib-rs",
@@ -303,16 +299,16 @@ serde_validate = { path = "./crates/serde_validate" }
 serde_repr = { version = "^0.1.21" }
 heck = { version = "^0.5.0" }
 bridge_rpc_core = { path = "./crates/bridge_rpc_core" }
-sqlx = { version = "^0.9.0", features = [
-    "runtime-tokio",
-    "tls-rustls",
-    "all-databases",
-    "uuid",
-    "time",
-    "bigdecimal",
-    "bstr",
-    "ipnet",
-] }
+# sqlx = { version = "^0.9.0", features = [
+#     "runtime-tokio",
+#     "tls-rustls",
+#     "all-databases",
+#     "uuid",
+#     "time",
+#     "bigdecimal",
+#     "bstr",
+#     "ipnet",
+# ] }
 cruet = { version = "^1.0.0" }
 scopeguard = { version = "^1.2.0" }
 mimalloc = { version = "^0.1.52", default-features = false }

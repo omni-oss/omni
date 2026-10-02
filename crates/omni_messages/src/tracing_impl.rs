@@ -14,7 +14,7 @@ pub use tracing_impl::TracingSubscriber;
 
 #[cfg(feature = "tracing")]
 mod tracing_impl {
-    use ::tracing as t;
+    use ::trace as t;
 
     use crate::diagnostic::{
         DiagnosticEvent, DiagnosticLevel, DiagnosticSubscriber,
