@@ -305,50 +305,37 @@ impl TaskConfiguration {
     pub fn cache(&self) -> Option<&CacheConfiguration> {
         match self {
             TaskConfiguration::ShortForm(_) => None,
-            TaskConfiguration::LongForm(box TaskConfigurationLongForm {
-                cache,
-                ..
-            }) => Some(cache),
+            TaskConfiguration::LongForm(long_form) => Some(&long_form.cache),
         }
     }
 
     pub fn output_logs(&self) -> Option<&OutputLogsConfiguration> {
         match self {
             TaskConfiguration::ShortForm(_) => None,
-            TaskConfiguration::LongForm(box TaskConfigurationLongForm {
-                output_logs,
-                ..
-            }) => output_logs.as_ref(),
+            TaskConfiguration::LongForm(long_form) => {
+                long_form.output_logs.as_ref()
+            }
         }
     }
 
     pub fn args(&self) -> Option<&DictConfig<DynValue>> {
         match self {
             TaskConfiguration::ShortForm(_) => None,
-            TaskConfiguration::LongForm(box TaskConfigurationLongForm {
-                args,
-                ..
-            }) => Some(args),
+            TaskConfiguration::LongForm(long_form) => Some(&long_form.args),
         }
     }
 
     pub fn env(&self) -> Option<&TaskEnvConfiguration> {
         match self {
             TaskConfiguration::ShortForm(_) => None,
-            TaskConfiguration::LongForm(box TaskConfigurationLongForm {
-                env,
-                ..
-            }) => Some(env),
+            TaskConfiguration::LongForm(long_form) => Some(&long_form.env),
         }
     }
 
     pub fn meta(&self) -> Option<&MetaConfiguration> {
         match self {
             TaskConfiguration::ShortForm(_) => None,
-            TaskConfiguration::LongForm(box TaskConfigurationLongForm {
-                meta,
-                ..
-            }) => Some(meta),
+            TaskConfiguration::LongForm(long_form) => Some(&long_form.meta),
         }
     }
 }
