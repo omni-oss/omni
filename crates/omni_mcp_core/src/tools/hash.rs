@@ -18,7 +18,7 @@ where
         + 'static,
 {
     pub(crate) async fn tool_hash_workspace(&self) -> eyre::Result<HashResult> {
-        let response = self.make_api().hash_workspace().await?;
+        let response = self.make_api()?.hash_workspace().await?;
         Ok(HashResult {
             hash: response.hash,
         })
@@ -29,7 +29,7 @@ where
         params: HashProjectParams,
     ) -> eyre::Result<HashResult> {
         let response = self
-            .make_api()
+            .make_api()?
             .hash_project(&params.name, &params.tasks)
             .await?;
         Ok(HashResult {

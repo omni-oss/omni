@@ -44,7 +44,7 @@ where
     pub(crate) async fn tool_generator_list(
         &self,
     ) -> eyre::Result<GeneratorListResult> {
-        let response = self.make_api().generator_list().await?;
+        let response = self.make_api()?.generator_list().await?;
         Ok(GeneratorListResult {
             generators: response
                 .generators
@@ -63,7 +63,7 @@ where
         params: GeneratorInspectParams,
     ) -> eyre::Result<GeneratorInspectResult> {
         let response = self
-            .make_api()
+            .make_api()?
             .generator_inspect(&params.name, InspectViewKind::Data)
             .await?;
         Ok(translate_inspect_response(response))
@@ -88,7 +88,7 @@ where
             input_provider: Arc::new(NeverInputProvider),
             max_depth: params.max_depth,
         };
-        let response = self.make_api().generator_run(req).await?;
+        let response = self.make_api()?.generator_run(req).await?;
         Ok(GeneratorRunResult {
             ok: true,
             session_saved: response.session_saved,
@@ -105,7 +105,7 @@ where
             input_values: deserialize_input_values(params.input_values),
             use_defaults: params.use_defaults,
         };
-        let response = self.make_api().generator_validate_input(req).await?;
+        let response = self.make_api()?.generator_validate_input(req).await?;
         Ok(GeneratorValidateInputResult {
             valid: response.valid,
             errors: translate_field_errors(response.errors),

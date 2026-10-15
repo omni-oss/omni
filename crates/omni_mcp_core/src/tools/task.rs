@@ -54,7 +54,7 @@ where
         };
         let subscriber = McpSubscriber::new(include_logs);
         let response = self
-            .make_api_with_subscriber(&subscriber)
+            .make_api_with_subscriber(&subscriber)?
             .task_run(req)
             .await?;
         let ok = response.is_success();
@@ -85,8 +85,10 @@ where
             output_cached_logs: Some(include_logs),
         };
         let subscriber = McpSubscriber::new(include_logs);
-        let response =
-            self.make_api_with_subscriber(&subscriber).exec(req).await?;
+        let response = self
+            .make_api_with_subscriber(&subscriber)?
+            .exec(req)
+            .await?;
         let ok = response.is_success();
         let mut logs = subscriber.take_logs();
         let results = response

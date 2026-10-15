@@ -1,8 +1,8 @@
-use std::future::Future;
+use std::{future::Future, sync::Mutex};
 
 use bridge_rpc_services::{FsSys, ProcSys};
 use omni_api::OmniApi;
-use omni_context::{Context, ContextSys};
+use omni_context::{ConfigFingerprint, Context, ContextSys};
 use omni_generator::GeneratorSys;
 use omni_messages::{NoopSubscriber, OmniEventSubscriber};
 use omni_task_executor::TaskExecutorSys;
@@ -20,12 +20,19 @@ use system_traits::BaseFsMetadataAsync;
 
 /// MCP server backed by an omni workspace.
 ///
-/// Each tool call creates a fresh [`OmniApi`] from a stored `Context`, ensuring
-/// workspace files are always read from disk and never stale. The stored
-/// subscriber is used only at the server level; tool operations always use
+/// The server is long-lived, so before each tool call the stored [`Context`]
+/// is checked against the on-disk workspace and remote cache configuration
+/// files and rebuilt if any of them changed. Each tool call then creates a
+/// fresh [`OmniApi`] from that context; project configurations are always
+/// discovered and read from disk by the API itself. Tool operations use
 /// [`NoopSubscriber`] so that their futures are unconditionally `Send`.
 pub struct OmniMcpServer<TSys: ContextSys> {
-    pub(crate) ctx: Context<TSys>,
+    state: Mutex<ContextState<TSys>>,
+}
+
+struct ContextState<TSys: ContextSys> {
+    ctx: Context<TSys>,
+    fingerprint: ConfigFingerprint,
 }
 
 impl<TSys> OmniMcpServer<TSys>
@@ -39,20 +46,41 @@ where
         + 'static,
 {
     pub fn new(ctx: Context<TSys>) -> Self {
-        Self { ctx }
+        let fingerprint = ctx.config_fingerprint();
+        Self {
+            state: Mutex::new(ContextState { ctx, fingerprint }),
+        }
+    }
+
+    /// Returns the current context, reloading it first if the workspace or
+    /// remote cache configuration changed on disk since the last load. A
+    /// failed reload is reported to the caller and retried on the next call.
+    pub(crate) fn context(&self) -> eyre::Result<Context<TSys>> {
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        let fingerprint = state.ctx.config_fingerprint();
+
+        if fingerprint != state.fingerprint {
+            let ctx = state.ctx.reload()?;
+            trace::info!("workspace configuration changed, context reloaded");
+            *state = ContextState { ctx, fingerprint };
+        }
+
+        Ok(state.ctx.clone())
     }
 
     /// Creates a fresh API for each tool call using [`NoopSubscriber`], ensuring
     /// that the resulting futures are unconditionally `Send`.
-    pub(crate) fn make_api(&self) -> OmniApi<TSys, NoopSubscriber> {
-        OmniApi::new_with_sys(self.ctx.clone(), NoopSubscriber)
+    pub(crate) fn make_api(
+        &self,
+    ) -> eyre::Result<OmniApi<TSys, NoopSubscriber>> {
+        Ok(OmniApi::new_with_sys(self.context()?, NoopSubscriber))
     }
 
     pub(crate) fn make_api_with_subscriber<TSub: OmniEventSubscriber>(
         &self,
         subscriber: TSub,
-    ) -> OmniApi<TSys, TSub> {
-        OmniApi::new_with_sys(self.ctx.clone(), subscriber)
+    ) -> eyre::Result<OmniApi<TSys, TSub>> {
+        Ok(OmniApi::new_with_sys(self.context()?, subscriber))
     }
 }
 

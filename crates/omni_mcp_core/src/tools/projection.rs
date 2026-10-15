@@ -27,7 +27,7 @@ where
         &self,
         params: ProjectionSyncParams,
     ) -> eyre::Result<ProjectionSyncResponse> {
-        self.make_api()
+        self.make_api()?
             .projection_sync(ProjectionSyncRequest {
                 dry_run: params.dry_run,
                 force: params.force,
@@ -42,7 +42,7 @@ where
         &self,
         params: ProjectionStatusParams,
     ) -> eyre::Result<ProjectionStatusResponse> {
-        self.make_api()
+        self.make_api()?
             .projection_status(ProjectionStatusRequest {
                 verbose: params.verbose,
             })
@@ -53,7 +53,7 @@ where
         &self,
         params: ProjectionUnlinkParams,
     ) -> eyre::Result<ProjectionUnlinkResponse> {
-        self.make_api()
+        self.make_api()?
             .projection_unlink(ProjectionUnlinkRequest {
                 id: params.id,
                 backup_handling: params.backup_handling,
@@ -65,7 +65,7 @@ where
         &self,
         params: ProjectionPruneParams,
     ) -> eyre::Result<ProjectionPruneResponse> {
-        self.make_api()
+        self.make_api()?
             .projection_prune(ProjectionPruneRequest {
                 dry_run: params.dry_run,
             })

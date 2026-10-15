@@ -30,7 +30,7 @@ where
             task: params.task,
             ..Default::default()
         };
-        let stats = self.make_api().cache_stats(req).await?;
+        let stats = self.make_api()?.cache_stats(req).await?;
         let projects = stats
             .projects
             .into_iter()
@@ -64,7 +64,7 @@ where
             meta: params.meta,
             older_than: params.older_than,
         };
-        let api = self.make_api();
+        let api = self.make_api()?;
         let prune_response = api.cache_prune(req).await?;
         let entries_pruned = prune_response.entries.len();
         let bytes_freed: u64 =

@@ -23,7 +23,7 @@ where
     pub(crate) async fn tool_project_list(
         &self,
     ) -> eyre::Result<ProjectListResult> {
-        let projects = self.make_api().project_list().await?;
+        let projects = self.make_api()?.project_list().await?;
         Ok(ProjectListResult { projects })
     }
 
@@ -31,7 +31,7 @@ where
         &self,
         params: ProjectConfigParams,
     ) -> eyre::Result<ProjectConfigResult> {
-        let config = self.make_api().project_config(&params.name).await?;
+        let config = self.make_api()?.project_config(&params.name).await?;
         let tasks = config
             .tasks
             .iter()

@@ -23,7 +23,7 @@ where
         &self,
         params: IgnoreSyncParams,
     ) -> eyre::Result<IgnoreSyncResponse> {
-        self.make_api()
+        self.make_api()?
             .ignore_sync(IgnoreSyncRequest {
                 dry_run: params.dry_run,
                 check: params.check,
@@ -35,7 +35,7 @@ where
         &self,
         _params: IgnoreCleanParams,
     ) -> eyre::Result<IgnoreCleanResponse> {
-        self.make_api()
+        self.make_api()?
             .ignore_clean(IgnoreCleanRequest::default())
             .await
     }

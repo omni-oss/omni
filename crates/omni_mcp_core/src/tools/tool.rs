@@ -26,7 +26,7 @@ where
     <TSys as BaseFsMetadataAsync>::Metadata: Send,
 {
     pub(crate) async fn tool_tool_list(&self) -> eyre::Result<ToolListResult> {
-        let response = self.make_api().tool_list().await?;
+        let response = self.make_api()?.tool_list().await?;
         Ok(ToolListResult {
             tools: response
                 .tools
@@ -43,7 +43,7 @@ where
         &self,
         params: ToolInspectParams,
     ) -> eyre::Result<ToolInspectResult> {
-        let response = self.make_api().tool_inspect(&params.name).await?;
+        let response = self.make_api()?.tool_inspect(&params.name).await?;
         Ok(ToolInspectResult {
             name: response.name,
             description: response.description,
@@ -59,7 +59,7 @@ where
             .working_dir
             .map(|dir| omni_api::ToolWorkingDir::Path(dir.into()));
         let result = self
-            .make_api()
+            .make_api()?
             .tool_run(&params.name, params.args, working_dir)
             .await?;
         Ok(ToolRunResult { result })
