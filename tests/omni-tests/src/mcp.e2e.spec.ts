@@ -115,6 +115,20 @@ function twoProjectSpec(): WorkspaceSpec {
 }
 
 /**
+ * Two projects in separate top-level folders, with only `apps/**` registered,
+ * so widening the `projects` globs makes `beta` discoverable.
+ */
+function splitLayoutSpec(): WorkspaceSpec {
+    return {
+        workspace: { projects: ["apps/**"] },
+        projects: {
+            "apps/alpha": { name: "alpha", tasks: { build: 'echo "alpha"' } },
+            "libs/beta": { name: "beta", tasks: { build: 'echo "beta"' } },
+        },
+    };
+}
+
+/**
  * Single-project workspace whose task prints a marker to stdout via `node`,
  * which passes arguments through verbatim on every platform (unlike `echo`,
  * whose availability and quote-handling vary across shells).
@@ -468,6 +482,52 @@ describe(
             expect(data.projects).toContain("alpha");
             expect(data.projects).toContain("beta");
             expect(data.projects).toHaveLength(2);
+        });
+
+        // The server is long-lived, so workspace config edits made while it
+        // runs must be picked up without reconnecting.
+        it("picks up project globs added to the workspace config while running", async () => {
+            const ws = makeWorkspace(splitLayoutSpec());
+            const { client } = await connectMcp({ cwd: ws.cwd });
+
+            const before = getContent<{ projects: string[] }>(
+                await client.callTool({ name: "project_list" }),
+            );
+            expect(before.projects).toEqual(["alpha"]);
+
+            ws.write("workspace.omni.yaml", {
+                projects: ["apps/**", "libs/**"],
+            });
+
+            const after = getContent<{ projects: string[] }>(
+                await client.callTool({ name: "project_list" }),
+            );
+            expect(after.projects).toHaveLength(2);
+            expect(after.projects).toContain("alpha");
+            expect(after.projects).toContain("beta");
+        });
+
+        it("reports an invalid workspace config edit and recovers once fixed", async () => {
+            const ws = makeWorkspace(splitLayoutSpec());
+            const { client } = await connectMcp({ cwd: ws.cwd });
+
+            await client.callTool({ name: "project_list" });
+
+            ws.write("workspace.omni.yaml", "projects: [apps/**\n");
+
+            await expect(
+                client.callTool({ name: "project_list" }),
+            ).rejects.toThrow(/workspace configuration/);
+
+            ws.write("workspace.omni.yaml", {
+                projects: ["apps/**", "libs/**"],
+            });
+
+            const recovered = getContent<{ projects: string[] }>(
+                await client.callTool({ name: "project_list" }),
+            );
+            expect(recovered.projects).toHaveLength(2);
+            expect(recovered.projects).toContain("beta");
         });
     },
 );
