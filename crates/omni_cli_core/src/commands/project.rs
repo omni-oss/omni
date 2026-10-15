@@ -1,6 +1,6 @@
 use clap::{ArgAction, Args, Subcommand};
 use derive_new::new;
-use omni_api::OmniApi;
+use omni_api::{OmniApi, ProjectListRequest};
 use omni_context::Context;
 use omni_messages::NoopSubscriber;
 use omni_tracing_subscriber::noop_subscriber;
@@ -118,13 +118,18 @@ pub struct ListArgs {
 async fn run_list(command: &ListCommand, ctx: &Context) -> eyre::Result<()> {
     let api = OmniApi::new_with_sys(ctx.clone(), NoopSubscriber);
 
-    let names = if command.args.raw {
-        api.project_list()
+    let request = ProjectListRequest::default();
+    let entries = if command.args.raw {
+        api.project_list(request)
             .with_subscriber(noop_subscriber())
             .await?
     } else {
-        api.project_list().await?
+        api.project_list(request).await?
     };
+    let names = entries
+        .into_iter()
+        .map(|entry| entry.name)
+        .collect::<Vec<_>>();
 
     if let Some(format) = command.args.format {
         if format == SerializationFormat::Toml {

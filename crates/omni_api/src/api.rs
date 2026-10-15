@@ -30,6 +30,7 @@ use crate::{
             GeneratorValidateInputRequest, GeneratorValidateInputResponse,
         },
         hash::HashResponse,
+        project::{ProjectListEntry, ProjectListRequest},
         task::{TaskRunRequest, TaskRunResponse},
     },
     setup_guard::SetupGuard,
@@ -421,10 +422,15 @@ where
         crate::operations::config_schema::handle_config_schema(kind)
     }
 
-    /// List the names of all projects in the workspace.
-    pub async fn project_list(&self) -> eyre::Result<Vec<String>> {
+    /// List the project configurations selected by `req`, sorted by name and
+    /// path. With a default request only runnable projects are listed.
+    pub async fn project_list(
+        &self,
+        req: ProjectListRequest,
+    ) -> eyre::Result<Vec<ProjectListEntry>> {
         let ctx = self.ctx.lock().await;
-        crate::operations::project::handle_project_list(ctx.as_context()).await
+        crate::operations::project::handle_project_list(ctx.as_context(), req)
+            .await
     }
 
     /// Return the full configuration for the named project.

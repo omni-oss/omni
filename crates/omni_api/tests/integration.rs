@@ -6,7 +6,10 @@
 
 use std::path::Path;
 
-use omni_api::{EnvRequest, OmniApi, SchemaKind, handle_config_schema};
+use omni_api::{
+    EnvRequest, OmniApi, ProjectListEntry, ProjectListRequest, SchemaKind,
+    handle_config_schema,
+};
 use omni_messages::NoopSubscriber;
 use omni_tracing_subscriber::TracingConfig;
 use system_traits::impls::RealSys;
@@ -102,11 +105,182 @@ async fn project_list_contains_alpha() {
     write_workspace(tmp.path());
     let api = make_api(tmp.path());
 
-    let names = api.project_list().await.expect("project list");
+    let entries = api
+        .project_list(ProjectListRequest::default())
+        .await
+        .expect("project list");
     assert!(
-        names.contains(&"alpha".to_string()),
-        "expected 'alpha' in project list, got {names:?}"
+        entries.iter().any(|e| e.name == "alpha"),
+        "expected 'alpha' in project list, got {entries:?}"
     );
+}
+
+/// Write a workspace containing one config of every kind:
+///
+/// - `app`, `lib`: runnable projects (`app` extends the three others)
+/// - `tpl`: discovered, `base: true`
+/// - `shared-base`: reached only through `extends`, `base: true`
+/// - `shared-common`: reached only through `extends`, not base
+fn write_mixed_workspace(dir: &Path) {
+    let files = [
+        ("workspace.omni.yaml", "projects:\n  - \"apps/**\"\n"),
+        (
+            "apps/app/project.omni.yaml",
+            "name: app\nextends:\n  - ../tpl/project.omni.yaml\n  - ../../shared/base.omni.yaml\n  - ../../shared/common.omni.yaml\n",
+        ),
+        ("apps/lib/project.omni.yaml", "name: lib\n"),
+        ("apps/tpl/project.omni.yaml", "name: tpl\nbase: true\n"),
+        ("shared/base.omni.yaml", "name: shared-base\nbase: true\n"),
+        ("shared/common.omni.yaml", "name: shared-common\n"),
+    ];
+
+    for (path, contents) in files {
+        let path = dir.join(path);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, contents).unwrap();
+    }
+}
+
+async fn listed_names(
+    api: &OmniApi<RealSys, NoopSubscriber>,
+    req: ProjectListRequest,
+) -> Vec<String> {
+    api.project_list(req)
+        .await
+        .expect("project list")
+        .into_iter()
+        .map(|e| e.name)
+        .collect()
+}
+
+#[tokio::test]
+async fn project_list_visibility_flags() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    write_mixed_workspace(tmp.path());
+    let api = make_api(tmp.path());
+
+    let request = |include_base, include_extended, all| ProjectListRequest {
+        include_base,
+        include_extended,
+        all,
+    };
+    let every = ["app", "lib", "shared-base", "shared-common", "tpl"];
+
+    let cases: [(ProjectListRequest, &[&str]); 8] = [
+        (request(false, false, false), &["app", "lib"]),
+        (
+            request(true, false, false),
+            &["app", "lib", "shared-base", "tpl"],
+        ),
+        (
+            request(false, true, false),
+            &["app", "lib", "shared-base", "shared-common"],
+        ),
+        (request(true, true, false), &every),
+        (request(false, false, true), &every),
+        (request(true, false, true), &every),
+        (request(false, true, true), &every),
+        (request(true, true, true), &every),
+    ];
+
+    for (req, expected) in cases {
+        let label = format!("{req:?}");
+        assert_eq!(listed_names(&api, req).await, expected, "{label}");
+    }
+}
+
+#[tokio::test]
+async fn project_list_entries_carry_relative_paths_and_flags() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    write_mixed_workspace(tmp.path());
+    let api = make_api(tmp.path());
+
+    let entries = api
+        .project_list(ProjectListRequest {
+            all: true,
+            ..Default::default()
+        })
+        .await
+        .expect("project list");
+
+    let entry = |name: &str, path: &str, base, discovered| ProjectListEntry {
+        name: name.to_string(),
+        path: path.to_string(),
+        base,
+        discovered,
+    };
+
+    assert_eq!(
+        entries,
+        [
+            entry("app", "apps/app/project.omni.yaml", false, true),
+            entry("lib", "apps/lib/project.omni.yaml", false, true),
+            entry("shared-base", "shared/base.omni.yaml", true, false),
+            entry("shared-common", "shared/common.omni.yaml", false, false),
+            entry("tpl", "apps/tpl/project.omni.yaml", true, true),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn project_list_sorts_same_name_by_path() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    write_mixed_workspace(tmp.path());
+    std::fs::create_dir_all(tmp.path().join("apps/b-tpl")).unwrap();
+    std::fs::write(
+        tmp.path().join("apps/b-tpl/project.omni.yaml"),
+        "name: tpl\nbase: true\n",
+    )
+    .unwrap();
+    let api = make_api(tmp.path());
+
+    let paths = api
+        .project_list(ProjectListRequest {
+            include_base: true,
+            ..Default::default()
+        })
+        .await
+        .expect("project list")
+        .into_iter()
+        .filter(|e| e.name == "tpl")
+        .map(|e| e.path)
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        paths,
+        ["apps/b-tpl/project.omni.yaml", "apps/tpl/project.omni.yaml"]
+    );
+}
+
+#[tokio::test]
+async fn project_list_default_matches_loaded_projects() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    write_mixed_workspace(tmp.path());
+    let api = make_api(tmp.path());
+
+    let listed = listed_names(&api, ProjectListRequest::default()).await;
+
+    let loaded = omni_context::Context::new(
+        RealSys,
+        "development",
+        tmp.path(),
+        false,
+        "workspace.omni.yaml",
+        None,
+        &TracingConfig::disabled(),
+    )
+    .expect("context creation failed")
+    .into_loaded()
+    .await
+    .expect("context loading failed");
+    let mut runnable = loaded
+        .projects()
+        .iter()
+        .map(|p| p.name.clone())
+        .collect::<Vec<_>>();
+    runnable.sort();
+
+    assert_eq!(listed, runnable);
 }
 
 #[tokio::test]

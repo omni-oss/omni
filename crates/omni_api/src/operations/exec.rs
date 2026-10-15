@@ -15,8 +15,7 @@ use super::task::TaskRunFilters;
 // ── Request ────────────────────────────────────────────────────────────────────
 
 /// Request to run an arbitrary command in the workspace environment.
-#[derive(Debug, Clone, JsonSchema)]
-#[derive(Default)]
+#[derive(Debug, Clone, JsonSchema, Default)]
 pub struct ExecRequest {
     /// The command and its arguments (e.g. `["echo", "hello"]`).
     pub cmd: Vec<String>,
@@ -26,7 +25,6 @@ pub struct ExecRequest {
     pub output_logs: Option<LogsDisplay>,
     pub output_cached_logs: Option<LogsDisplay>,
 }
-
 
 // ── Response ──────────────────────────────────────────────────────────────────
 

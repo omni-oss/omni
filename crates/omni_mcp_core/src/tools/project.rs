@@ -1,3 +1,4 @@
+use omni_api::ProjectListRequest;
 use omni_context::ContextSys;
 use omni_generator::GeneratorSys;
 use omni_task_executor::TaskExecutorSys;
@@ -23,7 +24,13 @@ where
     pub(crate) async fn tool_project_list(
         &self,
     ) -> eyre::Result<ProjectListResult> {
-        let projects = self.make_api()?.project_list().await?;
+        let projects = self
+            .make_api()?
+            .project_list(ProjectListRequest::default())
+            .await?
+            .into_iter()
+            .map(|entry| entry.name)
+            .collect();
         Ok(ProjectListResult { projects })
     }
 
