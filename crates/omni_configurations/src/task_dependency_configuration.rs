@@ -148,7 +148,6 @@ impl JsonSchema for TaskDependencyConfiguration {
 }
 
 #[cfg(test)]
-
 mod tests {
     use super::*;
 

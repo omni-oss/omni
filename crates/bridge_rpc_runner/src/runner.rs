@@ -236,6 +236,9 @@ impl ReadScopeGuard {
     fn none() -> Self {
         Self::default()
     }
+
+    /// Revokes the grants now rather than at the end of the enclosing scope.
+    pub fn revoke(self) {}
 }
 
 impl<TService: Service> BridgeServiceRunner<TService> {

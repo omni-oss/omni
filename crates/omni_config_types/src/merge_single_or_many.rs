@@ -77,7 +77,7 @@ where
 // `ListConfig`'s append/prepend/replace/merge rules.
 impl<T: Merge + Clone> Merge for MergeSingleOrMany<T> {
     fn merge(&mut self, other: Self) {
-        let mut this = std::mem::replace(self, Self::empty()).into_list();
+        let mut this = std::mem::take(self).into_list();
         this.merge(other.into_list());
         *self = Self::List(this);
     }

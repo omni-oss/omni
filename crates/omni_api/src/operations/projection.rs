@@ -232,10 +232,10 @@ where
 
     // A targeted `--source` that resolves to nothing is a hard error, not a
     // silent no-op.
-    if let Some(arg) = &req.source {
-        if effective.is_empty() {
-            return Err(eyre::eyre!("no projection source matches '{arg}'"));
-        }
+    if let Some(arg) = &req.source
+        && effective.is_empty()
+    {
+        return Err(eyre::eyre!("no projection source matches '{arg}'"));
     }
 
     // A targeted run never garbage-collects, so a member dropped from a re-read
@@ -754,13 +754,13 @@ where
         "projection",
     );
 
-    for file in discovery.discover().await? {
-        let owned: OwnedProjectionConfiguration =
-            omni_file_data_serde::read_async(file.as_path(), sys).await?;
-        return Ok(Some(owned));
-    }
+    let Some(file) = discovery.discover().await?.into_iter().next() else {
+        return Ok(None);
+    };
+    let owned: OwnedProjectionConfiguration =
+        omni_file_data_serde::read_async(file.as_path(), sys).await?;
 
-    Ok(None)
+    Ok(Some(owned))
 }
 
 /// The `allow_omni_config`/`allow_git` escape hatches are honored only when set

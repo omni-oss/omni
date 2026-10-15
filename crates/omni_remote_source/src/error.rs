@@ -3,11 +3,13 @@ use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
 #[derive(Debug, thiserror::Error, new)]
 #[error(transparent)]
-pub struct Error(pub(crate) ErrorInner);
+pub struct Error(pub(crate) Box<ErrorInner>);
 
 impl Error {
     pub fn custom(message: impl Into<String>) -> Self {
-        Self(ErrorInner::Custom(eyre::Report::msg(message.into())))
+        Self(Box::new(ErrorInner::Custom(eyre::Report::msg(
+            message.into(),
+        ))))
     }
 }
 
@@ -22,7 +24,7 @@ impl<T: Into<ErrorInner>> From<T> for Error {
     fn from(inner: T) -> Self {
         let inner = inner.into();
 
-        Self(inner)
+        Self(Box::new(inner))
     }
 }
 

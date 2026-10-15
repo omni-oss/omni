@@ -99,7 +99,7 @@ mod tests {
             ),
         ];
 
-        return projects;
+        projects
     }
 
     #[test]

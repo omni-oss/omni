@@ -503,6 +503,11 @@ async fn run_generator_list(
     Ok(())
 }
 
+type RetrievalResult = eyre::Result<(
+    Vec<Cow<'static, GeneratorConfiguration>>,
+    Option<RemoteSourceRef>,
+)>;
+
 async fn get_generators(
     ctx: &Context,
     sys: &impl GeneratorSys,
@@ -512,12 +517,7 @@ async fn get_generators(
             .await?,
     );
 
-    let mut retrieval_tasks: JoinSet<
-        eyre::Result<(
-            Vec<Cow<'static, GeneratorConfiguration>>,
-            Option<RemoteSourceRef>,
-        )>,
-    > = JoinSet::new();
+    let mut retrieval_tasks: JoinSet<RetrievalResult> = JoinSet::new();
 
     for (idx, config) in
         ctx.workspace_configuration().generators.iter().enumerate()

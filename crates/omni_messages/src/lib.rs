@@ -26,6 +26,7 @@ pub mod publish;
 mod channel;
 mod noop;
 mod omni;
+#[cfg(feature = "tracing")]
 mod tracing_impl;
 
 // ── Flat re-exports (keep all existing import paths working) ─────────────────

@@ -191,10 +191,10 @@ fn plan_mirror(
             continue;
         }
         let rel_slash = to_slash(&entry.rel);
-        if let Some(matcher) = &matcher {
-            if !matcher.is_match(&rel_slash) {
-                continue;
-            }
+        if let Some(matcher) = &matcher
+            && !matcher.is_match(&rel_slash)
+        {
+            continue;
         }
         candidates.push(PlannedPair {
             pair: LinkPair {

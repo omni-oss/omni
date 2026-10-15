@@ -155,8 +155,8 @@ pub trait InputProfile: Default + Sized {
     /// Ordered presentation preferences for a float-array input.
     ///
     /// Same inference rules as `string_array_presentation_hint`.
-    fn float_array_presentation_hint<'a>(
-        _input: &'a FloatArrayInput<Self>,
+    fn float_array_presentation_hint(
+        _input: &FloatArrayInput<Self>,
     ) -> Vec<Cow<'static, str>> {
         vec![]
     }

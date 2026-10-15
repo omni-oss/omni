@@ -649,7 +649,7 @@ where
 /// expansion. Returns `None` when the task has no command configured.
 fn resolve_task_command<'a>(
     spec: Option<&CommandConfig>,
-    task_ctx: &Cow<'_, TaskContext<'a>>,
+    task_ctx: &TaskContext<'a>,
 ) -> Result<Option<Command>, BatchExecutorError> {
     match spec {
         Some(spec) => Ok(Some(resolve_command(

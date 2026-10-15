@@ -15,27 +15,23 @@ use crate::{
     ScriptInvocation, TransactionSys, action_handlers::HandlerContext,
 };
 
+/// A shared, append-only log of values a mock observed.
+pub type Recorded<T> = std::sync::Arc<std::sync::Mutex<Vec<T>>>;
+
 /// Records every `run_scripts` call for test assertions.
 /// Uses an `Arc<Mutex>` so the mock can be cloned before being boxed into the fixture.
 #[derive(Debug, Default, Clone)]
 pub struct MockJsScriptRunner {
-    pub invocations: std::sync::Arc<
-        std::sync::Mutex<
-            Vec<(DelegatingJsRuntimeOption, Vec<ScriptInvocation>)>,
-        >,
-    >,
+    pub invocations:
+        Recorded<(DelegatingJsRuntimeOption, Vec<ScriptInvocation>)>,
     /// The ordered, **distinct** policy levels each call was handed, recorded in
     /// call order (parallel to `invocations`). Lets tests assert *which* policy a
     /// given script actually ran under — e.g. that a nested generator inherits
     /// the parent's ceiling as an outer level while still contributing its own.
-    pub levels: std::sync::Arc<
-        std::sync::Mutex<
-            Vec<
-                Vec<
-                    omni_capabilities::CapabilityRules<
-                        omni_generator_configurations::Generator,
-                    >,
-                >,
+    pub levels: Recorded<
+        Vec<
+            omni_capabilities::CapabilityRules<
+                omni_generator_configurations::Generator,
             >,
         >,
     >,
@@ -43,9 +39,7 @@ pub struct MockJsScriptRunner {
     /// order (parallel to `invocations`). Lets tests assert the most-severe
     /// combination of workspace/generator/action stances actually reached the
     /// script.
-    pub strictness: std::sync::Arc<
-        std::sync::Mutex<Vec<omni_capabilities::CapabilitiesStrictness>>,
-    >,
+    pub strictness: Recorded<omni_capabilities::CapabilitiesStrictness>,
 }
 
 #[async_trait::async_trait]

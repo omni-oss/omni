@@ -40,13 +40,15 @@ use crate::bridge::utils::send_frame_to_transport;
 
 pub type BoxStream<'a, T> = Pin<Box<dyn TokioStream<Item = T> + Send + 'a>>;
 
+type ServiceTasks = Arc<Mutex<Option<JoinSet<Result<(), ServiceError>>>>>;
+
 pub struct BridgeRpc<TTransport: Transport, TService: Service> {
     id: Id,
     service: Arc<TService>,
     transport: Arc<TTransport>,
     pending_ping: Arc<Mutex<Option<oneshot::Sender<()>>>>,
     frame_transporter: Arc<Mutex<Option<FrameTransporter>>>,
-    service_tasks: Arc<Mutex<Option<JoinSet<Result<(), ServiceError>>>>>,
+    service_tasks: ServiceTasks,
     session_manager:
         SessionManager<RequestSessionContext, ResponseSessionContext>,
     stop_signal_sender: Arc<Mutex<Option<watch::Sender<bool>>>>,
@@ -640,9 +642,10 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
     async fn handle_close(&self) {
         trace::trace!("received_close_frame");
         if let Some(stop_signal_) = self.stop_signal_sender.lock().await.take()
-            && let Err(e) = stop_signal_.send(true) {
-                trace::warn!(error = ?e, "failed_to_send_stop_signal");
-            }
+            && let Err(e) = stop_signal_.send(true)
+        {
+            trace::warn!(error = ?e, "failed_to_send_stop_signal");
+        }
     }
 
     async fn handle_ping(&self, frame_sender: &mpsc::Sender<Frame>) {

@@ -110,7 +110,7 @@ pub async fn local_source_pin<S: FsReadAsync + Sync>(
 
     let mut buf = Vec::new();
     for rel in &sorted {
-        let bytes = sys.fs_read_async(&source_root.join(rel)).await?;
+        let bytes = sys.fs_read_async(source_root.join(rel)).await?;
         buf.extend_from_slice(rel.to_string_lossy().as_bytes());
         buf.push(0);
         buf.extend_from_slice(&(bytes.len() as u64).to_le_bytes());
@@ -419,11 +419,9 @@ pub(crate) async fn remove_path<S: ApplierSys>(
         return Ok(false);
     }
 
-    if sys.fs_is_dir_no_err_async(path).await
-        && !sys.fs_is_symlink_no_err_async(path).await
-    {
-        sys.fs_remove_dir_all_async(path).await?;
-    } else if sys.fs_remove_file_async(path).await.is_err() {
+    let is_real_dir = sys.fs_is_dir_no_err_async(path).await
+        && !sys.fs_is_symlink_no_err_async(path).await;
+    if is_real_dir || sys.fs_remove_file_async(path).await.is_err() {
         sys.fs_remove_dir_all_async(path).await?;
     }
 

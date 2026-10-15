@@ -238,10 +238,10 @@ where
     while let Some(frame) = stack.pop() {
         let qualified_id = frame.qualified_id;
 
-        if let Some(select) = select {
-            if !selected_or_on_path(&qualified_id, select) {
-                continue;
-            }
+        if let Some(select) = select
+            && !selected_or_on_path(&qualified_id, select)
+        {
+            continue;
         }
 
         if frame.depth > max_depth {

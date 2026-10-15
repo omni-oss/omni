@@ -147,6 +147,7 @@ async fn get_artifacts(
         .await
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn put_artifact(
     server: &TestServer,
     tenant: &str,

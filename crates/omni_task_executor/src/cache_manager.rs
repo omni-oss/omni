@@ -38,6 +38,7 @@ where
     cache_dir: PathBuf,
 }
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, new)]
 pub enum TaskResultContext<'a> {
     Completed {

@@ -291,7 +291,7 @@ where
         };
 
         let body = runner.call(EXEC_TOOL_PATH, &payload).await?;
-        drop(read_scope);
+        read_scope.revoke();
         let value: Value = serde_json::from_slice(&body)?;
         Ok(value)
     }

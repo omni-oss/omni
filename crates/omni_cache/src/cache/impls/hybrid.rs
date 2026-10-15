@@ -1634,6 +1634,7 @@ mod tests {
         vec!["KEY".to_string()]
     }
 
+    #[allow(clippy::too_many_arguments)]
     #[derive(new, Debug)]
     struct TaskExecutionInfoStatic {
         task_name: String,
@@ -1693,7 +1694,7 @@ mod tests {
         };
         f(&mut owned);
 
-        Yoke::attach_to_cart(Box::new(owned), |owned| task_from_static(owned))
+        Yoke::attach_to_cart(Box::new(owned), task_from_static)
     }
 
     #[inline(always)]

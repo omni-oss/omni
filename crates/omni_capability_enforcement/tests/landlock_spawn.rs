@@ -10,11 +10,11 @@
 //!
 //! A confined generator may spawn a child, which may spawn further processes.
 //! The Landlock ruleset is inherited across `execve` and cannot be loosened, so
-//! a *grandchild* is bound by the same confinement as the runtime omni launched
-//! - a generator cannot escape the sandbox by shelling out to a helper. That
-//! contract, and the inherited, un-droppable `NO_NEW_PRIVS` that backstops it,
-//! are asserted directly by the grandchild tests below (the macOS and Windows
-//! analogs live in `seatbelt_spawn.rs` and `appcontainer_spawn.rs`).
+//! a *grandchild* is bound by the same confinement as the runtime omni
+//! launched: a generator cannot escape the sandbox by shelling out to a helper.
+//! That contract, and the inherited, un-droppable `NO_NEW_PRIVS` that backstops
+//! it, are asserted directly by the grandchild tests below (the macOS and
+//! Windows analogs live in `seatbelt_spawn.rs` and `appcontainer_spawn.rs`).
 
 #![cfg(target_os = "linux")]
 

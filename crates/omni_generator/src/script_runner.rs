@@ -466,7 +466,7 @@ impl JsScriptRunner for LazyScriptRunner {
             .call(EXEC_GENERATOR_SCRIPT_PATH, invocations)
             .await
             .map_err(|e| Error::custom(e.to_string()))?;
-        drop(read_scope);
+        read_scope.revoke();
 
         Ok(RunScriptResult { diagnostics })
     }

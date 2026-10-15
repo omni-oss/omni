@@ -110,16 +110,17 @@ pub async fn apply_link<S: ApplierSys>(
     let dest_exists = symlink_meta(sys, &pair.dest_abs).await?.is_some();
 
     // Ownership exception: omni already created this dest for this source.
-    if let Some(prior) = prior {
-        if prior.source_abs == pair.source_abs && dest_exists {
-            if prior.pin_unchanged {
-                return Ok(ApplyOutcome::Skipped);
-            }
-            // Pin changed: re-point the link omni owns, no backup.
-            remove_existing(sys, &pair.dest_abs).await?;
-            let kind = materialize(sys, pair, opts.link).await?;
-            return Ok(ApplyOutcome::Linked { kind, backup: None });
+    if let Some(prior) = prior
+        && prior.source_abs == pair.source_abs
+        && dest_exists
+    {
+        if prior.pin_unchanged {
+            return Ok(ApplyOutcome::Skipped);
         }
+        // Pin changed: re-point the link omni owns, no backup.
+        remove_existing(sys, &pair.dest_abs).await?;
+        let kind = materialize(sys, pair, opts.link).await?;
+        return Ok(ApplyOutcome::Linked { kind, backup: None });
     }
 
     let mut backup = None;

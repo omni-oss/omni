@@ -374,12 +374,11 @@ impl<TSys: ContextSys> Context<TSys> {
     }
 
     pub fn create_env_loader(&self) -> EnvLoader<TSys> {
-        let env_loader = EnvLoader::new(
+        EnvLoader::new(
             self.sys.clone(),
             PathBuf::from(&self.env_root_dir_marker),
             self.env_files().to_vec(),
-        );
-        env_loader
+        )
     }
 
     pub fn create_cache_store(&self) -> HybridTaskExecutionCacheStore {
@@ -734,7 +733,7 @@ mod tests {
         sys.fs_create_dir_all(&project4dir)
             .expect("Can't create project-4 dir");
         sys.fs_write(
-            &project4dir.join("project.omni.yaml"),
+            project4dir.join("project.omni.yaml"),
             include_str!("../test_fixtures/project-1.omni.yaml"),
         )
         .expect("Can't write project config file");

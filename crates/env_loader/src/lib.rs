@@ -260,7 +260,6 @@ mod tests {
             matcher: None,
             root_file: Some(Path::new("/root")),
             start_dir: Some(Path::new("/root/nested/project")),
-            ..Default::default()
         };
 
         let sys = create_sys();
@@ -277,7 +276,6 @@ mod tests {
             matcher: None,
             root_file: Some(Path::new("/root")),
             start_dir: Some(Path::new("/root/nested/project")),
-            ..Default::default()
         };
 
         let sys = create_sys();

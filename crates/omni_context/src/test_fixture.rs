@@ -8,7 +8,7 @@ use system_traits::{
 use tempfile::TempDir;
 
 pub fn real_sys() -> RealSys {
-    RealSys::default()
+    RealSys
 }
 
 pub fn mem_sys() -> InMemorySys {
@@ -16,8 +16,7 @@ pub fn mem_sys() -> InMemorySys {
 }
 
 pub fn tmp() -> TempDir {
-    let tmp = TempDir::new().expect("can't create temp dir");
-    tmp
+    TempDir::new().expect("can't create temp dir")
 }
 
 #[system_traits::auto_impl]

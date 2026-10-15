@@ -18,7 +18,7 @@ pub fn empty_cache_input_files() -> &'static GlobPatterns<OmniPath> {
 pub trait ExecutionPlanProvider {
     type Error: Error + Send + Sync + 'static;
 
-    #[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err, clippy::too_many_arguments)]
     fn get_execution_plan(
         &self,
         call: &Call,

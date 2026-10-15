@@ -16,6 +16,7 @@ pub struct Project {
     pub tasks: OrderedMap<String, Task>,
 }
 
+#[allow(clippy::too_many_arguments)]
 #[derive(
     Debug, Clone, PartialEq, Eq, Deserialize, Serialize, JsonSchema, new,
 )]

@@ -424,6 +424,11 @@ where
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
+type RetrievalResult = eyre::Result<(
+    Vec<Cow<'static, GeneratorConfiguration>>,
+    Option<RemoteSourceRef>,
+)>;
+
 /// Discover and load all generators declared in the workspace configuration.
 ///
 /// Mirrors the same logic in `omni_cli_core::commands::generator::get_generators`.
@@ -438,12 +443,7 @@ where
         crate::operations::remote_source::open_source_store(ctx, sys).await?,
     );
 
-    let mut retrieval_tasks: JoinSet<
-        eyre::Result<(
-            Vec<Cow<'static, GeneratorConfiguration>>,
-            Option<RemoteSourceRef>,
-        )>,
-    > = JoinSet::new();
+    let mut retrieval_tasks: JoinSet<RetrievalResult> = JoinSet::new();
 
     for (idx, config) in
         ctx.workspace_configuration().generators.iter().enumerate()

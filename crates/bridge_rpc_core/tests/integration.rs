@@ -1189,10 +1189,11 @@ fn create_data() -> RpcData {
 async fn consume_request(request: bridge_rpc_core::server::request::Request) {
     let mut reader = request.into_reader();
 
-    while let Some(_) = reader
+    while reader
         .read_body_chunk()
         .await
         .expect("Failed to read chunk")
+        .is_some()
     {}
 }
 

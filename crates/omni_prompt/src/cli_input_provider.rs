@@ -144,16 +144,9 @@ impl InputProvider<Generator> for CliInputProvider {
         input: &StringArrayInput<Generator>,
         ctx: &omni_tera::Context,
     ) -> Result<Vec<String>, Error> {
-        if input.array_extra.widget == Some(ListWidget::FreeEntry)
-            || input.body.allowed.is_none()
+        if input.array_extra.widget != Some(ListWidget::FreeEntry)
+            && let Some(allowed) = &input.body.allowed
         {
-            let name = input.base.name.as_str();
-            let message = input.base_extra.message.as_str();
-            tokio::task::block_in_place(|| {
-                prompt_free_entry_list(name, message)
-            })
-            .map_err(|e| eyre::eyre!("prompt error: {e}").into())
-        } else {
             let question = make::multi_select_string(
                 input,
                 ctx,
@@ -165,11 +158,17 @@ impl InputProvider<Generator> for CliInputProvider {
             let items = answer
                 .try_into_list_items()
                 .map_err(|_| eyre::eyre!("expected list items answer"))?;
-            let allowed = input.body.allowed.as_ref().unwrap();
             Ok(items
                 .iter()
                 .map(|item| allowed[item.index].value.clone())
                 .collect())
+        } else {
+            let name = input.base.name.as_str();
+            let message = input.base_extra.message.as_str();
+            tokio::task::block_in_place(|| {
+                prompt_free_entry_list(name, message)
+            })
+            .map_err(|e| eyre::eyre!("prompt error: {e}").into())
         }
     }
 
@@ -178,9 +177,22 @@ impl InputProvider<Generator> for CliInputProvider {
         input: &IntegerArrayInput<Generator>,
         ctx: &omni_tera::Context,
     ) -> Result<Vec<i64>, Error> {
-        if input.array_extra.widget == Some(ListWidget::FreeEntry)
-            || input.body.allowed.is_none()
+        if input.array_extra.widget != Some(ListWidget::FreeEntry)
+            && let Some(allowed) = &input.body.allowed
         {
+            let question = make::multi_select_integer(
+                input,
+                ctx,
+                self.validation_value_name,
+            )?;
+            let answer =
+                tokio::task::block_in_place(|| requestty::prompt_one(question))
+                    .map_err(|e| eyre::eyre!("prompt error: {e}"))?;
+            let items = answer
+                .try_into_list_items()
+                .map_err(|_| eyre::eyre!("expected list items answer"))?;
+            Ok(items.iter().map(|item| allowed[item.index].value).collect())
+        } else {
             let name = input.base.name.as_str();
             let message = input.base_extra.message.as_str();
             let strings = tokio::task::block_in_place(|| {
@@ -195,8 +207,18 @@ impl InputProvider<Generator> for CliInputProvider {
                         .map_err(|e| eyre::eyre!("parse int: {e}").into())
                 })
                 .collect()
-        } else {
-            let question = make::multi_select_integer(
+        }
+    }
+
+    async fn float_array(
+        &self,
+        input: &FloatArrayInput<Generator>,
+        ctx: &omni_tera::Context,
+    ) -> Result<Vec<f64>, Error> {
+        if input.array_extra.widget != Some(ListWidget::FreeEntry)
+            && let Some(allowed) = &input.body.allowed
+        {
+            let question = make::multi_select_float(
                 input,
                 ctx,
                 self.validation_value_name,
@@ -207,19 +229,8 @@ impl InputProvider<Generator> for CliInputProvider {
             let items = answer
                 .try_into_list_items()
                 .map_err(|_| eyre::eyre!("expected list items answer"))?;
-            let allowed = input.body.allowed.as_ref().unwrap();
             Ok(items.iter().map(|item| allowed[item.index].value).collect())
-        }
-    }
-
-    async fn float_array(
-        &self,
-        input: &FloatArrayInput<Generator>,
-        ctx: &omni_tera::Context,
-    ) -> Result<Vec<f64>, Error> {
-        if input.array_extra.widget == Some(ListWidget::FreeEntry)
-            || input.body.allowed.is_none()
-        {
+        } else {
             let name = input.base.name.as_str();
             let message = input.base_extra.message.as_str();
             let strings = tokio::task::block_in_place(|| {
@@ -234,20 +245,6 @@ impl InputProvider<Generator> for CliInputProvider {
                         .map_err(|e| eyre::eyre!("parse float: {e}").into())
                 })
                 .collect()
-        } else {
-            let question = make::multi_select_float(
-                input,
-                ctx,
-                self.validation_value_name,
-            )?;
-            let answer =
-                tokio::task::block_in_place(|| requestty::prompt_one(question))
-                    .map_err(|e| eyre::eyre!("prompt error: {e}"))?;
-            let items = answer
-                .try_into_list_items()
-                .map_err(|_| eyre::eyre!("expected list items answer"))?;
-            let allowed = input.body.allowed.as_ref().unwrap();
-            Ok(items.iter().map(|item| allowed[item.index].value).collect())
         }
     }
 }

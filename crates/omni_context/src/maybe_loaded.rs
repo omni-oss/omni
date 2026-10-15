@@ -11,6 +11,7 @@ use crate::{Context, ContextError, ContextSys, LoadedContext};
 /// state.
 ///
 /// [`into_loaded`]: MaybeLoaded::into_loaded
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug)]
 pub enum MaybeLoaded<TSys: ContextSys = RealSys> {
     /// The context has not yet been loaded.
