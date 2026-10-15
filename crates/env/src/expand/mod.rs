@@ -146,8 +146,7 @@ impl Expansion {
     }
 }
 
-#[derive(Debug, Clone, Copy, new, PartialEq, Eq)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, new, PartialEq, Eq, Default)]
 pub enum CommandExpansionConfig<'a> {
     #[default]
     Disabled,
@@ -158,7 +157,6 @@ pub enum CommandExpansionConfig<'a> {
         env_vars: &'a HashMap<OsString, OsString>,
     },
 }
-
 
 #[derive(Debug, Clone, PartialEq, new)]
 pub struct Expansions<'a> {

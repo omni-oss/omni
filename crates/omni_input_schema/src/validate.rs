@@ -107,9 +107,10 @@ pub fn validate<E: InputProfile>(
                 &effective,
                 ctx,
                 config.if_expressions_root_property,
-            )? {
-                continue;
-            }
+            )?
+        {
+            continue;
+        }
 
         let value = values.get(name.as_str());
         let has_default =
@@ -125,9 +126,10 @@ pub fn validate<E: InputProfile>(
 
         // Populate effective with the default so subsequent if-expressions see it.
         if value.is_none()
-            && let Some(default) = input.static_default_value_bag() {
-                effective.insert(name.clone(), default);
-            }
+            && let Some(default) = input.static_default_value_bag()
+        {
+            effective.insert(name.clone(), default);
+        }
 
         if let Some(raw) = value {
             match validate_single(input, name, raw, ctx, &effective, config) {
@@ -232,30 +234,33 @@ fn check_allowed<E: InputProfile>(
                         typed.by_ref().to_borrowed_str().map(|s| s.to_string())
                     });
                 if let Some(sv) = sv
-                    && !list.iter().any(|a| a.value == sv) {
-                        return Err(format!(
-                            "'{sv}' is not an allowed value for input '{name}'"
-                        ));
-                    }
+                    && !list.iter().any(|a| a.value == sv)
+                {
+                    return Err(format!(
+                        "'{sv}' is not an allowed value for input '{name}'"
+                    ));
+                }
             }
         }
         Input::Integer(i) => {
             if let Some(list) = &i.allowed
                 && let Some(iv) = try_parse_int(typed.by_ref())
-                    && !list.iter().any(|a| a.value == iv) {
-                        return Err(format!(
-                            "'{iv}' is not an allowed value for input '{name}'"
-                        ));
-                    }
+                && !list.iter().any(|a| a.value == iv)
+            {
+                return Err(format!(
+                    "'{iv}' is not an allowed value for input '{name}'"
+                ));
+            }
         }
         Input::Float(f) => {
             if let Some(list) = &f.allowed
                 && let Some(fv) = try_parse_float(typed.by_ref())
-                    && !list.iter().any(|a| a.value == fv) {
-                        return Err(format!(
-                            "'{fv}' is not an allowed value for input '{name}'"
-                        ));
-                    }
+                && !list.iter().any(|a| a.value == fv)
+            {
+                return Err(format!(
+                    "'{fv}' is not an allowed value for input '{name}'"
+                ));
+            }
         }
         Input::StringArray(sa) => {
             // For arrays, check each element when the array is passed as a JSON array.

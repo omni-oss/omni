@@ -214,9 +214,7 @@ async fn return_if_error(
 ) -> RequestResult<()> {
     match error_rx.try_recv() {
         Ok(error) => {
-            Err(
-                RequestErrorInner::ReceivedResponseErrorFrame(error).into()
-            )
+            Err(RequestErrorInner::ReceivedResponseErrorFrame(error).into())
         }
         Err(e) => match e {
             oneshot::error::TryRecvError::Empty

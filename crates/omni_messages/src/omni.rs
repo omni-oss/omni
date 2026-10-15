@@ -11,4 +11,7 @@ pub trait OmniEventSubscriber:
 {
 }
 
-impl<T: ExecutionEventSubscriber + GeneratorEventSubscriber> OmniEventSubscriber for T {}
+impl<T: ExecutionEventSubscriber + GeneratorEventSubscriber> OmniEventSubscriber
+    for T
+{
+}

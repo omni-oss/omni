@@ -23,18 +23,18 @@ pub fn initialize(config: InitConfig) -> eyre::Result<()> {
             target_os = "macos" => {
                 let store = apple_native_keyring_store::keychain::Store::new()?;
                 keyring_core::set_default_store(store);
-            },
+            }
             target_os = "windows" => {
                 let store = windows_native_keyring_store::store::Store::new()?;
                 keyring_core::set_default_store(store);
-            },
+            }
             target_os = "linux" => {
                 let result = zbus_secret_service_keyring_store::Store::new();
 
                 match result {
                     Ok(store) => {
                         keyring_core::set_default_store(store);
-                    },
+                    }
                     Err(error) => match error {
                         keyring_core::Error::PlatformFailure(error) => {
                             // normalize the text
@@ -52,9 +52,11 @@ pub fn initialize(config: InitConfig) -> eyre::Result<()> {
                         }
                     },
                 }
-            },
+            }
             _ => {
-                return erye::erye!("Unsupported platform, omni_setup only supports macOS, Windows and Linux");
+                return erye::erye!(
+                    "Unsupported platform, omni_setup only supports macOS, Windows and Linux"
+                );
             }
         }
     };

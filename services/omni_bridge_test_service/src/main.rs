@@ -7,6 +7,5 @@ fn main() -> eyre::Result<()> {
     // The library returns its own [`Error`] type; flatten it into an
     // `eyre::Report` so we get a nicely-formatted error on stderr if the
     // process exits with a failure.
-    omni_bridge_test_service::main_entry()
-        .map_err(|e| eyre::eyre!("{e}"))
+    omni_bridge_test_service::main_entry().map_err(|e| eyre::eyre!("{e}"))
 }

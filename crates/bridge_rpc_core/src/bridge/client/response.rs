@@ -151,9 +151,7 @@ async fn return_if_error(
     error_rx: &mut oneshot::Receiver<ResponseError>,
 ) -> ResponseResult<()> {
     match error_rx.try_recv() {
-        Ok(error) => {
-            Err(ResponseErrorInner::Response(error).into())
-        }
+        Ok(error) => Err(ResponseErrorInner::Response(error).into()),
         Err(e) => match e {
             oneshot::error::TryRecvError::Empty
             | oneshot::error::TryRecvError::Closed => Ok(()),

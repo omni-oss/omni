@@ -107,9 +107,10 @@ fn dfs<'a>(
 
     for action in &generator.actions {
         if let ActionConfiguration::RunGenerator { action: run } = action
-            && let Some(called) = generator_map.get(run.generator.as_str()) {
-                dfs(called, generator_map, visited, path)?;
-            }
+            && let Some(called) = generator_map.get(run.generator.as_str())
+        {
+            dfs(called, generator_map, visited, path)?;
+        }
     }
 
     path.remove(generator.name.as_str());
