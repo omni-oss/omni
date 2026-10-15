@@ -9,16 +9,18 @@ title: "print-config"
 ## Usage
 
 ```bash
-omni project print-config [OPTIONS] <project_name>
+omni project print-config [OPTIONS] [project_name]
 ```
 
 ---
 
 ## Positional arguments
 
-### `<project_name>`
+### `[project_name]`
 
-- **Required:** Yes
+Name of the project whose configuration to print
+
+- **Required:** No
 
 ---
 
@@ -34,6 +36,12 @@ Format to use when serializing
 
 - **Possible values:** `json`, `yaml`, `toml`
 
+### `--path`
+
+Path to the project configuration file to print. Relative paths are resolved against the current directory
+
+- **Required:** No
+
 ### `-r`, `--raw`
 
 Only print the raw configuration syntax, no logs will be added
@@ -47,7 +55,7 @@ Only print the raw configuration syntax, no logs will be added
 ## Examples
 
 ```bash
-omni project print-config [OPTIONS] <project_name>
+omni project print-config [OPTIONS] [project_name]
 ```
 
 ---
