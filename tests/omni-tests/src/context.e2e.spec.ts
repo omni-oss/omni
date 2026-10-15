@@ -197,6 +197,36 @@ describe("+context @config (base & extends)", () => {
         expect(result).toOutputContaining("GP-TASK");
     });
 
+    it("loads a discovered project only once when another discovered project extends it", async () => {
+        // The loader queues every discovered config up front and pops them in
+        // reverse path order, so `zzz` is processed before `aaa` and re-queues
+        // it. Both names are chosen to force that ordering.
+        const ws = makeWorkspace({
+            workspace: { projects: ["**"] },
+            projects: {
+                "libs/aaa": {
+                    name: "aaa",
+                    base: true,
+                    tasks: { "from-aaa": 'echo "AAA-TASK"' },
+                },
+                "libs/zzz": {
+                    name: "zzz",
+                    extends: ["../aaa/project.omni.yaml"],
+                },
+            },
+        });
+
+        const list = await runOmni(["project", "list", "-r"], { cwd: ws.cwd });
+        const run = await runOmni(
+            ["-l", "off", "run", "from-aaa", "-p", "zzz", "--output-logs=all"],
+            { cwd: ws.cwd },
+        );
+
+        expect(list).toHaveSucceeded();
+        expect(run).toHaveSucceeded();
+        expect(run).toOutputContaining("AAA-TASK");
+    });
+
     it("resolves both short-form and long-form task definitions", async () => {
         const ws = makeWorkspace({
             workspace: { projects: ["**"] },
