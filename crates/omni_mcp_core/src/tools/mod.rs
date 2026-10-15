@@ -17,14 +17,14 @@ pub fn tool_list() -> Vec<rmcp::model::Tool> {
             "Return workspace root, cache dir and env vars",
             true,
         ),
-        tool_noargs(
+        tool_typed::<ProjectListParams>(
             "project_list",
-            "List all project names in the workspace",
+            "List runnable projects in the workspace; optionally include base templates and extends-only configs",
             true,
         ),
         tool_typed::<ProjectConfigParams>(
             "project_config",
-            "Return full configuration for a named project including its tasks",
+            "Return full configuration for a project, selected by name or by config file path, including its tasks",
             true,
         ),
         tool_noargs(
@@ -223,5 +223,38 @@ mod tests {
         };
         assert_eq!(read_only(&by_name("ignore_sync")), Some(false));
         assert_eq!(read_only(&by_name("ignore_clean")), Some(false));
+    }
+
+    #[test]
+    fn project_tools_expose_selection_params() {
+        let tools = tool_list();
+        let properties = |name: &str| {
+            let tool = tools
+                .iter()
+                .find(|t| t.name == name)
+                .unwrap_or_else(|| panic!("missing MCP tool entry `{name}`"));
+            assert_eq!(
+                tool.annotations.as_ref().and_then(|a| a.read_only_hint),
+                Some(true),
+                "{name} must be read-only"
+            );
+            let mut keys = tool.input_schema["properties"]
+                .as_object()
+                .unwrap_or_else(|| panic!("{name} has no properties"))
+                .keys()
+                .cloned()
+                .collect::<Vec<_>>();
+            keys.sort();
+            let required = tool.input_schema.get("required").cloned();
+            (keys, required)
+        };
+
+        let (list_keys, list_required) = properties("project_list");
+        assert_eq!(list_keys, ["all", "include_base", "include_extended"]);
+        assert_eq!(list_required, None);
+
+        let (config_keys, config_required) = properties("project_config");
+        assert_eq!(config_keys, ["name", "path"]);
+        assert_eq!(config_required, None);
     }
 }

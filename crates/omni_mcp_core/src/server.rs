@@ -154,7 +154,7 @@ where
         let args = args.unwrap_or(Value::Object(Default::default()));
         match name {
             "workspace_info" => call0(self.tool_workspace_info()).await,
-            "project_list" => call0(self.tool_project_list()).await,
+            "project_list" => call1(args, |p| self.tool_project_list(p)).await,
             "project_config" => {
                 call1(args, |p| self.tool_project_config(p)).await
             }
