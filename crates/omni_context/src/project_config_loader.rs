@@ -138,10 +138,19 @@ impl<'a, TSys: ContextSys> ProjectConfigLoader<'a, TSys> {
                     extended_parent.resolve_in_place(&bases);
                 }
 
-                *extended_parent = clean(project_dir.join(
+                let extended_path = clean(project_dir.join(
                     extended_parent.path().expect("path should be resolved"),
-                ))
-                .into();
+                ));
+
+                if !extended_path.starts_with(root_dir) {
+                    return Err(ProjectConfigLoaderErrorInner::ExtendedProjectConfigOutsideWorkspace {
+                        extender_path: conf.path.clone(),
+                        extendee_path: extended_path,
+                    }
+                    .into());
+                }
+
+                *extended_parent = extended_path.into();
 
                 if !loaded.contains(extended_parent) {
                     to_process.push(RelatedPath::new(
@@ -192,6 +201,12 @@ pub(crate) enum ProjectConfigLoaderErrorInner {
 
     #[error("project configuration file does not exist: {extendee}, loaded by {extender}", extender = extender_path.display(), extendee = extendee_path.display())]
     ExtendedProjectConfigDoesNotExist {
+        extender_path: PathBuf,
+        extendee_path: PathBuf,
+    },
+
+    #[error("project configuration file is outside the workspace root: {extendee}, extended by {extender}", extender = extender_path.display(), extendee = extendee_path.display())]
+    ExtendedProjectConfigOutsideWorkspace {
         extender_path: PathBuf,
         extendee_path: PathBuf,
     },

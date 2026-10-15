@@ -952,6 +952,84 @@ mod tests {
         assert!(zzz.tasks.contains_key("from-aaa"));
     }
 
+    /// Writes a workspace at `<tmp>/ws` with one project `app` extending
+    /// `extends`, plus a base config at `<tmp>/shared/base.omni.yaml` that
+    /// lies outside the workspace root.
+    fn write_extends_workspace(tmp: &Path, extends: &str) -> PathBuf {
+        let sys = real_sys();
+        let root = tmp.join("ws");
+
+        sys.fs_create_dir_all(root.join(cross_path("apps/app")))
+            .expect("can't create app dir");
+        sys.fs_create_dir_all(tmp.join("shared"))
+            .expect("can't create shared dir");
+        sys.fs_create_dir_all(root.join("shared"))
+            .expect("can't create inner shared dir");
+
+        sys.fs_write(
+            root.join("workspace.omni.yaml"),
+            "projects:\n  - apps/**\n",
+        )
+        .expect("can't write workspace config");
+
+        let base = "name: base\nbase: true\ntasks:\n  hello: echo hello\n";
+        sys.fs_write(tmp.join(cross_path("shared/base.omni.yaml")), base)
+            .expect("can't write outer base config");
+        sys.fs_write(root.join(cross_path("shared/base.omni.yaml")), base)
+            .expect("can't write inner base config");
+
+        sys.fs_write(
+            root.join(cross_path("apps/app/project.omni.yaml")),
+            format!("name: app\nextends:\n  - {extends}\n"),
+        )
+        .expect("can't write app config");
+
+        root
+    }
+
+    #[tokio::test]
+    async fn test_extends_outside_workspace_root_is_rejected() {
+        for extends in [
+            "../../../shared/base.omni.yaml",
+            "\"@workspace/../shared/base.omni.yaml\"",
+        ] {
+            let tmp = tmp();
+            let root = write_extends_workspace(tmp.path(), extends);
+
+            let error = ctx("testing", &root, real_sys())
+                .load_project_configurations()
+                .await
+                .expect_err("extends outside the root must be rejected");
+
+            let message = error.to_string();
+            assert!(
+                message.contains("outside the workspace root"),
+                "unexpected error for {extends}: {message}"
+            );
+            assert!(
+                message.contains("project.omni.yaml"),
+                "error must name the extending file: {message}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_extends_with_parent_segments_inside_workspace_root_loads() {
+        let tmp = tmp();
+        let root =
+            write_extends_workspace(tmp.path(), "../../shared/base.omni.yaml");
+
+        let configs = ctx("testing", &root, real_sys())
+            .load_project_configurations()
+            .await
+            .expect("extends inside the root must load");
+
+        let mut names =
+            configs.iter().map(|c| c.name.as_str()).collect::<Vec<_>>();
+        names.sort();
+        assert_eq!(names, ["app", "base"]);
+    }
+
     /// A task marked `base` is neither discoverable nor runnable: it is absent
     /// from the emitted task set, while an unrelated sibling task is preserved.
     #[tokio::test]
