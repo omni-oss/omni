@@ -25,7 +25,7 @@ use crate::{
 };
 use dir_walker::DirWalker;
 use omni_core::{ExtensionGraph, ExtensionGraphError};
-use system_traits::impls::RealSys as RealSysSync;
+use system_traits::{FsMetadataValue as _, impls::RealSys as RealSysSync};
 
 use omni_configurations::{
     LoadConfigError, ProjectConfiguration, RemoteCacheConfiguration,
@@ -93,7 +93,55 @@ impl<TSys: ContextSys> Context<TSys> {
 
         Ok(context)
     }
+
+    /// Rebuilds the context from disk with the same construction parameters,
+    /// re-reading the workspace and remote cache configurations.
+    #[allow(clippy::result_large_err)]
+    pub fn reload(&self) -> Result<Self, ContextError> {
+        Self::new(
+            self.sys.clone(),
+            self.env.clone(),
+            &self.root_dir,
+            self.inherit_env_vars,
+            &self.env_root_dir_marker,
+            self.override_env_files.clone(),
+            &self.tracing_config,
+        )
+    }
+
+    /// Captures the size and modification time of every file that
+    /// [`Context::new`] reads eagerly. Comparing two fingerprints tells whether
+    /// the context needs to be [reloaded](Context::reload).
+    pub fn config_fingerprint(&self) -> ConfigFingerprint {
+        let workspace_files =
+            constants::SUPPORTED_EXTENSIONS.iter().map(|ext| {
+                self.root_dir
+                    .join(constants::WORKSPACE_OMNI.replace("{ext}", ext))
+            });
+
+        let entries = workspace_files
+            .chain(self.remote_cache_configuration_paths())
+            .map(|path| {
+                let stamp = self
+                    .sys
+                    .fs_metadata(&path)
+                    .ok()
+                    .map(|m| (m.len(), m.modified().ok()));
+                (path, stamp)
+            })
+            .collect();
+
+        ConfigFingerprint(entries)
+    }
 }
+
+/// Snapshot of the on-disk state of the configuration files backing a
+/// [`Context`]. A file that does not exist is recorded as `None`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ConfigFingerprint(Vec<(PathBuf, Option<FileStamp>)>);
+
+/// File size and, where the platform supports it, last modification time.
+type FileStamp = (u64, Option<std::time::SystemTime>);
 
 impl<TSys: ContextSys> Context<TSys> {
     pub fn tracing_config(&self) -> &TracingConfig {
@@ -603,6 +651,39 @@ mod tests {
             build.normalized(),
             (Some(LogsDisplay::Failed), Some(LogsDisplay::Failed))
         );
+    }
+
+    #[tokio::test]
+    async fn test_reload_picks_up_workspace_changes() {
+        let (tmp, sys) = default_fixture();
+        let ws = tmp.path().join("workspace.omni.yaml");
+
+        let ctx = ctx("testing", tmp.path(), sys.clone());
+        let before = ctx.config_fingerprint();
+        assert_eq!(before, ctx.config_fingerprint(), "fingerprint is stable");
+
+        let original = sys.fs_read_to_string(&ws).expect("can't read ws");
+        sys.fs_write(&ws, format!("{original}\nname: renamed-ws\n"))
+            .expect("can't write ws");
+
+        assert_ne!(
+            before,
+            ctx.config_fingerprint(),
+            "fingerprint must change when the workspace file changes"
+        );
+        assert_eq!(
+            ctx.workspace_configuration().name,
+            None,
+            "old ctx is stale"
+        );
+
+        let reloaded = ctx.reload().expect("can't reload");
+        assert_eq!(
+            reloaded.workspace_configuration().name.as_deref(),
+            Some("renamed-ws")
+        );
+        assert_eq!(reloaded.root_dir(), ctx.root_dir());
+        assert_eq!(reloaded.env_files(), ctx.env_files());
     }
 
     #[tokio::test]
