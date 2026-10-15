@@ -8,6 +8,7 @@ use omni_cache::impls::{
 use omni_remote_cache_client::{DefaultRemoteCacheClient, RemoteCacheClient};
 use omni_tracing_subscriber::TracingConfig;
 use owo_colors::OwoColorize as _;
+use sets::UnorderedSet;
 use strum::{EnumDiscriminants, EnumIs, IntoDiscriminant as _};
 use trace::Level;
 
@@ -17,6 +18,7 @@ use crate::{
     extracted_data_validator::{
         ExtractedDataValidationErrors, ExtractedDataValidator,
     },
+    project_config_entry::{ProjectConfigEntry, is_discovered},
     project_config_loader::{ProjectConfigLoader, ProjectConfigLoaderError},
     project_data_extractor::{ProjectDataExtractor, ProjectDataExtractorError},
     project_discovery::{
@@ -203,10 +205,37 @@ impl<TSys: ContextSys> Context<TSys> {
     pub async fn load_project_configurations(
         &self,
     ) -> Result<Vec<ProjectConfiguration>, ContextError> {
+        let entries = self.load_project_config_entries().await?;
+
+        Ok(entries.into_iter().map(|entry| entry.config).collect())
+    }
+
+    /// Loads every project configuration, including those reached only
+    /// through `extends`, tagged with whether discovery found it.
+    #[cfg_attr(feature = "enable-tracing", tracing::instrument(level = Level::DEBUG, skip_all))]
+    #[allow(clippy::result_large_err)]
+    pub async fn load_project_config_entries(
+        &self,
+    ) -> Result<Vec<ProjectConfigEntry>, ContextError> {
         let start = std::time::Instant::now();
         let project_paths = self.discover_project_paths().await?;
         let loaded =
             self.load_discovered_project_configs(project_paths).await?;
+
+        let discovered = loaded
+            .discovered_paths
+            .iter()
+            .map(|p| p as &Path)
+            .collect::<UnorderedSet<_>>();
+
+        let entries = loaded
+            .configs
+            .into_iter()
+            .map(|config| ProjectConfigEntry {
+                discovered: is_discovered(&config, &discovered),
+                config,
+            })
+            .collect();
 
         log::info!(
             "{}",
@@ -214,7 +243,7 @@ impl<TSys: ContextSys> Context<TSys> {
                 .bold()
         );
 
-        Ok(loaded.configs)
+        Ok(entries)
     }
 
     #[cfg_attr(feature = "enable-tracing", tracing::instrument(level = Level::DEBUG, skip_all))]
@@ -1038,6 +1067,73 @@ mod tests {
             configs.iter().map(|c| c.name.as_str()).collect::<Vec<_>>();
         names.sort();
         assert_eq!(names, ["app", "base"]);
+    }
+
+    #[tokio::test]
+    async fn test_project_config_entries_tag_discovery() {
+        let sys = real_sys();
+        let tmp = tmp();
+        let root = tmp.path();
+
+        for dir in ["apps/app", "apps/tpl", "shared"] {
+            sys.fs_create_dir_all(root.join(cross_path(dir)))
+                .expect("can't create dir");
+        }
+
+        sys.fs_write(
+            root.join("workspace.omni.yaml"),
+            "projects:\n  - apps/**\n",
+        )
+        .expect("can't write workspace config");
+
+        sys.fs_write(
+            root.join(cross_path("apps/tpl/project.omni.yaml")),
+            "name: tpl\nbase: true\n",
+        )
+        .expect("can't write tpl config");
+        sys.fs_write(
+            root.join(cross_path("shared/base.omni.yaml")),
+            "name: shared-base\nbase: true\n",
+        )
+        .expect("can't write base config");
+        sys.fs_write(
+            root.join(cross_path("shared/common.omni.yaml")),
+            "name: shared-common\n",
+        )
+        .expect("can't write common config");
+        sys.fs_write(
+            root.join(cross_path("apps/app/project.omni.yaml")),
+            "name: app\nextends:\n  - ../tpl/project.omni.yaml\n  - ../../shared/base.omni.yaml\n  - ../../shared/common.omni.yaml\n",
+        )
+        .expect("can't write app config");
+
+        let entries = ctx("testing", root, sys)
+            .load_project_config_entries()
+            .await
+            .expect("can't load project config entries");
+
+        let mut tagged = entries
+            .iter()
+            .map(|e| {
+                (
+                    e.config.name.as_str(),
+                    e.config.base,
+                    e.discovered,
+                    e.is_runnable(),
+                )
+            })
+            .collect::<Vec<_>>();
+        tagged.sort();
+
+        assert_eq!(
+            tagged,
+            [
+                ("app", false, true, true),
+                ("shared-base", true, false, false),
+                ("shared-common", false, false, false),
+                ("tpl", true, true, false),
+            ]
+        );
     }
 
     /// A task marked `base` is neither discoverable nor runnable: it is absent
