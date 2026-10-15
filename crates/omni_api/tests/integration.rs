@@ -320,7 +320,9 @@ fn by_name(name: &str) -> ProjectSelector {
 }
 
 fn by_path(root: &Path, path: &str) -> ProjectSelector {
-    ProjectSelector::Path(std::fs::canonicalize(root).unwrap().join(path))
+    // Deliberately not canonicalized: the CLI joins the raw current dir, so
+    // selection must tolerate a non-canonical (e.g. non-`\\?\`) path.
+    ProjectSelector::Path(root.join(path))
 }
 
 fn config_file(resp: &ProjectConfigResponse, root: &Path) -> PathBuf {

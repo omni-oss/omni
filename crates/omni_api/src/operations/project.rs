@@ -120,7 +120,9 @@ pub async fn handle_project_config<TSys: ContextSys>(
         ProjectSelector::Name(name) => {
             select_by_name(ctx.root_dir(), entries, &name)
         }
-        ProjectSelector::Path(path) => select_by_path(entries, &path),
+        ProjectSelector::Path(path) => {
+            select_by_path(ctx.sys(), entries, &path)
+        }
     }
 }
 
@@ -175,11 +177,17 @@ fn select_by_name(
     Ok(response)
 }
 
-fn select_by_path(
+fn select_by_path<TSys: ContextSys>(
+    sys: &TSys,
     entries: Vec<ProjectConfigEntry>,
     path: &Path,
 ) -> eyre::Result<ProjectConfigResponse> {
-    let path = clean(path);
+    // The workspace root is canonicalized when the context loads (on Windows
+    // that yields a `\\?\` verbatim path with long names), so compare
+    // canonical forms rather than the caller's lexical path.
+    let canonical =
+        |p: &Path| sys.fs_canonicalize(p).unwrap_or_else(|_| clean(p));
+    let path = canonical(path);
 
     entries
         .into_iter()
@@ -188,7 +196,7 @@ fn select_by_path(
                 .config
                 .file
                 .path()
-                .is_ok_and(|file| file == path.as_path())
+                .is_ok_and(|file| canonical(file) == path)
         })
         .map(|entry| ProjectConfigResponse::new(entry.config))
         .ok_or_else(|| {
