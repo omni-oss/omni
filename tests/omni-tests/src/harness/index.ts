@@ -16,6 +16,7 @@ export { ensureOmniBinary, resolveOmniBin } from "./binary";
 export {
     dependencyChainSpec,
     extendsSpec,
+    mixedProjectConfigsSpec,
     multiFormatProjectsSpec,
     mutualRecursionGeneratorSpec,
     nestedGeneratorSpec,

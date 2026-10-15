@@ -17,6 +17,7 @@ import { describe, expect, it } from "vitest";
 import {
     connectMcp,
     makeWorkspace,
+    mixedProjectConfigsSpec,
     mutualRecursionGeneratorSpec,
     nestedGeneratorSpec,
     runOmni,
@@ -31,6 +32,14 @@ import { cleanPath } from "./utils";
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/** One entry of the `project_list` result. */
+interface ProjectListEntry {
+    name: string;
+    path: string;
+    base: boolean;
+    discovered: boolean;
+}
 
 /** The return type of `client.callTool()`. */
 type CallToolResult = Awaited<ReturnType<Client["callTool"]>>;
@@ -529,6 +538,63 @@ describe(
             expect(recovered.projects).toHaveLength(2);
             expect(recovered.projects).toContain("beta");
         });
+
+        it("lists only runnable projects by default, with entries", async () => {
+            const ws = makeWorkspace(mixedProjectConfigsSpec());
+            const { client } = await connectMcp({ cwd: ws.cwd });
+
+            const data = getContent<{
+                projects: string[];
+                entries: ProjectListEntry[];
+            }>(await client.callTool({ name: "project_list" }));
+
+            expect(data.projects).toEqual(["app", "lib"]);
+            expect(data.entries).toEqual([
+                {
+                    name: "app",
+                    path: "apps/app/project.omni.yaml",
+                    base: false,
+                    discovered: true,
+                },
+                {
+                    name: "lib",
+                    path: "apps/lib/project.omni.yaml",
+                    base: false,
+                    discovered: true,
+                },
+            ]);
+        });
+
+        it("honors the visibility params", async () => {
+            const ws = makeWorkspace(mixedProjectConfigsSpec());
+            const { client } = await connectMcp({ cwd: ws.cwd });
+
+            const names = async (args: Record<string, boolean>) =>
+                getContent<{ projects: string[] }>(
+                    await client.callTool({
+                        name: "project_list",
+                        arguments: args,
+                    }),
+                ).projects;
+
+            expect(await names({ include_base: true })).toEqual([
+                "app",
+                "lib",
+                "shared-base",
+                "tpl",
+            ]);
+            expect(await names({ include_extended: true })).toEqual([
+                "app",
+                "lib",
+                "shared-base",
+            ]);
+            expect(await names({ all: true })).toEqual([
+                "app",
+                "lib",
+                "shared-base",
+                "tpl",
+            ]);
+        });
     },
 );
 
@@ -573,6 +639,47 @@ describe(
                     arguments: { name: "does-not-exist" },
                 }),
             ).rejects.toThrow();
+        });
+
+        it("selects a config by an entry path from project_list", async () => {
+            const ws = makeWorkspace(mixedProjectConfigsSpec());
+            const { client } = await connectMcp({ cwd: ws.cwd });
+
+            const { entries } = getContent<{ entries: ProjectListEntry[] }>(
+                await client.callTool({
+                    name: "project_list",
+                    arguments: { all: true },
+                }),
+            );
+            const shared = entries.find((e) => e.name === "shared-base");
+            expect(shared).toBeDefined();
+
+            const data = getContent<{ name: string; warnings: string[] }>(
+                await client.callTool({
+                    name: "project_config",
+                    arguments: { path: shared?.path },
+                }),
+            );
+
+            expect(data.name).toBe("shared-base");
+            expect(data.warnings).toEqual([]);
+        });
+
+        it("rejects both or neither of name and path as invalid params", async () => {
+            const ws = makeWorkspace(mixedProjectConfigsSpec());
+            const { client } = await connectMcp({ cwd: ws.cwd });
+
+            for (const args of [
+                {},
+                { name: "app", path: "apps/app/project.omni.yaml" },
+            ]) {
+                await expect(
+                    client.callTool({
+                        name: "project_config",
+                        arguments: args,
+                    }),
+                ).rejects.toThrow(/exactly one of `name` or `path`/);
+            }
         });
     },
 );

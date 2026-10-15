@@ -16,7 +16,13 @@ import { parse as parseToml } from "smol-toml";
 import { describe, expect, it } from "vitest";
 import { parse as parseYaml } from "yaml";
 
-import { extendsSpec, lines, makeWorkspace, runOmni } from "@/harness";
+import {
+    extendsSpec,
+    lines,
+    makeWorkspace,
+    mixedProjectConfigsSpec,
+    runOmni,
+} from "@/harness";
 
 const NAMES = ["alpha", "beta", "gamma"] as const;
 
@@ -248,6 +254,296 @@ describe("+project @exitcode (errors)", () => {
         // The command logs the error and still exits 0 (no config is printed).
         expect(result).toHaveSucceeded();
         expect(result).toOutputContaining("No project named 'nope' found");
+        expect(result.stdout).not.toContain("{");
+    });
+});
+
+/** A workspace with one config of every kind (see the fixture). */
+function mixedWorkspace() {
+    return makeWorkspace(mixedProjectConfigsSpec());
+}
+
+interface ListEntry {
+    name: string;
+    path: string;
+    base: boolean;
+    discovered: boolean;
+}
+
+const ALL_ENTRIES: ListEntry[] = [
+    {
+        name: "app",
+        path: "apps/app/project.omni.yaml",
+        base: false,
+        discovered: true,
+    },
+    {
+        name: "lib",
+        path: "apps/lib/project.omni.yaml",
+        base: false,
+        discovered: true,
+    },
+    {
+        name: "shared-base",
+        path: "shared/base.omni.yaml",
+        base: true,
+        discovered: false,
+    },
+    {
+        name: "tpl",
+        path: "apps/tpl/project.omni.yaml",
+        base: true,
+        discovered: true,
+    },
+];
+
+describe("+project @e2e (list visibility)", () => {
+    it("`project list` lists only runnable projects, sorted", async () => {
+        const ws = mixedWorkspace();
+
+        const result = await runOmni(["project", "list", "-r"], {
+            cwd: ws.cwd,
+        });
+
+        expect(result).toHaveSucceeded();
+        expect(lines(result.out)).toEqual(["app", "lib"]);
+    });
+
+    it("visibility flags add base and extends-only configs", async () => {
+        const ws = mixedWorkspace();
+
+        const names = async (flag: string) => {
+            const result = await runOmni(
+                ["project", "list", "-r", "-f", "json", flag],
+                { cwd: ws.cwd },
+            );
+            expect(result).toHaveSucceeded();
+            return (JSON.parse(result.stdout) as ListEntry[]).map(
+                (e) => e.name,
+            );
+        };
+
+        expect(await names("--include-base")).toEqual([
+            "app",
+            "lib",
+            "shared-base",
+            "tpl",
+        ]);
+        expect(await names("--include-extended")).toEqual([
+            "app",
+            "lib",
+            "shared-base",
+        ]);
+        expect(await names("--all")).toEqual([
+            "app",
+            "lib",
+            "shared-base",
+            "tpl",
+        ]);
+    });
+
+    it("`--all` combined with an include flag is the same as `--all`", async () => {
+        const ws = mixedWorkspace();
+
+        const result = await runOmni(
+            ["project", "list", "-r", "-f", "json", "--all", "--include-base"],
+            { cwd: ws.cwd },
+        );
+
+        expect(result).toHaveSucceeded();
+        expect(JSON.parse(result.stdout)).toEqual(ALL_ENTRIES);
+    });
+
+    it("without a visibility flag the output keeps the name-only shape", async () => {
+        const ws = mixedWorkspace();
+
+        const json = await runOmni(["project", "list", "-r", "-f", "json"], {
+            cwd: ws.cwd,
+        });
+        const toml = await runOmni(["project", "list", "-r", "-f", "toml"], {
+            cwd: ws.cwd,
+        });
+
+        expect(json).toHaveSucceeded();
+        expect(JSON.parse(json.stdout)).toEqual(["app", "lib"]);
+        expect(toml).toHaveSucceeded();
+        expect(parseToml(toml.stdout)).toEqual({ projects: ["app", "lib"] });
+    });
+});
+
+describe("+project @output (annotated list)", () => {
+    it("text output aligns name, tags and path columns", async () => {
+        const ws = mixedWorkspace();
+
+        const result = await runOmni(["project", "list", "-r", "--all"], {
+            cwd: ws.cwd,
+        });
+
+        expect(result).toHaveSucceeded();
+        expect(lines(result.out)).toEqual([
+            "app          project        apps/app/project.omni.yaml",
+            "lib          project        apps/lib/project.omni.yaml",
+            "shared-base  base,extended  shared/base.omni.yaml",
+            "tpl          base           apps/tpl/project.omni.yaml",
+        ]);
+    });
+
+    it("json and yaml serialize entry objects", async () => {
+        const ws = mixedWorkspace();
+
+        const json = await runOmni(
+            ["project", "list", "-r", "-f", "json", "--all"],
+            { cwd: ws.cwd },
+        );
+        const yaml = await runOmni(
+            ["project", "list", "-r", "-f", "yaml", "--all"],
+            { cwd: ws.cwd },
+        );
+
+        expect(json).toHaveSucceeded();
+        expect(JSON.parse(json.stdout)).toEqual(ALL_ENTRIES);
+        expect(yaml).toHaveSucceeded();
+        expect(parseYaml(yaml.stdout)).toEqual(ALL_ENTRIES);
+    });
+
+    it("toml serializes entries as `[[projects]]` tables", async () => {
+        const ws = mixedWorkspace();
+
+        const result = await runOmni(
+            ["project", "list", "-r", "-f", "toml", "--all"],
+            { cwd: ws.cwd },
+        );
+
+        expect(result).toHaveSucceeded();
+        expect(result.stdout).toContain("[[projects]]");
+        expect(parseToml(result.stdout)).toEqual({ projects: ALL_ENTRIES });
+    });
+});
+
+describe("+project @config (print-config selection)", () => {
+    it("`print-config --path` resolves a relative path from a subdirectory", async () => {
+        const ws = mixedWorkspace();
+
+        const result = await runOmni(
+            [
+                "project",
+                "print-config",
+                "-r",
+                "--path",
+                "tpl/project.omni.yaml",
+            ],
+            { cwd: ws.path("apps") },
+        );
+
+        expect(result).toHaveSucceeded();
+        const parsed = JSON.parse(result.stdout) as {
+            name: string;
+            base: boolean;
+        };
+        expect(parsed.name).toBe("tpl");
+        expect(parsed.base).toBe(true);
+    });
+
+    it("`print-config --path` selects an extends-only config", async () => {
+        const ws = mixedWorkspace();
+
+        const result = await runOmni(
+            [
+                "project",
+                "print-config",
+                "-r",
+                "--path",
+                "shared/base.omni.yaml",
+            ],
+            { cwd: ws.cwd },
+        );
+
+        expect(result).toHaveSucceeded();
+        expect((JSON.parse(result.stdout) as { name: string }).name).toBe(
+            "shared-base",
+        );
+    });
+
+    it("`print-config --path` to a file that is not loaded logs an error", async () => {
+        const ws = mixedWorkspace();
+        ws.write("stray.omni.yaml", { name: "stray" });
+
+        const result = await runOmni(
+            ["project", "print-config", "--path", "stray.omni.yaml"],
+            { cwd: ws.cwd },
+        );
+
+        expect(result).toHaveSucceeded();
+        expect(result).toOutputContaining("no loaded project configuration");
+        expect(result.stdout).not.toContain("{");
+    });
+
+    it("print-config requires exactly one of a name or `--path`", async () => {
+        const ws = mixedWorkspace();
+
+        const both = await runOmni(
+            [
+                "project",
+                "print-config",
+                "app",
+                "--path",
+                "apps/app/project.omni.yaml",
+            ],
+            { cwd: ws.cwd },
+        );
+        const neither = await runOmni(["project", "print-config"], {
+            cwd: ws.cwd,
+        });
+
+        expect(both).toHaveExitCode(2);
+        expect(neither).toHaveExitCode(2);
+    });
+
+    it("print-config prefers the runnable project over a same-named template", async () => {
+        const ws = mixedWorkspace();
+        ws.write("apps/a-app-tpl/project.omni.yaml", {
+            name: "app",
+            base: true,
+        });
+
+        const result = await runOmni(["project", "print-config", "-r", "app"], {
+            cwd: ws.cwd,
+        });
+
+        expect(result).toHaveSucceeded();
+        expect((JSON.parse(result.stdout) as { base: boolean }).base).toBe(
+            false,
+        );
+        expect(result.stderr).not.toContain("warning:");
+    });
+
+    it("print-config warns when several templates share the name", async () => {
+        const ws = mixedWorkspace();
+        ws.write("apps/b-tpl/project.omni.yaml", { name: "tpl", base: true });
+
+        const result = await runOmni(["project", "print-config", "-r", "tpl"], {
+            cwd: ws.cwd,
+        });
+
+        expect(result).toHaveSucceeded();
+        expect(JSON.parse(result.stdout)).toMatchObject({ name: "tpl" });
+        expect(result).toHaveStderrContaining("warning:");
+        expect(result).toHaveStderrContaining("apps/tpl/project.omni.yaml");
+        expect(result).toHaveStderrContaining("--path");
+    });
+
+    it("print-config errors when two runnable projects share the name", async () => {
+        const ws = mixedWorkspace();
+        ws.write("apps/app2/project.omni.yaml", { name: "app" });
+
+        const result = await runOmni(["project", "print-config", "app"], {
+            cwd: ws.cwd,
+        });
+
+        expect(result).toHaveSucceeded();
+        expect(result).toOutputContaining("duplicate project name");
+        expect(result).toOutputContaining("apps/app/project.omni.yaml");
+        expect(result).toOutputContaining("apps/app2/project.omni.yaml");
         expect(result.stdout).not.toContain("{");
     });
 });

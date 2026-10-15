@@ -301,6 +301,28 @@ describe("+context @config @exitcode (validation)", () => {
         expect(result).toHaveFailed();
         expect(result).toHaveStderrContaining("does not exist");
     });
+
+    it("rejects an `extends` target outside the workspace root", async () => {
+        const ws = makeWorkspace({
+            workspace: { projects: ["**"] },
+            projects: {
+                child: {
+                    name: "child",
+                    extends: ["../../outside.omni.yaml"],
+                    tasks: { build: "echo hi" },
+                },
+            },
+        });
+
+        const result = await runOmni(["run", "build", "-p", "child"], {
+            cwd: ws.cwd,
+        });
+
+        expect(result).toHaveFailed();
+        expect(result).toHaveStderrContaining("outside the workspace root");
+        expect(result).toHaveStderrContaining("outside.omni.yaml");
+        expect(result).toHaveStderrContaining("project.omni.yaml");
+    });
 });
 
 describe("+context @config (errors & env files)", () => {

@@ -59,6 +59,32 @@ export function dependencyChainSpec(): WorkspaceSpec {
 }
 
 /**
+ * One project config of every kind, for project listing / selection tests:
+ *
+ * - `app`, `lib`: runnable projects (`app` extends the two templates)
+ * - `tpl`: discovered, `base: true`
+ * - `shared-base`: reached only through `extends`, `base: true`
+ */
+export function mixedProjectConfigsSpec(): WorkspaceSpec {
+    return {
+        workspace: { projects: ["apps/**"] },
+        projects: {
+            "apps/app": {
+                name: "app",
+                extends: [
+                    "../tpl/project.omni.yaml",
+                    "../../shared/base.omni.yaml",
+                ],
+                tasks: { build: 'echo "app"' },
+            },
+            "apps/lib": { name: "lib", tasks: { build: 'echo "lib"' } },
+            "apps/tpl": { name: "tpl", base: true },
+            "shared/base.omni.yaml": { name: "shared-base", base: true },
+        },
+    };
+}
+
+/**
  * A base (template) project and a child that `extends` it - useful for config
  * merge / `extends` / `base: true` behaviors.
  */
