@@ -27,6 +27,7 @@ use trace::Level;
 use crate::{
     EnvLoader, EnvVarsMap, GetVarsArgs, build,
     env_loader::EnvCacheSys,
+    project_config_entry::is_runnable_project,
     utils::{EnvVarsOsMap, vars_os},
 };
 
@@ -92,12 +93,9 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
 
         let (ws_vars, ws_vars_os) = self.get_ws_vars_vars()?;
 
-        let filtered = project_configs.iter().filter(|config| {
-            !config.base
-                && project_paths.contains(
-                    config.file.path().expect("path should be resolved"),
-                )
-        });
+        let filtered = project_configs
+            .iter()
+            .filter(|config| is_runnable_project(config, &project_paths));
 
         let ws_extras = maps::map![
             "WORKSPACE_DIR".to_string() => root_dir.clone(),

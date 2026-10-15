@@ -204,32 +204,9 @@ impl<TSys: ContextSys> Context<TSys> {
         &self,
     ) -> Result<Vec<ProjectConfiguration>, ContextError> {
         let start = std::time::Instant::now();
-        let projects = self.workspace.projects.clone().normalize();
-        let project_paths = ProjectDiscovery::new(
-            self.root_dir(),
-            &projects.include,
-            &projects.exclude,
-        )
-        .discover_project_files()
-        .await?;
-
-        let project_paths = project_paths
-            .into_iter()
-            .filter_map(|p| match p {
-                DiscoveredPath::Real { file } => Some(file),
-                DiscoveredPath::Virtual { .. } => None,
-            })
-            .collect::<Vec<_>>();
-
-        let project_configs =
-            ProjectConfigLoader::<TSys>::new(&self.sys, self.root_dir())
-                .load_project_configs(&project_paths)
-                .await?;
-
-        let mut xt_graph = ExtensionGraph::from_nodes(project_configs)?;
-        let mut project_configs = xt_graph.get_or_process_all_nodes()?;
-
-        resolve_task_extensions_for_projects(&mut project_configs)?;
+        let project_paths = self.discover_project_paths().await?;
+        let loaded =
+            self.load_discovered_project_configs(project_paths).await?;
 
         log::info!(
             "{}",
@@ -237,7 +214,7 @@ impl<TSys: ContextSys> Context<TSys> {
                 .bold()
         );
 
-        Ok(project_configs)
+        Ok(loaded.configs)
     }
 
     #[cfg_attr(feature = "enable-tracing", tracing::instrument(level = Level::DEBUG, skip_all))]
@@ -246,14 +223,7 @@ impl<TSys: ContextSys> Context<TSys> {
         self,
     ) -> Result<LoadedContext<TSys>, ContextError> {
         let start = std::time::Instant::now();
-        let projects = self.workspace.projects.clone().normalize();
-        let project_paths = ProjectDiscovery::new(
-            self.root_dir(),
-            &projects.include,
-            &projects.exclude,
-        )
-        .discover_project_files()
-        .await?;
+        let project_paths = self.discover_project_paths().await?;
 
         let result = self.into_loaded_impl(project_paths).await;
 
@@ -297,23 +267,11 @@ impl<TSys: ContextSys> Context<TSys> {
         self,
         project_paths: Vec<DiscoveredPath>,
     ) -> Result<LoadedContext<TSys>, ContextError> {
-        let project_paths = project_paths
-            .into_iter()
-            .filter_map(|p| match p {
-                DiscoveredPath::Real { file } => Some(file),
-                DiscoveredPath::Virtual { .. } => None,
-            })
-            .collect::<Vec<_>>();
-
-        let project_configs =
-            ProjectConfigLoader::<TSys>::new(&self.sys, self.root_dir())
-                .load_project_configs(&project_paths)
-                .await?;
-
-        let mut xt_graph = ExtensionGraph::from_nodes(project_configs)?;
-        let mut project_configs = xt_graph.get_or_process_all_nodes()?;
-
-        resolve_task_extensions_for_projects(&mut project_configs)?;
+        let LoadedProjectConfigs {
+            configs: project_configs,
+            discovered_paths: project_paths,
+            extension_graph: xt_graph,
+        } = self.load_discovered_project_configs(project_paths).await?;
 
         let mut env_loader = self.create_env_loader();
 
@@ -338,6 +296,52 @@ impl<TSys: ContextSys> Context<TSys> {
         ExtractedDataValidator::new(false).validate(&extractions)?;
 
         Ok(LoadedContext::new(env_loader, self, extractions))
+    }
+
+    #[allow(clippy::result_large_err)]
+    async fn discover_project_paths(
+        &self,
+    ) -> Result<Vec<DiscoveredPath>, ContextError> {
+        let projects = self.workspace.projects.clone().normalize();
+        let project_paths = ProjectDiscovery::new(
+            self.root_dir(),
+            &projects.include,
+            &projects.exclude,
+        )
+        .discover_project_files()
+        .await?;
+
+        Ok(project_paths)
+    }
+
+    #[allow(clippy::result_large_err)]
+    async fn load_discovered_project_configs(
+        &self,
+        project_paths: Vec<DiscoveredPath>,
+    ) -> Result<LoadedProjectConfigs, ContextError> {
+        let discovered_paths = project_paths
+            .into_iter()
+            .filter_map(|p| match p {
+                DiscoveredPath::Real { file } => Some(file),
+                DiscoveredPath::Virtual { .. } => None,
+            })
+            .collect::<Vec<_>>();
+
+        let project_configs =
+            ProjectConfigLoader::<TSys>::new(&self.sys, self.root_dir())
+                .load_project_configs(&discovered_paths)
+                .await?;
+
+        let mut extension_graph = ExtensionGraph::from_nodes(project_configs)?;
+        let mut configs = extension_graph.get_or_process_all_nodes()?;
+
+        resolve_task_extensions_for_projects(&mut configs)?;
+
+        Ok(LoadedProjectConfigs {
+            configs,
+            discovered_paths,
+            extension_graph,
+        })
     }
 
     pub fn create_env_loader(&self) -> EnvLoader<TSys> {
@@ -491,6 +495,12 @@ fn get_remote_cache_configuration(
     log::info!("Remote caching is enabled");
 
     Ok(Some(rc))
+}
+
+struct LoadedProjectConfigs {
+    configs: Vec<ProjectConfiguration>,
+    discovered_paths: Vec<PathBuf>,
+    extension_graph: ExtensionGraph<ProjectConfiguration>,
 }
 
 #[allow(clippy::result_large_err)]
