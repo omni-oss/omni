@@ -1,9 +1,10 @@
 use clap::{ArgAction, Args, Subcommand};
 use derive_new::new;
-use omni_api::{OmniApi, ProjectListRequest};
+use omni_api::{OmniApi, ProjectListRequest, ProjectSelector};
 use omni_context::Context;
 use omni_messages::NoopSubscriber;
 use omni_tracing_subscriber::noop_subscriber;
+use owo_colors::OwoColorize as _;
 use serde::Serialize;
 use tracing_futures::WithSubscriber as _;
 
@@ -69,21 +70,24 @@ async fn run_print_config(
     ctx: &Context,
 ) -> eyre::Result<()> {
     let api = OmniApi::new_with_sys(ctx.clone(), NoopSubscriber);
-    let name = &command.args.project_name;
+    let selector = ProjectSelector::Name(command.args.project_name.clone());
 
     let result = if command.args.raw {
-        api.project_config(name)
+        api.project_config(selector)
             .with_subscriber(noop_subscriber())
             .await
     } else {
-        api.project_config(name).await
+        api.project_config(selector).await
     };
 
     match result {
-        Ok(config) => {
+        Ok(response) => {
+            for warning in &response.warnings {
+                eprintln!("{} {}", "warning:".yellow(), warning);
+            }
             omni_file_data_serde::to_writer(
                 &mut std::io::stdout(),
-                &config,
+                &response.config,
                 command.args.format.to_serde_format(),
             )?;
         }

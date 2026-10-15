@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 
 use omni_cache::{CacheStats, PrunedCacheEntry};
-use omni_configurations::ProjectConfiguration;
 use omni_context::{
     Context, ContextSys, LoadedContext, MaybeLoaded, WorkspaceInitConfig,
     get_root_dir,
@@ -30,7 +29,10 @@ use crate::{
             GeneratorValidateInputRequest, GeneratorValidateInputResponse,
         },
         hash::HashResponse,
-        project::{ProjectListEntry, ProjectListRequest},
+        project::{
+            ProjectConfigResponse, ProjectListEntry, ProjectListRequest,
+            ProjectSelector,
+        },
         task::{TaskRunRequest, TaskRunResponse},
     },
     setup_guard::SetupGuard,
@@ -433,17 +435,18 @@ where
             .await
     }
 
-    /// Return the full configuration for the named project.
+    /// Return the full configuration selected by `selector`.
     ///
-    /// Returns an error if no project with that name exists.
+    /// Returns an error if nothing matches, or if a name matches two or more
+    /// runnable projects.
     pub async fn project_config(
         &self,
-        name: &str,
-    ) -> eyre::Result<ProjectConfiguration> {
+        selector: ProjectSelector,
+    ) -> eyre::Result<ProjectConfigResponse> {
         let ctx = self.ctx.lock().await;
         crate::operations::project::handle_project_config(
             ctx.as_context(),
-            name,
+            selector,
         )
         .await
     }

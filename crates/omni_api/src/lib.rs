@@ -37,7 +37,10 @@ pub use operations::{
         PackInfoRequest, PackListRequest, PackListResponse, PackNodeInfo,
         PackTreeRequest,
     },
-    project::{ProjectListEntry, ProjectListRequest},
+    project::{
+        ProjectConfigResponse, ProjectListEntry, ProjectListRequest,
+        ProjectSelector,
+    },
     projection::{
         AppliedLinkInfo, BackupHandling, PlannedLinkInfo,
         ProjectionPruneRequest, ProjectionPruneResponse,

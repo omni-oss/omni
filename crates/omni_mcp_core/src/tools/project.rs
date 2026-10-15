@@ -1,4 +1,4 @@
-use omni_api::ProjectListRequest;
+use omni_api::{ProjectListRequest, ProjectSelector};
 use omni_context::ContextSys;
 use omni_generator::GeneratorSys;
 use omni_task_executor::TaskExecutorSys;
@@ -38,7 +38,11 @@ where
         &self,
         params: ProjectConfigParams,
     ) -> eyre::Result<ProjectConfigResult> {
-        let config = self.make_api()?.project_config(&params.name).await?;
+        let config = self
+            .make_api()?
+            .project_config(ProjectSelector::Name(params.name))
+            .await?
+            .config;
         let tasks = config
             .tasks
             .iter()

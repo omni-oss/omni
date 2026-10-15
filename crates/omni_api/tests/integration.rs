@@ -4,11 +4,11 @@
 //! constructs an `OmniApi` backed by that workspace, and asserts the expected
 //! behaviour of each operation.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use omni_api::{
-    EnvRequest, OmniApi, ProjectListEntry, ProjectListRequest, SchemaKind,
-    handle_config_schema,
+    EnvRequest, OmniApi, ProjectConfigResponse, ProjectListEntry,
+    ProjectListRequest, ProjectSelector, SchemaKind, handle_config_schema,
 };
 use omni_messages::NoopSubscriber;
 use omni_tracing_subscriber::TracingConfig;
@@ -289,8 +289,12 @@ async fn project_config_alpha() {
     write_workspace(tmp.path());
     let api = make_api(tmp.path());
 
-    let cfg = api.project_config("alpha").await.expect("project config");
-    assert_eq!(cfg.name, "alpha");
+    let resp = api
+        .project_config(ProjectSelector::Name("alpha".to_string()))
+        .await
+        .expect("project config");
+    assert_eq!(resp.config.name, "alpha");
+    assert!(resp.warnings.is_empty());
 }
 
 #[tokio::test]
@@ -299,8 +303,163 @@ async fn project_config_missing_returns_err() {
     write_workspace(tmp.path());
     let api = make_api(tmp.path());
 
-    let result = api.project_config("does_not_exist").await;
+    let result = api
+        .project_config(ProjectSelector::Name("does_not_exist".to_string()))
+        .await;
     assert!(result.is_err(), "should error for unknown project");
+}
+
+fn write_file(root: &Path, path: &str, contents: &str) {
+    let path = root.join(path);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(path, contents).unwrap();
+}
+
+fn by_name(name: &str) -> ProjectSelector {
+    ProjectSelector::Name(name.to_string())
+}
+
+fn by_path(root: &Path, path: &str) -> ProjectSelector {
+    ProjectSelector::Path(std::fs::canonicalize(root).unwrap().join(path))
+}
+
+fn config_file(resp: &ProjectConfigResponse, root: &Path) -> PathBuf {
+    resp.config
+        .file
+        .path()
+        .unwrap()
+        .strip_prefix(std::fs::canonicalize(root).unwrap())
+        .unwrap()
+        .to_path_buf()
+}
+
+#[tokio::test]
+async fn project_config_prefers_runnable_over_same_named_template() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    write_mixed_workspace(tmp.path());
+    write_file(
+        tmp.path(),
+        "apps/a-app-tpl/project.omni.yaml",
+        "name: app\nbase: true\n",
+    );
+    let api = make_api(tmp.path());
+
+    let resp = api.project_config(by_name("app")).await.expect("config");
+
+    assert_eq!(
+        config_file(&resp, tmp.path()),
+        Path::new("apps/app/project.omni.yaml")
+    );
+    assert!(resp.warnings.is_empty(), "{:?}", resp.warnings);
+}
+
+#[tokio::test]
+async fn project_config_rejects_duplicate_runnable_name() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    write_mixed_workspace(tmp.path());
+    write_file(tmp.path(), "apps/app2/project.omni.yaml", "name: app\n");
+    let api = make_api(tmp.path());
+
+    let message = api
+        .project_config(by_name("app"))
+        .await
+        .expect_err("duplicate runnable names must be rejected")
+        .to_string();
+
+    assert!(message.contains("duplicate project name"), "{message}");
+    assert!(message.contains("apps/app/project.omni.yaml"), "{message}");
+    assert!(message.contains("apps/app2/project.omni.yaml"), "{message}");
+    assert!(message.contains("--path"), "{message}");
+
+    let lib = api
+        .project_config(by_name("lib"))
+        .await
+        .expect("an unrelated name is unaffected");
+    assert_eq!(lib.config.name, "lib");
+}
+
+#[tokio::test]
+async fn project_config_picks_first_template_by_path_with_warning() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    write_mixed_workspace(tmp.path());
+    write_file(
+        tmp.path(),
+        "apps/b-tpl/project.omni.yaml",
+        "name: tpl\nbase: true\n",
+    );
+    let api = make_api(tmp.path());
+
+    let resp = api.project_config(by_name("tpl")).await.expect("config");
+
+    assert_eq!(
+        config_file(&resp, tmp.path()),
+        Path::new("apps/b-tpl/project.omni.yaml")
+    );
+    assert_eq!(resp.warnings.len(), 1, "{:?}", resp.warnings);
+    assert!(resp.warnings[0].contains("apps/tpl/project.omni.yaml"));
+    assert!(resp.warnings[0].contains("--path"));
+}
+
+#[tokio::test]
+async fn project_config_selects_by_path() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    write_mixed_workspace(tmp.path());
+    write_file(
+        tmp.path(),
+        "apps/b-tpl/project.omni.yaml",
+        "name: tpl\nbase: true\n",
+    );
+    write_file(
+        tmp.path(),
+        "apps/a-app-tpl/project.omni.yaml",
+        "name: app\nbase: true\n",
+    );
+    let api = make_api(tmp.path());
+
+    for path in [
+        "apps/b-tpl/project.omni.yaml",
+        "apps/tpl/project.omni.yaml",
+        "apps/a-app-tpl/project.omni.yaml",
+        "shared/common.omni.yaml",
+    ] {
+        let resp = api
+            .project_config(by_path(tmp.path(), path))
+            .await
+            .unwrap_or_else(|e| panic!("{path}: {e}"));
+        assert_eq!(config_file(&resp, tmp.path()), Path::new(path));
+        assert!(resp.warnings.is_empty());
+    }
+
+    let resp = api
+        .project_config(by_path(
+            tmp.path(),
+            "apps/lib/../tpl/./project.omni.yaml",
+        ))
+        .await
+        .expect("a path with . and .. segments must match");
+    assert_eq!(
+        config_file(&resp, tmp.path()),
+        Path::new("apps/tpl/project.omni.yaml")
+    );
+}
+
+#[tokio::test]
+async fn project_config_rejects_path_that_is_not_loaded() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    write_mixed_workspace(tmp.path());
+    write_file(tmp.path(), "stray.omni.yaml", "name: stray\n");
+    let api = make_api(tmp.path());
+
+    let message = api
+        .project_config(by_path(tmp.path(), "stray.omni.yaml"))
+        .await
+        .expect_err("a file that is not loaded must be rejected")
+        .to_string();
+
+    assert!(
+        message.contains("no loaded project configuration"),
+        "{message}"
+    );
 }
 
 // ── hash ──────────────────────────────────────────────────────────────────────
