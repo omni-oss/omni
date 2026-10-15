@@ -9,7 +9,7 @@ use omni_configurations::{
     LoadConfigError, LoadConfigErrorKind, ProjectConfiguration,
     TaskConfiguration, types::SingleOrMany,
 };
-use omni_types::Root;
+use omni_types::{OmniPath, Root};
 use path_clean::clean;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 use thiserror::Error;
@@ -51,6 +51,13 @@ impl<'a, TSys: ContextSys> ProjectConfigLoader<'a, TSys> {
         let root_dir = &self.root_dir;
 
         while let Some(conf) = to_process.pop() {
+            // A discovered config can also be queued as an extendee before its
+            // own discovered entry is popped, so skip anything already loaded.
+            let file: OmniPath = conf.path.clone().into();
+            if loaded.contains(&file) {
+                continue;
+            }
+
             let start_time = std::time::SystemTime::now();
 
             let mut project =
@@ -81,7 +88,7 @@ impl<'a, TSys: ContextSys> ProjectConfigLoader<'a, TSys> {
                 elapsed.as_millis()
             );
 
-            project.file = conf.path.clone().into();
+            project.file = file;
             let project_dir = conf.path.parent().ok_or_else(|| {
                 ProjectConfigLoaderErrorInner::NoParentDirFoundForPath(
                     conf.path.clone(),

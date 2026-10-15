@@ -899,6 +899,59 @@ mod tests {
         );
     }
 
+    /// A discovered project that is also `extends`-ed by another discovered
+    /// project must be loaded only once, regardless of which one the loader
+    /// processes first.
+    #[tokio::test]
+    async fn test_discovered_extendee_is_loaded_once() {
+        let sys = real_sys();
+        let tmp = tmp();
+        let root = tmp.path();
+
+        sys.fs_create_dir_all(root.join(cross_path("libs/aaa")))
+            .expect("can't create aaa dir");
+        sys.fs_create_dir_all(root.join(cross_path("libs/zzz")))
+            .expect("can't create zzz dir");
+
+        sys.fs_write(
+            root.join(cross_path("workspace.omni.yaml")),
+            "projects:\n  - libs/**\n",
+        )
+        .expect("can't write workspace config");
+
+        // `aaa` sorts before `zzz`, so `zzz` is processed first and pushes
+        // `aaa` again while its discovered entry is still pending.
+        sys.fs_write(
+            root.join(cross_path("libs/aaa/project.omni.yaml")),
+            "name: aaa\nbase: true\ntasks:\n  from-aaa: echo aaa\n",
+        )
+        .expect("can't write aaa config");
+
+        sys.fs_write(
+            root.join(cross_path("libs/zzz/project.omni.yaml")),
+            "name: zzz\nextends:\n  - ../aaa/project.omni.yaml\n",
+        )
+        .expect("can't write zzz config");
+
+        let context = ctx("testing", root, sys);
+
+        let configs = context
+            .load_project_configurations()
+            .await
+            .expect("can't load project configurations");
+        let mut names =
+            configs.iter().map(|c| c.name.as_str()).collect::<Vec<_>>();
+        names.sort();
+        assert_eq!(names, ["aaa", "zzz"]);
+
+        let loaded = context.into_loaded().await.expect("can't load projects");
+        let graph = loaded.get_project_graph().expect("can't get graph");
+        let zzz = graph
+            .get_project_by_name("zzz")
+            .expect("can't get zzz project");
+        assert!(zzz.tasks.contains_key("from-aaa"));
+    }
+
     /// A task marked `base` is neither discoverable nor runnable: it is absent
     /// from the emitted task set, while an unrelated sibling task is preserved.
     #[tokio::test]
