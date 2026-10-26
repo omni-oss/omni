@@ -107,10 +107,11 @@ async fn clone_at_annotated_tag_resolves_to_the_underlying_commit() {
         "clone must not report the annotated tag's object hash",
     );
 
+    let content = std::fs::read_to_string(dest_path.join("README.md"))
+        .expect("checked-out README");
+    let content = omni_utils::string::normalize_line_endings(&content)
+        .collect::<String>();
+
     // The tagged content should be checked out into the worktree.
-    assert_eq!(
-        std::fs::read_to_string(dest_path.join("README.md"))
-            .expect("checked-out README"),
-        "hello\n",
-    );
+    assert_eq!(content, "hello\n",);
 }

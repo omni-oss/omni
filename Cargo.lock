@@ -6367,6 +6367,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9737e026353e5cd0736f98eddae28665118eb6f6600902a7f50db585621fecb6"
 
 [[package]]
+name = "normalize-line-endings"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "61807f77802ff30975e01f4f071c8ba10c022052f98b3294119f3e615d13e5be"
+
+[[package]]
 name = "noyalib"
 version = "0.0.58"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7256,6 +7262,7 @@ dependencies = [
  "eyre",
  "gix",
  "log",
+ "omni_utils",
  "rstest",
  "rstest_reuse",
  "strum 0.28.0",
@@ -8021,6 +8028,7 @@ dependencies = [
  "bs58",
  "globset",
  "maps",
+ "normalize-line-endings",
  "path-clean",
  "pathdiff",
  "system_traits",

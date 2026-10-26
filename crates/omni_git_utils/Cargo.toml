@@ -33,3 +33,4 @@ system_traits = { workspace = true, features = [
     "real-sync",
     "real-async-tokio",
 ] }
+omni_utils = { workspace = true }
