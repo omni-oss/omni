@@ -24,8 +24,10 @@ pub struct MetaConfiguration(pub DictConfig<DynValue>);
 impl MetaConfiguration {
     pub fn into_expression_context(
         self,
-    ) -> Result<omni_expressions::Context<'static>, omni_expressions::Error>
-    {
+    ) -> Result<
+        omni_expressions::Context<'static, 'static>,
+        omni_expressions::Error,
+    > {
         let mut ctx = omni_expressions::Context::default();
 
         for (k, v) in self.0.iter() {

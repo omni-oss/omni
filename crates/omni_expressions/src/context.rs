@@ -1,15 +1,13 @@
-use std::borrow::Cow;
-
-use cel::{common::value::Val, objects::TryIntoValue};
+use cel::{common::value::CowVal, objects::TryIntoValue};
 
 use crate::ErrorInner;
 
 #[derive(Default)]
-pub struct Context<'a> {
-    pub(crate) inner: cel::Context<'a>,
+pub struct Context<'p, 'v> {
+    pub(crate) inner: cel::Context<'p, 'v>,
 }
 
-impl<'a> Context<'a> {
+impl<'p, 'v> Context<'p, 'v> {
     pub fn add_variable<S, V>(
         &mut self,
         name: S,
@@ -28,13 +26,14 @@ impl<'a> Context<'a> {
     pub fn get_variable<S>(
         &self,
         name: S,
-    ) -> Result<Cow<'_, dyn Val>, crate::Error>
+    ) -> Result<CowVal<'_, '_>, crate::Error>
     where
         S: AsRef<str>,
     {
-        Ok(self
+        let value = self
             .inner
             .get_variable(name.as_ref())
-            .ok_or_else(|| ErrorInner::new_variable_not_found(name.as_ref()))?)
+            .ok_or_else(|| ErrorInner::new_variable_not_found(name.as_ref()))?;
+        Ok(value)
     }
 }

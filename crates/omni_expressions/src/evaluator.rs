@@ -15,9 +15,9 @@ pub fn parse(expression: impl AsRef<str>) -> Result<Evaluator, Error> {
 
 impl Evaluator {
     /// Evaluates the expression to and coerces it to a boolean including errors.
-    pub fn coerce_to_bool<'a>(
+    pub fn coerce_to_bool<'p, 'v>(
         &self,
-        context: &Context<'a>,
+        context: &Context<'p, 'v>,
     ) -> Result<bool, Error> {
         let context = &context.inner;
         let result = self.0.execute(context)?;

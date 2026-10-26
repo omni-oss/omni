@@ -12,7 +12,7 @@ fn parse(
 #[inline(always)]
 fn evaluate(
     evaluator: &omni_expressions::Evaluator,
-    ctx: &Context<'_>,
+    ctx: &Context<'_, '_>,
 ) -> bool {
     evaluator.coerce_to_bool(ctx).expect("should have value")
 }
@@ -25,7 +25,7 @@ fn simple_expression(n: usize) -> String {
     exprs.join("&&")
 }
 
-fn simple_context() -> Context<'static> {
+fn simple_context() -> Context<'static, 'static> {
     Context::default()
 }
 
@@ -38,7 +38,7 @@ fn variables_expression(n: usize) -> String {
     exprs.join("&&")
 }
 
-fn variables_context(n: usize) -> Context<'static> {
+fn variables_context(n: usize) -> Context<'static, 'static> {
     let mut ctx = Context::default();
 
     for i in 0..n {
@@ -51,7 +51,7 @@ fn variables_context(n: usize) -> Context<'static> {
     ctx
 }
 
-fn functions_context(n: usize) -> Context<'static> {
+fn functions_context(n: usize) -> Context<'static, 'static> {
     let mut ctx = Context::default();
 
     for i in 0..n {

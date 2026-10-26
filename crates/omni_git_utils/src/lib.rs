@@ -6,7 +6,11 @@ use std::{collections::HashSet, path::Path, sync::LazyLock};
 
 use derive_new::new;
 pub use error::Error;
-use gix::progress::Discard;
+use gix::{
+    index, interrupt,
+    progress::{self, Discard},
+    worktree::{self, state::checkout::Options},
+};
 pub use sys::GitUtilsSys;
 use url::Url;
 
@@ -27,11 +31,11 @@ pub async fn clone_repo(
         gix::prepare_clone(uri, destination).map_err(gix::Error::from_error)?;
 
     let (mut checkout, _outcome) = prepare_clone
-        .fetch_then_checkout(Discard, &gix::interrupt::IS_INTERRUPTED)
+        .fetch_then_checkout(Discard, &interrupt::IS_INTERRUPTED)
         .map_err(gix::Error::from_error)?;
 
-    let (repo, _) = checkout
-        .main_worktree(Discard, &gix::interrupt::IS_INTERRUPTED)
+    let (repo, _outcome) = checkout
+        .main_worktree(Discard, &interrupt::IS_INTERRUPTED)
         .map_err(gix::Error::from_error)?;
 
     // `rev` may resolve to an annotated tag (or a chain of tags) rather than a
@@ -46,12 +50,9 @@ pub async fn clone_repo(
     let oid = commit.id;
     let tree_id = commit.tree().map_err(gix::Error::from_error)?.id();
 
-    let mut index_state = gix::index::State::from_tree(
-        &tree_id,
-        &repo.objects,
-        Default::default(),
-    )
-    .map_err(gix::Error::from)?;
+    let mut index_state =
+        index::State::from_tree(&tree_id, &repo.objects, Default::default())
+            .map_err(gix::Error::from)?;
 
     repo.reference(
         "HEAD",
@@ -65,17 +66,19 @@ pub async fn clone_repo(
         .workdir()
         .ok_or_else(|| eyre::eyre!("repository has no workdir"))?;
 
-    gix::worktree::state::checkout(
+    let (pipeline, _) = repo.filter_pipeline(Some(oid))?;
+    let (filters, _) = pipeline.into_parts();
+
+    worktree::state::checkout(
         &mut index_state,
         workdir,
         repo.objects.clone(),
-        &gix::progress::Discard,
-        &gix::progress::Discard,
-        &gix::interrupt::IS_INTERRUPTED,
-        gix::worktree::state::checkout::Options {
+        &progress::Discard,
+        &progress::Discard,
+        &interrupt::IS_INTERRUPTED,
+        Options {
             overwrite_existing: true, // overwrite files from the HEAD checkout
-            destination_is_initially_empty: false,
-            ..Default::default()
+            ..Options::new(filters)
         },
     )
     .map_err(gix::Error::from)?;

@@ -25,7 +25,7 @@ serde_path_to_error = { version = "^0.1.20" }
 sys_traits = { version = "^0.1.29", features = ["real"] }
 system_traits = { path = "./crates/system_traits" }
 async-trait = { version = "^0.1.92" }
-serde_json = { version = "^1.0.151" }
+serde_json = { version = "^1.0.154" }
 serde_bytes = { version = "^0.11.19" }
 trace = { path = "./crates/trace" }
 tracing = { version = "^0.1.44" }
@@ -45,7 +45,7 @@ derive_more = { version = "^2.1.1", features = ["full"] }
 derive-new = { version = "^0.7.0" }
 strum = { version = "^0.28.0", features = ["derive"] }
 merge = { version = "0.2.0" }
-tokio = { version = "^1.53.1", features = [
+tokio = { version = "^1.54.1", features = [
     "rt",
     "rt-multi-thread",
     "tracing",
@@ -60,7 +60,7 @@ tokio = { version = "^1.53.1", features = [
     "io-util",
 ] }
 tokio-stream = { version = "^0.1.19", features = ["full"] }
-tokio-util = { version = "^0.7.19", features = ["compat"] }
+tokio-util = { version = "^0.7.20", features = ["compat"] }
 reqwest = { version = "^0.13.5", features = [
     "charset",
     "blocking",
@@ -77,20 +77,20 @@ clap_complete = { version = "^4.6.11" }
 globset = { version = "^0.4" }
 shadow-rs = { version = "^2.0.0", default-features = false }
 embed-manifest = { version = "^1.5" }
-schemars = { version = "^1.2.2", features = ["indexmap2", "either1", "url2"] }
-noyalib = { version = "^0.0.51" }
+schemars = { version = "^1.2.3", features = ["indexmap2", "either1", "url2"] }
+noyalib = { version = "^0.0.58" }
 ignore = { version = "^0.4.33" }
 regex = { version = "^1.13.1" }
-lazy-regex = { version = "^3.6.1" }
+lazy-regex = { version = "^3.6.2" }
 env = { path = "./crates/env" }
 env_loader = { path = "./crates/env_loader" }
 petgraph = { version = "^0.8.3", features = ["serde-1", "rayon"] }
 omni_core = { path = "./crates/omni_core" }
 config_utils = { path = "./crates/config_utils" }
-toml = { version = "^1.1.6" }
-uuid = { version = "^1.26.1", features = ["v4", "v7", "serde"] }
+toml = { version = "^1.1.8" }
+uuid = { version = "^1.29.0", features = ["v4", "v7", "serde"] }
 url = { version = "^2.5.8", features = ["serde"] }
-parking_lot = { version = "^0.12.5" }
+parking_lot = { version = "^0.13.0" }
 bincode-next = { version = "^3.1.1", features = ["serde"] }
 dir_walker = { path = "./crates/dir_walker" }
 which = { version = "^8.0.6" }
@@ -114,7 +114,7 @@ mockall = { version = "^0.15.0" }
 ntest = { version = "^0.10.0" }
 bytes = { version = "^1.12.1" }
 byteorder = { version = "^1.5.0" }
-rust-embed = { version = "8.12.0", features = [
+rust-embed = { version = "8.13.0", features = [
     "compression",
     "include-exclude",
     "deterministic-timestamps",
@@ -131,7 +131,7 @@ dhat = { version = "^0.3.3" }
 enum-map = { version = "^3.1.0", features = ["serde", "bytemuck"] }
 portable-pty = { version = "^0.9.0" }
 terminal_size = { version = "^0.4.4" }
-rmcp = { version = "^3.5.0", features = ["server", "macros", "transport-io"] }
+rmcp = { version = "^3.7.0", features = ["server", "macros", "transport-io"] }
 rs_merkle = { version = "^1.5.0" }
 omni_cache = { path = "./crates/omni_cache" }
 omni_hasher = { path = "./crates/omni_hasher" }
@@ -139,17 +139,16 @@ derive_builder = { version = "^0.20.2" }
 blake3 = { version = "^1.8.7" }
 tempfile = { version = "^3.27.0" }
 bs58 = { version = "^0.5.1" }
-yoke = { version = "^0.8.3", features = ["derive"] }
+yoke = { version = "^0.8.4", features = ["derive"] }
 owo-colors = { version = "^4.4.0" }
 tiny-gradient = { version = "^0.1.0" }
 omni_expressions = { path = "./crates/omni_expressions" }
 omni_cli_core = { path = "./crates/omni_cli_core" }
-cel = { version = "^0.14.5", features = [
+cel = { version = "^0.15.0", features = [
     "chrono",
     "json",
     "regex",
     "bytes",
-    "structs",
 ] }
 omni_test_utils = { path = "./crates/omni_test_utils" }
 crossbeam-channel = { version = "^0.5.17" }
@@ -206,7 +205,7 @@ nix = { version = "^0.31.3" }
 base64 = { version = "^0.23.1" }
 clap_declspec = { path = "./crates/clap_declspec" }
 getset = { version = "^0.1.7" }
-either = { version = "^1.18.0", features = ["serde"] }
+either = { version = "^1.19.0", features = ["serde"] }
 # Pinned to 0.30.0: ratatui 0.30.1 requires ratatui-widgets ^0.3.1, whose
 # blanket `impl<T: Into<Text>> From<T>` triggers a coherence conflict with the
 # `time` crate. 0.30.0 uses the working ratatui-widgets 0.3.0. Revisit once the
@@ -249,11 +248,11 @@ axum-extra = { version = "^0.12.6", features = [
     "error-response",
 ] }
 axum-test = { version = "^21.1.0", features = ["all"] }
-aws-config = { version = "^1.12.0" }
-aws-sdk-s3 = { version = "^1.152.0" }
-aws-credential-types = { version = "^1.3.0" }
-aws-types = { version = "^1.6.0" }
-lru = { version = "^0.18.5" }
+aws-config = { version = "^1.13.0" }
+aws-sdk-s3 = { version = "^1.155.0" }
+aws-credential-types = { version = "^1.3.1" }
+aws-types = { version = "^1.7.0" }
+lru = { version = "^0.19.0" }
 utoipa = { version = "^6.0.0", features = [
     "indexmap",
     "url",
@@ -270,7 +269,7 @@ flate2 = { version = "^1.1.10", features = [
     "zlib-rs",
 ], default-features = false }
 tar = { version = "^0.4.46" }
-keyring-core = { version = "^1.0.0", features = ["sample"] }
+keyring-core = { version = "^1.0.1", features = ["sample"] }
 apple-native-keyring-store = { version = "^1.0.2", features = ["keychain"] }
 windows-native-keyring-store = { version = "^1.1.0" }
 zbus-secret-service-keyring-store = { version = "^1.0.1", features = [
@@ -280,7 +279,7 @@ linux-keyutils-keyring-store = { version = "^1.0.0" }
 machine-uid = { version = "^0.6.0" }
 rand = { version = "^0.10.3" }
 ring = { version = "^0.17.14" }
-gix = { version = "^0.88.0", features = [
+gix = { version = "^0.90.0", features = [
     "blocking-network-client",
     "blocking-http-transport-reqwest-rust-tls",
 ] }
@@ -312,15 +311,15 @@ bridge_rpc_core = { path = "./crates/bridge_rpc_core" }
 cruet = { version = "^1.0.0" }
 scopeguard = { version = "^1.2.0" }
 mimalloc = { version = "^0.1.52", default-features = false }
-bon = { version = "^3.10.1" }
+bon = { version = "^3.10.3" }
 paste = { version = "^1.0" }
-rstest = { version = "^0.27.0" }
-rstest_reuse = { version = "^0.7.0" }
+rstest = { version = "^0.28.0" }
+rstest_reuse = { version = "^0.7.1" }
 fastrand = { version = "^2.5.0" }
 directories = { version = "^6.0.0" }
 target-lexicon = { version = "^0.13.5" }
 # nom = { version = "^8.0.0" }
-enumset = { version = "^1.1.14", features = ["serde", "proc-macro-crate"] }
+enumset = { version = "^1.1.15", features = ["serde", "proc-macro-crate"] }
 indicatif = { version = "^0.18.6" }
 comfy-table = { version = "^8.0.1", features = ["custom_styling"] }
 
