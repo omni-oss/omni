@@ -55,38 +55,31 @@ fn run(mut cmd: Command, spec: &OsSandboxSpec) -> std::process::Output {
     cmd.output().expect("spawning the confined child failed")
 }
 
-/// Like [`run`], but tolerates the spawn *itself* failing — when Landlock denies
-/// `execve` of the target binary, the child never starts and the parent sees an
-/// error rather than a non-zero exit. Returns `true` iff the program ran to a
-/// successful exit.
-/// Whether `cmd` (confined by `spec`) runs to a successful exit.
-///
-/// When Landlock denies `execve` the child never starts and the parent sees an
-/// error rather than a non-zero exit. Freshly-written binaries can also fail to
-/// exec *transiently* under heavy parallel load (e.g. `ETXTBSY`, or a not-yet
-/// settled page cache), so a genuinely-executable program is retried a few
-/// times: a program that is actually denied fails every attempt (returning
-/// `false`), while a runnable one succeeds on some attempt.
-fn ran_successfully(
+/// Preserve spawn errors and child diagnostics, retrying only `ETXTBSY` from
+/// execution of a freshly copied binary. Permission/loader errors and non-zero
+/// exits are not transient successes and must not be hidden by a boolean.
+fn executable_output(
     cmd_fn: impl Fn() -> Command,
-    spec: &OsSandboxSpec,
-) -> bool {
-    for attempt in 0..5 {
+    spec: Option<&OsSandboxSpec>,
+) -> std::io::Result<std::process::Output> {
+    for attempt in 0..=4 {
         let mut cmd = cmd_fn();
         cmd.stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        install_os_sandbox(&mut cmd, spec).expect("installing the sandbox");
-        if let Ok(out) = cmd.output()
-            && out.status.success()
-        {
-            return true;
+        if let Some(spec) = spec {
+            install_os_sandbox(&mut cmd, spec)?;
         }
-        if attempt < 4 {
-            std::thread::sleep(std::time::Duration::from_millis(50));
+        match cmd.output() {
+            Err(err)
+                if err.raw_os_error() == Some(libc::ETXTBSY) && attempt < 4 =>
+            {
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            result => return result,
         }
     }
-    false
+    unreachable!("the last attempt returns its result")
 }
 
 #[test]
@@ -304,10 +297,31 @@ fn landlock_gates_execution_by_the_binary_directory_grant() {
     // preserves the executable mode bits on Unix, so both copies are runnable in
     // the absence of a sandbox; the loader and shared libraries they need live
     // under the baseline system prefixes `restrict` always grants.
-    let granted_bin = granted.join("prog");
-    let offlimits_bin = offlimits.join("prog");
+    // Preserve argv[0]'s basename: a multicall implementation of `cat` may
+    // dispatch by that name and reject an otherwise runnable copy named `prog`.
+    let granted_bin = granted.join("cat");
+    let offlimits_bin = offlimits.join("cat");
     fs::copy(&cat, &granted_bin).unwrap();
     fs::copy(&cat, &offlimits_bin).unwrap();
+
+    let cat_null = |binary: &Path| {
+        let mut c = Command::new(binary);
+        c.arg("/dev/null");
+        c
+    };
+    // Prove the fixtures work before attributing any failure to Landlock (e.g.
+    // a noexec temporary filesystem or a missing loader breaks both copies).
+    for binary in [&granted_bin, &offlimits_bin] {
+        let out = executable_output(|| cat_null(binary), None).unwrap_or_else(
+            |err| {
+                panic!("unconfined fixture {binary:?} failed to spawn: {err:?}")
+            },
+        );
+        assert!(
+            out.status.success(),
+            "unconfined fixture {binary:?} failed: {out:?}"
+        );
+    }
 
     // Grant read/execute for the `granted` directory only — exactly what the
     // runner does for an allowed program's resolved binary directory.
@@ -321,30 +335,31 @@ fn landlock_gates_execution_by_the_binary_directory_grant() {
 
     // (1) A program whose directory is granted can be executed. `cat /dev/null`
     // reads a baseline-granted device and exits 0.
+    let out = executable_output(|| cat_null(&granted_bin), Some(&spec))
+        .unwrap_or_else(|err| {
+            panic!(
+                "granted executable {granted_bin:?} failed to spawn under \
+                 Landlock ABI {}: {err:?}",
+                landlock_sandbox::abi_version()
+            )
+        });
     assert!(
-        ran_successfully(
-            || {
-                let mut c = Command::new(&granted_bin);
-                c.arg("/dev/null");
-                c
-            },
-            &spec
-        ),
-        "a program in a granted directory must be executable under the sandbox"
+        out.status.success(),
+        "a program in a granted directory must be executable under the sandbox; \
+         status: {}; stderr: {}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr)
     );
 
     // (2) An identical program in a directory that is *not* granted cannot be
     // executed: Landlock denies the `execve` and the child never starts.
-    assert!(
-        !ran_successfully(
-            || {
-                let mut c = Command::new(&offlimits_bin);
-                c.arg("/dev/null");
-                c
-            },
-            &spec
-        ),
-        "a program outside every granted directory must be denied execution"
+    let err = executable_output(|| cat_null(&offlimits_bin), Some(&spec))
+        .expect_err("a program outside every granted directory must not start");
+    assert_eq!(
+        err.raw_os_error(),
+        Some(libc::EACCES),
+        "expected Landlock execution denial for {offlimits_bin:?}, not an \
+         unrelated spawn failure: {err:?}"
     );
 }
 

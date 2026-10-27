@@ -1306,17 +1306,41 @@ mod tests {
             connect_ports: Vec::new(),
             confine: false,
         };
-        let mut command = Command::new(&cmd);
-        command
-            .current_dir(&dir)
-            .arg("/c")
-            .arg("exit")
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null());
+        let command = || {
+            let mut command = Command::new(&cmd);
+            command
+                .current_dir(&dir)
+                // Do not execute machine/user Command Processor AutoRun hooks:
+                // this fixture should only test launching and ACL cleanup.
+                .arg("/d")
+                .arg("/c")
+                .arg("exit 0")
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null());
+            command
+        };
+        // Separate ordinary command/cwd failures from AppContainer failures.
+        let status = command().status().unwrap_or_else(|err| {
+            panic!(
+                "unconfined fixture failed: program={cmd:?}, cwd={dir:?}, \
+                 cwd_utf16_len={}, error={err:?}",
+                dir.as_os_str().encode_wide().count()
+            )
+        });
+        assert!(status.success(), "unconfined fixture failed: {status}");
         let (mut child, guard) =
-            spawn(&mut command, &spec).expect("confined spawn failed");
-        child.wait().expect("waiting on the confined child failed");
+            spawn(&mut command(), &spec).unwrap_or_else(|err| {
+                panic!(
+                    "confined spawn failed after the unconfined fixture \
+                     succeeded: program={cmd:?}, cwd={dir:?}, \
+                     cwd_utf16_len={}, error={err:?}",
+                    dir.as_os_str().encode_wide().count()
+                )
+            });
+        let status =
+            child.wait().expect("waiting on the confined child failed");
+        assert!(status.success(), "confined fixture failed: {status}");
 
         // The grant must still be on disk while the guard lives (a running/
         // just-exited child must never lose a grant early).
