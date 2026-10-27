@@ -202,17 +202,34 @@ pub fn topmost_dirs<'a>(
 
     'outer: for dir in dirs {
         // If dir is already contained in an existing topmost dir, skip it
-        if topmost_dirs.iter().any(|&t| starts_with_path(dir, t)) {
+        if topmost_dirs.iter().any(|&t| walk_root_contains(t, dir)) {
             continue 'outer;
         }
 
         // Remove any existing topmost dir that is inside this dir
-        topmost_dirs.retain(|&t| !starts_with_path(t, dir));
+        topmost_dirs.retain(|&t| !walk_root_contains(dir, t));
 
         topmost_dirs.push(dir);
     }
 
     topmost_dirs
+}
+
+fn walk_root_contains(base: &Path, path: &Path) -> bool {
+    if base == path {
+        return true;
+    }
+    // A textual prefix is not containment for `/project/../sibling`. Keep
+    // these roots rather than dropping a sibling's walk or lexically cleaning
+    // `..`, which could change its meaning when a prefix contains a symlink.
+    if base
+        .components()
+        .chain(path.components())
+        .any(|c| c == std::path::Component::ParentDir)
+    {
+        return false;
+    }
+    starts_with_path(path, base)
 }
 
 pub fn path_safe(text: &str) -> String {
@@ -267,6 +284,28 @@ mod tests {
         let result = remove_globs(path);
 
         assert_eq!(result, Path::new("/test"));
+    }
+
+    #[test]
+    fn topmost_dirs_preserves_parent_relative_sibling_roots_in_either_order() {
+        let sys = InMemorySys::default();
+        sys.fs_create_dir_all("/root/project").unwrap();
+        sys.fs_create_dir_all("/root/project/../shared").unwrap();
+        let project = PathBuf::from("/root/project/local.txt");
+        let sibling = PathBuf::from("/root/project/../shared/*.txt");
+        for paths in [
+            vec![project.clone(), sibling.clone()],
+            vec![sibling.clone(), project.clone()],
+        ] {
+            let roots = topmost_dirs(sys.clone(), &paths, Path::new("/root"));
+            assert_eq!(
+                roots.len(),
+                2,
+                "roots must not shadow each other: {roots:?}"
+            );
+            assert!(roots.contains(&Path::new("/root/project")));
+            assert!(roots.contains(&Path::new("/root/project/../shared")));
+        }
     }
 
     #[test]

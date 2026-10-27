@@ -1330,6 +1330,189 @@ mod tests {
         );
     }
 
+    async fn assert_collected_scope(
+        root: &Path,
+        project: &Project,
+        expected_inputs: &[&Path],
+        expected_outputs: &[&Path],
+    ) -> DefaultHash {
+        let cache_dir = fresh_cache_dir(root);
+        let collector = Collector::new(root, &cache_dir, RealSys);
+        let infos = [project.info()];
+        let results = collector
+            .collect(
+                &infos,
+                &CollectConfig {
+                    input_files: true,
+                    output_files: true,
+                    digests: true,
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("collect sibling paths");
+        let result = &results[0];
+        for (files, expected) in [
+            (&result.input_files, expected_inputs),
+            (&result.output_files, expected_outputs),
+        ] {
+            let files = files.as_ref().expect("files requested");
+            let mut actual = files
+                .iter()
+                .map(|file| {
+                    std::fs::canonicalize(file.resolve(&result.roots)).unwrap()
+                })
+                .collect::<Vec<_>>();
+            let mut expected = expected
+                .iter()
+                .map(|file| std::fs::canonicalize(file).unwrap())
+                .collect::<Vec<_>>();
+            actual.sort();
+            expected.sort();
+            assert_eq!(actual, expected, "patterns: {:?}", project.input_files,);
+        }
+        result.digest.expect("digest requested")
+    }
+
+    #[tokio::test]
+    async fn collects_sibling_paths_with_and_without_local_inputs() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path();
+        let local = root.join("proj/local.txt");
+        write_file(&local, "local");
+        let shared = root.join("shared/data.txt");
+        let patterns = [
+            "../shared/data.txt".parse().unwrap(),
+            "../shared/*.txt".parse().unwrap(),
+            "@project/../shared/*.txt".parse().unwrap(),
+            "@workspace/shared/*.txt".parse().unwrap(),
+            OmniPath::new(shared.clone()),
+            OmniPath::new(root.join("shared/*.txt")),
+        ];
+        for pattern in patterns {
+            for include_local in [false, true] {
+                write_file(&shared, "original");
+                let mut project = Project::new(root, "proj");
+                project.input_files = vec![pattern.clone()];
+                project.output_files = vec![pattern.clone()];
+                let mut expected_inputs = vec![shared.as_path()];
+                if include_local {
+                    project.input_files.push(OmniPath::new("local.txt"));
+                    expected_inputs.push(local.as_path());
+                }
+                let before = assert_collected_scope(
+                    root,
+                    &project,
+                    &expected_inputs,
+                    &[&shared],
+                )
+                .await;
+                write_file(
+                    &shared,
+                    "changed sibling content, with a different size",
+                );
+                let after = assert_collected_scope(
+                    root,
+                    &project,
+                    &expected_inputs,
+                    &[&shared],
+                )
+                .await;
+                assert_ne!(
+                    before, after,
+                    "sibling input must affect the digest"
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn parent_relative_and_absolute_paths_outside_workspace_are_excluded()
+    {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path().join("workspace");
+        write_file(&root.join("proj/local.txt"), "local");
+        let external = temp.path().join("external/data.txt");
+        let patterns = [
+            "../../external/data.txt".parse().unwrap(),
+            "../../external/*.txt".parse().unwrap(),
+            "@project/../../external/*.txt".parse().unwrap(),
+            "@workspace/../external/*.txt".parse().unwrap(),
+            OmniPath::new(external.clone()),
+            OmniPath::new(temp.path().join("external/*.txt")),
+        ];
+        for pattern in patterns {
+            write_file(&external, "external");
+            let mut project = Project::new(&root, "proj");
+            project.input_files = vec![pattern.clone()];
+            project.output_files = vec![pattern];
+            let config = CollectConfig {
+                input_files: true,
+                output_files: true,
+                digests: true,
+                ..Default::default()
+            };
+            let before =
+                collect_one(&root, &fresh_cache_dir(&root), &project, &config)
+                    .await;
+            assert!(as_set(&before.input_files).is_empty());
+            assert!(as_set(&before.output_files).is_empty());
+            write_file(&external, "external edit must not enter the digest");
+            let after =
+                collect_one(&root, &fresh_cache_dir(&root), &project, &config)
+                    .await;
+            assert!(as_set(&after.input_files).is_empty());
+            assert!(as_set(&after.output_files).is_empty());
+            assert_eq!(before.digest, after.digest);
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn symlink_to_sibling_directory_collects_inputs_and_outputs() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path();
+        let shared = root.join("shared/data.txt");
+        write_file(&shared, "original");
+        symlink(&root.join("shared"), &root.join("proj/linked"));
+        let mut project = Project::new(root, "proj");
+        project.input_files = vec![OmniPath::new("linked/*.txt")];
+        project.output_files = project.input_files.clone();
+        let before =
+            assert_collected_scope(root, &project, &[&shared], &[&shared])
+                .await;
+        write_file(&shared, "edited sibling content behind a symlink");
+        let after =
+            assert_collected_scope(root, &project, &[&shared], &[&shared])
+                .await;
+        assert_ne!(before, after);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn parent_components_after_symlink_keep_filesystem_meaning() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path();
+        let local = root.join("proj/local.txt");
+        let shared = root.join("target/shared/data.txt");
+        write_file(&local, "local");
+        write_file(&shared, "real target");
+        write_file(
+            &root.join("proj/shared/wrong.txt"),
+            "lexical cleaning trap",
+        );
+        std::fs::create_dir_all(root.join("target/child")).unwrap();
+        symlink(&root.join("target/child"), &root.join("proj/linked"));
+        let mut project = Project::new(root, "proj");
+        project.input_files = vec![
+            OmniPath::new("local.txt"),
+            OmniPath::new("linked/../shared/*.txt"),
+        ];
+        project.output_files = vec![OmniPath::new("linked/../shared/*.txt")];
+        assert_collected_scope(root, &project, &[&local, &shared], &[&shared])
+            .await;
+    }
+
     #[cfg(unix)]
     fn symlink(target: &Path, link: &Path) {
         if let Some(parent) = link.parent() {
