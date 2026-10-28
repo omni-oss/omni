@@ -381,6 +381,7 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
                     &mut match_bases,
                     &roots,
                     &mut output_patterns,
+                    &self.sys,
                 )?;
 
                 output_files_globset = Some(include_set(
@@ -394,6 +395,7 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
                     project.project_dir,
                     &roots,
                     &mut output_exclude_patterns,
+                    &self.sys,
                 )?;
                 output_files_exclude_globset = Some(include_set(
                     &output_exclude_patterns,
@@ -414,6 +416,7 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
                     &mut match_bases,
                     &roots,
                     &mut input_patterns,
+                    &self.sys,
                 )?;
 
                 input_files_globset =
@@ -425,6 +428,7 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
                     project.project_dir,
                     &roots,
                     &mut input_exclude_patterns,
+                    &self.sys,
                 )?;
                 input_files_exclude_globset = Some(include_set(
                     &input_exclude_patterns,
@@ -718,6 +722,45 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
     }
 }
 
+// Context canonicalizes workspace/project roots on Windows, yielding verbatim
+// paths. User-supplied absolute patterns need the same representation as the
+// walker, both for the match-base prefilter and the compiled glob. Canonicalize
+// only the literal prefix: a glob itself cannot be canonicalized. Leave paths
+// already in the walker's namespace alone (including relative symlink paths).
+fn align_absolute_pattern(
+    path: PathBuf,
+    _project_dir: &Path,
+    _sys: &impl FsCanonicalize,
+) -> PathBuf {
+    #[cfg(windows)]
+    {
+        use std::path::{Component, Prefix};
+
+        let is_verbatim = |p: &Path| {
+            matches!(
+                p.components().next(),
+                Some(Component::Prefix(prefix)) if matches!(
+                    prefix.kind(),
+                    Prefix::Verbatim(_) | Prefix::VerbatimDisk(_) | Prefix::VerbatimUNC(_, _)
+                )
+            )
+        };
+        if is_verbatim(_project_dir) && !is_verbatim(&path) {
+            let base = remove_globs(&path);
+            if let Ok(canonical) = _sys.fs_canonicalize(base) {
+                let suffix =
+                    path.strip_prefix(base).expect("literal glob prefix");
+                return if suffix.as_os_str().is_empty() {
+                    canonical
+                } else {
+                    canonical.join(suffix)
+                };
+            }
+        }
+    }
+    path
+}
+
 fn populate_includes_and_patterns(
     files: &[OmniPath],
     project_dir: &Path,
@@ -725,6 +768,7 @@ fn populate_includes_and_patterns(
     match_bases: &mut Vec<PathBuf>,
     roots: &RootMap,
     patterns: &mut Vec<String>,
+    sys: &impl FsCanonicalize,
 ) -> Result<(), Error> {
     trace::trace!(
         files = ?files,
@@ -741,6 +785,7 @@ fn populate_includes_and_patterns(
             p.to_path_buf()
         };
 
+        let path = align_absolute_pattern(path, project_dir, sys);
         patterns.push(path.to_string_lossy().into_owned());
         // The literal prefix bounds where this glob can match: any matching
         // path must live under it.
@@ -760,6 +805,7 @@ fn resolve_exclude_patterns(
     project_dir: &Path,
     roots: &RootMap,
     patterns: &mut Vec<String>,
+    sys: &impl FsCanonicalize,
 ) -> Result<(), Error> {
     for p in files {
         let p = p.resolve(roots);
@@ -770,6 +816,7 @@ fn resolve_exclude_patterns(
             p.to_path_buf()
         };
 
+        let path = align_absolute_pattern(path, project_dir, sys);
         patterns.push(path.to_string_lossy().into_owned());
     }
     Ok(())
@@ -1389,40 +1436,71 @@ mod tests {
             OmniPath::new(shared.clone()),
             OmniPath::new(root.join("shared/*.txt")),
         ];
-        for pattern in patterns {
-            for include_local in [false, true] {
-                write_file(&shared, "original");
-                let mut project = Project::new(root, "proj");
-                project.input_files = vec![pattern.clone()];
-                project.output_files = vec![pattern.clone()];
-                let mut expected_inputs = vec![shared.as_path()];
-                if include_local {
-                    project.input_files.push(OmniPath::new("local.txt"));
-                    expected_inputs.push(local.as_path());
+        // Production Context roots are canonical (verbatim on Windows), while
+        // absolute paths supplied in configuration usually are not. Also retain
+        // coverage for callers that pass ordinary roots directly to Collector.
+        for root in [root.to_path_buf(), std::fs::canonicalize(root).unwrap()] {
+            let root = root.as_path();
+            for pattern in &patterns {
+                for include_local in [false, true] {
+                    write_file(&shared, "original");
+                    let mut project = Project::new(root, "proj");
+                    project.input_files = vec![pattern.clone()];
+                    project.output_files = vec![pattern.clone()];
+                    let mut expected_inputs = vec![shared.as_path()];
+                    if include_local {
+                        project.input_files.push(OmniPath::new("local.txt"));
+                        expected_inputs.push(local.as_path());
+                    }
+                    let before = assert_collected_scope(
+                        root,
+                        &project,
+                        &expected_inputs,
+                        &[&shared],
+                    )
+                    .await;
+                    write_file(
+                        &shared,
+                        "changed sibling content, with a different size",
+                    );
+                    let after = assert_collected_scope(
+                        root,
+                        &project,
+                        &expected_inputs,
+                        &[&shared],
+                    )
+                    .await;
+                    assert_ne!(
+                        before, after,
+                        "sibling input must affect the digest"
+                    );
                 }
-                let before = assert_collected_scope(
-                    root,
-                    &project,
-                    &expected_inputs,
-                    &[&shared],
-                )
-                .await;
-                write_file(
-                    &shared,
-                    "changed sibling content, with a different size",
-                );
-                let after = assert_collected_scope(
-                    root,
-                    &project,
-                    &expected_inputs,
-                    &[&shared],
-                )
-                .await;
-                assert_ne!(
-                    before, after,
-                    "sibling input must affect the digest"
-                );
             }
+        }
+    }
+
+    #[tokio::test]
+    async fn absolute_excludes_match_with_canonical_roots() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let shared = temp.path().join("shared");
+        write_file(&shared.join("keep.txt"), "keep");
+        write_file(&shared.join("skip.txt"), "skip");
+        std::fs::create_dir_all(temp.path().join("proj")).unwrap();
+        let root = std::fs::canonicalize(temp.path()).unwrap();
+
+        for exclude in [shared.join("skip.txt"), shared.join("sk*.txt")] {
+            let mut project = Project::new(&root, "proj");
+            project.input_files = vec![OmniPath::new(shared.join("*.txt"))];
+            project.output_files = project.input_files.clone();
+            project.input_files_exclude = vec![OmniPath::new(exclude)];
+            project.output_files_exclude = project.input_files_exclude.clone();
+            assert_collected_scope(
+                &root,
+                &project,
+                &[&shared.join("keep.txt")],
+                &[&shared.join("keep.txt")],
+            )
+            .await;
         }
     }
 

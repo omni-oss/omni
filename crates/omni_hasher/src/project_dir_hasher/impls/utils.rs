@@ -91,7 +91,18 @@ pub async fn build_merkle_tree<THasher: Hasher>(
     sys: impl UtilSys,
 ) -> Result<MerkleTree<Compat<THasher>>, BuildMerkleTreeError> {
     let project_dir_name = path_safe(project_name);
-    let project_dir_path = index_dir.join(project_dir_name);
+    // Metadata stamps are only meaningful for the same on-disk project. A
+    // shared cache must not reuse a different worktree's hashes just because
+    // its relative paths, mtimes and sizes happen to match. This namespace is
+    // only for the optimization index, not for content-addressed task results.
+    let location = bs58::encode(THasher::hash(
+        root_map[Root::Project].as_os_str().as_encoded_bytes(),
+    ))
+    .into_string();
+    let project_dir_path = index_dir
+        .join(project_dir_name)
+        .join("indices")
+        .join(location);
 
     let mut file_entries_by_path =
         HashMap::<OmniPath, FileEntry<THasher>>::new();

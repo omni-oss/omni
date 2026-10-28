@@ -194,6 +194,53 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn shared_index_does_not_reuse_another_worktrees_file_hashes() {
+        let temp = tempdir().unwrap();
+        let cache = temp.path().join("shared-cache");
+        let modified = std::time::UNIX_EPOCH
+            + std::time::Duration::from_secs(1_700_000_000);
+        let mut hashes = Vec::new();
+        for (worktree, content) in
+            [("first", "aaaa"), ("second", "bbbb"), ("identical", "aaaa")]
+        {
+            let root = temp.path().join(worktree);
+            let project = root.join("project");
+            std::fs::create_dir_all(&project).unwrap();
+            let file = project.join("input.txt");
+            std::fs::write(&file, content).unwrap();
+            std::fs::File::options()
+                .write(true)
+                .open(&file)
+                .unwrap()
+                .set_modified(modified)
+                .unwrap();
+            let hasher = RealDirHasher::builder()
+                .index_dir(&cache)
+                .workspace_root_dir(&root)
+                .build()
+                .unwrap();
+            hashes.push(
+                hasher
+                    .hash::<Blake3Hasher>(
+                        "project",
+                        &project,
+                        &[OmniPath::new("input.txt")],
+                    )
+                    .await
+                    .unwrap(),
+            );
+        }
+        assert_ne!(
+            hashes[0], hashes[1],
+            "different worktree content must be hashed"
+        );
+        assert_eq!(
+            hashes[0], hashes[2],
+            "the index namespace must not affect content-addressed hashes"
+        );
+    }
+
+    #[tokio::test]
     async fn test_hash_unchanged() {
         let dir = test_fixture().await;
         let tempdir = dir.path();

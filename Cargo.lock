@@ -7306,6 +7306,7 @@ dependencies = [
  "async-trait",
  "bincode-next",
  "blake3",
+ "bs58",
  "byteorder",
  "derive-new",
  "derive_builder",
