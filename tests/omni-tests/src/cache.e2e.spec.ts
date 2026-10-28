@@ -85,6 +85,61 @@ describe("+cache @cache (cache dir)", () => {
         expect(result).toHaveSucceeded();
         expect(cleanPath(result.out)).toBe(ws.path(".omni", "cache"));
     });
+
+    it("`cache dir --cache-dir` prints the custom cache directory", async () => {
+        const ws = makeWorkspace(singleProjectSpec());
+        const custom = ws.path("custom-cache");
+
+        const result = await runOmni(["cache", "dir", "--cache-dir", custom], {
+            cwd: ws.cwd,
+        });
+
+        expect(result).toHaveSucceeded();
+        expect(cleanPath(result.out)).toBe(custom);
+    });
+
+    it("`--cache-dir` is honored by `run` and `cache stats`", async () => {
+        const ws = makeWorkspace(singleProjectSpec());
+        const custom = ws.path("custom-cache");
+
+        const run = await runOmni(["run", "build", "--cache-dir", custom], {
+            cwd: ws.cwd,
+        });
+        expect(run).toHaveSucceeded();
+
+        const stats = await runOmni(["cache", "stats", "--cache-dir", custom], {
+            cwd: ws.cwd,
+        });
+        expect(stats).toHaveSucceeded();
+        expect(stats).toOutputContaining("- Task: build");
+
+        // The custom cache location was actually used.
+        expect(ws.exists("custom-cache")).toBe(true);
+    });
+
+    it("`cache dir --cache-dir` resolves a relative path against the cwd", async () => {
+        const ws = makeWorkspace(singleProjectSpec());
+
+        const result = await runOmni(
+            ["cache", "dir", "--cache-dir", "rel-cache"],
+            { cwd: ws.cwd },
+        );
+
+        expect(result).toHaveSucceeded();
+        expect(cleanPath(result.out)).toBe(ws.path("rel-cache"));
+    });
+
+    it("`--cache-dir` with a relative path is honored by `run`", async () => {
+        const ws = makeWorkspace(singleProjectSpec());
+
+        const run = await runOmni(
+            ["run", "build", "--cache-dir", "rel-cache"],
+            { cwd: ws.cwd },
+        );
+        expect(run).toHaveSucceeded();
+
+        expect(ws.exists("rel-cache")).toBe(true);
+    });
 });
 
 describe("+cache @cache @e2e (run cache hit / log replay)", () => {
@@ -718,8 +773,8 @@ describe("+cache @cache (remote setup)", () => {
         );
 
         expect(result).toHaveSucceeded();
-        expect(ws.exists(".omni/remote-cache.omni.yaml")).toBe(true);
-        const config = ws.read(".omni/remote-cache.omni.yaml");
+        expect(ws.exists(".omni/cache/remote-cache.omni.yaml")).toBe(true);
+        const config = ws.read(".omni/cache/remote-cache.omni.yaml");
         // The YAML emitter may or may not quote the URL scalar; both round-trip
         // to the same string, so accept either form.
         const escapedBaseUrl = baseUrl.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -758,7 +813,7 @@ describe("+cache @cache (remote setup)", () => {
 
         expect(result).toHaveFailed();
         expect(result).toHaveStderrContaining("failed to setup remote caching");
-        expect(ws.exists(".omni/remote-cache.omni.yaml")).toBe(false);
+        expect(ws.exists(".omni/cache/remote-cache.omni.yaml")).toBe(false);
     });
 });
 
