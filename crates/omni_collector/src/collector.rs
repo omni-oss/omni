@@ -1,5 +1,5 @@
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -357,6 +357,10 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
                 .sum(),
         );
 
+        // Shared by all tasks and include/exclude patterns, but never retained
+        // across collections where files or symlink targets may have changed.
+        let mut alignment = PatternAlignment::new(self.ws_root_dir, &self.sys);
+
         for project in project_tasks {
             trace::trace!(
                 project_name = ?project.project_name,
@@ -381,7 +385,7 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
                     &mut match_bases,
                     &roots,
                     &mut output_patterns,
-                    &self.sys,
+                    &mut alignment,
                 )?;
 
                 output_files_globset = Some(include_set(
@@ -395,7 +399,7 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
                     project.project_dir,
                     &roots,
                     &mut output_exclude_patterns,
-                    &self.sys,
+                    &mut alignment,
                 )?;
                 output_files_exclude_globset = Some(include_set(
                     &output_exclude_patterns,
@@ -416,7 +420,7 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
                     &mut match_bases,
                     &roots,
                     &mut input_patterns,
-                    &self.sys,
+                    &mut alignment,
                 )?;
 
                 input_files_globset =
@@ -428,7 +432,7 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
                     project.project_dir,
                     &roots,
                     &mut input_exclude_patterns,
-                    &self.sys,
+                    &mut alignment,
                 )?;
                 input_files_exclude_globset = Some(include_set(
                     &input_exclude_patterns,
@@ -729,27 +733,58 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
 // Preserve paths already under the walk root, including relative symlink paths
 // and their filesystem-sensitive `..` components. Direct Collector callers may
 // use a noncanonical root, in which case the walker retains that namespace.
-fn align_absolute_pattern(
-    path: PathBuf,
-    workspace_root: &Path,
-    sys: &impl FsCanonicalize,
-) -> PathBuf {
-    if !starts_with_path(&path, workspace_root)
-        && sys
-            .fs_canonicalize(workspace_root)
-            .is_ok_and(|canonical| canonical == workspace_root)
-    {
+struct PatternAlignment<'a, TSys> {
+    workspace_root: &'a Path,
+    sys: &'a TSys,
+    root_is_canonical: Option<bool>,
+    // None also memoizes failed resolutions, so missing prefixes are not
+    // repeatedly probed. A fresh collection retries them.
+    canonical_bases: HashMap<PathBuf, Option<PathBuf>>,
+}
+
+impl<'a, TSys: FsCanonicalize> PatternAlignment<'a, TSys> {
+    fn new(workspace_root: &'a Path, sys: &'a TSys) -> Self {
+        Self {
+            workspace_root,
+            sys,
+            root_is_canonical: None,
+            canonical_bases: HashMap::new(),
+        }
+    }
+
+    fn align(&mut self, path: PathBuf) -> PathBuf {
+        // Common case: no filesystem access, cache lookup or allocation.
+        if starts_with_path(&path, self.workspace_root) {
+            return path;
+        }
+
+        let root_is_canonical =
+            *self.root_is_canonical.get_or_insert_with(|| {
+                self.sys
+                    .fs_canonicalize(self.workspace_root)
+                    .is_ok_and(|canonical| canonical == self.workspace_root)
+            });
+        if !root_is_canonical {
+            return path;
+        }
+
         let base = remove_globs(&path);
-        if let Ok(canonical) = sys.fs_canonicalize(base) {
+        if !self.canonical_bases.contains_key(base) {
+            self.canonical_bases.insert(
+                base.to_path_buf(),
+                self.sys.fs_canonicalize(base).ok(),
+            );
+        }
+        if let Some(canonical) = self.canonical_bases[base].as_ref() {
             let suffix = path.strip_prefix(base).expect("literal glob prefix");
             return if suffix.as_os_str().is_empty() {
-                canonical
+                canonical.clone()
             } else {
                 canonical.join(suffix)
             };
         }
+        path
     }
-    path
 }
 
 fn populate_includes_and_patterns(
@@ -759,7 +794,7 @@ fn populate_includes_and_patterns(
     match_bases: &mut Vec<PathBuf>,
     roots: &RootMap,
     patterns: &mut Vec<String>,
-    sys: &impl FsCanonicalize,
+    alignment: &mut PatternAlignment<'_, impl FsCanonicalize>,
 ) -> Result<(), Error> {
     trace::trace!(
         files = ?files,
@@ -776,7 +811,7 @@ fn populate_includes_and_patterns(
             p.to_path_buf()
         };
 
-        let path = align_absolute_pattern(path, roots[Root::Workspace], sys);
+        let path = alignment.align(path);
         patterns.push(path.to_string_lossy().into_owned());
         // The literal prefix bounds where this glob can match: any matching
         // path must live under it.
@@ -796,7 +831,7 @@ fn resolve_exclude_patterns(
     project_dir: &Path,
     roots: &RootMap,
     patterns: &mut Vec<String>,
-    sys: &impl FsCanonicalize,
+    alignment: &mut PatternAlignment<'_, impl FsCanonicalize>,
 ) -> Result<(), Error> {
     for p in files {
         let p = p.resolve(roots);
@@ -807,7 +842,7 @@ fn resolve_exclude_patterns(
             p.to_path_buf()
         };
 
-        let path = align_absolute_pattern(path, roots[Root::Workspace], sys);
+        let path = alignment.align(path);
         patterns.push(path.to_string_lossy().into_owned());
     }
     Ok(())
@@ -843,6 +878,109 @@ mod tests {
     };
 
     use super::*;
+
+    #[derive(Default)]
+    struct CountingCanonicalizer {
+        resolutions: HashMap<PathBuf, PathBuf>,
+        calls: std::cell::RefCell<Vec<PathBuf>>,
+    }
+
+    impl system_traits::BaseFsCanonicalize for CountingCanonicalizer {
+        fn base_fs_canonicalize(
+            &self,
+            path: &Path,
+        ) -> std::io::Result<PathBuf> {
+            self.calls.borrow_mut().push(path.to_path_buf());
+            self.resolutions.get(path).cloned().ok_or_else(|| {
+                std::io::Error::from(std::io::ErrorKind::NotFound)
+            })
+        }
+    }
+
+    #[test]
+    fn pattern_alignment_fast_path_does_not_canonicalize() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let sys = CountingCanonicalizer::default();
+        let mut alignment = PatternAlignment::new(root, &sys);
+        for suffix in ["proj/src/*.txt", "proj/../shared/*.txt"] {
+            let path = root.join(suffix);
+            assert_eq!(alignment.align(path.clone()), path);
+        }
+        assert!(sys.calls.borrow().is_empty());
+        assert!(alignment.root_is_canonical.is_none());
+        assert!(alignment.canonical_bases.is_empty());
+    }
+
+    #[test]
+    fn pattern_alignment_memoizes_literal_bases_only_within_a_collection() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("workspace");
+        let alias_base = temp.path().join("alias/shared");
+        let canonical_base = root.join("shared");
+        let sys = CountingCanonicalizer {
+            resolutions: HashMap::from([
+                (root.clone(), root.clone()),
+                (alias_base.clone(), canonical_base.clone()),
+            ]),
+            ..Default::default()
+        };
+        for collection in 1..=2 {
+            let mut alignment = PatternAlignment::new(&root, &sys);
+            for suffix in ["*.txt", "*.rs", "**/*.txt", "*.txt"] {
+                assert_eq!(
+                    alignment.align(alias_base.join(suffix)),
+                    canonical_base.join(suffix),
+                );
+            }
+            // One root check and one literal-prefix resolution per collection.
+            assert_eq!(sys.calls.borrow().len(), collection * 2);
+        }
+    }
+
+    #[test]
+    fn pattern_alignment_memoizes_missing_bases_but_retries_next_collection() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("workspace");
+        let base = temp.path().join("missing");
+        let mut sys = CountingCanonicalizer {
+            resolutions: HashMap::from([(root.clone(), root.clone())]),
+            ..Default::default()
+        };
+        {
+            let mut alignment = PatternAlignment::new(&root, &sys);
+            for suffix in ["*.txt", "*.rs", "*.txt"] {
+                let path = base.join(suffix);
+                assert_eq!(alignment.align(path.clone()), path);
+            }
+            assert_eq!(sys.calls.borrow().len(), 2);
+        }
+        let resolved = root.join("shared");
+        sys.resolutions.insert(base.clone(), resolved.clone());
+        let mut alignment = PatternAlignment::new(&root, &sys);
+        assert_eq!(alignment.align(base.join("*.txt")), resolved.join("*.txt"));
+        assert_eq!(sys.calls.borrow().len(), 4);
+    }
+
+    #[test]
+    fn pattern_alignment_checks_noncanonical_root_only_once() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("alias");
+        let sys = CountingCanonicalizer {
+            resolutions: HashMap::from([(
+                root.clone(),
+                temp.path().join("workspace"),
+            )]),
+            ..Default::default()
+        };
+        let mut alignment = PatternAlignment::new(&root, &sys);
+        for name in ["first/*.txt", "second/*.rs", "first/*.txt"] {
+            let path = temp.path().join(name);
+            assert_eq!(alignment.align(path.clone()), path);
+        }
+        assert_eq!(*sys.calls.borrow(), vec![root.clone()]);
+        assert!(alignment.canonical_bases.is_empty());
+    }
 
     // Ensures each collect that must observe fresh on-disk state uses its own
     // hash index, sidestepping the hasher's mtime-based cache.
