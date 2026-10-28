@@ -152,6 +152,14 @@ pub struct CliArgs {
         group = "inherit-env-vars",
     )]
     pub inherit_env_vars: bool,
+
+    #[arg(
+        long = "cache-dir",
+        help = "The directory to use for the cache",
+        env = "OMNI_CACHE_DIR",
+        global = true
+    )]
+    pub cache_dir: Option<PathBuf>,
 }
 
 impl Default for CliArgs {
@@ -167,6 +175,7 @@ impl Default for CliArgs {
             inherit_env_vars: false,
             stdout_show_traces: false,
             stderr_show_traces: false,
+            cache_dir: None,
         }
     }
 }

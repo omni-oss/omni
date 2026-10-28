@@ -29,7 +29,7 @@ pub fn from_args_root_dir_and_sys<TSys: ContextSys>(
         .env_root_dir_marker
         .clone()
         .unwrap_or_else(|| constants::WORKSPACE_OMNI.replace("{ext}", "yaml"));
-    let ctx = Context::new(
+    let ctx = Context::new_with_cache_dir(
         sys,
         env,
         root_dir.as_ref(),
@@ -37,6 +37,7 @@ pub fn from_args_root_dir_and_sys<TSys: ContextSys>(
         &root_marker,
         env_files,
         tracing,
+        cli.cache_dir.clone(),
     )?;
 
     Ok(ctx)
@@ -63,7 +64,7 @@ pub fn from_config_root_dir_and_sys<TSys: ContextSys>(
     sys: TSys,
     tracing: &TracingConfig,
 ) -> Result<Context<TSys>, ContextError> {
-    let ctx = Context::new(
+    let ctx = Context::new_with_cache_dir(
         sys,
         &cfg.env,
         root_dir.as_ref(),
@@ -71,6 +72,7 @@ pub fn from_config_root_dir_and_sys<TSys: ContextSys>(
         &cfg.env_root_dir_marker,
         cfg.env_files.clone(),
         tracing,
+        cfg.cache_dir.clone(),
     )?;
     Ok(ctx)
 }
