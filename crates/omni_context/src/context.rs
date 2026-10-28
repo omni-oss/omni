@@ -44,6 +44,7 @@ pub struct Context<TSys: ContextSys = RealSysSync> {
     remote_cache: Option<RemoteCacheConfiguration>,
     root_dir: PathBuf,
     omni_dir: PathBuf,
+    cache_dir: PathBuf,
     tracing_config: TracingConfig,
     sys: TSys,
 }
@@ -61,12 +62,51 @@ impl<TSys: ContextSys> Context<TSys> {
         override_env_files: Option<Vec<PathBuf>>,
         tracing_config: &TracingConfig,
     ) -> Result<Self, ContextError> {
+        Self::new_with_cache_dir(
+            sys,
+            env,
+            root_dir,
+            inherit_env_vars,
+            root_marker,
+            override_env_files,
+            tracing_config,
+            None,
+        )
+    }
+
+    /// Like [`Context::new`], but allows overriding the cache directory. When
+    /// `cache_dir` is `None`, the cache directory defaults to
+    /// `<root_dir>/.omni/cache`.
+    #[allow(clippy::result_large_err)]
+    pub fn new_with_cache_dir(
+        sys: TSys,
+        env: impl Into<String>,
+        root_dir: &Path,
+        inherit_env_vars: bool,
+        root_marker: &str,
+        override_env_files: Option<Vec<PathBuf>>,
+        tracing_config: &TracingConfig,
+        cache_dir: Option<PathBuf>,
+    ) -> Result<Self, ContextError> {
         let env = env.into();
         let root_dir = sys.fs_canonicalize(root_dir)?;
+        let cache_dir = match cache_dir {
+            Some(p) => {
+                let resolved = if p.is_absolute() {
+                    p
+                } else {
+                    sys.env_current_dir()
+                        .unwrap_or_else(|_| PathBuf::new())
+                        .join(p)
+                };
+                sys.fs_canonicalize(&resolved).unwrap_or(resolved)
+            }
+            None => root_dir.join(CACHE_DIR),
+        };
         let workspace = get_workspace_configuration(&env, &root_dir, &sys)?;
         let omni_dir = root_dir.join(OMNI_DIR);
         let remote_cache =
-            get_remote_cache_configuration(&root_dir, &omni_dir, &sys)?;
+            get_remote_cache_configuration(&root_dir, &cache_dir, &sys)?;
         let context = Self {
             env,
             inherit_env_vars,
@@ -75,6 +115,7 @@ impl<TSys: ContextSys> Context<TSys> {
             remote_cache,
             root_dir,
             omni_dir,
+            cache_dir,
             env_root_dir_marker: root_marker.to_string(),
             sys,
             tracing_config: tracing_config.clone(),
@@ -88,6 +129,7 @@ impl<TSys: ContextSys> Context<TSys> {
             ?context.remote_cache,
             ?context.root_dir,
             ?context.omni_dir,
+            ?context.cache_dir,
             ?context.env_root_dir_marker,
             ?context.tracing_config,
             "context_created"
@@ -100,7 +142,7 @@ impl<TSys: ContextSys> Context<TSys> {
     /// re-reading the workspace and remote cache configurations.
     #[allow(clippy::result_large_err)]
     pub fn reload(&self) -> Result<Self, ContextError> {
-        Self::new(
+        Self::new_with_cache_dir(
             self.sys.clone(),
             self.env.clone(),
             &self.root_dir,
@@ -108,6 +150,7 @@ impl<TSys: ContextSys> Context<TSys> {
             &self.env_root_dir_marker,
             self.override_env_files.clone(),
             &self.tracing_config,
+            Some(self.cache_dir.clone()),
         )
     }
 
@@ -173,11 +216,11 @@ impl<TSys: ContextSys> Context<TSys> {
     }
 
     pub fn remote_cache_configuration_paths(&self) -> Vec<PathBuf> {
-        get_remote_cache_configuration_paths(self.omni_dir())
+        get_remote_cache_configuration_paths(&self.cache_dir)
     }
 
     pub fn remote_cache_configuration_path(&self, ext: &str) -> PathBuf {
-        self.omni_dir()
+        self.cache_dir()
             .join(constants::REMOTE_CACHE_OMNI.replace("{ext}", ext))
     }
 
@@ -407,7 +450,7 @@ impl<TSys: ContextSys> Context<TSys> {
     }
 
     pub fn cache_dir(&self) -> PathBuf {
-        self.root_dir.join(CACHE_DIR)
+        self.cache_dir.clone()
     }
 
     pub fn scratch_dir(&self) -> PathBuf {
@@ -480,22 +523,22 @@ fn get_workspace_configuration(
     Ok(w)
 }
 
-fn get_remote_cache_configuration_paths(omni_dir: &Path) -> Vec<PathBuf> {
+fn get_remote_cache_configuration_paths(cache_dir: &Path) -> Vec<PathBuf> {
     vec![
-        omni_dir.join(constants::REMOTE_CACHE_OMNI.replace("{ext}", "enc")),
-        omni_dir.join(constants::REMOTE_CACHE_OMNI.replace("{ext}", "yaml")),
+        cache_dir.join(constants::REMOTE_CACHE_OMNI.replace("{ext}", "enc")),
+        cache_dir.join(constants::REMOTE_CACHE_OMNI.replace("{ext}", "yaml")),
     ]
 }
 
 #[allow(clippy::result_large_err)]
 fn get_remote_cache_configuration(
     abs_root_dir: &Path,
-    omni_dir: &Path,
+    cache_dir: &Path,
     sys: &impl ContextSys,
 ) -> Result<Option<RemoteCacheConfiguration>, ContextError> {
     let mut rc_path = None;
 
-    let files = get_remote_cache_configuration_paths(omni_dir);
+    let files = get_remote_cache_configuration_paths(cache_dir);
 
     for f in &files {
         if sys.fs_exists(f)? && sys.fs_is_file(f)? {

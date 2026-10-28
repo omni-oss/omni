@@ -12,6 +12,8 @@ pub struct WorkspaceInitConfig {
     /// File name that marks the workspace root dir (walked upward).
     pub env_root_dir_marker: String,
     pub inherit_env_vars: bool,
+    /// Optional override for the cache directory location.
+    pub cache_dir: Option<PathBuf>,
 }
 
 impl Default for WorkspaceInitConfig {
@@ -22,6 +24,7 @@ impl Default for WorkspaceInitConfig {
             env_root_dir_marker: constants::WORKSPACE_OMNI
                 .replace("{ext}", "yaml"),
             inherit_env_vars: false,
+            cache_dir: None,
         }
     }
 }
