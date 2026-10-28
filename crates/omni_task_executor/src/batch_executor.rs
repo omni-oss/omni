@@ -219,12 +219,29 @@ where
                     self.sys.fs_create_dir_all_async(dir).await?;
                 }
 
-                self.sys
+                if let Err(err) = self
+                    .sys
                     .fs_hard_link_async(
                         file.cached_path.as_path(),
                         original_path,
                     )
-                    .await?;
+                    .await
+                {
+                    // Hardlinks cannot cross device boundaries (and may fail for
+                    // other filesystem reasons). Fall back to a copy so that a
+                    // cache directory on a different device than the workspace
+                    // still works, albeit without link-level deduplication.
+                    log::debug!(
+                        "hardlink failed ({err}); falling back to copy for {:?}",
+                        original_path
+                    );
+                    self.sys
+                        .fs_copy_async(
+                            file.cached_path.as_path(),
+                            original_path,
+                        )
+                        .await?;
+                }
 
                 diagnostic!(
                     self.subscriber,

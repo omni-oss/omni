@@ -27,7 +27,7 @@ impl<'a, TSys: ContextSys> CacheStoreProvider
     type CacheStore = HybridTaskExecutionCacheStore;
 
     fn get_cache_store(&self) -> Self::CacheStore {
-        let cache_dir = self.context.root_dir().join(".omni/cache");
+        let cache_dir = self.context.cache_dir();
         let remote_config =
             if let Some(rc) = &self.context.remote_cache_configuration() {
                 RemoteConfig::new_enabled(EnabledRemoteConfig::new(
