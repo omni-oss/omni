@@ -722,40 +722,31 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
     }
 }
 
-// Context canonicalizes workspace/project roots on Windows, yielding verbatim
-// paths. User-supplied absolute patterns need the same representation as the
-// walker, both for the match-base prefilter and the compiled glob. Canonicalize
-// only the literal prefix: a glob itself cannot be canonicalized. Leave paths
-// already in the walker's namespace alone (including relative symlink paths).
+// Context canonicalizes workspace roots. Absolute patterns may instead use an
+// alias such as /var on macOS or a non-verbatim Windows path. Align these with
+// the walker's namespace for both the match-base prefilter and compiled glob.
+// Only canonicalize the literal prefix; the glob itself cannot be resolved.
+// Preserve paths already under the walk root, including relative symlink paths
+// and their filesystem-sensitive `..` components. Direct Collector callers may
+// use a noncanonical root, in which case the walker retains that namespace.
 fn align_absolute_pattern(
     path: PathBuf,
-    _project_dir: &Path,
-    _sys: &impl FsCanonicalize,
+    workspace_root: &Path,
+    sys: &impl FsCanonicalize,
 ) -> PathBuf {
-    #[cfg(windows)]
+    if !starts_with_path(&path, workspace_root)
+        && sys
+            .fs_canonicalize(workspace_root)
+            .is_ok_and(|canonical| canonical == workspace_root)
     {
-        use std::path::{Component, Prefix};
-
-        let is_verbatim = |p: &Path| {
-            matches!(
-                p.components().next(),
-                Some(Component::Prefix(prefix)) if matches!(
-                    prefix.kind(),
-                    Prefix::Verbatim(_) | Prefix::VerbatimDisk(_) | Prefix::VerbatimUNC(_, _)
-                )
-            )
-        };
-        if is_verbatim(_project_dir) && !is_verbatim(&path) {
-            let base = remove_globs(&path);
-            if let Ok(canonical) = _sys.fs_canonicalize(base) {
-                let suffix =
-                    path.strip_prefix(base).expect("literal glob prefix");
-                return if suffix.as_os_str().is_empty() {
-                    canonical
-                } else {
-                    canonical.join(suffix)
-                };
-            }
+        let base = remove_globs(&path);
+        if let Ok(canonical) = sys.fs_canonicalize(base) {
+            let suffix = path.strip_prefix(base).expect("literal glob prefix");
+            return if suffix.as_os_str().is_empty() {
+                canonical
+            } else {
+                canonical.join(suffix)
+            };
         }
     }
     path
@@ -785,7 +776,7 @@ fn populate_includes_and_patterns(
             p.to_path_buf()
         };
 
-        let path = align_absolute_pattern(path, project_dir, sys);
+        let path = align_absolute_pattern(path, roots[Root::Workspace], sys);
         patterns.push(path.to_string_lossy().into_owned());
         // The literal prefix bounds where this glob can match: any matching
         // path must live under it.
@@ -816,7 +807,7 @@ fn resolve_exclude_patterns(
             p.to_path_buf()
         };
 
-        let path = align_absolute_pattern(path, project_dir, sys);
+        let path = align_absolute_pattern(path, roots[Root::Workspace], sys);
         patterns.push(path.to_string_lossy().into_owned());
     }
     Ok(())
@@ -1501,6 +1492,59 @@ mod tests {
                 &[&shared.join("keep.txt")],
             )
             .await;
+        }
+    }
+
+    // Reproduce macOS's /var -> /private/var alias even on Linux.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn absolute_patterns_through_workspace_alias_match_canonical_walk() {
+        let temp = tempfile::tempdir().unwrap();
+        let workspace = temp.path().join("workspace");
+        let shared = workspace.join("shared");
+        write_file(&shared.join("keep.txt"), "original");
+        write_file(&shared.join("skip.txt"), "excluded");
+        std::fs::create_dir_all(workspace.join("proj")).unwrap();
+        let alias = temp.path().join("alias");
+        std::os::unix::fs::symlink(&workspace, &alias).unwrap();
+        let root = std::fs::canonicalize(&workspace).unwrap();
+
+        for include in
+            [alias.join("shared/keep.txt"), alias.join("shared/*.txt")]
+        {
+            for exclude in
+                [alias.join("shared/skip.txt"), alias.join("shared/sk*.txt")]
+            {
+                let mut project = Project::new(&root, "proj");
+                project.input_files = vec![OmniPath::new(&include)];
+                project.output_files = project.input_files.clone();
+                project.input_files_exclude = vec![OmniPath::new(exclude)];
+                project.output_files_exclude =
+                    project.input_files_exclude.clone();
+                write_file(&shared.join("keep.txt"), "original");
+                let before = assert_collected_scope(
+                    &root,
+                    &project,
+                    &[&shared.join("keep.txt")],
+                    &[&shared.join("keep.txt")],
+                )
+                .await;
+                write_file(
+                    &shared.join("keep.txt"),
+                    "changed content with a different size",
+                );
+                let after = assert_collected_scope(
+                    &root,
+                    &project,
+                    &[&shared.join("keep.txt")],
+                    &[&shared.join("keep.txt")],
+                )
+                .await;
+                assert_ne!(
+                    before, after,
+                    "aliased input must affect the digest"
+                );
+            }
         }
     }
 
