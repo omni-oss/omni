@@ -17,3 +17,16 @@ pub use projection::*;
 pub use task::*;
 pub use tool::*;
 pub use workspace::*;
+
+/// MCP-only workspace selection; API operation requests stay workspace-agnostic.
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct WorkspaceParams<P> {
+    /// Absolute existing invocation directory. Omni discovers the nearest
+    /// workspace from its canonical (physical) ancestor chain.
+    pub working_dir: std::path::PathBuf,
+    #[serde(flatten)]
+    pub params: P,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct EmptyParams {}

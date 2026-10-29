@@ -1,11 +1,16 @@
-use std::{future::Future, sync::Mutex};
+use std::{future::Future, path::PathBuf, sync::Mutex};
 
+use crate::model::*;
 use bridge_rpc_services::{FsSys, ProcSys};
 use omni_api::OmniApi;
-use omni_context::{ConfigFingerprint, Context, ContextSys};
+use omni_context::{
+    ConfigFingerprint, Context, ContextSys, WorkspaceInitConfig,
+    get_root_dir_from,
+};
 use omni_generator::GeneratorSys;
 use omni_messages::{NoopSubscriber, OmniEventSubscriber};
 use omni_task_executor::TaskExecutorSys;
+use omni_tracing_subscriber::TracingConfig;
 use rmcp::{
     ServerHandler,
     model::{
@@ -18,16 +23,27 @@ use serde::Serialize;
 use serde_json::Value;
 use system_traits::BaseFsMetadataAsync;
 
-/// MCP server backed by an omni workspace.
+/// MCP server bound to one workspace or resolving a workspace per shared call.
 ///
-/// The server is long-lived, so before each tool call the stored [`Context`]
+/// In bound mode, before each tool call the stored [`Context`]
 /// is checked against the on-disk workspace and remote cache configuration
 /// files and rebuilt if any of them changed. Each tool call then creates a
 /// fresh [`OmniApi`] from that context; project configurations are always
 /// discovered and read from disk by the API itself. Tool operations use
 /// [`NoopSubscriber`] so that their futures are unconditionally `Send`.
+/// Shared mode stores initialization policy only and constructs a fresh,
+/// request-owned adapter for every call without mutating process CWD or env.
 pub struct OmniMcpServer<TSys: ContextSys> {
-    state: Mutex<ContextState<TSys>>,
+    state: ServerState<TSys>,
+}
+
+enum ServerState<TSys: ContextSys> {
+    Bound(Mutex<ContextState<TSys>>),
+    Shared {
+        sys: TSys,
+        config: WorkspaceInitConfig,
+        tracing: TracingConfig,
+    },
 }
 
 struct ContextState<TSys: ContextSys> {
@@ -48,15 +64,40 @@ where
     pub fn new(ctx: Context<TSys>) -> Self {
         let fingerprint = ctx.config_fingerprint();
         Self {
-            state: Mutex::new(ContextState { ctx, fingerprint }),
+            state: ServerState::Bound(Mutex::new(ContextState {
+                ctx,
+                fingerprint,
+            })),
         }
+    }
+
+    /// Construct a server without discovering or retaining a workspace.
+    pub fn new_shared(
+        sys: TSys,
+        config: WorkspaceInitConfig,
+        tracing: TracingConfig,
+    ) -> Self {
+        Self {
+            state: ServerState::Shared {
+                sys,
+                config,
+                tracing,
+            },
+        }
+    }
+
+    fn is_shared(&self) -> bool {
+        matches!(self.state, ServerState::Shared { .. })
     }
 
     /// Returns the current context, reloading it first if the workspace or
     /// remote cache configuration changed on disk since the last load. A
     /// failed reload is reported to the caller and retried on the next call.
     pub(crate) fn context(&self) -> eyre::Result<Context<TSys>> {
-        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        let ServerState::Bound(state) = &self.state else {
+            eyre::bail!("shared server requires a request-local working_dir");
+        };
+        let mut state = state.lock().unwrap_or_else(|e| e.into_inner());
         let fingerprint = state.ctx.config_fingerprint();
 
         if fingerprint != state.fingerprint {
@@ -105,6 +146,9 @@ where
             env!("CARGO_PKG_VERSION"),
         );
         info.capabilities.tools = Some(rmcp::model::ToolsCapability::default());
+        if self.is_shared() {
+            info.instructions = Some("Every tool requires an absolute existing working_dir. Omni discovers the nearest workspace from the canonical physical directory. Each call is independent; no workspace selection is retained. Shared mode is not a filesystem sandbox.".into());
+        }
         info
     }
 
@@ -114,7 +158,11 @@ where
         _context: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, rmcp::model::ErrorData> {
         Ok(ListToolsResult {
-            tools: crate::tools::tool_list(),
+            tools: if self.is_shared() {
+                crate::tools::tool_list_for_mode(true)
+            } else {
+                crate::tools::tool_list()
+            },
             ..Default::default()
         })
     }
@@ -151,7 +199,78 @@ where
         name: &str,
         args: Option<Value>,
     ) -> Result<CallToolResponse, rmcp::model::ErrorData> {
-        let args = args.unwrap_or(Value::Object(Default::default()));
+        let mut args = args.unwrap_or(Value::Object(Default::default()));
+        if let ServerState::Shared {
+            sys,
+            config,
+            tracing,
+        } = &self.state
+        {
+            // Typed deserialization validates both selection and operation shape
+            // before any workspace is loaded. Unknown tools never trigger discovery.
+            let dir = shared_working_dir(name, args.clone())?;
+            if !dir.is_absolute() {
+                return Err(rmcp::model::ErrorData::invalid_params(
+                    "working_dir must be an absolute existing directory",
+                    None,
+                ));
+            }
+            let dir = sys
+                .fs_canonicalize(&dir)
+                .and_then(|dir| {
+                    if sys.fs_is_dir(&dir)? {
+                        Ok(dir)
+                    } else {
+                        Err(std::io::Error::other("not a directory"))
+                    }
+                })
+                .map_err(|e| {
+                    rmcp::model::ErrorData::invalid_params(
+                        format!("invalid working_dir {}: {e}", dir.display()),
+                        None,
+                    )
+                })?;
+            let ctx = (|| -> eyre::Result<_> {
+                let root = get_root_dir_from(sys, &dir)?;
+                Ok(Context::new_with_working_dir(
+                    sys.clone(),
+                    &config.env,
+                    &root,
+                    config.inherit_env_vars,
+                    &config.env_root_dir_marker,
+                    config.env_files.clone(),
+                    tracing,
+                    config.cache_dir.clone(),
+                    Some(dir.clone()),
+                )?)
+            })()
+            .map_err(|e| {
+                rmcp::model::ErrorData::internal_error(
+                    format!("working_dir {}: {e:#}", dir.display()),
+                    None,
+                )
+            })?;
+            // The request owns this bound adapter. Both normal and subscriber-
+            // backed APIs therefore use exactly the same resolved context.
+            if name == "tool_run" {
+                args["working_dir"] =
+                    serde_json::to_value(&dir).map_err(|e| {
+                        rmcp::model::ErrorData::invalid_params(
+                            e.to_string(),
+                            None,
+                        )
+                    })?;
+            }
+            return Self::new(ctx).dispatch_bound(name, args).await;
+        }
+        self.dispatch_bound(name, args).await
+    }
+
+    async fn dispatch_bound(
+        &self,
+        name: &str,
+        args: Value,
+    ) -> Result<CallToolResponse, rmcp::model::ErrorData> {
         match name {
             "workspace_info" => call0(self.tool_workspace_info()).await,
             "project_list" => call1(args, |p| self.tool_project_list(p)).await,
@@ -200,6 +319,49 @@ where
     }
 }
 
+fn shared_working_dir(
+    name: &str,
+    args: Value,
+) -> Result<PathBuf, rmcp::model::ErrorData> {
+    fn parse<P: serde::de::DeserializeOwned>(
+        args: Value,
+    ) -> Result<PathBuf, rmcp::model::ErrorData> {
+        let params: WorkspaceParams<P> = serde_json::from_value(args).map_err(|e| {
+            rmcp::model::ErrorData::invalid_params(format!("invalid params (working_dir must be an absolute existing directory): {e}"), None)
+        })?;
+        Ok(params.working_dir)
+    }
+    match name {
+        "workspace_info" | "generator_list" | "hash_workspace"
+        | "tool_list" => parse::<EmptyParams>(args),
+        "project_list" => parse::<ProjectListParams>(args),
+        "project_config" => parse::<ProjectConfigParams>(args),
+        "generator_inspect" => parse::<GeneratorInspectParams>(args),
+        "generator_run" => parse::<GeneratorRunParams>(args),
+        "generator_validate_input" => {
+            parse::<GeneratorValidateInputParams>(args)
+        }
+        "hash_project" => parse::<HashProjectParams>(args),
+        "cache_stats" => parse::<CacheStatsParams>(args),
+        "cache_prune" => parse::<CachePruneParams>(args),
+        "task_run" => parse::<TaskRunParams>(args),
+        "exec_command" => parse::<ExecCommandParams>(args),
+        "tool_inspect" => parse::<ToolInspectParams>(args),
+        "tool_run" => parse::<SharedToolRunParams>(args),
+        "projection_sync" => parse::<ProjectionSyncParams>(args),
+        "projection_status" => parse::<ProjectionStatusParams>(args),
+        "projection_unlink" => parse::<ProjectionUnlinkParams>(args),
+        "projection_prune" => parse::<ProjectionPruneParams>(args),
+        "ignore_sync" => parse::<IgnoreSyncParams>(args),
+        "ignore_clean" => parse::<IgnoreCleanParams>(args),
+        unknown => Err(rmcp::model::ErrorData::new(
+            rmcp::model::ErrorCode::METHOD_NOT_FOUND,
+            format!("unknown tool: {unknown}"),
+            None,
+        )),
+    }
+}
+
 async fn call0<R: Serialize>(
     fut: impl Future<Output = eyre::Result<R>>,
 ) -> Result<CallToolResponse, rmcp::model::ErrorData> {
@@ -238,4 +400,102 @@ where
         )
     })?;
     call0(f(params)).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[tokio::test]
+    async fn concurrent_shared_calls_leave_process_directory_and_environment_unchanged()
+     {
+        let tmp = tempfile::tempdir().unwrap();
+        for name in ["alpha", "beta"] {
+            let dir = tmp.path().join(name);
+            std::fs::create_dir(&dir).unwrap();
+            std::fs::write(dir.join("workspace.omni.yaml"), "projects: []\n")
+                .unwrap();
+            std::fs::write(
+                dir.join(".env"),
+                format!("OMNI_SHARED_ISOLATION_MARKER={name}\n"),
+            )
+            .unwrap();
+        }
+        let cwd = std::env::current_dir().unwrap();
+        let env =
+            std::env::vars_os().collect::<std::collections::BTreeMap<_, _>>();
+        let server = OmniMcpServer::new_shared(
+            system_traits::impls::RealSys,
+            WorkspaceInitConfig::default(),
+            TracingConfig::disabled(),
+        );
+        let call = |name: &'static str| {
+            let server = &server;
+            let dir = tmp.path().join(name);
+            async move {
+                let result = server
+                    .dispatch(
+                        "workspace_info",
+                        Some(json!({"working_dir": dir})),
+                    )
+                    .await
+                    .unwrap();
+                let CallToolResponse::Complete(result) = result else {
+                    panic!("unexpected task response")
+                };
+                assert_eq!(
+                    result.structured_content.unwrap()["env_vars"]["OMNI_SHARED_ISOLATION_MARKER"],
+                    name
+                );
+            }
+        };
+        tokio::join!(call("alpha"), call("beta"));
+        assert_eq!(std::env::current_dir().unwrap(), cwd);
+        assert_eq!(
+            std::env::vars_os().collect::<std::collections::BTreeMap<_, _>>(),
+            env
+        );
+    }
+
+    #[test]
+    fn shared_shapes_are_validated_without_workspace_discovery() {
+        for tool in crate::tools::tool_list_for_mode(true) {
+            let error = shared_working_dir(&tool.name, json!({})).unwrap_err();
+            assert_eq!(error.code, rmcp::model::ErrorCode::INVALID_PARAMS);
+            assert!(error.message.contains("working_dir"));
+        }
+        assert!(
+            shared_working_dir(
+                "workspace_info",
+                json!({"working_dir": "/workspace"})
+            )
+            .is_ok()
+        );
+        assert!(
+            shared_working_dir(
+                "generator_inspect",
+                json!({"working_dir": "/workspace"})
+            )
+            .unwrap_err()
+            .message
+            .contains("name")
+        );
+        assert_eq!(
+            shared_working_dir("unknown", json!({})).unwrap_err().code,
+            rmcp::model::ErrorCode::METHOD_NOT_FOUND
+        );
+    }
+
+    #[test]
+    fn flattened_tool_run_has_one_directory_and_preserves_defaults() {
+        let params: WorkspaceParams<SharedToolRunParams> =
+            serde_json::from_value(json!({
+                "working_dir": "/workspace/sub", "name": "writer"
+            }))
+            .unwrap();
+        assert_eq!(params.working_dir, PathBuf::from("/workspace/sub"));
+        assert_eq!(params.params.name, "writer");
+        assert_eq!(params.params.args, json!({}));
+    }
 }

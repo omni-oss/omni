@@ -43,6 +43,15 @@ pub struct ToolRunParams {
     pub working_dir: Option<String>,
 }
 
+/// Shared-mode operation payload, avoiding a second flattened working_dir.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SharedToolRunParams {
+    pub name: String,
+    /// JSON object of arguments, validated against the tool's declared inputs.
+    #[serde(default = "default_empty_obj")]
+    pub args: Value,
+}
+
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct ToolRunResult {
     /// The tool's captured return value.
