@@ -1,6 +1,7 @@
 /** RFC 0018 acceptance tests, exercised through the real stdio MCP transport. */
 import { spawnSync } from "node:child_process";
 import { readdirSync, symlinkSync, unlinkSync } from "node:fs";
+import { join } from "node:path";
 
 import type { Client } from "@modelcontextprotocol/client";
 import { describe, expect, it } from "vitest";
@@ -277,7 +278,7 @@ describe(
                 const data = await content(client, "workspace_info", dir);
                 expect(data.env_vars.SHARED_TEST).toBe(marker);
                 expect(cleanPath(data.cache_dir)).toBe(
-                    `${cleanPath(dir)}/local-cache`,
+                    cleanPath(join(dir, "local-cache")),
                 );
             };
             await check(a.cwd, "root-a");
