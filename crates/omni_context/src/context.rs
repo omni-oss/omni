@@ -1,3 +1,4 @@
+use crate::cache_resolution::{CacheDirectorySource, CacheResolutionState};
 use std::path::{Path, PathBuf};
 
 pub(crate) use crate::env_loader::EnvLoader;
@@ -14,7 +15,7 @@ use trace::Level;
 
 use crate::{
     ContextSys, LoadedContext,
-    constants::{self, CACHE_DIR, OMNI_DIR, SCRATCH_DIR, TRACE_DIR},
+    constants::{self, OMNI_DIR, SCRATCH_DIR, TRACE_DIR},
     extracted_data_validator::{
         ExtractedDataValidationErrors, ExtractedDataValidator,
     },
@@ -45,6 +46,8 @@ pub struct Context<TSys: ContextSys = RealSysSync> {
     root_dir: PathBuf,
     omni_dir: PathBuf,
     cache_dir: PathBuf,
+    cache_resolution: CacheResolutionState,
+    cache_source: CacheDirectorySource,
     tracing_config: TracingConfig,
     sys: TSys,
 }
@@ -75,8 +78,8 @@ impl<TSys: ContextSys> Context<TSys> {
     }
 
     /// Like [`Context::new`], but allows overriding the cache directory. When
-    /// `cache_dir` is `None`, the cache directory defaults to
-    /// `<root_dir>/.omni/cache`.
+    /// `cache_dir` is `None`, use machine-local worktree policy and automatically
+    /// share the corresponding primary Git workspace's cache when available.
     #[allow(clippy::result_large_err, clippy::too_many_arguments)]
     pub fn new_with_cache_dir(
         sys: TSys,
@@ -90,19 +93,38 @@ impl<TSys: ContextSys> Context<TSys> {
     ) -> Result<Self, ContextError> {
         let env = env.into();
         let root_dir = sys.fs_canonicalize(root_dir)?;
-        let cache_dir = match cache_dir {
-            Some(p) => {
-                if p.is_absolute() {
-                    p
-                } else {
-                    sys.env_current_dir()
-                        .unwrap_or_else(|_| PathBuf::new())
-                        .join(p)
-                }
-            }
-            None => root_dir.join(CACHE_DIR),
-        };
-        let cache_dir = canonicalize_cache_dir(&cache_dir, &sys);
+        let cache_resolution = CacheResolutionState::new(
+            &root_dir,
+            cache_dir,
+            &sys,
+            omni_scm::discover_checkout,
+        );
+        Self::new_with_cache_resolution(
+            sys,
+            env,
+            &root_dir,
+            inherit_env_vars,
+            root_marker,
+            override_env_files,
+            tracing_config,
+            cache_resolution,
+        )
+    }
+
+    #[allow(clippy::result_large_err, clippy::too_many_arguments)]
+    fn new_with_cache_resolution(
+        sys: TSys,
+        env: String,
+        root_dir: &Path,
+        inherit_env_vars: bool,
+        root_marker: &str,
+        override_env_files: Option<Vec<PathBuf>>,
+        tracing_config: &TracingConfig,
+        cache_resolution: CacheResolutionState,
+    ) -> Result<Self, ContextError> {
+        let root_dir = root_dir.to_path_buf();
+        let (cache_dir, cache_source) =
+            cache_resolution.resolve(&root_dir, &sys)?;
         let workspace = get_workspace_configuration(&env, &root_dir, &sys)?;
         let omni_dir = root_dir.join(OMNI_DIR);
         let remote_cache = get_remote_cache_configuration(&cache_dir, &sys)?;
@@ -115,6 +137,8 @@ impl<TSys: ContextSys> Context<TSys> {
             root_dir,
             omni_dir,
             cache_dir,
+            cache_resolution,
+            cache_source,
             env_root_dir_marker: root_marker.to_string(),
             sys,
             tracing_config: tracing_config.clone(),
@@ -141,7 +165,7 @@ impl<TSys: ContextSys> Context<TSys> {
     /// re-reading the workspace and remote cache configurations.
     #[allow(clippy::result_large_err)]
     pub fn reload(&self) -> Result<Self, ContextError> {
-        Self::new_with_cache_dir(
+        Self::new_with_cache_resolution(
             self.sys.clone(),
             self.env.clone(),
             &self.root_dir,
@@ -149,7 +173,7 @@ impl<TSys: ContextSys> Context<TSys> {
             &self.env_root_dir_marker,
             self.override_env_files.clone(),
             &self.tracing_config,
-            Some(self.cache_dir.clone()),
+            self.cache_resolution.clone(),
         )
     }
 
@@ -164,6 +188,7 @@ impl<TSys: ContextSys> Context<TSys> {
             });
 
         let entries = workspace_files
+            .chain(self.cache_resolution.configuration_paths(&self.root_dir))
             .chain(self.remote_cache_configuration_paths())
             .map(|path| {
                 let stamp = self
@@ -478,6 +503,10 @@ impl<TSys: ContextSys> Context<TSys> {
         self.cache_dir.clone()
     }
 
+    pub fn cache_directory_source(&self) -> &CacheDirectorySource {
+        &self.cache_source
+    }
+
     pub fn scratch_dir(&self) -> PathBuf {
         self.root_dir.join(SCRATCH_DIR)
     }
@@ -552,18 +581,22 @@ fn get_workspace_configuration(
 // This keeps its encryption-key identity stable across creation and filesystem
 // aliases (for example /var on macOS), without lexically collapsing symlink/..
 // components.
-fn canonicalize_cache_dir(path: &Path, sys: &impl ContextSys) -> PathBuf {
-    for ancestor in path.ancestors() {
-        if let Ok(canonical) = sys.fs_canonicalize(ancestor) {
-            let suffix = path.strip_prefix(ancestor).expect("ancestor prefix");
-            return if suffix.as_os_str().is_empty() {
-                canonical
-            } else {
-                canonical.join(suffix)
-            };
+pub(crate) fn canonicalize_cache_dir(
+    path: &Path,
+    sys: &impl ContextSys,
+) -> PathBuf {
+    let mut resolved = PathBuf::new();
+    for component in path.components() {
+        if component == std::path::Component::ParentDir {
+            resolved.pop();
+        } else {
+            resolved.push(component);
+            if let Ok(canonical) = sys.fs_canonicalize(&resolved) {
+                resolved = canonical;
+            }
         }
     }
-    path.to_path_buf()
+    resolved
 }
 
 fn get_remote_cache_configuration_paths(cache_dir: &Path) -> Vec<PathBuf> {
@@ -653,6 +686,11 @@ impl<T: Into<ContextErrorInner>> From<T> for ContextError {
     derive(strum::IntoStaticStr, strum::Display, strum::EnumIs)
 )]
 pub(crate) enum ContextErrorInner {
+    #[error("{0}")]
+    CacheDirectory(String),
+
+    #[error("failed to load worktree configuration: '{0}'")]
+    WorktreeConfiguration(PathBuf, #[source] LoadConfigError),
     #[error(transparent)]
     Io(#[from] std::io::Error),
 
@@ -716,6 +754,75 @@ mod tests {
             &TracingConfig::default(),
         )
         .expect("Can't create context")
+    }
+
+    #[tokio::test]
+    async fn reload_tracks_worktree_file_lifecycle_and_remote_cache_location() {
+        let (tmp, sys) = default_fixture();
+        let root = tmp.path();
+        let original = ctx("testing", root, sys.clone());
+        let fingerprint = original.config_fingerprint();
+        let policy = root.join("worktree.omni.yaml");
+        std::fs::write(&policy, "cache: {dir: shared}").unwrap();
+        assert_ne!(fingerprint, original.config_fingerprint());
+        let changed = original.reload().unwrap();
+        assert_eq!(
+            changed.cache_dir(),
+            std::fs::canonicalize(root).unwrap().join("shared")
+        );
+        assert_ne!(original.cache_dir(), changed.cache_dir());
+        assert!(
+            changed
+                .remote_cache_configuration_paths()
+                .iter()
+                .all(|path| path.starts_with(changed.cache_dir()))
+        );
+        std::fs::create_dir_all(changed.cache_dir()).unwrap();
+        std::fs::write(changed.cache_dir().join("remote-cache.omni.yaml"),
+            "api_key: fixture-key\napi_base_url: http://localhost\ntenant_code: tenant\norganization_code: org\nworkspace_code: workspace\n").unwrap();
+        let with_remote = changed.reload().unwrap();
+        assert_eq!(
+            with_remote.remote_cache_configuration().unwrap().api_key,
+            "fixture-key"
+        );
+        std::fs::write(&policy, "cache: {dir: other-cache}").unwrap();
+        assert!(
+            with_remote
+                .reload()
+                .unwrap()
+                .remote_cache_configuration()
+                .is_none()
+        );
+        std::fs::write(root.join("worktree.omni.json"), "{}").unwrap();
+        assert!(changed.reload().is_err());
+        std::fs::remove_file(root.join("worktree.omni.json")).unwrap();
+        for contents in ["cache: null", "cache: {dir: null}"] {
+            std::fs::write(&policy, contents).unwrap();
+            let inherited = with_remote.reload().unwrap();
+            assert_eq!(inherited.cache_dir(), original.cache_dir());
+            assert!(inherited.remote_cache_configuration().is_none());
+        }
+        std::fs::remove_file(&policy).unwrap();
+        assert_eq!(changed.reload().unwrap().cache_dir(), original.cache_dir());
+
+        let explicit = Context::new_with_cache_dir(
+            sys,
+            "testing",
+            root,
+            false,
+            "workspace.omni.yaml",
+            None,
+            &TracingConfig::disabled(),
+            Some(root.join("fixed")),
+        )
+        .unwrap();
+        let fingerprint = explicit.config_fingerprint();
+        std::fs::write(&policy, "invalid: true").unwrap();
+        assert_eq!(fingerprint, explicit.config_fingerprint());
+        assert_eq!(
+            explicit.reload().unwrap().cache_dir(),
+            explicit.cache_dir()
+        );
     }
 
     #[tokio::test]

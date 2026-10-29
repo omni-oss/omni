@@ -63,6 +63,13 @@ pub const DEFAULT_IGNORE_FILES: &[&str] = &[GITIGNORE, IGNORE, OMNI_IGNORE];
 /// `<stem>.omni.{ext}` manifest name templates. `{ext}` is expanded with
 /// [`config_file_names`] (or a caller-chosen extension via `str::replace`).
 pub const WORKSPACE_OMNI: &str = "workspace.omni.{ext}";
+pub const WORKTREE_OMNI: &str = "worktree.omni.{ext}";
+
+/// Machine-local policy is not an ordinary task input or manifest.
+pub fn is_worktree_configuration_name(name: &str) -> bool {
+    name.strip_prefix(WORKTREE_OMNI.trim_end_matches("{ext}"))
+        .is_some_and(|ext| SUPPORTED_CONFIG_EXTS.contains(&ext))
+}
 pub const PROJECT_OMNI: &str = "project.omni.{ext}";
 pub const GENERATOR_OMNI: &str = "generator.omni.{ext}";
 pub const TOOL_OMNI: &str = "tool.omni.{ext}";

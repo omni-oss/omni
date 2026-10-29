@@ -6880,6 +6880,7 @@ dependencies = [
  "log",
  "maps",
  "omni_command_config",
+ "omni_constants",
  "omni_glob",
  "omni_hasher",
  "omni_types",
@@ -7033,6 +7034,7 @@ dependencies = [
  "omni_glob_config",
  "omni_hasher",
  "omni_remote_cache_client",
+ "omni_scm",
  "omni_setup",
  "omni_task_context",
  "omni_task_output_logs",
@@ -7739,6 +7741,7 @@ dependencies = [
  "log",
  "serde",
  "strum 0.28.0",
+ "tempfile",
  "thiserror 2.0.21",
  "tokio 1.54.1",
 ]

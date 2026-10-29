@@ -56,6 +56,9 @@ fn has_git_component(path: &Path) -> bool {
 }
 
 fn is_control_plane_basename(basename: &str) -> bool {
+    if omni_constants::is_worktree_configuration_name(basename) {
+        return true;
+    }
     if basename == omni_constants::OMNI_IGNORE {
         return true;
     }
@@ -99,6 +102,9 @@ mod tests {
             "generator.omni.yml",
             ".omniignore",
             "remote-cache.omni.bin",
+            "worktree.omni.yaml",
+            "worktree.omni.json",
+            "worktree.omni.toml",
         ] {
             let dest = Path::new("/ws").join(name);
             assert!(check_dest(&dest, &g).is_err(), "`{name}` must be refused");

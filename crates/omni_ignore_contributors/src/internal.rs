@@ -1,7 +1,7 @@
 use omni_constants::{
     OMNI_CACHE_DIR, OMNI_DIR, OMNI_LOCKS_DIR, OMNI_SCRATCH_DIR,
     OMNI_SOURCES_DIR, OMNI_TRACE_DIR, REMOTE_CACHE_OMNI,
-    SOURCE_LOCKFILE_LOCK_NAME, SOURCE_LOCKFILE_NAME,
+    SOURCE_LOCKFILE_LOCK_NAME, SOURCE_LOCKFILE_NAME, WORKTREE_OMNI,
 };
 use omni_ignore_core::{IgnoreContributor, IgnorePattern};
 
@@ -26,6 +26,7 @@ impl InternalContributor {
             format!("!/{OMNI_SOURCES_DIR}/{SOURCE_LOCKFILE_NAME}"),
             format!("/{OMNI_SOURCES_DIR}/{SOURCE_LOCKFILE_LOCK_NAME}"),
             format!("/{OMNI_TRACE_DIR}/**"),
+            format!("/{}", WORKTREE_OMNI.replace("{ext}", "*")),
         ]
     }
 }
@@ -65,6 +66,7 @@ mod tests {
                 "!/.omni/sources/lock.json",
                 "/.omni/sources/lock.json.lock",
                 "/.omni/trace/**",
+                "/worktree.omni.*",
             ]
         );
     }

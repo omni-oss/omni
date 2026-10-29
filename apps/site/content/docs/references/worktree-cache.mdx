@@ -1,0 +1,80 @@
+---
+title: "Worktree caches"
+description: "Automatic cache sharing between Git worktrees and machine-local cache configuration"
+---
+
+Omni automatically shares cached task results between a primary Git checkout and
+its linked worktrees, including detached worktrees. Independent clones do not
+share automatically. Git is the currently supported provider; discovery uses
+local metadata without network calls or a Git process per task.
+
+Run `omni cache dir` to see the effective location. With no configuration, linked
+workspaces use the corresponding primary workspace's `.omni/cache`. Nested Omni
+workspaces map to the same relative directory in the primary checkout, which must
+exist and contain a `workspace.omni.*` file. When no safe corresponding workspace
+is available, Omni uses the current workspace's cache instead.
+
+## Machine-local configuration
+
+Create **one** `worktree.omni.yaml`, `.yml`, `.json`, or `.toml` file next to
+`workspace.omni.*`. Do not commit it. `omni ignore sync` maintains the
+`/worktree.omni.*` pattern in every configured ignore target.
+
+```yaml
+# In the primary workspace: inherited by linked workspaces.
+cache:
+  dir: ../shared-cache/app
+```
+
+Relative paths resolve against the workspace **declaring the value**, not the
+invocation directory or the inheriting worktree. Absolute paths are also allowed.
+To intentionally use an isolated cache, set this in the linked workspace:
+
+```yaml
+cache:
+  dir: .omni/cache
+```
+
+An empty configuration, omitted field, or `null` value (`cache: null` or
+`cache.dir: null`) inherits the primary value. Unknown fields, duplicate file
+variants, and empty/whitespace-only paths are errors. Use literal paths: home
+(`~`) and environment-variable expansion are not
+supported. Worktree configuration is excluded from default file hashes even
+before ignore synchronization; an explicitly declared input naming the file
+(such as `worktree.omni.yaml` or `worktree.omni.*`) can still include it.
+
+Windows absolute drive and UNC paths use native filesystem semantics. Ambiguous
+drive-relative forms such as `C:cache` are rejected; use a fully absolute path or
+a normal workspace-relative path instead.
+
+## Precedence and safety
+
+1. Existing CLI (`--cache-dir`), environment (`OMNI_CACHE_DIR`), or API override.
+2. Current workspace's `worktree.omni.*` value.
+3. Corresponding primary workspace's `worktree.omni.*` value.
+4. Corresponding primary workspace's `.omni/cache`.
+5. Current workspace's `.omni/cache` when no primary workspace is available.
+
+Explicit overrides retain invocation-relative semantics and bypass discovery and
+worktree configuration entirely, including errors in unused configuration files.
+A local value also bypasses the shadowed primary configuration file.
+
+Always choose a dedicated cache directory, not a directory containing files you
+want to preserve. Omni rejects cache paths equal to or containing the current or
+known primary workspace, including filesystem aliases. Explicit overrides skip
+discovery, so that guard cannot protect an undiscovered primary workspace.
+Dedicated descendants, sibling cache directories, and external directories are
+allowed. Omni does not migrate or delete previous caches during selection.
+
+## Sharing consequences and reloads
+
+Sharing includes cache-scoped remote configuration and credentials. Clearing or
+pruning a cache affects every checkout using that store. Treat sharing as a local
+trust decision, not an isolation boundary for untrusted code. Task execution,
+restored outputs, scratch state, and traces remain in the current workspace.
+
+Long-lived API/MCP contexts reload cache selection when local or primary worktree
+configuration is created, removed, or edited. Existing operations retain their
+context snapshot. Checkout topology is discovered only at context construction:
+reconstruct the context after topology changes. Every new CLI invocation performs
+fresh discovery. No per-task discovery or background topology watcher is added.

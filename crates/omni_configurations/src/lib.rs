@@ -19,6 +19,7 @@ mod ui;
 mod utils;
 mod validators;
 mod workspace_configuration;
+mod worktree_configuration;
 
 pub use cache_configuration::*;
 pub use capabilities::*;
@@ -38,3 +39,4 @@ pub use task_output_configuration::*;
 pub use ui::*;
 pub use utils::fs::{LoadConfigError, LoadConfigErrorKind};
 pub use workspace_configuration::*;
+pub use worktree_configuration::*;
