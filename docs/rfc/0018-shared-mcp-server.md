@@ -1,6 +1,6 @@
 # RFC 0018: Shared MCP server with request-local working directories
 
-- **Status:** Accepted — not yet implemented
+- **Status:** Implemented
 - **Owner:** TBD
 - **Date:** 2026-10-29
 - **Base branch:** `main`

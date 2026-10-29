@@ -18,6 +18,15 @@ omni mcp [OPTIONS]
 
 ## Options
 
+### `--shared`
+
+Start without binding a workspace. The server can launch from any directory;
+each tool call must supply an absolute `working_dir`. Omni canonicalizes that
+directory and discovers the nearest workspace by walking its physical ancestors.
+
+Cannot be combined with `--root-dir`, including a root supplied through
+`OMNI_ROOT_DIR`.
+
 ### `--root-dir`
 
 Workspace root directory. When omitted, omni walks up from the current working directory to find an `workspace.omni.yaml` file. MCP clients should set this to the workspace root so the server works correctly regardless of the client's own working directory. It also sets the current dir of the process. Can also be set via the `OMNI_ROOT_DIR` environment variable
@@ -30,8 +39,73 @@ Workspace root directory. When omitted, omni walks up from the current working d
 
 ## Examples
 
-```bash
-omni mcp [OPTIONS]
+### Global agent configuration
+
+For clients that use an `mcpServers` configuration, register Omni once without a
+workspace-specific startup directory:
+
+```json
+{
+  "mcpServers": {
+    "omni": {
+      "command": "omni",
+      "args": ["mcp", "--shared"]
+    }
+  }
+}
 ```
+
+Every shared tool, including tools that otherwise take no arguments, requires
+`working_dir`. For example, call `workspace_info` with:
+
+```json
+{ "working_dir": "/home/user/repos/app/packages/frontend" }
+```
+
+Or call `task_run` with:
+
+```json
+{
+  "working_dir": "/home/user/repos/app/packages/frontend",
+  "tasks": ["build"]
+}
+```
+
+Use an existing absolute directory, not `~`, a relative path, or a shell variable.
+Symlinks follow their physical targets. Each call selects its own workspace;
+there is no remembered default or fallback after an error. Configuration edits
+are read on the next call.
+
+The workspace root still owns configuration, project discovery and default
+storage. Relative generator output paths and environment queries use the
+invocation directory. Shared `tool_run.working_dir` also selects the tool's
+execution directory. Project filters and configuration-relative paths retain
+their existing meanings.
+
+Environment profile, environment-file, inheritance and cache flags remain
+server-wide policy. A relative explicit `--cache-dir` resolves separately from
+each call's `working_dir`. The server does not change process CWD or process
+environment variables.
+
+Shared mode logs to stderr by default and does not create a default workspace
+trace file in the launch directory. To enable file tracing, supply both
+`--file-trace-level` and `--file-trace-output` before `mcp`; relative trace paths
+resolve from the startup directory, not a request's workspace.
+
+Shared mode is not a sandbox: tools can address locally accessible workspaces
+with the server process's privileges. Existing operation capability policies
+still apply.
+
+### Workspace-bound configuration
+
+Existing workspace-bound invocations retain their schemas and defaults:
+
+```bash
+omni mcp --root-dir /home/user/repos/app
+```
+
+Without `--shared`, `working_dir` is not required on tools. Bound `tool_run`
+continues to accept an optional execution directory and defaults to the workspace
+root when omitted.
 
 ---
