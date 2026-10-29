@@ -227,7 +227,7 @@ where
                     )
                     .await
                 {
-                    if !should_copy_after_hardlink_error(&err) {
+                    if !omni_utils::fs::should_copy_after_hardlink_error(&err) {
                         return Err(err.into());
                     }
 
@@ -1016,15 +1016,6 @@ pub(crate) enum BatchExecutorErrorInner {
     Resolve(#[from] omni_command_config::ResolveError),
 }
 
-fn should_copy_after_hardlink_error(error: &std::io::Error) -> bool {
-    matches!(
-        error.kind(),
-        std::io::ErrorKind::CrossesDevices
-            | std::io::ErrorKind::Unsupported
-            | std::io::ErrorKind::PermissionDenied
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use omni_task_output_logs::{
@@ -1035,32 +1026,6 @@ mod tests {
     /// The built-in default the executor applies when no flag or config sets a
     /// facet.
     const DEFAULT: LogsDisplay = LogsDisplay::Failed;
-
-    #[test]
-    fn hardlink_copy_fallback_is_limited_to_filesystem_restrictions() {
-        use std::io::{Error, ErrorKind};
-
-        for kind in [
-            ErrorKind::CrossesDevices,
-            ErrorKind::Unsupported,
-            ErrorKind::PermissionDenied,
-        ] {
-            assert!(super::should_copy_after_hardlink_error(&Error::from(
-                kind
-            )));
-        }
-        for kind in [
-            ErrorKind::NotFound,
-            ErrorKind::AlreadyExists,
-            ErrorKind::InvalidInput,
-            ErrorKind::StorageFull,
-            ErrorKind::Other,
-        ] {
-            assert!(!super::should_copy_after_hardlink_error(&Error::from(
-                kind
-            )));
-        }
-    }
 
     // Mirrors BatchExecutor::resolve_output_logs.
     fn resolve(

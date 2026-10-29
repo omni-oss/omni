@@ -33,9 +33,9 @@ use omni_types::OmniPath;
 use serde::{Deserialize, Serialize};
 use strum::{EnumDiscriminants, EnumIs, IntoDiscriminant as _};
 use system_traits::{
-    FsCreateDirAllAsync, FsHardLinkAsync as _, FsMetadataAsync,
-    FsReadAsync as _, FsRemoveDirAllAsync as _, FsRenameAsync as _,
-    FsWriteAsync as _, impls::RealSys,
+    FsCopyAsync as _, FsCreateDirAllAsync, FsHardLinkAsync as _,
+    FsMetadataAsync, FsReadAsync as _, FsRemoveDirAllAsync as _,
+    FsRenameAsync as _, FsWriteAsync as _, impls::RealSys,
 };
 use time::OffsetDateTime;
 use tokio::task::JoinSet;
@@ -618,16 +618,25 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                         let cache_abs_file_path =
                             staging_dir.join(&cache_file_name);
 
-                        self.sys
+                        if let Err(err) = self.sys
                             .fs_hard_link_async(
                                 &original_abs_path,
                                 &cache_abs_file_path,
                             )
-                            .await?;
-
-                        log::debug!(
-                            "cache file hard link {original_abs_path:?} to {cache_abs_file_path:?}"
-                        );
+                            .await
+                        {
+                            if !omni_utils::fs::should_copy_after_hardlink_error(&err) {
+                                return Err(err.into());
+                            }
+                            log::debug!(
+                                "Saving cached file by copy because hardlinking was unavailable ({err}): {original_abs_path:?} to {cache_abs_file_path:?}"
+                            );
+                            self.sys.fs_copy_async(&original_abs_path, &cache_abs_file_path).await?;
+                        } else {
+                            log::debug!(
+                                "cache file hard link {original_abs_path:?} to {cache_abs_file_path:?}"
+                            );
+                        }
 
                         cache_output_files.push(CachedFileOutput {
                             cached_path: PathBuf::from(cache_file_name),
@@ -1762,6 +1771,43 @@ mod tests {
             exit_code,
             execution_duration: std::time::Duration::from_millis(100),
             tries: 1,
+        }
+    }
+
+    #[tokio::test]
+    #[cfg(target_os = "linux")]
+    async fn caches_outputs_on_a_different_device() {
+        use std::os::unix::fs::MetadataExt;
+
+        let temp = fixture(&["project1"]).await;
+        // /dev/shm provides a second filesystem on typical Linux hosts. Other
+        // hosts still exercise the error-kind policy in omni_utils's tests.
+        let Ok(cache_dir) = tempfile::tempdir_in("/dev/shm") else {
+            return;
+        };
+        if std::fs::metadata(temp.path()).unwrap().dev()
+            == std::fs::metadata(cache_dir.path()).unwrap().dev()
+        {
+            return;
+        }
+        let cache = HybridTaskExecutionCacheStore::new(
+            cache_dir.path(),
+            temp.path(),
+            RemoteConfig::new_disabled(),
+        );
+        let task = task("task", "project1", temp.path());
+        cache
+            .cache(&new_cache_info(Some(&LOGS_CONTENT), *task.get()))
+            .await
+            .unwrap();
+        std::fs::remove_dir_all(temp.path().join("project1/dist")).unwrap();
+        let cached = cache.get(task.get()).await.unwrap().unwrap();
+        assert_eq!(cached.files.len(), 2);
+        for file in cached.files {
+            assert_eq!(
+                std::fs::read_to_string(file.cached_path).unwrap(),
+                JS_CONTENT
+            );
         }
     }
 
