@@ -655,6 +655,18 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
 
                         if let Some(input_files_globset) =
                             project.input_files_globset.as_ref()
+                            && (!is_local_cache_policy(original_file_abs_path)
+                                || project.task.input_files.iter().any(
+                                    |input| {
+                                        let path =
+                                            input.resolve(&project.roots);
+                                        let path = project_dir.join(path);
+                                        self.sys
+                                            .fs_canonicalize(&path)
+                                            .unwrap_or(path)
+                                            == original_file_abs_path
+                                    },
+                                ))
                             && input_files_globset
                                 .is_match_candidate(&candidate)
                             && !exclude_matches(
@@ -874,6 +886,12 @@ fn exclude_matches(
     candidate: &Candidate,
 ) -> bool {
     globset.is_some_and(|g| g.is_match_candidate(candidate))
+}
+
+fn is_local_cache_policy(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(omni_constants::is_worktree_configuration_name)
 }
 
 // A symlink cycle surfaces as `Error::Loop` (possibly wrapped), which is not an
@@ -1146,6 +1164,41 @@ mod tests {
             .iter()
             .cloned()
             .collect()
+    }
+
+    #[tokio::test]
+    async fn local_worktree_policy_is_not_a_glob_input_but_can_be_explicit() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        write_file(&root.join("proj/source.txt"), "source");
+        write_file(
+            &root.join("proj/worktree.omni.yaml"),
+            "cache: {dir: first}",
+        );
+        let mut project = Project::new(root, "proj");
+        project.input_files = vec![OmniPath::new("**/*")];
+        let config = CollectConfig {
+            input_files: true,
+            digests: true,
+            ..Default::default()
+        };
+        let before =
+            collect_one(root, &fresh_cache_dir(root), &project, &config).await;
+        assert_eq!(as_set(&before.input_files), rel_paths(&["source.txt"]));
+        write_file(
+            &root.join("proj/worktree.omni.yaml"),
+            "cache: {dir: changed}",
+        );
+        let after =
+            collect_one(root, &fresh_cache_dir(root), &project, &config).await;
+        assert_eq!(before.digest, after.digest);
+        project.input_files = vec![OmniPath::new("worktree.omni.yaml")];
+        let explicit =
+            collect_one(root, &fresh_cache_dir(root), &project, &config).await;
+        assert_eq!(
+            as_set(&explicit.input_files),
+            rel_paths(&["worktree.omni.yaml"])
+        );
     }
 
     #[tokio::test]

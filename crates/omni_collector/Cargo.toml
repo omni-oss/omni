@@ -10,6 +10,7 @@ default = ["enable-tracing"]
 enable-tracing = ["trace/enabled"]
 
 [dependencies]
+omni_constants = { workspace = true }
 eyre = { workspace = true }
 thiserror = { workspace = true }
 strum = { workspace = true }

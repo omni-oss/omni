@@ -1,6 +1,7 @@
 #![allow(clippy::redundant_field_names)]
 
 pub mod build;
+mod cache_resolution;
 mod config;
 pub mod constants;
 mod context;
@@ -20,6 +21,7 @@ mod test_fixture;
 mod utils;
 mod workspace_hasher;
 
+pub use cache_resolution::CacheDirectorySource;
 pub use config::WorkspaceInitConfig;
 pub use context::*;
 pub use env_loader::*;

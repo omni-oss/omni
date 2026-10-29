@@ -3,7 +3,7 @@ use std::path::Path;
 use serde::{Deserialize, Deserializer};
 use system_traits::FsRead;
 
-use crate::{LoadConfigError, utils};
+use crate::LoadConfigError;
 
 /// Machine-local cache policy. Missing fields inherit; explicit nulls do not.
 #[derive(Clone, Debug, Default, PartialEq, Deserialize)]
@@ -32,7 +32,27 @@ impl WorktreeConfiguration {
         path: &Path,
         sys: &(impl FsRead + Send + Sync),
     ) -> Result<Self, LoadConfigError> {
-        utils::fs::load_config(path, sys)
+        let content = sys
+            .fs_read(path)
+            .map_err(|error| (path.to_path_buf(), error))?;
+        let format = omni_file_data_serde::ext_to_format(
+            path.extension().unwrap_or_default(),
+        )
+        .map_err(|error| (path.to_path_buf(), error))?;
+        // YAML has no empty-map spelling requirement. Empty/comment-only files
+        // mean inheritance, unlike explicit null values for cache or cache.dir.
+        if format == omni_file_data_serde::Format::Yaml
+            && std::str::from_utf8(&content).is_ok_and(|text| {
+                text.lines().all(|line| {
+                    let line = line.trim();
+                    line.is_empty() || line.starts_with('#')
+                })
+            })
+        {
+            return Ok(Self::default());
+        }
+        Ok(omni_file_data_serde::from_slice(&content, format)
+            .map_err(|error| (path.to_path_buf(), error))?)
     }
 }
 
