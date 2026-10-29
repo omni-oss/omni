@@ -38,7 +38,7 @@ pub struct OmniMcpServer<TSys: ContextSys> {
 }
 
 enum ServerState<TSys: ContextSys> {
-    Bound(Mutex<ContextState<TSys>>),
+    Bound(Box<Mutex<ContextState<TSys>>>),
     Shared {
         sys: TSys,
         config: WorkspaceInitConfig,
@@ -64,10 +64,10 @@ where
     pub fn new(ctx: Context<TSys>) -> Self {
         let fingerprint = ctx.config_fingerprint();
         Self {
-            state: ServerState::Bound(Mutex::new(ContextState {
+            state: ServerState::Bound(Box::new(Mutex::new(ContextState {
                 ctx,
                 fingerprint,
-            })),
+            }))),
         }
     }
 
