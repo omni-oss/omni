@@ -99,6 +99,10 @@ describe("automatic Git worktree cache sharing", { tags: ["caching"] }, () => {
         );
         ws.write("linked/worktree.omni.yaml", {});
         expect(await cacheDir(linked)).toBe(ws.path("shared/cache"));
+        for (const contents of ["cache: null", "cache: {dir: null}"]) {
+            ws.write("linked/worktree.omni.yaml", contents);
+            expect(await cacheDir(linked)).toBe(ws.path("shared/cache"));
+        }
         ws.write("linked/worktree.omni.yaml", {
             cache: { dir: ".omni/cache" },
         });

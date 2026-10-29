@@ -796,6 +796,12 @@ mod tests {
         std::fs::write(root.join("worktree.omni.json"), "{}").unwrap();
         assert!(changed.reload().is_err());
         std::fs::remove_file(root.join("worktree.omni.json")).unwrap();
+        for contents in ["cache: null", "cache: {dir: null}"] {
+            std::fs::write(&policy, contents).unwrap();
+            let inherited = with_remote.reload().unwrap();
+            assert_eq!(inherited.cache_dir(), original.cache_dir());
+            assert!(inherited.remote_cache_configuration().is_none());
+        }
         std::fs::remove_file(&policy).unwrap();
         assert_eq!(changed.reload().unwrap().cache_dir(), original.cache_dir());
 

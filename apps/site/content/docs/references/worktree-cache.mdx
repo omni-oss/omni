@@ -35,9 +35,10 @@ cache:
   dir: .omni/cache
 ```
 
-An empty configuration or omitted `cache.dir` inherits the primary value. Unknown
-fields, duplicate file variants, null values, and empty/whitespace-only paths are
-errors. Use literal paths: home (`~`) and environment-variable expansion are not
+An empty configuration, omitted field, or `null` value (`cache: null` or
+`cache.dir: null`) inherits the primary value. Unknown fields, duplicate file
+variants, and empty/whitespace-only paths are errors. Use literal paths: home
+(`~`) and environment-variable expansion are not
 supported. Worktree configuration is excluded from default file hashes even
 before ignore synchronization; an explicitly declared input naming the file
 (such as `worktree.omni.yaml` or `worktree.omni.*`) can still include it.

@@ -1,29 +1,23 @@
 use std::path::Path;
 
-use serde::{Deserialize, Deserializer};
+use serde::Deserialize;
 use system_traits::FsRead;
 
 use crate::LoadConfigError;
 
-/// Machine-local cache policy. Missing fields inherit; explicit nulls do not.
+/// Machine-local cache policy. Missing and null fields both inherit.
 #[derive(Clone, Debug, Default, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WorktreeConfiguration {
-    #[serde(default, deserialize_with = "present")]
+    #[serde(default)]
     pub cache: Option<WorktreeCacheConfiguration>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WorktreeCacheConfiguration {
-    #[serde(default, deserialize_with = "present")]
+    #[serde(default)]
     pub dir: Option<String>,
-}
-
-fn present<'de, T: Deserialize<'de>, D: Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Option<T>, D::Error> {
-    T::deserialize(deserializer).map(Some)
 }
 
 impl WorktreeConfiguration {
@@ -40,7 +34,7 @@ impl WorktreeConfiguration {
         )
         .map_err(|error| (path.to_path_buf(), error))?;
         // YAML has no empty-map spelling requirement. Empty/comment-only files
-        // mean inheritance, unlike explicit null values for cache or cache.dir.
+        // mean inheritance, as do null values for cache or cache.dir.
         if format == omni_file_data_serde::Format::Yaml
             && std::str::from_utf8(&content).is_ok_and(|text| {
                 text.lines().all(|line| {
@@ -61,17 +55,23 @@ mod tests {
     use super::*;
 
     #[test]
-    fn missing_values_inherit_but_nulls_and_unknown_fields_fail() {
-        for value in ["{}", r#"{"cache":{}}"#] {
+    fn missing_and_null_values_inherit_but_invalid_fields_fail() {
+        for value in [
+            "{}",
+            r#"{"cache":{}}"#,
+            r#"{"cache":null}"#,
+            r#"{"cache":{"dir":null}}"#,
+        ] {
             let config: WorktreeConfiguration =
                 serde_json::from_str(value).unwrap();
             assert!(config.cache.and_then(|cache| cache.dir).is_none());
         }
         for value in [
-            r#"{"cache":null}"#,
-            r#"{"cache":{"dir":null}}"#,
             r#"{"cache":{"directory":"cache"}}"#,
             r#"{"extends":"other"}"#,
+            r#"{"cache":false}"#,
+            r#"{"cache":{"dir":42}}"#,
+            r#"{"cache":{"dir":[]}}"#,
         ] {
             assert!(
                 serde_json::from_str::<WorktreeConfiguration>(value).is_err(),

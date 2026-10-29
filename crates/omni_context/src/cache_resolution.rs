@@ -316,7 +316,6 @@ mod tests {
         for content in [
             "cache: {dir: ''}",
             "cache: {dir: '  '}",
-            "cache: {dir: null}",
             "cache: {dir: '~/cache'}",
             "cache: {dir: '$HOME/cache'}",
             "cache: {dir: '${HOME}/cache'}",
@@ -332,6 +331,36 @@ mod tests {
         f.write(&f.root, "{}");
         std::fs::write(f.root.join("worktree.omni.json"), "{}").unwrap();
         assert!(f.state().resolve(&f.root, &RealSys).is_err());
+    }
+
+    #[test]
+    fn null_fields_inherit_primary_configuration_or_automatic_default() {
+        let f = Fixture::new();
+        f.write(&f.primary, "cache: {dir: shared}");
+        for content in [
+            "cache: null",
+            "cache:",
+            "cache: {dir: null}",
+            "cache:\n  dir:",
+        ] {
+            f.write(&f.root, content);
+            assert_eq!(f.resolve(), f.primary.join("shared"));
+        }
+        std::fs::remove_file(f.root.join("worktree.omni.yaml")).unwrap();
+        for content in [r#"{"cache":null}"#, r#"{"cache":{"dir":null}}"#] {
+            std::fs::write(f.root.join("worktree.omni.json"), content).unwrap();
+            assert_eq!(f.resolve(), f.primary.join("shared"));
+        }
+        for content in ["cache: null", "cache: {dir: null}"] {
+            f.write(&f.primary, content);
+            assert_eq!(f.resolve(), f.primary.join(OMNI_CACHE_DIR));
+        }
+        let local =
+            CacheResolutionState::new(&f.root, None, &RealSys, |_| Ok(None));
+        assert_eq!(
+            local.resolve(&f.root, &RealSys).unwrap().0,
+            f.root.join(OMNI_CACHE_DIR)
+        );
     }
 
     #[test]

@@ -58,9 +58,10 @@ and `toml`. More than one worktree configuration variant in the same workspace
 is an error, rather than an extension-priority choice.
 
 The initial schema contains only optional `cache.dir`. An empty configuration or
-an omitted field means inheritance; an explicitly empty string or `null` is an
-error. Reject unknown fields to catch misspellings. No environment-specific file
-variants, `extends`, or general manifest merging are introduced.
+an omitted or `null` field means inheritance, consistent with other Omni
+configuration. An explicitly empty string is an error. Reject unknown fields to
+catch misspellings. No environment-specific file variants, `extends`, or general
+manifest merging are introduced.
 
 ### 3.1 Precedence
 
@@ -334,7 +335,8 @@ manifests, protect worktree configuration from accidental projection writes too.
 - Local worktree values override inherited values; absent fields inherit.
 - Absolute paths, `..`, Windows drive/UNC paths, filesystem aliases, and
   nonexistent cache suffixes behave correctly.
-- Empty/null values, unsupported expansion syntax, malformed files, unknown
+- Null values inherit, including `cache: null` and `cache.dir: null`.
+- Empty paths, unsupported expansion syntax, malformed files, unknown
   fields, and duplicate variants produce clear errors.
 - Explicit overrides retain existing precedence and relative semantics, skip
   discovery, and bypass otherwise invalid worktree configuration.
