@@ -12,6 +12,16 @@ pub fn from_args_root_dir_and_sys<TSys: ContextSys>(
     sys: TSys,
     tracing: &TracingConfig,
 ) -> Result<Context<TSys>, ContextError> {
+    from_config_root_dir_and_sys(
+        &workspace_init_config(cli),
+        root_dir,
+        sys,
+        tracing,
+    )
+}
+
+/// Extract server-wide workspace initialization policy without loading a workspace.
+pub fn workspace_init_config(cli: &CliArgs) -> WorkspaceInitConfig {
     let env = cli.env.as_deref().unwrap_or("development");
     let env_files = cli.env_file.as_ref().map(|v| {
         v.iter()
@@ -29,18 +39,13 @@ pub fn from_args_root_dir_and_sys<TSys: ContextSys>(
         .env_root_dir_marker
         .clone()
         .unwrap_or_else(|| constants::WORKSPACE_OMNI.replace("{ext}", "yaml"));
-    let ctx = Context::new_with_cache_dir(
-        sys,
-        env,
-        root_dir.as_ref(),
-        cli.inherit_env_vars,
-        &root_marker,
+    WorkspaceInitConfig {
+        env: env.to_owned(),
         env_files,
-        tracing,
-        cli.cache_dir.clone(),
-    )?;
-
-    Ok(ctx)
+        env_root_dir_marker: root_marker,
+        inherit_env_vars: cli.inherit_env_vars,
+        cache_dir: cli.cache_dir.clone(),
+    }
 }
 
 #[allow(clippy::result_large_err)]

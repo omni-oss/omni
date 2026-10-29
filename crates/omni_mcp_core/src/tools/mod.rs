@@ -11,118 +11,161 @@ pub mod workspace;
 use crate::model::*;
 
 pub fn tool_list() -> Vec<rmcp::model::Tool> {
+    tool_list_for_mode(false)
+}
+
+pub fn tool_list_for_mode(shared: bool) -> Vec<rmcp::model::Tool> {
+    let schemas = ToolSchemas { shared };
     vec![
-        tool_noargs(
+        schemas.noargs(
             "workspace_info",
             "Return workspace root, cache dir and env vars",
             true,
         ),
-        tool_typed::<ProjectListParams>(
+        schemas.typed::<ProjectListParams>(
             "project_list",
             "List runnable projects in the workspace; optionally include base templates and extends-only configs",
             true,
         ),
-        tool_typed::<ProjectConfigParams>(
+        schemas.typed::<ProjectConfigParams>(
             "project_config",
             "Return full configuration for a project, selected by name or by config file path, including its tasks",
             true,
         ),
-        tool_noargs(
+        schemas.noargs(
             "generator_list",
             "List all available generators in the workspace",
             true,
         ),
-        tool_typed::<GeneratorInspectParams>(
+        schemas.typed::<GeneratorInspectParams>(
             "generator_inspect",
             "Inspect a generator's full input schema, options, validators and targets",
             true,
         ),
-        tool_typed::<GeneratorRunParams>(
+        schemas.typed::<GeneratorRunParams>(
             "generator_run",
             "Scaffold files using a generator. Concurrent runs within the same workspace are automatically serialized to prevent race conditions on shared files. Run generators sequentially rather than in parallel.",
             false,
         ),
-        tool_typed::<GeneratorValidateInputParams>(
+        schemas.typed::<GeneratorValidateInputParams>(
             "generator_validate_input",
             "Validate input values against a generator's schema without running it",
             true,
         ),
-        tool_noargs(
+        schemas.noargs(
             "hash_workspace",
             "Compute a content hash for the entire workspace",
             true,
         ),
-        tool_typed::<HashProjectParams>(
+        schemas.typed::<HashProjectParams>(
             "hash_project",
             "Compute a content hash for a single project (optionally scoped to tasks)",
             true,
         ),
-        tool_typed::<CacheStatsParams>(
+        schemas.typed::<CacheStatsParams>(
             "cache_stats",
             "Return cache hit/miss/size statistics per project and task",
             true,
         ),
-        tool_typed::<CachePruneParams>(
+        schemas.typed::<CachePruneParams>(
             "cache_prune",
             "Prune stale cache entries. dry_run=true (default) shows what would be deleted without deleting",
             false,
         ),
-        tool_typed::<TaskRunParams>(
+        schemas.typed::<TaskRunParams>(
             "task_run",
             "Execute named tasks with optional project/dir/dry_run filters",
             false,
         ),
-        tool_typed::<ExecCommandParams>(
+        schemas.typed::<ExecCommandParams>(
             "exec_command",
             "Run an arbitrary command across projects",
             false,
         ),
-        tool_noargs(
+        schemas.noargs(
             "tool_list",
             "List all available tools in the workspace",
             true,
         ),
-        tool_typed::<ToolInspectParams>(
+        schemas.typed::<ToolInspectParams>(
             "tool_inspect",
             "Inspect a tool's input schema derived from its own inputs",
             true,
         ),
-        tool_typed::<ToolRunParams>(
+        if shared {
+            schemas.typed::<SharedToolRunParams>(
+                "tool_run",
+                "Run a workspace tool by name with JSON arguments and return its captured value",
+                false,
+            )
+        } else { schemas.typed::<ToolRunParams>(
             "tool_run",
             "Run a workspace tool by name with JSON arguments and return its captured value",
             false,
-        ),
-        tool_typed::<ProjectionSyncParams>(
+        ) },
+        schemas.typed::<ProjectionSyncParams>(
             "projection_sync",
             "Materialize configured projections into the workspace via links, persisting the ledger. Idempotent; not read-only.",
             false,
         ),
-        tool_typed::<ProjectionStatusParams>(
+        schemas.typed::<ProjectionStatusParams>(
             "projection_status",
             "Report the state of every recorded projection link (ok/missing/broken/drifted)",
             true,
         ),
-        tool_typed::<ProjectionUnlinkParams>(
+        schemas.typed::<ProjectionUnlinkParams>(
             "projection_unlink",
             "Tear down the links recorded for a single projection source id",
             false,
         ),
-        tool_typed::<ProjectionPruneParams>(
+        schemas.typed::<ProjectionPruneParams>(
             "projection_prune",
             "Remove ledger-recorded links whose destinations have become dangling",
             false,
         ),
-        tool_typed::<IgnoreSyncParams>(
+        schemas.typed::<IgnoreSyncParams>(
             "ignore_sync",
             "Maintain omni's managed block in the configured ignore files. dry_run previews the block; check reports staleness. Not read-only.",
             false,
         ),
-        tool_typed::<IgnoreCleanParams>(
+        schemas.typed::<IgnoreCleanParams>(
             "ignore_clean",
             "Remove omni's managed block from every configured ignore file",
             false,
         ),
     ]
+}
+
+struct ToolSchemas {
+    shared: bool,
+}
+
+impl ToolSchemas {
+    fn typed<P: schemars::JsonSchema>(
+        &self,
+        name: &'static str,
+        description: &'static str,
+        read_only: bool,
+    ) -> rmcp::model::Tool {
+        if self.shared {
+            tool_typed::<WorkspaceParams<P>>(name, description, read_only)
+        } else {
+            tool_typed::<P>(name, description, read_only)
+        }
+    }
+
+    fn noargs(
+        &self,
+        name: &'static str,
+        description: &'static str,
+        read_only: bool,
+    ) -> rmcp::model::Tool {
+        if self.shared {
+            self.typed::<EmptyParams>(name, description, read_only)
+        } else {
+            tool_noargs(name, description, read_only)
+        }
+    }
 }
 
 fn tool_noargs(
@@ -159,6 +202,39 @@ fn tool_typed<P: schemars::JsonSchema>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_shared_schema_requires_one_string_directory() {
+        let bound = tool_list();
+        let shared = tool_list_for_mode(true);
+        assert_eq!(bound.len(), shared.len());
+        for (bound, shared) in bound.iter().zip(&shared) {
+            assert_eq!(bound.name, shared.name);
+            let required = shared.input_schema["required"].as_array().unwrap();
+            assert_eq!(
+                required.iter().filter(|v| *v == "working_dir").count(),
+                1
+            );
+            assert_eq!(
+                shared.input_schema["properties"]["working_dir"]["type"],
+                "string"
+            );
+            if let Some(properties) = bound
+                .input_schema
+                .get("properties")
+                .and_then(serde_json::Value::as_object)
+            {
+                for (key, value) in properties {
+                    if key != "working_dir" {
+                        assert_eq!(
+                            &shared.input_schema["properties"][key],
+                            value
+                        );
+                    }
+                }
+            }
+        }
+    }
 
     #[test]
     fn exposes_exactly_three_fixed_tool_entries() {

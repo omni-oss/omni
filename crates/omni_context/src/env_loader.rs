@@ -20,6 +20,7 @@ pub struct EnvLoader<T: EnvCacheSys> {
     sys: T,
     root_dir_marker: PathBuf,
     env_files: Vec<PathBuf>,
+    working_dir: Option<PathBuf>,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
@@ -40,7 +41,13 @@ impl<T: EnvCacheSys> EnvLoader<T> {
             sys,
             root_dir_marker,
             env_files,
+            working_dir: None,
         }
+    }
+
+    pub fn with_working_dir(mut self, working_dir: Option<PathBuf>) -> Self {
+        self.working_dir = working_dir;
+        self
     }
 
     pub fn get_cached(&self, path: &Path) -> Option<Arc<EnvVarsMap>> {
@@ -52,8 +59,14 @@ impl<T: EnvCacheSys> EnvLoader<T> {
         &mut self,
         args: &GetVarsArgs,
     ) -> Result<Arc<EnvVarsMap>, EnvLoaderError> {
-        let cwd = self.sys.env_current_dir()?;
-        let start_dir = args.start_dir.unwrap_or(&cwd);
+        let cwd;
+        let start_dir = match args.start_dir.or(self.working_dir.as_deref()) {
+            Some(dir) => dir,
+            None => {
+                cwd = self.sys.env_current_dir()?;
+                &cwd
+            }
+        };
 
         if let Some(cached) = self.env_cache.get(start_dir) {
             return Ok(cached);

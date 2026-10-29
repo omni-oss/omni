@@ -25,6 +25,10 @@ export interface ConnectMcpOptions {
      * server locates `workspace.omni.yaml` regardless of where the test runs.
      */
     cwd: string;
+    /** Start without binding a workspace; each tool call supplies working_dir. */
+    shared?: boolean;
+    /** Additional global CLI arguments (for example --cache-dir). */
+    args?: string[];
 }
 
 /**
@@ -45,13 +49,22 @@ export async function connectMcp(
     const bin = resolveOmniBin();
     const transport = new StdioClientTransport({
         command: bin,
-        args: ["mcp", "--root-dir", options.cwd],
+        args: [
+            ...(options.args ?? []),
+            "mcp",
+            ...(options.shared ? ["--shared"] : ["--root-dir", options.cwd]),
+        ],
         cwd: options.cwd,
         // Suppress server-side tracing from polluting test output.
         stderr: "ignore",
     });
     const client = new Client({ name: "omni-e2e-test", version: "0.0.1" });
-    await client.connect(transport);
+    try {
+        await client.connect(transport);
+    } catch (error) {
+        await transport.close();
+        throw error;
+    }
 
     const mcp: McpClient = {
         client,
