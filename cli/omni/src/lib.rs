@@ -130,6 +130,13 @@ pub async fn run(
             exit(res);
         }
         CliSubcommands::Mcp(mcp) => {
+            if mcp.shared {
+                return commands::mcp::run_shared(
+                    context::workspace_init_config(args),
+                    tracing,
+                )
+                .await;
+            }
             let context = if let Some(root) = &mcp.root_dir {
                 context::from_args_root_dir_and_sys(
                     args, root, RealSys, tracing,
@@ -151,6 +158,8 @@ async fn run_main() -> eyre::Result<()> {
         .install()?;
 
     let cli = Cli::parse();
+    let shared_mcp =
+        matches!(&cli.subcommand, CliSubcommands::Mcp(cmd) if cmd.shared);
 
     let ws_root_dir = if cli.subcommand.is_mcp() {
         None
@@ -158,28 +167,43 @@ async fn run_main() -> eyre::Result<()> {
         get_root_dir(&RealSys).ok()
     };
 
-    let trace_file_path = cli
-        .args
-        .file_trace_output
-        .clone()
-        .or_else(|| Some(PathBuf::from("./.omni/trace/omni.log")));
+    let trace_file_path = cli.args.file_trace_output.clone().or_else(|| {
+        (!shared_mcp).then(|| PathBuf::from("./.omni/trace/omni.log"))
+    });
 
     let trace_file_path = trace_file_path.map(|path| {
         if !path.has_root()
             && let Some(ref root) = ws_root_dir
         {
             root.join(path)
+        } else if shared_mcp && path.is_relative() {
+            std::env::current_dir()
+                .map(|dir| dir.join(&path))
+                .unwrap_or(path)
         } else {
             path
         }
     });
 
+    let file_level = if shared_mcp && trace_file_path.is_none() {
+        omni_tracing_subscriber::Level::Off
+    } else {
+        cli.args.file_trace_level.value()
+    };
     let tracing_config = TracingConfig {
         file_path: trace_file_path,
-        file_level: cli.args.file_trace_level.value(),
-        stdout_level: cli.args.stdout_log_level.value(),
+        file_level,
+        stdout_level: if cli.subcommand.is_mcp() {
+            omni_tracing_subscriber::Level::Off
+        } else {
+            cli.args.stdout_log_level.value()
+        },
         stdout_show_traces: cli.args.stdout_show_traces,
-        stderr_level: cli.args.stderr_log_level.value(),
+        stderr_level: if shared_mcp {
+            omni_tracing_subscriber::Level::Info
+        } else {
+            cli.args.stderr_log_level.value()
+        },
         stderr_show_traces: cli.args.stderr_show_traces,
     };
 

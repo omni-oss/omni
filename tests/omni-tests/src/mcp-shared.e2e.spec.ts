@@ -76,6 +76,31 @@ describe(
             }
         });
 
+        it("keeps tracing off the protocol and only creates explicitly selected trace files", async () => {
+            const launch = launchDir();
+            const withoutFile = await connectMcp({
+                cwd: launch.cwd,
+                shared: true,
+                args: ["--file-trace-level", "debug"],
+            });
+            await withoutFile.client.listTools();
+            expect(readdirSync(launch.cwd)).toEqual([]);
+            await withoutFile.disconnect();
+            const withFile = await connectMcp({
+                cwd: launch.cwd,
+                shared: true,
+                args: [
+                    "--file-trace-level",
+                    "debug",
+                    "--file-trace-output",
+                    "logs/shared.log",
+                ],
+            });
+            await withFile.client.listTools();
+            expect(launch.exists("logs/shared.log")).toBe(true);
+            expect(launch.exists(".omni")).toBe(false);
+        });
+
         it("preserves bound schemas, operation fields, defaults and annotations while requiring one shared directory", async () => {
             const ws = makeWorkspace(singleProjectSpec());
             const bound = await connectMcp({ cwd: ws.cwd });
@@ -86,6 +111,12 @@ describe(
             const baseline = (await bound.client.listTools()).tools;
             const tools = (await shared.client.listTools()).tools;
             for (const original of baseline) {
+                await expect(
+                    shared.client.callTool({
+                        name: original.name,
+                        arguments: {},
+                    }),
+                ).rejects.toThrow(/working_dir/);
                 const tool = tools.find((t) => t.name === original.name)!;
                 expect(tool.annotations).toEqual(original.annotations);
                 expect(
@@ -387,7 +418,7 @@ describe(
                 workspaces.map((ws) =>
                     content(client, "task_run", ws.cwd, {
                         tasks: ["build"],
-                        include_logs: true,
+                        include_logs: "all",
                     }),
                 ),
             );

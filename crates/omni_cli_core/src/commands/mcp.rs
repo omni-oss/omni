@@ -6,11 +6,15 @@ use omni_tracing_subscriber::{Level, TracingSubscriber};
 use system_traits::impls::RealSys;
 use tracing_futures::WithSubscriber;
 
-use crate::context::Context;
+use crate::context::{Context, WorkspaceInitConfig};
+use omni_tracing_subscriber::TracingConfig;
 
 #[derive(Args, Debug)]
 #[command()]
 pub struct McpCommand {
+    /// Serve multiple workspaces, selected by an absolute working_dir per call.
+    #[arg(long, conflicts_with = "root_dir")]
+    pub shared: bool,
     /// Workspace root directory. When omitted, omni walks up from the
     /// current working directory to find an `workspace.omni.yaml` file.
     /// MCP clients should set this to the workspace root so the server
@@ -33,5 +37,17 @@ pub async fn run(cmd: &McpCommand, ctx: &Context<RealSys>) -> eyre::Result<()> {
     config.stderr_level = Level::Info;
     let sub = TracingSubscriber::new(&config, vec![])
         .expect("Failed to create tracing subscriber");
+    serve_stdio(server).with_subscriber(sub).await
+}
+
+pub async fn run_shared(
+    config: WorkspaceInitConfig,
+    tracing: &TracingConfig,
+) -> eyre::Result<()> {
+    let mut tracing = tracing.clone();
+    tracing.stdout_level = Level::Off;
+    tracing.stderr_level = Level::Info;
+    let server = OmniMcpServer::new_shared(RealSys, config, tracing.clone());
+    let sub = TracingSubscriber::new(&tracing, vec![])?;
     serve_stdio(server).with_subscriber(sub).await
 }
