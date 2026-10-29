@@ -1,6 +1,6 @@
 # RFC 0017: Automatic worktree cache sharing
 
-- **Status:** Accepted — pending implementation
+- **Status:** Accepted — implemented (pending merge)
 - **Owner:** TBD
 - **Date:** 2026-10-29
 - **Base branch:** `feat/custom-cache-dir`

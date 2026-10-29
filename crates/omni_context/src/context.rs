@@ -777,6 +777,22 @@ mod tests {
                 .iter()
                 .all(|path| path.starts_with(changed.cache_dir()))
         );
+        std::fs::create_dir_all(changed.cache_dir()).unwrap();
+        std::fs::write(changed.cache_dir().join("remote-cache.omni.yaml"),
+            "api_key: fixture-key\napi_base_url: http://localhost\ntenant_code: tenant\norganization_code: org\nworkspace_code: workspace\n").unwrap();
+        let with_remote = changed.reload().unwrap();
+        assert_eq!(
+            with_remote.remote_cache_configuration().unwrap().api_key,
+            "fixture-key"
+        );
+        std::fs::write(&policy, "cache: {dir: other-cache}").unwrap();
+        assert!(
+            with_remote
+                .reload()
+                .unwrap()
+                .remote_cache_configuration()
+                .is_none()
+        );
         std::fs::write(root.join("worktree.omni.json"), "{}").unwrap();
         assert!(changed.reload().is_err());
         std::fs::remove_file(root.join("worktree.omni.json")).unwrap();

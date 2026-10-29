@@ -92,6 +92,7 @@ struct Holder<'a> {
     output_files_exclude_glob: Vec<OmniPath>,
     resolved_output_files: Option<Vec<OmniPath>>,
     input_files_globset: Option<Arc<GlobSet>>,
+    worktree_inputs_globset: Option<Arc<GlobSet>>,
     input_files_exclude_globset: Option<Arc<GlobSet>>,
     resolved_input_files: Option<Vec<OmniPath>>,
     /// Literal (glob-free) prefixes of this project's include paths. A walked
@@ -419,6 +420,7 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
             }
 
             let mut input_files_globset = None;
+            let mut worktree_inputs_globset = None;
             let mut input_files_exclude_globset = None;
 
             // the output dirs are based on the hashes so need to be collected here
@@ -437,6 +439,31 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
                 input_files_globset =
                     Some(include_set(&input_patterns, GlobOptions::default())?);
 
+                // Broad source globs do not pull machine-local policy into task
+                // keys. A pattern naming that policy deliberately (literal or
+                // extension glob) retains the ordinary explicit-input behavior.
+                let worktree_patterns = input_patterns
+                    .iter()
+                    .filter(|pattern| {
+                        Path::new(pattern)
+                            .file_name()
+                            .and_then(|name| name.to_str())
+                            .is_some_and(|name| {
+                                name.starts_with(
+                                    omni_constants::WORKTREE_OMNI
+                                        .trim_end_matches("{ext}"),
+                                )
+                            })
+                    })
+                    .cloned()
+                    .collect::<Vec<_>>();
+                if !worktree_patterns.is_empty() {
+                    worktree_inputs_globset = Some(include_set(
+                        &worktree_patterns,
+                        GlobOptions::default(),
+                    )?);
+                }
+
                 let mut input_exclude_patterns = Vec::new();
                 resolve_exclude_patterns(
                     project.input_files_exclude,
@@ -453,6 +480,7 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
 
             to_process.push(Holder {
                 input_files_globset,
+                worktree_inputs_globset,
                 input_files_exclude_globset,
                 output_files_globset,
                 output_files_exclude_globset,
@@ -615,6 +643,8 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
                     // and extension extraction, plus allocations) for every
                     // project's input and output globset below.
                     let candidate = Candidate::new(original_file_abs_path);
+                    let local_cache_policy =
+                        is_local_cache_policy(original_file_abs_path);
 
                     for project in &mut to_process {
                         // Cheap rejection: a file can only match this project's
@@ -655,18 +685,13 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
 
                         if let Some(input_files_globset) =
                             project.input_files_globset.as_ref()
-                            && (!is_local_cache_policy(original_file_abs_path)
-                                || project.task.input_files.iter().any(
-                                    |input| {
-                                        let path =
-                                            input.resolve(&project.roots);
-                                        let path = project_dir.join(path);
-                                        self.sys
-                                            .fs_canonicalize(&path)
-                                            .unwrap_or(path)
-                                            == original_file_abs_path
-                                    },
-                                ))
+                            && (!local_cache_policy
+                                || project
+                                    .worktree_inputs_globset
+                                    .as_ref()
+                                    .is_some_and(|patterns| {
+                                        patterns.is_match_candidate(&candidate)
+                                    }))
                             && input_files_globset
                                 .is_match_candidate(&candidate)
                             && !exclude_matches(
@@ -1199,6 +1224,13 @@ mod tests {
             as_set(&explicit.input_files),
             rel_paths(&["worktree.omni.yaml"])
         );
+        project.input_files = vec![OmniPath::new("worktree.omni.*")];
+        let targeted =
+            collect_one(root, &fresh_cache_dir(root), &project, &config).await;
+        assert_eq!(
+            as_set(&targeted.input_files),
+            rel_paths(&["worktree.omni.yaml"])
+        );
     }
 
     #[tokio::test]
@@ -1234,6 +1266,32 @@ mod tests {
             let after = collect_one(&root, &cache, &project, &config).await;
             assert_eq!(before.digest, after.digest);
         }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn explicit_worktree_policy_input_works_with_an_aliased_root() {
+        let temp = tempfile::tempdir().unwrap();
+        let actual = temp.path().join("actual");
+        write_file(&actual.join("proj/worktree.omni.yaml"), "{}");
+        let alias = temp.path().join("alias");
+        std::os::unix::fs::symlink(&actual, &alias).unwrap();
+        let mut project = Project::new(&alias, "proj");
+        project.input_files = vec![OmniPath::new("worktree.omni.yaml")];
+        let result = collect_one(
+            &alias,
+            &fresh_cache_dir(&alias),
+            &project,
+            &CollectConfig {
+                input_files: true,
+                ..Default::default()
+            },
+        )
+        .await;
+        assert_eq!(
+            as_set(&result.input_files),
+            rel_paths(&["worktree.omni.yaml"])
+        );
     }
 
     #[cfg(unix)]

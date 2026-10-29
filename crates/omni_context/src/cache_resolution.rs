@@ -36,7 +36,7 @@ impl CacheResolutionState {
         discover: impl FnOnce(&Path) -> eyre::Result<Option<CheckoutLayout>>,
     ) -> Self {
         if let Some(path) = explicit {
-            let path = if path.is_absolute() {
+            let path = if path.is_absolute() || empty_path(&path) {
                 path
             } else {
                 sys.env_current_dir().unwrap_or_default().join(path)
@@ -79,12 +79,19 @@ impl CacheResolutionState {
             .collect()
     }
 
+    #[allow(clippy::result_large_err)]
     pub(crate) fn resolve(
         &self,
         root: &Path,
         sys: &impl ContextSys,
     ) -> Result<(PathBuf, CacheDirectorySource), ContextError> {
         let (path, source) = if let Some(path) = &self.explicit {
+            if empty_path(path) {
+                return Err(ContextErrorInner::CacheDirectory(
+                    "explicit cache directory must be a nonempty path".into(),
+                )
+                .into());
+            }
             (path.clone(), CacheDirectorySource::Explicit)
         } else if let Some((path, file)) = configured_directory(root, sys)? {
             (path, CacheDirectorySource::WorktreeFile(file))
@@ -102,7 +109,11 @@ impl CacheResolutionState {
         } else {
             (
                 root.join(OMNI_CACHE_DIR),
-                CacheDirectorySource::LocalDefault,
+                if self.primary.is_some() {
+                    CacheDirectorySource::PrimaryDefault
+                } else {
+                    CacheDirectorySource::LocalDefault
+                },
             )
         };
         let path = canonicalize_cache_dir(&path, sys);
@@ -120,6 +131,10 @@ impl CacheResolutionState {
         );
         Ok((path, source))
     }
+}
+
+fn empty_path(path: &Path) -> bool {
+    path.to_str().is_some_and(|value| value.trim().is_empty())
 }
 
 fn mapped_workspace(
@@ -149,6 +164,7 @@ fn mapped_workspace(
     mapped
 }
 
+#[allow(clippy::result_large_err)]
 fn configured_directory(
     root: &Path,
     sys: &impl ContextSys,
@@ -179,15 +195,30 @@ fn configured_directory(
     let expansion = dir == "~"
         || dir.starts_with("~/")
         || dir.starts_with("~\\")
-        || dir.starts_with("${")
-        || dir.strip_prefix('$').is_some_and(|tail| {
-            tail.chars()
-                .next()
-                .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        || dir.split('$').skip(1).any(|tail| {
+            tail.starts_with('{')
+                || tail
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
         })
-        || dir.strip_prefix('%').is_some_and(|tail| tail.contains('%'));
+        || dir.split('%').skip(1).step_by(2).any(|tail| {
+            !tail.is_empty()
+                && tail.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+        }) && dir.matches('%').count() >= 2;
     if dir.trim().is_empty() || expansion {
         return Err(ContextErrorInner::CacheDirectory(format!("invalid cache.dir in {}: use a nonempty literal path; home/environment expansion is not supported", file.display())).into());
+    }
+    #[cfg(windows)]
+    if !std::path::Path::new(&dir).has_root()
+        && matches!(
+            std::path::Path::new(&dir).components().next(),
+            Some(std::path::Component::Prefix(_))
+        )
+    {
+        return Err(ContextErrorInner::CacheDirectory(format!(
+            "invalid cache.dir in {}: drive-relative paths are ambiguous; use a fully absolute or workspace-relative path", file.display()
+        )).into());
     }
     Ok(Some((root.join(dir), file)))
 }
@@ -268,6 +299,15 @@ mod tests {
             state.resolve(&f.root, &RealSys).unwrap().0,
             f.root.join("custom")
         );
+        for path in ["", "  "] {
+            let state = CacheResolutionState::new(
+                &f.root,
+                Some(path.into()),
+                &RealSys,
+                |_| panic!(),
+            );
+            assert!(state.resolve(&f.root, &RealSys).is_err());
+        }
     }
 
     #[test]
@@ -280,6 +320,7 @@ mod tests {
             "cache: {dir: '~/cache'}",
             "cache: {dir: '$HOME/cache'}",
             "cache: {dir: '${HOME}/cache'}",
+            "cache: {dir: 'state/$HOME/cache'}",
             "cache: {dir: '%LOCALAPPDATA%/cache'}",
             "cache: {directory: cache}",
             "extends: x",
@@ -311,6 +352,35 @@ mod tests {
             f.write(&f.root, contents);
             assert_eq!(f.resolve(), f.primary.join(OMNI_CACHE_DIR));
         }
+    }
+
+    #[test]
+    fn literal_paths_keep_meaningful_spaces_and_nonexpansion_characters() {
+        let f = Fixture::new();
+        for dir in [
+            "cache directory",
+            " cache ",
+            "cost$5",
+            "discount%",
+            "tilde~cache",
+        ] {
+            f.write(&f.root, &format!("cache: {{dir: '{dir}'}}"));
+            assert_eq!(f.resolve(), f.root.join(dir));
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_paths_use_native_absolute_semantics_and_reject_drive_relative() {
+        let f = Fixture::new();
+        let absolute = f.primary.join("dedicated-cache");
+        f.write(
+            &f.root,
+            &format!("cache: {{dir: '{}'}}", absolute.display()),
+        );
+        assert_eq!(f.resolve(), absolute);
+        f.write(&f.root, "cache: {dir: 'C:cache'}");
+        assert!(f.state().resolve(&f.root, &RealSys).is_err());
     }
 
     #[test]
