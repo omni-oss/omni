@@ -44,6 +44,7 @@ pub struct Context<TSys: ContextSys = RealSysSync> {
     workspace: WorkspaceConfiguration,
     remote_cache: Option<RemoteCacheConfiguration>,
     root_dir: PathBuf,
+    working_dir: Option<PathBuf>,
     omni_dir: PathBuf,
     cache_dir: PathBuf,
     cache_resolution: CacheResolutionState,
@@ -91,8 +92,49 @@ impl<TSys: ContextSys> Context<TSys> {
         tracing_config: &TracingConfig,
         cache_dir: Option<PathBuf>,
     ) -> Result<Self, ContextError> {
+        Self::new_with_working_dir(
+            sys,
+            env,
+            root_dir,
+            inherit_env_vars,
+            root_marker,
+            override_env_files,
+            tracing_config,
+            cache_dir,
+            None,
+        )
+    }
+
+    /// Construct a context with an explicit invocation directory, without
+    /// changing process CWD. Relative explicit cache paths use this directory
+    /// during initialization; the override is retained across reloads.
+    #[allow(clippy::result_large_err, clippy::too_many_arguments)]
+    pub fn new_with_working_dir(
+        sys: TSys,
+        env: impl Into<String>,
+        root_dir: &Path,
+        inherit_env_vars: bool,
+        root_marker: &str,
+        override_env_files: Option<Vec<PathBuf>>,
+        tracing_config: &TracingConfig,
+        cache_dir: Option<PathBuf>,
+        working_dir: Option<PathBuf>,
+    ) -> Result<Self, ContextError> {
         let env = env.into();
         let root_dir = sys.fs_canonicalize(root_dir)?;
+        let working_dir = working_dir
+            .map(|path| sys.fs_canonicalize(path))
+            .transpose()?;
+        let cache_dir = cache_dir.map(|path| {
+            if !path.is_absolute()
+                && !path.as_os_str().is_empty()
+                && let Some(dir) = &working_dir
+            {
+                dir.join(path)
+            } else {
+                path
+            }
+        });
         let cache_resolution = CacheResolutionState::new(
             &root_dir,
             cache_dir,
@@ -108,6 +150,7 @@ impl<TSys: ContextSys> Context<TSys> {
             override_env_files,
             tracing_config,
             cache_resolution,
+            working_dir,
         )
     }
 
@@ -121,6 +164,7 @@ impl<TSys: ContextSys> Context<TSys> {
         override_env_files: Option<Vec<PathBuf>>,
         tracing_config: &TracingConfig,
         cache_resolution: CacheResolutionState,
+        working_dir: Option<PathBuf>,
     ) -> Result<Self, ContextError> {
         let root_dir = root_dir.to_path_buf();
         let (cache_dir, cache_source) =
@@ -135,6 +179,7 @@ impl<TSys: ContextSys> Context<TSys> {
             workspace,
             remote_cache,
             root_dir,
+            working_dir,
             omni_dir,
             cache_dir,
             cache_resolution,
@@ -174,6 +219,7 @@ impl<TSys: ContextSys> Context<TSys> {
             self.override_env_files.clone(),
             &self.tracing_config,
             self.cache_resolution.clone(),
+            self.working_dir.clone(),
         )
     }
 
@@ -232,7 +278,10 @@ impl<TSys: ContextSys> Context<TSys> {
     }
 
     pub fn current_dir(&self) -> std::io::Result<PathBuf> {
-        self.sys.env_current_dir()
+        match &self.working_dir {
+            Some(dir) => Ok(dir.clone()),
+            None => self.sys.env_current_dir(),
+        }
     }
 
     pub fn omni_dir(&self) -> &Path {
@@ -472,6 +521,7 @@ impl<TSys: ContextSys> Context<TSys> {
             PathBuf::from(&self.env_root_dir_marker),
             self.env_files().to_vec(),
         )
+        .with_working_dir(self.working_dir.clone())
     }
 
     pub fn create_cache_store(&self) -> HybridTaskExecutionCacheStore {
@@ -519,8 +569,16 @@ impl<TSys: ContextSys> Context<TSys> {
 #[allow(clippy::result_large_err)]
 pub fn get_root_dir(sys: &impl ContextSys) -> Result<PathBuf, ContextError> {
     let current_dir = sys.env_current_dir()?;
+    get_root_dir_from(sys, &current_dir)
+}
 
-    for p in current_dir.ancestors() {
+/// Discover the nearest workspace in the supplied directory's ancestor chain.
+#[allow(clippy::result_large_err)]
+pub fn get_root_dir_from(
+    sys: &impl ContextSys,
+    start_dir: &Path,
+) -> Result<PathBuf, ContextError> {
+    for p in start_dir.ancestors() {
         let workspace_files = constants::SUPPORTED_EXTENSIONS
             .iter()
             .map(|ext| constants::WORKSPACE_OMNI.replace("{ext}", ext));
@@ -754,6 +812,40 @@ mod tests {
             &TracingConfig::default(),
         )
         .expect("Can't create context")
+    }
+
+    #[tokio::test]
+    async fn explicit_working_dir_survives_reload_and_loading() {
+        let (tmp, sys) = default_fixture();
+        let cwd_before = std::env::current_dir().unwrap();
+        let dir =
+            std::fs::canonicalize(tmp.path().join("nested/project-1")).unwrap();
+        let context = Context::new_with_working_dir(
+            sys.clone(),
+            "testing",
+            tmp.path(),
+            false,
+            "workspace.omni.yaml",
+            Some(vec![".env".into(), ".env.local".into()]),
+            &TracingConfig::disabled(),
+            Some("request-cache".into()),
+            Some(dir.clone()),
+        )
+        .unwrap();
+        assert_eq!(get_root_dir_from(&sys, &dir).unwrap(), tmp.path());
+        assert_eq!(context.current_dir().unwrap(), dir);
+        assert_eq!(context.cache_dir(), dir.join("request-cache"));
+        let reloaded = context.reload().unwrap();
+        assert_eq!(reloaded.current_dir().unwrap(), dir);
+        assert_eq!(reloaded.cache_dir(), context.cache_dir());
+        let env = reloaded
+            .create_env_loader()
+            .get(&Default::default())
+            .unwrap();
+        assert_eq!(env["SHARED_ENV"], "root-local-nested-local-project-local");
+        let loaded = reloaded.into_loaded().await.unwrap();
+        assert_eq!(loaded.current_dir().unwrap(), dir);
+        assert_eq!(std::env::current_dir().unwrap(), cwd_before);
     }
 
     #[tokio::test]
