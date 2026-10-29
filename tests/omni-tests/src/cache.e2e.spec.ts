@@ -151,7 +151,12 @@ describe("+cache @cache (cache dir)", () => {
                 },
             },
         });
-        const args = ["run", "build", "--cache-dir", ws.path("app/custom-cache")];
+        const args = [
+            "run",
+            "build",
+            "--cache-dir",
+            ws.path("app/custom-cache"),
+        ];
         expect(await runOmni(args, { cwd: ws.cwd })).toHaveSucceeded();
         for (let i = 0; i < 2; i++) {
             const cached = await runOmni(args, { cwd: ws.cwd });
@@ -802,6 +807,46 @@ describe("+cache @cache (remote setup)", () => {
         );
         expect(config).toContain("tenant_code: test-tenant");
         expect(config).toContain("workspace_code: test-ws");
+    });
+
+    it("shares encrypted remote configuration across workspaces using one cache", async () => {
+        const first = makeWorkspace(singleProjectSpec());
+        const second = makeWorkspace(singleProjectSpec());
+        // Intentionally does not exist until setup, exercising stable identity
+        // across creation as well as across different workspace roots.
+        const cache = first.path("shared-cache");
+        const baseUrl = await startMockRemoteCache();
+        const setup = await runOmni(
+            [
+                "cache",
+                "remote",
+                "setup",
+                "-b",
+                baseUrl,
+                "-a",
+                "test-key",
+                "-t",
+                "test-tenant",
+                "-o",
+                "test-org",
+                "-w",
+                "test-ws",
+                "--secure",
+                "--cache-dir",
+                cache,
+            ],
+            { cwd: first.cwd },
+        );
+        expect(setup).toHaveSucceeded();
+        expect(first.exists("shared-cache/remote-cache.omni.enc")).toBe(true);
+        for (const ws of [first, second]) {
+            const loaded = await runOmni(
+                ["cache", "dir", "--cache-dir", cache],
+                { cwd: ws.cwd },
+            );
+            expect(loaded).toHaveSucceeded();
+            expect(loaded).toOutputContaining("Remote caching is enabled");
+        }
     });
 
     it("surfaces an error on an unreachable endpoint", async () => {
