@@ -832,7 +832,10 @@ mod tests {
             Some(dir.clone()),
         )
         .unwrap();
-        assert_eq!(get_root_dir_from(&sys, &dir).unwrap(), tmp.path());
+        assert_eq!(
+            get_root_dir_from(&sys, &dir).unwrap(),
+            std::fs::canonicalize(tmp.path()).unwrap()
+        );
         assert_eq!(context.current_dir().unwrap(), dir);
         assert_eq!(context.cache_dir(), dir.join("request-cache"));
         let reloaded = context.reload().unwrap();
