@@ -197,7 +197,8 @@ where
     let client = ctx.create_remote_cache_client();
     let ext = if req.secure { "enc" } else { "yaml" };
     let config_path = ctx.remote_cache_configuration_path(ext);
-    let user = ctx.root_dir().to_string_lossy();
+    let cache_dir = ctx.cache_dir();
+    let user = cache_dir.to_string_lossy();
 
     omni_setup::setup_remote_caching_config_async(
         &user,

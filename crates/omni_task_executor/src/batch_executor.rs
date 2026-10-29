@@ -219,12 +219,31 @@ where
                     self.sys.fs_create_dir_all_async(dir).await?;
                 }
 
-                self.sys
+                if let Err(err) = self
+                    .sys
                     .fs_hard_link_async(
                         file.cached_path.as_path(),
                         original_path,
                     )
-                    .await?;
+                    .await
+                {
+                    if !omni_utils::fs::should_copy_after_hardlink_error(&err) {
+                        return Err(err.into());
+                    }
+
+                    // Copy when the filesystem or its permissions prevent
+                    // hardlinking. Other failures must not be masked by a copy.
+                    log::debug!(
+                        "Restoring cached file by copy because hardlinking was unavailable ({err}): {:?}",
+                        original_path
+                    );
+                    self.sys
+                        .fs_copy_async(
+                            file.cached_path.as_path(),
+                            original_path,
+                        )
+                        .await?;
+                }
 
                 diagnostic!(
                     self.subscriber,

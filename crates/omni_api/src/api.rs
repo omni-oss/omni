@@ -71,6 +71,7 @@ pub struct OmniApiBuilder<S: OmniEventSubscriber = TracingSubscriber> {
     workspace_config: WorkspaceInitConfig,
     tracing_config: TracingConfig,
     root_dir: Option<PathBuf>,
+    cache_dir: Option<PathBuf>,
 }
 
 impl<S: OmniEventSubscriber> OmniApiBuilder<S> {
@@ -85,6 +86,7 @@ impl<S: OmniEventSubscriber> OmniApiBuilder<S> {
             workspace_config: self.workspace_config,
             tracing_config: self.tracing_config,
             root_dir: self.root_dir,
+            cache_dir: self.cache_dir,
         }
     }
 
@@ -124,6 +126,12 @@ impl<S: OmniEventSubscriber> OmniApiBuilder<S> {
         self
     }
 
+    /// Override the cache directory location.
+    pub fn cache_dir(mut self, path: impl Into<PathBuf>) -> Self {
+        self.cache_dir = Some(path.into());
+        self
+    }
+
     /// Consumes the builder and constructs an `OmniApi<RealSysSync, S>`.
     #[allow(clippy::result_large_err)]
     pub fn build(self) -> Result<OmniApi<RealSysSync, S>, OmniApiError> {
@@ -134,7 +142,7 @@ impl<S: OmniEventSubscriber> OmniApiBuilder<S> {
             None => get_root_dir(&sys)?,
         };
 
-        let ctx = Context::new(
+        let ctx = Context::new_with_cache_dir(
             sys,
             &self.workspace_config.env,
             &root_dir,
@@ -142,6 +150,9 @@ impl<S: OmniEventSubscriber> OmniApiBuilder<S> {
             &self.workspace_config.env_root_dir_marker,
             self.workspace_config.env_files,
             &self.tracing_config,
+            self.cache_dir
+                .clone()
+                .or_else(|| self.workspace_config.cache_dir.clone()),
         )?;
 
         let setup_guard = if self.with_setup {
@@ -201,6 +212,7 @@ impl OmniApi<RealSysSync, TracingSubscriber> {
             workspace_config: WorkspaceInitConfig::default(),
             tracing_config: TracingConfig::disabled(),
             root_dir: None,
+            cache_dir: None,
         }
     }
 }

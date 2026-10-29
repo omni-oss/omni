@@ -24,6 +24,7 @@ derive-new = { workspace = true }
 derive_builder = { workspace = true }
 futures = { workspace = true }
 byteorder = { workspace = true }
+bs58 = { workspace = true }
 dir_walker = { workspace = true }
 bincode-next = { workspace = true }
 omni_utils = { workspace = true }

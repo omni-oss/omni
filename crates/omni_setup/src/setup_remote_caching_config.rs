@@ -64,9 +64,7 @@ pub async fn setup_remote_caching_config_async<TClient: RemoteCacheClient>(
 
     let parent = remote_config_path.parent().expect("should have parent");
 
-    if sys.fs_exists_no_err_async(parent).await {
-        sys.fs_create_dir_all_async(parent).await?;
-    }
+    sys.fs_create_dir_all_async(parent).await?;
 
     if encrypt {
         let (service, user) = get_service_and_user(None, Some(user))?;

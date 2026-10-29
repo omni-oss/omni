@@ -1,5 +1,5 @@
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -155,11 +155,21 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
     fn workspace_bound_predicate(
         &self,
         canonical_root: PathBuf,
+        canonical_cache: PathBuf,
     ) -> impl Fn(&dir_walker::impls::IgnoreDirEntry) -> bool + Send + Sync + 'static
     {
         let sys = self.sys.clone();
+        let cache_dir = canonical_cache
+            .strip_prefix(&canonical_root)
+            .map(|relative| self.ws_root_dir.join(relative))
+            .unwrap_or_else(|_| self.cache_dir.to_path_buf());
 
         move |entry| {
+            if entry.path().starts_with(&cache_dir)
+                || entry.path().starts_with(&canonical_cache)
+            {
+                return false;
+            }
             if !entry.path_is_symlink() {
                 return true;
             }
@@ -167,6 +177,7 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
             let link = entry.path();
 
             match sys.fs_canonicalize(link) {
+                Ok(target) if target.starts_with(&canonical_cache) => false,
                 Ok(target) if target.starts_with(&canonical_root) => true,
                 Ok(target) => {
                     trace::warn!(
@@ -357,6 +368,10 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
                 .sum(),
         );
 
+        // Shared by all tasks and include/exclude patterns, but never retained
+        // across collections where files or symlink targets may have changed.
+        let mut alignment = PatternAlignment::new(self.ws_root_dir, &self.sys);
+
         for project in project_tasks {
             trace::trace!(
                 project_name = ?project.project_name,
@@ -381,6 +396,7 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
                     &mut match_bases,
                     &roots,
                     &mut output_patterns,
+                    &mut alignment,
                 )?;
 
                 output_files_globset = Some(include_set(
@@ -394,6 +410,7 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
                     project.project_dir,
                     &roots,
                     &mut output_exclude_patterns,
+                    &mut alignment,
                 )?;
                 output_files_exclude_globset = Some(include_set(
                     &output_exclude_patterns,
@@ -414,6 +431,7 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
                     &mut match_bases,
                     &roots,
                     &mut input_patterns,
+                    &mut alignment,
                 )?;
 
                 input_files_globset =
@@ -425,6 +443,7 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
                     project.project_dir,
                     &roots,
                     &mut input_exclude_patterns,
+                    &mut alignment,
                 )?;
                 input_files_exclude_globset = Some(include_set(
                     &input_exclude_patterns,
@@ -496,6 +515,10 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
                 forced_includes.into_iter().collect::<Vec<_>>();
 
             let canonical_root = self.canonical_ws_root();
+            let canonical_cache = self
+                .sys
+                .fs_canonicalize(self.cache_dir)
+                .unwrap_or_else(|_| self.cache_dir.to_path_buf());
 
             let topmost =
                 topmost_dirs(self.sys.clone(), &includes, self.ws_root_dir)
@@ -507,8 +530,10 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
                     // enter the hash.
                     .filter(|root| match self.sys.fs_canonicalize(root) {
                         Ok(target) => {
-                            let contained =
-                                target.starts_with(&canonical_root);
+                            if target.starts_with(&canonical_cache) {
+                                return false;
+                            }
+                            let contained = target.starts_with(&canonical_root);
                             if !contained {
                                 trace::warn!(
                                     root = ?root,
@@ -533,15 +558,19 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
                 "before_walk"
             );
 
-            let dirwalker = RealGlobDirWalker::config()
-                .standard_filters(true)
-                .include(forced_includes)
-                .root_dir(self.ws_root_dir)
-                .custom_ignore_filenames(vec![".omniignore".to_string()])
-                .follow_links(true)
-                .filter_entry(self.workspace_bound_predicate(canonical_root))
-                .build()
-                .build_walker()?;
+            let dirwalker =
+                RealGlobDirWalker::config()
+                    .standard_filters(true)
+                    .include(forced_includes)
+                    .root_dir(self.ws_root_dir)
+                    .custom_ignore_filenames(vec![".omniignore".to_string()])
+                    .follow_links(true)
+                    .filter_entry(self.workspace_bound_predicate(
+                        canonical_root,
+                        canonical_cache,
+                    ))
+                    .build()
+                    .build_walker()?;
 
             // Every walk root may have been dropped for escaping the
             // workspace, in which case there is nothing to enumerate.
@@ -718,6 +747,67 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
     }
 }
 
+// Context canonicalizes workspace roots. Absolute patterns may instead use an
+// alias such as /var on macOS or a non-verbatim Windows path. Align these with
+// the walker's namespace for both the match-base prefilter and compiled glob.
+// Only canonicalize the literal prefix; the glob itself cannot be resolved.
+// Preserve paths already under the walk root, including relative symlink paths
+// and their filesystem-sensitive `..` components. Direct Collector callers may
+// use a noncanonical root, in which case the walker retains that namespace.
+struct PatternAlignment<'a, TSys> {
+    workspace_root: &'a Path,
+    sys: &'a TSys,
+    root_is_canonical: Option<bool>,
+    // None also memoizes failed resolutions, so missing prefixes are not
+    // repeatedly probed. A fresh collection retries them.
+    canonical_bases: HashMap<PathBuf, Option<PathBuf>>,
+}
+
+impl<'a, TSys: FsCanonicalize> PatternAlignment<'a, TSys> {
+    fn new(workspace_root: &'a Path, sys: &'a TSys) -> Self {
+        Self {
+            workspace_root,
+            sys,
+            root_is_canonical: None,
+            canonical_bases: HashMap::new(),
+        }
+    }
+
+    fn align(&mut self, path: PathBuf) -> PathBuf {
+        // Common case: no filesystem access, cache lookup or allocation.
+        if starts_with_path(&path, self.workspace_root) {
+            return path;
+        }
+
+        let root_is_canonical =
+            *self.root_is_canonical.get_or_insert_with(|| {
+                self.sys
+                    .fs_canonicalize(self.workspace_root)
+                    .is_ok_and(|canonical| canonical == self.workspace_root)
+            });
+        if !root_is_canonical {
+            return path;
+        }
+
+        let base = remove_globs(&path);
+        if !self.canonical_bases.contains_key(base) {
+            self.canonical_bases.insert(
+                base.to_path_buf(),
+                self.sys.fs_canonicalize(base).ok(),
+            );
+        }
+        if let Some(canonical) = self.canonical_bases[base].as_ref() {
+            let suffix = path.strip_prefix(base).expect("literal glob prefix");
+            return if suffix.as_os_str().is_empty() {
+                canonical.clone()
+            } else {
+                canonical.join(suffix)
+            };
+        }
+        path
+    }
+}
+
 fn populate_includes_and_patterns(
     files: &[OmniPath],
     project_dir: &Path,
@@ -725,6 +815,7 @@ fn populate_includes_and_patterns(
     match_bases: &mut Vec<PathBuf>,
     roots: &RootMap,
     patterns: &mut Vec<String>,
+    alignment: &mut PatternAlignment<'_, impl FsCanonicalize>,
 ) -> Result<(), Error> {
     trace::trace!(
         files = ?files,
@@ -741,6 +832,7 @@ fn populate_includes_and_patterns(
             p.to_path_buf()
         };
 
+        let path = alignment.align(path);
         patterns.push(path.to_string_lossy().into_owned());
         // The literal prefix bounds where this glob can match: any matching
         // path must live under it.
@@ -760,6 +852,7 @@ fn resolve_exclude_patterns(
     project_dir: &Path,
     roots: &RootMap,
     patterns: &mut Vec<String>,
+    alignment: &mut PatternAlignment<'_, impl FsCanonicalize>,
 ) -> Result<(), Error> {
     for p in files {
         let p = p.resolve(roots);
@@ -770,6 +863,7 @@ fn resolve_exclude_patterns(
             p.to_path_buf()
         };
 
+        let path = alignment.align(path);
         patterns.push(path.to_string_lossy().into_owned());
     }
     Ok(())
@@ -805,6 +899,109 @@ mod tests {
     };
 
     use super::*;
+
+    #[derive(Default)]
+    struct CountingCanonicalizer {
+        resolutions: HashMap<PathBuf, PathBuf>,
+        calls: std::cell::RefCell<Vec<PathBuf>>,
+    }
+
+    impl system_traits::BaseFsCanonicalize for CountingCanonicalizer {
+        fn base_fs_canonicalize(
+            &self,
+            path: &Path,
+        ) -> std::io::Result<PathBuf> {
+            self.calls.borrow_mut().push(path.to_path_buf());
+            self.resolutions.get(path).cloned().ok_or_else(|| {
+                std::io::Error::from(std::io::ErrorKind::NotFound)
+            })
+        }
+    }
+
+    #[test]
+    fn pattern_alignment_fast_path_does_not_canonicalize() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let sys = CountingCanonicalizer::default();
+        let mut alignment = PatternAlignment::new(root, &sys);
+        for suffix in ["proj/src/*.txt", "proj/../shared/*.txt"] {
+            let path = root.join(suffix);
+            assert_eq!(alignment.align(path.clone()), path);
+        }
+        assert!(sys.calls.borrow().is_empty());
+        assert!(alignment.root_is_canonical.is_none());
+        assert!(alignment.canonical_bases.is_empty());
+    }
+
+    #[test]
+    fn pattern_alignment_memoizes_literal_bases_only_within_a_collection() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("workspace");
+        let alias_base = temp.path().join("alias/shared");
+        let canonical_base = root.join("shared");
+        let sys = CountingCanonicalizer {
+            resolutions: HashMap::from([
+                (root.clone(), root.clone()),
+                (alias_base.clone(), canonical_base.clone()),
+            ]),
+            ..Default::default()
+        };
+        for collection in 1..=2 {
+            let mut alignment = PatternAlignment::new(&root, &sys);
+            for suffix in ["*.txt", "*.rs", "**/*.txt", "*.txt"] {
+                assert_eq!(
+                    alignment.align(alias_base.join(suffix)),
+                    canonical_base.join(suffix),
+                );
+            }
+            // One root check and one literal-prefix resolution per collection.
+            assert_eq!(sys.calls.borrow().len(), collection * 2);
+        }
+    }
+
+    #[test]
+    fn pattern_alignment_memoizes_missing_bases_but_retries_next_collection() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("workspace");
+        let base = temp.path().join("missing");
+        let mut sys = CountingCanonicalizer {
+            resolutions: HashMap::from([(root.clone(), root.clone())]),
+            ..Default::default()
+        };
+        {
+            let mut alignment = PatternAlignment::new(&root, &sys);
+            for suffix in ["*.txt", "*.rs", "*.txt"] {
+                let path = base.join(suffix);
+                assert_eq!(alignment.align(path.clone()), path);
+            }
+            assert_eq!(sys.calls.borrow().len(), 2);
+        }
+        let resolved = root.join("shared");
+        sys.resolutions.insert(base.clone(), resolved.clone());
+        let mut alignment = PatternAlignment::new(&root, &sys);
+        assert_eq!(alignment.align(base.join("*.txt")), resolved.join("*.txt"));
+        assert_eq!(sys.calls.borrow().len(), 4);
+    }
+
+    #[test]
+    fn pattern_alignment_checks_noncanonical_root_only_once() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("alias");
+        let sys = CountingCanonicalizer {
+            resolutions: HashMap::from([(
+                root.clone(),
+                temp.path().join("workspace"),
+            )]),
+            ..Default::default()
+        };
+        let mut alignment = PatternAlignment::new(&root, &sys);
+        for name in ["first/*.txt", "second/*.rs", "first/*.txt"] {
+            let path = temp.path().join(name);
+            assert_eq!(alignment.align(path.clone()), path);
+        }
+        assert_eq!(*sys.calls.borrow(), vec![root.clone()]);
+        assert!(alignment.canonical_bases.is_empty());
+    }
 
     // Ensures each collect that must observe fresh on-disk state uses its own
     // hash index, sidestepping the hasher's mtime-based cache.
@@ -949,6 +1146,71 @@ mod tests {
             .iter()
             .cloned()
             .collect()
+    }
+
+    #[tokio::test]
+    async fn custom_cache_is_never_collected_as_input_or_output() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = std::fs::canonicalize(temp.path()).unwrap();
+        let cache = root.join("proj/custom-cache");
+        write_file(&root.join("proj/source.txt"), "source");
+        write_file(&cache.join("cached.txt"), "cache state");
+        let mut project = Project::new(&root, "proj");
+        let config = CollectConfig {
+            input_files: true,
+            output_files: true,
+            digests: true,
+            cache_output_dirs: false,
+        };
+        for pattern in ["**/*", "custom-cache/**/*", "custom-cache/cached.txt"]
+        {
+            project.input_files = vec![OmniPath::new(pattern)];
+            project.output_files = project.input_files.clone();
+            let before = collect_one(&root, &cache, &project, &config).await;
+            let expected = if pattern == "**/*" {
+                rel_paths(&["source.txt"])
+            } else {
+                BTreeSet::new()
+            };
+            assert_eq!(as_set(&before.input_files), expected);
+            assert_eq!(as_set(&before.output_files), expected);
+            write_file(
+                &cache.join("cached.txt"),
+                "changed cache state with a different size",
+            );
+            let after = collect_one(&root, &cache, &project, &config).await;
+            assert_eq!(before.digest, after.digest);
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn symlinks_into_custom_cache_are_not_collected() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = std::fs::canonicalize(temp.path()).unwrap();
+        let cache = root.join("state");
+        write_file(&cache.join("cached.txt"), "cache state");
+        std::fs::create_dir_all(root.join("proj")).unwrap();
+        std::os::unix::fs::symlink(&cache, root.join("proj/link")).unwrap();
+        let mut project = Project::new(&root, "proj");
+        for pattern in ["**/*", "link/**/*", "link/cached.txt"] {
+            project.input_files = vec![OmniPath::new(pattern)];
+            project.output_files = project.input_files.clone();
+            let result = collect_one(
+                &root,
+                &cache,
+                &project,
+                &CollectConfig {
+                    input_files: true,
+                    output_files: true,
+                    digests: true,
+                    cache_output_dirs: false,
+                },
+            )
+            .await;
+            assert!(as_set(&result.input_files).is_empty());
+            assert!(as_set(&result.output_files).is_empty());
+        }
     }
 
     #[tokio::test]
@@ -1389,38 +1651,122 @@ mod tests {
             OmniPath::new(shared.clone()),
             OmniPath::new(root.join("shared/*.txt")),
         ];
-        for pattern in patterns {
-            for include_local in [false, true] {
-                write_file(&shared, "original");
-                let mut project = Project::new(root, "proj");
-                project.input_files = vec![pattern.clone()];
-                project.output_files = vec![pattern.clone()];
-                let mut expected_inputs = vec![shared.as_path()];
-                if include_local {
-                    project.input_files.push(OmniPath::new("local.txt"));
-                    expected_inputs.push(local.as_path());
+        // Production Context roots are canonical (verbatim on Windows), while
+        // absolute paths supplied in configuration usually are not. Also retain
+        // coverage for callers that pass ordinary roots directly to Collector.
+        for root in [root.to_path_buf(), std::fs::canonicalize(root).unwrap()] {
+            let root = root.as_path();
+            for pattern in &patterns {
+                for include_local in [false, true] {
+                    write_file(&shared, "original");
+                    let mut project = Project::new(root, "proj");
+                    project.input_files = vec![pattern.clone()];
+                    project.output_files = vec![pattern.clone()];
+                    let mut expected_inputs = vec![shared.as_path()];
+                    if include_local {
+                        project.input_files.push(OmniPath::new("local.txt"));
+                        expected_inputs.push(local.as_path());
+                    }
+                    let before = assert_collected_scope(
+                        root,
+                        &project,
+                        &expected_inputs,
+                        &[&shared],
+                    )
+                    .await;
+                    write_file(
+                        &shared,
+                        "changed sibling content, with a different size",
+                    );
+                    let after = assert_collected_scope(
+                        root,
+                        &project,
+                        &expected_inputs,
+                        &[&shared],
+                    )
+                    .await;
+                    assert_ne!(
+                        before, after,
+                        "sibling input must affect the digest"
+                    );
                 }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn absolute_excludes_match_with_canonical_roots() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let shared = temp.path().join("shared");
+        write_file(&shared.join("keep.txt"), "keep");
+        write_file(&shared.join("skip.txt"), "skip");
+        std::fs::create_dir_all(temp.path().join("proj")).unwrap();
+        let root = std::fs::canonicalize(temp.path()).unwrap();
+
+        for exclude in [shared.join("skip.txt"), shared.join("sk*.txt")] {
+            let mut project = Project::new(&root, "proj");
+            project.input_files = vec![OmniPath::new(shared.join("*.txt"))];
+            project.output_files = project.input_files.clone();
+            project.input_files_exclude = vec![OmniPath::new(exclude)];
+            project.output_files_exclude = project.input_files_exclude.clone();
+            assert_collected_scope(
+                &root,
+                &project,
+                &[&shared.join("keep.txt")],
+                &[&shared.join("keep.txt")],
+            )
+            .await;
+        }
+    }
+
+    // Reproduce macOS's /var -> /private/var alias even on Linux.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn absolute_patterns_through_workspace_alias_match_canonical_walk() {
+        let temp = tempfile::tempdir().unwrap();
+        let workspace = temp.path().join("workspace");
+        let shared = workspace.join("shared");
+        write_file(&shared.join("keep.txt"), "original");
+        write_file(&shared.join("skip.txt"), "excluded");
+        std::fs::create_dir_all(workspace.join("proj")).unwrap();
+        let alias = temp.path().join("alias");
+        std::os::unix::fs::symlink(&workspace, &alias).unwrap();
+        let root = std::fs::canonicalize(&workspace).unwrap();
+
+        for include in
+            [alias.join("shared/keep.txt"), alias.join("shared/*.txt")]
+        {
+            for exclude in
+                [alias.join("shared/skip.txt"), alias.join("shared/sk*.txt")]
+            {
+                let mut project = Project::new(&root, "proj");
+                project.input_files = vec![OmniPath::new(&include)];
+                project.output_files = project.input_files.clone();
+                project.input_files_exclude = vec![OmniPath::new(exclude)];
+                project.output_files_exclude =
+                    project.input_files_exclude.clone();
+                write_file(&shared.join("keep.txt"), "original");
                 let before = assert_collected_scope(
-                    root,
+                    &root,
                     &project,
-                    &expected_inputs,
-                    &[&shared],
+                    &[&shared.join("keep.txt")],
+                    &[&shared.join("keep.txt")],
                 )
                 .await;
                 write_file(
-                    &shared,
-                    "changed sibling content, with a different size",
+                    &shared.join("keep.txt"),
+                    "changed content with a different size",
                 );
                 let after = assert_collected_scope(
-                    root,
+                    &root,
                     &project,
-                    &expected_inputs,
-                    &[&shared],
+                    &[&shared.join("keep.txt")],
+                    &[&shared.join("keep.txt")],
                 )
                 .await;
                 assert_ne!(
                     before, after,
-                    "sibling input must affect the digest"
+                    "aliased input must affect the digest"
                 );
             }
         }

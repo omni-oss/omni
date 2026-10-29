@@ -45,17 +45,6 @@ impl<'a> ProjectDiscovery<'a> {
 }
 
 impl<'a> ProjectDiscovery<'a> {
-    pub async fn discover_project_files(
-        &self,
-    ) -> Result<Vec<DiscoveredPath>, ProjectDiscoveryError> {
-        let discovered = self.discovery.discover().await?;
-
-        Ok(discovered
-            .into_iter()
-            .map(DiscoveredPath::new_real)
-            .collect())
-    }
-
     pub async fn discover_project_files_with_walker<TDirWalker: DirWalker>(
         &self,
         walker: &TDirWalker,

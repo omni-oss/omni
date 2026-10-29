@@ -44,6 +44,7 @@ pub struct Context<TSys: ContextSys = RealSysSync> {
     remote_cache: Option<RemoteCacheConfiguration>,
     root_dir: PathBuf,
     omni_dir: PathBuf,
+    cache_dir: PathBuf,
     tracing_config: TracingConfig,
     sys: TSys,
 }
@@ -61,12 +62,50 @@ impl<TSys: ContextSys> Context<TSys> {
         override_env_files: Option<Vec<PathBuf>>,
         tracing_config: &TracingConfig,
     ) -> Result<Self, ContextError> {
+        Self::new_with_cache_dir(
+            sys,
+            env,
+            root_dir,
+            inherit_env_vars,
+            root_marker,
+            override_env_files,
+            tracing_config,
+            None,
+        )
+    }
+
+    /// Like [`Context::new`], but allows overriding the cache directory. When
+    /// `cache_dir` is `None`, the cache directory defaults to
+    /// `<root_dir>/.omni/cache`.
+    #[allow(clippy::result_large_err, clippy::too_many_arguments)]
+    pub fn new_with_cache_dir(
+        sys: TSys,
+        env: impl Into<String>,
+        root_dir: &Path,
+        inherit_env_vars: bool,
+        root_marker: &str,
+        override_env_files: Option<Vec<PathBuf>>,
+        tracing_config: &TracingConfig,
+        cache_dir: Option<PathBuf>,
+    ) -> Result<Self, ContextError> {
         let env = env.into();
         let root_dir = sys.fs_canonicalize(root_dir)?;
+        let cache_dir = match cache_dir {
+            Some(p) => {
+                if p.is_absolute() {
+                    p
+                } else {
+                    sys.env_current_dir()
+                        .unwrap_or_else(|_| PathBuf::new())
+                        .join(p)
+                }
+            }
+            None => root_dir.join(CACHE_DIR),
+        };
+        let cache_dir = canonicalize_cache_dir(&cache_dir, &sys);
         let workspace = get_workspace_configuration(&env, &root_dir, &sys)?;
         let omni_dir = root_dir.join(OMNI_DIR);
-        let remote_cache =
-            get_remote_cache_configuration(&root_dir, &omni_dir, &sys)?;
+        let remote_cache = get_remote_cache_configuration(&cache_dir, &sys)?;
         let context = Self {
             env,
             inherit_env_vars,
@@ -75,6 +114,7 @@ impl<TSys: ContextSys> Context<TSys> {
             remote_cache,
             root_dir,
             omni_dir,
+            cache_dir,
             env_root_dir_marker: root_marker.to_string(),
             sys,
             tracing_config: tracing_config.clone(),
@@ -88,6 +128,7 @@ impl<TSys: ContextSys> Context<TSys> {
             ?context.remote_cache,
             ?context.root_dir,
             ?context.omni_dir,
+            ?context.cache_dir,
             ?context.env_root_dir_marker,
             ?context.tracing_config,
             "context_created"
@@ -100,7 +141,7 @@ impl<TSys: ContextSys> Context<TSys> {
     /// re-reading the workspace and remote cache configurations.
     #[allow(clippy::result_large_err)]
     pub fn reload(&self) -> Result<Self, ContextError> {
-        Self::new(
+        Self::new_with_cache_dir(
             self.sys.clone(),
             self.env.clone(),
             &self.root_dir,
@@ -108,6 +149,7 @@ impl<TSys: ContextSys> Context<TSys> {
             &self.env_root_dir_marker,
             self.override_env_files.clone(),
             &self.tracing_config,
+            Some(self.cache_dir.clone()),
         )
     }
 
@@ -173,11 +215,11 @@ impl<TSys: ContextSys> Context<TSys> {
     }
 
     pub fn remote_cache_configuration_paths(&self) -> Vec<PathBuf> {
-        get_remote_cache_configuration_paths(self.omni_dir())
+        get_remote_cache_configuration_paths(&self.cache_dir)
     }
 
     pub fn remote_cache_configuration_path(&self, ext: &str) -> PathBuf {
-        self.omni_dir()
+        self.cache_dir()
             .join(constants::REMOTE_CACHE_OMNI.replace("{ext}", ext))
     }
 
@@ -332,12 +374,27 @@ impl<TSys: ContextSys> Context<TSys> {
         &self,
     ) -> Result<Vec<DiscoveredPath>, ContextError> {
         let projects = self.workspace.projects.clone().normalize();
+        let cache_dir = self
+            .sys
+            .fs_canonicalize(&self.cache_dir)
+            .unwrap_or_else(|_| self.cache_dir.clone());
+        let walker = dir_walker::impls::IgnoreRealDirWalker::new_with_config(
+            dir_walker::impls::IgnoreRealDirWalkerConfig::builder()
+                .standard_filters(true)
+                .custom_ignore_filenames(vec![
+                    constants::OMNI_IGNORE.to_string(),
+                ])
+                .filter_entry(move |entry| {
+                    !entry.path().starts_with(&cache_dir)
+                })
+                .build(),
+        );
         let project_paths = ProjectDiscovery::new(
             self.root_dir(),
             &projects.include,
             &projects.exclude,
         )
-        .discover_project_files()
+        .discover_project_files_with_walker(&walker)
         .await?;
 
         Ok(project_paths)
@@ -348,10 +405,21 @@ impl<TSys: ContextSys> Context<TSys> {
         &self,
         project_paths: Vec<DiscoveredPath>,
     ) -> Result<LoadedProjectConfigs, ContextError> {
+        let cache_dir = self
+            .sys
+            .fs_canonicalize(&self.cache_dir)
+            .unwrap_or_else(|_| self.cache_dir.clone());
         let discovered_paths = project_paths
             .into_iter()
             .filter_map(|p| match p {
-                DiscoveredPath::Real { file } => Some(file),
+                DiscoveredPath::Real { file } => {
+                    // Also enforce exclusion for caller-supplied walkers.
+                    let target = self
+                        .sys
+                        .fs_canonicalize(&file)
+                        .unwrap_or_else(|_| file.clone());
+                    (!target.starts_with(&cache_dir)).then_some(file)
+                }
                 DiscoveredPath::Virtual { .. } => None,
             })
             .collect::<Vec<_>>();
@@ -407,7 +475,7 @@ impl<TSys: ContextSys> Context<TSys> {
     }
 
     pub fn cache_dir(&self) -> PathBuf {
-        self.root_dir.join(CACHE_DIR)
+        self.cache_dir.clone()
     }
 
     pub fn scratch_dir(&self) -> PathBuf {
@@ -480,22 +548,39 @@ fn get_workspace_configuration(
     Ok(w)
 }
 
-fn get_remote_cache_configuration_paths(omni_dir: &Path) -> Vec<PathBuf> {
+// Resolve the existing prefix even before setup creates the cache directory.
+// This keeps its encryption-key identity stable across creation and filesystem
+// aliases (for example /var on macOS), without lexically collapsing symlink/..
+// components.
+fn canonicalize_cache_dir(path: &Path, sys: &impl ContextSys) -> PathBuf {
+    for ancestor in path.ancestors() {
+        if let Ok(canonical) = sys.fs_canonicalize(ancestor) {
+            let suffix = path.strip_prefix(ancestor).expect("ancestor prefix");
+            return if suffix.as_os_str().is_empty() {
+                canonical
+            } else {
+                canonical.join(suffix)
+            };
+        }
+    }
+    path.to_path_buf()
+}
+
+fn get_remote_cache_configuration_paths(cache_dir: &Path) -> Vec<PathBuf> {
     vec![
-        omni_dir.join(constants::REMOTE_CACHE_OMNI.replace("{ext}", "enc")),
-        omni_dir.join(constants::REMOTE_CACHE_OMNI.replace("{ext}", "yaml")),
+        cache_dir.join(constants::REMOTE_CACHE_OMNI.replace("{ext}", "enc")),
+        cache_dir.join(constants::REMOTE_CACHE_OMNI.replace("{ext}", "yaml")),
     ]
 }
 
 #[allow(clippy::result_large_err)]
 fn get_remote_cache_configuration(
-    abs_root_dir: &Path,
-    omni_dir: &Path,
+    cache_dir: &Path,
     sys: &impl ContextSys,
 ) -> Result<Option<RemoteCacheConfiguration>, ContextError> {
     let mut rc_path = None;
 
-    let files = get_remote_cache_configuration_paths(omni_dir);
+    let files = get_remote_cache_configuration_paths(cache_dir);
 
     for f in &files {
         if sys.fs_exists(f)? && sys.fs_is_file(f)? {
@@ -512,7 +597,7 @@ fn get_remote_cache_configuration(
     let rc_path =
         rc_path.expect("RemoteConfiguration should exist at this point");
 
-    let user = abs_root_dir.to_string_lossy();
+    let user = cache_dir.to_string_lossy();
     let rc = omni_setup::get_remote_caching_config(
         &user,
         rc_path.as_path(),
@@ -631,6 +716,69 @@ mod tests {
             &TracingConfig::default(),
         )
         .expect("Can't create context")
+    }
+
+    #[tokio::test]
+    async fn cache_identity_is_stable_before_and_after_directory_creation() {
+        let (tmp, sys) = default_fixture();
+        let cache = tmp.path().join("new/cache");
+        let first = Context::new_with_cache_dir(
+            sys.clone(),
+            "testing",
+            tmp.path(),
+            false,
+            "workspace.omni.yaml",
+            None,
+            &TracingConfig::disabled(),
+            Some(cache.clone()),
+        )
+        .unwrap();
+        std::fs::create_dir_all(&cache).unwrap();
+        let second = first.reload().unwrap();
+        assert_eq!(
+            first.cache_dir().as_os_str(),
+            second.cache_dir().as_os_str()
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn missing_cache_directory_resolves_existing_filesystem_aliases() {
+        let temp = tempfile::tempdir().unwrap();
+        let target = temp.path().join("target");
+        let alias = temp.path().join("alias");
+        std::fs::create_dir(&target).unwrap();
+        std::os::unix::fs::symlink(&target, &alias).unwrap();
+        let before =
+            canonicalize_cache_dir(&alias.join("new/cache"), &real_sys());
+        std::fs::create_dir_all(target.join("new/cache")).unwrap();
+        let after =
+            canonicalize_cache_dir(&alias.join("new/cache"), &real_sys());
+        assert_eq!(before.as_os_str(), after.as_os_str());
+        assert_eq!(
+            before,
+            std::fs::canonicalize(target.join("new/cache")).unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn custom_cache_is_excluded_from_project_discovery() {
+        let (tmp, sys) = default_fixture();
+        let cache = tmp.path().join("nested/custom-cache");
+        std::fs::create_dir_all(&cache).unwrap();
+        std::fs::write(cache.join("project.omni.yaml"), "invalid: [yaml")
+            .unwrap();
+        let mut context = ctx("testing", tmp.path(), sys);
+        context.cache_dir = std::fs::canonicalize(cache).unwrap();
+        let loaded = context.clone().into_loaded().await.unwrap();
+        assert_eq!(loaded.projects().len(), 3);
+        let walker = dir_walker::impls::IgnoreRealDirWalker::new_with_config(
+            dir_walker::impls::IgnoreRealDirWalkerConfig::builder()
+                .standard_filters(false)
+                .build(),
+        );
+        let loaded = context.into_loaded_with_walker(&walker).await.unwrap();
+        assert_eq!(loaded.projects().len(), 3);
     }
 
     #[tokio::test]
