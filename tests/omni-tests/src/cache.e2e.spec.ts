@@ -140,6 +140,25 @@ describe("+cache @cache (cache dir)", () => {
 
         expect(ws.exists("rel-cache")).toBe(true);
     });
+
+    it("an in-project custom cache does not invalidate broad input globs", async () => {
+        const ws = makeWorkspace({
+            projects: {
+                app: {
+                    name: "app",
+                    cache: { key: { defaults: false, files: ["**/*"] } },
+                    tasks: { build: "echo built" },
+                },
+            },
+        });
+        const args = ["run", "build", "--cache-dir", ws.path("app/custom-cache")];
+        expect(await runOmni(args, { cwd: ws.cwd })).toHaveSucceeded();
+        for (let i = 0; i < 2; i++) {
+            const cached = await runOmni(args, { cwd: ws.cwd });
+            expect(cached).toHaveSucceeded();
+            expect(cached).toOutputContaining("Cache hit for task 'app#build'");
+        }
+    });
 });
 
 describe("+cache @cache @e2e (run cache hit / log replay)", () => {

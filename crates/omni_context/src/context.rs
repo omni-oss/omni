@@ -375,12 +375,27 @@ impl<TSys: ContextSys> Context<TSys> {
         &self,
     ) -> Result<Vec<DiscoveredPath>, ContextError> {
         let projects = self.workspace.projects.clone().normalize();
+        let cache_dir = self
+            .sys
+            .fs_canonicalize(&self.cache_dir)
+            .unwrap_or_else(|_| self.cache_dir.clone());
+        let walker = dir_walker::impls::IgnoreRealDirWalker::new_with_config(
+            dir_walker::impls::IgnoreRealDirWalkerConfig::builder()
+                .standard_filters(true)
+                .custom_ignore_filenames(vec![
+                    constants::OMNI_IGNORE.to_string(),
+                ])
+                .filter_entry(move |entry| {
+                    !entry.path().starts_with(&cache_dir)
+                })
+                .build(),
+        );
         let project_paths = ProjectDiscovery::new(
             self.root_dir(),
             &projects.include,
             &projects.exclude,
         )
-        .discover_project_files()
+        .discover_project_files_with_walker(&walker)
         .await?;
 
         Ok(project_paths)
@@ -391,10 +406,21 @@ impl<TSys: ContextSys> Context<TSys> {
         &self,
         project_paths: Vec<DiscoveredPath>,
     ) -> Result<LoadedProjectConfigs, ContextError> {
+        let cache_dir = self
+            .sys
+            .fs_canonicalize(&self.cache_dir)
+            .unwrap_or_else(|_| self.cache_dir.clone());
         let discovered_paths = project_paths
             .into_iter()
             .filter_map(|p| match p {
-                DiscoveredPath::Real { file } => Some(file),
+                DiscoveredPath::Real { file } => {
+                    // Also enforce exclusion for caller-supplied walkers.
+                    let target = self
+                        .sys
+                        .fs_canonicalize(&file)
+                        .unwrap_or_else(|_| file.clone());
+                    (!target.starts_with(&cache_dir)).then_some(file)
+                }
                 DiscoveredPath::Virtual { .. } => None,
             })
             .collect::<Vec<_>>();
@@ -674,6 +700,26 @@ mod tests {
             &TracingConfig::default(),
         )
         .expect("Can't create context")
+    }
+
+    #[tokio::test]
+    async fn custom_cache_is_excluded_from_project_discovery() {
+        let (tmp, sys) = default_fixture();
+        let cache = tmp.path().join("nested/custom-cache");
+        std::fs::create_dir_all(&cache).unwrap();
+        std::fs::write(cache.join("project.omni.yaml"), "invalid: [yaml")
+            .unwrap();
+        let mut context = ctx("testing", tmp.path(), sys);
+        context.cache_dir = std::fs::canonicalize(cache).unwrap();
+        let loaded = context.clone().into_loaded().await.unwrap();
+        assert_eq!(loaded.projects().len(), 3);
+        let walker = dir_walker::impls::IgnoreRealDirWalker::new_with_config(
+            dir_walker::impls::IgnoreRealDirWalkerConfig::builder()
+                .standard_filters(false)
+                .build(),
+        );
+        let loaded = context.into_loaded_with_walker(&walker).await.unwrap();
+        assert_eq!(loaded.projects().len(), 3);
     }
 
     #[tokio::test]

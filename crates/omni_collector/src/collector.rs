@@ -155,11 +155,21 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
     fn workspace_bound_predicate(
         &self,
         canonical_root: PathBuf,
+        canonical_cache: PathBuf,
     ) -> impl Fn(&dir_walker::impls::IgnoreDirEntry) -> bool + Send + Sync + 'static
     {
         let sys = self.sys.clone();
+        let cache_dir = canonical_cache
+            .strip_prefix(&canonical_root)
+            .map(|relative| self.ws_root_dir.join(relative))
+            .unwrap_or_else(|_| self.cache_dir.to_path_buf());
 
         move |entry| {
+            if entry.path().starts_with(&cache_dir)
+                || entry.path().starts_with(&canonical_cache)
+            {
+                return false;
+            }
             if !entry.path_is_symlink() {
                 return true;
             }
@@ -167,6 +177,7 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
             let link = entry.path();
 
             match sys.fs_canonicalize(link) {
+                Ok(target) if target.starts_with(&canonical_cache) => false,
                 Ok(target) if target.starts_with(&canonical_root) => true,
                 Ok(target) => {
                     trace::warn!(
@@ -504,6 +515,10 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
                 forced_includes.into_iter().collect::<Vec<_>>();
 
             let canonical_root = self.canonical_ws_root();
+            let canonical_cache = self
+                .sys
+                .fs_canonicalize(self.cache_dir)
+                .unwrap_or_else(|_| self.cache_dir.to_path_buf());
 
             let topmost =
                 topmost_dirs(self.sys.clone(), &includes, self.ws_root_dir)
@@ -515,8 +530,10 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
                     // enter the hash.
                     .filter(|root| match self.sys.fs_canonicalize(root) {
                         Ok(target) => {
-                            let contained =
-                                target.starts_with(&canonical_root);
+                            if target.starts_with(&canonical_cache) {
+                                return false;
+                            }
+                            let contained = target.starts_with(&canonical_root);
                             if !contained {
                                 trace::warn!(
                                     root = ?root,
@@ -541,15 +558,19 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
                 "before_walk"
             );
 
-            let dirwalker = RealGlobDirWalker::config()
-                .standard_filters(true)
-                .include(forced_includes)
-                .root_dir(self.ws_root_dir)
-                .custom_ignore_filenames(vec![".omniignore".to_string()])
-                .follow_links(true)
-                .filter_entry(self.workspace_bound_predicate(canonical_root))
-                .build()
-                .build_walker()?;
+            let dirwalker =
+                RealGlobDirWalker::config()
+                    .standard_filters(true)
+                    .include(forced_includes)
+                    .root_dir(self.ws_root_dir)
+                    .custom_ignore_filenames(vec![".omniignore".to_string()])
+                    .follow_links(true)
+                    .filter_entry(self.workspace_bound_predicate(
+                        canonical_root,
+                        canonical_cache,
+                    ))
+                    .build()
+                    .build_walker()?;
 
             // Every walk root may have been dropped for escaping the
             // workspace, in which case there is nothing to enumerate.
@@ -1125,6 +1146,71 @@ mod tests {
             .iter()
             .cloned()
             .collect()
+    }
+
+    #[tokio::test]
+    async fn custom_cache_is_never_collected_as_input_or_output() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = std::fs::canonicalize(temp.path()).unwrap();
+        let cache = root.join("proj/custom-cache");
+        write_file(&root.join("proj/source.txt"), "source");
+        write_file(&cache.join("cached.txt"), "cache state");
+        let mut project = Project::new(&root, "proj");
+        let config = CollectConfig {
+            input_files: true,
+            output_files: true,
+            digests: true,
+            cache_output_dirs: false,
+        };
+        for pattern in ["**/*", "custom-cache/**/*", "custom-cache/cached.txt"]
+        {
+            project.input_files = vec![OmniPath::new(pattern)];
+            project.output_files = project.input_files.clone();
+            let before = collect_one(&root, &cache, &project, &config).await;
+            let expected = if pattern == "**/*" {
+                rel_paths(&["source.txt"])
+            } else {
+                BTreeSet::new()
+            };
+            assert_eq!(as_set(&before.input_files), expected);
+            assert_eq!(as_set(&before.output_files), expected);
+            write_file(
+                &cache.join("cached.txt"),
+                "changed cache state with a different size",
+            );
+            let after = collect_one(&root, &cache, &project, &config).await;
+            assert_eq!(before.digest, after.digest);
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn symlinks_into_custom_cache_are_not_collected() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = std::fs::canonicalize(temp.path()).unwrap();
+        let cache = root.join("state");
+        write_file(&cache.join("cached.txt"), "cache state");
+        std::fs::create_dir_all(root.join("proj")).unwrap();
+        std::os::unix::fs::symlink(&cache, root.join("proj/link")).unwrap();
+        let mut project = Project::new(&root, "proj");
+        for pattern in ["**/*", "link/**/*", "link/cached.txt"] {
+            project.input_files = vec![OmniPath::new(pattern)];
+            project.output_files = project.input_files.clone();
+            let result = collect_one(
+                &root,
+                &cache,
+                &project,
+                &CollectConfig {
+                    input_files: true,
+                    output_files: true,
+                    digests: true,
+                    cache_output_dirs: false,
+                },
+            )
+            .await;
+            assert!(as_set(&result.input_files).is_empty());
+            assert!(as_set(&result.output_files).is_empty());
+        }
     }
 
     #[tokio::test]
