@@ -85,6 +85,9 @@ describe("+run-filters @e2e (dry run)", () => {
         expect(result).toOutputContaining("Dry run mode enabled");
         expect(result).toOutputContaining("Executing task 'app#build':");
         expect(result).toOutputContaining("dry-ran.txt");
+        // Completion is reported through the same lifecycle event as a real
+        // run, so the CLI prints the same status line.
+        expect(result).toOutputContaining("Executed task 'app#build'");
         // The command never runs, so it never creates its side-effect file.
         expect(ws.exists("app/dry-ran.txt")).toBe(false);
     });

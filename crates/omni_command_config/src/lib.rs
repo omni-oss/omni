@@ -1,7 +1,9 @@
 mod command_config;
+mod display;
 mod resolve;
 
 pub use command_config::*;
+pub use display::*;
 pub use resolve::*;
 
 #[cfg(all(test, feature = "serde"))]

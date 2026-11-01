@@ -143,7 +143,13 @@ impl ChildProcess {
 
         let start_time = std::time::Instant::now();
 
-        log::trace!("executing command: {} {:?}", program, args);
+        log::trace!(
+            "executing command: {}",
+            omni_command_config::format_argv(
+                std::iter::once(program.as_str())
+                    .chain(args.iter().map(String::as_str))
+            )
+        );
 
         let child = Child::spawn(
             program,

@@ -3,7 +3,9 @@ use std::{borrow::Cow, future::Future, time::Duration};
 use futures::stream::{FuturesUnordered, StreamExt as _};
 use maps::{UnorderedMap, unordered_map};
 use omni_cache::{CachedTaskExecution, TaskExecutionCacheStore};
-use omni_command_config::{Command, CommandConfig, resolve_command};
+use omni_command_config::{
+    Command, CommandConfig, escape_control_chars, resolve_command,
+};
 use omni_config_types::TeraExprBoolean;
 use omni_context::LoadedContext;
 use omni_core::TaskExecutionNode;
@@ -511,19 +513,31 @@ where
                     task_ctx,
                 )?;
 
+                // Mirror the normal execution path's lifecycle events so
+                // subscribers (and the CLI) report the task exactly as they
+                // would after a real run.
+                let task_id = task_ctx.node.full_task_name().to_string();
+                self.subscriber
+                    .on_task_started(TaskStartedEvent {
+                        task_id: task_id.clone(),
+                        project: task_ctx.node.project_name().to_string(),
+                        task: task_ctx.node.task_name().to_string(),
+                    })
+                    .await;
+
                 match &display_command {
                     Some(command) if !command.is_empty() => diagnostic!(
                         self.subscriber,
                         DiagnosticLevel::Info,
                         "Executing task '{}': {}",
-                        escape_control_chars(task_ctx.node.full_task_name()),
-                        escape_control_chars(&command.to_string()),
+                        escape_control_chars(&task_id),
+                        command,
                     ),
                     _ => diagnostic!(
                         self.subscriber,
                         DiagnosticLevel::Info,
                         "Executing task '{}'",
-                        escape_control_chars(task_ctx.node.full_task_name()),
+                        escape_control_chars(&task_id),
                     ),
                 }
 
@@ -538,6 +552,18 @@ where
                     ),
                     0,
                 ));
+
+                self.subscriber
+                    .on_task_completed(TaskCompletedEvent {
+                        task_id,
+                        project: task_ctx.node.project_name().to_string(),
+                        task: task_ctx.node.task_name().to_string(),
+                        exit_code: 0,
+                        elapsed: Duration::ZERO,
+                        cache_hit: false,
+                        tries: 0,
+                    })
+                    .await;
             } else {
                 futs.push(run_process(
                     self.subscriber,
@@ -730,32 +756,6 @@ fn resolve_task_command_for_display<'a>(
         }
         None => Ok(None),
     }
-}
-
-/// Escape control characters so attacker-controlled task names or commands
-/// cannot inject terminal escapes (e.g. OSC 52 clipboard writes) or forge log
-/// lines. Printable characters, including non-ASCII text, are left untouched.
-fn escape_control_chars(input: &str) -> Cow<'_, str> {
-    if !input.chars().any(char::is_control) {
-        return Cow::Borrowed(input);
-    }
-
-    use std::fmt::Write as _;
-
-    let mut escaped = String::with_capacity(input.len());
-    for c in input.chars() {
-        match c {
-            '\n' => escaped.push_str("\\n"),
-            '\r' => escaped.push_str("\\r"),
-            '\t' => escaped.push_str("\\t"),
-            c if c.is_control() => {
-                // `write!` to a `String` cannot fail.
-                let _ = write!(escaped, "\\u{{{:x}}}", c as u32);
-            }
-            c => escaped.push(c),
-        }
-    }
-    Cow::Owned(escaped)
 }
 
 fn evaluate_bool_expr(
@@ -1324,25 +1324,5 @@ mod tests {
         // deterministic.
         assert_eq!(forward_out, (0..n).collect::<Vec<_>>());
         assert_eq!(forward_out, reverse_out);
-    }
-
-    #[test]
-    fn escape_control_chars_leaves_printable_text_alone() {
-        assert_eq!(super::escape_control_chars("echo café"), "echo café");
-    }
-
-    #[test]
-    fn escape_control_chars_neutralizes_osc_sequence() {
-        // OSC 52 clipboard write: ESC ] 52 ; c ; <base64> BEL.
-        let escaped =
-            super::escape_control_chars("echo \x1b]52;c;c2VjcmV0\x07");
-        assert_eq!(escaped, "echo \\u{1b}]52;c;c2VjcmV0\\u{7}");
-        assert!(!escaped.contains('\x1b'));
-        assert!(!escaped.contains('\x07'));
-    }
-
-    #[test]
-    fn escape_control_chars_renders_common_escapes() {
-        assert_eq!(super::escape_control_chars("a\nb\rc\td"), "a\\nb\\rc\\td");
     }
 }

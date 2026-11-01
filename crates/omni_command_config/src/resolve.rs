@@ -78,11 +78,12 @@ impl Command {
 
 impl std::fmt::Display for Command {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let argv = self.to_argv();
-        match shlex::try_join(argv.iter().map(String::as_str)) {
-            Ok(rendered) => f.write_str(&rendered),
-            Err(_) => write!(f, "{argv:?}"),
-        }
+        let argv = self
+            .prog
+            .iter()
+            .map(String::as_str)
+            .chain(self.args.iter().map(String::as_str));
+        f.write_str(&crate::display::format_argv(argv))
     }
 }
 
