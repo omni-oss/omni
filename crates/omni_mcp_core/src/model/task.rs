@@ -2,6 +2,25 @@ use omni_task_output_logs::LogsDisplay;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+#[derive(
+    Debug,
+    Default,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    JsonSchema,
+)]
+#[serde(rename_all = "lowercase")]
+pub enum ForceMode {
+    All,
+    Failed,
+    #[default]
+    None,
+}
+
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct TaskRunParams {
     /// Tasks to run.
@@ -15,9 +34,11 @@ pub struct TaskRunParams {
     /// Dry run mode.
     #[serde(default)]
     pub dry_run: bool,
-    /// Force execution of tasks, ignoring cached results.
+    /// Force execution of tasks: `all` re-runs every selected task ignoring
+    /// cached results, `failed` re-runs only tasks that failed last time, and
+    /// `none` (default) uses the cache normally.
     #[serde(default)]
-    pub force: bool,
+    pub force: ForceMode,
     /// Ignore dependencies and run tasks independently.
     #[serde(default)]
     pub ignore_dependencies: bool,
@@ -66,4 +87,42 @@ pub struct ExecCommandParams {
 pub struct ExecCommandResult {
     pub ok: bool,
     pub results: Vec<TaskExecutionSummary>,
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    fn parse(value: serde_json::Value) -> Result<TaskRunParams, String> {
+        serde_json::from_value(value).map_err(|e| e.to_string())
+    }
+
+    #[test]
+    fn force_defaults_to_none() {
+        let params = parse(json!({ "tasks": ["test"] })).unwrap();
+        assert_eq!(params.force, ForceMode::None);
+    }
+
+    #[test]
+    fn force_accepts_cli_values() {
+        for (value, expected) in [
+            ("all", ForceMode::All),
+            ("failed", ForceMode::Failed),
+            ("none", ForceMode::None),
+        ] {
+            let params =
+                parse(json!({ "tasks": ["test"], "force": value })).unwrap();
+            assert_eq!(params.force, expected, "{value}");
+        }
+    }
+
+    #[test]
+    fn force_rejects_booleans_and_unknown_values() {
+        for value in [json!(true), json!(false), json!("bogus")] {
+            parse(json!({ "tasks": ["test"], "force": value.clone() }))
+                .expect_err(&format!("{value} should be rejected"));
+        }
+    }
 }
