@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     model::{
-        ExecCommandParams, ExecCommandResult, ForceMode, TaskExecutionSummary,
+        ExecCommandParams, ExecCommandResult, TaskExecutionSummary,
         TaskRunParams, TaskRunResult,
     },
     server::OmniMcpServer,
@@ -11,9 +11,7 @@ use crate::{
 use omni_api::{ExecRequest, TaskRunFilters, TaskRunRequest};
 use omni_context::ContextSys;
 use omni_generator::GeneratorSys;
-use omni_task_executor::{
-    Force, OnFailure, TaskExecutionResult, TaskExecutorSys,
-};
+use omni_task_executor::{OnFailure, TaskExecutionResult, TaskExecutorSys};
 
 impl<TSys> OmniMcpServer<TSys>
 where
@@ -40,11 +38,7 @@ where
         let req = TaskRunRequest {
             tasks: params.tasks,
             ignore_dependencies: params.ignore_dependencies,
-            force: match params.force {
-                ForceMode::All => Force::All,
-                ForceMode::Failed => Force::Failed,
-                ForceMode::None => Force::None,
-            },
+            force: params.force,
             filters,
             with_dependents: false,
             on_failure: OnFailure::SkipDependents,

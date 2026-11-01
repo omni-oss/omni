@@ -1,25 +1,7 @@
+use omni_task_executor::Force;
 use omni_task_output_logs::LogsDisplay;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-
-#[derive(
-    Debug,
-    Default,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    Serialize,
-    Deserialize,
-    JsonSchema,
-)]
-#[serde(rename_all = "lowercase")]
-pub enum ForceMode {
-    All,
-    Failed,
-    #[default]
-    None,
-}
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct TaskRunParams {
@@ -38,7 +20,7 @@ pub struct TaskRunParams {
     /// cached results, `failed` re-runs only tasks that failed last time, and
     /// `none` (default) uses the cache normally.
     #[serde(default)]
-    pub force: ForceMode,
+    pub force: Force,
     /// Ignore dependencies and run tasks independently.
     #[serde(default)]
     pub ignore_dependencies: bool,
@@ -102,15 +84,15 @@ mod tests {
     #[test]
     fn force_defaults_to_none() {
         let params = parse(json!({ "tasks": ["test"] })).unwrap();
-        assert_eq!(params.force, ForceMode::None);
+        assert_eq!(params.force, Force::None);
     }
 
     #[test]
     fn force_accepts_cli_values() {
         for (value, expected) in [
-            ("all", ForceMode::All),
-            ("failed", ForceMode::Failed),
-            ("none", ForceMode::None),
+            ("all", Force::All),
+            ("failed", Force::Failed),
+            ("none", Force::None),
         ] {
             let params =
                 parse(json!({ "tasks": ["test"], "force": value })).unwrap();
