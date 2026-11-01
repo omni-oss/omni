@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     model::{
-        ExecCommandParams, ExecCommandResult, TaskExecutionSummary,
+        ExecCommandParams, ExecCommandResult, ForceMode, TaskExecutionSummary,
         TaskRunParams, TaskRunResult,
     },
     server::OmniMcpServer,
@@ -40,10 +40,10 @@ where
         let req = TaskRunRequest {
             tasks: params.tasks,
             ignore_dependencies: params.ignore_dependencies,
-            force: if params.force {
-                Force::All
-            } else {
-                Force::None
+            force: match params.force {
+                ForceMode::All => Force::All,
+                ForceMode::Failed => Force::Failed,
+                ForceMode::None => Force::None,
             },
             filters,
             with_dependents: false,

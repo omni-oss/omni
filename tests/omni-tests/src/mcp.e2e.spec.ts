@@ -1892,6 +1892,84 @@ describe(
     },
 );
 
+// ---------------------------------------------------------------------------
+// task_run force
+// ---------------------------------------------------------------------------
+
+// `force` mirrors the CLI's `--force` values (`all | failed | none`). The
+// nonce task prints `RUN-MARK-<n>`, so a fresh execution is distinguishable
+// from a cache replay by the logged number.
+describe(
+    "+mcp @mcp @cli (task_run force)",
+    {
+        tags: ["mcp", "caching", "execution"],
+    },
+    () => {
+        async function runBuild(
+            client: Client,
+            force?: unknown,
+        ): Promise<string> {
+            const args: Record<string, unknown> = {
+                tasks: ["build"],
+                include_logs: "all",
+            };
+            if (force !== undefined) {
+                args.force = force;
+            }
+            const result = await client.callTool({
+                name: "task_run",
+                arguments: args,
+            });
+            const data = getContent<{
+                results: Array<{ task: string; logs?: string | null }>;
+            }>(result);
+            return data.results.find((r) => r.task === "build")?.logs ?? "";
+        }
+
+        it("force: 'all' re-executes a cached task", async () => {
+            const ws = makeWorkspace(cachedLoggingTaskSpec());
+            const { client } = await connectMcp({ cwd: ws.cwd });
+
+            expect(await runBuild(client)).toContain("RUN-MARK-1");
+            expect(await runBuild(client, "all")).toContain("RUN-MARK-2");
+        });
+
+        it("force: 'none' uses the cache", async () => {
+            const ws = makeWorkspace(cachedLoggingTaskSpec());
+            const { client } = await connectMcp({ cwd: ws.cwd });
+
+            expect(await runBuild(client)).toContain("RUN-MARK-1");
+            const cached = await runBuild(client, "none");
+            expect(cached).toContain("RUN-MARK-1");
+            expect(cached).not.toContain("RUN-MARK-2");
+        });
+
+        it("force: 'failed' does not re-run a task that succeeded", async () => {
+            const ws = makeWorkspace(cachedLoggingTaskSpec());
+            const { client } = await connectMcp({ cwd: ws.cwd });
+
+            expect(await runBuild(client)).toContain("RUN-MARK-1");
+            const cached = await runBuild(client, "failed");
+            expect(cached).toContain("RUN-MARK-1");
+            expect(cached).not.toContain("RUN-MARK-2");
+        });
+
+        it("rejects boolean and unknown force values", async () => {
+            const ws = makeWorkspace(cachedLoggingTaskSpec());
+            const { client } = await connectMcp({ cwd: ws.cwd });
+
+            for (const force of [true, false, "bogus"]) {
+                await expect(
+                    client.callTool({
+                        name: "task_run",
+                        arguments: { tasks: ["build"], force },
+                    }),
+                ).rejects.toThrow();
+            }
+        });
+    },
+);
+
 function denoAvailable(): boolean {
     try {
         return (
