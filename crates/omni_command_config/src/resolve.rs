@@ -76,6 +76,16 @@ impl Command {
     }
 }
 
+impl std::fmt::Display for Command {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let argv = self.to_argv();
+        match shlex::try_join(argv.iter().map(String::as_str)) {
+            Ok(rendered) => f.write_str(&rendered),
+            Err(_) => write!(f, "{argv:?}"),
+        }
+    }
+}
+
 #[derive(Debug, Copy, Clone, Default, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
@@ -351,5 +361,19 @@ mod tests {
     fn to_argv_of_empty_is_empty() {
         let resolved = Command::default();
         assert!(resolved.to_argv().is_empty());
+    }
+
+    #[test]
+    fn display_joins_and_quotes_argv() {
+        let command = Command {
+            prog: Some("echo".to_string()),
+            args: vec!["hello world".to_string(), "plain".to_string()],
+        };
+        assert_eq!(command.to_string(), "echo 'hello world' plain");
+    }
+
+    #[test]
+    fn display_of_empty_is_empty() {
+        assert_eq!(Command::default().to_string(), "");
     }
 }

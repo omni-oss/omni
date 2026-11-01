@@ -487,13 +487,30 @@ where
             let record_logs =
                 task_ctx.cache_info.as_ref().is_some_and(|ci| ci.cache_logs);
 
+            // Resolve the command even in dry-run mode so template/env
+            // expansion (including `{{ args.* }}` from `-a/--arg`) happens
+            // and any resolution errors surface during planning.
+            let override_command = resolve_task_command(
+                task_ctx.node.task_exec_config(),
+                task_ctx,
+            )?;
+
             if self.dry_run {
-                diagnostic!(
-                    self.subscriber,
-                    DiagnosticLevel::Info,
-                    "Executing task '{}'",
-                    task_ctx.node.full_task_name(),
-                );
+                match &override_command {
+                    Some(command) if !command.is_empty() => diagnostic!(
+                        self.subscriber,
+                        DiagnosticLevel::Info,
+                        "Executing task '{}': {}",
+                        task_ctx.node.full_task_name(),
+                        command,
+                    ),
+                    _ => diagnostic!(
+                        self.subscriber,
+                        DiagnosticLevel::Info,
+                        "Executing task '{}'",
+                        task_ctx.node.full_task_name(),
+                    ),
+                }
 
                 let node = task_ctx.node.clone();
                 fut_results.push(TaskResultContext::new_completed(
@@ -507,11 +524,6 @@ where
                     0,
                 ));
             } else {
-                let override_command = resolve_task_command(
-                    task_ctx.node.task_exec_config(),
-                    task_ctx,
-                )?;
-
                 let override_retry_command = resolve_task_command(
                     task_ctx.node.task_retry_exec_config(),
                     task_ctx,

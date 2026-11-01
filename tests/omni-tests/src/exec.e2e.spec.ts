@@ -122,7 +122,16 @@ describe("+exec @e2e (dry run)", () => {
         const ws = makeWorkspace(twoProjectSpec());
 
         const result = await runOmni(
-            ["exec", "-p", "app", "--dry-run", "--", "echo", "DRY-MARK"],
+            [
+                "exec",
+                "-p",
+                "app",
+                "--dry-run",
+                "--",
+                "node",
+                "-e",
+                "require('fs').writeFileSync('dry-ran.txt', 'DRY-MARK')",
+            ],
             {
                 cwd: ws.cwd,
             },
@@ -131,8 +140,9 @@ describe("+exec @e2e (dry run)", () => {
         expect(result).toHaveSucceeded();
         expect(result).toOutputContaining("Dry run mode enabled");
         expect(result).toOutputContaining("Executing task");
-        // The command is not actually run, so its output never appears.
-        expect(result.stdout).not.toContain("DRY-MARK");
+        expect(result).toOutputContaining("dry-ran.txt");
+        // The command is not actually run, so it never creates its file.
+        expect(ws.exists("apps/app/dry-ran.txt")).toBe(false);
     });
 });
 
@@ -313,8 +323,9 @@ describe("+exec @e2e (dry run with combined filters)", () => {
                 "--dir",
                 "apps/**",
                 "--",
-                "echo",
-                "DRY-MARK",
+                "node",
+                "-e",
+                "require('fs').writeFileSync('dry-ran.txt', 'DRY-MARK')",
             ],
             { cwd: ws.cwd },
         );
@@ -327,6 +338,6 @@ describe("+exec @e2e (dry run with combined filters)", () => {
         expect(result.stdout).not.toContain("other#exec");
         expect(result.stdout).not.toContain("app-tool#exec");
         // Nothing is actually executed in dry-run mode.
-        expect(result.stdout).not.toContain("DRY-MARK");
+        expect(ws.exists("apps/app/dry-ran.txt")).toBe(false);
     });
 });

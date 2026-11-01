@@ -70,7 +70,12 @@ describe("+run-filters @e2e (dry run)", () => {
         const ws = makeWorkspace({
             workspace: { projects: ["**"] },
             projects: {
-                app: { name: "app", tasks: { build: 'echo "DRY-MARK"' } },
+                app: {
+                    name: "app",
+                    tasks: {
+                        build: `node -e "require('fs').writeFileSync('dry-ran.txt', 'DRY-MARK')"`,
+                    },
+                },
             },
         });
 
@@ -78,9 +83,36 @@ describe("+run-filters @e2e (dry run)", () => {
 
         expect(result).toHaveSucceeded();
         expect(result).toOutputContaining("Dry run mode enabled");
-        expect(result).toOutputContaining("Executing task 'app#build'");
-        // The command never runs, so its output is absent.
-        expect(result.stdout).not.toContain("DRY-MARK");
+        expect(result).toOutputContaining("Executing task 'app#build':");
+        expect(result).toOutputContaining("dry-ran.txt");
+        // The command never runs, so it never creates its side-effect file.
+        expect(ws.exists("app/dry-ran.txt")).toBe(false);
+    });
+
+    it("`-d/--dry-run` prints the command with dynamic args expanded", async () => {
+        const ws = makeWorkspace({
+            workspace: { projects: ["**"] },
+            projects: {
+                app: {
+                    name: "app",
+                    tasks: {
+                        greet: `node -e "require('fs').writeFileSync('{{ args.out }}', 'GREET-RAN')"`,
+                    },
+                },
+            },
+        });
+
+        const result = await runOmni(
+            ["run", "greet", "-a", "out=dry-ran.txt", "-d", "--force"],
+            { cwd: ws.cwd },
+        );
+
+        expect(result).toHaveSucceeded();
+        expect(result).toOutputContaining("Executing task 'app#greet':");
+        expect(result).toOutputContaining("dry-ran.txt");
+        // The template is rendered, not echoed back raw.
+        expect(result.stdout).not.toContain("{{ args.out }}");
+        expect(ws.exists("app/dry-ran.txt")).toBe(false);
     });
 });
 
@@ -632,7 +664,12 @@ describe("+run-filters @output (result + dry-run combination)", () => {
         const ws = makeWorkspace({
             workspace: { projects: ["**"] },
             projects: {
-                app: { name: "app", tasks: { build: 'echo "DRY-MARK"' } },
+                app: {
+                    name: "app",
+                    tasks: {
+                        build: `node -e "require('fs').writeFileSync('dry-ran.txt', 'DRY-MARK')"`,
+                    },
+                },
             },
         });
 
@@ -652,7 +689,7 @@ describe("+run-filters @output (result + dry-run combination)", () => {
         expect(result).toHaveSucceeded();
         // The task never executes, but the results file is still written in the
         // requested format regardless of the `.dat` extension.
-        expect(result.stdout).not.toContain("DRY-MARK");
+        expect(ws.exists("app/dry-ran.txt")).toBe(false);
         expect(ws.exists("results.dat")).toBe(true);
         expect(ws.read("results.dat")).toContain("status:");
     });
@@ -663,7 +700,12 @@ describe("+run-filters @output (ui downgrade)", () => {
         const ws = makeWorkspace({
             workspace: { projects: ["**"] },
             projects: {
-                app: { name: "app", tasks: { build: 'echo "PLAN-MARK"' } },
+                app: {
+                    name: "app",
+                    tasks: {
+                        build: `node -e "require('fs').writeFileSync('dry-ran.txt', 'PLAN-MARK')"`,
+                    },
+                },
             },
         });
 
@@ -676,7 +718,7 @@ describe("+run-filters @output (ui downgrade)", () => {
         expect(result).toHaveSucceeded();
         expect(result).toOutputContaining("Dry run mode enabled");
         expect(result).toOutputContaining("Executing task 'app#build'");
-        expect(result.stdout).not.toContain("PLAN-MARK");
+        expect(ws.exists("app/dry-ran.txt")).toBe(false);
     });
 });
 

@@ -646,7 +646,12 @@ describe("+run @output (dry-run + result file)", () => {
         const ws = makeWorkspace({
             workspace: { projects: ["**"] },
             projects: {
-                app: { name: "app", tasks: { build: 'echo "DRY-MARK"' } },
+                app: {
+                    name: "app",
+                    tasks: {
+                        build: `node -e "require('fs').writeFileSync('dry-ran.txt', 'DRY-MARK')"`,
+                    },
+                },
             },
         });
 
@@ -659,7 +664,7 @@ describe("+run @output (dry-run + result file)", () => {
 
         expect(result).toHaveSucceeded();
         // The task never executes, yet the results file is written.
-        expect(result.stdout).not.toContain("DRY-MARK");
+        expect(ws.exists("app/dry-ran.txt")).toBe(false);
         expect(ws.exists("results.json")).toBe(true);
         const parsed = JSON.parse(ws.read("results.json"));
         expect(Array.isArray(parsed)).toBe(true);
