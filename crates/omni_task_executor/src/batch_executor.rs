@@ -489,26 +489,41 @@ where
 
             // Resolve the command even in dry-run mode so template/env
             // expansion (including `{{ args.* }}` from `-a/--arg`) happens
-            // and any resolution errors surface during planning.
+            // and any resolution errors surface during planning. The retry
+            // command is resolved here too so an invalid retry config fails
+            // the dry run exactly as it would during a normal run.
             let override_command = resolve_task_command(
                 task_ctx.node.task_exec_config(),
                 task_ctx,
             )?;
+            let override_retry_command = resolve_task_command(
+                task_ctx.node.task_retry_exec_config(),
+                task_ctx,
+            )?;
 
             if self.dry_run {
-                match &override_command {
+                // Resolve a second time with environment values hidden: the
+                // expanded form may contain secrets (e.g. `$TOKEN` or
+                // `{{ env.TOKEN }}`), which must not be written to CLI logs.
+                // Tera still renders so `{{ args.* }}` stays visible.
+                let display_command = resolve_task_command_for_display(
+                    task_ctx.node.task_exec_config(),
+                    task_ctx,
+                )?;
+
+                match &display_command {
                     Some(command) if !command.is_empty() => diagnostic!(
                         self.subscriber,
                         DiagnosticLevel::Info,
                         "Executing task '{}': {}",
-                        task_ctx.node.full_task_name(),
-                        command,
+                        escape_control_chars(task_ctx.node.full_task_name()),
+                        escape_control_chars(&command.to_string()),
                     ),
                     _ => diagnostic!(
                         self.subscriber,
                         DiagnosticLevel::Info,
                         "Executing task '{}'",
-                        task_ctx.node.full_task_name(),
+                        escape_control_chars(task_ctx.node.full_task_name()),
                     ),
                 }
 
@@ -524,10 +539,6 @@ where
                     0,
                 ));
             } else {
-                let override_retry_command = resolve_task_command(
-                    task_ctx.node.task_retry_exec_config(),
-                    task_ctx,
-                )?;
                 futs.push(run_process(
                     self.subscriber,
                     self.wants_task_output_stream,
@@ -690,6 +701,61 @@ fn resolve_task_command<'a>(
         )?)),
         None => Ok(None),
     }
+}
+
+/// Placeholder substituted for environment values in a dry-run display.
+const REDACTED_ENV_VALUE: &str = "<redacted>";
+
+/// Resolve a task's command for display in a dry-run diagnostic.
+///
+/// Tera is still rendered so dynamic values (e.g. `{{ args.* }}` from
+/// `-a/--arg`) are visible, but environment values are deliberately hidden:
+/// `$VAR` expansion is skipped and `{{ env.VAR }}` renders a placeholder, since
+/// either value may be a secret.
+fn resolve_task_command_for_display<'a>(
+    spec: Option<&CommandConfig>,
+    task_ctx: &TaskContext<'a>,
+) -> Result<Option<Command>, BatchExecutorError> {
+    match spec {
+        Some(spec) => {
+            let mut display_ctx = task_ctx.template_context.clone();
+            let redacted_env: maps::Map<String, String> = task_ctx
+                .env_vars
+                .keys()
+                .map(|name| (name.clone(), REDACTED_ENV_VALUE.to_string()))
+                .collect();
+            display_ctx.insert("env", &redacted_env);
+
+            Ok(Some(resolve_command(spec, Some(&display_ctx), None)?))
+        }
+        None => Ok(None),
+    }
+}
+
+/// Escape control characters so attacker-controlled task names or commands
+/// cannot inject terminal escapes (e.g. OSC 52 clipboard writes) or forge log
+/// lines. Printable characters, including non-ASCII text, are left untouched.
+fn escape_control_chars(input: &str) -> Cow<'_, str> {
+    if !input.chars().any(char::is_control) {
+        return Cow::Borrowed(input);
+    }
+
+    use std::fmt::Write as _;
+
+    let mut escaped = String::with_capacity(input.len());
+    for c in input.chars() {
+        match c {
+            '\n' => escaped.push_str("\\n"),
+            '\r' => escaped.push_str("\\r"),
+            '\t' => escaped.push_str("\\t"),
+            c if c.is_control() => {
+                // `write!` to a `String` cannot fail.
+                let _ = write!(escaped, "\\u{{{:x}}}", c as u32);
+            }
+            c => escaped.push(c),
+        }
+    }
+    Cow::Owned(escaped)
 }
 
 fn evaluate_bool_expr(
@@ -1258,5 +1324,25 @@ mod tests {
         // deterministic.
         assert_eq!(forward_out, (0..n).collect::<Vec<_>>());
         assert_eq!(forward_out, reverse_out);
+    }
+
+    #[test]
+    fn escape_control_chars_leaves_printable_text_alone() {
+        assert_eq!(super::escape_control_chars("echo café"), "echo café");
+    }
+
+    #[test]
+    fn escape_control_chars_neutralizes_osc_sequence() {
+        // OSC 52 clipboard write: ESC ] 52 ; c ; <base64> BEL.
+        let escaped =
+            super::escape_control_chars("echo \x1b]52;c;c2VjcmV0\x07");
+        assert_eq!(escaped, "echo \\u{1b}]52;c;c2VjcmV0\\u{7}");
+        assert!(!escaped.contains('\x1b'));
+        assert!(!escaped.contains('\x07'));
+    }
+
+    #[test]
+    fn escape_control_chars_renders_common_escapes() {
+        assert_eq!(super::escape_control_chars("a\nb\rc\td"), "a\\nb\\rc\\td");
     }
 }

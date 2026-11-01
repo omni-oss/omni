@@ -114,6 +114,90 @@ describe("+run-filters @e2e (dry run)", () => {
         expect(result.stdout).not.toContain("{{ args.out }}");
         expect(ws.exists("app/dry-ran.txt")).toBe(false);
     });
+
+    it("`-d/--dry-run` does not print expanded env secrets", async () => {
+        const ws = makeWorkspace({
+            workspace: { projects: ["**"] },
+            projects: {
+                app: {
+                    name: "app",
+                    tasks: {
+                        login: {
+                            exec: `node -e "require('fs').writeFileSync('token.txt', process.argv[1])" $TOKEN {{ env.TOKEN }}`,
+                            env: { vars: { TOKEN: "super-secret-token" } },
+                        },
+                    },
+                },
+            },
+        });
+
+        // `--force` skips the cache-replay path so the plan is resolved (and
+        // printed) even if this task ran before.
+        const result = await runOmni(["run", "login", "-d", "--force"], {
+            cwd: ws.cwd,
+        });
+
+        expect(result).toHaveSucceeded();
+        expect(result).toOutputContaining("Executing task 'app#login':");
+        // The reference is shown, but not the value it expands to at runtime.
+        expect(result).toOutputContaining("$TOKEN");
+        expect(result).toOutputContaining("<redacted>");
+        expect(result.stdout).not.toContain("super-secret-token");
+        // Dry run still never executes the task.
+        expect(ws.exists("app/token.txt")).toBe(false);
+    });
+
+    it("`-d/--dry-run` escapes terminal control characters in the command", async () => {
+        const ws = makeWorkspace({
+            workspace: { projects: ["**"] },
+            projects: {
+                app: {
+                    name: "app",
+                    // OSC 52 clipboard write: ESC ] 52 ; c ; <data> BEL.
+                    tasks: { osc: `echo "\x1b]52;c;c2VjcmV0\x07"` },
+                },
+            },
+        });
+
+        const result = await runOmni(["run", "osc", "-d", "--force"], {
+            cwd: ws.cwd,
+        });
+
+        expect(result).toHaveSucceeded();
+        expect(result).toOutputContaining("Executing task 'app#osc':");
+        // The control bytes are rendered inert instead of reaching the
+        // terminal, where an OSC 52 sequence could rewrite the clipboard.
+        expect(result.stdout).toContain("\\u{1b}");
+        expect(result.stdout).not.toContain("\x1b]52;c;c2VjcmV0");
+        expect(result.stdout).not.toContain("\x07");
+    });
+
+    it("`-d/--dry-run` surfaces an invalid retry command", async () => {
+        const ws = makeWorkspace({
+            workspace: { projects: ["**"] },
+            projects: {
+                app: {
+                    name: "app",
+                    tasks: {
+                        flaky: {
+                            exec: "echo hi",
+                            retry_exec: "echo 'unterminated",
+                        },
+                    },
+                },
+            },
+        });
+
+        // `--ignore-dependencies` plans the task directly with its
+        // `retry_exec`, so the dry run must reject the invalid retry command.
+        const result = await runOmni(
+            ["run", "flaky", "-d", "--ignore-dependencies"],
+            { cwd: ws.cwd },
+        );
+
+        expect(result).toHaveFailed();
+        expect(result).toHaveStderrContaining("invalid shell command syntax");
+    });
 });
 
 describe("+run-filters @e2e (meta filter)", () => {
