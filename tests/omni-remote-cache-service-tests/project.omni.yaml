@@ -8,43 +8,39 @@ tasks:
   build:
     enabled: false
 
-  # Same specs, selected with REMOTE_CACHE_TEST_TARGETS (see src/targets).
-  test:service:native:
+  # Same specs for every target, selected with REMOTE_CACHE_TEST_TARGETS
+  # (see src/targets).
+  test:service:base:
+    base: true
     exec: bun x vitest --config ./vitest.config.service.ts run
+    max_retries: 5
+    retry_interval: 2s
+
+  test:service:native:
+    extends: [test:service:base]
     env:
       vars:
         REMOTE_CACHE_TEST_TARGETS: native
-    max_retries: 5
-    retry_interval: 2s
     dependencies:
       - omni_remote_cache_service#build:debug
 
   # Needs wrangler (downloaded on demand) and worker-build.
   test:service:worker:
-    exec: bun x vitest --config ./vitest.config.service.ts run
+    extends: [test:service:base]
     env:
       vars:
         REMOTE_CACHE_TEST_TARGETS: worker
-    max_retries: 5
-    retry_interval: 2s
     dependencies:
       - omni_remote_cache_worker#build
 
-  # Variable unset: one run covers every target.
   test:service:
-    exec: bun x vitest --config ./vitest.config.service.ts run
-    max_retries: 5
-    retry_interval: 2s
-    dependencies:
-      - omni_remote_cache_service#build:debug
-      - omni_remote_cache_worker#build
-    cache:
-      enabled: false
-
-  test:
     dependencies:
       - test:service:native
       - test:service:worker
+
+  test:
+    dependencies:
+      - test:service
 
   publish:
     enabled: false
