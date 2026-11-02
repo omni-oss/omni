@@ -322,9 +322,12 @@ pub struct MetaFilterFailure {
 }
 ```
 
-`DefaultTaskFilter` gains `on_error: MetaOnError` and replaces
-`.unwrap_or(false)` with a match; `should_include_task` returns the per-task
-error.
+`DefaultTaskFilter` replaces `.unwrap_or(false)` with a match.
+`should_include_task` returns the per-task error, or, when
+`collect_meta_errors(limits)` is set, records the failure in a bounded
+collector and excludes the task. `DefaultExecutionPlanProvider` applies
+`MetaOnError` after filtering: `fail` returns the aggregate error, `exclude`
+emits a warning.
 
 Where the filter runs (traced in `execution_plan_provider.rs` and
 `omni_core::task_execution_graph`):
