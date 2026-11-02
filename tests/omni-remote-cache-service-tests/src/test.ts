@@ -42,13 +42,22 @@ export const test = baseTest.extend<{
     ],
     apiBaseUrl: [
         async ({ port }, use) => {
-            const apiBaseUrl = `http://localhost:${port}/api`;
+            const apiBaseUrl =
+                process.env.REMOTE_CACHE_TEST_BASE_URL ??
+                `http://localhost:${port}/api`;
             await use(apiBaseUrl);
         },
         { scope: "test" },
     ],
     childProcess: [
         async ({ apiBaseUrl, port }, use) => {
+            // Test an already running instance (e.g. the Cloudflare worker
+            // under `wrangler dev`) instead of spawning the native binary.
+            if (process.env.REMOTE_CACHE_TEST_BASE_URL) {
+                await use(null as unknown as ChildProcess);
+                return;
+            }
+
             const host = await getHost().catch(() => "");
             const { path: omniPath, compileInfo } = resolveServiceBinOrThrow({
                 binName: "omni_remote_cache_service",
