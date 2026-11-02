@@ -1,5 +1,5 @@
 use clap::ArgAction;
-use omni_remote_cache_storage_core::impls::BasicS3Config;
+use omni_remote_cache_storage_s3::BasicS3Config;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, clap::Args, Clone, PartialEq, Eq)]

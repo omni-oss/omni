@@ -39,6 +39,7 @@ dependencies:
   - omni_remote_cache_storage_core
   - omni_remote_cache_storage_local
   - omni_remote_cache_storage_memory
+  - omni_remote_cache_storage_s3
   - omni_tracing_subscriber
   - omni_path_utils
   - maps
