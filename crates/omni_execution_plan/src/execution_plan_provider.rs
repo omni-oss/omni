@@ -415,6 +415,16 @@ pub struct ExecutionPlanProviderError(
 );
 
 impl ExecutionPlanProviderError {
+    pub fn meta_filter_error(&self) -> Option<&MetaFilterError> {
+        match &self.0 {
+            ExecutionPlanProviderErrorInner::MetaFilter(e) => Some(e),
+            ExecutionPlanProviderErrorInner::FilterError(f) => {
+                f.meta_filter_error()
+            }
+            _ => None,
+        }
+    }
+
     #[allow(unused)]
     pub fn kind(&self) -> ExecutionPlanProviderErrorKind {
         self.0.discriminant()

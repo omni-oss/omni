@@ -372,6 +372,13 @@ where
 pub struct FilterError(pub(crate) FilterErrorInner);
 
 impl FilterError {
+    pub fn meta_filter_error(&self) -> Option<&MetaFilterError> {
+        match &self.0 {
+            FilterErrorInner::MetaFilter(e) => Some(e),
+            _ => None,
+        }
+    }
+
     #[allow(unused)]
     pub fn kind(&self) -> FilterErrorKind {
         self.0.discriminant()

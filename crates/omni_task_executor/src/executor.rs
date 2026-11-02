@@ -171,6 +171,18 @@ impl<'a, TSys: TaskExecutorSys, S: ExecutionEventSubscriber>
 pub struct TaskExecutorError(TaskExecutorErrorInner);
 
 impl TaskExecutorError {
+    /// The aggregated meta filter failure, if that is what went wrong.
+    pub fn meta_filter_error(
+        &self,
+    ) -> Option<&omni_execution_plan::MetaFilterError> {
+        match &self.0 {
+            TaskExecutorErrorInner::ExecutionPlanProvider(e) => {
+                e.meta_filter_error()
+            }
+            _ => None,
+        }
+    }
+
     pub fn kind(&self) -> TaskExecutorErrorKind {
         self.0.discriminant()
     }

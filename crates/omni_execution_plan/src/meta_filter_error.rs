@@ -171,6 +171,58 @@ impl MetaFilterError {
     }
 }
 
+impl MetaFilterError {
+    /// Structured payload for machine consumers (e.g. MCP error `data`).
+    pub fn to_json(&self) -> serde_json::Value {
+        use serde_json::{Map, Value, json};
+
+        let groups = self
+            .groups
+            .iter()
+            .map(|g| {
+                let samples = g
+                    .samples
+                    .iter()
+                    .map(|s| {
+                        let meta = s
+                            .meta
+                            .iter()
+                            .map(|(k, v)| {
+                                (
+                                    k.clone(),
+                                    serde_json::from_str(v)
+                                        .unwrap_or_else(|_| Value::String(v.clone())),
+                                )
+                            })
+                            .collect::<Map<_, _>>();
+                        json!({
+                            "project": s.project,
+                            "task": s.task,
+                            "project_dir": s.project_dir.to_string_lossy(),
+                            "meta": meta,
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                json!({
+                    "cause": g.cause,
+                    "count": g.count,
+                    "samples": samples,
+                    "omitted": g.omitted,
+                    "hint": g.hint,
+                })
+            })
+            .collect::<Vec<_>>();
+
+        json!({
+            "kind": "meta_filter_evaluation",
+            "filter": self.filter,
+            "total": self.total,
+            "other": self.other,
+            "groups": groups,
+        })
+    }
+}
+
 impl fmt::Display for MetaFilterError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.total == 1

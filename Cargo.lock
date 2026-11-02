@@ -7121,6 +7121,7 @@ dependencies = [
  "path-clean",
  "schemars",
  "serde",
+ "serde_json",
  "strsim",
  "strum 0.28.0",
  "test-log",
