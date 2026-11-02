@@ -46,7 +46,7 @@ impl<'a, TContext: Context + 'a> DefaultExecutionPlanProvider<'a, TContext> {
                 Err(ExecutionPlanProviderErrorInner::MetaFilter(e).into())
             }
             (Some(e), MetaOnError::Exclude) => {
-                tracing::warn!("{}", e.render_warning());
+                log::warn!("{}", e.render_warning());
                 Ok(())
             }
         }
