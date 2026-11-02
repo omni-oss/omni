@@ -7,8 +7,9 @@ use omni_remote_cache_storage_core::{
     BoxStream, ListItem, PageOptions, RemoteCacheStorageBackend,
     decorators::LruCached,
     error::{self, Error},
-    impls::{InMemoryBackend, LocalDiskCacheBackend, S3CacheBackend},
+    impls::{LocalDiskCacheBackend, S3CacheBackend},
 };
+use omni_remote_cache_storage_memory::InMemoryBackend;
 
 use crate::args::{BackendType, ServeArgs};
 

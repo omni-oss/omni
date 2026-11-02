@@ -209,17 +209,3 @@ where
         self.inner.size(container, key).await
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use std::num::NonZeroUsize;
-
-    use super::LruCached;
-    use crate::decl_remote_cache_storage_backend_tests;
-    use crate::impls::InMemoryBackend;
-
-    decl_remote_cache_storage_backend_tests!(LruCached::new(
-        InMemoryBackend::new("default"),
-        NonZeroUsize::new(100).unwrap()
-    ));
-}

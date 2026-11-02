@@ -37,6 +37,7 @@ tasks:
 
 dependencies:
   - omni_remote_cache_storage_core
+  - omni_remote_cache_storage_memory
   - omni_tracing_subscriber
   - omni_path_utils
   - maps

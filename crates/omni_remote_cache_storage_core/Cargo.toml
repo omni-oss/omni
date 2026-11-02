@@ -6,7 +6,7 @@ version = "0.1.0"
 repository.workspace = true
 
 [features]
-default = ["s3", "local-disk", "in-memory", "utoipa"]
+default = ["s3", "local-disk", "utoipa"]
 utoipa = ["dep:utoipa"]
 s3 = [
     "dep:aws-config",
@@ -17,7 +17,6 @@ s3 = [
     "dep:aws-types",
 ]
 local-disk = []
-in-memory = []
 
 [dependencies]
 eyre = { workspace = true }
@@ -37,7 +36,6 @@ aws-credential-types = { workspace = true, optional = true }
 aws-types = { workspace = true, optional = true }
 http = { workspace = true, optional = true }
 http-body = { workspace = true, optional = true }
-maps = { workspace = true }
 lru = { workspace = true }
 utoipa = { workspace = true, optional = true }
 tokio-stream = { workspace = true }
