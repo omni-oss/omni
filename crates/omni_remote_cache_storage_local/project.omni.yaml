@@ -2,3 +2,6 @@
 name: omni_remote_cache_storage_local
 extends:
   - "@workspace/omni/presets/rust-lib.omni.yaml"
+
+dependencies:
+  - omni_remote_cache_storage_core

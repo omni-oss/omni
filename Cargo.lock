@@ -7657,6 +7657,7 @@ dependencies = [
  "noyalib",
  "omni_path_utils",
  "omni_remote_cache_storage_core",
+ "omni_remote_cache_storage_local",
  "omni_remote_cache_storage_memory",
  "omni_tracing_subscriber",
  "schemars",
@@ -7708,11 +7709,18 @@ dependencies = [
 name = "omni_remote_cache_storage_local"
 version = "0.1.0"
 dependencies = [
- "bon",
+ "async-trait",
+ "bytes 1.12.1",
+ "bytesize",
  "derive-new",
  "eyre",
- "strum 0.28.0",
- "thiserror 2.0.21",
+ "futures 0.3.34",
+ "log",
+ "omni_remote_cache_storage_core",
+ "tempfile",
+ "tokio 1.54.1",
+ "tokio-stream",
+ "tokio-util",
 ]
 
 [[package]]

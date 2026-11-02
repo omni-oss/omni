@@ -6,7 +6,7 @@ version = "0.1.0"
 repository.workspace = true
 
 [features]
-default = ["s3", "local-disk", "utoipa"]
+default = ["s3", "utoipa"]
 utoipa = ["dep:utoipa"]
 s3 = [
     "dep:aws-config",
@@ -16,7 +16,6 @@ s3 = [
     "dep:aws-credential-types",
     "dep:aws-types",
 ]
-local-disk = []
 
 [dependencies]
 eyre = { workspace = true }

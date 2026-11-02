@@ -29,6 +29,7 @@ bytesize = { workspace = true }
 http = { workspace = true }
 http-body = { workspace = true }
 omni_remote_cache_storage_core = { workspace = true }
+omni_remote_cache_storage_local = { workspace = true }
 omni_remote_cache_storage_memory = { workspace = true }
 omni_tracing_subscriber = { workspace = true }
 # rust-embed = { workspace = true, features = [
