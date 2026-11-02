@@ -13,7 +13,10 @@ use omni_scm::{Scm, get_scm_implementation};
 use omni_types::{OmniPath, Root, enum_map};
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
-use crate::{ProjectFilter, ScmAffectedFilter, TaskFilter};
+use crate::{
+    MetaFilterCollector, MetaFilterError, MetaFilterErrorLimits, ProjectFilter,
+    ScmAffectedFilter, TaskFilter,
+};
 
 pub struct DefaultProjectFilter {
     project_matcher: Option<Arc<GlobSet>>,
@@ -64,6 +67,8 @@ where
 {
     task_matcher: Option<Arc<GlobSet>>,
     meta_filter: Option<Evaluator>,
+    meta_filter_source: Option<String>,
+    collector: Option<MetaFilterCollector>,
     dir_matcher: Option<Arc<GlobSet>>,
     project_matcher: Option<Arc<GlobSet>>,
     get_task_meta: TGetTaskMetaFn,
@@ -91,6 +96,7 @@ where
             )
         };
 
+        let meta_filter_source = meta_filter.map(|f| f.to_string());
         let meta_filter = meta_filter
             .map(|filter| {
                 omni_expressions::parse(filter)
@@ -139,10 +145,27 @@ where
         Ok(Self {
             task_matcher,
             meta_filter,
+            meta_filter_source,
+            collector: None,
             project_matcher,
             dir_matcher,
             get_task_meta,
         })
+    }
+
+    /// Instead of returning an error for the first task whose meta filter
+    /// fails to evaluate, record failures in a bounded collector, exclude the
+    /// task, and keep going. Retrieve the aggregate with
+    /// [`Self::take_meta_error`].
+    pub fn collect_meta_errors(mut self, limits: MetaFilterErrorLimits) -> Self {
+        if let Some(source) = &self.meta_filter_source {
+            self.collector = Some(MetaFilterCollector::new(source, limits));
+        }
+        self
+    }
+
+    pub fn take_meta_error(&self) -> Option<MetaFilterError> {
+        self.collector.as_ref().and_then(|c| c.take())
     }
 }
 
@@ -165,14 +188,6 @@ where
             return Ok(true);
         }
 
-        let get_meta = |node: &TaskExecutionNode| {
-            if let Some(meta) = (self.get_task_meta)(node) {
-                meta.clone().into_expression_context()
-            } else {
-                Ok(omni_expressions::Context::default())
-            }
-        };
-
         if let Some(pm) = &self.project_matcher
             && !pm.is_match(node.project_name())
         {
@@ -191,10 +206,31 @@ where
             return Ok(false);
         }
 
-        if let Some(mf) = &self.meta_filter
-            && !mf.coerce_to_bool(&get_meta(node)?).unwrap_or(false)
-        {
-            return Ok(false);
+        if let Some(mf) = &self.meta_filter {
+            let meta = (self.get_task_meta)(node);
+            let result = match meta {
+                Some(m) => m.to_expression_context(),
+                None => MetaConfiguration::empty_expression_context(),
+            }
+            .and_then(|ctx| mf.evaluate_bool(&ctx));
+
+            match result {
+                Ok(true) => {}
+                Ok(false) => return Ok(false),
+                Err(e) => {
+                    if let Some(collector) = &self.collector {
+                        collector.record(node, &e, meta);
+                        return Ok(false);
+                    }
+                    let one = MetaFilterCollector::new(
+                        self.meta_filter_source.clone().unwrap_or_default(),
+                        MetaFilterErrorLimits::with_samples(1),
+                    );
+                    one.record(node, &e, meta);
+                    let err = one.take().expect("one failure was recorded");
+                    return Err(FilterErrorInner::MetaFilter(err).into());
+                }
+            }
         }
 
         // if let Some(changed_files) = &self.changed_files {
@@ -374,22 +410,21 @@ pub trait TaskFilterExt: TaskFilter {
     fn filter_tasks<'a>(
         &self,
         tasks: &'a [TaskExecutionNode],
-    ) -> Vec<&'a TaskExecutionNode> {
-        tasks
-            .iter()
-            .filter(|t| self.should_include_task(t).unwrap_or(false))
-            .collect::<Vec<_>>()
+    ) -> Result<Vec<&'a TaskExecutionNode>, Self::Error> {
+        let mut out = vec![];
+        for t in tasks {
+            if self.should_include_task(t)? {
+                out.push(t);
+            }
+        }
+        Ok(out)
     }
 
     fn filter_tasks_cloned(
         &self,
         tasks: &[TaskExecutionNode],
-    ) -> Vec<TaskExecutionNode> {
-        tasks
-            .iter()
-            .filter(|t| self.should_include_task(t).unwrap_or(false))
-            .cloned()
-            .collect::<Vec<_>>()
+    ) -> Result<Vec<TaskExecutionNode>, Self::Error> {
+        Ok(self.filter_tasks(tasks)?.into_iter().cloned().collect())
     }
 }
 
@@ -406,6 +441,9 @@ pub(crate) enum FilterErrorInner {
 
     #[error(transparent)]
     Scm(#[from] omni_scm::error::Error),
+
+    #[error(transparent)]
+    MetaFilter(MetaFilterError),
 }
 
 #[cfg(test)]
@@ -452,8 +490,30 @@ mod tests {
         );
     }
 
+    fn node(project: &str, task: &str) -> TaskExecutionNode {
+        TaskExecutionNode::new(
+            task.to_string(),
+            Some(CommandConfig::Shell("echo test".to_string())),
+            None,
+            project.to_string(),
+            std::path::PathBuf::from(format!("/ws/{project}")),
+            vec![],
+            true.into(),
+            false,
+            false,
+            None,
+            None,
+        )
+    }
+
+    fn kind_meta(kind: &str) -> MetaConfiguration {
+        MetaConfiguration::new(DictConfig::value(maps::map! {
+            "kind".to_string() => DynValue::new_string(kind),
+        }))
+    }
+
     #[test_log::test]
-    fn test_default_task_filter_meta_filter_no_meta_configuration() {
+    fn test_meta_filter_missing_key_is_an_error() {
         let filter = DefaultTaskFilter::new(
             &["test"],
             &[],
@@ -464,25 +524,170 @@ mod tests {
         )
         .unwrap();
 
-        let node = TaskExecutionNode::new(
-            "test".to_string(),
-            Some(CommandConfig::Shell("echo test".to_string())),
-            None,
-            "project1".to_string(),
-            std::path::PathBuf::from(""),
-            vec![],
-            true.into(),
-            false,
-            false,
-            None,
-            None,
-        );
+        let err = filter.should_include_task(&node("project1", "test")).unwrap_err();
+        let FilterErrorInner::MetaFilter(e) = &err.0 else {
+            panic!("expected meta filter error, got {err}");
+        };
+        assert_eq!(e.filter, "a == 1");
+        assert_eq!(e.total, 1);
+        assert!(e.groups[0].cause.contains("Undeclared reference to 'a'"));
+        assert_eq!(e.groups[0].samples[0].project, "project1");
+        assert_eq!(e.groups[0].samples[0].task, "test");
+    }
 
-        assert!(
-            !filter
-                .should_include_task(&node)
-                .expect("should have value")
-        );
+    #[test_log::test]
+    fn test_meta_filter_has_handles_missing_key() {
+        let filter = DefaultTaskFilter::new(
+            &[],
+            &[],
+            &[],
+            Path::new(""),
+            Some("has(meta.kind) && meta.kind == 'e2e'"),
+            |_| None,
+        )
+        .unwrap();
+        assert!(!filter.should_include_task(&node("p", "test")).unwrap());
+    }
+
+    #[test_log::test]
+    fn test_meta_filter_non_bool_is_an_error() {
+        let meta = kind_meta("e2e");
+        let filter = DefaultTaskFilter::new(
+            &[],
+            &[],
+            &[],
+            Path::new(""),
+            Some("kind"),
+            |_| Some(&meta),
+        )
+        .unwrap();
+        let err = filter.should_include_task(&node("p", "test")).unwrap_err();
+        assert!(err.to_string().contains("got string"), "{err}");
+    }
+
+    #[test_log::test]
+    fn test_meta_filter_skipped_for_tasks_excluded_by_other_matchers() {
+        let filter = DefaultTaskFilter::new(
+            &["build"],
+            &[],
+            &[],
+            Path::new(""),
+            Some("missing == 1"),
+            |_| None,
+        )
+        .unwrap();
+        assert!(!filter.should_include_task(&node("p", "test")).unwrap());
+    }
+
+    #[test_log::test]
+    fn test_collect_aggregates_with_bounded_samples() {
+        let filter = DefaultTaskFilter::new(
+            &[],
+            &[],
+            &[],
+            Path::new(""),
+            Some("knd == 'e2e'"),
+            |_| None,
+        )
+        .unwrap()
+        .collect_meta_errors(MetaFilterErrorLimits::default());
+
+        for i in 0..500 {
+            assert!(
+                !filter
+                    .should_include_task(&node(&format!("p{i}"), "test"))
+                    .unwrap()
+            );
+        }
+        let e = filter.take_meta_error().unwrap();
+        assert_eq!(e.total, 500);
+        assert_eq!(e.groups.len(), 1);
+        assert_eq!(e.groups[0].count, 500);
+        assert_eq!(e.groups[0].samples.len(), 3);
+        assert_eq!(e.groups[0].omitted, 497);
+        assert_eq!(e.groups[0].samples[0].project, "p0");
+        assert!(filter.take_meta_error().is_none());
+    }
+
+    #[test_log::test]
+    fn test_collect_samples_zero_and_large() {
+        for (n, expected) in [(0, 0), (1, 1), (1000, 5)] {
+            let filter = DefaultTaskFilter::new(
+                &[],
+                &[],
+                &[],
+                Path::new(""),
+                Some("knd == 'e2e'"),
+                |_| None,
+            )
+            .unwrap()
+            .collect_meta_errors(MetaFilterErrorLimits::with_samples(n));
+            for i in 0..5 {
+                filter
+                    .should_include_task(&node(&format!("p{i}"), "t"))
+                    .unwrap();
+            }
+            let e = filter.take_meta_error().unwrap();
+            assert_eq!(e.groups[0].samples.len(), expected);
+            assert_eq!(e.total, 5);
+        }
+    }
+
+    #[test_log::test]
+    fn test_collect_limits_causes_and_hints_typo() {
+        let meta = kind_meta("unit");
+        let filter = DefaultTaskFilter::new(
+            &[],
+            &[],
+            &[],
+            Path::new(""),
+            Some("knd == 'e2e'"),
+            |_| Some(&meta),
+        )
+        .unwrap()
+        .collect_meta_errors(MetaFilterErrorLimits::default());
+        filter.should_include_task(&node("web", "test")).unwrap();
+        let e = filter.take_meta_error().unwrap();
+        let hint = e.groups[0].hint.as_deref().unwrap();
+        assert!(hint.contains("Did you mean `kind`"), "{hint}");
+        let shown = e.to_string();
+        assert!(shown.contains("\"kind\": \"unit\""), "{shown}");
+    }
+
+    #[test_log::test]
+    fn test_collect_more_than_ten_causes_counts_other() {
+        let meta = kind_meta("unit");
+        let mut exprs = vec![];
+        for i in 0..12 {
+            exprs.push(format!("missing{i} == 1"));
+        }
+        // One filter evaluates one expression, so reuse the collector directly.
+        let collector = MetaFilterCollector::new("f", Default::default());
+        for (i, ex) in exprs.iter().enumerate() {
+            let err = omni_expressions::parse(ex)
+                .unwrap()
+                .evaluate_bool(&Default::default())
+                .unwrap_err();
+            collector.record(&node(&format!("p{i}"), "t"), &err, Some(&meta));
+        }
+        let e = collector.take().unwrap();
+        assert_eq!(e.total, 12);
+        assert_eq!(e.groups.len(), 10);
+        assert_eq!(e.other, 2);
+    }
+
+    #[test_log::test]
+    fn test_filter_tasks_propagates_errors() {
+        let filter = DefaultTaskFilter::new(
+            &[],
+            &[],
+            &[],
+            Path::new(""),
+            Some("nope == 1"),
+            |_| None,
+        )
+        .unwrap();
+        assert!(filter.filter_tasks(&[node("p", "t")]).is_err());
     }
 
     #[test_log::test]

@@ -7120,6 +7120,7 @@ dependencies = [
  "omni_utils",
  "path-clean",
  "serde",
+ "strsim",
  "strum 0.28.0",
  "test-log",
  "thiserror 2.0.21",

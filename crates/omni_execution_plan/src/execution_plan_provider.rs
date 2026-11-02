@@ -18,14 +18,39 @@ use strum::{EnumDiscriminants, IntoDiscriminant as _};
 use crate::{
     Call, Context, DefaultProjectFilter, DefaultTaskFilter,
     DefaultTaskScmAffectedFilter, ExecutionPlanProvider, FilterError,
-    ProjectFilter as _, ProjectFilterExt as _, ScmAffectedFilter,
-    TaskFilter as _,
+    MetaErrorOptions, MetaFilterError, MetaOnError, ProjectFilter as _,
+    ProjectFilterExt as _, ScmAffectedFilter, TaskFilter as _,
 };
 
 #[derive(Debug, new)]
 pub struct DefaultExecutionPlanProvider<'a, TContext: Context + 'a> {
     context: TContext,
     _phantom: PhantomData<&'a ()>,
+    #[new(default)]
+    meta_error: MetaErrorOptions,
+}
+
+impl<'a, TContext: Context + 'a> DefaultExecutionPlanProvider<'a, TContext> {
+    pub fn with_meta_error_options(mut self, options: MetaErrorOptions) -> Self {
+        self.meta_error = options;
+        self
+    }
+
+    fn handle_meta_error(
+        &self,
+        error: Option<MetaFilterError>,
+    ) -> Result<(), ExecutionPlanProviderError> {
+        match (error, self.meta_error.on_error) {
+            (None, _) => Ok(()),
+            (Some(e), MetaOnError::Fail) => {
+                Err(ExecutionPlanProviderErrorInner::MetaFilter(e).into())
+            }
+            (Some(e), MetaOnError::Exclude) => {
+                tracing::warn!("{}", e.render_warning());
+                Ok(())
+            }
+        }
+    }
 }
 
 impl<'a, TContext: Context> ExecutionPlanProvider
@@ -121,6 +146,8 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
                     }
                 }
 
+                self.handle_meta_error(task_filter.take_meta_error())?;
+
                 nodes
             }
             Call::Tasks(tnames) => {
@@ -178,6 +205,8 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
                     }
                 }
 
+                self.handle_meta_error(task_filter.take_meta_error())?;
+
                 nodes
             }
         };
@@ -215,7 +244,8 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
                         .get_task_meta_config(n.project_name(), n.task_name())
                 }
             },
-        )?;
+        )?
+        .collect_meta_errors(self.meta_error.limits);
         Ok(tf)
     }
 
@@ -318,7 +348,7 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
             None
         };
 
-        Ok(if with_dependents {
+        let plan = if with_dependents {
             let tf_dependents = self.get_task_filter(
                 call.is_command(),
                 &task_names,
@@ -347,7 +377,11 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
                         true
                     })
             })?
-        })
+        };
+
+        self.handle_meta_error(tf.take_meta_error())?;
+
+        Ok(plan)
     }
 }
 
@@ -413,6 +447,9 @@ pub(crate) enum ExecutionPlanProviderErrorInner {
 
     #[error(transparent)]
     FilterError(#[from] FilterError),
+
+    #[error(transparent)]
+    MetaFilter(MetaFilterError),
 }
 
 #[cfg(test)]
