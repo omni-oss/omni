@@ -1,4 +1,4 @@
-use std::{borrow::Cow, collections::BTreeMap};
+use std::collections::BTreeMap;
 
 use axum::{Json, Router, extract::State, response::IntoResponse};
 use axum_extra::routing::{RouterExt, TypedPath};
@@ -71,8 +71,10 @@ fn apply(
     api_prefix: &str,
     addr: &str,
     version: Version,
+    service_version: &str,
     mut openapi: OpenApi,
 ) -> OpenApi {
+    openapi.info.version = service_version.to_string();
     let api_prefix = api_prefix.trim();
     let base_path = if !api_prefix.is_empty() {
         format!("{api_prefix}/{version}")
@@ -103,32 +105,29 @@ pub async fn get_open_api_doc(
     GetOpenApiDocs { version, format }: GetOpenApiDocs,
     State(state): State<ServiceState>,
 ) -> axum::response::Response {
-    let api_prefix = state
-        .args
-        .routes
-        .as_ref()
-        .and_then(|r| r.api_prefix.as_deref())
-        .unwrap_or("/api");
-    let listen = if state.args.listen.contains("0.0.0.0") {
-        Cow::Owned(state.args.listen.replace("0.0.0.0", "localhost"))
-    } else {
-        Cow::Borrowed(&state.args.listen)
-    };
-    let protocol = if state.args.secure { "https" } else { "http" };
-    let addr = format!("{protocol}://{listen}");
+    let api_prefix = state.info.api_prefix();
+    let addr = state.info.base_url();
 
     match format {
         Format::Json => match version {
-            Version::V1 => {
-                Json(apply(api_prefix, &addr, version, V1RootApiDoc::openapi()))
-                    .into_response()
-            }
+            Version::V1 => Json(apply(
+                api_prefix,
+                &addr,
+                version,
+                &state.info.version,
+                V1RootApiDoc::openapi(),
+            ))
+            .into_response(),
         },
         Format::Yaml => match version {
-            Version::V1 => {
-                Yaml(apply(api_prefix, &addr, version, V1RootApiDoc::openapi()))
-                    .into_response()
-            }
+            Version::V1 => Yaml(apply(
+                api_prefix,
+                &addr,
+                version,
+                &state.info.version,
+                V1RootApiDoc::openapi(),
+            ))
+            .into_response(),
         },
     }
 }

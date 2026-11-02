@@ -1,3 +1,5 @@
+#![allow(clippy::redundant_field_names)]
+
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use async_trait::async_trait;

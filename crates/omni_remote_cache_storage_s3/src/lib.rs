@@ -1,3 +1,5 @@
+#![allow(clippy::redundant_field_names)]
+
 use async_trait::async_trait;
 use aws_config::{BehaviorVersion, Region, SdkConfig};
 use aws_credential_types::Credentials;

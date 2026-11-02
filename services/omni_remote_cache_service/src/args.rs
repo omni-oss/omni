@@ -1,9 +1,11 @@
 use derive_new::new;
 use strum::Display;
 
+use clap::ArgAction;
+use omni_remote_cache_core::routes::root::RouterConfig;
+
 use crate::{
-    local_disk_backend::LocalDiskBackendConfig, routes::root::RouterConfig,
-    s3_backend::S3BackendConfig,
+    local_disk_backend::LocalDiskBackendConfig, s3_backend::S3BackendConfig,
 };
 
 #[derive(clap::Parser)]
@@ -86,7 +88,7 @@ pub struct ServeArgs {
     pub backend: BackendType,
 
     #[command(flatten)]
-    pub routes: Option<RouterConfig>,
+    pub routes: Option<RouterArgs>,
 }
 
 #[derive(
@@ -127,4 +129,28 @@ pub enum ConfigType {
     Inline,
     #[strum(serialize = "file")]
     File,
+}
+
+#[derive(Default, clap::Args, Debug, Clone, new)]
+pub struct RouterArgs {
+    #[clap(
+        long = "routes.api-prefix",
+        env = "OMNI_REMOTE_CACHE_SERVICE_ROUTES_API_PREFIX",
+        default_value = "/api"
+    )]
+    pub api_prefix: Option<String>,
+
+    #[clap(
+        long = "routes.enable-openapi",
+        env = "OMNI_REMOTE_CACHE_SERVICE_ROUTES_ENABLE_OPENAPI",
+        action = ArgAction::SetTrue,
+        default_value = "false"
+    )]
+    pub enable_openapi: bool,
+}
+
+impl From<RouterArgs> for RouterConfig {
+    fn from(args: RouterArgs) -> Self {
+        RouterConfig::new(args.api_prefix, args.enable_openapi)
+    }
 }

@@ -4,10 +4,9 @@ use axum::{
     response::{IntoResponse as _, Response},
 };
 use axum_extra::{response::InternalServerError, routing::TypedPath};
+use futures::StreamExt;
 use http::StatusCode;
-use omni_remote_cache_storage_core::RemoteCacheStorageBackend;
 use serde::Deserialize;
-use tokio_stream::StreamExt;
 use utoipa::IntoParams;
 
 use crate::{
@@ -74,12 +73,14 @@ pub async fn put_artifact(
     validate_ownership!(state.provider, &tenant_code, &query);
 
     let container = container(&query.org, &query.ws, &query.env);
-    let stream = body.into_data_stream().filter_map(|r| match r {
-        Ok(b) => Some(b),
-        Err(e) => {
-            log::error!("Error reading from stream: {}", e);
-            None
-        }
+    let stream = body.into_data_stream().filter_map(|r| {
+        std::future::ready(match r {
+            Ok(b) => Some(b),
+            Err(e) => {
+                log::error!("Error reading from stream: {}", e);
+                None
+            }
+        })
     });
 
     let x = state

@@ -1123,7 +1123,6 @@ dependencies = [
  "form_urlencoded",
  "futures-core",
  "futures-util",
- "headers",
  "http 1.5.0",
  "http-body 1.1.0",
  "http-body-util",
@@ -1133,9 +1132,6 @@ dependencies = [
  "rustversion",
  "serde_core",
  "serde_html_form",
- "serde_path_to_error",
- "tokio 1.54.1",
- "tokio-util",
  "tower-layer",
  "tower-service",
  "tracing",
@@ -4725,30 +4721,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "headers"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b3314d5adb5d94bcdf56771f2e50dbbc80bb4bdf88967526706205ac9eff24eb"
-dependencies = [
- "base64 0.22.1",
- "bytes 1.12.1",
- "headers-core",
- "http 1.5.0",
- "httpdate",
- "mime",
- "sha1 0.10.7",
-]
-
-[[package]]
-name = "headers-core"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "54b4a22553d4242c49fddb9ba998a99962b5cc6f22cb5a3482bec22522403ce4"
-dependencies = [
- "http 1.5.0",
-]
-
-[[package]]
 name = "heapless"
 version = "0.7.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7626,17 +7598,30 @@ dependencies = [
 name = "omni_remote_cache_core"
 version = "0.1.0"
 dependencies = [
- "bon",
+ "async-trait",
+ "axum",
+ "axum-extra",
+ "bytes 1.12.1",
+ "bytesize",
  "derive-new",
  "eyre",
+ "futures 0.3.34",
+ "http 1.5.0",
+ "http-body 1.1.0",
  "log",
- "rstest",
- "rstest_reuse",
+ "maps",
+ "noyalib",
+ "omni_path_utils",
+ "omni_remote_cache_storage_core",
+ "schemars",
+ "serde",
+ "serde_json",
+ "sets",
  "strum 0.28.0",
- "test-log",
  "thiserror 2.0.21",
- "trace",
+ "time",
  "tracing",
+ "utoipa",
 ]
 
 [[package]]
@@ -7645,40 +7630,30 @@ version = "0.3.0"
 dependencies = [
  "async-trait",
  "axum",
- "axum-extra",
  "axum-test",
  "bytes 1.12.1",
  "bytesize",
  "clap",
  "derive-new",
- "derive_builder",
  "eyre",
  "http 1.5.0",
- "http-body 1.1.0",
  "log",
  "maps",
- "noyalib",
- "omni_path_utils",
+ "omni_remote_cache_core",
  "omni_remote_cache_storage_core",
  "omni_remote_cache_storage_local",
  "omni_remote_cache_storage_memory",
  "omni_remote_cache_storage_s3",
  "omni_tracing_subscriber",
- "schemars",
  "serde",
  "serde_json",
  "sets",
  "shadow-rs",
  "strum 0.28.0",
- "thiserror 2.0.21",
- "time",
  "tokio 1.54.1",
- "tokio-stream",
- "tokio-util",
  "tower",
  "tower-http 0.7.1",
  "tracing",
- "utoipa",
 ]
 
 [[package]]
@@ -10951,6 +10926,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cdb87b95ec50ddfa440816d227a17b2ccbdda963a316a727fda0fc4334f7d134"
 dependencies = [
  "deranged",
+ "js-sys",
  "libc",
  "num-conv",
  "num_threads",

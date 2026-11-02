@@ -1,15 +1,10 @@
-use std::convert::Infallible;
-
 use axum::{
-    body::Body,
     extract::{Query, State},
     response::{IntoResponse, Response},
 };
 use axum_extra::{response::InternalServerError, routing::TypedPath};
-use http::{StatusCode, header};
-use omni_remote_cache_storage_core::RemoteCacheStorageBackend;
+use http::StatusCode;
 use serde::Deserialize;
-use tokio_stream::StreamExt;
 use utoipa::IntoParams;
 
 use super::common::container;
@@ -21,13 +16,13 @@ use crate::{
 
 #[derive(TypedPath, Deserialize, Debug)]
 #[typed_path("/{digest}")]
-pub struct GetArtifactPath {
+pub struct HeadArtifactPath {
     pub digest: String,
 }
 
 #[derive(Deserialize, IntoParams, Debug)]
 #[into_params(parameter_in = Query)]
-pub struct GetArtifactQuery {
+pub struct HeadArtifactQuery {
     /// The organization code
     pub org: String,
     /// The workspace code
@@ -37,19 +32,18 @@ pub struct GetArtifactQuery {
 }
 
 #[utoipa::path(
-    get,
+    head,
     path = "/{digest}",
     description = "Download an artifact",
     params(
         ("digest" = String, Path, description = "Artifact digest"),
         ("X-OMNI-TENANT" = String, Header, description = "Tenant code"),
-        GetArtifactQuery
+        HeadArtifactQuery
     ),
     responses(
         (
-            status = OK,
+            status = NO_CONTENT,
             description = "Success",
-            content_type = "application/octet-stream",
         ),
         (status = NOT_FOUND, description = "Not found"),
         (status = BAD_REQUEST, description = "Bad request"),
@@ -57,9 +51,9 @@ pub struct GetArtifactQuery {
     )
 )]
 #[tracing::instrument(skip(state))]
-pub async fn get_artifact(
-    GetArtifactPath { digest }: GetArtifactPath,
-    Query(query): Query<GetArtifactQuery>,
+pub async fn head_artifact(
+    HeadArtifactPath { digest }: HeadArtifactPath,
+    Query(query): Query<HeadArtifactQuery>,
     TenantCode(tenant_code): TenantCode,
     State(state): State<ServiceState>,
     ApiKey(api_key): ApiKey,
@@ -75,29 +69,20 @@ pub async fn get_artifact(
     validate_ownership!(state.provider, &tenant_code, &query);
 
     let container = container(&query.org, &query.ws, &query.env);
-    let x = state
+    let exists = state
         .storage_backend
-        .get_stream(Some(container.as_ref()), &digest)
+        .exists(Some(container.as_ref()), &digest)
         .await
         .map_err(InternalServerError);
 
-    match x {
-        Ok(o) => match o {
-            Some(stream) => {
-                let body = Body::from_stream(stream.map(Ok::<_, Infallible>));
-
-                Response::builder()
-                    .status(StatusCode::OK)
-                    .header(header::CONTENT_TYPE, "application/octet-stream")
-                    .header(
-                        header::CONTENT_DISPOSITION,
-                        format!("attachment; filename=\"{}\"", digest),
-                    )
-                    .body(body)
-                    .expect("should be able to build response from stream")
+    match exists {
+        Ok(o) => {
+            if o {
+                StatusCode::NO_CONTENT.into_response()
+            } else {
+                StatusCode::NOT_FOUND.into_response()
             }
-            None => (StatusCode::NOT_FOUND, "Not found").into_response(),
-        },
+        }
         Err(e) => e.into_response(),
     }
 }

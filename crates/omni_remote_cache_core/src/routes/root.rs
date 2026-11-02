@@ -1,5 +1,4 @@
 use axum::Router;
-use clap::ArgAction;
 use derive_new::new;
 use serde::{Deserialize, Serialize};
 
@@ -8,21 +7,9 @@ use crate::{
     state::ServiceState,
 };
 
-#[derive(Default, Serialize, Deserialize, clap::Args, Debug, Clone, new)]
+#[derive(Default, Serialize, Deserialize, Debug, Clone, new)]
 pub struct RouterConfig {
-    #[clap(
-        long = "routes.api-prefix",
-        env = "OMNI_REMOTE_CACHE_SERVICE_ROUTES_API_PREFIX",
-        default_value = "/api"
-    )]
     pub api_prefix: Option<String>,
-
-    #[clap(
-        long = "routes.enable-openapi",
-        env = "OMNI_REMOTE_CACHE_SERVICE_ROUTES_ENABLE_OPENAPI",
-        action = ArgAction::SetTrue,
-        default_value = "false"
-    )]
     pub enable_openapi: bool,
 }
 

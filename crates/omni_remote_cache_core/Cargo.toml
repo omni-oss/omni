@@ -9,20 +9,38 @@ repository.workspace = true
 [lib]
 name = "omni_remote_cache_core"
 path = "src/lib.rs"
-[features]
-default = ["enable-tracing"]
-enable-tracing = ["dep:tracing", "trace/enabled"]
 
 [dependencies]
-eyre = { workspace = true }
-thiserror = { workspace = true }
-strum = { workspace = true }
-trace = { workspace = true }
-tracing = { workspace = true, optional = true }
-log = { workspace = true }
-bon = { workspace = true }
+async-trait = { workspace = true }
+axum = { version = "^0.8.9", default-features = false, features = [
+    "json",
+    "query",
+    "macros",
+    "matched-path",
+    "original-uri",
+] }
+axum-extra = { workspace = true }
+bytes = { workspace = true }
+bytesize = { workspace = true }
 derive-new = { workspace = true }
-[dev-dependencies]
-test-log = { workspace = true }
-rstest = { workspace = true }
-rstest_reuse = { workspace = true }
+eyre = { workspace = true }
+futures = { workspace = true }
+http = { workspace = true }
+http-body = { workspace = true }
+maps = { workspace = true }
+noyalib = { workspace = true }
+omni_path_utils = { workspace = true }
+omni_remote_cache_storage_core = { workspace = true, features = ["utoipa"] }
+schemars = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sets = { workspace = true }
+strum = { workspace = true }
+thiserror = { workspace = true }
+time = { workspace = true }
+tracing = { workspace = true }
+utoipa = { workspace = true }
+log = { workspace = true }
+
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
+time = { workspace = true, features = ["wasm-bindgen"] }

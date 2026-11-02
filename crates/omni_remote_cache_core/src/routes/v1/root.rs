@@ -1,7 +1,7 @@
 use axum::Router;
 use utoipa::OpenApi;
 
-use crate::{build, state::ServiceState};
+use crate::state::ServiceState;
 
 use super::artifacts::{self, ArtifactsApiDoc};
 
@@ -13,7 +13,7 @@ pub fn build_router() -> Router<ServiceState> {
 #[openapi(
     info(
         title = "omni-remote-cache-service",
-        version = build::PKG_VERSION,
+        version = "0.0.0",
         description = "A service for caching remote artifacts",
     ),
     nest(

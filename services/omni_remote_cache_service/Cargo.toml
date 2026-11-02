@@ -9,26 +9,22 @@ repository.workspace = true
 [dependencies]
 async-trait = { workspace = true }
 eyre = { workspace = true }
-thiserror = { workspace = true }
 strum = { workspace = true }
 log = { workspace = true }
 tracing = { workspace = true }
 derive-new = { workspace = true }
-derive_builder = { workspace = true }
 tokio = { workspace = true }
 axum = { workspace = true }
-axum-extra = { workspace = true }
 tower = { workspace = true }
 tower-http = { workspace = true }
 clap = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-noyalib = { workspace = true }
 bytes = { workspace = true }
 bytesize = { workspace = true }
 http = { workspace = true }
-http-body = { workspace = true }
-omni_remote_cache_storage_core = { workspace = true, features = ["utoipa"] }
+omni_remote_cache_core = { workspace = true }
+omni_remote_cache_storage_core = { workspace = true }
 omni_remote_cache_storage_s3 = { workspace = true }
 omni_remote_cache_storage_local = { workspace = true }
 omni_remote_cache_storage_memory = { workspace = true }
@@ -39,18 +35,12 @@ omni_tracing_subscriber = { workspace = true }
 #     "deterministic-timestamps",
 #     "axum-ex",
 # ] }
-utoipa = { workspace = true }
 shadow-rs = { workspace = true }
-tokio-util = { workspace = true }
-tokio-stream = { workspace = true }
-omni_path_utils = { workspace = true }
-schemars = { workspace = true }
-maps = { workspace = true }
-sets = { workspace = true }
-time = { workspace = true }
 
 [dev-dependencies]
 axum-test = { workspace = true }
+maps = { workspace = true }
+sets = { workspace = true }
 
 [build-dependencies]
 eyre = { workspace = true }

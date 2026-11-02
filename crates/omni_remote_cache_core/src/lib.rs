@@ -1,20 +1,16 @@
-pub mod error;
+#![feature(decl_macro)]
+#![allow(clippy::redundant_field_names)]
 
-// @anchor:mods
-
-// @anchor:uses
-
-pub fn add(a: i32, b: i32) -> i32 {
-    a + b
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+pub mod config;
+pub mod data;
+pub mod data_impl;
+mod extractors;
+pub mod providers;
+pub mod request;
+pub mod response;
+pub mod routes;
+mod scalar;
+mod security;
+pub mod services;
+pub mod state;
+mod utils;
