@@ -52,12 +52,42 @@ impl Evaluator {
 
 fn is_invoked(source: &str, name: &str) -> bool {
     let is_ident = |c: char| c.is_alphanumeric() || c == '_';
-    source.match_indices(name).any(|(i, _)| {
+    let code = strip_string_literals(source);
+    code.match_indices(name).any(|(i, _)| {
         let before_ok =
-            source[..i].chars().next_back().is_none_or(|c| !is_ident(c));
-        let after = source[i + name.len()..].trim_start();
+            code[..i].chars().next_back().is_none_or(|c| !is_ident(c));
+        let after = code[i + name.len()..].trim_start();
         before_ok && after.starts_with('(')
     })
+}
+
+/// Blanks out the contents of quoted string literals so call-like text inside
+/// them is never mistaken for a call.
+fn strip_string_literals(source: &str) -> String {
+    let mut out = String::with_capacity(source.len());
+    let mut quote: Option<char> = None;
+    let mut escaped = false;
+    for c in source.chars() {
+        match quote {
+            Some(q) => {
+                if escaped {
+                    escaped = false;
+                } else if c == '\\' {
+                    escaped = true;
+                } else if c == q {
+                    quote = None;
+                    out.push(c);
+                }
+            }
+            None => {
+                if c == '"' || c == '\'' {
+                    quote = Some(c);
+                }
+                out.push(c);
+            }
+        }
+    }
+    out
 }
 
 /// Structured classification of an evaluation error, so callers never need to
@@ -102,9 +132,12 @@ impl Error {
                 },
                 E::NoSuchOverload(_)
                 | E::UnexpectedType { .. }
-                | E::ValuesNotComparable(_, _) => ErrorClass::TypeMismatch {
-                    detail: e.to_string(),
-                },
+                | E::ValuesNotComparable(_, _)
+                | E::UnsupportedBinaryOperator(_, _, _) => {
+                    ErrorClass::TypeMismatch {
+                        detail: e.to_string(),
+                    }
+                }
                 _ => ErrorClass::Other,
             },
             _ => ErrorClass::Other,
@@ -270,6 +303,16 @@ mod tests {
         assert!(matches!(
             eval("p > \"high\"", &ctx).unwrap_err().class(),
             ErrorClass::TypeMismatch { .. }
+        ));
+    }
+
+    #[test]
+    fn call_text_in_string_literal_is_not_a_call() {
+        let ctx = Context::default();
+        let e = eval("foo == true || \"foo(\" == \"bar\"", &ctx).unwrap_err();
+        assert!(matches!(
+            e.class(),
+            ErrorClass::MissingReference { is_call: false, .. }
         ));
     }
 }
