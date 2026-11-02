@@ -1,6 +1,7 @@
 use bytesize::ByteSize;
 use derive_new::new;
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "utoipa")]
 use utoipa::ToSchema;
 
 #[derive(
@@ -14,11 +15,11 @@ use utoipa::ToSchema;
     Ord,
     Hash,
     new,
-    ToSchema,
 )]
+#[cfg_attr(feature = "utoipa", derive(ToSchema))]
 pub struct ListItem {
     pub key: String,
-    #[schema(value_type = u64)]
+    #[cfg_attr(feature = "utoipa", schema(value_type = u64))]
     #[serde(with = "bytesize_serde")]
     pub size: ByteSize,
 }
