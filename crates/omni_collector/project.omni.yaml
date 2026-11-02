@@ -10,3 +10,4 @@ dependencies:
   - omni_glob
   - omni_utils
   - config_utils
+  - omni_command_config

@@ -35,3 +35,4 @@ dependencies:
   - system_traits
   - maps
   - config_utils
+  - omni_command_config
