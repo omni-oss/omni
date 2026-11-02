@@ -435,6 +435,48 @@ path = "crates/omni_remote_source_contributors"
 include = ["crates/omni_remote_source_contributors/**"]
 public_api = false
 
+[monorepo.packages.omni_remote_cache_core]
+path = "crates/omni_remote_cache_core"
+include = [
+    "crates/omni_remote_cache_core/**",
+]
+public_api = false
+
+[monorepo.packages.omni_remote_cache_storage_r2]
+path = "crates/omni_remote_cache_storage_r2"
+include = [
+    "crates/omni_remote_cache_storage_r2/**",
+]
+public_api = false
+
+[monorepo.packages.omni_remote_cache_worker]
+path = "services/omni_remote_cache_worker"
+include = [
+    "services/omni_remote_cache_worker/**",
+]
+public_api = false
+
+[monorepo.packages.omni_remote_cache_storage_s3]
+path = "crates/omni_remote_cache_storage_s3"
+include = [
+    "crates/omni_remote_cache_storage_s3/**",
+]
+public_api = false
+
+[monorepo.packages.omni_remote_cache_storage_local]
+path = "crates/omni_remote_cache_storage_local"
+include = [
+    "crates/omni_remote_cache_storage_local/**",
+]
+public_api = false
+
+[monorepo.packages.omni_remote_cache_storage_memory]
+path = "crates/omni_remote_cache_storage_memory"
+include = [
+    "crates/omni_remote_cache_storage_memory/**",
+]
+public_api = false
+
 # @anchor:new-rust-package
 
 [monorepo.packages."@omni-oss/async-utils"]

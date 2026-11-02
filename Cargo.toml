@@ -6,6 +6,7 @@ members = [
     "cli/omni",
     "crates/*",
     "services/omni_remote_cache_service",
+    "services/omni_remote_cache_worker",
     "services/omni_bridge_test_service",
 ]
 # default-members = ["cli/omni"]
@@ -195,6 +196,12 @@ omni_meta = { path = "crates/omni_meta" }
 omni_ignore_core = { path = "crates/omni_ignore_core" }
 omni_ignore_contributors = { path = "crates/omni_ignore_contributors" }
 omni_remote_source_contributors = { path = "crates/omni_remote_source_contributors" }
+omni_remote_cache_core = { path = "crates/omni_remote_cache_core" }
+omni_remote_cache_storage_r2 = { path = "crates/omni_remote_cache_storage_r2" }
+omni_remote_cache_worker = { path = "services/omni_remote_cache_worker" }
+omni_remote_cache_storage_s3 = { path = "crates/omni_remote_cache_storage_s3" }
+omni_remote_cache_storage_local = { path = "crates/omni_remote_cache_storage_local" }
+omni_remote_cache_storage_memory = { path = "crates/omni_remote_cache_storage_memory" }
 # @anchor:new-crate
 tracing-futures = { version = "^0.2.5", features = ["tokio"] }
 pathdiff = { version = "^0.2.3" }

@@ -7620,6 +7620,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "omni_remote_cache_core"
+version = "0.1.0"
+dependencies = [
+ "bon",
+ "derive-new",
+ "eyre",
+ "log",
+ "rstest",
+ "rstest_reuse",
+ "strum 0.28.0",
+ "test-log",
+ "thiserror 2.0.21",
+ "trace",
+ "tracing",
+]
+
+[[package]]
 name = "omni_remote_cache_service"
 version = "0.3.0"
 dependencies = [
@@ -7684,6 +7701,73 @@ dependencies = [
  "tokio-stream",
  "tokio-util",
  "utoipa",
+]
+
+[[package]]
+name = "omni_remote_cache_storage_local"
+version = "0.1.0"
+dependencies = [
+ "bon",
+ "derive-new",
+ "eyre",
+ "strum 0.28.0",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "omni_remote_cache_storage_memory"
+version = "0.1.0"
+dependencies = [
+ "bon",
+ "derive-new",
+ "eyre",
+ "strum 0.28.0",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "omni_remote_cache_storage_r2"
+version = "0.1.0"
+dependencies = [
+ "bon",
+ "derive-new",
+ "eyre",
+ "log",
+ "rstest",
+ "rstest_reuse",
+ "strum 0.28.0",
+ "test-log",
+ "thiserror 2.0.21",
+ "trace",
+ "tracing",
+]
+
+[[package]]
+name = "omni_remote_cache_storage_s3"
+version = "0.1.0"
+dependencies = [
+ "bon",
+ "derive-new",
+ "eyre",
+ "strum 0.28.0",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "omni_remote_cache_worker"
+version = "0.1.0"
+dependencies = [
+ "bon",
+ "derive-new",
+ "eyre",
+ "log",
+ "rstest",
+ "rstest_reuse",
+ "strum 0.28.0",
+ "test-log",
+ "thiserror 2.0.21",
+ "trace",
+ "tracing",
 ]
 
 [[package]]
