@@ -43,7 +43,14 @@ include = [
     "packages/*/**",
     "services/bridge-service/**",
 ]
-ignore = ["crates/omni_remote_cache_storage_core/**"]
+ignore = [
+    "crates/omni_remote_cache_storage_core/**",
+    "crates/omni_remote_cache_core/**",
+    "crates/omni_remote_cache_storage_s3/**",
+    "crates/omni_remote_cache_storage_local/**",
+    "crates/omni_remote_cache_storage_memory/**",
+    "crates/omni_remote_cache_storage_r2/**",
+]
 public_api = true
 
 [monorepo.packages.omni_cli_core]
@@ -54,7 +61,14 @@ include = [
     "packages/*/**",
     "services/bridge-service/**",
 ]
-ignore = ["crates/omni_remote_cache_storage_core/**"]
+ignore = [
+    "crates/omni_remote_cache_storage_core/**",
+    "crates/omni_remote_cache_core/**",
+    "crates/omni_remote_cache_storage_s3/**",
+    "crates/omni_remote_cache_storage_local/**",
+    "crates/omni_remote_cache_storage_memory/**",
+    "crates/omni_remote_cache_storage_r2/**",
+]
 public_api = false
 
 [monorepo.packages.omni_remote_cache_service]
@@ -62,6 +76,10 @@ path = "services/omni_remote_cache_service"
 include = [
     "services/omni_remote_cache_service/**",
     "crates/omni_remote_cache_storage_core/**",
+    "crates/omni_remote_cache_core/**",
+    "crates/omni_remote_cache_storage_s3/**",
+    "crates/omni_remote_cache_storage_local/**",
+    "crates/omni_remote_cache_storage_memory/**",
     "crates/omni_tracing_subscriber/**",
     "crates/omni_path_utils/**",
     "crates/sets/**",
