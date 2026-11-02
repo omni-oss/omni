@@ -734,25 +734,44 @@ const REDACTED_ENV_VALUE: &str = "<redacted>";
 
 /// Resolve a task's command for display in a dry-run diagnostic.
 ///
-/// Tera is still rendered so dynamic values (e.g. `{{ args.* }}` from
-/// `-a/--arg`) are visible, but environment values are deliberately hidden:
-/// `$VAR` expansion is skipped and `{{ env.VAR }}` renders a placeholder, since
-/// either value may be a secret.
+/// Tera is rendered with the real environment so conditionals pick the same
+/// branches as a real run (and invalid syntax surfaces the same way). Secrets
+/// are removed only afterwards: `$VAR` expansion is skipped so references stay
+/// visible, and any environment value present in the rendered command is
+/// replaced with a placeholder.
 fn resolve_task_command_for_display<'a>(
     spec: Option<&CommandConfig>,
     task_ctx: &TaskContext<'a>,
 ) -> Result<Option<Command>, BatchExecutorError> {
     match spec {
         Some(spec) => {
-            let mut display_ctx = task_ctx.template_context.clone();
-            let redacted_env: maps::Map<String, String> = task_ctx
-                .env_vars
-                .keys()
-                .map(|name| (name.clone(), REDACTED_ENV_VALUE.to_string()))
-                .collect();
-            display_ctx.insert("env", &redacted_env);
+            let mut command =
+                resolve_command(spec, Some(&task_ctx.template_context), None)?;
 
-            Ok(Some(resolve_command(spec, Some(&display_ctx), None)?))
+            // Longest values first so a value cannot partially mask a longer
+            // one that contains it.
+            let mut secrets: Vec<&str> = task_ctx
+                .env_vars
+                .values()
+                .map(String::as_str)
+                .filter(|value| !value.is_empty())
+                .collect();
+            secrets.sort_by_key(|value| std::cmp::Reverse(value.len()));
+
+            let redact = |text: &mut String| {
+                for secret in &secrets {
+                    if text.contains(secret) {
+                        *text = text.replace(secret, REDACTED_ENV_VALUE);
+                    }
+                }
+            };
+
+            if let Some(prog) = command.prog.as_mut() {
+                redact(prog);
+            }
+            command.args.iter_mut().for_each(redact);
+
+            Ok(Some(command))
         }
         None => Ok(None),
     }

@@ -150,6 +150,34 @@ describe("+run-filters @e2e (dry run)", () => {
         expect(ws.exists("app/token.txt")).toBe(false);
     });
 
+    it("`-d/--dry-run` keeps the real Tera branch for env conditionals", async () => {
+        const ws = makeWorkspace({
+            workspace: { projects: ["**"] },
+            projects: {
+                app: {
+                    name: "app",
+                    tasks: {
+                        ready: {
+                            exec: `{% if env.MODE == 'prod' %}echo ready{% else %}echo "unterminated{% endif %}`,
+                            env: { vars: { MODE: "prod" } },
+                        },
+                    },
+                },
+            },
+        });
+
+        const result = await runOmni(["run", "ready", "-d", "--force"], {
+            cwd: ws.cwd,
+        });
+
+        // The runnable branch is selected, so the dry run must not fail on the
+        // unterminated quote from the other branch.
+        expect(result).toHaveSucceeded();
+        expect(result).toOutputContaining(
+            "Executing task 'app#ready': echo ready",
+        );
+    });
+
     it("`-d/--dry-run` escapes terminal control characters in the command", async () => {
         const ws = makeWorkspace({
             workspace: { projects: ["**"] },
