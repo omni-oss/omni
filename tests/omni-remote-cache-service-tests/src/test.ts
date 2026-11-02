@@ -1,149 +1,58 @@
-import { type ChildProcess, spawn } from "node:child_process";
+import { afterAll, beforeAll, test as baseTest } from "vitest";
 
-import { test as baseTest } from "vitest";
-
-import { resolveServiceBinOrThrow } from "./binary";
-import { getHost, sleep, withTimeout } from "./utils";
+import { type RunningTarget, resolveTarget } from "./targets";
 
 const ports = new Set<number>();
+const target = resolveTarget();
 
-const timeoutFetch = withTimeout(fetch, 100);
+function allocatePort(): number {
+    let port = 3400;
+    while (ports.has(port)) port++;
+    ports.add(port);
+    return port;
+}
+
+let shared: Promise<RunningTarget> | null = null;
+function startShared() {
+    if (!shared) {
+        const port = allocatePort();
+        shared = target.start(port);
+    }
+    return shared;
+}
+
+// Booting the worker includes a cargo build, far beyond the per-test timeout.
+beforeAll(async () => {
+    if (target.shared) await startShared();
+}, 600_000);
+
+afterAll(async () => {
+    if (shared) await (await shared).stop();
+    shared = null;
+});
 
 export const test = baseTest.extend<{
-    port: number;
+    targetName: string;
     apiBaseUrl: string;
-    childProcess: ChildProcess;
 }>({
-    port: [
+    // oxlint-disable-next-line no-empty-pattern
+    targetName: async ({}, use) => {
+        await use(target.name);
+    },
+    apiBaseUrl: [
         // oxlint-disable-next-line no-empty-pattern
         async ({}, use) => {
-            const maxPort = ports
-                .entries()
-                .reduce((acc, cur) => Math.max(acc, cur[1]), 3399);
-            const minPort = ports
-                .entries()
-                .reduce((acc, cur) => Math.min(acc, cur[1]), 3400);
-
-            let port: number | null = null;
-            for (let i = minPort; i <= maxPort; i++) {
-                if (!ports.has(i)) {
-                    port = i;
-                    break;
-                }
-            }
-
-            const newPort = port ?? maxPort + 1;
-
-            ports.add(newPort);
-            await use(newPort);
-            ports.delete(newPort);
-        },
-        { scope: "test" },
-    ],
-    apiBaseUrl: [
-        async ({ port }, use) => {
-            const apiBaseUrl =
-                process.env.REMOTE_CACHE_TEST_BASE_URL ??
-                `http://localhost:${port}/api`;
-            await use(apiBaseUrl);
-        },
-        { scope: "test" },
-    ],
-    childProcess: [
-        async ({ apiBaseUrl, port }, use) => {
-            // Test an already running instance (e.g. the Cloudflare worker
-            // under `wrangler dev`) instead of spawning the native binary.
-            if (process.env.REMOTE_CACHE_TEST_BASE_URL) {
-                await use(null as unknown as ChildProcess);
+            if (target.shared) {
+                await use((await startShared()).apiBaseUrl);
                 return;
             }
-
-            const host = await getHost().catch(() => "");
-            const { path: omniPath, compileInfo } = resolveServiceBinOrThrow({
-                binName: "omni_remote_cache_service",
-                host,
-            });
-
-            const childProcess = spawn(
-                omniPath,
-                [
-                    "serve",
-                    "--listen",
-                    `0.0.0.0:${port}`,
-                    "-b",
-                    "in-memory",
-                    "--routes.api-prefix",
-                    "/api",
-                    "--config",
-                    "orcs.config.json",
-                    "--config-type",
-                    "file",
-                ],
-                {
-                    env: process.env,
-                    stdio: "pipe",
-                    cwd: process.cwd(),
-                },
-            );
-
-            const output = [] as string[];
-
-            childProcess.stdout?.on("data", (data) => {
-                output.push(data.toString());
-            });
-            childProcess.stderr?.on("data", (data) => {
-                output.push(data.toString());
-            });
-
-            // we're not trying to get a successful response, just to make sure the server is up and can respond
-            let currentTry = 0;
-            let didConnect = false;
-            let error: Error | null = null;
-            const MAX_TRIES = 10;
-            while (currentTry < MAX_TRIES) {
-                try {
-                    await timeoutFetch(apiBaseUrl);
-                    didConnect = true;
-                    break;
-                } catch (e) {
-                    if (error instanceof Error) {
-                        error = e as Error;
-                    }
-                }
-
-                if (childProcess.exitCode != null) {
-                    throw new Error(
-                        `Child process exited with code ${childProcess.exitCode}:\n${output.join("\n")}\n${compileInfo}`,
-                    );
-                }
-
-                currentTry++;
-                // add a small delay to ensure the server is ready
-                await sleep(100);
-            }
-
-            if (!didConnect) {
-                if (error) {
-                    throw error;
-                }
-                throw new Error(
-                    `Failed to connect to server: ${apiBaseUrl}\n${output.join("\n")}\n${compileInfo}`,
-                );
-            }
-
+            const port = allocatePort();
+            const running = await target.start(port);
             try {
-                await use(childProcess);
+                await use(running.apiBaseUrl);
             } finally {
-                const result = childProcess.kill("SIGTERM");
-                await sleep(100);
-
-                if (
-                    !result &&
-                    childProcess.exitCode !== null &&
-                    !childProcess.killed
-                ) {
-                    childProcess.kill("SIGKILL");
-                }
+                await running.stop();
+                ports.delete(port);
             }
         },
         { scope: "test", auto: true },

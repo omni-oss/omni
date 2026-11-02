@@ -45,12 +45,5 @@ tasks:
         files:
           - "build/**"
 
-  # Not part of `test`: needs wrangler (downloaded on demand) and network.
-  smoke-test:
-    description: Run the worker under `wrangler dev --local` and exercise the artifact API against local R2
-    exec: sh ./scripts/smoke-test.sh
-    cache:
-      enabled: false
-
 meta:
   type: service

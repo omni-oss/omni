@@ -88,6 +88,35 @@ describe("v1.artifacts.api", () => {
         expect(response.status).toBe(403);
     });
 
+    test("large artifact round trip", async ({ apiBaseUrl }) => {
+        // big enough to exercise chunked/multipart uploads in the backends
+        const big = new Uint8Array(20 * 1024 * 1024);
+        for (let i = 0; i < big.length; i += 65536) {
+            crypto.getRandomValues(big.subarray(i, i + 65536));
+        }
+        const digest = crypto.randomUUID();
+
+        const put = await putArtifact(
+            apiBaseUrl,
+            digest,
+            TENANT,
+            ORG,
+            WS,
+            ENV,
+            big,
+        );
+        expect(put.status).toBe(204);
+
+        const get = await fetch(
+            `${apiBaseUrl}/v1/artifacts/${digest}?org=${ORG}&ws=${WS}&env=${ENV}`,
+            { headers: { "X-OMNI-TENANT": TENANT, "X-API-KEY": API_KEY } },
+        );
+        expect(get.status).toBe(200);
+        expect(Buffer.compare(Buffer.from(await get.arrayBuffer()), big)).toBe(
+            0,
+        );
+    }, 30_000);
+
     test("delete artifact", async ({ apiBaseUrl }) => {
         await putArtifact(apiBaseUrl);
 
@@ -100,7 +129,7 @@ describe("v1.artifacts.api", () => {
 });
 
 // Usage with fetch
-const fetchWithTimeout = withTimeout(fetch, 1000);
+const fetchWithTimeout = withTimeout(fetch, 10_000);
 
 async function putArtifact(
     apiBaseUrl: string,
@@ -109,7 +138,7 @@ async function putArtifact(
     org: string = ORG,
     ws: string = WS,
     env: string = ENV,
-    body: string = BODY,
+    body: string | Uint8Array<ArrayBuffer> = BODY,
     apiKey: string = API_KEY,
 ) {
     return await fetchWithTimeout(

@@ -15,6 +15,16 @@ tasks:
     dependencies:
       - omni_remote_cache_service#build:debug
 
+  # Same specs against the Cloudflare worker under `wrangler dev --local`.
+  # Not part of `test`: needs wrangler (downloaded on demand) and network.
+  test:service:worker:
+    exec: bun x vitest --config ./vitest.config.service.ts run
+    env:
+      vars:
+        REMOTE_CACHE_TEST_TARGET: worker
+    cache:
+      enabled: false
+
   test:
     dependencies:
       - test:service
