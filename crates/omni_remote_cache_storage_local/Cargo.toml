@@ -19,7 +19,7 @@ eyre = { workspace = true }
 log = { workspace = true }
 tokio = { workspace = true }
 tokio-stream = { workspace = true }
-tokio-util = { workspace = true }
+tokio-util = { workspace = true, features = ["io"] }
 omni_remote_cache_storage_core = { workspace = true }
 
 [dev-dependencies]
