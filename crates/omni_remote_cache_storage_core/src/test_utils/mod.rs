@@ -3,7 +3,7 @@ macro_rules! decl_remote_cache_storage_backend_tests {
     ($default:expr) => {
         use bytes::{Bytes, BytesMut};
         use bytesize::ByteSize;
-        use tokio_stream::StreamExt;
+        use futures::StreamExt;
         use $crate::RemoteCacheStorageBackend;
 
         async fn backend() -> impl RemoteCacheStorageBackend + Send + Sync {
@@ -184,7 +184,9 @@ macro_rules! decl_remote_cache_storage_backend_tests {
         async fn test_save_stream() {
             let backend = backend().await;
 
-            let stream = tokio_stream::once(Bytes::from("value3"));
+            let stream = futures::stream::once(std::future::ready(
+                Bytes::from("value3"),
+            ));
 
             backend
                 .save_stream(None, "key3", Box::pin(stream))
@@ -207,7 +209,9 @@ macro_rules! decl_remote_cache_storage_backend_tests {
         async fn test_save_stream_container() {
             let backend = backend().await;
 
-            let stream = tokio_stream::once(Bytes::from("value3"));
+            let stream = futures::stream::once(std::future::ready(
+                Bytes::from("value3"),
+            ));
 
             backend
                 .save_stream(Some("container2"), "key1", Box::pin(stream))

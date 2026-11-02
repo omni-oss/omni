@@ -1,19 +1,26 @@
-use std::num::NonZeroUsize;
+use std::{
+    num::NonZeroUsize,
+    sync::{Arc, Mutex, MutexGuard, PoisonError},
+};
 
 use async_trait::async_trait;
 use bytes::{Bytes, BytesMut};
 use bytesize::ByteSize;
-use tokio::sync::Mutex;
-use tokio_stream::StreamExt as _;
+use futures::StreamExt as _;
 
 use crate::{
     BoxStream, ListItem, PageOptions, RemoteCacheStorageBackend, error::Error,
 };
 
+const DEFAULT_MAX_CACHEABLE_SIZE: ByteSize = ByteSize::mib(8);
+
+type Cache = lru::LruCache<(String, String), Bytes>;
+
 #[derive(Debug)]
 pub struct LruCached<T: RemoteCacheStorageBackend> {
     inner: T,
-    cached: Mutex<lru::LruCache<(String, String), Bytes>>,
+    cached: Mutex<Cache>,
+    max_cacheable_size: ByteSize,
 }
 
 impl<T: RemoteCacheStorageBackend> LruCached<T> {
@@ -21,13 +28,33 @@ impl<T: RemoteCacheStorageBackend> LruCached<T> {
         Self {
             inner,
             cached: Mutex::new(lru::LruCache::new(capacity)),
+            max_cacheable_size: DEFAULT_MAX_CACHEABLE_SIZE,
         }
+    }
+
+    /// Streamed uploads larger than this are passed through to the inner
+    /// backend without being cached, so they are never fully buffered.
+    pub fn with_max_cacheable_size(mut self, size: ByteSize) -> Self {
+        self.max_cacheable_size = size;
+        self
     }
 }
 
 impl<T: RemoteCacheStorageBackend> LruCached<T> {
     fn container<'s>(&'s self, container: Option<&'s str>) -> &'s str {
         container.unwrap_or(self.inner.default_container())
+    }
+
+    fn cache(&self) -> MutexGuard<'_, Cache> {
+        self.cached.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn cache_key(
+        &self,
+        container: Option<&str>,
+        key: &str,
+    ) -> (String, String) {
+        (self.container(container).to_string(), key.to_string())
     }
 }
 
@@ -45,12 +72,7 @@ where
         container: Option<&str>,
         key: &str,
     ) -> Result<Option<Bytes>, Error> {
-        let container_name = self.container(container);
-        if let Some(cached) = self
-            .cached
-            .lock()
-            .await
-            .get(&(container_name.to_string(), key.to_string()))
+        if let Some(cached) = self.cache().get(&self.cache_key(container, key))
         {
             return Ok(Some(cached.clone()));
         }
@@ -63,14 +85,7 @@ where
         container: Option<&str>,
         key: &str,
     ) -> Result<bool, Error> {
-        let container_name = self.container(container);
-        if self
-            .cached
-            .lock()
-            .await
-            .get(&(container_name.to_string(), key.to_string()))
-            .is_some()
-        {
+        if self.cache().get(&self.cache_key(container, key)).is_some() {
             return Ok(true);
         }
 
@@ -82,15 +97,11 @@ where
         container: Option<&str>,
         key: &str,
     ) -> Result<Option<BoxStream<Bytes>>, Error> {
-        let container_name = self.container(container);
-        if let Some(cached) = self
-            .cached
-            .lock()
-            .await
-            .get(&(container_name.to_string(), key.to_string()))
-        {
-            let cloned = cached.clone();
-            return Ok(Some(Box::pin(tokio_stream::once(cloned))));
+        let cached = self.cache().get(&self.cache_key(container, key)).cloned();
+        if let Some(cached) = cached {
+            return Ok(Some(Box::pin(futures::stream::once(
+                std::future::ready(cached),
+            ))));
         }
 
         self.inner.get_stream(container, key).await
@@ -117,10 +128,8 @@ where
         key: &str,
         value: Bytes,
     ) -> Result<(), Error> {
-        self.cached.lock().await.put(
-            (self.container(container).to_string(), key.to_string()),
-            value.clone(),
-        );
+        self.cache()
+            .put(self.cache_key(container, key), value.clone());
 
         self.inner.save(container, key, value).await
     }
@@ -131,21 +140,50 @@ where
         key: &str,
         value: BoxStream<Bytes>,
     ) -> Result<(), Error> {
-        let collected = value.collect::<Vec<Bytes>>().await;
-        let mut combined = BytesMut::new();
+        // `None` means the upload exceeded the cacheable size and the
+        // captured bytes were dropped.
+        let capture = Arc::new(Mutex::new(Some(BytesMut::new())));
+        let max = usize::try_from(self.max_cacheable_size.as_u64())
+            .unwrap_or(usize::MAX);
 
-        for chunk in collected {
-            combined.extend_from_slice(&chunk);
+        let teed = {
+            let capture = capture.clone();
+            value.inspect(move |chunk| {
+                let mut guard =
+                    capture.lock().unwrap_or_else(PoisonError::into_inner);
+                let exceeded = match guard.as_mut() {
+                    Some(buf) if buf.len() + chunk.len() <= max => {
+                        buf.extend_from_slice(chunk);
+                        false
+                    }
+                    Some(_) => true,
+                    None => false,
+                };
+                if exceeded {
+                    *guard = None;
+                }
+            })
+        };
+
+        let cache_key = self.cache_key(container, key);
+        let result =
+            self.inner.save_stream(container, key, Box::pin(teed)).await;
+
+        let captured = capture
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take();
+
+        match (&result, captured) {
+            (Ok(()), Some(buf)) => {
+                self.cache().put(cache_key, buf.freeze());
+            }
+            _ => {
+                self.cache().pop(&cache_key);
+            }
         }
 
-        let combined = combined.freeze();
-
-        self.cached.lock().await.put(
-            (self.container(container).to_string(), key.to_string()),
-            combined.clone(),
-        );
-
-        self.inner.save(container, key, combined).await
+        result
     }
 
     async fn delete(
@@ -153,10 +191,7 @@ where
         container: Option<&str>,
         key: &str,
     ) -> Result<(), Error> {
-        self.cached
-            .lock()
-            .await
-            .pop(&(self.container(container).to_string(), key.to_string()));
+        self.cache().pop(&self.cache_key(container, key));
 
         self.inner.delete(container, key).await
     }
@@ -166,12 +201,7 @@ where
         container: Option<&str>,
         key: &str,
     ) -> Result<Option<ByteSize>, Error> {
-        let container_name = self.container(container);
-        if let Some(cached) = self
-            .cached
-            .lock()
-            .await
-            .get(&(container_name.to_string(), key.to_string()))
+        if let Some(cached) = self.cache().get(&self.cache_key(container, key))
         {
             return Ok(Some(ByteSize::b(cached.len() as u64)));
         }

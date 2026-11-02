@@ -15,7 +15,7 @@ pub struct PageOptions {
 }
 
 pub type BoxStream<T> =
-    Pin<Box<dyn tokio_stream::Stream<Item = T> + 'static + Send>>;
+    Pin<Box<dyn futures::Stream<Item = T> + 'static + Send>>;
 
 #[async_trait]
 pub trait RemoteCacheStorageBackend {
