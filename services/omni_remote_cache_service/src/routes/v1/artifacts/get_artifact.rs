@@ -7,7 +7,7 @@ use axum::{
 };
 use axum_extra::{response::InternalServerError, routing::TypedPath};
 use http::{StatusCode, header};
-use omni_remote_cache_storage::RemoteCacheStorageBackend;
+use omni_remote_cache_storage_core::RemoteCacheStorageBackend;
 use serde::Deserialize;
 use tokio_stream::StreamExt;
 use utoipa::IntoParams;

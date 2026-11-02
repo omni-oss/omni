@@ -7639,7 +7639,7 @@ dependencies = [
  "maps",
  "noyalib",
  "omni_path_utils",
- "omni_remote_cache_storage",
+ "omni_remote_cache_storage_core",
  "omni_tracing_subscriber",
  "schemars",
  "serde",
@@ -7659,7 +7659,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "omni_remote_cache_storage"
+name = "omni_remote_cache_storage_core"
 version = "0.1.0"
 dependencies = [
  "async-trait",

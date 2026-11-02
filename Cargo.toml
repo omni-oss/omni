@@ -224,7 +224,7 @@ humantime-serde = { version = "^1.1.1" }
 itertools = { version = "^0.15.0" }
 omni_execution_plan = { path = "./crates/omni_execution_plan" }
 omni_task_context = { path = "./crates/omni_task_context" }
-omni_remote_cache_storage = { path = "./crates/omni_remote_cache_storage" }
+omni_remote_cache_storage_core = { path = "./crates/omni_remote_cache_storage_core" }
 omni_remote_cache_client = { path = "./crates/omni_remote_cache_client" }
 omni_file_data_serde = { path = "./crates/omni_file_data_serde" }
 omni_setup = { path = "./crates/omni_setup" }

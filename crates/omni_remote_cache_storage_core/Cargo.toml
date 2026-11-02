@@ -1,5 +1,5 @@
 [package]
-name = "omni_remote_cache_storage"
+name = "omni_remote_cache_storage_core"
 rust-version.workspace = true
 edition.workspace = true
 version = "0.1.0"

@@ -36,7 +36,7 @@ tasks:
       - ^passthrough
 
 dependencies:
-  - omni_remote_cache_storage
+  - omni_remote_cache_storage_core
   - omni_tracing_subscriber
   - omni_path_utils
   - maps
