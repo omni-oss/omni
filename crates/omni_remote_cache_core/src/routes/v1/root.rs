@@ -13,6 +13,7 @@ pub fn build_router() -> Router<ServiceState> {
 #[openapi(
     info(
         title = "omni-remote-cache-service",
+        // Placeholder: `open_api::apply` overwrites it with `ServiceInfo::version`.
         version = "0.0.0",
         description = "A service for caching remote artifacts",
     ),
