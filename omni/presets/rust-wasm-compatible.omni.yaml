@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/json-schemas/refs/heads/main/project.json
+name: rust-wasm-compatible
+
+# Mixin for crates that must keep compiling for wasm32-unknown-unknown (e.g.
+# because they are linked into a Cloudflare Worker). The check is wired into
+# `test` so CI fails as soon as a native-only dependency sneaks in.
+tasks:
+  check-wasm:
+    description: Type-check the crate for wasm32-unknown-unknown
+    exec: cargo check -p ${PROJECT_NAME} --target wasm32-unknown-unknown ${RUST_CHECK_WASM_ADDITIONAL_ARGS:-}
+    dependencies:
+      - ^check-wasm
+    cache:
+      key:
+        env:
+          append: [RUST_CHECK_WASM_ADDITIONAL_ARGS]
+        files:
+          append: ["@workspace/.cargo/config.toml"]
+
+  test:
+    dependencies:
+      append: [check-wasm]

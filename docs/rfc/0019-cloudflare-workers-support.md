@@ -48,18 +48,21 @@ Exit criteria: native service tests unchanged and green; `cargo check -p omni_re
 
 ## Phase 3: CI plan (wasm targets for Rust)
 
-Existing CI is planned by omni (`omni run test build publish` dry-run -> `jobs_build_rust`) and executed by `run-omni-jobs.yaml`. Changes:
+CI is planned by omni (`omni run test build publish` dry-run -> `jobs_build_rust`/`jobs_test_rust`) and executed by `run-omni-jobs.yaml`. Because the plan is derived from project tasks, wasm checks are expressed as omni tasks and run in the existing `test-rust`/`build-rust` jobs; no new workflow job is required.
 
-1. **Toolchain**: add `targets: wasm32-unknown-unknown` to `actions-rust-lang/setup-rust-toolchain` in `.github/actions/setup-tools` (or a `rust-targets` input) and optionally `rust-toolchain.toml` `targets`.
-2. **Tools**: install `worker-build` and `wasm-bindgen-cli` (pinned, cached) via the setup-tools action.
-3. **Omni presets**: add `omni/presets/rust-wasm-lib.omni.yaml` with tasks:
-   - `check-wasm`: `cargo check -p <crate> --target wasm32-unknown-unknown`
-   - `build-wasm`: `cargo build --release --target wasm32-unknown-unknown`
-   Apply to `omni_remote_cache_storage_core`, `omni_remote_cache_core`, `omni_remote_cache_storage_r2`, and the worker. The worker's own task runs `worker-build --release`.
-4. **Plan output**: `create-jobs` groups jobs by kind; add a `rust_wasm` bucket (`jobs_build_rust_wasm`, `_count`) in the `plan` job outputs, and a `build-rust-wasm` job calling `run-omni-jobs.yaml` with `cache-key-prefix: build_rust_wasm` and `save-outputs`/`artifacts-name: build-rust-wasm`. Keep it a PR gate (needs `test-rust`).
-5. **Feature-unification guard**: a CI step running `cargo tree -p omni_remote_cache_worker --target wasm32-unknown-unknown -e features -i tokio` (and `mio`) that fails if present.
-6. **Integration**: job running `wrangler dev` (miniflare) against the built worker with a smoke test.
-7. **Publish** (later): `wrangler deploy` on `omni-remote-cache-worker-v*` tags, gated by `CLOUDFLARE_API_TOKEN` secret.
+Implemented:
+
+1. **Toolchain**: `rust-toolchain.toml` lists `wasm32-unknown-unknown` in `targets`, so `setup-rust-toolchain` and local rustup install it.
+2. **Presets**:
+   - `omni/presets/rust-wasm-compatible.omni.yaml` adds a `check-wasm` task (`cargo check --target wasm32-unknown-unknown`) and wires it into `test`. Applied to `omni_remote_cache_storage_core`, `_memory`, `_r2` and `omni_remote_cache_core`.
+   - `omni/presets/rust-cloudflare-worker.omni.yaml` (worker) adds `check-wasm-deps`, which fails if `mio`, `socket2`, `tokio-util` or `aws-sdk-s3` appear in the wasm dependency graph (guards against feature unification), and a `build` task running `worker-build --release` (installed on demand at a pinned version) with `build/**` cached as output.
+3. **getrandom**: `.cargo/config.toml` sets the `wasm_js` backend cfg for the wasm target.
+
+Follow-ups (not in this PR):
+
+- `wrangler dev` smoke test against the built worker.
+- Publish via `wrangler deploy` on `omni-remote-cache-worker-v*` tags (needs `CLOUDFLARE_API_TOKEN`).
+- Cache `~/.cargo/bin/worker-build` in the setup-tools action.
 
 ## Risks
 
