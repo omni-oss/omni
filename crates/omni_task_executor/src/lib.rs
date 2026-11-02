@@ -19,7 +19,7 @@ mod utils;
 pub use config::*;
 pub use executor::*;
 pub use force::*;
-pub use omni_execution_plan::Call;
+pub use omni_execution_plan::{Call, MetaOnError};
 pub use on_failure::*;
 pub use result::*;
 pub use sys::*;

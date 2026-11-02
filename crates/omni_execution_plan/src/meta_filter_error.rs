@@ -1,6 +1,9 @@
 use std::{cell::RefCell, fmt, path::PathBuf};
 
 use maps::UnorderedMap;
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+use strum::{Display, EnumIs, VariantArray};
 use omni_configurations::MetaConfiguration;
 use omni_core::TaskExecutionNode;
 use omni_expressions::ErrorClass;
@@ -32,12 +35,28 @@ const CEL_FUNCTIONS: &[&str] = &[
 ];
 
 /// What to do with tasks whose meta filter fails to evaluate.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Default,
+    EnumIs,
+    Display,
+    VariantArray,
+    Serialize,
+    Deserialize,
+    JsonSchema,
+)]
+#[serde(rename_all = "lowercase")]
 pub enum MetaOnError {
     /// Abort planning with an aggregated error.
     #[default]
+    #[strum(serialize = "fail")]
     Fail,
     /// Exclude the failing tasks and report them as a warning.
+    #[strum(serialize = "exclude")]
     Exclude,
 }
 

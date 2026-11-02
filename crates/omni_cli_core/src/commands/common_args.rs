@@ -4,7 +4,7 @@ use clap::Args;
 use clap_utils::EnumValueAdapter;
 use maps::UnorderedMap;
 use omni_configurations::{Ui, WorkspaceConfiguration};
-use omni_execution_plan::ScmAffectedFilter;
+use omni_execution_plan::{MetaOnError, ScmAffectedFilter};
 use omni_scm::SelectScm;
 use omni_task_executor::ExecutionConfigBuilder;
 use omni_task_output_logs::LogsDisplay;
@@ -21,6 +21,21 @@ pub struct RunArgs {
         help = "Filter the task/projects based on the meta configuration, accepts CEL syntax"
     )]
     pub meta: Option<String>,
+
+    #[arg(
+        long,
+        help = "What to do when the --meta filter fails to evaluate for a task: fail with a diagnostic, or exclude the task and warn",
+        value_enum,
+        default_value_t = EnumValueAdapter::new(MetaOnError::Fail),
+    )]
+    pub meta_on_error: EnumValueAdapter<MetaOnError>,
+
+    #[arg(
+        long,
+        help = "How many failing tasks to list per distinct --meta error cause",
+        default_value_t = 3,
+    )]
+    pub meta_error_samples: usize,
 
     #[arg(
         long,
@@ -141,6 +156,9 @@ impl RunArgs {
         if let Some(meta) = &self.meta {
             builder.meta_filter(meta);
         }
+
+        builder.meta_on_error(self.meta_on_error.value());
+        builder.meta_error_samples(self.meta_error_samples);
 
         builder.project_filters(self.project.clone());
         builder.dir_filters(self.dir.clone());

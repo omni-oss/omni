@@ -3,7 +3,8 @@ use omni_context::{ContextSys, LoadedContext, LoadedContextError};
 use omni_core::BatchedExecutionPlan;
 use omni_execution_plan::{
     Call, Context as ContextTrait, DefaultExecutionPlanProvider,
-    ExecutionPlanProvider, ExecutionPlanProviderError, ScmAffectedFilter,
+    ExecutionPlanProvider, ExecutionPlanProviderError, MetaErrorOptions,
+    ScmAffectedFilter,
 };
 use omni_glob::GlobPatterns;
 use omni_types::OmniPath;
@@ -14,6 +15,11 @@ pub struct ContextExecutionPlanProvider<'a, TSys: ContextSys> {
 }
 
 impl<'a, TSys: ContextSys> ContextExecutionPlanProvider<'a, TSys> {
+    pub fn with_meta_error_options(mut self, options: MetaErrorOptions) -> Self {
+        self.inner = self.inner.with_meta_error_options(options);
+        self
+    }
+
     pub fn new(context: &'a LoadedContext<TSys>) -> Self {
         Self {
             inner: DefaultExecutionPlanProvider::new(ContextWrapper {

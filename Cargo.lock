@@ -7119,6 +7119,7 @@ dependencies = [
  "omni_types",
  "omni_utils",
  "path-clean",
+ "schemars",
  "serde",
  "strsim",
  "strum 0.28.0",

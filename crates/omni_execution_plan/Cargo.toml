@@ -35,6 +35,7 @@ omni_types = { workspace = true }
 path-clean = { workspace = true }
 omni_config_types = { workspace = true }
 strsim = { workspace = true }
+schemars = { workspace = true }
 
 [dev-dependencies]
 test-log = { workspace = true }

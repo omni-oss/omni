@@ -4,7 +4,8 @@ use omni_cache::impls::LocalTaskExecutionCacheStoreError;
 use omni_context::LoadedContext;
 use omni_core::{ProjectGraphError, TaskExecutionGraphError};
 use omni_execution_plan::{
-    ExecutionPlanProvider as _, ExecutionPlanProviderError,
+    ExecutionPlanProvider as _, ExecutionPlanProviderError, MetaErrorOptions,
+    MetaFilterErrorLimits,
 };
 use omni_messages::{
     DiagnosticLevel, ExecutionCompleteEvent, ExecutionEventSubscriber,
@@ -59,6 +60,12 @@ impl<'a, TSys: TaskExecutorSys, S: ExecutionEventSubscriber>
         }
 
         let plan = ContextExecutionPlanProvider::new(self.context)
+            .with_meta_error_options(MetaErrorOptions {
+                on_error: self.config.meta_on_error(),
+                limits: MetaFilterErrorLimits::with_samples(
+                    self.config.meta_error_samples(),
+                ),
+            })
             .get_execution_plan(
                 self.config.call(),
                 self.config
