@@ -15,10 +15,10 @@ and treated as `false`: the task is silently excluded. A typo, a wrong type, or
 a task without the referenced key all look the same as "does not match", and
 the user gets an empty or incomplete task set with no explanation.
 
-This RFC makes runtime evaluation errors visible. By default, the first
-evaluation error aborts planning with a diagnostic that names the task, the
-project, the expression, the underlying CEL error, and the meta data the
-expression was evaluated against. A `--meta-on-error` option keeps the old
+This RFC makes runtime evaluation errors visible. By default, evaluation
+errors abort planning with one aggregated diagnostic that names the failing
+tasks (a bounded sample per cause plus totals), the expression, the underlying
+CEL error, and the meta data the expression was evaluated against. A `--meta-on-error` option keeps the old
 "exclude" behaviour as an explicit, still-reported opt-in.
 
 ## 2. Motivation / Problem
@@ -109,8 +109,11 @@ keys practical, the evaluation context additionally exposes the whole map as
 --meta '"kind" in meta && meta.kind == "e2e"'
 ```
 
-Top-level variables continue to work unchanged. `meta` is added only if the
-task's meta does not already define a key named `meta` (the user key wins and a
+Top-level variables continue to work unchanged. `meta` is always
+injected, as an empty map for tasks with no meta configuration, so
+`has(meta.kind)` is `false` rather than an undeclared-reference error for them
+(today such tasks get a context with no variables at all). It is skipped only if
+the task's meta already defines a key named `meta` (the user key wins and a
 `debug!` is emitted).
 
 ### 4.3 `--meta-on-error`
@@ -171,6 +174,10 @@ is renamed `evaluate_bool` since it no longer coerces; the benchmark is updated.
 
 ## 5. What it looks like
 
+Cause strings are the `cel` error messages verbatim (for example
+`Undeclared reference to 'knd'`); the exact wording in these examples is
+illustrative and tests assert on substrings.
+
 ### 5.1 CLI, missing key / typo
 
 ```text
@@ -178,7 +185,7 @@ $ omni run test --meta 'knd == "e2e"'
 error: meta filter failed to evaluate for 500 task(s)
 
   filter:  knd == "e2e"
-  cause:   undeclared reference to 'knd' (in container '')   [500 tasks]
+  cause:   Undeclared reference to 'knd'   [500 tasks]
 
     web#test   apps/web   meta: { "kind": "unit", "owner": "frontend" }
     api#test   apps/api   meta: { "kind": "e2e" }
@@ -209,8 +216,8 @@ error: meta filter failed to evaluate
 ```text
 $ omni run test --meta 'kind == "e2e"' --meta-on-error exclude
 warn: meta filter failed for 2 task(s); they were excluded (see --meta-on-error)
-  web#test: undeclared reference to 'kind'   meta: {}
-  docs#test: undeclared reference to 'kind'  meta: {}
+  web#test: Undeclared reference to 'kind'   meta: {}
+  docs#test: Undeclared reference to 'kind'  meta: {}
 Running 1 task ...
 ```
 
@@ -229,17 +236,17 @@ locate the task without parsing text:
     "total": 500,
     "groups": [
       {
-        "cause": "undeclared reference to 'knd'",
+        "cause": "Undeclared reference to 'knd'",
         "count": 500,
         "samples": [
-          {
-            "project": "web",
-            "task": "test",
-            "project_dir": "apps/web",
-            "meta": { "kind": "unit", "owner": "frontend" }
-          }
+          { "project": "web", "task": "test", "project_dir": "apps/web",
+            "meta": { "kind": "unit", "owner": "frontend" } },
+          { "project": "api", "task": "test", "project_dir": "apps/api",
+            "meta": { "kind": "e2e" } },
+          { "project": "docs", "task": "test", "project_dir": "apps/docs",
+            "meta": {} }
         ],
-        "omitted": 499,
+        "omitted": 497,
         "hint": "`knd` is not defined for this task. Did you mean `kind`? For optional keys use has(meta.knd)."
       }
     ]
@@ -456,6 +463,8 @@ cases that rely on truthiness or missing keys) are updated to the new contract.
 - `into_expression_context(&self)` exposes every top-level key and `meta`.
 - `meta.k` and `k` evaluate identically, including nested maps and lists.
 - A task key named `meta` wins and `meta` is not injected.
+- A task with no meta configuration still gets an empty `meta` map, so
+  `has(meta.kind)` is `false` for it.
 - The meta is not consumed or cloned by the call (`&self`).
 
 `omni_execution_plan` (`filter.rs`, `execution_plan_provider.rs`):
