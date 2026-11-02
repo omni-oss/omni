@@ -3,7 +3,10 @@ use std::{borrow::Cow, future::Future, time::Duration};
 use futures::stream::{FuturesUnordered, StreamExt as _};
 use maps::{UnorderedMap, unordered_map};
 use omni_cache::{CachedTaskExecution, TaskExecutionCacheStore};
-use omni_command_config::{Command, CommandConfig, resolve_command};
+use omni_command_config::{
+    Command, CommandConfig, escape_control_chars, redact_values,
+    resolve_command, resolve_command_with,
+};
 use omni_config_types::TeraExprBoolean;
 use omni_context::LoadedContext;
 use omni_core::TaskExecutionNode;
@@ -487,13 +490,57 @@ where
             let record_logs =
                 task_ctx.cache_info.as_ref().is_some_and(|ci| ci.cache_logs);
 
+            // Resolve the command even in dry-run mode so template/env
+            // expansion (including `{{ args.* }}` from `-a/--arg`) happens
+            // and any resolution errors surface during planning. The retry
+            // command is resolved here too so an invalid retry config fails
+            // the dry run exactly as it would during a normal run.
+            let override_command = resolve_task_command(
+                task_ctx.node.task_exec_config(),
+                task_ctx,
+            )?;
+            let override_retry_command = resolve_task_command(
+                task_ctx.node.task_retry_exec_config(),
+                task_ctx,
+            )?;
+
             if self.dry_run {
-                diagnostic!(
-                    self.subscriber,
-                    DiagnosticLevel::Info,
-                    "Executing task '{}'",
-                    task_ctx.node.full_task_name(),
-                );
+                // Resolve a second time with environment values hidden: the
+                // expanded form may contain secrets (e.g. `$TOKEN` or
+                // `{{ env.TOKEN }}`), which must not be written to CLI logs.
+                // Tera still renders so `{{ args.* }}` stays visible.
+                let display_command = resolve_task_command_for_display(
+                    task_ctx.node.task_exec_config(),
+                    task_ctx,
+                )?;
+
+                // Mirror the normal execution path's lifecycle events so
+                // subscribers (and the CLI) report the task exactly as they
+                // would after a real run.
+                let task_id = task_ctx.node.full_task_name().to_string();
+                self.subscriber
+                    .on_task_started(TaskStartedEvent {
+                        task_id: task_id.clone(),
+                        project: task_ctx.node.project_name().to_string(),
+                        task: task_ctx.node.task_name().to_string(),
+                    })
+                    .await;
+
+                match &display_command {
+                    Some(command) if !command.is_empty() => diagnostic!(
+                        self.subscriber,
+                        DiagnosticLevel::Info,
+                        "Executing task '{}': {}",
+                        escape_control_chars(&task_id),
+                        command,
+                    ),
+                    _ => diagnostic!(
+                        self.subscriber,
+                        DiagnosticLevel::Info,
+                        "Executing task '{}'",
+                        escape_control_chars(&task_id),
+                    ),
+                }
 
                 let node = task_ctx.node.clone();
                 fut_results.push(TaskResultContext::new_completed(
@@ -506,16 +553,19 @@ where
                     ),
                     0,
                 ));
-            } else {
-                let override_command = resolve_task_command(
-                    task_ctx.node.task_exec_config(),
-                    task_ctx,
-                )?;
 
-                let override_retry_command = resolve_task_command(
-                    task_ctx.node.task_retry_exec_config(),
-                    task_ctx,
-                )?;
+                self.subscriber
+                    .on_task_completed(TaskCompletedEvent {
+                        task_id,
+                        project: task_ctx.node.project_name().to_string(),
+                        task: task_ctx.node.task_name().to_string(),
+                        exit_code: 0,
+                        elapsed: Duration::ZERO,
+                        cache_hit: false,
+                        tries: 0,
+                    })
+                    .await;
+            } else {
                 futs.push(run_process(
                     self.subscriber,
                     self.wants_task_output_stream,
@@ -676,6 +726,43 @@ fn resolve_task_command<'a>(
             Some(&task_ctx.template_context),
             Some(&task_ctx.env_vars),
         )?)),
+        None => Ok(None),
+    }
+}
+
+/// Placeholder substituted for environment values in a dry-run display.
+const REDACTED_ENV_VALUE: &str = "<redacted>";
+
+/// Resolve a task's command for display in a dry-run diagnostic.
+///
+/// Tera is rendered with the real environment so conditionals pick the same
+/// branches as a real run (and invalid syntax surfaces the same way). Secrets
+/// are removed only afterwards: `$VAR` expansion is skipped so references stay
+/// visible, and any environment value present in the rendered command is
+/// replaced with a placeholder.
+fn resolve_task_command_for_display<'a>(
+    spec: Option<&CommandConfig>,
+    task_ctx: &TaskContext<'a>,
+) -> Result<Option<Command>, BatchExecutorError> {
+    match spec {
+        Some(spec) => {
+            // Longest-first redaction happens on the rendered string *before*
+            // shell splitting, so a secret containing whitespace is still
+            // matched as one value.
+            let secrets: Vec<&str> =
+                task_ctx.env_vars.values().map(String::as_str).collect();
+
+            let command = resolve_command_with(
+                spec,
+                Some(&task_ctx.template_context),
+                None,
+                |rendered| {
+                    redact_values(rendered, &secrets, REDACTED_ENV_VALUE)
+                },
+            )?;
+
+            Ok(Some(command))
+        }
         None => Ok(None),
     }
 }

@@ -28,3 +28,4 @@ dependencies:
   - omni_capability_enforcement
   - omni_capability_sys
   - omni_config_types
+  - omni_command_config

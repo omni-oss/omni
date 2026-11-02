@@ -70,7 +70,12 @@ describe("+run-filters @e2e (dry run)", () => {
         const ws = makeWorkspace({
             workspace: { projects: ["**"] },
             projects: {
-                app: { name: "app", tasks: { build: 'echo "DRY-MARK"' } },
+                app: {
+                    name: "app",
+                    tasks: {
+                        build: `node -e "require('fs').writeFileSync('dry-ran.txt', 'DRY-MARK')"`,
+                    },
+                },
             },
         });
 
@@ -78,9 +83,178 @@ describe("+run-filters @e2e (dry run)", () => {
 
         expect(result).toHaveSucceeded();
         expect(result).toOutputContaining("Dry run mode enabled");
-        expect(result).toOutputContaining("Executing task 'app#build'");
-        // The command never runs, so its output is absent.
-        expect(result.stdout).not.toContain("DRY-MARK");
+        expect(result).toOutputContaining("Executing task 'app#build':");
+        expect(result).toOutputContaining("dry-ran.txt");
+        // Completion is reported through the same lifecycle event as a real
+        // run, so the CLI prints the same status line.
+        expect(result).toOutputContaining("Executed task 'app#build'");
+        // The command never runs, so it never creates its side-effect file.
+        expect(ws.exists("app/dry-ran.txt")).toBe(false);
+    });
+
+    it("`-d/--dry-run` prints the command with dynamic args expanded", async () => {
+        const ws = makeWorkspace({
+            workspace: { projects: ["**"] },
+            projects: {
+                app: {
+                    name: "app",
+                    tasks: {
+                        greet: `node -e "require('fs').writeFileSync('{{ args.out }}', 'GREET-RAN')"`,
+                    },
+                },
+            },
+        });
+
+        const result = await runOmni(
+            ["run", "greet", "-a", "out=dry-ran.txt", "-d", "--force"],
+            { cwd: ws.cwd },
+        );
+
+        expect(result).toHaveSucceeded();
+        expect(result).toOutputContaining("Executing task 'app#greet':");
+        expect(result).toOutputContaining("dry-ran.txt");
+        // The template is rendered, not echoed back raw.
+        expect(result.stdout).not.toContain("{{ args.out }}");
+        expect(ws.exists("app/dry-ran.txt")).toBe(false);
+    });
+
+    it("`-d/--dry-run` does not print expanded env secrets", async () => {
+        const ws = makeWorkspace({
+            workspace: { projects: ["**"] },
+            projects: {
+                app: {
+                    name: "app",
+                    tasks: {
+                        login: {
+                            exec: `node -e "require('fs').writeFileSync('token.txt', process.argv[1])" $TOKEN {{ env.TOKEN }}`,
+                            env: { vars: { TOKEN: "super-secret-token" } },
+                        },
+                    },
+                },
+            },
+        });
+
+        // `--force` skips the cache-replay path so the plan is resolved (and
+        // printed) even if this task ran before.
+        const result = await runOmni(["run", "login", "-d", "--force"], {
+            cwd: ws.cwd,
+        });
+
+        expect(result).toHaveSucceeded();
+        expect(result).toOutputContaining("Executing task 'app#login':");
+        // The reference is shown, but not the value it expands to at runtime.
+        expect(result).toOutputContaining("$TOKEN");
+        expect(result).toOutputContaining("<redacted>");
+        expect(result.stdout).not.toContain("super-secret-token");
+        // Dry run still never executes the task.
+        expect(ws.exists("app/token.txt")).toBe(false);
+    });
+
+    it("`-d/--dry-run` keeps the real Tera branch for env conditionals", async () => {
+        const ws = makeWorkspace({
+            workspace: { projects: ["**"] },
+            projects: {
+                app: {
+                    name: "app",
+                    tasks: {
+                        ready: {
+                            exec: `{% if env.MODE == 'prod' %}echo ready{% else %}echo "unterminated{% endif %}`,
+                            env: { vars: { MODE: "prod" } },
+                        },
+                    },
+                },
+            },
+        });
+
+        const result = await runOmni(["run", "ready", "-d", "--force"], {
+            cwd: ws.cwd,
+        });
+
+        // The runnable branch is selected, so the dry run must not fail on the
+        // unterminated quote from the other branch.
+        expect(result).toHaveSucceeded();
+        expect(result).toOutputContaining(
+            "Executing task 'app#ready': echo ready",
+        );
+    });
+
+    it("`-d/--dry-run` redacts env secrets that contain whitespace", async () => {
+        const ws = makeWorkspace({
+            workspace: { projects: ["**"] },
+            projects: {
+                app: {
+                    name: "app",
+                    tasks: {
+                        spaced: {
+                            exec: "echo {{ env.TOKEN }}",
+                            env: { vars: { TOKEN: "secret phrase" } },
+                        },
+                    },
+                },
+            },
+        });
+
+        const result = await runOmni(["run", "spaced", "-d", "--force"], {
+            cwd: ws.cwd,
+        });
+
+        expect(result).toHaveSucceeded();
+        expect(result).toOutputContaining("<redacted>");
+        // Neither half of the value may leak once shell splitting runs.
+        expect(result.stdout).not.toContain("secret");
+        expect(result.stdout).not.toContain("phrase");
+    });
+
+    it("`-d/--dry-run` escapes terminal control characters in the command", async () => {
+        const ws = makeWorkspace({
+            workspace: { projects: ["**"] },
+            projects: {
+                app: {
+                    name: "app",
+                    // OSC 52 clipboard write: ESC ] 52 ; c ; <data> BEL.
+                    tasks: { osc: `echo "\x1b]52;c;c2VjcmV0\x07"` },
+                },
+            },
+        });
+
+        const result = await runOmni(["run", "osc", "-d", "--force"], {
+            cwd: ws.cwd,
+        });
+
+        expect(result).toHaveSucceeded();
+        expect(result).toOutputContaining("Executing task 'app#osc':");
+        // The control bytes are rendered inert instead of reaching the
+        // terminal, where an OSC 52 sequence could rewrite the clipboard.
+        expect(result.stdout).toContain("\\u{1b}");
+        expect(result.stdout).not.toContain("\x1b]52;c;c2VjcmV0");
+        expect(result.stdout).not.toContain("\x07");
+    });
+
+    it("`-d/--dry-run` surfaces an invalid retry command", async () => {
+        const ws = makeWorkspace({
+            workspace: { projects: ["**"] },
+            projects: {
+                app: {
+                    name: "app",
+                    tasks: {
+                        flaky: {
+                            exec: "echo hi",
+                            retry_exec: "echo 'unterminated",
+                        },
+                    },
+                },
+            },
+        });
+
+        // `--ignore-dependencies` plans the task directly with its
+        // `retry_exec`, so the dry run must reject the invalid retry command.
+        const result = await runOmni(
+            ["run", "flaky", "-d", "--ignore-dependencies"],
+            { cwd: ws.cwd },
+        );
+
+        expect(result).toHaveFailed();
+        expect(result).toHaveStderrContaining("invalid shell command syntax");
     });
 });
 
@@ -632,7 +806,12 @@ describe("+run-filters @output (result + dry-run combination)", () => {
         const ws = makeWorkspace({
             workspace: { projects: ["**"] },
             projects: {
-                app: { name: "app", tasks: { build: 'echo "DRY-MARK"' } },
+                app: {
+                    name: "app",
+                    tasks: {
+                        build: `node -e "require('fs').writeFileSync('dry-ran.txt', 'DRY-MARK')"`,
+                    },
+                },
             },
         });
 
@@ -652,7 +831,7 @@ describe("+run-filters @output (result + dry-run combination)", () => {
         expect(result).toHaveSucceeded();
         // The task never executes, but the results file is still written in the
         // requested format regardless of the `.dat` extension.
-        expect(result.stdout).not.toContain("DRY-MARK");
+        expect(ws.exists("app/dry-ran.txt")).toBe(false);
         expect(ws.exists("results.dat")).toBe(true);
         expect(ws.read("results.dat")).toContain("status:");
     });
@@ -663,7 +842,12 @@ describe("+run-filters @output (ui downgrade)", () => {
         const ws = makeWorkspace({
             workspace: { projects: ["**"] },
             projects: {
-                app: { name: "app", tasks: { build: 'echo "PLAN-MARK"' } },
+                app: {
+                    name: "app",
+                    tasks: {
+                        build: `node -e "require('fs').writeFileSync('dry-ran.txt', 'PLAN-MARK')"`,
+                    },
+                },
             },
         });
 
@@ -676,7 +860,7 @@ describe("+run-filters @output (ui downgrade)", () => {
         expect(result).toHaveSucceeded();
         expect(result).toOutputContaining("Dry run mode enabled");
         expect(result).toOutputContaining("Executing task 'app#build'");
-        expect(result.stdout).not.toContain("PLAN-MARK");
+        expect(ws.exists("app/dry-ran.txt")).toBe(false);
     });
 });
 

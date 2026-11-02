@@ -15,3 +15,4 @@ dependencies:
   - omni_config_types
   - omni_utils
   - omni_glob
+  - omni_command_config

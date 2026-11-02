@@ -36,3 +36,4 @@ dependencies:
   - omni_glob
   - omni_glob_config
   - omni_config_types
+  - omni_command_config
