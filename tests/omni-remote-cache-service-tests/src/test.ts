@@ -1,60 +1,42 @@
-import { afterAll, beforeAll, test as baseTest } from "vitest";
+import { afterAll, beforeAll, describe } from "vitest";
 
-import { type RunningTarget, resolveTarget } from "./targets";
+import { resolveTargets, type Target } from "./targets";
 
-const ports = new Set<number>();
-const target = resolveTarget();
-
-function allocatePort(): number {
-    let port = 3400;
-    while (ports.has(port)) port++;
-    ports.add(port);
-    return port;
+export interface TargetContext {
+    readonly name: string;
+    readonly apiBaseUrl: string;
 }
 
-let shared: Promise<RunningTarget> | null = null;
-function startShared() {
-    if (!shared) {
-        const port = allocatePort();
-        shared = target.start(port);
-    }
-    return shared;
+let nextPort = 3400;
+
+/**
+ * Data-driven suite: registers `define` once per target (native binary,
+ * Cloudflare worker, ...) so a single run exercises every implementation.
+ * Restrict with `REMOTE_CACHE_TEST_TARGETS=native,worker`.
+ */
+export function describeTargets(
+    name: string,
+    define: (target: TargetContext) => void,
+) {
+    describe.each(resolveTargets())("$name: " + name, (target: Target) => {
+        let running: Awaited<ReturnType<Target["start"]>> | null = null;
+
+        // Booting the worker includes a cargo build, far beyond the default timeout.
+        beforeAll(async () => {
+            running = await target.start(nextPort++);
+        }, 600_000);
+
+        afterAll(async () => {
+            await running?.stop();
+            running = null;
+        });
+
+        define({
+            name: target.name,
+            get apiBaseUrl() {
+                if (!running) throw new Error("target is not running");
+                return running.apiBaseUrl;
+            },
+        });
+    });
 }
-
-// Booting the worker includes a cargo build, far beyond the per-test timeout.
-beforeAll(async () => {
-    if (target.shared) await startShared();
-}, 600_000);
-
-afterAll(async () => {
-    if (shared) await (await shared).stop();
-    shared = null;
-});
-
-export const test = baseTest.extend<{
-    targetName: string;
-    apiBaseUrl: string;
-}>({
-    // oxlint-disable-next-line no-empty-pattern
-    targetName: async ({}, use) => {
-        await use(target.name);
-    },
-    apiBaseUrl: [
-        // oxlint-disable-next-line no-empty-pattern
-        async ({}, use) => {
-            if (target.shared) {
-                await use((await startShared()).apiBaseUrl);
-                return;
-            }
-            const port = allocatePort();
-            const running = await target.start(port);
-            try {
-                await use(running.apiBaseUrl);
-            } finally {
-                await running.stop();
-                ports.delete(port);
-            }
-        },
-        { scope: "test", auto: true },
-    ],
-});

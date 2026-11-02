@@ -7,7 +7,6 @@ import type { Target } from "./types";
 
 export const nativeTarget: Target = {
     name: "native",
-    shared: false,
     async start(port) {
         const host = await getHost().catch(() => "");
         const { path: bin, compileInfo } = resolveServiceBinOrThrow({

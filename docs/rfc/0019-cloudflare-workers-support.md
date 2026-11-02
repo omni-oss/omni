@@ -58,11 +58,11 @@ Implemented:
    - `omni/presets/rust-cloudflare-worker.omni.yaml` (worker) adds `check-wasm-deps`, which fails if `mio`, `socket2`, `tokio-util` or `aws-sdk-s3` appear in the wasm dependency graph (guards against feature unification), and a `build` task running `worker-build --release` (installed on demand at a pinned version) with `build/**` cached as output.
 3. **getrandom**: `.cargo/config.toml` sets the `wasm_js` backend cfg for the wasm target.
 
-Verified locally: `worker-build --release` produces a 1.5 MB wasm bundle, and the `omni-remote-cache-service-tests` suite passes against both targets (`REMOTE_CACHE_TEST_TARGET=native|worker`, task `test:service:worker`). The worker target runs `wrangler dev --local` (miniflare R2, fresh state each run); a 20 MiB artifact round-trip covers the multipart path.
+Verified locally: `worker-build --release` produces a 1.5 MB wasm bundle, and the `omni-remote-cache-service-tests` suite passes against both targets (one run covers both targets; `REMOTE_CACHE_TEST_TARGETS` restricts them). The worker target runs `wrangler dev --local` (miniflare R2, fresh state each run); a 20 MiB artifact round-trip covers the multipart path.
 
 Follow-ups (not in this PR):
 
-- Run `test:service:worker` in CI.
+- Confirm the combined service spec (native + worker) is stable on every CI platform.
 - Publish via `wrangler deploy` on `omni-remote-cache-worker-v*` tags (needs `CLOUDFLARE_API_TOKEN`).
 - Cache `~/.cargo/bin/worker-build` in the setup-tools action.
 

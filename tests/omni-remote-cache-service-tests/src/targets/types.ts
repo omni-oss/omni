@@ -5,7 +5,5 @@ export interface RunningTarget {
 
 export interface Target {
     name: string;
-    /** When true the instance is started once per process and shared. */
-    shared: boolean;
     start: (port: number) => Promise<RunningTarget>;
 }
