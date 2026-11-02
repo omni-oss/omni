@@ -15,7 +15,8 @@ use tokio_stream::StreamExt;
 use tokio_util::io::ReaderStream;
 
 use omni_remote_cache_storage_core::{
-    BoxStream, ListItem, PageOptions, RemoteCacheStorageBackend, error::Error,
+    BoxStream, ListItem, PageOptions, ReadStream, RemoteCacheStorageBackend,
+    error::Error,
 };
 
 #[derive(Debug, new)]
@@ -71,22 +72,16 @@ impl RemoteCacheStorageBackend for LocalDiskCacheBackend {
         &self,
         container: Option<&str>,
         key: &str,
-    ) -> Result<Option<BoxStream<Bytes>>, Error> {
+    ) -> Result<Option<ReadStream>, Error> {
         let path = self.path(key, container);
 
         if tokio::fs::try_exists(&path).await.map_err(Error::custom)? {
             let stream = ReaderStream::new(
                 File::open(path).await.map_err(Error::custom)?,
             )
-            .filter_map(|x| match x {
-                Ok(b) => Some(b),
-                Err(e) => {
-                    log::error!("error reading file: {}", e);
-                    None
-                }
-            });
+            .map(|r| r.map_err(Error::custom));
 
-            Ok(Some(Box::pin(stream) as BoxStream<Bytes>))
+            Ok(Some(Box::pin(stream) as ReadStream))
         } else {
             Ok(None)
         }

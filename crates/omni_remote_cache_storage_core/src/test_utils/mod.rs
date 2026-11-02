@@ -86,7 +86,9 @@ macro_rules! decl_remote_cache_storage_backend_tests {
 
             let mut value = BytesMut::new();
             while let Some(chunk) = stream.next().await {
-                value.extend_from_slice(&chunk);
+                value.extend_from_slice(
+                    &chunk.expect("chunk should be readable"),
+                );
             }
 
             assert_eq!(value, Bytes::from("value1"));
@@ -104,7 +106,9 @@ macro_rules! decl_remote_cache_storage_backend_tests {
 
             let mut value = BytesMut::new();
             while let Some(chunk) = stream.next().await {
-                value.extend_from_slice(&chunk);
+                value.extend_from_slice(
+                    &chunk.expect("chunk should be readable"),
+                );
             }
 
             assert_eq!(value, Bytes::from("value1"));

@@ -17,6 +17,11 @@ pub struct PageOptions {
 pub type BoxStream<T> =
     Pin<Box<dyn futures::Stream<Item = T> + 'static + Send>>;
 
+/// Read side of an object: items are fallible so a mid-stream failure is
+/// surfaced to the caller instead of silently truncating the data.
+pub type ReadStream =
+    Pin<Box<dyn futures::Stream<Item = Result<Bytes, Error>> + 'static + Send>>;
+
 #[async_trait]
 pub trait RemoteCacheStorageBackend {
     fn default_container(&self) -> &str;
@@ -37,7 +42,7 @@ pub trait RemoteCacheStorageBackend {
         &self,
         container: Option<&str>,
         key: &str,
-    ) -> Result<Option<BoxStream<Bytes>>, Error>;
+    ) -> Result<Option<ReadStream>, Error>;
 
     async fn list(
         &self,

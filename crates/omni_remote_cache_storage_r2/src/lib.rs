@@ -11,7 +11,8 @@ use bytes::{Bytes, BytesMut};
 use bytesize::ByteSize;
 use futures::{Stream, StreamExt as _};
 use omni_remote_cache_storage_core::{
-    BoxStream, ListItem, PageOptions, RemoteCacheStorageBackend, error::Error,
+    BoxStream, ListItem, PageOptions, ReadStream, RemoteCacheStorageBackend,
+    error::Error,
 };
 use send_wrapper::SendWrapper;
 use worker::{Bucket, MultipartUpload, UploadedPart, send::SendFuture};
@@ -55,10 +56,12 @@ fn err(e: worker::Error) -> Error {
     Error::custom(eyre::eyre!(e.to_string()))
 }
 
-struct SendStream(SendWrapper<Pin<Box<dyn Stream<Item = Bytes>>>>);
+type LocalReadStream = Pin<Box<dyn Stream<Item = Result<Bytes, Error>>>>;
+
+struct SendStream(SendWrapper<LocalReadStream>);
 
 impl Stream for SendStream {
-    type Item = Bytes;
+    type Item = Result<Bytes, Error>;
 
     fn poll_next(
         self: Pin<&mut Self>,
@@ -219,7 +222,7 @@ impl RemoteCacheStorageBackend for R2Backend {
         &self,
         container: Option<&str>,
         key: &str,
-    ) -> Result<Option<BoxStream<Bytes>>, Error> {
+    ) -> Result<Option<ReadStream>, Error> {
         let key = self.object_key(container, key);
         SendFuture::new(async {
             let Some(object) =
@@ -232,18 +235,11 @@ impl RemoteCacheStorageBackend for R2Backend {
             };
 
             let stream = body.stream().map_err(err)?;
-            let stream = stream
-                .take_while(|r| {
-                    if let Err(e) = r {
-                        log::error!("error reading from R2 stream: {e}");
-                    }
-                    std::future::ready(r.is_ok())
-                })
-                .filter_map(|r| std::future::ready(r.ok().map(Bytes::from)));
+            let stream = stream.map(|r| r.map(Bytes::from).map_err(err));
 
             Ok(Some(
                 Box::pin(SendStream(SendWrapper::new(Box::pin(stream))))
-                    as BoxStream<Bytes>,
+                    as ReadStream,
             ))
         })
         .await

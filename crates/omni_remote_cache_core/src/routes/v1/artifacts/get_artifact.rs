@@ -1,12 +1,9 @@
-use std::convert::Infallible;
-
 use axum::{
     body::Body,
     extract::{Query, State},
     response::{IntoResponse, Response},
 };
 use axum_extra::{response::InternalServerError, routing::TypedPath};
-use futures::StreamExt;
 use http::{StatusCode, header};
 use serde::Deserialize;
 use utoipa::IntoParams;
@@ -83,7 +80,7 @@ pub async fn get_artifact(
     match x {
         Ok(o) => match o {
             Some(stream) => {
-                let body = Body::from_stream(stream.map(Ok::<_, Infallible>));
+                let body = Body::from_stream(stream);
 
                 Response::builder()
                     .status(StatusCode::OK)

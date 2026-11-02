@@ -9,7 +9,7 @@ use derive_new::new;
 use futures::StreamExt as _;
 use maps::{Map, UnorderedMap};
 use omni_remote_cache_storage_core::{
-    BoxStream, ListItem, PageOptions, RemoteCacheStorageBackend, error::Error,
+    BoxStream, ListItem, ReadStream, PageOptions, RemoteCacheStorageBackend, error::Error,
 };
 
 #[derive(Debug, new)]
@@ -72,7 +72,7 @@ impl RemoteCacheStorageBackend for InMemoryBackend {
         &self,
         container: Option<&str>,
         key: &str,
-    ) -> Result<Option<BoxStream<Bytes>>, Error> {
+    ) -> Result<Option<ReadStream>, Error> {
         let container = self.container(container);
         let result =
             self.lock()
@@ -80,8 +80,8 @@ impl RemoteCacheStorageBackend for InMemoryBackend {
                 .and_then(|m| m.get(key))
                 .map(|v| {
                     Box::pin(futures::stream::once(std::future::ready(
-                        Bytes::copy_from_slice(v),
-                    ))) as BoxStream<Bytes>
+                        Ok(Bytes::copy_from_slice(v)),
+                    ))) as ReadStream
                 });
 
         Ok(result)

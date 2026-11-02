@@ -17,7 +17,8 @@ use tokio_stream::StreamExt;
 use tokio_util::io::ReaderStream;
 
 use omni_remote_cache_storage_core::{
-    BoxStream, ListItem, PageOptions, RemoteCacheStorageBackend, error::Error,
+    BoxStream, ListItem, PageOptions, ReadStream, RemoteCacheStorageBackend,
+    error::Error,
 };
 
 // --- S3 Backend Struct ---
@@ -233,7 +234,7 @@ impl RemoteCacheStorageBackend for S3CacheBackend {
         &self,
         container: Option<&str>,
         key: &str,
-    ) -> Result<Option<BoxStream<Bytes>>, Error> {
+    ) -> Result<Option<ReadStream>, Error> {
         let (bucket, prefix) = self.get_bucket_and_prefix(container);
 
         let request = self
@@ -249,13 +250,7 @@ impl RemoteCacheStorageBackend for S3CacheBackend {
                 let data = output.body.into_async_read();
 
                 let reader_stream =
-                    ReaderStream::new(data).filter_map(|e| match e {
-                        Ok(b) => Some(b),
-                        Err(e) => {
-                            log::error!("Error reading from stream: {}", e);
-                            None
-                        }
-                    });
+                    ReaderStream::new(data).map(|r| r.map_err(Error::custom));
 
                 Ok(Some(Box::pin(reader_stream)))
             }

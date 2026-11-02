@@ -7720,7 +7720,6 @@ dependencies = [
  "bytesize",
  "eyre",
  "futures 0.3.34",
- "log",
  "omni_remote_cache_storage_core",
  "send_wrapper",
  "worker",

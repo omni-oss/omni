@@ -9,7 +9,8 @@ use bytesize::ByteSize;
 use futures::StreamExt as _;
 
 use crate::{
-    BoxStream, ListItem, PageOptions, RemoteCacheStorageBackend, error::Error,
+    BoxStream, ListItem, PageOptions, ReadStream, RemoteCacheStorageBackend,
+    error::Error,
 };
 
 const DEFAULT_MAX_CACHEABLE_SIZE: ByteSize = ByteSize::mib(8);
@@ -96,11 +97,11 @@ where
         &self,
         container: Option<&str>,
         key: &str,
-    ) -> Result<Option<BoxStream<Bytes>>, Error> {
+    ) -> Result<Option<ReadStream>, Error> {
         let cached = self.cache().get(&self.cache_key(container, key)).cloned();
         if let Some(cached) = cached {
             return Ok(Some(Box::pin(futures::stream::once(
-                std::future::ready(cached),
+                std::future::ready(Ok(cached)),
             ))));
         }
 

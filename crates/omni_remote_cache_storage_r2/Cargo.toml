@@ -15,7 +15,6 @@ async-trait = { workspace = true }
 bytes = { workspace = true }
 bytesize = { workspace = true }
 eyre = { workspace = true }
-log = { workspace = true }
 futures = { workspace = true }
 send_wrapper = { workspace = true }
 worker = { workspace = true }
