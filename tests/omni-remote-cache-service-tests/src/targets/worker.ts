@@ -14,6 +14,7 @@ import { waitForServer } from "./wait";
  */
 export const workerTarget: Target = {
     name: "worker",
+    basePort: 3500,
     async start(port) {
         const workspace = process.env.WORKSPACE_DIR;
         if (!workspace) {

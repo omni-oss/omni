@@ -7,7 +7,7 @@ export interface TargetContext {
     readonly apiBaseUrl: string;
 }
 
-let nextPort = 3400;
+const offsets = new Map<string, number>();
 
 /**
  * Data-driven suite: registers `define` once per target (native binary,
@@ -23,7 +23,9 @@ export function describeTargets(
 
         // Booting the worker includes a cargo build, far beyond the default timeout.
         beforeAll(async () => {
-            running = await target.start(nextPort++);
+            const offset = offsets.get(target.name) ?? 0;
+            offsets.set(target.name, offset + 1);
+            running = await target.start(target.basePort + offset);
         }, 600_000);
 
         afterAll(async () => {
