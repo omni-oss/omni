@@ -136,6 +136,24 @@ pub fn resolve_command(
     tera_ctx: Option<&omni_tera::Context>,
     env_vars: Option<&Map<String, String>>,
 ) -> Result<Command, ResolveError> {
+    resolve_command_with(spec, tera_ctx, env_vars, |s| s)
+}
+
+/// Like [`resolve_command`], but passes each rendered string through
+/// `transform` *before* it is shell-split.
+///
+/// Redacting here (rather than on the split argv) keeps a value containing
+/// whitespace matchable: once `shlex` splits `secret phrase` into two
+/// arguments, neither half matches the original value.
+pub fn resolve_command_with<F>(
+    spec: &CommandConfig,
+    tera_ctx: Option<&omni_tera::Context>,
+    env_vars: Option<&Map<String, String>>,
+    transform: F,
+) -> Result<Command, ResolveError>
+where
+    F: for<'s> Fn(Cow<'s, str>) -> Cow<'s, str>,
+{
     match spec {
         CommandConfig::Shell(s) => {
             let s = maybe_render(s, tera_ctx)?;
@@ -143,6 +161,7 @@ pub fn resolve_command(
                 Some(vars) => Cow::Owned(::env::expand(s.as_ref(), vars)),
                 None => s,
             };
+            let s = transform(s);
             let argv = shlex::split(s.as_ref())
                 .ok_or(ResolveError::InvalidShellSyntax)?;
 
@@ -153,10 +172,13 @@ pub fn resolve_command(
                 .iter()
                 .map(|e| {
                     let e = maybe_render(e, tera_ctx)?;
-                    Ok(match env_vars {
-                        Some(vars) => ::env::expand(e.as_ref(), vars),
-                        None => e.into_owned(),
-                    })
+                    let e = match env_vars {
+                        Some(vars) => {
+                            Cow::Owned(::env::expand(e.as_ref(), vars))
+                        }
+                        None => e,
+                    };
+                    Ok(transform(e).into_owned())
                 })
                 .collect::<Result<Vec<String>, ResolveError>>()?;
 

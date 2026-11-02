@@ -4,7 +4,8 @@ use futures::stream::{FuturesUnordered, StreamExt as _};
 use maps::{UnorderedMap, unordered_map};
 use omni_cache::{CachedTaskExecution, TaskExecutionCacheStore};
 use omni_command_config::{
-    Command, CommandConfig, escape_control_chars, resolve_command,
+    Command, CommandConfig, escape_control_chars, redact_values,
+    resolve_command, resolve_command_with,
 };
 use omni_config_types::TeraExprBoolean;
 use omni_context::LoadedContext;
@@ -745,31 +746,20 @@ fn resolve_task_command_for_display<'a>(
 ) -> Result<Option<Command>, BatchExecutorError> {
     match spec {
         Some(spec) => {
-            let mut command =
-                resolve_command(spec, Some(&task_ctx.template_context), None)?;
+            // Longest-first redaction happens on the rendered string *before*
+            // shell splitting, so a secret containing whitespace is still
+            // matched as one value.
+            let secrets: Vec<&str> =
+                task_ctx.env_vars.values().map(String::as_str).collect();
 
-            // Longest values first so a value cannot partially mask a longer
-            // one that contains it.
-            let mut secrets: Vec<&str> = task_ctx
-                .env_vars
-                .values()
-                .map(String::as_str)
-                .filter(|value| !value.is_empty())
-                .collect();
-            secrets.sort_by_key(|value| std::cmp::Reverse(value.len()));
-
-            let redact = |text: &mut String| {
-                for secret in &secrets {
-                    if text.contains(secret) {
-                        *text = text.replace(secret, REDACTED_ENV_VALUE);
-                    }
-                }
-            };
-
-            if let Some(prog) = command.prog.as_mut() {
-                redact(prog);
-            }
-            command.args.iter_mut().for_each(redact);
+            let command = resolve_command_with(
+                spec,
+                Some(&task_ctx.template_context),
+                None,
+                |rendered| {
+                    redact_values(rendered, &secrets, REDACTED_ENV_VALUE)
+                },
+            )?;
 
             Ok(Some(command))
         }

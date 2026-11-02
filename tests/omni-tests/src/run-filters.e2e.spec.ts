@@ -178,6 +178,33 @@ describe("+run-filters @e2e (dry run)", () => {
         );
     });
 
+    it("`-d/--dry-run` redacts env secrets that contain whitespace", async () => {
+        const ws = makeWorkspace({
+            workspace: { projects: ["**"] },
+            projects: {
+                app: {
+                    name: "app",
+                    tasks: {
+                        spaced: {
+                            exec: "echo {{ env.TOKEN }}",
+                            env: { vars: { TOKEN: "secret phrase" } },
+                        },
+                    },
+                },
+            },
+        });
+
+        const result = await runOmni(["run", "spaced", "-d", "--force"], {
+            cwd: ws.cwd,
+        });
+
+        expect(result).toHaveSucceeded();
+        expect(result).toOutputContaining("<redacted>");
+        // Neither half of the value may leak once shell splitting runs.
+        expect(result.stdout).not.toContain("secret");
+        expect(result.stdout).not.toContain("phrase");
+    });
+
     it("`-d/--dry-run` escapes terminal control characters in the command", async () => {
         const ws = makeWorkspace({
             workspace: { projects: ["**"] },

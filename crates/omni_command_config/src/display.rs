@@ -52,9 +52,58 @@ where
     escape_control_chars(&rendered).into_owned()
 }
 
+/// Replace every occurrence of each value in `secrets` with `placeholder`.
+///
+/// Longer values are replaced first so a short value cannot partially mask a
+/// longer one that contains it. Empty values are ignored. Works on the
+/// unsplit string, so values containing whitespace are matched intact.
+pub fn redact_values<'a>(
+    input: Cow<'a, str>,
+    secrets: &[&str],
+    placeholder: &str,
+) -> Cow<'a, str> {
+    let mut ordered: Vec<&str> =
+        secrets.iter().copied().filter(|s| !s.is_empty()).collect();
+    ordered.sort_by_key(|s| std::cmp::Reverse(s.len()));
+
+    let mut text = input;
+    for secret in ordered {
+        if text.contains(secret) {
+            text = Cow::Owned(text.replace(secret, placeholder));
+        }
+    }
+    text
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn redact_replaces_values_with_whitespace_intact() {
+        let out = redact_values(
+            Cow::Borrowed("echo secret phrase"),
+            &["secret phrase"],
+            "<redacted>",
+        );
+        assert_eq!(out, "echo <redacted>");
+    }
+
+    #[test]
+    fn redact_prefers_longer_values() {
+        let out = redact_values(
+            Cow::Borrowed("tok-abc"),
+            &["tok", "tok-abc"],
+            "<redacted>",
+        );
+        assert_eq!(out, "<redacted>");
+    }
+
+    #[test]
+    fn redact_ignores_empty_values_and_borrows_when_unchanged() {
+        let out = redact_values(Cow::Borrowed("echo hi"), &[""], "<redacted>");
+        assert!(matches!(out, Cow::Borrowed("echo hi")));
+    }
 
     #[test]
     fn escape_leaves_printable_text_alone() {
