@@ -7753,17 +7753,14 @@ dependencies = [
 name = "omni_remote_cache_worker"
 version = "0.1.0"
 dependencies = [
- "bon",
- "derive-new",
+ "axum",
+ "console_error_panic_hook",
  "eyre",
- "log",
- "rstest",
- "rstest_reuse",
- "strum 0.28.0",
- "test-log",
- "thiserror 2.0.21",
- "trace",
- "tracing",
+ "http 1.5.0",
+ "omni_remote_cache_core",
+ "omni_remote_cache_storage_r2",
+ "tower-service",
+ "worker",
 ]
 
 [[package]]
