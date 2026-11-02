@@ -1,6 +1,6 @@
 # RFC 0020: Surface meta filter runtime errors
 
-- **Status:** Accepted <!-- Draft | Accepted | Implemented | Superseded -->
+- **Status:** Implemented <!-- Draft | Accepted | Implemented | Superseded -->
 - **Owner:** TBD
 - **Date:** 2026-11-02
 - **Base branch:** `main`

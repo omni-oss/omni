@@ -1,12 +1,12 @@
 use std::{cell::RefCell, fmt, path::PathBuf};
 
 use maps::UnorderedMap;
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
-use strum::{Display, EnumIs, VariantArray};
 use omni_configurations::MetaConfiguration;
 use omni_core::TaskExecutionNode;
 use omni_expressions::ErrorClass;
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+use strum::{Display, EnumIs, VariantArray};
 
 const MAX_SNAPSHOT_KEYS: usize = 20;
 const MAX_SNAPSHOT_VALUE_CHARS: usize = 256;
@@ -190,8 +190,9 @@ impl MetaFilterError {
                             .map(|(k, v)| {
                                 (
                                     k.clone(),
-                                    serde_json::from_str(v)
-                                        .unwrap_or_else(|_| Value::String(v.clone())),
+                                    serde_json::from_str(v).unwrap_or_else(
+                                        |_| Value::String(v.clone()),
+                                    ),
                                 )
                             })
                             .collect::<Map<_, _>>();
@@ -317,7 +318,10 @@ pub struct MetaFilterCollector {
 }
 
 impl MetaFilterCollector {
-    pub fn new(filter: impl Into<String>, limits: MetaFilterErrorLimits) -> Self {
+    pub fn new(
+        filter: impl Into<String>,
+        limits: MetaFilterErrorLimits,
+    ) -> Self {
         Self {
             filter: filter.into(),
             limits,
@@ -419,7 +423,10 @@ fn snapshot(meta: Option<&MetaConfiguration>) -> Vec<(String, String)> {
         .map(|(k, v)| {
             let mut s = v.clone().into_json().to_string();
             if s.chars().count() > MAX_SNAPSHOT_VALUE_CHARS {
-                s = s.chars().take(MAX_SNAPSHOT_VALUE_CHARS).collect::<String>()
+                s = s
+                    .chars()
+                    .take(MAX_SNAPSHOT_VALUE_CHARS)
+                    .collect::<String>()
                     + "…";
             }
             (k.to_string(), s)
@@ -448,7 +455,10 @@ fn closest<'a>(
 
 pub(crate) fn hint(class: &ErrorClass, keys: &[String]) -> Option<String> {
     match class {
-        ErrorClass::MissingReference { name, is_call: false } => {
+        ErrorClass::MissingReference {
+            name,
+            is_call: false,
+        } => {
             let mut h = format!("`{name}` is not defined for this task.");
             if let Some(k) = closest(name, keys.iter().map(|k| k.as_str())) {
                 h.push_str(&format!(" Did you mean `{k}`?"));
@@ -456,7 +466,10 @@ pub(crate) fn hint(class: &ErrorClass, keys: &[String]) -> Option<String> {
             h.push_str(&format!(" For optional keys use has(meta.{name})."));
             Some(h)
         }
-        ErrorClass::MissingReference { name, is_call: true } => {
+        ErrorClass::MissingReference {
+            name,
+            is_call: true,
+        } => {
             let mut h = format!("`{name}` is not a known function.");
             if let Some(f) = closest(name, CEL_FUNCTIONS.iter().copied()) {
                 h.push_str(&format!(" Did you mean `{f}`?"));
@@ -525,9 +538,14 @@ mod tests {
     fn hint_other_is_none() {
         assert!(hint(&ErrorClass::Other, &[]).is_none());
         assert!(
-            hint(&ErrorClass::NonBool { got: "string".into() }, &[])
-                .unwrap()
-                .contains("got `string`")
+            hint(
+                &ErrorClass::NonBool {
+                    got: "string".into()
+                },
+                &[]
+            )
+            .unwrap()
+            .contains("got `string`")
         );
         assert!(
             hint(&ErrorClass::TypeMismatch { detail: "x".into() }, &[])

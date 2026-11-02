@@ -15,7 +15,10 @@ pub struct ContextExecutionPlanProvider<'a, TSys: ContextSys> {
 }
 
 impl<'a, TSys: ContextSys> ContextExecutionPlanProvider<'a, TSys> {
-    pub fn with_meta_error_options(mut self, options: MetaErrorOptions) -> Self {
+    pub fn with_meta_error_options(
+        mut self,
+        options: MetaErrorOptions,
+    ) -> Self {
         self.inner = self.inner.with_meta_error_options(options);
         self
     }

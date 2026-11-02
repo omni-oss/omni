@@ -31,7 +31,10 @@ pub struct DefaultExecutionPlanProvider<'a, TContext: Context + 'a> {
 }
 
 impl<'a, TContext: Context + 'a> DefaultExecutionPlanProvider<'a, TContext> {
-    pub fn with_meta_error_options(mut self, options: MetaErrorOptions) -> Self {
+    pub fn with_meta_error_options(
+        mut self,
+        options: MetaErrorOptions,
+    ) -> Self {
         self.meta_error = options;
         self
     }

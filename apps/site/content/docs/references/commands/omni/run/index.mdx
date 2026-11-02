@@ -84,6 +84,24 @@ Filter the task/projects based on the meta configuration, accepts CEL syntax
 
 - **Required:** No
 
+### `--meta-on-error`
+
+What to do when the --meta filter fails to evaluate for a task: fail with a diagnostic, or exclude the task and warn
+
+- **Required:** No
+
+- **Default:** `fail`
+
+- **Possible values:** `fail`, `exclude`
+
+### `--meta-error-samples`
+
+How many failing tasks to list per distinct --meta error cause
+
+- **Required:** No
+
+- **Default:** `3`
+
 ### `-p`, `--project`
 
 Filter based on the project name matching the passed argument, accepts glob patterns

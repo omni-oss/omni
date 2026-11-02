@@ -157,7 +157,10 @@ where
     /// fails to evaluate, record failures in a bounded collector, exclude the
     /// task, and keep going. Retrieve the aggregate with
     /// [`Self::take_meta_error`].
-    pub fn collect_meta_errors(mut self, limits: MetaFilterErrorLimits) -> Self {
+    pub fn collect_meta_errors(
+        mut self,
+        limits: MetaFilterErrorLimits,
+    ) -> Self {
         if let Some(source) = &self.meta_filter_source {
             self.collector = Some(MetaFilterCollector::new(source, limits));
         }
@@ -531,7 +534,9 @@ mod tests {
         )
         .unwrap();
 
-        let err = filter.should_include_task(&node("project1", "test")).unwrap_err();
+        let err = filter
+            .should_include_task(&node("project1", "test"))
+            .unwrap_err();
         let FilterErrorInner::MetaFilter(e) = &err.0 else {
             panic!("expected meta filter error, got {err}");
         };

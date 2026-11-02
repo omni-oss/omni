@@ -34,7 +34,9 @@ impl MetaConfiguration {
         let mut ctx = omni_expressions::Context::default();
         ctx.add_map_with_root(
             META_VARIABLE,
-            self.0.iter().map(|(k, v)| (k.as_str(), v.clone().into_json())),
+            self.0
+                .iter()
+                .map(|(k, v)| (k.as_str(), v.clone().into_json())),
         )?;
         Ok(ctx)
     }

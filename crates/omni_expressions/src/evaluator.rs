@@ -28,8 +28,8 @@ impl Evaluator {
         &self,
         context: &Context<'p, 'v>,
     ) -> Result<bool, Error> {
-        let result = self.program.execute(&context.inner).map_err(|e| {
-            match e {
+        let result =
+            self.program.execute(&context.inner).map_err(|e| match e {
                 cel::ExecutionError::UndeclaredReference(name)
                     if is_invoked(&self.source, &name) =>
                 {
@@ -38,8 +38,7 @@ impl Evaluator {
                     }
                 }
                 e => ErrorInner::ExecutionError(e),
-            }
-        })?;
+            })?;
 
         match result {
             cel::Value::Bool(b) => Ok(b),
@@ -54,7 +53,8 @@ impl Evaluator {
 fn is_invoked(source: &str, name: &str) -> bool {
     let is_ident = |c: char| c.is_alphanumeric() || c == '_';
     source.match_indices(name).any(|(i, _)| {
-        let before_ok = source[..i].chars().next_back().is_none_or(|c| !is_ident(c));
+        let before_ok =
+            source[..i].chars().next_back().is_none_or(|c| !is_ident(c));
         let after = source[i + name.len()..].trim_start();
         before_ok && after.starts_with('(')
     })

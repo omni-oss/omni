@@ -60,8 +60,7 @@ impl<'p, 'v> Context<'p, 'v> {
         let mut has_root = false;
         for (k, v) in entries {
             let k: String = k.into();
-            let value =
-                v.try_into_value().map_err(|e| eyre::eyre!(e))?;
+            let value = v.try_into_value().map_err(|e| eyre::eyre!(e))?;
             if k == root {
                 has_root = true;
             }

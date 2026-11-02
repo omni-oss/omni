@@ -33,7 +33,7 @@ pub struct RunArgs {
     #[arg(
         long,
         help = "How many failing tasks to list per distinct --meta error cause",
-        default_value_t = 3,
+        default_value_t = 3
     )]
     pub meta_error_samples: usize,
 
