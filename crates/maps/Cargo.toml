@@ -15,3 +15,6 @@ concurrent = ["dep:dashmap"]
 ahash = { workspace = true }
 indexmap = { workspace = true }
 dashmap = { workspace = true, optional = true }
+
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
+getrandom = { workspace = true, features = ["wasm_js"] }
