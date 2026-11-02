@@ -113,8 +113,7 @@ Top-level variables continue to work unchanged. `meta` is always
 injected, as an empty map for tasks with no meta configuration, so
 `has(meta.kind)` is `false` rather than an undeclared-reference error for them
 (today such tasks get a context with no variables at all). It is skipped only if
-the task's meta already defines a key named `meta` (the user key wins and a
-`debug!` is emitted).
+the task's meta already defines a key named `meta` (the user key wins).
 
 ### 4.3 `--meta-on-error`
 
@@ -270,7 +269,7 @@ pub enum ErrorClass {
     MissingReference { name: String, is_call: bool },
     MissingKey { key: String },
     TypeMismatch { detail: String },
-    NonBool { got: &'static str },
+    NonBool { got: String },
     Other,
 }
 
@@ -287,12 +286,11 @@ the expression (checked against the parsed expression, not the message), since
 `UndeclaredReference` is also raised for unknown functions such as `startWith`.
 The `kind()` accessor is no longer `#[allow(unused)]`.
 
-Exposing `meta` must not add copying. `MetaConfiguration::into_expression_context`
-is changed to take `&self` (today it takes `self`, forcing the caller to clone
-the whole configuration per task). It converts the meta to one `cel::Value::Map`
-once and registers it as `meta`; top-level keys are registered from that same
-map's entries. `cel::Value` maps, lists, and strings are `Arc`-backed, so these
-registrations are reference-count bumps, not deep copies. Net allocation is
+Exposing `meta` must not add copying. `MetaConfiguration::to_expression_context(&self)`
+builds the context through `Context::add_map_with_root`. Each value is converted
+once with `v.clone().into_json()`, then the root `meta` map and the top-level
+entries are registered from that conversion. `cel::Value` maps, lists, and strings
+are `Arc`-backed, so these registrations are reference-count bumps, not deep copies. Net allocation is
 lower than today. Caching the context per task is out of scope.
 
 ### 6.2 `omni_execution_plan`
