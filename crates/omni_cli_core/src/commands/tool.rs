@@ -48,14 +48,15 @@ pub struct ToolRunCommand {
     pub name: String,
 
     #[arg(
-        long = "args-json",
-        help = "Tool arguments as a JSON object; merged under any --arg flags"
+        long = "values-json",
+        help = "Tool input values as a JSON object; merged under any --value flags"
     )]
     pub args_json: Option<String>,
 
     #[arg(
-        long = "arg",
-        help = "A single k=v argument (repeatable); overrides matching --args-json keys. The value is parsed as JSON when possible, else treated as a string",
+        short = 'v',
+        long = "value",
+        help = "A single k=v input value (repeatable); overrides matching --values-json keys. The value is parsed as JSON when possible, else treated as a string",
         value_parser = parse_key_value::<String, String>
     )]
     pub arg: Vec<(String, String)>,
@@ -158,8 +159,8 @@ async fn run_tool_run(
     Ok(())
 }
 
-/// Merge the `--args-json` object with repeatable `--arg k=v` flags into a
-/// single JSON object. `--arg` wins on key collisions. Each `--arg` value is
+/// Merge the `--values-json` object with repeatable `--value k=v` flags into a
+/// single JSON object. `--value` wins on key collisions. Each `--value` value is
 /// parsed as JSON when possible so scalars keep their type, otherwise it is
 /// kept as a string. This dual-input merge is a CLI-only convenience.
 fn merge_tool_args(
@@ -169,12 +170,12 @@ fn merge_tool_args(
     let mut merged = match args_json {
         Some(raw) => {
             let value: serde_json::Value = serde_json::from_str(raw)
-                .map_err(|e| eyre::eyre!("invalid --args-json: {e}"))?;
+                .map_err(|e| eyre::eyre!("invalid --values-json: {e}"))?;
             match value {
                 serde_json::Value::Object(map) => map,
                 _ => {
                     return Err(eyre::eyre!(
-                        "--args-json must be a JSON object"
+                        "--values-json must be a JSON object"
                     ));
                 }
             }
