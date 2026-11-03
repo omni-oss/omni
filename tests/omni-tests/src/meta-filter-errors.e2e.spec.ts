@@ -219,8 +219,7 @@ describe("+diagnostics @e2e (registry)", () => {
         });
 
         expect(result).toHaveSucceeded();
-        const json = result.stdout.slice(result.stdout.indexOf("["));
-        const codes = (JSON.parse(json) as Array<{ code: string }>).map(
+        const codes = (JSON.parse(result.stdout) as Array<{ code: string }>).map(
             (e) => e.code,
         );
         expect(codes).toContain("meta_filter.evaluation");
