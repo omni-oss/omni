@@ -1,6 +1,6 @@
 use omni_diagnostic::{Audience, DiagnosticReport, render::chain_messages};
 use rmcp::model::{ErrorCode, ErrorData as McpError};
-use serde_json::{Value, json};
+use serde_json::json;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
 #[derive(Debug, thiserror::Error)]
@@ -51,25 +51,8 @@ pub fn report_to_mcp_error(report: eyre::Report) -> McpError {
         Audience::User => ErrorCode::INVALID_PARAMS,
         Audience::Environment | Audience::Internal => ErrorCode::INTERNAL_ERROR,
     };
-    let mut data = d.to_json();
-    if d.code == "meta_filter.evaluation" {
-        add_legacy_meta_filter_fields(&mut data);
-    }
+    let data = d.to_json();
     McpError::new(code, d.message, Some(data))
-}
-
-/// RFC 0020 clients read `filter`/`total`/`other`/`groups` from the top level
-/// of `data`. Kept for one release, then removed (RFC 0021, section 4.4).
-fn add_legacy_meta_filter_fields(data: &mut Value) {
-    let Some(details) = data.get("details").and_then(Value::as_object).cloned()
-    else {
-        return;
-    };
-    if let Some(top) = data.as_object_mut() {
-        for (k, v) in details {
-            top.entry(k).or_insert(v);
-        }
-    }
 }
 
 #[cfg(test)]

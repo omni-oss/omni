@@ -350,11 +350,11 @@ JSON (`data` in MCP, stderr in `--error-format json`). The envelope is fixed;
 
 `data.kind` for the meta filter changes from `"meta_filter_evaluation"` to
 `"meta_filter.evaluation"`. This **breaks** RFC 0020 clients that dispatch on
-the old value; the compatibility fields below do not restore it. The existing
-`filter`/`total`/`other`/`groups` fields are also emitted at the top level of
-`data` for one release (marked deprecated in the docs), then removed, so
-clients that only read those fields keep working. The `kind` value is the only
-intentional breaking wire change.
+the old value. The RFC 0020 top-level `filter`/`total`/`other`/`groups` fields
+move under `details` with no compatibility copy, which breaks those clients
+too. RFC 0020 is days old and has no known external consumers, so a clean
+envelope is preferred over a deprecation period. Both are called out in the
+changelog.
 
 Text:
 
@@ -537,9 +537,9 @@ is a separate piece of work: omni-oss/omni#47.
   existing error types, not a parallel type hierarchy, and by the `find`
   fallback making migration optional.
 - **Wire stability.** Codes and the JSON envelope become public. Mitigated by
-  the docs table, a snapshot test per migrated code, and the one-release
-  top-level fields in 4.4. The `kind` rename for the meta filter is a
-  deliberate break (4.4) and is called out in the changelog.
+  the docs table and a snapshot test per migrated code. The `kind` rename and
+  the move of the meta filter fields under `details` are a deliberate break
+  (4.4), called out in the changelog.
 - **Exit code change.** Scripts that check `$? -eq 1` for user errors will see
   `2` for migrated diagnostics (same as omni's existing clap usage errors). Mitigated by migrating only the meta filter
   error initially (it is a few days old) and calling this out in the changelog
@@ -568,10 +568,9 @@ Each step is independently shippable.
      verbatim into the function named by `#[diagnostic(body = ...)]`, so the
      CLI layout is unchanged. `details = ...` returns what `to_json` returns
      today.
-   - **Compatibility fields:** the deprecated top-level `filter`, `total`,
-     `other` and `groups` are all kept for one release (`other` is the count
-     of failures whose causes were not retained), and snapshot tests cover
-     each.
+   - **No compatibility fields:** `filter`, `total`, `other` and `groups`
+     (`other` is the count of failures whose causes were not retained) are
+     only under `details`; snapshot tests cover each.
    - **Keep `render_warning`.** The `--meta-on-error exclude` path
      (`execution_plan_provider.rs`) is a notice, which is out of scope (4.5),
      so `render_warning` stays until the warnings RFC replaces it.

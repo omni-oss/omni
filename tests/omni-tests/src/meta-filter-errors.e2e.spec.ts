@@ -246,16 +246,18 @@ describe("+meta-filter-errors @e2e @mcp (task_run)", { tags: ["mcp"] }, () => {
         expect(error?.code).toBe(-32602);
         expect(error?.data.kind).toBe("meta_filter.evaluation");
         expect(error?.data.audience).toBe("user");
-        expect(error?.data.details.total).toBe(3);
-        expect(error?.data.filter).toBe('knd == "e2e"');
-        expect(error?.data.total).toBe(3);
-        const group = error?.data.groups[0];
+        const details = error?.data.details;
+        expect(details.filter).toBe('knd == "e2e"');
+        expect(details.total).toBe(3);
+        expect(details.other).toBe(0);
+        // RFC 0020's top-level fields are gone; they live under `details`.
+        expect(error?.data.filter).toBeUndefined();
+        expect(error?.data.groups).toBeUndefined();
+        const group = details.groups[0];
         expect(group.cause).toContain("Undeclared reference to 'knd'");
         expect(group.count).toBe(3);
         expect(group.samples).toHaveLength(3);
         expect(group.hint).toContain("kind");
-        // Deprecated top-level fields (RFC 0021, section 4.4).
-        expect(error?.data.other).toBe(0);
     });
 
     it("`meta_on_error: exclude` runs the remaining tasks", async () => {
