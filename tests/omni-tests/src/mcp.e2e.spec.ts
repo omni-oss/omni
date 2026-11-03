@@ -2113,7 +2113,7 @@ describe.runIf(denoAvailable())(
             const run = getContent<{ result: { greeting: string } }>(
                 await client.callTool({
                     name: "tool_run",
-                    arguments: { name: "greet", args: { who: "world" } },
+                    arguments: { name: "greet", input_values: { who: "world" } },
                 }),
             );
             expect(run.result).toEqual({ greeting: "hello world" });
@@ -2128,7 +2128,7 @@ describe.runIf(denoAvailable())(
                     name: "tool_run",
                     arguments: {
                         name: "writer",
-                        args: { path: "out.txt" },
+                        input_values: { path: "out.txt" },
                         working_dir: "sub",
                     },
                 }),
