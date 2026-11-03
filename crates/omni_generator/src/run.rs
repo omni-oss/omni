@@ -251,11 +251,6 @@ fn build_input_redactor<S: GeneratorEventSubscriber>(
         return inherited.unwrap_or_else(|| Redactor::builder().build());
     }
 
-    let entries: Vec<(&str, String)> = values
-        .iter()
-        .map(|(k, v)| (k.as_str(), v.to_string()))
-        .collect();
-
     let mut builder = Redactor::builder();
     for input in r#gen.inputs.iter() {
         let paths = omni_input_schema::secret_paths(input);

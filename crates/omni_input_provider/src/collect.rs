@@ -232,16 +232,17 @@ async fn process_pre_filled_value<
     provider: &dyn InputProvider<E>,
 ) -> Result<OwnedValueBag, Error> {
     let input = input.borrow();
+    let shown = || display_value(config, input, key, value);
     // Coerce the raw value to the correct Rust type (e.g. "true" → bool).
     let value = match input {
         Input::Boolean(_) => try_parse_bool(value.by_ref())
-            .ok_or_else(|| make_type_error(key, value.by_ref(), "boolean"))
+            .ok_or_else(|| make_type_error(key, shown(), "boolean"))
             .map(|b| ValueBag::capture_serde1(&b).to_owned())?,
         Input::Integer(_) => try_parse_int(value.by_ref())
-            .ok_or_else(|| make_type_error(key, value.by_ref(), "integer"))
+            .ok_or_else(|| make_type_error(key, shown(), "integer"))
             .map(|i| ValueBag::capture_serde1(&i).to_owned())?,
         Input::Float(_) => try_parse_float(value.by_ref())
-            .ok_or_else(|| make_type_error(key, value.by_ref(), "float"))
+            .ok_or_else(|| make_type_error(key, shown(), "float"))
             .map(|f| ValueBag::capture_serde1(&f).to_owned())?,
         _ => value.clone(),
     };
@@ -440,12 +441,11 @@ fn try_parse_int(value: value_bag::ValueBag<'_>) -> Option<i64> {
 
 fn make_type_error(
     input_name: &str,
-    value: value_bag::ValueBag<'_>,
+    shown: String,
     expected_type: &str,
 ) -> Error {
     Error::from(eyre::eyre!(
-        "{input_name}: value is not of type {expected_type}: value {}",
-        serde_json::to_string_pretty(&value).expect("should serialize"),
+        "{input_name}: value is not of type {expected_type}: value {shown}"
     ))
 }
 
