@@ -60,6 +60,25 @@ describe("+meta-filter-errors @e2e (cli)", () => {
         expect(out).toContain('"kind": "unit"');
         expect(out).toContain("Did you mean `kind`?");
         expect(out).not.toContain("RAN-");
+        expect(out).toContain("error[meta_filter.evaluation]");
+    });
+
+    it("exits 2 and prints JSON with --error-format json", async () => {
+        const ws = makeWorkspace(metaSpec());
+
+        const result = await runOmni(
+            ["run", "test", "--meta", 'knd == "e2e"', "--error-format", "json"],
+            { cwd: ws.cwd },
+        );
+
+        expect(result.exitCode).toBe(2);
+        const line = result.stderr
+            .split("\n")
+            .find((l) => l.startsWith("{"));
+        const body = JSON.parse(line ?? "{}");
+        expect(body.kind).toBe("meta_filter.evaluation");
+        expect(body.audience).toBe("user");
+        expect(body.details.total).toBe(3);
     });
 
     it("a key missing on some tasks fails, naming the task without meta", async () => {
@@ -208,7 +227,9 @@ describe("+meta-filter-errors @e2e @mcp (task_run)", { tags: ["mcp"] }, () => {
 
         expect(error).toBeDefined();
         expect(error?.code).toBe(-32602);
-        expect(error?.data.kind).toBe("meta_filter_evaluation");
+        expect(error?.data.kind).toBe("meta_filter.evaluation");
+        expect(error?.data.audience).toBe("user");
+        expect(error?.data.details.total).toBe(3);
         expect(error?.data.filter).toBe('knd == "e2e"');
         expect(error?.data.total).toBe(3);
         const group = error?.data.groups[0];
@@ -216,6 +237,8 @@ describe("+meta-filter-errors @e2e @mcp (task_run)", { tags: ["mcp"] }, () => {
         expect(group.count).toBe(3);
         expect(group.samples).toHaveLength(3);
         expect(group.hint).toContain("kind");
+        // Deprecated top-level fields (RFC 0021, section 4.4).
+        expect(error?.data.other).toBe(0);
     });
 
     it("`meta_on_error: exclude` runs the remaining tasks", async () => {

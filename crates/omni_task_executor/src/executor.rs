@@ -188,6 +188,11 @@ impl TaskExecutorError {
     }
 }
 
+omni_diagnostic::register_wrapper!(TaskExecutorError, |e| {
+    e.meta_filter_error()
+        .map(|m| m as &dyn omni_diagnostic::Diagnostic)
+});
+
 impl<T: Into<TaskExecutorErrorInner>> From<T> for TaskExecutorError {
     fn from(value: T) -> Self {
         let inner = value.into();

@@ -234,6 +234,21 @@ Context added with `wrap_err` above a diagnostic is preserved as a `context`
 array in both renderers (section 4.4), outermost first. This is what keeps the
 cause chain that MCP currently loses.
 
+**Wrapper types.** `#[error(transparent)]` forwards `source()` past the inner
+error, so a diagnostic wrapped by `FilterError`, `ExecutionPlanProviderError` or
+`TaskExecutorError` never appears in the chain. Such wrappers register a lookup
+that digs the diagnostic out (found while migrating `MetaFilterError`):
+
+```rust
+omni_diagnostic::register_wrapper!(TaskExecutorError, |e| {
+    e.meta_filter_error().map(|m| m as &dyn Diagnostic)
+});
+```
+
+The wrapper's own `Display`/`source()` are unchanged. This keeps the existing
+`Error(ErrorInner)` pattern intact instead of forcing every wrapper to derive
+`Diagnostic`.
+
 The diagnostic's own `std::error::Error::source()` chain (for example the
 `#[source] std::io::Error` of an environment failure) is rendered separately as
 a `causes` array, also outermost first, and as `caused by:` lines in the text
@@ -251,7 +266,13 @@ actually went wrong underneath.
 2. No diagnostic: fall through to the existing `color_eyre` report. Behaviour
    is unchanged.
 
-`color_eyre` stays installed for panics and for un-migrated errors.
+With `--error-format json`, an error that is **not** a diagnostic prints
+`{"message": "<{:#} of the report>", "context": [...]}` (the same fallback
+shape MCP returns) and exits `1`, so scripts never have to parse a
+`color_eyre` report.
+
+`color_eyre` stays installed for panics and for un-migrated errors in `text`
+mode.
 The location section stays debug-only.
 
 Exit codes (new, documented). POSIX only defines `0` as success and non-zero
@@ -523,7 +544,9 @@ Each step is independently shippable.
    risk.
 3. **Migrate `MetaFilterError`.** Derive `Diagnostic`
    (`meta_filter.evaluation`, `Audience::User`) and delete `to_json` and
-   `TaskExecutorError::meta_filter_error` in favour of the trait.
+   `TaskExecutorError::meta_filter_error` in favour of the trait. The
+   `meta_filter_error()` accessors stay as the wrapper lookup (4.2), but the
+   `downcast_ref` branch in `server.rs` goes.
    - **`Display` becomes the one-line summary.** Today `Display` renders the
      full multi-line RFC 0020 body. The migration splits it: `Display`
      (still owned by `thiserror`, via `#[error("meta filter failed to evaluate

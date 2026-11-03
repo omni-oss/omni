@@ -87,6 +87,7 @@ omni_generator = { workspace = true }
 omni_context = { workspace = true }
 omni_term_ui = { workspace = true }
 omni_messages = { workspace = true }
+omni_diagnostic = { workspace = true }
 omni_task_executor = { workspace = true }
 omni_task_output_logs = { workspace = true }
 clap_declspec = { workspace = true }

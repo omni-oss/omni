@@ -170,3 +170,28 @@ fn source_chain_is_reported_as_causes() {
         "error[sample.unreadable]: cannot read config\n  caused by: permission denied\n"
     );
 }
+
+#[derive(Debug, thiserror::Error)]
+#[error(transparent)]
+struct Wrapper(InnerErr);
+
+impl Wrapper {
+    fn diag(&self) -> Option<&dyn Diagnostic> {
+        Some(&self.0)
+    }
+}
+
+omni_diagnostic::register_wrapper!(Wrapper, |w| w.diag());
+
+#[test]
+fn wrapper_exposes_a_diagnostic_hidden_by_transparent() {
+    use std::error::Error;
+    let r: eyre::Report = Wrapper(InnerErr).into();
+    assert!(r.chain().all(|e| e.downcast_ref::<InnerErr>().is_none()));
+    assert!(Wrapper(InnerErr).source().is_none());
+    assert_eq!(find(&r).unwrap().code(), "sample.inner");
+    assert_eq!(
+        DiagnosticReport::from_report(&r).unwrap().code,
+        "sample.inner"
+    );
+}

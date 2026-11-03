@@ -138,6 +138,61 @@ macro_rules! register {
     ($t:ty) => {};
 }
 
+/// Builds a [`Registration`] for a *wrapper* error that hides a diagnostic.
+///
+/// `#[error(transparent)]` forwards `source()` past the inner error, so the
+/// inner diagnostic never appears in the cause chain. A wrapper type exposes
+/// it instead by giving a function that digs it out:
+///
+/// ```ignore
+/// omni_diagnostic::register_wrapper!(TaskExecutorError, |e| {
+///     e.meta_filter_error().map(|m| m as &dyn Diagnostic)
+/// });
+/// ```
+#[macro_export]
+macro_rules! wrapper_registration {
+    ($t:ty, $f:expr) => {{
+        fn __lookup<'a>(
+            e: &'a (dyn ::std::error::Error + 'static),
+        ) -> ::core::option::Option<&'a dyn $crate::Diagnostic> {
+            let f: for<'b> fn(
+                &'b $t,
+            ) -> ::core::option::Option<
+                &'b dyn $crate::Diagnostic,
+            > = $f;
+            e.downcast_ref::<$t>().and_then(f)
+        }
+        $crate::Registration {
+            type_name: ::core::concat!(
+                ::core::module_path!(),
+                "::",
+                ::core::stringify!($t)
+            ),
+            codes: &[],
+            lookup: __lookup,
+        }
+    }};
+}
+
+/// Registers a wrapper error (see [`wrapper_registration!`]).
+#[cfg(all(feature = "inventory", not(feature = "explicit-registry")))]
+#[macro_export]
+macro_rules! register_wrapper {
+    ($t:ty, $f:expr) => {
+        $crate::__private::inventory::submit! {
+            $crate::wrapper_registration!($t, $f)
+        }
+    };
+}
+
+/// Explicit-registry backend: add `wrapper_registration!(..)` to the list
+/// given to `install` instead.
+#[cfg(feature = "explicit-registry")]
+#[macro_export]
+macro_rules! register_wrapper {
+    ($t:ty, $f:expr) => {};
+}
+
 #[cfg(not(any(feature = "inventory", feature = "explicit-registry")))]
 compile_error!(
     "omni_diagnostic needs the `inventory` or `explicit-registry` feature"

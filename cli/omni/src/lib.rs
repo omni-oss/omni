@@ -5,9 +5,10 @@ use std::{
 
 use clap::Parser as _;
 use omni_cli_core::{
-    commands::{self, Cli, CliArgs, CliSubcommands},
+    commands::{self, Cli, CliArgs, CliSubcommands, ErrorFormat},
     context::{self, Context, ContextError, get_root_dir},
 };
+use omni_diagnostic::DiagnosticReport;
 use omni_tracing_subscriber::TracingConfig;
 use scopeguard::defer;
 use system_traits::impls::RealSys;
@@ -92,6 +93,9 @@ pub async fn run(
         CliSubcommands::Declspec(declspec_command) => {
             commands::declspec::run(declspec_command).await?;
         }
+        CliSubcommands::Diagnostics(cmd) => {
+            commands::diagnostics::run(cmd).await?;
+        }
         CliSubcommands::Cache(cache_command) => {
             let context = create_ctx()?;
             commands::cache::run(cache_command, &context).await?;
@@ -158,6 +162,45 @@ async fn run_main() -> eyre::Result<()> {
         .install()?;
 
     let cli = Cli::parse();
+    let error_format = cli.args.error_format;
+
+    match run_cli(cli).await {
+        Ok(()) => Ok(()),
+        Err(report) => report_failure(report, error_format),
+    }
+}
+
+/// Prints a failure and exits for diagnostics (RFC 0021, section 4.3).
+/// Errors that are not diagnostics keep the `color_eyre` report, unless JSON
+/// output was asked for.
+fn report_failure(
+    report: eyre::Report,
+    format: ErrorFormat,
+) -> eyre::Result<()> {
+    if let Some(d) = DiagnosticReport::from_report(&report) {
+        match format {
+            ErrorFormat::Text => eprint!("{}", d.to_text()),
+            ErrorFormat::Json => eprintln!("{}", d.to_json()),
+        }
+        std::process::exit(d.exit_code());
+    }
+
+    if format == ErrorFormat::Json {
+        let context = omni_diagnostic::render::chain_messages(&report);
+        eprintln!(
+            "{}",
+            serde_json::json!({
+                "message": format!("{report:#}"),
+                "context": context,
+            })
+        );
+        std::process::exit(1);
+    }
+
+    Err(report)
+}
+
+async fn run_cli(cli: Cli) -> eyre::Result<()> {
     let shared_mcp =
         matches!(&cli.subcommand, CliSubcommands::Mcp(cmd) if cmd.shared);
 

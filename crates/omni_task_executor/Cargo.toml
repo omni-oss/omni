@@ -68,6 +68,7 @@ ahash = { workspace = true }
 bs58 = { workspace = true }
 num_cpus = { workspace = true }
 omni_messages = { workspace = true }
+omni_diagnostic = { workspace = true }
 
 omni_execution_plan = { workspace = true }
 omni_glob = { workspace = true }
