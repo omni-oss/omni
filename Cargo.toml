@@ -205,6 +205,7 @@ omni_remote_cache_storage_local = { path = "crates/omni_remote_cache_storage_loc
 omni_remote_cache_storage_memory = { path = "crates/omni_remote_cache_storage_memory" }
 worker = { version = "^0.8.7", default-features = false, features = ["http", "axum"] }
 send_wrapper = { version = "^0.6.0" }
+omni_diagnostic = { path = "crates/omni_diagnostic" }
 # @anchor:new-crate
 tracing-futures = { version = "^0.2.5", features = ["tokio"] }
 pathdiff = { version = "^0.2.3" }

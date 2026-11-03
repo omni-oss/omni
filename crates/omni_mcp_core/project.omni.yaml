@@ -15,3 +15,4 @@ dependencies:
   - omni_config_types
   - bridge_rpc_services
   - system_traits
+  - omni_diagnostic

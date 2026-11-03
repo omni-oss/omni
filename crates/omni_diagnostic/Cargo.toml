@@ -1,0 +1,18 @@
+[package]
+name = "omni_diagnostic"
+rust-version.workspace = true
+edition.workspace = true
+version.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[lib]
+name = "omni_diagnostic"
+path = "src/lib.rs"
+
+[dependencies]
+eyre = { workspace = true }
+thiserror = { workspace = true }
+strum = { workspace = true }
+bon = { workspace = true }
+derive-new = { workspace = true }
