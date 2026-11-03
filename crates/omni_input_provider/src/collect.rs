@@ -129,13 +129,42 @@ fn display_value<E: InputProfile>(
             Ok(
                 json @ (serde_json::Value::Object(_)
                 | serde_json::Value::Array(_)),
-            ) => redact_leaves(key, json, &hidden).to_string(),
+            ) => {
+                // Redact known values in string leaves *before* serializing,
+                // so JSON escaping (quotes, newlines) cannot hide them.
+                let json = redact_leaves(key, json, &hidden);
+                match &config.redact_values {
+                    Some(r) => redact_strings(json, r).to_string(),
+                    None => json.to_string(),
+                }
+            }
             _ => value.to_string(),
         }
     };
     match &config.redact_values {
         Some(r) => r.redact(text.as_str()).into_owned(),
         None => text,
+    }
+}
+
+fn redact_strings(
+    value: serde_json::Value,
+    redactor: &omni_redact::Redactor,
+) -> serde_json::Value {
+    use serde_json::Value;
+    match value {
+        Value::String(s) => {
+            Value::String(redactor.redact(s.as_str()).into_owned())
+        }
+        Value::Array(a) => Value::Array(
+            a.into_iter().map(|v| redact_strings(v, redactor)).collect(),
+        ),
+        Value::Object(m) => Value::Object(
+            m.into_iter()
+                .map(|(k, v)| (k, redact_strings(v, redactor)))
+                .collect(),
+        ),
+        other => other,
     }
 }
 
@@ -189,8 +218,17 @@ async fn get_input_value<
     } else if config.use_defaults
         && let Some(expr) = input.dynamic_default_expr()
     {
+        let shown_expr = if omni_input_schema::secret_paths(input.borrow())
+            .iter()
+            .any(|p| p == key)
+            || config.redact.as_ref().is_some_and(|r| r.matches(key))
+        {
+            omni_constants::REDACTED_PLACEHOLDER
+        } else {
+            expr
+        };
         log::debug!(
-            "evaluating dynamic default expression for input {key}: {expr}"
+            "evaluating dynamic default expression for input {key}: {shown_expr}"
         );
         let expanded = omni_tera::one_off(
             expr,

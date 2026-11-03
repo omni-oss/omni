@@ -7392,6 +7392,7 @@ dependencies = [
  "omni_config_types",
  "omni_constants",
  "omni_input_schema",
+ "omni_redact",
  "omni_serde_validators",
  "omni_tera",
  "paste",
