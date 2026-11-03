@@ -268,12 +268,23 @@ fn build_input_redactor<S: GeneratorEventSubscriber>(
     }
     let secrets = builder.build();
 
+    let json_entries: Vec<(&str, serde_json::Value)> = values
+        .iter()
+        .map(|(k, v)| {
+            (
+                k.as_str(),
+                serde_json::to_value(v).unwrap_or_else(|_| {
+                    serde_json::Value::String(v.to_string())
+                }),
+            )
+        })
+        .collect();
     let from_policy = config
         .redact_policy
         .map(|p| {
-            p.redactor(
+            p.redactor_for_json(
                 RedactCategory::Inputs,
-                entries.iter().map(|(k, v)| (*k, v.as_str())),
+                json_entries.iter().map(|(k, v)| (*k, v)),
             )
         })
         .unwrap_or_else(|| Redactor::builder().build());

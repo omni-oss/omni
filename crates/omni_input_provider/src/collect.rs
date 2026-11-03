@@ -119,9 +119,46 @@ fn display_value<E: InputProfile>(
     let redacted = input.base().secret
         || config.redact.as_ref().is_some_and(|r| r.matches(key));
     if redacted {
-        omni_constants::REDACTED_PLACEHOLDER.to_string()
-    } else {
-        value.to_string()
+        return omni_constants::REDACTED_PLACEHOLDER.to_string();
+    }
+    let Some(filter) = config.redact.as_ref() else {
+        return value.to_string();
+    };
+    // Objects and arrays: hide only the leaves selected by dotted names such
+    // as `credentials.token`, keeping their siblings.
+    match serde_json::to_value(value) {
+        Ok(
+            json @ (serde_json::Value::Object(_) | serde_json::Value::Array(_)),
+        ) => redact_leaves(key, json, filter).to_string(),
+        _ => value.to_string(),
+    }
+}
+
+fn redact_leaves(
+    path: &str,
+    value: serde_json::Value,
+    filter: &omni_input_schema::NameFilter,
+) -> serde_json::Value {
+    use serde_json::Value;
+    if filter.matches(path) {
+        return Value::String(omni_constants::REDACTED_PLACEHOLDER.to_string());
+    }
+    match value {
+        Value::Object(m) => Value::Object(
+            m.into_iter()
+                .map(|(k, v)| {
+                    let p = format!("{path}.{k}");
+                    (k, redact_leaves(&p, v, filter))
+                })
+                .collect(),
+        ),
+        Value::Array(a) => Value::Array(
+            a.into_iter()
+                .enumerate()
+                .map(|(i, v)| redact_leaves(&format!("{path}.{i}"), v, filter))
+                .collect(),
+        ),
+        other => other,
     }
 }
 
@@ -426,6 +463,19 @@ impl<'v> value_bag::visit::Visit<'v> for IsStringConvertible {
 #[cfg(test)]
 mod tests {
     use maps::UnorderedMap;
+    #[test]
+    fn redact_leaves_hides_selected_nested_leaf_only() {
+        let filter = omni_input_schema::NameFilter::new(std::sync::Arc::new(
+            |n: &str| n == "creds.token",
+        ));
+        let v = redact_leaves(
+            "creds",
+            json!({"token": "t0k", "user": "bob"}),
+            &filter,
+        );
+        assert_eq!(v, json!({"token": "<redacted>", "user": "bob"}));
+    }
+
     use omni_input_schema::{Input, ValidationConfig};
     use serde_json::json;
     use value_bag::{OwnedValueBag, ValueBag};
