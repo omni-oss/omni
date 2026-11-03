@@ -577,6 +577,28 @@ where
         TSys: bridge_rpc_services::FsSys + bridge_rpc_services::ProcSys,
         <TSys as system_traits::BaseFsMetadataAsync>::Metadata: Send,
     {
+        self.tool_run_redacted(
+            name,
+            args,
+            working_dir,
+            &omni_configurations::RedactOverrides::default(),
+        )
+        .await
+    }
+
+    /// Like [`Self::tool_run`], with command-line redaction overrides applied
+    /// on top of the configured policy. Never reachable from MCP.
+    pub async fn tool_run_redacted(
+        &self,
+        name: &str,
+        args: serde_json::Value,
+        working_dir: Option<crate::operations::tool::ToolWorkingDir>,
+        redact: &omni_configurations::RedactOverrides,
+    ) -> eyre::Result<serde_json::Value>
+    where
+        TSys: bridge_rpc_services::FsSys + bridge_rpc_services::ProcSys,
+        <TSys as system_traits::BaseFsMetadataAsync>::Metadata: Send,
+    {
         let mut ctx = self.ctx.lock().await;
         ctx.load().await?;
         crate::operations::tool::handle_tool_run(
@@ -584,6 +606,7 @@ where
             name,
             args,
             working_dir,
+            redact,
         )
         .await
     }
