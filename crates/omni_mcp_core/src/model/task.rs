@@ -1,4 +1,4 @@
-use omni_task_executor::Force;
+use omni_task_executor::{Force, MetaOnError};
 use omni_task_output_logs::LogsDisplay;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -13,6 +13,17 @@ pub struct TaskRunParams {
     /// Directory filter where tasks will be executed.
     #[serde(default)]
     pub dir: Vec<String>,
+    /// CEL expression selecting tasks by their `meta` configuration. It must
+    /// evaluate to a bool; use `has(meta.key)` for keys that may be missing.
+    #[serde(default)]
+    pub meta: Option<String>,
+    /// What to do when the meta filter fails for a task: `fail` (default)
+    /// returns an error describing the failures, `exclude` skips those tasks.
+    #[serde(default)]
+    pub meta_on_error: MetaOnError,
+    /// Failing tasks to list per distinct meta error cause (default 3).
+    #[serde(default = "default_meta_error_samples")]
+    pub meta_error_samples: usize,
     /// Dry run mode.
     #[serde(default)]
     pub dry_run: bool,
@@ -29,6 +40,10 @@ pub struct TaskRunParams {
     /// Include logs in the response.
     #[serde(default)]
     pub include_logs: Option<LogsDisplay>,
+}
+
+fn default_meta_error_samples() -> usize {
+    3
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]

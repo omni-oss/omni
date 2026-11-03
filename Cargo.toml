@@ -45,6 +45,7 @@ time = { version = "^0.3.55", features = ["serde", "serde-human-readable"] }
 derive_more = { version = "^2.1.1", features = ["full"] }
 derive-new = { version = "^0.7.0" }
 strum = { version = "^0.28.0", features = ["derive"] }
+strsim = { version = "^0.11.1" }
 merge = { version = "0.2.0" }
 tokio = { version = "^1.54.1", features = [
     "rt",

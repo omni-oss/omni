@@ -29,6 +29,9 @@ where
     ) -> eyre::Result<TaskRunResult> {
         let include_logs = params.include_logs.unwrap_or_default();
         let filters = TaskRunFilters {
+            meta: params.meta,
+            meta_on_error: params.meta_on_error,
+            meta_error_samples: params.meta_error_samples,
             project: params.project,
             dir: params.dir,
             dry_run: params.dry_run,
