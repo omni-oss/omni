@@ -1,0 +1,5 @@
+error: invalid code: expected dotted lowercase segments like `area.name` (`^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$`)
+ --> tests/ui/bad_code_format.rs:5:21
+  |
+5 | #[diagnostic(code = "NotDotted")]
+  |                     ^^^^^^^^^^^

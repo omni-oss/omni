@@ -434,6 +434,11 @@ impl ExecutionPlanProviderError {
     }
 }
 
+omni_diagnostic::register_wrapper!(ExecutionPlanProviderError, |e| {
+    e.meta_filter_error()
+        .map(|m| m as &dyn omni_diagnostic::Diagnostic)
+});
+
 impl<T: Into<ExecutionPlanProviderErrorInner>> From<T>
     for ExecutionPlanProviderError
 {
@@ -468,6 +473,63 @@ pub(crate) enum ExecutionPlanProviderErrorInner {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn sample_meta_error(total: usize) -> MetaFilterError {
+        MetaFilterError {
+            filter: "knd == 1".into(),
+            total,
+            groups: vec![crate::MetaFilterGroup {
+                cause: "Undeclared reference to 'knd'".into(),
+                count: total,
+                samples: vec![],
+                omitted: 0,
+                hint: Some("Did you mean `kind`?".into()),
+            }],
+            other: 2,
+        }
+    }
+
+    #[test]
+    fn meta_filter_error_is_found_through_transparent_wrappers() {
+        use eyre::WrapErr;
+        use omni_diagnostic::DiagnosticReport;
+
+        let wrapped = ExecutionPlanProviderError(
+            ExecutionPlanProviderErrorInner::FilterError(FilterError(
+                crate::filter::FilterErrorInner::MetaFilter(sample_meta_error(
+                    500,
+                )),
+            )),
+        );
+        let report: eyre::Report = Err::<(), _>(wrapped)
+            .wrap_err("planning tasks for `test`")
+            .unwrap_err();
+
+        let d = DiagnosticReport::from_report(&report)
+            .expect("meta filter diagnostic");
+        assert_eq!(d.code, "meta_filter.evaluation");
+        assert_eq!(d.context, vec!["planning tasks for `test`"]);
+        assert_eq!(d.message, "meta filter failed to evaluate for 500 task(s)");
+        assert_eq!(d.details.as_ref().unwrap()["other"], 2);
+        assert_eq!(d.details.as_ref().unwrap()["total"], 500);
+        assert_eq!(d.exit_code(), 2);
+        let text = d.to_text();
+        assert!(text.contains("[500 tasks]"), "{text}");
+        assert!(text.contains("hint: Did you mean `kind`?"), "{text}");
+        assert_eq!(
+            d.hints,
+            vec![
+                "Did you mean `kind`?".to_string(),
+                "To skip failing tasks instead, pass --meta-on-error exclude."
+                    .to_string()
+            ]
+        );
+        assert_eq!(d.to_json()["hints"][0], "Did you mean `kind`?");
+        assert!(
+            text.contains("hint: To skip failing tasks instead"),
+            "{text}"
+        );
+    }
 
     #[test]
     fn command_call_preserves_spaced_argument() {

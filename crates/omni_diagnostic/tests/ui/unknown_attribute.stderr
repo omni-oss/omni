@@ -1,0 +1,5 @@
+error: unknown `diagnostic` attribute
+ --> tests/ui/unknown_attribute.rs:5:28
+  |
+5 | #[diagnostic(code = "x.a", severity = warning)]
+  |                            ^^^^^^^^

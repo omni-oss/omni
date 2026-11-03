@@ -16,3 +16,4 @@ dependencies:
   - omni_utils
   - omni_glob
   - omni_command_config
+  - omni_diagnostic

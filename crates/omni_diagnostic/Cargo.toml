@@ -1,0 +1,30 @@
+[package]
+name = "omni_diagnostic"
+rust-version.workspace = true
+edition.workspace = true
+version.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[lib]
+name = "omni_diagnostic"
+path = "src/lib.rs"
+
+[features]
+default = ["inventory"]
+# Default registry backend: constructor sections (Linux, macOS, Windows).
+inventory = ["dep:inventory"]
+# Fallback for targets without constructor sections (e.g. wasm): the binary
+# installs an explicit list with `registry::install`.
+explicit-registry = []
+
+[dependencies]
+eyre = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+inventory = { workspace = true, optional = true }
+omni_diagnostic_derive = { workspace = true }
+
+[dev-dependencies]
+thiserror = { workspace = true }
+trybuild = { workspace = true }

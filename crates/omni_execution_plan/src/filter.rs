@@ -388,6 +388,11 @@ impl FilterError {
     }
 }
 
+omni_diagnostic::register_wrapper!(FilterError, |e| {
+    e.meta_filter_error()
+        .map(|m| m as &dyn omni_diagnostic::Diagnostic)
+});
+
 impl<T: Into<FilterErrorInner>> From<T> for FilterError {
     fn from(value: T) -> Self {
         let repr = value.into();
@@ -462,6 +467,13 @@ mod tests {
     use config_utils::{DictConfig, DynValue};
     use omni_command_config::CommandConfig;
     use omni_core::TaskExecutionNode;
+
+    /// What the CLI prints for a failure.
+    fn shown(report: eyre::Report) -> String {
+        omni_diagnostic::DiagnosticReport::from_report(&report)
+            .map(|d| d.to_text())
+            .unwrap_or_else(|| format!("{report:#}"))
+    }
 
     #[test_log::test]
     fn test_default_task_filter_project_name_and_meta_filter_matching_all() {
@@ -574,7 +586,8 @@ mod tests {
         )
         .unwrap();
         let err = filter.should_include_task(&node("p", "test")).unwrap_err();
-        assert!(err.to_string().contains("got string"), "{err}");
+        let shown = shown(eyre::Report::new(err));
+        assert!(shown.contains("got string"), "{shown}");
     }
 
     #[test_log::test]
@@ -662,7 +675,7 @@ mod tests {
         let e = filter.take_meta_error().unwrap();
         let hint = e.groups[0].hint.as_deref().unwrap();
         assert!(hint.contains("Did you mean `kind`"), "{hint}");
-        let shown = e.to_string();
+        let shown = shown(eyre::Report::new(e));
         assert!(shown.contains("\"kind\": \"unit\""), "{shown}");
     }
 

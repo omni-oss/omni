@@ -495,6 +495,20 @@ include = [
 ]
 public_api = false
 
+[monorepo.packages.omni_diagnostic]
+path = "crates/omni_diagnostic"
+include = [
+    "crates/omni_diagnostic/**",
+]
+public_api = false
+
+[monorepo.packages.omni_diagnostic_derive]
+path = "crates/omni_diagnostic_derive"
+include = [
+    "crates/omni_diagnostic_derive/**",
+]
+public_api = false
+
 # @anchor:new-rust-package
 
 [monorepo.packages."@omni-oss/async-utils"]

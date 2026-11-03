@@ -60,6 +60,25 @@ describe("+meta-filter-errors @e2e (cli)", () => {
         expect(out).toContain('"kind": "unit"');
         expect(out).toContain("Did you mean `kind`?");
         expect(out).not.toContain("RAN-");
+        expect(out).toContain("error[meta_filter.evaluation]");
+    });
+
+    it("exits 2 and prints JSON with --error-format json", async () => {
+        const ws = makeWorkspace(metaSpec());
+
+        const result = await runOmni(
+            ["run", "test", "--meta", 'knd == "e2e"', "--error-format", "json"],
+            { cwd: ws.cwd },
+        );
+
+        expect(result.exitCode).toBe(2);
+        const line = result.stderr
+            .split("\n")
+            .find((l) => l.startsWith("{"));
+        const body = JSON.parse(line ?? "{}");
+        expect(body.kind).toBe("meta_filter.evaluation");
+        expect(body.audience).toBe("user");
+        expect(body.details.total).toBe(3);
     });
 
     it("a key missing on some tasks fails, naming the task without meta", async () => {
@@ -191,6 +210,22 @@ describe("+meta-filter-errors @e2e (cli)", () => {
     });
 });
 
+describe("+diagnostics @e2e (registry)", () => {
+    it("the built binary registers the meta filter diagnostic", async () => {
+        const ws = makeWorkspace(metaSpec());
+
+        const result = await runOmni(["diagnostics", "list", "--format", "json"], {
+            cwd: ws.cwd,
+        });
+
+        expect(result).toHaveSucceeded();
+        const codes = (JSON.parse(result.stdout) as Array<{ code: string }>).map(
+            (e) => e.code,
+        );
+        expect(codes).toContain("meta_filter.evaluation");
+    });
+});
+
 describe("+meta-filter-errors @e2e @mcp (task_run)", { tags: ["mcp"] }, () => {
     it("returns a structured error for a failing meta filter", async () => {
         const ws = makeWorkspace(metaSpec());
@@ -208,10 +243,16 @@ describe("+meta-filter-errors @e2e @mcp (task_run)", { tags: ["mcp"] }, () => {
 
         expect(error).toBeDefined();
         expect(error?.code).toBe(-32602);
-        expect(error?.data.kind).toBe("meta_filter_evaluation");
-        expect(error?.data.filter).toBe('knd == "e2e"');
-        expect(error?.data.total).toBe(3);
-        const group = error?.data.groups[0];
+        expect(error?.data.kind).toBe("meta_filter.evaluation");
+        expect(error?.data.audience).toBe("user");
+        const details = error?.data.details;
+        expect(details.filter).toBe('knd == "e2e"');
+        expect(details.total).toBe(3);
+        expect(details.other).toBe(0);
+        // RFC 0020's top-level fields are gone; they live under `details`.
+        expect(error?.data.filter).toBeUndefined();
+        expect(error?.data.groups).toBeUndefined();
+        const group = details.groups[0];
         expect(group.cause).toContain("Undeclared reference to 'knd'");
         expect(group.count).toBe(3);
         expect(group.samples).toHaveLength(3);

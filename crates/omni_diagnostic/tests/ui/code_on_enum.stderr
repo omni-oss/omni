@@ -1,0 +1,5 @@
+error: only allowed on a variant (or on a struct), not on an enum
+ --> tests/ui/code_on_enum.rs:4:21
+  |
+4 | #[diagnostic(code = "x.a")]
+  |                     ^^^^^

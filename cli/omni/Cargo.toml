@@ -27,6 +27,8 @@ tokio = { workspace = true }
 clap = { workspace = true }
 system_traits = { workspace = true }
 omni_tracing_subscriber = { workspace = true }
+omni_diagnostic = { workspace = true }
+serde_json = { workspace = true }
 
 # Not enabled on Windows: libmimalloc-sys compiles against the dynamic CRT
 # while other deps ship static-CRT objects; MSVC /failifmismatch rejects both.

@@ -205,6 +205,13 @@ omni_remote_cache_storage_local = { path = "crates/omni_remote_cache_storage_loc
 omni_remote_cache_storage_memory = { path = "crates/omni_remote_cache_storage_memory" }
 worker = { version = "^0.8.7", default-features = false, features = ["http", "axum"] }
 send_wrapper = { version = "^0.6.0" }
+omni_diagnostic = { path = "crates/omni_diagnostic" }
+omni_diagnostic_derive = { path = "crates/omni_diagnostic_derive" }
+syn = { version = "^2.0.119", features = ["full", "extra-traits"] }
+quote = { version = "^1.0.47" }
+proc-macro2 = { version = "^1.0" }
+inventory = { version = "^0.3.21" }
+trybuild = { version = "^1.0" }
 # @anchor:new-crate
 tracing-futures = { version = "^0.2.5", features = ["tokio"] }
 pathdiff = { version = "^0.2.3" }

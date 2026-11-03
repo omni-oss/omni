@@ -1,0 +1,5 @@
+error: generic types cannot be registered; add `#[diagnostic(no_register)]` or use a concrete wrapper
+ --> tests/ui/generic_needs_no_register.rs:6:9
+  |
+6 | struct E<T: std::fmt::Display + std::fmt::Debug + Send + Sync + 'static>(T);
+  |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

@@ -5,9 +5,10 @@ use std::{
 
 use clap::Parser as _;
 use omni_cli_core::{
-    commands::{self, Cli, CliArgs, CliSubcommands},
+    commands::{self, Cli, CliArgs, CliSubcommands, ErrorFormat},
     context::{self, Context, ContextError, get_root_dir},
 };
+use omni_diagnostic::DiagnosticReport;
 use omni_tracing_subscriber::TracingConfig;
 use scopeguard::defer;
 use system_traits::impls::RealSys;
@@ -92,6 +93,9 @@ pub async fn run(
         CliSubcommands::Declspec(declspec_command) => {
             commands::declspec::run(declspec_command).await?;
         }
+        CliSubcommands::Diagnostics(cmd) => {
+            commands::diagnostics::run(cmd).await?;
+        }
         CliSubcommands::Cache(cache_command) => {
             let context = create_ctx()?;
             commands::cache::run(cache_command, &context).await?;
@@ -157,7 +161,86 @@ async fn run_main() -> eyre::Result<()> {
         .display_location_section(cfg!(debug_assertions))
         .install()?;
 
-    let cli = Cli::parse();
+    let cli = match Cli::try_parse() {
+        Ok(cli) => cli,
+        Err(e) => report_usage_error(e),
+    };
+    let error_format = cli.args.error_format;
+
+    match run_cli(cli).await {
+        Ok(()) => Ok(()),
+        Err(report) => report_failure(report, error_format),
+    }
+}
+
+/// Whether JSON errors were asked for. Clap fails before the arguments are
+/// parsed, so this looks at the raw arguments and the environment.
+fn json_errors_requested() -> bool {
+    // `args_os`: a non-Unicode argument must not panic the usage-error path.
+    let mut args = std::env::args_os().skip(1);
+    let mut requested = std::env::var_os("OMNI_ERROR_FORMAT");
+    while let Some(a) = args.next() {
+        if a == "--" {
+            break;
+        }
+        if a == "--error-format" {
+            requested = args.next();
+        } else if let Some(v) =
+            a.to_str().and_then(|a| a.strip_prefix("--error-format="))
+        {
+            requested = Some(v.into());
+        }
+    }
+    requested.as_deref() == Some(std::ffi::OsStr::new("json"))
+}
+
+/// Clap exits on its own for `--help`/`--version`; usage errors are printed
+/// as JSON when `--error-format json` was asked for, and exit `2` either way.
+fn report_usage_error(e: clap::Error) -> ! {
+    if e.use_stderr() && json_errors_requested() {
+        eprintln!(
+            "{}",
+            serde_json::json!({
+                "message": e.render().to_string().trim_end(),
+                "context": Vec::<String>::new(),
+            })
+        );
+        std::process::exit(2);
+    }
+    e.exit()
+}
+
+/// Prints a failure and exits for diagnostics (RFC 0021, section 4.3).
+/// Errors that are not diagnostics keep the `color_eyre` report, unless JSON
+/// output was asked for.
+fn report_failure(
+    report: eyre::Report,
+    format: ErrorFormat,
+) -> eyre::Result<()> {
+    if let Some(d) = DiagnosticReport::from_report(&report) {
+        match format {
+            ErrorFormat::Text => eprint!("{}", d.to_text()),
+            ErrorFormat::Json => eprintln!("{}", d.to_json()),
+        }
+        std::process::exit(d.exit_code());
+    }
+
+    if format == ErrorFormat::Json {
+        let context = omni_diagnostic::render::chain_messages(&report);
+        eprintln!(
+            "{}",
+            serde_json::json!({
+                "message": format!("{report:#}"),
+                "context": context,
+            })
+        );
+        std::process::exit(1);
+    }
+
+    Err(report)
+}
+
+async fn run_cli(cli: Cli) -> eyre::Result<()> {
     let shared_mcp =
         matches!(&cli.subcommand, CliSubcommands::Mcp(cmd) if cmd.shared);
 

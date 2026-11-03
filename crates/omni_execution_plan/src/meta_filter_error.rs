@@ -3,6 +3,7 @@ use std::{cell::RefCell, fmt, path::PathBuf};
 use maps::UnorderedMap;
 use omni_configurations::MetaConfiguration;
 use omni_core::TaskExecutionNode;
+use omni_diagnostic::Diagnostic;
 use omni_expressions::ErrorClass;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -129,7 +130,15 @@ pub struct MetaFilterGroup {
     pub hint: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Diagnostic)]
+#[diagnostic(
+    code = "meta_filter.evaluation",
+    audience = user,
+    details = details_json,
+    body = write_body,
+    hints = group_hints,
+    hint = "To skip failing tasks instead, pass --meta-on-error exclude."
+)]
 pub struct MetaFilterError {
     pub filter: String,
     pub total: usize,
@@ -171,12 +180,13 @@ impl MetaFilterError {
     }
 }
 
-impl MetaFilterError {
-    /// Structured payload for machine consumers (e.g. MCP error `data`).
-    pub fn to_json(&self) -> serde_json::Value {
+/// `details` of the diagnostic: what machine consumers (MCP, `--error-format
+/// json`) get beyond the message.
+fn details_json(this: &MetaFilterError) -> serde_json::Value {
+    {
         use serde_json::{Map, Value, json};
 
-        let groups = self
+        let groups = this
             .groups
             .iter()
             .map(|g| {
@@ -215,81 +225,85 @@ impl MetaFilterError {
             .collect::<Vec<_>>();
 
         json!({
-            "kind": "meta_filter_evaluation",
-            "filter": self.filter,
-            "total": self.total,
-            "other": self.other,
+            "filter": this.filter,
+            "total": this.total,
+            "other": this.other,
             "groups": groups,
         })
     }
 }
 
+/// The one-line summary. The grouped detail is `write_body`.
 impl fmt::Display for MetaFilterError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.total == 1
-            && let Some(g) = self.groups.first()
-            && let Some(s) = g.samples.first()
-        {
-            writeln!(f, "meta filter failed to evaluate")?;
-            writeln!(f)?;
-            writeln!(f, "  filter:   {}", self.filter)?;
-            writeln!(f, "  cause:    {}", g.cause)?;
-            writeln!(f)?;
-            writeln!(f, "  task:     {}", s.name())?;
-            writeln!(
+        if self.total == 1 {
+            write!(f, "meta filter failed to evaluate")
+        } else {
+            write!(
                 f,
-                "  project:  {}  ({})",
-                s.project,
-                s.project_dir.display()
-            )?;
-            write!(f, "  meta:     {}", s.render_meta())?;
-            if let Some(h) = &g.hint {
-                write!(f, "\n\n  hint: {h}")?;
-            }
-            return write!(
-                f,
-                "\n        To skip failing tasks instead, pass --meta-on-error exclude."
-            );
+                "meta filter failed to evaluate for {} task(s)",
+                self.total
+            )
         }
+    }
+}
 
+/// Corrections found per cause, for the diagnostic's `hints`.
+fn group_hints(this: &MetaFilterError) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for h in this.groups.iter().filter_map(|g| g.hint.as_ref()) {
+        if !out.contains(h) {
+            out.push(h.clone());
+        }
+    }
+    out
+}
+
+/// The RFC 0020 layout, without the summary line. Hints (per-cause
+/// corrections and the `--meta-on-error` suggestion) are diagnostic hints.
+fn write_body(this: &MetaFilterError, f: &mut dyn fmt::Write) -> fmt::Result {
+    if this.total == 1
+        && let Some(g) = this.groups.first()
+        && let Some(s) = g.samples.first()
+    {
+        writeln!(f, "  filter:   {}", this.filter)?;
+        writeln!(f, "  cause:    {}", g.cause)?;
+        writeln!(f)?;
+        writeln!(f, "  task:     {}", s.name())?;
         writeln!(
             f,
-            "meta filter failed to evaluate for {} task(s)",
-            self.total
+            "  project:  {}  ({})",
+            s.project,
+            s.project_dir.display()
         )?;
-        writeln!(f)?;
-        writeln!(f, "  filter:  {}", self.filter)?;
-        for g in &self.groups {
-            writeln!(f, "  cause:   {}   [{} tasks]", g.cause, g.count)?;
-            if !g.samples.is_empty() {
-                writeln!(f)?;
-            }
-            for s in &g.samples {
-                writeln!(
-                    f,
-                    "    {}  {}  meta: {}",
-                    s.name(),
-                    s.project_dir.display(),
-                    s.render_meta()
-                )?;
-            }
-            if g.omitted > 0 {
-                writeln!(f, "    ... and {} more", g.omitted)?;
-            }
-            if let Some(h) = &g.hint {
-                writeln!(f)?;
-                writeln!(f, "  hint: {h}")?;
-            }
+        write!(f, "  meta:     {}", s.render_meta())?;
+        return Ok(());
+    }
+
+    writeln!(f, "  filter:  {}", this.filter)?;
+    for g in &this.groups {
+        writeln!(f, "  cause:   {}   [{} tasks]", g.cause, g.count)?;
+        if !g.samples.is_empty() {
             writeln!(f)?;
         }
-        if self.other > 0 {
-            writeln!(f, "  ... and {} more with other causes\n", self.other)?;
+        for s in &g.samples {
+            writeln!(
+                f,
+                "    {}  {}  meta: {}",
+                s.name(),
+                s.project_dir.display(),
+                s.render_meta()
+            )?;
         }
-        write!(
-            f,
-            "  To skip failing tasks instead, pass --meta-on-error exclude."
-        )
+        if g.omitted > 0 {
+            writeln!(f, "    ... and {} more", g.omitted)?;
+        }
+        writeln!(f)?;
     }
+    if this.other > 0 {
+        writeln!(f, "  ... and {} more with other causes", this.other)?;
+    }
+    Ok(())
 }
 
 impl std::error::Error for MetaFilterError {}

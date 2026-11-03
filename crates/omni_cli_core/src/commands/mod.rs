@@ -20,10 +20,10 @@ use crate::{
     build,
     commands::{
         cache::CacheCommand, declspec::DeclspecCommand,
-        generator::GeneratorCommand, hash::HashCommand, ignore::IgnoreCommand,
-        init::InitCommand, project::ProjectCommand,
-        projection::ProjectionCommand, remote_source::RemoteSourcesCommand,
-        tool::ToolCommand,
+        diagnostics::DiagnosticsCommand, generator::GeneratorCommand,
+        hash::HashCommand, ignore::IgnoreCommand, init::InitCommand,
+        project::ProjectCommand, projection::ProjectionCommand,
+        remote_source::RemoteSourcesCommand, tool::ToolCommand,
     },
 };
 
@@ -31,6 +31,7 @@ pub mod cache;
 pub mod completion;
 pub mod config;
 pub mod declspec;
+pub mod diagnostics;
 pub mod env;
 pub mod exec;
 pub mod generator;
@@ -64,6 +65,14 @@ pub struct Cli {
 
     #[command(subcommand)]
     pub subcommand: CliSubcommands,
+}
+
+/// How a top-level failure is printed (RFC 0021).
+#[derive(clap::ValueEnum, Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ErrorFormat {
+    #[default]
+    Text,
+    Json,
 }
 
 #[derive(Args, Debug)]
@@ -153,6 +162,16 @@ pub struct CliArgs {
     pub inherit_env_vars: bool,
 
     #[arg(
+        long = "error-format",
+        help = "How to print a failure: `text` for people, `json` for scripts and CI",
+        env = "OMNI_ERROR_FORMAT",
+        value_enum,
+        default_value = "text",
+        global = true
+    )]
+    pub error_format: ErrorFormat,
+
+    #[arg(
         long = "cache-dir",
         help = "The directory to use for the cache",
         env = "OMNI_CACHE_DIR",
@@ -175,6 +194,7 @@ impl Default for CliArgs {
             stdout_show_traces: false,
             stderr_show_traces: false,
             cache_dir: None,
+            error_format: ErrorFormat::Text,
         }
     }
 }
@@ -202,6 +222,9 @@ pub enum CliSubcommands {
 
     #[command(about = "Generate machine readable CLI specification")]
     Declspec(DeclspecCommand),
+
+    #[command(about = "Inspect diagnostic codes")]
+    Diagnostics(DiagnosticsCommand),
 
     #[command(about = "Cache related subcommands")]
     Cache(CacheCommand),

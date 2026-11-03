@@ -1,0 +1,5 @@
+error: `details = ...` cannot be combined with field `detail`
+ --> tests/ui/detail_and_details.rs:7:38
+  |
+7 | #[diagnostic(code = "x.a", details = d)]
+  |                                      ^
