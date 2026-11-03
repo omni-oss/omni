@@ -17,29 +17,31 @@ pub const DEFAULT_BULK_MIN_LEN: usize = 4;
 /// remote) never reach logs or errors. Fixed rule: not part of any policy.
 pub fn redact_url_userinfo(input: &str) -> Cow<'_, str> {
     let mut out: Option<String> = None;
-    let mut rest = input;
-    let mut consumed = 0;
-    while let Some(i) = rest.find("://") {
-        let auth_start = i + 3;
-        let after = &rest[auth_start..];
+    // `copied`: start of text not yet written to `out`. `scan`: where to look
+    // for the next `://`. Both are offsets into `input`.
+    let mut copied = 0;
+    let mut scan = 0;
+    while let Some(i) = input[scan..].find("://") {
+        let auth_start = scan + i + 3;
+        let after = &input[auth_start..];
         let auth_end = after
             .find(|c: char| matches!(c, '/' | '?' | '#') || c.is_whitespace())
             .unwrap_or(after.len());
-        let authority = &after[..auth_end];
-        if let Some(at) = authority.rfind('@') {
-            let buf = out.get_or_insert_with(String::new);
-            buf.push_str(&input[consumed..consumed + auth_start]);
-            buf.push_str(REDACTED_PLACEHOLDER);
-            buf.push('@');
-            consumed += auth_start + at + 1;
-            rest = &input[consumed..];
-        } else {
-            rest = &rest[auth_start..];
+        match after[..auth_end].rfind('@') {
+            Some(at) => {
+                let buf = out.get_or_insert_with(String::new);
+                buf.push_str(&input[copied..auth_start]);
+                buf.push_str(REDACTED_PLACEHOLDER);
+                buf.push('@');
+                copied = auth_start + at + 1;
+                scan = copied;
+            }
+            None => scan = auth_start,
         }
     }
     match out {
         Some(mut buf) => {
-            buf.push_str(&input[consumed..]);
+            buf.push_str(&input[copied..]);
             Cow::Owned(buf)
         }
         None => Cow::Borrowed(input),
@@ -254,6 +256,14 @@ mod tests {
             redact_url_userinfo("https://github.com/a/b@c"),
             Cow::Borrowed(_)
         ));
+    }
+
+    #[test]
+    fn plain_url_before_credentialed_url() {
+        assert_eq!(
+            redact_url_userinfo("https://github.com/a https://u:tok@h/x"),
+            "https://github.com/a https://<redacted>@h/x"
+        );
     }
 
     #[test]
