@@ -218,7 +218,7 @@ async fn get_input_value<
     } else if config.use_defaults
         && let Some(expr) = input.dynamic_default_expr()
     {
-        let shown_expr = if omni_input_schema::secret_paths(input.borrow())
+        let shown_expr = if omni_input_schema::secret_paths(input)
             .iter()
             .any(|p| p == key)
             || config.redact.as_ref().is_some_and(|r| r.matches(key))
