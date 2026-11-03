@@ -4,6 +4,10 @@ use std::collections::HashSet;
 /// Invalid characters are replaced with their Unicode escape sequence.
 /// This keeps similar paths grouped together while ensuring uniqueness.
 ///
+/// The encoding is injective: distinct inputs always produce distinct
+/// outputs. `%` itself is escaped, and every escape is `%` followed by
+/// exactly two hex digits, so the output can be decoded unambiguously.
+///
 /// # Arguments
 /// * `component` - The path component to escape
 ///
@@ -22,9 +26,10 @@ pub fn escape_path_component(component: &str) -> String {
     // Windows: < > : " / \ | ? *
     // Also reserved: ASCII control chars (0-31), DEL (127)
     // Reserved names on Windows: CON, PRN, AUX, NUL, COM1-9, LPT1-9
+    // `%` is the escape character, so it must be escaped too.
 
     let invalid_chars: HashSet<char> =
-        ['<', '>', ':', '"', '/', '\\', '|', '?', '*']
+        ['<', '>', ':', '"', '/', '\\', '|', '?', '*', '%']
             .iter()
             .copied()
             .collect();
@@ -74,13 +79,16 @@ pub fn escape_path_component(component: &str) -> String {
     };
 
     if reserved_names.contains(name_without_ext.to_uppercase().as_str()) {
-        // Prefix reserved names to make them safe
-        result = format!("_{}", result);
+        // Escape the first character of reserved names to make them safe.
+        // Reserved names are ASCII, so the first char is a single byte.
+        let first = result.as_bytes()[0];
+        result = format!("%{:02X}{}", first, &result[1..]);
     }
 
-    // Ensure the result is not empty
+    // Ensure the result is not empty. A lone `%` can never be produced by
+    // any other input, since every other `%` is followed by two hex digits.
     if result.is_empty() {
-        result = "_".to_string();
+        result = "%".to_string();
     }
 
     result
@@ -119,10 +127,11 @@ mod tests {
 
     #[test]
     fn test_reserved_names() {
-        assert_eq!(escape_path_component("CON"), "_CON");
-        assert_eq!(escape_path_component("con"), "_con");
-        assert_eq!(escape_path_component("PRN.txt"), "_PRN.txt");
-        assert_eq!(escape_path_component("COM1"), "_COM1");
+        assert_eq!(escape_path_component("CON"), "%43ON");
+        assert_eq!(escape_path_component("con"), "%63on");
+        assert_eq!(escape_path_component("PRN.txt"), "%50RN.txt");
+        assert_eq!(escape_path_component("COM1"), "%43OM1");
+        assert_eq!(escape_path_component("_CON"), "_CON");
         assert_eq!(escape_path_component("normal_con"), "normal_con");
     }
 
@@ -135,7 +144,8 @@ mod tests {
 
     #[test]
     fn test_empty_and_edge_cases() {
-        assert_eq!(escape_path_component(""), "_");
+        assert_eq!(escape_path_component(""), "%");
+        assert_eq!(escape_path_component("_"), "_");
         assert_eq!(escape_path_component("."), "%2E");
         assert_eq!(escape_path_component(".."), "%2E%2E");
     }
@@ -163,5 +173,36 @@ mod tests {
         assert_ne!(a, b);
         assert_ne!(b, c);
         assert_ne!(a, c);
+    }
+
+    #[test]
+    fn test_percent_is_escaped() {
+        assert_eq!(escape_path_component("foo%2Fbar"), "foo%252Fbar");
+        assert_eq!(escape_path_component("%"), "%25");
+    }
+
+    #[test]
+    fn test_injective() {
+        let inputs = [
+            "foo/bar",
+            "foo%2Fbar",
+            "foo%252Fbar",
+            "CON",
+            "_CON",
+            "%43ON",
+            "",
+            "_",
+            "%",
+            "%25",
+            ".",
+            "%2E",
+            "a.",
+            "a%2E",
+            " ",
+            "%20",
+        ];
+        let outputs: HashSet<String> =
+            inputs.iter().map(|i| escape_path_component(i)).collect();
+        assert_eq!(outputs.len(), inputs.len());
     }
 }

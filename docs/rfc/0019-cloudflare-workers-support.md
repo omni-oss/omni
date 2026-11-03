@@ -65,7 +65,7 @@ Follow-ups (not in this PR):
 - Confirm the combined service spec (native + worker) is stable on every CI platform.
 - Publish via `wrangler deploy` on `omni-remote-cache-worker-v*` tags (needs `CLOUDFLARE_API_TOKEN`).
 - Cache `~/.cargo/bin/worker-build` in the setup-tools action.
-- Make the container encoding injective: `escape_path_component` maps `foo/bar` and `foo%2Fbar` to the same container (pre-existing in the native backends, now also true for R2 keys). Fixing it changes stored keys, so it needs a migration or a legacy-read path.
+- ~~Make the container encoding injective~~ (done, #44): `escape_path_component` now escapes `%` and percent-encodes reserved names and the empty string instead of using a `_` prefix. No migration or legacy-read path is needed since no data was stored under the old encoding.
 
 ## Risks
 

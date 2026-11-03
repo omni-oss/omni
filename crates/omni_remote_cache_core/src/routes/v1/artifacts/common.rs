@@ -188,3 +188,21 @@ pub macro validate_ownership(
         Err(e) => return e.into_response(),
     }
 }}
+
+#[cfg(test)]
+mod tests {
+    use super::container;
+
+    #[test]
+    fn container_does_not_collide_on_percent_encoded_names() {
+        assert_ne!(
+            container("foo/bar", "ws", "env"),
+            container("foo%2Fbar", "ws", "env")
+        );
+        assert_ne!(container("a", "b/c", "d"), container("a/b", "c", "d"));
+        assert_ne!(
+            container("CON", "ws", "env"),
+            container("_CON", "ws", "env")
+        );
+    }
+}
