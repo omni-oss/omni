@@ -95,12 +95,12 @@ pub fn tool_list_for_mode(shared: bool) -> Vec<rmcp::model::Tool> {
         if shared {
             schemas.typed::<SharedToolRunParams>(
                 "tool_run",
-                "Run a workspace tool by name with JSON arguments and return its captured value",
+                "Run a workspace tool by name with JSON input values and return its captured value",
                 false,
             )
         } else { schemas.typed::<ToolRunParams>(
             "tool_run",
-            "Run a workspace tool by name with JSON arguments and return its captured value",
+            "Run a workspace tool by name with JSON input values and return its captured value",
             false,
         ) },
         schemas.typed::<ProjectionSyncParams>(

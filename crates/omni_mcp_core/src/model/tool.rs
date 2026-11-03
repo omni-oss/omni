@@ -34,7 +34,7 @@ pub struct ToolInspectResult {
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct ToolRunParams {
     pub name: String,
-    /// JSON object of arguments, validated against the tool's declared inputs.
+    /// JSON object of input values, validated against the tool's declared inputs.
     #[serde(default = "default_empty_obj")]
     pub args: Value,
     /// Directory the tool operates in; relative `ctx.sys` paths resolve here.
@@ -47,7 +47,7 @@ pub struct ToolRunParams {
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct SharedToolRunParams {
     pub name: String,
-    /// JSON object of arguments, validated against the tool's declared inputs.
+    /// JSON object of input values, validated against the tool's declared inputs.
     #[serde(default = "default_empty_obj")]
     pub args: Value,
 }
