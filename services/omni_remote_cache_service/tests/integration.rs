@@ -3,7 +3,7 @@ use bytes::Bytes;
 use http::StatusCode;
 use maps::unordered_map;
 use omni_remote_cache_service::{
-    args::{BackendType, ConfigType, ServeArgs},
+    args::{BackendType, ConfigType, RouterArgs, ServeArgs},
     config::{
         All, AllOrSpecificConfiguration, ApiKeyConfiguration, Configuration,
         EnvironmentConfiguration, OrganizationConfiguration,
@@ -12,7 +12,7 @@ use omni_remote_cache_service::{
     },
     response::data::Data,
     routes::{root::RouterConfig, v1::artifacts::CacheItem},
-    state::ServiceState,
+    state::build_state,
 };
 use sets::{UnorderedSet, unordered_set};
 
@@ -85,7 +85,7 @@ async fn create_server(cfg: &Configuration) -> TestServer {
     let json_config = serde_json::to_string(cfg)
         .expect("should be able to serialize to json");
 
-    let route_config = RouterConfig::new(Some("/api".to_string()), true);
+    let route_config = RouterArgs::new(Some("/api".to_string()), true);
 
     let serve_args = ServeArgs::new(
         "".to_string(), // since test server doesn't actually listen, just use an empty string
@@ -98,11 +98,11 @@ async fn create_server(cfg: &Configuration) -> TestServer {
         BackendType::InMemory,
         Some(route_config),
     );
-    let state = ServiceState::from_args(&serve_args)
+    let state = build_state(&serve_args)
         .await
         .expect("must be able to construct state");
     let router = omni_remote_cache_service::routes::root::build_router(
-        serve_args.routes.as_ref().unwrap(),
+        &RouterConfig::from(serve_args.routes.clone().unwrap()),
     )
     .with_state(state);
 

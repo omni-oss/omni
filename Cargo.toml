@@ -6,6 +6,7 @@ members = [
     "cli/omni",
     "crates/*",
     "services/omni_remote_cache_service",
+    "services/omni_remote_cache_worker",
     "services/omni_bridge_test_service",
 ]
 # default-members = ["cli/omni"]
@@ -124,6 +125,7 @@ garde = { version = "^0.23.0", features = ["full"] }
 os_pipe = { version = "^1.2.3" }
 indexmap = { version = "^2.14.2", features = ["serde", "rayon"] }
 dashmap = { version = "^6.2.1", features = ["serde", "rayon"] }
+getrandom = { version = "^0.3.4" }
 ahash = { version = "^0.8.12" }
 maps = { path = "./crates/maps" }
 sets = { path = "./crates/sets" }
@@ -196,6 +198,13 @@ omni_meta = { path = "crates/omni_meta" }
 omni_ignore_core = { path = "crates/omni_ignore_core" }
 omni_ignore_contributors = { path = "crates/omni_ignore_contributors" }
 omni_remote_source_contributors = { path = "crates/omni_remote_source_contributors" }
+omni_remote_cache_core = { path = "crates/omni_remote_cache_core" }
+omni_remote_cache_storage_r2 = { path = "crates/omni_remote_cache_storage_r2" }
+omni_remote_cache_storage_s3 = { path = "crates/omni_remote_cache_storage_s3" }
+omni_remote_cache_storage_local = { path = "crates/omni_remote_cache_storage_local" }
+omni_remote_cache_storage_memory = { path = "crates/omni_remote_cache_storage_memory" }
+worker = { version = "^0.8.7", default-features = false, features = ["http", "axum"] }
+send_wrapper = { version = "^0.6.0" }
 # @anchor:new-crate
 tracing-futures = { version = "^0.2.5", features = ["tokio"] }
 pathdiff = { version = "^0.2.3" }
@@ -225,7 +234,7 @@ humantime-serde = { version = "^1.1.1" }
 itertools = { version = "^0.15.0" }
 omni_execution_plan = { path = "./crates/omni_execution_plan" }
 omni_task_context = { path = "./crates/omni_task_context" }
-omni_remote_cache_storage = { path = "./crates/omni_remote_cache_storage" }
+omni_remote_cache_storage_core = { path = "./crates/omni_remote_cache_storage_core" }
 omni_remote_cache_client = { path = "./crates/omni_remote_cache_client" }
 omni_file_data_serde = { path = "./crates/omni_file_data_serde" }
 omni_setup = { path = "./crates/omni_setup" }
@@ -240,12 +249,8 @@ omni_tera = { path = "./crates/omni_tera" }
 axum = { version = "^0.8.9", features = ["macros", "http2", "multipart"] }
 tower = { version = "^0.5.3" }
 tower-http = { version = "^0.7.1", features = ["trace", "catch-panic"] }
-axum-extra = { version = "^0.12.6", features = [
-    "async-read-body",
-    "typed-header",
+axum-extra = { version = "^0.12.6", default-features = false, features = [
     "typed-routing",
-    "form",
-    "file-stream",
     "error-response",
 ] }
 axum-test = { version = "^21.1.0", features = ["all"] }

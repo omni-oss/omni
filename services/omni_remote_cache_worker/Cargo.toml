@@ -1,0 +1,22 @@
+[package]
+name = "omni_remote_cache_worker"
+rust-version.workspace = true
+edition.workspace = true
+version = "0.1.0"
+authors.workspace = true
+repository.workspace = true
+
+[lib]
+name = "omni_remote_cache_worker"
+path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+axum = { version = "^0.8.9", default-features = false }
+console_error_panic_hook = { version = "^0.1.7" }
+eyre = { workspace = true }
+http = { workspace = true }
+tower-service = { version = "^0.3.3" }
+worker = { workspace = true }
+omni_remote_cache_core = { workspace = true }
+omni_remote_cache_storage_r2 = { workspace = true }

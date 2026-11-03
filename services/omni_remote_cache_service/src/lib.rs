@@ -1,27 +1,19 @@
-#![feature(decl_macro)]
 #![allow(clippy::redundant_field_names)]
 
 pub mod args;
 mod build;
-pub mod config;
-pub mod data;
-pub mod data_impl;
-mod extractors;
 mod init_tracing;
 pub mod local_disk_backend;
-pub mod providers;
-pub mod request;
-pub mod response;
-pub mod routes;
 pub mod s3_backend;
-mod scalar;
-mod security;
-pub mod services;
 pub mod state;
 pub mod storage_backend;
-mod utils;
+
+pub use omni_remote_cache_core::{
+    config, data, data_impl, providers, request, response, routes, services,
+};
 
 use clap::Parser;
+use omni_remote_cache_core::routes::root::RouterConfig;
 use tokio::net::TcpListener;
 use tower::ServiceBuilder;
 use tower_http::{catch_panic::CatchPanicLayer, trace::TraceLayer};
@@ -29,7 +21,7 @@ use tower_http::{catch_panic::CatchPanicLayer, trace::TraceLayer};
 use crate::{
     args::{Cli, CliSubcommands},
     init_tracing::init_tracing,
-    state::ServiceState,
+    state::build_state,
 };
 
 #[tokio::main(flavor = "multi_thread")]
@@ -40,9 +32,10 @@ pub async fn main() -> eyre::Result<()> {
 
     match cli.subcommand {
         CliSubcommands::Serve(serve) => {
-            let state = ServiceState::from_args(&serve.args).await?;
+            let state = build_state(&serve.args).await?;
 
-            let routing_config = serve.args.routes.unwrap_or_default();
+            let routing_config: RouterConfig =
+                serve.args.routes.clone().unwrap_or_default().into();
             let router = routes::root::build_router(&routing_config)
                 .with_state(state)
                 .layer(

@@ -1071,7 +1071,7 @@ dependencies = [
  "hyper 1.11.1",
  "hyper-util",
  "itoa",
- "matchit",
+ "matchit 0.8.4",
  "memchr",
  "mime",
  "multer",
@@ -1123,7 +1123,6 @@ dependencies = [
  "form_urlencoded",
  "futures-core",
  "futures-util",
- "headers",
  "http 1.5.0",
  "http-body 1.1.0",
  "http-body-util",
@@ -1133,9 +1132,6 @@ dependencies = [
  "rustversion",
  "serde_core",
  "serde_html_form",
- "serde_path_to_error",
- "tokio 1.54.1",
- "tokio-util",
  "tower-layer",
  "tower-service",
  "tracing",
@@ -3544,9 +3540,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "899def5c37c4fd7b2664648c28120ecec138e4d395b459e5ca34f9cce2dd77fd"
 dependencies = [
  "cfg-if 1.0.5",
+ "js-sys",
  "libc",
  "r-efi 5.2.0",
  "wasip2",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -4720,30 +4718,6 @@ dependencies = [
  "allocator-api2",
  "equivalent",
  "foldhash 0.2.0",
-]
-
-[[package]]
-name = "headers"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b3314d5adb5d94bcdf56771f2e50dbbc80bb4bdf88967526706205ac9eff24eb"
-dependencies = [
- "base64 0.22.1",
- "bytes 1.12.1",
- "headers-core",
- "http 1.5.0",
- "httpdate",
- "mime",
- "sha1 0.10.7",
-]
-
-[[package]]
-name = "headers-core"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "54b4a22553d4242c49fddb9ba998a99962b5cc6f22cb5a3482bec22522403ce4"
-dependencies = [
- "http 1.5.0",
 ]
 
 [[package]]
@@ -6020,6 +5994,7 @@ version = "0.1.0"
 dependencies = [
  "ahash",
  "dashmap",
+ "getrandom 0.3.4",
  "indexmap",
 ]
 
@@ -6031,6 +6006,12 @@ checksum = "d1525a2a28c7f4fa0fc98bb91ae755d1e2d1505079e05539e35bc876b5d65ae9"
 dependencies = [
  "regex-automata",
 ]
+
+[[package]]
+name = "matchit"
+version = "0.7.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0e7465ac9959cc2b1404e8e2367b43684a6d13790fe23056cc8c6c5a6b7bcb94"
 
 [[package]]
 name = "matchit"
@@ -7623,46 +7604,132 @@ dependencies = [
 ]
 
 [[package]]
-name = "omni_remote_cache_service"
-version = "0.3.0"
+name = "omni_remote_cache_core"
+version = "0.1.0"
 dependencies = [
  "async-trait",
  "axum",
  "axum-extra",
- "axum-test",
  "bytes 1.12.1",
  "bytesize",
- "clap",
  "derive-new",
- "derive_builder",
  "eyre",
+ "futures 0.3.34",
  "http 1.5.0",
  "http-body 1.1.0",
  "log",
  "maps",
  "noyalib",
  "omni_path_utils",
- "omni_remote_cache_storage",
- "omni_tracing_subscriber",
+ "omni_remote_cache_storage_core",
  "schemars",
  "serde",
  "serde_json",
  "sets",
- "shadow-rs",
  "strum 0.28.0",
  "thiserror 2.0.21",
  "time",
- "tokio 1.54.1",
- "tokio-stream",
- "tokio-util",
- "tower",
- "tower-http 0.7.1",
  "tracing",
  "utoipa",
 ]
 
 [[package]]
-name = "omni_remote_cache_storage"
+name = "omni_remote_cache_service"
+version = "0.3.0"
+dependencies = [
+ "async-trait",
+ "axum",
+ "axum-test",
+ "bytes 1.12.1",
+ "bytesize",
+ "clap",
+ "derive-new",
+ "eyre",
+ "http 1.5.0",
+ "log",
+ "maps",
+ "omni_remote_cache_core",
+ "omni_remote_cache_storage_core",
+ "omni_remote_cache_storage_local",
+ "omni_remote_cache_storage_memory",
+ "omni_remote_cache_storage_s3",
+ "omni_tracing_subscriber",
+ "serde",
+ "serde_json",
+ "sets",
+ "shadow-rs",
+ "strum 0.28.0",
+ "tokio 1.54.1",
+ "tower",
+ "tower-http 0.7.1",
+ "tracing",
+]
+
+[[package]]
+name = "omni_remote_cache_storage_core"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "bytes 1.12.1",
+ "bytesize",
+ "derive-new",
+ "eyre",
+ "futures 0.3.34",
+ "lru 0.19.0",
+ "serde",
+ "strum 0.28.0",
+ "thiserror 2.0.21",
+ "utoipa",
+]
+
+[[package]]
+name = "omni_remote_cache_storage_local"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "bytes 1.12.1",
+ "bytesize",
+ "derive-new",
+ "eyre",
+ "futures 0.3.34",
+ "log",
+ "omni_remote_cache_storage_core",
+ "tempfile",
+ "tokio 1.54.1",
+ "tokio-stream",
+ "tokio-util",
+]
+
+[[package]]
+name = "omni_remote_cache_storage_memory"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "bytes 1.12.1",
+ "bytesize",
+ "derive-new",
+ "futures 0.3.34",
+ "maps",
+ "omni_remote_cache_storage_core",
+ "tokio 1.54.1",
+]
+
+[[package]]
+name = "omni_remote_cache_storage_r2"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "bytes 1.12.1",
+ "bytesize",
+ "eyre",
+ "futures 0.3.34",
+ "omni_remote_cache_storage_core",
+ "send_wrapper",
+ "worker",
+]
+
+[[package]]
+name = "omni_remote_cache_storage_s3"
 version = "0.1.0"
 dependencies = [
  "async-trait",
@@ -7673,20 +7740,29 @@ dependencies = [
  "bytes 1.12.1",
  "bytesize",
  "derive-new",
- "eyre",
  "http 1.5.0",
  "http-body 1.1.0",
  "log",
- "lru 0.19.0",
- "maps",
+ "omni_remote_cache_storage_core",
  "serde",
- "strum 0.28.0",
  "tempfile",
- "thiserror 2.0.21",
  "tokio 1.54.1",
  "tokio-stream",
  "tokio-util",
- "utoipa",
+]
+
+[[package]]
+name = "omni_remote_cache_worker"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "console_error_panic_hook",
+ "eyre",
+ "http 1.5.0",
+ "omni_remote_cache_core",
+ "omni_remote_cache_storage_r2",
+ "tower-service",
+ "worker",
 ]
 
 [[package]]
@@ -9303,7 +9379,7 @@ dependencies = [
  "url",
  "wasm-bindgen",
  "wasm-bindgen-futures",
- "wasm-streams",
+ "wasm-streams 0.5.0",
  "web-sys",
 ]
 
@@ -9331,7 +9407,7 @@ dependencies = [
  "async-trait",
  "getrandom 0.2.17",
  "http 1.5.0",
- "matchit",
+ "matchit 0.8.4",
  "reqwest",
  "reqwest-middleware",
  "tracing",
@@ -9864,6 +9940,12 @@ name = "semver-parser"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "388a1df253eca08550bef6c72392cfe7c30914bf41df5269b68cbd6ff8f570a3"
+
+[[package]]
+name = "send_wrapper"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cd0b0ec5f1c1ca621c432a25813d8d60c88abe6d3e08a3eb9cf37d97a0fe3d73"
 
 [[package]]
 name = "serde"
@@ -10853,6 +10935,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cdb87b95ec50ddfa440816d227a17b2ccbdda963a316a727fda0fc4334f7d134"
 dependencies = [
  "deranged",
+ "js-sys",
  "libc",
  "num-conv",
  "num_threads",
@@ -11919,6 +12002,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "wasm-streams"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "94ce9bdac782bbca70d6ac48a3ba18b873c848a706d6dc3bd9a03c1b96f04693"
+dependencies = [
+ "futures-util",
+ "js-sys",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+]
+
+[[package]]
 name = "web-sys"
 version = "0.3.106"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -12309,6 +12405,66 @@ dependencies = [
  "group",
  "hybrid-array",
  "primefield",
+]
+
+[[package]]
+name = "worker"
+version = "0.8.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4057bce8ec66c80b7e270d884c312e2a4ff60eb997fd02936656106c06a964e5"
+dependencies = [
+ "async-trait",
+ "axum",
+ "bytes 1.12.1",
+ "chrono",
+ "futures-channel",
+ "futures-util",
+ "http 1.5.0",
+ "http-body 1.1.0",
+ "js-sys",
+ "matchit 0.7.3",
+ "pin-project",
+ "serde",
+ "serde-wasm-bindgen",
+ "serde_json",
+ "serde_urlencoded",
+ "strum 0.28.0",
+ "tokio 1.54.1",
+ "url",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "wasm-streams 0.7.0",
+ "web-sys",
+ "worker-macros",
+ "worker-sys",
+]
+
+[[package]]
+name = "worker-macros"
+version = "0.8.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f3d7389670b55aab89760be149007aeff773cdad7b650d807f7fb556d04bb304"
+dependencies = [
+ "async-trait",
+ "proc-macro2",
+ "quote",
+ "strum 0.28.0",
+ "syn 3.0.6",
+ "wasm-bindgen",
+ "wasm-bindgen-macro-support",
+ "worker-sys",
+]
+
+[[package]]
+name = "worker-sys"
+version = "0.8.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a440092e7ae7c5feb5507fbdc6aee0cc241d132757c83e1729766a24cddff82"
+dependencies = [
+ "cfg-if 1.0.5",
+ "js-sys",
+ "wasm-bindgen",
+ "web-sys",
 ]
 
 [[package]]

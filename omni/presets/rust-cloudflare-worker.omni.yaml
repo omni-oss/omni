@@ -1,0 +1,49 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/json-schemas/refs/heads/main/project.json
+name: rust-cloudflare-worker
+
+extends:
+  - ./rust-lib.omni.yaml
+  - ./rust-wasm-compatible.omni.yaml
+
+env:
+  vars:
+    WORKER_BUILD_VERSION: "0.8.7"
+
+tasks:
+  # Fails when native-only runtimes leak into the wasm dependency graph, e.g.
+  # through workspace feature unification re-enabling tokio's `net`/`fs`.
+  check-wasm-deps:
+    description: Ensure mio and tokio's native features are absent from the wasm build
+    exec: sh ${WORKSPACE_DIR}/omni/scripts/check-wasm-deps.sh ${PROJECT_NAME}
+    dependencies:
+      - check-wasm
+    cache:
+      key:
+        files:
+          append:
+            - "@workspace/Cargo.lock"
+            - "@workspace/omni/scripts/check-wasm-deps.sh"
+
+  test:
+    dependencies:
+      append: [check-wasm-deps]
+
+  build:
+    description: Build the worker bundle (build/worker) with worker-build
+    exec: sh ${WORKSPACE_DIR}/omni/scripts/worker-build.sh ${WORKER_BUILD_VERSION}
+    dependencies:
+      - test
+      - ^build
+    cache:
+      key:
+        files:
+          append:
+            - "./wrangler.toml"
+            - "@workspace/.cargo/config.toml"
+            - "@workspace/omni/scripts/worker-build.sh"
+      output:
+        files:
+          - "build/**"
+
+meta:
+  type: service

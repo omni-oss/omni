@@ -1,0 +1,30 @@
+[package]
+name = "omni_remote_cache_storage_s3"
+rust-version.workspace = true
+edition.workspace = true
+version = "0.1.0"
+authors.workspace = true
+repository.workspace = true
+
+[lib]
+name = "omni_remote_cache_storage_s3"
+path = "src/lib.rs"
+
+[dependencies]
+async-trait = { workspace = true }
+aws-config = { workspace = true }
+aws-credential-types = { workspace = true }
+aws-sdk-s3 = { workspace = true }
+aws-types = { workspace = true }
+bytes = { workspace = true }
+bytesize = { workspace = true }
+derive-new = { workspace = true }
+http = { workspace = true }
+http-body = { workspace = true }
+log = { workspace = true }
+serde = { workspace = true }
+tempfile = { workspace = true }
+tokio = { workspace = true }
+tokio-stream = { workspace = true }
+tokio-util = { workspace = true, features = ["io"] }
+omni_remote_cache_storage_core = { workspace = true }

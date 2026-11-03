@@ -3,12 +3,14 @@ use std::num::NonZeroUsize;
 use async_trait::async_trait;
 use bytes::Bytes;
 use derive_new::new;
-use omni_remote_cache_storage::{
-    BoxStream, ListItem, PageOptions, RemoteCacheStorageBackend,
+use omni_remote_cache_storage_core::{
+    BoxStream, ListItem, ReadStream, PageOptions, RemoteCacheStorageBackend,
     decorators::LruCached,
     error::{self, Error},
-    impls::{InMemoryBackend, LocalDiskCacheBackend, S3CacheBackend},
 };
+use omni_remote_cache_storage_local::LocalDiskCacheBackend;
+use omni_remote_cache_storage_memory::InMemoryBackend;
+use omni_remote_cache_storage_s3::S3CacheBackend;
 
 use crate::args::{BackendType, ServeArgs};
 
@@ -145,7 +147,7 @@ impl RemoteCacheStorageBackend for StorageBackend {
         &self,
         container: Option<&str>,
         key: &str,
-    ) -> Result<Option<BoxStream<Bytes>>, Error> {
+    ) -> Result<Option<ReadStream>, Error> {
         match self {
             StorageBackend::LruCachedLocalDisk(inner) => {
                 inner.get_stream(container, key).await

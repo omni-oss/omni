@@ -1,0 +1,19 @@
+name = "omni-remote-cache-worker"
+main = "build/worker/shim.mjs"
+compatibility_date = "2026-11-01"
+
+[build]
+command = "cargo install -q worker-build --locked --version 0.8.7 && worker-build --release"
+
+[[r2_buckets]]
+binding = "CACHE_BUCKET"
+bucket_name = "omni-remote-cache"
+
+[vars]
+API_PREFIX = "/api"
+ENABLE_OPENAPI = "false"
+DEFAULT_CONTAINER = "default"
+
+# Provide the service configuration (tenants and API keys, same JSON schema as
+# orcs.config.json) as a secret:
+#   wrangler secret put ORCS_CONFIG

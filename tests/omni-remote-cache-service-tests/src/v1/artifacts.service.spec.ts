@@ -1,8 +1,8 @@
-import { describe, expect } from "vitest";
+import { expect, test } from "vitest";
 
 import { withTimeout } from "@/utils";
 
-import { test } from "../test";
+import { describeTargets } from "../test";
 
 const DIGEST = "12345678901234567890123456789012345678901234567890123456789012";
 const API_KEY = "key1";
@@ -17,14 +17,16 @@ const BODY = JSON.stringify({
     },
 });
 
-describe("v1.artifacts.api", () => {
-    test("put artifact", async ({ apiBaseUrl }) => {
+describeTargets("v1.artifacts.api", (target) => {
+    test("put artifact", async () => {
+        const apiBaseUrl = target.apiBaseUrl;
         const response = await putArtifact(apiBaseUrl);
 
         expect(response.status).toBeOneOf([200, 204]);
     });
 
-    test("list artifacts", async ({ apiBaseUrl }) => {
+    test("list artifacts", async () => {
+        const apiBaseUrl = target.apiBaseUrl;
         await putArtifact(apiBaseUrl);
         const response = await listArtifacts(apiBaseUrl);
         const body = await response.json();
@@ -35,7 +37,8 @@ describe("v1.artifacts.api", () => {
         expect(body.data[0].size).toBe(BODY.length);
     });
 
-    test("get artifact", async ({ apiBaseUrl }) => {
+    test("get artifact", async () => {
+        const apiBaseUrl = target.apiBaseUrl;
         await putArtifact(apiBaseUrl);
 
         const response = await getArtifact(apiBaseUrl);
@@ -47,13 +50,15 @@ describe("v1.artifacts.api", () => {
         expect(await response.text()).toEqual(BODY);
     });
 
-    test("get artifact not found", async ({ apiBaseUrl }) => {
+    test("get artifact not found", async () => {
+        const apiBaseUrl = target.apiBaseUrl;
         const response = await getArtifact(apiBaseUrl, crypto.randomUUID());
 
         expect(response.status).toBe(404);
     });
 
-    test("artifact exists", async ({ apiBaseUrl }) => {
+    test("artifact exists", async () => {
+        const apiBaseUrl = target.apiBaseUrl;
         await putArtifact(apiBaseUrl);
 
         const response = await headArtifact(apiBaseUrl);
@@ -61,20 +66,23 @@ describe("v1.artifacts.api", () => {
         expect(response.status).toBeOneOf([200, 204]);
     });
 
-    test("artifact exists not found", async ({ apiBaseUrl }) => {
+    test("artifact exists not found", async () => {
+        const apiBaseUrl = target.apiBaseUrl;
         const response = await headArtifact(apiBaseUrl, crypto.randomUUID());
 
         expect(response.status).toBe(404);
     });
 
-    test("head artifacts", async ({ apiBaseUrl }) => {
+    test("head artifacts", async () => {
+        const apiBaseUrl = target.apiBaseUrl;
         await putArtifact(apiBaseUrl);
         const response = await headArtifacts(apiBaseUrl);
 
         expect(response.status).toBeOneOf([200, 204]);
     });
 
-    test("head artifacts invalid api key", async ({ apiBaseUrl }) => {
+    test("head artifacts invalid api key", async () => {
+        const apiBaseUrl = target.apiBaseUrl;
         await putArtifact(apiBaseUrl);
         const response = await headArtifacts(
             apiBaseUrl,
@@ -88,7 +96,38 @@ describe("v1.artifacts.api", () => {
         expect(response.status).toBe(403);
     });
 
-    test("delete artifact", async ({ apiBaseUrl }) => {
+    test("large artifact round trip", async () => {
+        const apiBaseUrl = target.apiBaseUrl;
+        // big enough to exercise chunked/multipart uploads in the backends
+        const big = new Uint8Array(20 * 1024 * 1024);
+        for (let i = 0; i < big.length; i += 65536) {
+            crypto.getRandomValues(big.subarray(i, i + 65536));
+        }
+        const digest = crypto.randomUUID();
+
+        const put = await putArtifact(
+            apiBaseUrl,
+            digest,
+            TENANT,
+            ORG,
+            WS,
+            ENV,
+            big,
+        );
+        expect(put.status).toBe(204);
+
+        const get = await fetch(
+            `${apiBaseUrl}/v1/artifacts/${digest}?org=${ORG}&ws=${WS}&env=${ENV}`,
+            { headers: { "X-OMNI-TENANT": TENANT, "X-API-KEY": API_KEY } },
+        );
+        expect(get.status).toBe(200);
+        expect(Buffer.compare(Buffer.from(await get.arrayBuffer()), big)).toBe(
+            0,
+        );
+    }, 30_000);
+
+    test("delete artifact", async () => {
+        const apiBaseUrl = target.apiBaseUrl;
         await putArtifact(apiBaseUrl);
 
         const deleteResponse = await deleteArtifact(apiBaseUrl);
@@ -100,7 +139,7 @@ describe("v1.artifacts.api", () => {
 });
 
 // Usage with fetch
-const fetchWithTimeout = withTimeout(fetch, 1000);
+const fetchWithTimeout = withTimeout(fetch, 10_000);
 
 async function putArtifact(
     apiBaseUrl: string,
@@ -109,7 +148,7 @@ async function putArtifact(
     org: string = ORG,
     ws: string = WS,
     env: string = ENV,
-    body: string = BODY,
+    body: string | Uint8Array<ArrayBuffer> = BODY,
     apiKey: string = API_KEY,
 ) {
     return await fetchWithTimeout(
