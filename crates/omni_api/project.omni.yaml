@@ -10,6 +10,7 @@ dependencies:
   - omni_core
   - omni_task_executor
   - omni_configurations
+  - omni_redact
   - omni_projections
   - omni_ignore_core
   - omni_ignore_contributors

@@ -70,6 +70,9 @@ pub struct ExecuteActionsArgs<'a, S: GeneratorEventSubscriber = NoopSubscriber>
     pub depth: usize,
     /// Maximum allowed nesting depth, propagated to nested runs.
     pub max_depth: usize,
+    /// Hides secret and policy-selected input values in logs.
+    pub redactor: &'a omni_redact::Redactor,
+    pub redact_policy: Option<&'a omni_configurations::RedactPolicy>,
 }
 
 #[allow(clippy::result_large_err)]
@@ -138,6 +141,8 @@ pub async fn execute_actions<'a, S: GeneratorEventSubscriber>(
             use_input_defaults: args.use_input_defaults,
             depth: args.depth,
             max_depth: args.max_depth,
+            redactor: args.redactor,
+            redact_policy: args.redact_policy,
         };
 
         let in_progress_message =

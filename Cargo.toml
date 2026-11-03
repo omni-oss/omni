@@ -212,6 +212,7 @@ quote = { version = "^1.0.47" }
 proc-macro2 = { version = "^1.0" }
 inventory = { version = "^0.3.21" }
 trybuild = { version = "^1.0" }
+omni_redact = { path = "crates/omni_redact" }
 # @anchor:new-crate
 tracing-futures = { version = "^0.2.5", features = ["tokio"] }
 pathdiff = { version = "^0.2.3" }

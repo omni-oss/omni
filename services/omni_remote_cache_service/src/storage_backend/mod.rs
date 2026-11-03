@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use derive_new::new;
 use omni_remote_cache_storage_core::{
-    BoxStream, ListItem, ReadStream, PageOptions, RemoteCacheStorageBackend,
+    BoxStream, ListItem, PageOptions, ReadStream, RemoteCacheStorageBackend,
     decorators::LruCached,
     error::{self, Error},
 };

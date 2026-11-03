@@ -91,6 +91,10 @@ pub fn config_file_names(template: &str) -> Vec<String> {
         .collect()
 }
 
+/// The text that replaces a redacted value in logs, diagnostics and dry-run
+/// output. Every omni surface uses this one value.
+pub const REDACTED_PLACEHOLDER: &str = "<redacted>";
+
 #[cfg(test)]
 mod tests {
     use super::*;

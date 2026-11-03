@@ -54,6 +54,9 @@ pub struct HandlerContext<'a, S: GeneratorEventSubscriber = NoopSubscriber> {
     /// time); when `true`, the effective policy is enforced.
     pub enable_experimental: bool,
     pub env: &'a Map<String, String>,
+    /// Hides secret and policy-selected input values in logs.
+    pub redactor: &'a omni_redact::Redactor,
+    pub redact_policy: Option<&'a omni_configurations::RedactPolicy>,
     pub gen_session: &'a GenSession,
     pub use_input_defaults: bool,
     pub js_script_runner: &'a dyn JsScriptRunner,

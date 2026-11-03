@@ -119,6 +119,12 @@ pub trait InputProfile: Default + Sized {
         false
     }
 
+    /// Whether the input's value must be kept out of logs. The default reads
+    /// `secret`; a profile may add presentation signals (a password widget).
+    fn is_secret(input: &Input<Self>) -> bool {
+        input.base().secret
+    }
+
     /// Ordered presentation preferences for a string scalar input.
     ///
     /// `collect()` tries each hint in order and uses the first it recognises.

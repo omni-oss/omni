@@ -103,6 +103,11 @@ pub struct WorkspaceConfiguration {
     /// on).
     #[serde(default)]
     pub ignore: IgnoreConfig,
+
+    /// Which values are redacted from logs, diagnostics and dry-run output.
+    /// Display only: execution and cache keys are unaffected.
+    #[serde(default)]
+    pub redact: crate::RedactConfiguration,
 }
 
 impl WorkspaceConfiguration {

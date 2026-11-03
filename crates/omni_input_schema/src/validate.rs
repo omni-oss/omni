@@ -40,6 +40,32 @@ pub struct ValidationConfig<'a> {
     pub validation_value_name: Option<&'a str>,
     /// When `true`, inputs with a `default` skip the missing-required check.
     pub use_defaults: bool,
+    /// Names of inputs whose values must not appear in logs, in addition to
+    /// inputs marked `secret`. Display only.
+    pub redact: Option<NameFilter>,
+    /// Values already known to be sensitive (for example those redacted by an
+    /// enclosing generator); applied to every logged input value.
+    pub redact_values: Option<omni_redact::Redactor>,
+}
+
+/// A predicate over input names, used to keep values out of logs.
+#[derive(Clone)]
+pub struct NameFilter(std::sync::Arc<dyn Fn(&str) -> bool + Send + Sync>);
+
+impl NameFilter {
+    pub fn new(f: std::sync::Arc<dyn Fn(&str) -> bool + Send + Sync>) -> Self {
+        Self(f)
+    }
+
+    pub fn matches(&self, name: &str) -> bool {
+        (self.0)(name)
+    }
+}
+
+impl std::fmt::Debug for NameFilter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("NameFilter(..)")
+    }
 }
 
 impl Default for ValidationConfig<'_> {
@@ -48,6 +74,8 @@ impl Default for ValidationConfig<'_> {
             if_expressions_root_property: Some("inputs"),
             validation_value_name: Some("value"),
             use_defaults: false,
+            redact: None,
+            redact_values: None,
         }
     }
 }

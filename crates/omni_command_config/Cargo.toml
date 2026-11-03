@@ -21,6 +21,7 @@ thiserror = { workspace = true }
 strum = { workspace = true }
 derive-new = { workspace = true }
 omni_tera = { workspace = true }
+omni_redact = { workspace = true }
 env = { workspace = true }
 shlex = { workspace = true }
 maps = { workspace = true }

@@ -111,7 +111,7 @@ pub async fn run_custom_commons<'a, S: GeneratorEventSubscriber>(
         ctx.tera_context_values,
     )?;
 
-    log::debug!("Running command: {}", command);
+    log::debug!("Running command: {}", ctx.redactor.redact(command.as_str()));
 
     if common.supports_dry_run || !ctx.dry_run {
         let env = build_command_env(common, ctx, target)?;

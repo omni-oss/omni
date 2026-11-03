@@ -431,6 +431,29 @@ fn is_string_expr(value: &str) -> bool {
 /// Type alias for the pure-data input type used by tools, plugins, and MCP.
 pub type InputSchema = Input<()>;
 
+/// Dotted paths (relative to the input's own name, which is the first entry
+/// when the whole input is secret) of every secret input or object field.
+pub fn secret_paths<E: InputProfile>(input: &Input<E>) -> Vec<String> {
+    fn walk<E: InputProfile>(
+        input: &Input<E>,
+        path: String,
+        out: &mut Vec<String>,
+    ) {
+        if E::is_secret(input) {
+            out.push(path.clone());
+            return;
+        }
+        if let Input::Object(o) = input {
+            for f in &o.fields {
+                walk(f, format!("{path}.{}", f.base().name), out);
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(input, input.base().name.clone(), &mut out);
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

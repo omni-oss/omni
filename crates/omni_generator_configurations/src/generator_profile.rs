@@ -154,6 +154,16 @@ impl InputProfile for Generator {
         base.base_extra().remember
     }
 
+    /// A password widget counts as secret even without `secret: true`.
+    fn is_secret(input: &Input<Self>) -> bool {
+        input.base().secret
+            || matches!(
+                input,
+                Input::String(s)
+                    if s.string_extra.widget == Some(StringWidget::Password)
+            )
+    }
+
     /// Widget override takes priority. For `Text` (the default), data signals
     /// drive inference in `collect()` — no hint returned.
     fn string_presentation_hint(

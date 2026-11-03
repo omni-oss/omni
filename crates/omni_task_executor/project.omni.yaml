@@ -37,3 +37,4 @@ dependencies:
   - config_utils
   - omni_command_config
   - omni_diagnostic
+  - omni_redact

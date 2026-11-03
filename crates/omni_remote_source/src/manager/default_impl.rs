@@ -332,7 +332,11 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
             dest,
         )
         .await?;
-        log::trace!("cloned git repo uri: {}, rev: {}", uri, commit,);
+        log::trace!(
+            "cloned git repo uri: {}, rev: {}",
+            omni_redact::redact_url_userinfo(uri.as_ref()),
+            commit,
+        );
         Ok(clone)
     }
 

@@ -4,10 +4,11 @@ use futures::stream::{FuturesUnordered, StreamExt as _};
 use maps::{UnorderedMap, unordered_map};
 use omni_cache::{CachedTaskExecution, TaskExecutionCacheStore};
 use omni_command_config::{
-    Command, CommandConfig, escape_control_chars, redact_values,
-    resolve_command, resolve_command_with,
+    Command, CommandConfig, escape_control_chars, resolve_command,
+    resolve_command_with,
 };
 use omni_config_types::TeraExprBoolean;
+use omni_configurations::{RedactCategory, RedactOverrides};
 use omni_context::LoadedContext;
 use omni_core::TaskExecutionNode;
 use omni_hasher::impls::DefaultHash;
@@ -20,6 +21,7 @@ use omni_messages::{
 use omni_process::{
     ChildProcessError, TaskChildProcess, TaskChildProcessResult,
 };
+use omni_redact::Redactor;
 use omni_task_context::{TaskContext, TaskContextProviderExt as _};
 use omni_task_output_logs::{EffectiveOutputLogs, LogsDisplay};
 use omni_types::{OmniPath, Root, RootMap, enum_map};
@@ -55,6 +57,7 @@ where
     no_cache: bool,
     add_task_details: bool,
     args: &'s UnorderedMap<String, serde_json::Value>,
+    redact: &'s RedactOverrides,
 }
 
 impl<'s, TCacheStore, TSys, S> BatchExecutor<'s, TCacheStore, TSys, S>
@@ -80,6 +83,7 @@ where
         no_cache: bool,
         add_task_details: bool,
         args: &'s UnorderedMap<String, serde_json::Value>,
+        redact: &'s RedactOverrides,
     ) -> Self {
         Self {
             context,
@@ -99,7 +103,56 @@ where
             no_cache,
             add_task_details,
             args,
+            redact,
         }
+    }
+
+    /// Builds the redactor for a task from its resolved policy plus
+    /// command-line overrides, over the task's env values and args.
+    fn build_redactor(&self, task_ctx: &TaskContext<'_>) -> Redactor {
+        let policy = self.redact.apply(
+            self.context
+                .get_redact_policy(
+                    task_ctx.node.project_name(),
+                    task_ctx.node.task_name(),
+                )
+                .cloned()
+                .unwrap_or_default(),
+        );
+
+        let unmatched = policy.unmatched_patterns(
+            RedactCategory::Env,
+            task_ctx.env_vars.keys().map(String::as_str),
+        );
+        if !unmatched.is_empty() {
+            log::debug!(
+                "redact.env patterns for task '{}' matched no env var: {}",
+                task_ctx.node.full_task_name(),
+                unmatched.join(", ")
+            );
+        }
+
+        let env = policy.redactor(
+            RedactCategory::Env,
+            task_ctx
+                .env_vars
+                .iter()
+                .map(|(k, v)| (k.as_str(), v.as_str())),
+        );
+
+        let args = task_ctx
+            .template_context
+            .get("args")
+            .and_then(|v| serde_json::to_value(v).ok());
+        let args = match args.as_ref().and_then(|v| v.as_object()) {
+            Some(args) => policy.redactor_for_json(
+                RedactCategory::Args,
+                args.iter().map(|(k, v)| (k.as_str(), v)),
+            ),
+            None => Redactor::builder().build(),
+        };
+
+        env.union(&args)
     }
 
     fn should_skip_batch_on_error(
@@ -505,9 +558,11 @@ where
                 // expanded form may contain secrets (e.g. `$TOKEN` or
                 // `{{ env.TOKEN }}`), which must not be written to CLI logs.
                 // Tera still renders so `{{ args.* }}` stays visible.
+                let redactor = self.build_redactor(task_ctx);
                 let display_command = resolve_task_command_for_display(
                     task_ctx.node.task_exec_config(),
                     task_ctx,
+                    &redactor,
                 )?;
 
                 // Mirror the normal execution path's lifecycle events so
@@ -726,35 +781,28 @@ fn resolve_task_command<'a>(
     }
 }
 
-/// Placeholder substituted for environment values in a dry-run display.
-const REDACTED_ENV_VALUE: &str = "<redacted>";
-
 /// Resolve a task's command for display in a dry-run diagnostic.
 ///
 /// Tera is rendered with the real environment so conditionals pick the same
 /// branches as a real run (and invalid syntax surfaces the same way). Secrets
 /// are removed only afterwards: `$VAR` expansion is skipped so references stay
-/// visible, and any environment value present in the rendered command is
-/// replaced with a placeholder.
+/// visible, and every value selected by `redactor` is replaced with its
+/// placeholder.
 fn resolve_task_command_for_display<'a>(
     spec: Option<&CommandConfig>,
     task_ctx: &TaskContext<'a>,
+    redactor: &Redactor,
 ) -> Result<Option<Command>, BatchExecutorError> {
     match spec {
         Some(spec) => {
-            // Longest-first redaction happens on the rendered string *before*
-            // shell splitting, so a secret containing whitespace is still
-            // matched as one value.
-            let secrets: Vec<&str> =
-                task_ctx.env_vars.values().map(String::as_str).collect();
-
+            // Redaction happens on the rendered string *before* shell
+            // splitting, so a secret containing whitespace is still matched as
+            // one value.
             let command = resolve_command_with(
                 spec,
                 Some(&task_ctx.template_context),
                 None,
-                |rendered| {
-                    redact_values(rendered, &secrets, REDACTED_ENV_VALUE)
-                },
+                |rendered| redactor.redact(rendered),
             )?;
 
             Ok(Some(command))

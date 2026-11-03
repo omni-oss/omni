@@ -87,6 +87,8 @@ where
             use_defaults: params.use_defaults,
             input_provider: Arc::new(NeverInputProvider),
             max_depth: params.max_depth,
+            // The mode never comes from tool parameters.
+            redact: Default::default(),
         };
         let response = self.make_api()?.generator_run(req).await?;
         Ok(GeneratorRunResult {

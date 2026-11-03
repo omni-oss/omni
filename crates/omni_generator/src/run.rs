@@ -20,6 +20,8 @@ use sets::UnorderedSet;
 use strum::EnumDiscriminants;
 use value_bag::{OwnedValueBag, ValueBag};
 
+use omni_configurations::{RedactCategory, RedactMode, RedactPolicy};
+use omni_redact::Redactor;
 use omni_utils::lock::LockGuard;
 
 use crate::{
@@ -86,6 +88,12 @@ pub struct RunConfig<'a, S: GeneratorEventSubscriber = NoopSubscriber> {
     /// [`DEFAULT_MAX_GENERATOR_DEPTH`] unless a config legitimately nests deeper.
     #[builder(default = DEFAULT_MAX_GENERATOR_DEPTH)]
     pub max_depth: usize,
+    /// Redaction policy for input values (`redact.inputs`, `--redact-input`,
+    /// `--redact`). Per-input `secret: true` is always honored regardless.
+    pub redact_policy: Option<&'a RedactPolicy>,
+    /// Values already redacted by an enclosing generator; secrets propagate to
+    /// nested generators.
+    pub inherited_redactor: Option<&'a Redactor>,
 }
 
 pub struct GeneratorRunResult {
@@ -229,6 +237,76 @@ async fn run_in_transaction<'a, S: GeneratorEventSubscriber>(
     Ok(GeneratorRunResult { session, actions })
 }
 
+/// Builds the redactor for a generator's input values: values of inputs marked
+/// `secret: true`, values selected by the `redact.inputs` policy, and anything
+/// an enclosing generator already redacted.
+fn build_input_redactor<S: GeneratorEventSubscriber>(
+    r#gen: &GeneratorConfiguration,
+    values: &UnorderedMap<String, OwnedValueBag>,
+    config: &RunConfig<'_, S>,
+) -> Redactor {
+    let inherited = config.inherited_redactor.cloned();
+    let mode = config.redact_policy.map(|p| p.mode).unwrap_or_default();
+    if mode == RedactMode::None {
+        return inherited.unwrap_or_else(|| Redactor::builder().build());
+    }
+
+    let mut builder = Redactor::builder();
+    for input in r#gen.inputs.iter() {
+        let paths = omni_input_schema::secret_paths(input);
+        if paths.is_empty() {
+            continue;
+        }
+        let Some(value) = values.get(input.base().name.as_str()) else {
+            continue;
+        };
+        let json = serde_json::to_value(value)
+            .unwrap_or_else(|_| serde_json::Value::String(value.to_string()));
+        let mut leaves = Vec::new();
+        omni_configurations::flatten_json_leaves(
+            input.base().name.as_str(),
+            &json,
+            &mut leaves,
+        );
+        for (leaf, v) in leaves {
+            let covered = paths
+                .iter()
+                .any(|p| leaf == *p || leaf.starts_with(&format!("{p}.")));
+            if covered {
+                builder = builder.value(v);
+            }
+        }
+    }
+    let secrets = builder.build();
+
+    let json_entries: Vec<(&str, serde_json::Value)> = values
+        .iter()
+        .map(|(k, v)| {
+            (
+                k.as_str(),
+                serde_json::to_value(v).unwrap_or_else(|_| {
+                    serde_json::Value::String(v.to_string())
+                }),
+            )
+        })
+        .collect();
+    let from_policy = config
+        .redact_policy
+        .map(|p| {
+            p.redactor_for_json(
+                RedactCategory::Inputs,
+                json_entries.iter().map(|(k, v)| (*k, v)),
+            )
+        })
+        .unwrap_or_else(|| Redactor::builder().build());
+
+    let own = secrets.union(&from_policy);
+    match inherited {
+        Some(inherited) => inherited.union(&own),
+        None => own,
+    }
+}
+
 #[allow(clippy::result_large_err)]
 pub(crate) async fn run_internal<'a, S: GeneratorEventSubscriber>(
     r#gen: &GeneratorConfiguration,
@@ -249,6 +327,12 @@ pub(crate) async fn run_internal<'a, S: GeneratorEventSubscriber>(
 
     let collection_config = ValidationConfig {
         use_defaults: config.use_input_defaults,
+        redact_values: config.inherited_redactor.cloned(),
+        redact: config.redact_policy.map(|p| {
+            omni_input_schema::NameFilter::new(
+                p.name_predicate(RedactCategory::Inputs),
+            )
+        }),
         ..ValidationConfig::default()
     };
 
@@ -275,6 +359,8 @@ pub(crate) async fn run_internal<'a, S: GeneratorEventSubscriber>(
     }
 
     trace::trace!(count = values.len(), "input_values");
+
+    let redactor = build_input_redactor(r#gen, &values, config);
 
     let mut context_values = config.context_values.clone();
 
@@ -338,6 +424,8 @@ pub(crate) async fn run_internal<'a, S: GeneratorEventSubscriber>(
         use_input_defaults: config.use_input_defaults,
         depth,
         max_depth: config.max_depth,
+        redactor: &redactor,
+        redact_policy: config.redact_policy,
     };
 
     execute_actions(&args, &session, sys).await?;

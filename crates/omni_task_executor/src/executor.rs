@@ -51,6 +51,21 @@ impl<'a, TSys: TaskExecutorSys, S: ExecutionEventSubscriber>
     ) -> Result<Vec<TaskExecutionResult>, TaskExecutorError> {
         let start_time = std::time::Instant::now();
 
+        let redact_mode = self.config.redact().mode.unwrap_or(
+            self.context
+                .workspace_configuration()
+                .redact
+                .mode
+                .unwrap_or_default(),
+        );
+        if redact_mode == omni_configurations::RedactMode::None {
+            notice!(
+                self.subscriber,
+                NoticeLevel::Warn,
+                "Redaction is disabled (--redact none): sensitive values may appear in output",
+            );
+        }
+
         if self.config.dry_run() {
             notice!(
                 self.subscriber,

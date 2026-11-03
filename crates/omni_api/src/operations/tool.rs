@@ -104,6 +104,7 @@ pub async fn handle_tool_run<TSys>(
     name: &str,
     args: serde_json::Value,
     working_dir: Option<ToolWorkingDir>,
+    redact: &omni_configurations::RedactOverrides,
 ) -> eyre::Result<serde_json::Value>
 where
     TSys: ContextSys
@@ -133,12 +134,23 @@ where
         })
         .unwrap_or_default();
 
+    let policy =
+        redact.apply(omni_configurations::RedactPolicy::resolve(&[&ctx
+            .workspace_configuration()
+            .redact]));
+    let redactor = tool_input_redactor(&tool.inputs, &values, &policy);
+
     let report = validate(
         &tool.inputs,
         &values,
         &Default::default(),
         &ValidationConfig {
             use_defaults: true,
+            redact: Some(omni_input_schema::NameFilter::new(
+                policy.name_predicate(
+                    omni_configurations::RedactCategory::Inputs,
+                ),
+            )),
             ..Default::default()
         },
     )?;
@@ -150,6 +162,7 @@ where
             .map(|e| format!("  - {}: {}", e.input_name, e.message))
             .collect::<Vec<_>>()
             .join("\n");
+        let details = redactor.redact(details.as_str());
         return Err(eyre::eyre!(
             "invalid arguments for tool '{name}':\n{details}"
         ));
@@ -221,7 +234,42 @@ where
     let result = run_named(&tools, name, args, &runner, &enforcement).await;
     runner.shutdown().await;
 
-    Ok(result?)
+    match result {
+        Ok(value) => Ok(value),
+        Err(err) => {
+            let message = err.to_string();
+            let redacted = redactor.redact(message.as_str());
+            if matches!(redacted, std::borrow::Cow::Borrowed(_)) {
+                Err(err.into())
+            } else {
+                Err(eyre::eyre!("{redacted}"))
+            }
+        }
+    }
+}
+
+/// Values of inputs marked `secret` plus those selected by the `redact.inputs`
+/// policy, so they never reach error output.
+fn tool_input_redactor(
+    inputs: &[omni_input_schema::InputSchema],
+    values: &UnorderedMap<String, OwnedValueBag>,
+    policy: &omni_configurations::RedactPolicy,
+) -> omni_redact::Redactor {
+    let entries: Vec<(&str, String)> = values
+        .iter()
+        .map(|(k, v)| (k.as_str(), v.to_string()))
+        .collect();
+    let secrets = inputs.iter().filter(|i| i.base().secret).filter_map(|i| {
+        entries
+            .iter()
+            .find(|(k, _)| *k == i.base().name.as_str())
+            .map(|(_, v)| v.clone())
+    });
+    let own = omni_redact::Redactor::builder().values(secrets).build();
+    own.union(&policy.redactor(
+        omni_configurations::RedactCategory::Inputs,
+        entries.iter().map(|(k, v)| (*k, v.as_str())),
+    ))
 }
 
 type RetrievalResult = eyre::Result<(

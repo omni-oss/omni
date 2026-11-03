@@ -6590,6 +6590,7 @@ dependencies = [
  "omni_meta",
  "omni_projection_configurations",
  "omni_projections",
+ "omni_redact",
  "omni_remote_cache_client",
  "omni_remote_source",
  "omni_remote_source_contributors",
@@ -6887,6 +6888,7 @@ dependencies = [
  "env",
  "maps",
  "merge",
+ "omni_redact",
  "omni_serde_validators",
  "omni_tera",
  "schemars",
@@ -6961,8 +6963,10 @@ dependencies = [
  "omni_experimental_features",
  "omni_expressions",
  "omni_file_data_serde",
+ "omni_glob",
  "omni_glob_config",
  "omni_projection_configurations",
+ "omni_redact",
  "omni_serde_validators",
  "omni_task_output_logs",
  "omni_types",
@@ -7071,6 +7075,7 @@ dependencies = [
  "eyre",
  "inventory",
  "omni_diagnostic_derive",
+ "omni_redact",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
@@ -7202,14 +7207,17 @@ dependencies = [
  "omni_command_config",
  "omni_config_types",
  "omni_configuration_discovery",
+ "omni_configurations",
  "omni_constants",
  "omni_discovery",
  "omni_file_data_serde",
  "omni_generator_configurations",
  "omni_glob",
  "omni_input_provider",
+ "omni_input_schema",
  "omni_messages",
  "omni_process",
+ "omni_redact",
  "omni_tera",
  "omni_types",
  "omni_utils",
@@ -7294,6 +7302,7 @@ dependencies = [
  "omni_types",
  "omni_utils",
  "serde",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -7381,7 +7390,9 @@ dependencies = [
  "log",
  "maps",
  "omni_config_types",
+ "omni_constants",
  "omni_input_schema",
+ "omni_redact",
  "omni_serde_validators",
  "omni_tera",
  "paste",
@@ -7409,6 +7420,7 @@ dependencies = [
  "log",
  "maps",
  "omni_config_types",
+ "omni_redact",
  "omni_serde_validators",
  "omni_tera",
  "schemars",
@@ -7603,6 +7615,13 @@ dependencies = [
  "trace",
  "tracing",
  "value-bag",
+]
+
+[[package]]
+name = "omni_redact"
+version = "0.0.0"
+dependencies = [
+ "omni_constants",
 ]
 
 [[package]]
@@ -7806,6 +7825,7 @@ dependencies = [
  "omni_file_data_serde",
  "omni_git_utils",
  "omni_lockfile",
+ "omni_redact",
  "omni_utils",
  "serde",
  "strum 0.28.0",
@@ -7963,6 +7983,7 @@ dependencies = [
  "omni_hasher",
  "omni_messages",
  "omni_process",
+ "omni_redact",
  "omni_task_context",
  "omni_task_output_logs",
  "omni_tera",

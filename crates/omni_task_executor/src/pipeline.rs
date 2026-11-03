@@ -86,6 +86,7 @@ impl<'a, TSys: TaskExecutorSys, S: ExecutionEventSubscriber>
             self.config.no_cache(),
             self.config.add_task_details(),
             self.config.args(),
+            self.config.redact(),
         );
 
         for batch in &execution_plan {

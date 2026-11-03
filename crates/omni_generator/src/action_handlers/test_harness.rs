@@ -79,6 +79,7 @@ pub struct Fixture {
     capabilities: omni_capabilities::CapabilityRules<
         omni_generator_configurations::Generator,
     >,
+    redactor: omni_redact::Redactor,
     workspace_capabilities: omni_capabilities::CapabilityRules<
         omni_generator_configurations::Generator,
     >,
@@ -118,6 +119,7 @@ impl Fixture {
             overwrite: None,
             generators: vec![],
             capabilities: Default::default(),
+            redactor: omni_redact::Redactor::builder().build(),
             workspace_capabilities: Default::default(),
             inherited_capabilities: Vec::new(),
         }
@@ -175,6 +177,8 @@ impl Fixture {
             available_generators: &self.generators,
             workspace_dir: &self.workspace,
             resolved_action_name: "test_action",
+            redactor: &self.redactor,
+            redact_policy: None,
             workspace_capabilities: &self.workspace_capabilities,
             inherited_capabilities: &self.inherited_capabilities,
             capabilities: &self.capabilities,

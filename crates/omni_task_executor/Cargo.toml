@@ -52,6 +52,7 @@ futures = { workspace = true }
 maps = { workspace = true }
 env = { workspace = true }
 omni_configurations = { workspace = true }
+omni_redact = { workspace = true }
 omni_expressions = { workspace = true }
 omni_context = { workspace = true }
 omni_process = { workspace = true }

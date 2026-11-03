@@ -63,14 +63,14 @@ pub(crate) async fn transform_one<S: GeneratorEventSubscriber>(
     log::debug!(
         "Transforming {} through command: {}",
         file.display(),
-        command
+        ctx.redactor.redact(command.as_str())
     );
 
     let output = run_transform_command(&command, &cwd, &env, &content).await?;
 
     if output.exit_code != 0 {
         Err(ErrorInner::CommandFailed {
-            command,
+            command: ctx.redactor.redact(command.as_str()).into_owned(),
             exit_code: output.exit_code,
         })?;
     }

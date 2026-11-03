@@ -213,6 +213,7 @@ async fn run_generator_run(
         use_defaults: command.args.common.use_defaults,
         input_provider: Arc::new(CliInputProvider::default()),
         max_depth: command.args.max_depth,
+        redact: command.args.common.redact_overrides(),
     };
 
     let scratch_dir = loaded_context.scratch_dir();

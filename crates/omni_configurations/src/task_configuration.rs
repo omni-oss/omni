@@ -74,6 +74,10 @@ pub struct TaskConfigurationLongForm {
     #[serde(default)]
     pub env: TaskEnvConfiguration,
 
+    /// Redaction policy for this task (`args` and `env`).
+    #[serde(default)]
+    pub redact: crate::RedactConfiguration,
+
     #[serde(default)]
     pub cache: CacheConfiguration,
 
@@ -161,6 +165,7 @@ impl Default for TaskConfigurationLongForm {
             description: None,
             args: DictConfig::default(),
             env: TaskEnvConfiguration::default(),
+            redact: Default::default(),
             cache: CacheConfiguration::default(),
             output_logs: None,
             meta: MetaConfiguration::default(),
@@ -325,6 +330,13 @@ impl TaskConfiguration {
         }
     }
 
+    pub fn redact(&self) -> Option<&crate::RedactConfiguration> {
+        match self {
+            TaskConfiguration::ShortForm(_) => None,
+            TaskConfiguration::LongForm(long_form) => Some(&long_form.redact),
+        }
+    }
+
     pub fn env(&self) -> Option<&TaskEnvConfiguration> {
         match self {
             TaskConfiguration::ShortForm(_) => None,
@@ -350,6 +362,7 @@ impl Merge for TaskConfigurationLongForm {
             retry_exec: b_retry_cmd,
             description: b_desc,
             env: b_env,
+            redact: b_redact,
             cache: b_cache,
             output_logs: b_output_logs,
             meta: b_meta,
@@ -379,6 +392,7 @@ impl Merge for TaskConfigurationLongForm {
         merge::option::recurse(&mut self.retry_exec, b_retry_cmd);
         merge::option::recurse(&mut self.description, b_desc);
         self.env.merge(b_env);
+        self.redact.merge(b_redact);
         self.cache.merge(b_cache);
         merge::option::recurse(&mut self.output_logs, b_output_logs);
         self.meta.merge(b_meta);

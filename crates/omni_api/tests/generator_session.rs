@@ -109,6 +109,7 @@ fn base_req(output_dir: PathBuf) -> GeneratorRunRequest {
         use_defaults: true,
         input_provider: empty_provider(),
         max_depth: None,
+        redact: Default::default(),
     }
 }
 

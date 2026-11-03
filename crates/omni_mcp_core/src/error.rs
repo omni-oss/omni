@@ -47,6 +47,7 @@ pub fn report_to_mcp_error(report: eyre::Report) -> McpError {
             Some(json!({ "context": chain_messages(&report) })),
         );
     };
+    let d = d.redact_url_userinfo();
     let code = match d.audience {
         Audience::User => ErrorCode::INVALID_PARAMS,
         Audience::Environment | Audience::Internal => ErrorCode::INTERNAL_ERROR,

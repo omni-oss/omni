@@ -1,0 +1,14 @@
+[package]
+name = "omni_redact"
+rust-version.workspace = true
+edition.workspace = true
+version = "0.0.0"
+authors.workspace = true
+repository.workspace = true
+
+[lib]
+name = "omni_redact"
+path = "src/lib.rs"
+
+[dependencies]
+omni_constants = { workspace = true }

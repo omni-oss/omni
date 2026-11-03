@@ -77,6 +77,21 @@ pub struct ToolRunCommand {
     pub project: Option<String>,
 
     #[arg(
+        long = "redact-input",
+        value_name = "NAME",
+        help = "Redact the value of this input (name or glob) in error output. Repeatable"
+    )]
+    pub redact_input: Vec<String>,
+
+    #[arg(
+        long = "redact",
+        value_name = "MODE",
+        value_enum,
+        help = "Redaction mode: declared (apply configured policy), all, or none"
+    )]
+    pub redact: Option<crate::commands::common_args::RedactModeArg>,
+
+    #[arg(
         long,
         help = "Pretty-print the JSON output",
         default_value_t = false,
@@ -147,7 +162,16 @@ async fn run_tool_run(
     };
 
     let response = OmniApi::new_with_sys(ctx.clone(), NoopSubscriber)
-        .tool_run(&command.name, args, working_dir)
+        .tool_run_redacted(
+            &command.name,
+            args,
+            working_dir,
+            &omni_configurations::RedactOverrides {
+                mode: command.redact.map(Into::into),
+                inputs: command.redact_input.clone(),
+                ..Default::default()
+            },
+        )
         .await?;
 
     if command.pretty {

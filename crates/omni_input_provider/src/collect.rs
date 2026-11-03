@@ -108,6 +108,94 @@ fn to_tera_ctx(
     ctx
 }
 
+/// The value to show in logs: the placeholder for secret inputs (including a
+/// password widget) and inputs selected by the redaction policy; inside
+/// objects, only the secret or selected leaves are hidden.
+fn display_value<E: InputProfile>(
+    config: &ValidationConfig<'_>,
+    input: &Input<E>,
+    key: &str,
+    value: &OwnedValueBag,
+) -> String {
+    let secrets = omni_input_schema::secret_paths(input);
+    let hidden = |path: &str| {
+        secrets.iter().any(|s| s == path)
+            || config.redact.as_ref().is_some_and(|r| r.matches(path))
+    };
+    let text = if hidden(key) {
+        omni_constants::REDACTED_PLACEHOLDER.to_string()
+    } else {
+        match serde_json::to_value(value) {
+            Ok(
+                json @ (serde_json::Value::Object(_)
+                | serde_json::Value::Array(_)),
+            ) => {
+                // Redact known values in string leaves *before* serializing,
+                // so JSON escaping (quotes, newlines) cannot hide them.
+                let json = redact_leaves(key, json, &hidden);
+                match &config.redact_values {
+                    Some(r) => redact_strings(json, r).to_string(),
+                    None => json.to_string(),
+                }
+            }
+            _ => value.to_string(),
+        }
+    };
+    match &config.redact_values {
+        Some(r) => r.redact(text.as_str()).into_owned(),
+        None => text,
+    }
+}
+
+fn redact_strings(
+    value: serde_json::Value,
+    redactor: &omni_redact::Redactor,
+) -> serde_json::Value {
+    use serde_json::Value;
+    match value {
+        Value::String(s) => {
+            Value::String(redactor.redact(s.as_str()).into_owned())
+        }
+        Value::Array(a) => Value::Array(
+            a.into_iter().map(|v| redact_strings(v, redactor)).collect(),
+        ),
+        Value::Object(m) => Value::Object(
+            m.into_iter()
+                .map(|(k, v)| (k, redact_strings(v, redactor)))
+                .collect(),
+        ),
+        other => other,
+    }
+}
+
+fn redact_leaves(
+    path: &str,
+    value: serde_json::Value,
+    hidden: &dyn Fn(&str) -> bool,
+) -> serde_json::Value {
+    use serde_json::Value;
+    if hidden(path) {
+        return Value::String(omni_constants::REDACTED_PLACEHOLDER.to_string());
+    }
+    match value {
+        Value::Object(m) => Value::Object(
+            m.into_iter()
+                .map(|(k, v)| {
+                    let p = format!("{path}.{k}");
+                    (k, redact_leaves(&p, v, hidden))
+                })
+                .collect(),
+        ),
+        Value::Array(a) => Value::Array(
+            a.into_iter()
+                .enumerate()
+                .map(|(i, v)| redact_leaves(&format!("{path}.{i}"), v, hidden))
+                .collect(),
+        ),
+        other => other,
+    }
+}
+
 async fn get_input_value<
     E: InputProfile + Send + Sync + 'static,
     I: Borrow<Input<E>>,
@@ -121,14 +209,26 @@ async fn get_input_value<
 ) -> Result<OwnedValueBag, Error> {
     let input = input.borrow();
     if let Some(v) = pre_exec_value {
-        log::debug!("using pre-exec value for input {key}: {v}");
+        log::debug!(
+            "using pre-exec value for input {key}: {}",
+            display_value(config, input, key, v)
+        );
         process_pre_filled_value(config, ctx, input, key, v, false, provider)
             .await
     } else if config.use_defaults
         && let Some(expr) = input.dynamic_default_expr()
     {
+        let shown_expr = if omni_input_schema::secret_paths(input)
+            .iter()
+            .any(|p| p == key)
+            || config.redact.as_ref().is_some_and(|r| r.matches(key))
+        {
+            omni_constants::REDACTED_PLACEHOLDER
+        } else {
+            expr
+        };
         log::debug!(
-            "evaluating dynamic default expression for input {key}: {expr}"
+            "evaluating dynamic default expression for input {key}: {shown_expr}"
         );
         let expanded = omni_tera::one_off(
             expr,
@@ -143,7 +243,10 @@ async fn get_input_value<
     } else if config.use_defaults
         && let Some(default) = input.static_default_value_bag()
     {
-        log::debug!("using default value for input {key}: {default}");
+        log::debug!(
+            "using default value for input {key}: {}",
+            display_value(config, input, key, &default)
+        );
         process_pre_filled_value(
             config, ctx, input, key, &default, true, provider,
         )
@@ -167,16 +270,17 @@ async fn process_pre_filled_value<
     provider: &dyn InputProvider<E>,
 ) -> Result<OwnedValueBag, Error> {
     let input = input.borrow();
+    let shown = || display_value(config, input, key, value);
     // Coerce the raw value to the correct Rust type (e.g. "true" → bool).
     let value = match input {
         Input::Boolean(_) => try_parse_bool(value.by_ref())
-            .ok_or_else(|| make_type_error(key, value.by_ref(), "boolean"))
+            .ok_or_else(|| make_type_error(key, shown(), "boolean"))
             .map(|b| ValueBag::capture_serde1(&b).to_owned())?,
         Input::Integer(_) => try_parse_int(value.by_ref())
-            .ok_or_else(|| make_type_error(key, value.by_ref(), "integer"))
+            .ok_or_else(|| make_type_error(key, shown(), "integer"))
             .map(|i| ValueBag::capture_serde1(&i).to_owned())?,
         Input::Float(_) => try_parse_float(value.by_ref())
-            .ok_or_else(|| make_type_error(key, value.by_ref(), "float"))
+            .ok_or_else(|| make_type_error(key, shown(), "float"))
             .map(|f| ValueBag::capture_serde1(&f).to_owned())?,
         _ => value.clone(),
     };
@@ -304,11 +408,30 @@ async fn collect_from_object<E: InputProfile + Send + Sync + 'static>(
     config: &ValidationConfig<'_>,
     provider: &dyn InputProvider<E>,
 ) -> Result<OwnedValueBag, Error> {
+    // Child fields are matched by their dotted path (`creds.token`), so wrap
+    // the policy filter to prefix each child name with the parent's name.
+    let mut child_config = config.clone();
+    let parent = object_input.base.name.clone();
+    let parent_secret = object_input.base.secret;
+    if parent_secret || config.redact.is_some() {
+        let filter = config.redact.clone();
+        // A hidden parent (secret, or selected by the policy) hides every
+        // child; otherwise a child matches by its dotted path.
+        child_config.redact = Some(omni_input_schema::NameFilter::new(
+            std::sync::Arc::new(move |name| {
+                parent_secret
+                    || filter.as_ref().is_some_and(|f| {
+                        f.matches(&parent)
+                            || f.matches(&format!("{parent}.{name}"))
+                    })
+            }),
+        ));
+    }
     let object = Box::pin(collect_internal(
         object_input.fields.as_slice(),
         &unordered_map!(),
         context,
-        config,
+        &child_config,
         provider,
     ))
     .await?;
@@ -365,12 +488,11 @@ fn try_parse_int(value: value_bag::ValueBag<'_>) -> Option<i64> {
 
 fn make_type_error(
     input_name: &str,
-    value: value_bag::ValueBag<'_>,
+    shown: String,
     expected_type: &str,
 ) -> Error {
     Error::from(eyre::eyre!(
-        "{input_name}: value is not of type {expected_type}: value {}",
-        serde_json::to_string_pretty(&value).expect("should serialize"),
+        "{input_name}: value is not of type {expected_type}: value {shown}"
     ))
 }
 
@@ -403,6 +525,16 @@ impl<'v> value_bag::visit::Visit<'v> for IsStringConvertible {
 #[cfg(test)]
 mod tests {
     use maps::UnorderedMap;
+    #[test]
+    fn redact_leaves_hides_selected_nested_leaf_only() {
+        let v = super::redact_leaves(
+            "creds",
+            json!({"token": "t0k", "user": "bob"}),
+            &|n: &str| n == "creds.token",
+        );
+        assert_eq!(v, json!({"token": "<redacted>", "user": "bob"}));
+    }
+
     use omni_input_schema::{Input, ValidationConfig};
     use serde_json::json;
     use value_bag::{OwnedValueBag, ValueBag};

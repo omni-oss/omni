@@ -9,7 +9,8 @@ use env::{
 };
 use env_loader::EnvLoaderError;
 use omni_configurations::{
-    MetaConfiguration, RemoteCacheConfiguration, WorkspaceConfiguration,
+    MetaConfiguration, RedactPolicy, RemoteCacheConfiguration,
+    WorkspaceConfiguration,
 };
 use omni_core::{Project, ProjectGraph, ProjectGraphError, TaskExecutionNode};
 use omni_execution_plan::DefaultExecutionPlanProvider;
@@ -118,6 +119,17 @@ impl<TSys: ContextSys> LoadedContext<TSys> {
     ) -> Option<&OutputLogsConfiguration> {
         self.extracted
             .output_logs_configs
+            .get(&format!("{project_name}#{task_name}"))
+    }
+
+    /// The resolved redaction policy for a task. Display only.
+    pub fn get_redact_policy(
+        &self,
+        project_name: &str,
+        task_name: &str,
+    ) -> Option<&RedactPolicy> {
+        self.extracted
+            .redact_policies
             .get(&format!("{project_name}#{task_name}"))
     }
 

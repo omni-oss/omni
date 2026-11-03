@@ -25,6 +25,7 @@ bon = { workspace = true }
 serde = { workspace = true }
 async-trait = { workspace = true }
 omni_lockfile = { workspace = true }
+omni_redact = { workspace = true }
 omni_git_utils = { workspace = true }
 omni_utils = { workspace = true }
 omni_constants = { workspace = true }
