@@ -41,7 +41,7 @@ pub use error::{Error, ErrorKind};
 pub use input::{
     BooleanInput, FloatArrayInput, FloatInput, Input, InputKind, InputSchema,
     IntegerArrayInput, IntegerInput, ObjectInput, StringArrayInput,
-    StringInput,
+    StringInput, secret_paths,
 };
 pub use json_schema::to_json_schema;
 pub use profile::InputProfile;

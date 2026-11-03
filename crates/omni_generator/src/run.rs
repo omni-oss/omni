@@ -258,12 +258,28 @@ fn build_input_redactor<S: GeneratorEventSubscriber>(
 
     let mut builder = Redactor::builder();
     for input in r#gen.inputs.iter() {
-        let base = input.base();
-        if base.secret
-            && let Some((_, v)) =
-                entries.iter().find(|(k, _)| *k == base.name.as_str())
-        {
-            builder = builder.value(v.as_str());
+        let paths = omni_input_schema::secret_paths(input);
+        if paths.is_empty() {
+            continue;
+        }
+        let Some(value) = values.get(input.base().name.as_str()) else {
+            continue;
+        };
+        let json = serde_json::to_value(value)
+            .unwrap_or_else(|_| serde_json::Value::String(value.to_string()));
+        let mut leaves = Vec::new();
+        omni_configurations::flatten_json_leaves(
+            input.base().name.as_str(),
+            &json,
+            &mut leaves,
+        );
+        for (leaf, v) in leaves {
+            let covered = paths
+                .iter()
+                .any(|p| leaf == *p || leaf.starts_with(&format!("{p}.")));
+            if covered {
+                builder = builder.value(v);
+            }
         }
     }
     let secrets = builder.build();
@@ -316,6 +332,7 @@ pub(crate) async fn run_internal<'a, S: GeneratorEventSubscriber>(
 
     let collection_config = ValidationConfig {
         use_defaults: config.use_input_defaults,
+        redact_values: config.inherited_redactor.cloned(),
         redact: config.redact_policy.map(|p| {
             omni_input_schema::NameFilter::new(
                 p.name_predicate(RedactCategory::Inputs),

@@ -108,39 +108,44 @@ fn to_tera_ctx(
     ctx
 }
 
-/// The value to show in logs: the placeholder for `secret` inputs and inputs
-/// selected by the redaction policy.
+/// The value to show in logs: the placeholder for secret inputs (including a
+/// password widget) and inputs selected by the redaction policy; inside
+/// objects, only the secret or selected leaves are hidden.
 fn display_value<E: InputProfile>(
     config: &ValidationConfig<'_>,
     input: &Input<E>,
     key: &str,
     value: &OwnedValueBag,
 ) -> String {
-    let redacted = input.base().secret
-        || config.redact.as_ref().is_some_and(|r| r.matches(key));
-    if redacted {
-        return omni_constants::REDACTED_PLACEHOLDER.to_string();
-    }
-    let Some(filter) = config.redact.as_ref() else {
-        return value.to_string();
+    let secrets = omni_input_schema::secret_paths(input);
+    let hidden = |path: &str| {
+        secrets.iter().any(|s| s == path)
+            || config.redact.as_ref().is_some_and(|r| r.matches(path))
     };
-    // Objects and arrays: hide only the leaves selected by dotted names such
-    // as `credentials.token`, keeping their siblings.
-    match serde_json::to_value(value) {
-        Ok(
-            json @ (serde_json::Value::Object(_) | serde_json::Value::Array(_)),
-        ) => redact_leaves(key, json, filter).to_string(),
-        _ => value.to_string(),
+    let text = if hidden(key) {
+        omni_constants::REDACTED_PLACEHOLDER.to_string()
+    } else {
+        match serde_json::to_value(value) {
+            Ok(
+                json @ (serde_json::Value::Object(_)
+                | serde_json::Value::Array(_)),
+            ) => redact_leaves(key, json, &hidden).to_string(),
+            _ => value.to_string(),
+        }
+    };
+    match &config.redact_values {
+        Some(r) => r.redact(text.as_str()).into_owned(),
+        None => text,
     }
 }
 
 fn redact_leaves(
     path: &str,
     value: serde_json::Value,
-    filter: &omni_input_schema::NameFilter,
+    hidden: &dyn Fn(&str) -> bool,
 ) -> serde_json::Value {
     use serde_json::Value;
-    if filter.matches(path) {
+    if hidden(path) {
         return Value::String(omni_constants::REDACTED_PLACEHOLDER.to_string());
     }
     match value {
@@ -148,14 +153,14 @@ fn redact_leaves(
             m.into_iter()
                 .map(|(k, v)| {
                     let p = format!("{path}.{k}");
-                    (k, redact_leaves(&p, v, filter))
+                    (k, redact_leaves(&p, v, hidden))
                 })
                 .collect(),
         ),
         Value::Array(a) => Value::Array(
             a.into_iter()
                 .enumerate()
-                .map(|(i, v)| redact_leaves(&format!("{path}.{i}"), v, filter))
+                .map(|(i, v)| redact_leaves(&format!("{path}.{i}"), v, hidden))
                 .collect(),
         ),
         other => other,
@@ -465,13 +470,10 @@ mod tests {
     use maps::UnorderedMap;
     #[test]
     fn redact_leaves_hides_selected_nested_leaf_only() {
-        let filter = omni_input_schema::NameFilter::new(std::sync::Arc::new(
-            |n: &str| n == "creds.token",
-        ));
         let v = super::redact_leaves(
             "creds",
             json!({"token": "t0k", "user": "bob"}),
-            &filter,
+            &|n: &str| n == "creds.token",
         );
         assert_eq!(v, json!({"token": "<redacted>", "user": "bob"}));
     }

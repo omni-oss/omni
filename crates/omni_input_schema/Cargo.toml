@@ -33,6 +33,7 @@ schemars = { workspace = true }
 serde_json = { workspace = true }
 garde = { workspace = true }
 omni_tera = { workspace = true }
+omni_redact = { workspace = true }
 omni_serde_validators = { workspace = true }
 serde_validate = { workspace = true }
 omni_config_types = { workspace = true }

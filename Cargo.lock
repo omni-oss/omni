@@ -7419,6 +7419,7 @@ dependencies = [
  "log",
  "maps",
  "omni_config_types",
+ "omni_redact",
  "omni_serde_validators",
  "omni_tera",
  "schemars",

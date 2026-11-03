@@ -43,6 +43,9 @@ pub struct ValidationConfig<'a> {
     /// Names of inputs whose values must not appear in logs, in addition to
     /// inputs marked `secret`. Display only.
     pub redact: Option<NameFilter>,
+    /// Values already known to be sensitive (for example those redacted by an
+    /// enclosing generator); applied to every logged input value.
+    pub redact_values: Option<omni_redact::Redactor>,
 }
 
 /// A predicate over input names, used to keep values out of logs.
@@ -72,6 +75,7 @@ impl Default for ValidationConfig<'_> {
             validation_value_name: Some("value"),
             use_defaults: false,
             redact: None,
+            redact_values: None,
         }
     }
 }

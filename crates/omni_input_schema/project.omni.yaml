@@ -10,3 +10,4 @@ dependencies:
   - omni_tera
   - serde_validate
   - omni_serde_validators
+  - omni_redact
