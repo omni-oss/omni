@@ -4,7 +4,7 @@ use derive_builder::Builder;
 use getset::{CloneGetters, CopyGetters, Getters};
 use maps::UnorderedMap;
 
-use omni_execution_plan::{Call, ScmAffectedFilter};
+use omni_execution_plan::{Call, MetaOnError, ScmAffectedFilter};
 use omni_task_output_logs::LogsDisplay;
 
 use crate::{Force, OnFailure};
@@ -33,6 +33,16 @@ pub struct ExecutionConfig {
     #[builder(default)]
     #[getset(get = "pub")]
     meta_filter: Option<String>,
+
+    /// What to do when the meta filter fails to evaluate for a task
+    #[builder(default)]
+    #[getset(get_copy = "pub")]
+    meta_on_error: MetaOnError,
+
+    /// Number of failing tasks to show per distinct meta filter error cause
+    #[builder(default = 3)]
+    #[getset(get_copy = "pub")]
+    meta_error_samples: usize,
 
     /// Glob pattern to filter the directories
     #[builder(default)]

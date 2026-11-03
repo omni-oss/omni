@@ -14,7 +14,7 @@ fn evaluate(
     evaluator: &omni_expressions::Evaluator,
     ctx: &Context<'_, '_>,
 ) -> bool {
-    evaluator.coerce_to_bool(ctx).expect("should have value")
+    evaluator.evaluate_bool(ctx).expect("should have value")
 }
 
 fn simple_expression(n: usize) -> String {

@@ -20,6 +20,10 @@ use serde::{Deserialize, Serialize};
 pub struct TaskRunFilters {
     /// CEL expression to match against task meta configuration.
     pub meta: Option<String>,
+    /// What to do when the meta filter fails to evaluate for a task.
+    pub meta_on_error: omni_task_executor::MetaOnError,
+    /// Failing tasks to list per distinct meta error cause.
+    pub meta_error_samples: usize,
     /// Glob patterns to match project names.
     pub project: Vec<String>,
     /// Glob patterns to match project directories.
@@ -47,6 +51,8 @@ impl Default for TaskRunFilters {
     fn default() -> Self {
         Self {
             meta: None,
+            meta_on_error: Default::default(),
+            meta_error_samples: 3,
             project: vec![],
             dir: vec![],
             max_concurrency: None,
@@ -173,6 +179,9 @@ pub(crate) fn apply_filters(
     if let Some(meta) = &filters.meta {
         builder.meta_filter(meta);
     }
+
+    builder.meta_on_error(filters.meta_on_error);
+    builder.meta_error_samples(filters.meta_error_samples);
 
     builder.project_filters(filters.project.clone());
     builder.dir_filters(filters.dir.clone());

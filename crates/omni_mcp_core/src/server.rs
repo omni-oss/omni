@@ -378,6 +378,18 @@ async fn call0<R: Serialize>(
             )))
         }
         Err(e) => {
+            if let Some(meta) = e
+                .downcast_ref::<omni_task_executor::TaskExecutorError>()
+                .and_then(|e| e.meta_filter_error())
+            {
+                let total = meta.total;
+                return Err(rmcp::model::ErrorData::invalid_params(
+                    format!(
+                        "meta filter failed to evaluate for {total} task(s)"
+                    ),
+                    Some(meta.to_json()),
+                ));
+            }
             Err(rmcp::model::ErrorData::internal_error(e.to_string(), None))
         }
     }
