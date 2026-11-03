@@ -54,25 +54,18 @@ where
 
 /// Replace every occurrence of each value in `secrets` with `placeholder`.
 ///
-/// Longer values are replaced first so a short value cannot partially mask a
-/// longer one that contains it. Empty values are ignored. Works on the
-/// unsplit string, so values containing whitespace are matched intact.
+/// A thin wrapper over [`omni_redact::Redactor`]; every value is redacted
+/// however short.
 pub fn redact_values<'a>(
     input: Cow<'a, str>,
     secrets: &[&str],
     placeholder: &str,
 ) -> Cow<'a, str> {
-    let mut ordered: Vec<&str> =
-        secrets.iter().copied().filter(|s| !s.is_empty()).collect();
-    ordered.sort_by_key(|s| std::cmp::Reverse(s.len()));
-
-    let mut text = input;
-    for secret in ordered {
-        if text.contains(secret) {
-            text = Cow::Owned(text.replace(secret, placeholder));
-        }
-    }
-    text
+    omni_redact::Redactor::builder()
+        .placeholder(placeholder)
+        .values(secrets.iter().copied())
+        .build()
+        .redact(input)
 }
 
 #[cfg(test)]

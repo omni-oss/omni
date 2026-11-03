@@ -10,7 +10,8 @@ use maps::{Map, UnorderedMap};
 use merge::Merge as _;
 use omni_config_types::MergeSingleOrMany;
 use omni_configurations::{
-    MetaConfiguration, ProjectConfiguration, WorkspaceConfiguration,
+    MetaConfiguration, ProjectConfiguration, RedactPolicy,
+    WorkspaceConfiguration,
 };
 use omni_core::{
     ExtensionGraph, ExtensionGraphError, ExtensionGraphNode as _, Project, Task,
@@ -83,6 +84,7 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
         let mut task_env_var_overrides = maps::unordered_map![];
         let mut cache_infos = maps::unordered_map![];
         let mut output_logs_configs = maps::unordered_map![];
+        let mut redact_policies = maps::unordered_map![];
 
         let project_paths = project_paths
             .iter()
@@ -92,6 +94,16 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
         let root_dir = self.root_dir.to_string_lossy().to_string();
 
         let (ws_vars, ws_vars_os) = self.get_ws_vars_vars()?;
+
+        self.workspace_configuration
+            .redact
+            .check(true)
+            .map_err(|message| {
+                ProjectDataExtractorErrorInner::InvalidRedact {
+                    location: "the workspace configuration".to_string(),
+                    message,
+                }
+            })?;
 
         let filtered = project_configs
             .iter()
@@ -152,6 +164,13 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
             let project_cache = &project_config.cache;
             let project_output_logs = &project_config.output_logs;
             let project_meta = &project_config.meta;
+
+            project_config.redact.check(false).map_err(|message| {
+                ProjectDataExtractorErrorInner::InvalidRedact {
+                    location: format!("project '{}'", project_config.name),
+                    message,
+                }
+            })?;
 
             project_meta_configs
                 .insert(project_config.name.clone(), project_meta.clone());
@@ -259,6 +278,30 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
                     project_meta.clone()
                 };
 
+                if let Some(task_redact) = task.redact() {
+                    task_redact.check(false).map_err(|message| {
+                        ProjectDataExtractorErrorInner::InvalidRedact {
+                            location: format!(
+                                "task '{}' in project '{}'",
+                                name, project_config.name
+                            ),
+                            message,
+                        }
+                    })?;
+                }
+
+                let mut levels = vec![
+                    &self.workspace_configuration.redact,
+                    &project_config.redact,
+                ];
+                if let Some(task_redact) = task.redact() {
+                    levels.push(task_redact);
+                }
+                redact_policies.insert(
+                    full_task_name.clone(),
+                    RedactPolicy::resolve(&levels),
+                );
+
                 task_meta_configs.insert(full_task_name, task_meta);
             }
 
@@ -285,6 +328,7 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
             project_meta_configs,
             task_meta_configs,
             output_logs_configs,
+            redact_policies,
         ))
     }
 }
@@ -297,6 +341,10 @@ pub struct ProjectDataExtractions {
     pub project_meta_configs: UnorderedMap<String, MetaConfiguration>,
     pub task_meta_configs: UnorderedMap<String, MetaConfiguration>,
     pub output_logs_configs: UnorderedMap<String, OutputLogsConfiguration>,
+    /// Resolved redaction policy per `project#task`. Display only: never
+    /// hashed and never part of cache keys.
+    #[serde(default)]
+    pub redact_policies: UnorderedMap<String, RedactPolicy>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -336,4 +384,7 @@ pub(crate) enum ProjectDataExtractorErrorInner {
 
     #[error(transparent)]
     OmniPath(#[from] OmniPathError),
+
+    #[error("invalid `redact` configuration in {location}: {message}")]
+    InvalidRedact { location: String, message: String },
 }

@@ -460,7 +460,7 @@ impl NameGlobSet {
     pub fn is_match(&self, name: &str) -> bool;
 
     /// Patterns that matched none of `names`; for debug-level typo hints.
-    pub fn unmatched<'a>(&'a self, names: impl IntoIterator<Item = &'a str>)
+    pub fn unmatched<'a, 'n>(&'a self, names: impl IntoIterator<Item = &'n str>)
         -> Vec<&'a str>;
 }
 ```

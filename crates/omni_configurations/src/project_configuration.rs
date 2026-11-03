@@ -63,6 +63,10 @@ pub struct ProjectConfiguration {
     #[serde(default)]
     pub meta: MetaConfiguration,
 
+    /// Redaction policy for the project's tasks (`args` and `env`).
+    #[serde(default)]
+    pub redact: crate::RedactConfiguration,
+
     #[serde(default)]
     pub tasks: DictConfig<TaskConfiguration>,
 }
@@ -136,6 +140,7 @@ mod tests {
                 LogsDisplay::Failed,
             )),
             meta: MetaConfiguration::default(),
+            redact: Default::default(),
             tasks: DictConfig::default(),
         };
 
@@ -156,6 +161,7 @@ mod tests {
                 },
             )),
             meta: MetaConfiguration::default(),
+            redact: Default::default(),
             tasks: DictConfig::default(),
         };
 
@@ -183,6 +189,7 @@ mod tests {
                 LogsDisplay::All,
             )),
             meta: MetaConfiguration::default(),
+            redact: Default::default(),
             tasks: DictConfig::default(),
         };
 

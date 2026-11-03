@@ -3,7 +3,9 @@ use std::{path::PathBuf, time::Duration};
 use clap::Args;
 use clap_utils::EnumValueAdapter;
 use maps::UnorderedMap;
-use omni_configurations::{Ui, WorkspaceConfiguration};
+use omni_configurations::{
+    RedactMode, RedactOverrides, Ui, WorkspaceConfiguration,
+};
 use omni_execution_plan::{MetaOnError, ScmAffectedFilter};
 use omni_scm::SelectScm;
 use omni_task_executor::ExecutionConfigBuilder;
@@ -125,6 +127,28 @@ pub struct RunArgs {
     pub args: Vec<(String, String)>,
 
     #[arg(
+        long = "redact-arg",
+        value_name = "NAME",
+        help = "Redact the value of this arg (name or glob) in logs and dry-run output. Repeatable"
+    )]
+    pub redact_arg: Vec<String>,
+
+    #[arg(
+        long = "redact-env",
+        value_name = "NAME",
+        help = "Redact the value of this environment variable (name or glob) in logs and dry-run output. Repeatable"
+    )]
+    pub redact_env: Vec<String>,
+
+    #[arg(
+        long = "redact",
+        value_name = "MODE",
+        value_enum,
+        help = "Redaction mode: declared (apply configured policy), all, or none (prints a notice)"
+    )]
+    pub redact: Option<RedactModeArg>,
+
+    #[arg(
         long,
         short,
         help = "Ui mode to use while running the command",
@@ -145,6 +169,24 @@ pub struct RunArgs {
         value_enum
     )]
     pub output_cached_logs: Option<EnumValueAdapter<LogsDisplay>>,
+}
+
+/// `--redact` values; see [`RedactMode`].
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+pub enum RedactModeArg {
+    Declared,
+    All,
+    None,
+}
+
+impl From<RedactModeArg> for RedactMode {
+    fn from(value: RedactModeArg) -> Self {
+        match value {
+            RedactModeArg::Declared => RedactMode::Declared,
+            RedactModeArg::All => RedactMode::All,
+            RedactModeArg::None => RedactMode::None,
+        }
+    }
 }
 
 impl RunArgs {
@@ -203,6 +245,13 @@ impl RunArgs {
 
             builder.args(hm);
         }
+
+        builder.redact(RedactOverrides {
+            mode: self.redact.map(Into::into),
+            args: self.redact_arg.clone(),
+            inputs: vec![],
+            env: self.redact_env.clone(),
+        });
 
         if let Some(output_logs) = &self.output_logs {
             builder.output_logs(output_logs.value());

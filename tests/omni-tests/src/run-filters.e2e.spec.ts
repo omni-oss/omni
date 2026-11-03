@@ -205,6 +205,151 @@ describe("+run-filters @e2e (dry run)", () => {
         expect(result.stdout).not.toContain("phrase");
     });
 
+    it("`redact.args` hides declared args and nested args in a dry run", async () => {
+        const ws = makeWorkspace({
+            workspace: { projects: ["**"], redact: { args: ["api.key"] } },
+            projects: {
+                app: {
+                    name: "app",
+                    tasks: {
+                        t: {
+                            exec: "echo {{ args.token }} {{ args.api.key }} {{ args.plain }}",
+                            args: {
+                                plain: "visible-value",
+                                api: { key: "apikey-secret" },
+                            },
+                        },
+                    },
+                },
+            },
+        });
+
+        const result = await runOmni(
+            ["run", "t", "-d", "--force", "-a", "token=sekret-token"],
+            { cwd: ws.cwd },
+        );
+
+        expect(result).toHaveSucceeded();
+        expect(result).toOutputContaining("visible-value");
+        expect(result.stdout).not.toContain("apikey-secret");
+        // `token` is not declared, so it stays visible.
+        expect(result).toOutputContaining("sekret-token");
+    });
+
+    it("`--redact-arg` adds to the declared args", async () => {
+        const ws = makeWorkspace({
+            workspace: { projects: ["**"] },
+            projects: {
+                app: {
+                    name: "app",
+                    tasks: { t: { exec: "echo {{ args.token }}" } },
+                },
+            },
+        });
+
+        const result = await runOmni(
+            [
+                "run",
+                "t",
+                "-d",
+                "--force",
+                "-a",
+                "token=sekret-token",
+                "--redact-arg",
+                "token",
+            ],
+            { cwd: ws.cwd },
+        );
+
+        expect(result).toHaveSucceeded();
+        expect(result).toOutputContaining("<redacted>");
+        expect(result.stdout).not.toContain("sekret-token");
+    });
+
+    it("`redact.env` `except` keeps names visible and short env values are not blanket-redacted", async () => {
+        const ws = makeWorkspace({
+            workspace: { projects: ["**"] },
+            projects: {
+                app: {
+                    name: "app",
+                    redact: { env: { all: true, except: ["OTHER"] } },
+                    tasks: {
+                        t: {
+                            exec: "echo {{ env.TOKEN }} {{ env.OTHER }} {{ env.SHORT }}",
+                            env: {
+                                vars: {
+                                    TOKEN: "tok-secret",
+                                    OTHER: "other-value",
+                                    SHORT: "1",
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        });
+
+        const result = await runOmni(["run", "t", "-d", "--force"], {
+            cwd: ws.cwd,
+        });
+
+        expect(result).toHaveSucceeded();
+        expect(result.stdout).not.toContain("tok-secret");
+        expect(result).toOutputContaining("other-value");
+    });
+
+    it("`--redact none` prints a notice and shows values; `--redact all` hides args", async () => {
+        const ws = makeWorkspace({
+            workspace: { projects: ["**"] },
+            projects: {
+                app: {
+                    name: "app",
+                    tasks: {
+                        t: {
+                            exec: "echo {{ env.TOKEN }} {{ args.plain }}",
+                            args: { plain: "plain-value" },
+                            env: { vars: { TOKEN: "tok-secret" } },
+                        },
+                    },
+                },
+            },
+        });
+
+        const none = await runOmni(
+            ["run", "t", "-d", "--force", "--redact", "none"],
+            { cwd: ws.cwd },
+        );
+        expect(none).toHaveSucceeded();
+        expect(none).toOutputContaining("Redaction is disabled");
+        expect(none).toOutputContaining("tok-secret");
+
+        const all = await runOmni(
+            ["run", "t", "-d", "--force", "--redact", "all"],
+            { cwd: ws.cwd },
+        );
+        expect(all).toHaveSucceeded();
+        expect(all.stdout).not.toContain("plain-value");
+        expect(all.stdout).not.toContain("tok-secret");
+    });
+
+    it("rejects `redact.inputs` and `redact.mode` outside the workspace", async () => {
+        const ws = makeWorkspace({
+            workspace: { projects: ["**"] },
+            projects: {
+                app: {
+                    name: "app",
+                    redact: { inputs: ["x"] },
+                    tasks: { t: "echo hi" },
+                },
+            },
+        });
+
+        const result = await runOmni(["run", "t", "-d", "--force"], {
+            cwd: ws.cwd,
+        });
+        expect(result).toHaveFailed();
+    });
+
     it("`-d/--dry-run` escapes terminal control characters in the command", async () => {
         const ws = makeWorkspace({
             workspace: { projects: ["**"] },

@@ -164,9 +164,9 @@ impl NameGlobSet {
     }
 
     /// Patterns that matched none of `names`; for debug-level typo hints.
-    pub fn unmatched<'a>(
+    pub fn unmatched<'a, 'n>(
         &'a self,
-        names: impl IntoIterator<Item = &'a str>,
+        names: impl IntoIterator<Item = &'n str>,
     ) -> Vec<&'a str> {
         let names: Vec<String> =
             names.into_iter().map(|n| self.fold(n)).collect();

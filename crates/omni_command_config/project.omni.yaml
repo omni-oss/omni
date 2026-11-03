@@ -2,3 +2,5 @@
 name: omni_command_config
 extends:
   - "@workspace/omni/presets/rust-lib.omni.yaml"
+dependencies:
+  - omni_redact

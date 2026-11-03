@@ -4,6 +4,7 @@ use derive_builder::Builder;
 use getset::{CloneGetters, CopyGetters, Getters};
 use maps::UnorderedMap;
 
+use omni_configurations::RedactOverrides;
 use omni_execution_plan::{Call, MetaOnError, ScmAffectedFilter};
 use omni_task_output_logs::LogsDisplay;
 
@@ -103,6 +104,11 @@ pub struct ExecutionConfig {
     #[builder(default)]
     #[getset(get = "pub")]
     args: UnorderedMap<String, serde_json::Value>,
+
+    /// Command-line redaction overrides applied on top of configured policy.
+    #[builder(default)]
+    #[getset(get = "pub")]
+    redact: RedactOverrides,
 }
 
 impl ExecutionConfigBuilder {
