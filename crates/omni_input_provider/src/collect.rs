@@ -373,12 +373,21 @@ async fn collect_from_object<E: InputProfile + Send + Sync + 'static>(
     // Child fields are matched by their dotted path (`creds.token`), so wrap
     // the policy filter to prefix each child name with the parent's name.
     let mut child_config = config.clone();
-    if let Some(filter) = config.redact.clone() {
-        let parent = object_input.base.name.clone();
-        child_config.redact =
-            Some(omni_input_schema::NameFilter::new(std::sync::Arc::new(
-                move |name| filter.matches(&format!("{parent}.{name}")),
-            )));
+    let parent = object_input.base.name.clone();
+    let parent_secret = object_input.base.secret;
+    if parent_secret || config.redact.is_some() {
+        let filter = config.redact.clone();
+        // A hidden parent (secret, or selected by the policy) hides every
+        // child; otherwise a child matches by its dotted path.
+        child_config.redact = Some(omni_input_schema::NameFilter::new(
+            std::sync::Arc::new(move |name| {
+                parent_secret
+                    || filter.as_ref().is_some_and(|f| {
+                        f.matches(&parent)
+                            || f.matches(&format!("{parent}.{name}"))
+                    })
+            }),
+        ));
     }
     let object = Box::pin(collect_internal(
         object_input.fields.as_slice(),
