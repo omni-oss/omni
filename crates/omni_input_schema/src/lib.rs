@@ -46,6 +46,6 @@ pub use input::{
 pub use json_schema::to_json_schema;
 pub use profile::InputProfile;
 pub use validate::{
-    ValidationConfig, ValidationError, ValidationReport, validate,
+    NameFilter, ValidationConfig, ValidationError, ValidationReport, validate,
     validate_boolean_expression_result, validate_value,
 };

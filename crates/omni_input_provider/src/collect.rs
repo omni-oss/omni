@@ -108,6 +108,23 @@ fn to_tera_ctx(
     ctx
 }
 
+/// The value to show in logs: the placeholder for `secret` inputs and inputs
+/// selected by the redaction policy.
+fn display_value<E: InputProfile>(
+    config: &ValidationConfig<'_>,
+    input: &Input<E>,
+    key: &str,
+    value: &OwnedValueBag,
+) -> String {
+    let redacted = input.base().secret
+        || config.redact.as_ref().is_some_and(|r| r.matches(key));
+    if redacted {
+        omni_constants::REDACTED_PLACEHOLDER.to_string()
+    } else {
+        value.to_string()
+    }
+}
+
 async fn get_input_value<
     E: InputProfile + Send + Sync + 'static,
     I: Borrow<Input<E>>,
@@ -121,7 +138,10 @@ async fn get_input_value<
 ) -> Result<OwnedValueBag, Error> {
     let input = input.borrow();
     if let Some(v) = pre_exec_value {
-        log::debug!("using pre-exec value for input {key}: {v}");
+        log::debug!(
+            "using pre-exec value for input {key}: {}",
+            display_value(config, input, key, v)
+        );
         process_pre_filled_value(config, ctx, input, key, v, false, provider)
             .await
     } else if config.use_defaults
@@ -143,7 +163,10 @@ async fn get_input_value<
     } else if config.use_defaults
         && let Some(default) = input.static_default_value_bag()
     {
-        log::debug!("using default value for input {key}: {default}");
+        log::debug!(
+            "using default value for input {key}: {}",
+            display_value(config, input, key, &default)
+        );
         process_pre_filled_value(
             config, ctx, input, key, &default, true, provider,
         )

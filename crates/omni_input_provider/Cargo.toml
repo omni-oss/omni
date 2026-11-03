@@ -16,6 +16,7 @@ test-utils = []
 
 [dependencies]
 omni_input_schema = { workspace = true }
+omni_constants = { workspace = true }
 thiserror = { workspace = true }
 eyre = { workspace = true }
 strum = { workspace = true }

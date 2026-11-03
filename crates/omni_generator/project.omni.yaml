@@ -9,6 +9,7 @@ dependencies:
   - omni_file_data_serde
   - omni_constants
   - omni_input_provider
+  - omni_input_schema
   - omni_messages
   - omni_configuration_discovery
   - omni_discovery
@@ -29,3 +30,5 @@ dependencies:
   - omni_capability_sys
   - omni_config_types
   - omni_command_config
+  - omni_configurations
+  - omni_redact

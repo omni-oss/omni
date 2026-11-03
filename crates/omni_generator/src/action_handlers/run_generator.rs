@@ -109,6 +109,8 @@ pub async fn run_generator<'a, S: GeneratorEventSubscriber>(
         .input_provider(ctx.input_provider)
         .subscriber(ctx.subscriber)
         .max_depth(ctx.max_depth)
+        .maybe_redact_policy(ctx.redact_policy)
+        .inherited_redactor(ctx.redactor)
         .build();
 
     // Under the shrink-only model the calling generator's authority binds its

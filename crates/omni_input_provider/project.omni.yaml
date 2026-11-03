@@ -11,3 +11,5 @@ dependencies:
   - maps
   - sets
   - omni_config_types
+  - omni_constants
+  - omni_input_schema

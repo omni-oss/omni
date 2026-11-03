@@ -290,6 +290,38 @@ impl RedactPolicy {
         self
     }
 
+    /// A predicate telling whether a value *name* is redacted under this
+    /// policy, for log sites that know the name before the value (and so
+    /// cannot use a [`Redactor`]). Mirrors [`Self::redactor`]'s selection
+    /// except that the bulk minimum length cannot apply without the value.
+    pub fn name_predicate(
+        &self,
+        category: RedactCategory,
+    ) -> std::sync::Arc<dyn Fn(&str) -> bool + Send + Sync> {
+        let policy = match self.mode {
+            RedactMode::None => {
+                return std::sync::Arc::new(|_| false);
+            }
+            RedactMode::Declared => self.category(category).clone(),
+            RedactMode::All => RedactCategoryPolicy {
+                all: true,
+                only: vec![],
+                except: vec![],
+            },
+        };
+        let opts = category.glob_options();
+        let (Ok(only), Ok(except)) = (
+            NameGlobSet::new(&policy.only, &opts),
+            NameGlobSet::new(&policy.except, &opts),
+        ) else {
+            return std::sync::Arc::new(|_| true);
+        };
+        let all = policy.all;
+        std::sync::Arc::new(move |name| {
+            only.is_match(name) || (all && !except.is_match(name))
+        })
+    }
+
     /// `only` and `except` patterns of `category` that match none of `names`.
     /// Used for debug-level typo hints; never an error.
     pub fn unmatched_patterns<'n>(

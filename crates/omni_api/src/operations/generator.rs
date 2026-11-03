@@ -76,6 +76,9 @@ pub struct GeneratorRunRequest {
     /// Maximum `run-generator` nesting depth before the run is aborted. `None`
     /// uses [`omni_generator::DEFAULT_MAX_GENERATOR_DEPTH`].
     pub max_depth: Option<usize>,
+    /// Command-line redaction overrides. Never settable through MCP.
+    #[schemars(skip)]
+    pub redact: omni_configurations::RedactOverrides,
 }
 
 /// Response from a `generator_run` call.
@@ -309,6 +312,12 @@ where
         .enable_experimental
         .capabilities();
 
+    let redact_policy =
+        req.redact
+            .apply(omni_configurations::RedactPolicy::resolve(&[&ctx
+                .workspace_configuration()
+                .redact]));
+
     let run_config = RunConfig::builder()
         .dry_run(req.dry_run)
         .output_dir(output_dir.as_path())
@@ -327,6 +336,7 @@ where
         .input_provider(req.input_provider.as_ref())
         .subscriber(subscriber)
         .maybe_max_depth(req.max_depth)
+        .redact_policy(&redact_policy)
         .build();
 
     let result = omni_generator::run_named(&name, &run_config, &sys).await?;

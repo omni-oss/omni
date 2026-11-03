@@ -1864,5 +1864,73 @@ describe(
             expect(result).toHaveSucceeded();
             expect(ws.read("out/nested.txt")).toContain("from child");
         });
+    
+        it("redacts `secret` and `redact.inputs` values in debug logs, and `--redact none` shows them", async () => {
+            const ws = makeWorkspace({
+                workspace: {
+                    projects: ["**"],
+                    generators: [{ source: "local", path: "generators/**" }],
+                    redact: { inputs: ["token"] },
+                },
+                projects: {
+                    "generators/g/generator.omni.yaml": {
+                        name: "g",
+                        display_name: "G",
+                        description: "redaction fixture",
+                        inputs: [
+                            {
+                                type: "string",
+                                name: "pw",
+                                message: "pw",
+                                secret: true,
+                            },
+                            { type: "string", name: "token", message: "token" },
+                            { type: "string", name: "plain", message: "plain" },
+                        ],
+                        actions: [
+                            {
+                                type: "add-content",
+                                output_path: "a.txt",
+                                content: "x",
+                            },
+                            {
+                                type: "transform",
+                                file: "a.txt",
+                                command:
+                                    "cat; echo {{ inputs.pw }} {{ inputs.token }} {{ inputs.plain }} >&2",
+                            },
+                        ],
+                    },
+                },
+                files: { ".omni/sources/generator/.keep": "" },
+            });
+            const args = [
+                "-l",
+                "debug",
+                "generator",
+                "run",
+                "-n",
+                "g",
+                "-o",
+                "out",
+                "-v",
+                "pw=pass-secret-1",
+                "-v",
+                "token=token-secret-1",
+                "-v",
+                "plain=plain-open-1",
+            ];
+
+            const hidden = await runOmni(args, { cwd: ws.cwd });
+            expect(hidden.out).not.toContain("pass-secret-1");
+            expect(hidden.out).not.toContain("token-secret-1");
+            expect(hidden.out).toContain("plain-open-1");
+            expect(hidden.out).toContain("<redacted>");
+
+            const shown = await runOmni([...args, "--redact", "none"], {
+                cwd: ws.cwd,
+            });
+            expect(shown.out).toContain("token-secret-1");
+        });
     },
 );
