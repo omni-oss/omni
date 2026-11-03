@@ -369,11 +369,21 @@ async fn collect_from_object<E: InputProfile + Send + Sync + 'static>(
     config: &ValidationConfig<'_>,
     provider: &dyn InputProvider<E>,
 ) -> Result<OwnedValueBag, Error> {
+    // Child fields are matched by their dotted path (`creds.token`), so wrap
+    // the policy filter to prefix each child name with the parent's name.
+    let mut child_config = config.clone();
+    if let Some(filter) = config.redact.clone() {
+        let parent = object_input.base.name.clone();
+        child_config.redact =
+            Some(omni_input_schema::NameFilter::new(std::sync::Arc::new(
+                move |name| filter.matches(&format!("{parent}.{name}")),
+            )));
+    }
     let object = Box::pin(collect_internal(
         object_input.fields.as_slice(),
         &unordered_map!(),
         context,
-        config,
+        &child_config,
         provider,
     ))
     .await?;
