@@ -591,7 +591,11 @@ Redaction is a safety net, not a guarantee. Stated plainly:
   they previously could leak.
 - Config schema gains an optional `redact` block at three levels, so
   existing configs stay valid; JSON schemas are regenerated.
-- No change to execution, hashing or cache keys.
+- No change to execution, hashing or cache keys: the policy is display
+  metadata and is not hashed. A `redact` block written in a project config file
+  is part of that file, which is already a cache key input, so editing it
+  invalidates that project's cache like any other edit to the file. A
+  workspace-level `redact` block does not change project hashes.
 
 ## 7. Rollout
 
@@ -606,6 +610,32 @@ Redaction is a safety net, not a guarantee. Stated plainly:
 4. Wire logging/tracing and generator action call sites.
 5. Wire RFC 0021 renderers.
 6. Documentation page for redaction behavior and its limits.
+
+### Implementation status
+
+Steps 1 to 3 landed together, plus the parts of 4 and 5 that have a call site
+in this tree:
+
+- Dry-run command display, generator `transform` / `transform-many` /
+  `run-command` logs and errors, the generator input-collection debug logs,
+  tool validation and run errors, RFC 0021 diagnostics (text and JSON, CLI and
+  MCP) and the git clone trace log are routed through the redactor or the fixed
+  URL-userinfo rule.
+- `--redact`, `--redact-arg`, `--redact-env` (`run`, `exec`),
+  `--redact-input`, `--redact-env`, `--redact` (`generator run`) and
+  `--redact-input`, `--redact` (`tool run`) are available. MCP never exposes
+  them.
+- Not done, with the reason:
+  - **Generic `tracing` / `log` adapters** (the optional features in 4.3): no
+    call site outside those above echoes a sensitive value today, so a global
+    log filter would add cost without closing a known leak. It can be added
+    behind the existing `Redactor` API.
+  - **Remote cache credentials**: the remote cache configuration in this tree
+    holds no secret fields (credentials come from the process environment and
+    are never formatted), so there is nothing to redact yet.
+  - **Workspace `redact.env` applied to a tool's env**: tool runs do not
+    format env values, so this has no visible effect yet.
+  - **Documentation page** (step 6).
 
 ## 8. Open questions
 

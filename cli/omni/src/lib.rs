@@ -218,6 +218,8 @@ fn report_failure(
     format: ErrorFormat,
 ) -> eyre::Result<()> {
     if let Some(d) = DiagnosticReport::from_report(&report) {
+        // Fixed rule: credentials embedded in a URL are never printed.
+        let d = d.redact_url_userinfo();
         match format {
             ErrorFormat::Text => eprint!("{}", d.to_text()),
             ErrorFormat::Json => eprintln!("{}", d.to_json()),

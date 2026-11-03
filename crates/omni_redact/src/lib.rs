@@ -12,6 +12,40 @@ pub use omni_constants::REDACTED_PLACEHOLDER;
 /// [`RedactorBuilder::bulk_value`].
 pub const DEFAULT_BULK_MIN_LEN: usize = 4;
 
+/// Replaces the userinfo (`user:password@`) of every URL-like token in `input`
+/// with the placeholder, so credentials embedded in a URL (for example a git
+/// remote) never reach logs or errors. Fixed rule: not part of any policy.
+pub fn redact_url_userinfo(input: &str) -> Cow<'_, str> {
+    let mut out: Option<String> = None;
+    let mut rest = input;
+    let mut consumed = 0;
+    while let Some(i) = rest.find("://") {
+        let auth_start = i + 3;
+        let after = &rest[auth_start..];
+        let auth_end = after
+            .find(|c: char| matches!(c, '/' | '?' | '#') || c.is_whitespace())
+            .unwrap_or(after.len());
+        let authority = &after[..auth_end];
+        if let Some(at) = authority.rfind('@') {
+            let buf = out.get_or_insert_with(String::new);
+            buf.push_str(&input[consumed..consumed + auth_start]);
+            buf.push_str(REDACTED_PLACEHOLDER);
+            buf.push('@');
+            consumed += auth_start + at + 1;
+            rest = &input[consumed..];
+        } else {
+            rest = &rest[auth_start..];
+        }
+    }
+    match out {
+        Some(mut buf) => {
+            buf.push_str(&input[consumed..]);
+            Cow::Owned(buf)
+        }
+        None => Cow::Borrowed(input),
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Redactor {
     /// Sorted longest first, deduplicated, never empty.
@@ -204,6 +238,22 @@ mod tests {
     fn default_placeholder_is_shared_constant() {
         let r = Redactor::builder().build();
         assert_eq!(r.placeholder(), REDACTED_PLACEHOLDER);
+    }
+
+    #[test]
+    fn url_userinfo_is_redacted() {
+        assert_eq!(
+            redact_url_userinfo("clone https://user:tok@github.com/a/b.git ok"),
+            "clone https://<redacted>@github.com/a/b.git ok"
+        );
+        assert_eq!(
+            redact_url_userinfo("ssh://git@host/x and https://a:b@h/p"),
+            "ssh://<redacted>@host/x and https://<redacted>@h/p"
+        );
+        assert!(matches!(
+            redact_url_userinfo("https://github.com/a/b@c"),
+            Cow::Borrowed(_)
+        ));
     }
 
     #[test]

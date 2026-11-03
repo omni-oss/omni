@@ -19,6 +19,7 @@ inventory = ["dep:inventory"]
 explicit-registry = []
 
 [dependencies]
+omni_redact = { workspace = true }
 eyre = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

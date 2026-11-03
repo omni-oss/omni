@@ -2,3 +2,5 @@
 name: omni_diagnostic
 extends:
   - "@workspace/omni/presets/rust-lib.omni.yaml"
+dependencies:
+  - omni_redact

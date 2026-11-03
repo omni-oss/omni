@@ -332,6 +332,35 @@ describe("+run-filters @e2e (dry run)", () => {
         expect(all.stdout).not.toContain("tok-secret");
     });
 
+    it("a workspace `redact` block does not change project hashes", async () => {
+        const make = (redact: Record<string, unknown> | undefined) =>
+            makeWorkspace({
+                workspace: { projects: ["**"], ...(redact ? { redact } : {}) },
+                projects: {
+                    app: {
+                        name: "app",
+                        tasks: { t: "echo hi" },
+                    },
+                },
+            });
+        const hash = async (redact: Record<string, unknown> | undefined) => {
+            const ws = make(redact);
+            const result = await runOmni(
+                ["-l", "off", "hash", "project", "app"],
+                { cwd: ws.cwd },
+            );
+            expect(result).toHaveSucceeded();
+            return result.stdout.trim();
+        };
+
+        const plain = await hash(undefined);
+        const redacted = await hash({
+            args: ["token"],
+            env: { all: true, except: ["CI"] },
+        });
+        expect(redacted).toBe(plain);
+    });
+
     it("rejects `redact.inputs` and `redact.mode` outside the workspace", async () => {
         const ws = makeWorkspace({
             workspace: { projects: ["**"] },
