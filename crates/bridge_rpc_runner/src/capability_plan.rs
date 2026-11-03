@@ -30,9 +30,7 @@ use omni_capability_enforcement::{
     NativeOsSandbox, NodePermissions, ScriptShimBroker, ShimPolicy,
     SpawnPolicy, UnenforceablePolicy, build_plan_layered,
 };
-use omni_messages::{
-    DiagnosticEvent, diagnostic_event, publish::DiagnosticLevel,
-};
+use omni_messages::{NoticeEvent, notice_event, publish::NoticeLevel};
 
 use crate::DelegatingJsRuntimeOption;
 
@@ -210,7 +208,7 @@ pub fn build_spawn_plan<P: CapabilityFloors>(
     runtime: DelegatingJsRuntimeOption,
     policy: &EffectivePolicy<P>,
     posture: SpawnPosture,
-) -> Result<(SpawnPolicy, ShimPolicy, Vec<DiagnosticEvent>), PlanError>
+) -> Result<(SpawnPolicy, ShimPolicy, Vec<NoticeEvent>), PlanError>
 where
     P::Context: core::fmt::Debug,
 {
@@ -287,7 +285,7 @@ where
     // * `floor_gaps` — a governed domain (net/process on Bun, fs off-Linux, …)
     //   is enforced only by the bypassable in-process broker/shim, with no
     //   un-bypassable runtime-flag or OS-sandbox floor for the resolved runtime.
-    let mut diagnostics: Vec<DiagnosticEvent> = Vec::new();
+    let mut diagnostics: Vec<NoticeEvent> = Vec::new();
 
     // Loud, distinct signal for the escape hatch: when `OMNI_DISABLE_OS_SANDBOX`
     // is set the OS-sandbox floor is dropped and filesystem confinement falls
@@ -295,8 +293,8 @@ where
     // downgrade that is easy to enable unknowingly, so surface it prominently
     // and up front — ahead of the per-domain floor-gap warnings.
     if os_sandbox_disabled {
-        diagnostics.push(diagnostic_event!(
-            DiagnosticLevel::Warn,
+        diagnostics.push(notice_event!(
+            NoticeLevel::Warn,
             "OS-level sandbox is DISABLED for this run \
              (OMNI_DISABLE_OS_SANDBOX is set): filesystem confinement falls \
              back to the bypassable in-process broker and the kernel backstop \
@@ -306,14 +304,14 @@ where
     }
 
     for warning in plan.warnings {
-        diagnostics.push(diagnostic_event!(
-            DiagnosticLevel::Warn,
+        diagnostics.push(notice_event!(
+            NoticeLevel::Warn,
             "capability policy not fully enforced: {warning}",
         ));
     }
     for gap in plan.floor_gaps {
-        diagnostics.push(diagnostic_event!(
-            DiagnosticLevel::Warn,
+        diagnostics.push(notice_event!(
+            NoticeLevel::Warn,
             "capability enforced without an un-bypassable floor: {}",
             gap.reason
         ));

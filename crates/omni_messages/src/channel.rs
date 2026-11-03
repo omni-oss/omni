@@ -2,7 +2,6 @@ use tokio::sync::mpsc::{
     UnboundedReceiver, UnboundedSender, unbounded_channel,
 };
 
-use crate::diagnostic::{DiagnosticEvent, DiagnosticSubscriber};
 use crate::execution::{
     CacheHitEvent, ExecutionCompleteEvent, ExecutionEventSubscriber,
     ExecutionPlanReadyEvent, TaskCompletedEvent, TaskFailedEvent,
@@ -16,6 +15,7 @@ use crate::generator::events::{
 use crate::generator::{
     GeneratorCompletedEvent, GeneratorEventSubscriber, GeneratorStartEvent,
 };
+use crate::notice::{NoticeEvent, NoticeSubscriber};
 
 /// All events that can travel through the channel.
 ///
@@ -33,8 +33,8 @@ pub enum OmniEventKind {
     CacheHit(CacheHitEvent),
     ExecutionComplete(ExecutionCompleteEvent),
     ExecutionPlanReady(ExecutionPlanReadyEvent),
-    // Shared diagnostic
-    Diagnostic(DiagnosticEvent),
+    // Shared notice
+    Notice(NoticeEvent),
     // Generator lifecycle
     GeneratorStarted(GeneratorStartEvent),
     GeneratorActionSkipped(GeneratorActionSkippedEvent),
@@ -66,9 +66,9 @@ impl ChannelSubscriber {
     }
 }
 
-impl DiagnosticSubscriber for ChannelSubscriber {
-    fn on_diagnostic(&self, e: DiagnosticEvent) {
-        self.send(OmniEventKind::Diagnostic(e));
+impl NoticeSubscriber for ChannelSubscriber {
+    fn on_notice(&self, e: NoticeEvent) {
+        self.send(OmniEventKind::Notice(e));
     }
 }
 

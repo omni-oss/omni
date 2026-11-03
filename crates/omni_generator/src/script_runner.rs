@@ -51,9 +51,7 @@ use omni_capabilities::{CapabilityFloors, CapabilityRules, PathRoots, Root};
 use omni_capability_enforcement::{ShimPolicy, SpawnPolicy};
 use omni_capability_sys::{EvaluatingAuthorizer, PolicyEnforcingSys};
 use omni_generator_configurations::Generator;
-use omni_messages::{
-    DiagnosticEvent, diagnostic_event, publish::DiagnosticLevel,
-};
+use omni_messages::{NoticeEvent, notice_event, publish::NoticeLevel};
 use serde::Serialize;
 use system_traits::EnvSnapshot;
 
@@ -95,7 +93,7 @@ fn build_spawn_plan(
     runtime: DelegatingJsRuntimeOption,
     policy: &EffectivePolicy,
     posture: SpawnPosture,
-) -> Result<(SpawnPolicy, ShimPolicy, Vec<DiagnosticEvent>), Error> {
+) -> Result<(SpawnPolicy, ShimPolicy, Vec<NoticeEvent>), Error> {
     build_spawn_plan_generic(runtime, policy, posture).map_err(|e| {
         Error::custom(format!(
             "cannot enforce the capability policy for this generator: {e}"
@@ -150,7 +148,7 @@ pub struct ScriptInvocation {
 /// trait signature.
 #[derive(Debug, Clone, Default)]
 pub struct RunScriptResult {
-    pub diagnostics: Vec<DiagnosticEvent>,
+    pub diagnostics: Vec<NoticeEvent>,
 }
 
 /// Abstraction over the JavaScript script execution backend.
@@ -345,8 +343,8 @@ impl JsScriptRunner for LazyScriptRunner {
             // policy, surface a warning so it is not silently ignored.
             let mut diagnostics = Vec::new();
             if policy.levels.iter().any(|level| !level.is_empty()) {
-                diagnostics.push(diagnostic_event!(
-                    DiagnosticLevel::Warn,
+                diagnostics.push(notice_event!(
+                    NoticeLevel::Warn,
                     "a capability policy is declared but the capabilities \
                      feature is experimental and disabled; it is ignored and \
                      scripts run unconfined — enable it with \
@@ -451,8 +449,8 @@ impl JsScriptRunner for LazyScriptRunner {
                 .await?;
 
             for note in &closure.diagnostics {
-                diagnostics.push(diagnostic_event!(
-                    DiagnosticLevel::Warn,
+                diagnostics.push(notice_event!(
+                    NoticeLevel::Warn,
                     "import-scan: {note}",
                 ));
             }
@@ -591,11 +589,9 @@ mod tests {
         )
         .expect("the warn stance never refuses on a floor gap");
         assert!(
-            after
-                .iter()
-                .any(|d| matches!(d.level, DiagnosticLevel::Warn)
-                    && d.message.contains("OS-level sandbox is DISABLED")
-                    && d.message.contains("OMNI_DISABLE_OS_SANDBOX")),
+            after.iter().any(|d| matches!(d.level, NoticeLevel::Warn)
+                && d.message.contains("OS-level sandbox is DISABLED")
+                && d.message.contains("OMNI_DISABLE_OS_SANDBOX")),
             "expected a loud OS-sandbox-disabled warning when the hatch is \
              set, got: {after:?}"
         );

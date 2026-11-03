@@ -10,7 +10,7 @@
 //!
 //! - **Subscriber traits** ([`ExecutionEventSubscriber`],
 //!   [`GeneratorEventSubscriber`], [`OmniEventSubscriber`],
-//!   [`DiagnosticSubscriber`]) — implemented by callers to receive structured
+//!   [`NoticeSubscriber`]) — implemented by callers to receive structured
 //!   events from the engine.
 //! - **Event payload types** — serializable structs for every lifecycle event,
 //!   organized by subsystem under [`execution`] and [`generator`].
@@ -18,9 +18,9 @@
 //!   [`ChannelSubscriber`], and (when the `tracing` feature is enabled)
 //!   [`TracingSubscriber`]).
 
-pub mod diagnostic;
 pub mod execution;
 pub mod generator;
+pub mod notice;
 pub mod publish;
 
 mod channel;
@@ -32,7 +32,6 @@ mod tracing_impl;
 // ── Flat re-exports (keep all existing import paths working) ─────────────────
 
 pub use channel::{ChannelSubscriber, OmniEventKind};
-pub use diagnostic::{DiagnosticEvent, DiagnosticLevel, DiagnosticSubscriber};
 pub use execution::{
     CacheHitEvent, ExecutionCompleteEvent, ExecutionEventSubscriber,
     ExecutionPlanReadyEvent, TaskCompletedEvent, TaskFailedEvent,
@@ -43,6 +42,7 @@ pub use generator::{
     GeneratorCompletedEvent, GeneratorEventSubscriber, GeneratorStartEvent,
 };
 pub use noop::NoopSubscriber;
+pub use notice::{NoticeEvent, NoticeLevel, NoticeSubscriber};
 pub use omni::OmniEventSubscriber;
 
 #[cfg(feature = "tracing")]

@@ -1,8 +1,11 @@
-/// Conditionally emit a [`DiagnosticEvent`] through a subscriber.
+/// Conditionally emit a [`NoticeEvent`] through a subscriber.
 ///
 /// The event is only constructed and dispatched when the subscriber's
-/// `wants_diagnostics()` returns `true`, avoiding unnecessary string
-/// allocations for subscribers that discard diagnostics (e.g. [`NoopSubscriber`]).
+/// `wants_notices()` returns `true`, avoiding unnecessary string
+/// allocations for subscribers that discard notices (e.g. [`NoopSubscriber`]).
+///
+/// Only user-facing levels (`Info`, `Warn`, `Error`) are accepted; use
+/// `log::debug!` / `log::trace!` for developer diagnostics.
 ///
 /// The macro expands to a `Future` — callers must `.await` the result.
 ///
@@ -12,33 +15,33 @@
 /// # Examples
 ///
 /// ```rust,ignore
-/// use omni_messages::publish::{diagnostic, DiagnosticLevel};
+/// use omni_messages::publish::{notice, NoticeLevel};
 ///
 /// // Simple message
-/// diagnostic!(subscriber, DiagnosticLevel::Info, "task started").await;
+/// notice!(subscriber, NoticeLevel::Info, "task started").await;
 ///
 /// // Format string
-/// diagnostic!(subscriber, DiagnosticLevel::Debug, "processed {}/{}", done, total).await;
+/// notice!(subscriber, NoticeLevel::Warn, "processed {}/{}", done, total).await;
 /// ```
 ///
-/// [`DiagnosticEvent`]: crate::DiagnosticEvent
+/// [`NoticeEvent`]: crate::NoticeEvent
 /// [`NoopSubscriber`]: crate::NoopSubscriber
 #[macro_export]
-macro_rules! diagnostic {
+macro_rules! notice {
     ($subscriber:expr, $level:expr, $($fmt_args:tt)+) => {
-        if $subscriber.wants_diagnostics() {
+        if $subscriber.wants_notices() {
             $subscriber
-                .on_diagnostic(
-                    $crate::diagnostic_event!($level, $($fmt_args)+)
+                .on_notice(
+                    $crate::notice_event!($level, $($fmt_args)+)
                 )
         }
     };
 }
 
 #[macro_export]
-macro_rules! diagnostic_event {
+macro_rules! notice_event {
     ($level:expr, $($fmt_args:tt)+) => {
-        $crate::DiagnosticEvent {
+        $crate::NoticeEvent {
             level: $level,
             message: ::std::format!($($fmt_args)+),
             fields: ::std::collections::BTreeMap::new(),
@@ -47,10 +50,10 @@ macro_rules! diagnostic_event {
     };
 }
 
-pub use diagnostic;
+pub use notice;
 
 // Re-export the types callers need alongside the macro.
-pub use crate::diagnostic::{DiagnosticEvent, DiagnosticLevel};
+pub use crate::notice::{NoticeEvent, NoticeLevel};
 
 #[cfg(test)]
 mod tests {
@@ -60,14 +63,14 @@ mod tests {
     use super::*;
     use crate::{
         GeneratorEventSubscriber, NoopSubscriber,
-        diagnostic::DiagnosticSubscriber, execution::ExecutionEventSubscriber,
+        execution::ExecutionEventSubscriber, notice::NoticeSubscriber,
     };
 
-    /// A subscriber that counts how many `on_diagnostic` calls it receives.
+    /// A subscriber that counts how many `on_notice` calls it receives.
     struct CountingSubscriber(Arc<AtomicU32>);
 
-    impl DiagnosticSubscriber for CountingSubscriber {
-        fn on_diagnostic(&self, _event: DiagnosticEvent) {
+    impl NoticeSubscriber for CountingSubscriber {
+        fn on_notice(&self, _event: NoticeEvent) {
             self.0.fetch_add(1, Ordering::Relaxed);
         }
     }
@@ -76,27 +79,24 @@ mod tests {
     impl GeneratorEventSubscriber for CountingSubscriber {}
 
     #[tokio::test]
-    async fn diagnostic_dispatches_when_wants_diagnostics_is_true() {
+    async fn notice_dispatches_when_wants_notices_is_true() {
         let count = Arc::new(AtomicU32::new(0));
         let sub = CountingSubscriber(Arc::clone(&count));
-        assert!(
-            sub.wants_diagnostics(),
-            "should want diagnostics by default"
-        );
+        assert!(sub.wants_notices(), "should want notices by default");
 
-        diagnostic!(sub, DiagnosticLevel::Info, "hello {}", 42);
+        notice!(sub, NoticeLevel::Info, "hello {}", 42);
         assert_eq!(count.load(Ordering::Relaxed), 1);
     }
 
     #[tokio::test]
-    async fn diagnostic_skips_when_wants_diagnostics_is_false() {
+    async fn notice_skips_when_wants_notices_is_false() {
         let sub = NoopSubscriber;
         assert!(
-            !sub.wants_diagnostics(),
-            "NoopSubscriber should not want diagnostics"
+            !sub.wants_notices(),
+            "NoopSubscriber should not want notices"
         );
 
-        // on_diagnostic is never called; no panic expected
-        diagnostic!(sub, DiagnosticLevel::Error, "should not reach subscriber");
+        // on_notice is never called; no panic expected
+        notice!(sub, NoticeLevel::Error, "should not reach subscriber");
     }
 }

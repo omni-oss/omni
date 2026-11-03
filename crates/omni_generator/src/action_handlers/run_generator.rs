@@ -5,7 +5,7 @@ use omni_generator_configurations::{
     ForAllInputValuesConfiguration, ForwardInputValuesConfiguration,
     InputValue, Root, RunGeneratorActionConfiguration,
 };
-use omni_messages::{DiagnosticLevel, GeneratorEventSubscriber, diagnostic};
+use omni_messages::GeneratorEventSubscriber;
 use value_bag::{OwnedValueBag, ValueBag};
 
 use crate::{
@@ -35,11 +35,7 @@ pub async fn run_generator<'a, S: GeneratorEventSubscriber>(
 
     let input_values = resolve_input_values(parent_inputs, config, ctx)?;
 
-    diagnostic!(
-        ctx.subscriber,
-        DiagnosticLevel::Trace,
-        "resolved prompt values: {input_values:#?}"
-    );
+    log::trace!("resolved prompt values: {input_values:#?}");
 
     let target_overrides = if config.targets.is_empty() {
         Cow::Borrowed(ctx.target_overrides)
@@ -55,11 +51,7 @@ pub async fn run_generator<'a, S: GeneratorEventSubscriber>(
         Cow::Owned(map)
     };
 
-    diagnostic!(
-        ctx.subscriber,
-        DiagnosticLevel::Trace,
-        "resolved target overrides: {target_overrides:#?}"
-    );
+    log::trace!("resolved target overrides: {target_overrides:#?}");
 
     let override_output_dir = config.output_dir.as_ref().map(|d| {
         let base = enum_map::enum_map! {

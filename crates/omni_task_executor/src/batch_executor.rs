@@ -12,10 +12,10 @@ use omni_context::LoadedContext;
 use omni_core::TaskExecutionNode;
 use omni_hasher::impls::DefaultHash;
 use omni_messages::{
-    CacheHitEvent, DiagnosticLevel, ExecutionEventSubscriber,
-    TaskCompletedEvent, TaskFailedEvent, TaskOutputStream,
-    TaskOutputStreamEvent, TaskRetryingEvent, TaskSkipReason, TaskSkippedEvent,
-    TaskStartedEvent, publish::diagnostic,
+    CacheHitEvent, ExecutionEventSubscriber, NoticeLevel, TaskCompletedEvent,
+    TaskFailedEvent, TaskOutputStream, TaskOutputStreamEvent,
+    TaskRetryingEvent, TaskSkipReason, TaskSkippedEvent, TaskStartedEvent,
+    publish::notice,
 };
 use omni_process::{
     ChildProcessError, TaskChildProcess, TaskChildProcessResult,
@@ -209,9 +209,7 @@ where
                     file.original_path.path().expect("should be resolved");
 
                 if self.sys.fs_exists_async(original_path).await? {
-                    diagnostic!(
-                        self.subscriber,
-                        DiagnosticLevel::Debug,
+                    log::debug!(
                         "file already exists {original_path:?}, skipping cache restore",
                     );
                     continue;
@@ -248,9 +246,7 @@ where
                         .await?;
                 }
 
-                diagnostic!(
-                    self.subscriber,
-                    DiagnosticLevel::Debug,
+                log::debug!(
                     "restored cached file {:?} to {:?}",
                     file.cached_path,
                     original_path,
@@ -527,16 +523,16 @@ where
                     .await;
 
                 match &display_command {
-                    Some(command) if !command.is_empty() => diagnostic!(
+                    Some(command) if !command.is_empty() => notice!(
                         self.subscriber,
-                        DiagnosticLevel::Info,
+                        NoticeLevel::Info,
                         "Executing task '{}': {}",
                         escape_control_chars(&task_id),
                         command,
                     ),
-                    _ => diagnostic!(
+                    _ => notice!(
                         self.subscriber,
-                        DiagnosticLevel::Info,
+                        NoticeLevel::Info,
                         "Executing task '{}'",
                         escape_control_chars(&task_id),
                     ),
@@ -977,9 +973,9 @@ async fn run_process<'a, S: ExecutionEventSubscriber>(
             if let Some(duration) = retry_duration
                 && !duration.is_zero()
             {
-                diagnostic!(
+                notice!(
                     subscriber,
-                    DiagnosticLevel::Warn,
+                    NoticeLevel::Warn,
                     "Waiting for '{:?}' before retrying task '{}'",
                     duration,
                     task_ctx.node.full_task_name(),

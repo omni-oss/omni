@@ -15,9 +15,9 @@ use omni_messages::generator::events::{
     GeneratorActionSkippedEvent, GeneratorActionSuccessEvent,
 };
 use omni_messages::{
-    CacheHitEvent, DiagnosticEvent, DiagnosticLevel, DiagnosticSubscriber,
-    ExecutionCompleteEvent, ExecutionEventSubscriber, ExecutionPlanReadyEvent,
-    GeneratorCompletedEvent, GeneratorEventSubscriber, GeneratorStartEvent,
+    CacheHitEvent, ExecutionCompleteEvent, ExecutionEventSubscriber,
+    ExecutionPlanReadyEvent, GeneratorCompletedEvent, GeneratorEventSubscriber,
+    GeneratorStartEvent, NoticeEvent, NoticeLevel, NoticeSubscriber,
     TaskCompletedEvent, TaskFailedEvent, TaskOutputStreamEvent,
     TaskRetryingEvent, TaskSkipReason, TaskSkippedEvent, TaskStartedEvent,
 };
@@ -313,15 +313,13 @@ fn write_stdout(bytes: &[u8]) {
     let _ = out.flush();
 }
 
-/// Emit a single diagnostic through `log` so level filtering and formatting
+/// Emit a single notice through `log` so level filtering and formatting
 /// still apply.
-fn log_diagnostic(e: &DiagnosticEvent) {
+fn log_notice(e: &NoticeEvent) {
     match e.level {
-        DiagnosticLevel::Trace => log::trace!("{}", e.message),
-        DiagnosticLevel::Debug => log::debug!("{}", e.message),
-        DiagnosticLevel::Info => log::info!("{}", e.message),
-        DiagnosticLevel::Warn => log::warn!("{}", e.message),
-        DiagnosticLevel::Error => log::error!("{}", e.message),
+        NoticeLevel::Info => log::info!("{}", e.message),
+        NoticeLevel::Warn => log::warn!("{}", e.message),
+        NoticeLevel::Error => log::error!("{}", e.message),
     }
 }
 
@@ -581,18 +579,18 @@ impl CliSubscriber {
     }
 }
 
-impl DiagnosticSubscriber for CliSubscriber {
-    fn on_diagnostic(&self, e: DiagnosticEvent) {
-        self.suspend_for_output(|| log_diagnostic(&e));
+impl NoticeSubscriber for CliSubscriber {
+    fn on_notice(&self, e: NoticeEvent) {
+        self.suspend_for_output(|| log_notice(&e));
     }
 
-    fn on_diagnostics_batched(
+    fn on_notices_batched(
         &self,
-        events: impl IntoIterator<Item = DiagnosticEvent>,
+        events: impl IntoIterator<Item = NoticeEvent>,
     ) {
         self.suspend_for_output(|| {
             for e in events {
-                log_diagnostic(&e);
+                log_notice(&e);
             }
         });
     }

@@ -1,13 +1,13 @@
-use crate::diagnostic::DiagnosticSubscriber;
 use crate::execution::ExecutionEventSubscriber;
 use crate::generator::GeneratorEventSubscriber;
+use crate::notice::NoticeSubscriber;
 
 /// Zero-sized subscriber that discards all events and creates no pipe
 /// infrastructure. Use this in tests or contexts where events are irrelevant.
 pub struct NoopSubscriber;
 
-impl DiagnosticSubscriber for NoopSubscriber {
-    fn wants_diagnostics(&self) -> bool {
+impl NoticeSubscriber for NoopSubscriber {
+    fn wants_notices(&self) -> bool {
         false
     }
 }
@@ -39,7 +39,7 @@ mod tests {
     }
 
     #[test]
-    fn noop_does_not_want_diagnostics() {
-        assert!(!NoopSubscriber.wants_diagnostics());
+    fn noop_does_not_want_notices() {
+        assert!(!NoopSubscriber.wants_notices());
     }
 }
