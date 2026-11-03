@@ -425,6 +425,7 @@ pub enum ProjectFilterError {
 | variant or struct | `hint = "fmt"` | Repeatable. Same `{0}` / `{field}` / `{field:?}` interpolation as `thiserror`. |
 | field | `detail` / `detail = "key"` | Collected into the `details` JSON object (field must be `Serialize`). Key defaults to the field name. |
 | variant or struct | `details = path::fn` | Escape hatch: `fn(&Self) -> serde_json::Value`. Mutually exclusive with field `detail`. |
+| variant or struct | `hints = path::fn` | Escape hatch: `fn(&Self) -> Vec<String>`, listed before the static `hint`s (specific before generic). |
 | variant or struct | `body = path::fn` | Escape hatch for `render_body`. |
 | variant | `forward` | Variant has exactly one field implementing `Diagnostic`; all methods delegate to it. |
 | type | `no_register` | Skip registration (for diagnostics only ever constructed by hand). |

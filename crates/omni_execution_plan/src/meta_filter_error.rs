@@ -136,6 +136,7 @@ pub struct MetaFilterGroup {
     audience = user,
     details = details_json,
     body = write_body,
+    hints = group_hints,
     hint = "To skip failing tasks instead, pass --meta-on-error exclude."
 )]
 pub struct MetaFilterError {
@@ -247,8 +248,19 @@ impl fmt::Display for MetaFilterError {
     }
 }
 
-/// The RFC 0020 layout, without the summary line and the trailing
-/// `--meta-on-error` hint (which is a diagnostic hint).
+/// Corrections found per cause, for the diagnostic's `hints`.
+fn group_hints(this: &MetaFilterError) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for h in this.groups.iter().filter_map(|g| g.hint.as_ref()) {
+        if !out.contains(h) {
+            out.push(h.clone());
+        }
+    }
+    out
+}
+
+/// The RFC 0020 layout, without the summary line. Hints (per-cause
+/// corrections and the `--meta-on-error` suggestion) are diagnostic hints.
 fn write_body(this: &MetaFilterError, f: &mut dyn fmt::Write) -> fmt::Result {
     if this.total == 1
         && let Some(g) = this.groups.first()
@@ -265,9 +277,6 @@ fn write_body(this: &MetaFilterError, f: &mut dyn fmt::Write) -> fmt::Result {
             s.project_dir.display()
         )?;
         write!(f, "  meta:     {}", s.render_meta())?;
-        if let Some(h) = &g.hint {
-            write!(f, "\n\n  hint: {h}")?;
-        }
         return Ok(());
     }
 
@@ -288,10 +297,6 @@ fn write_body(this: &MetaFilterError, f: &mut dyn fmt::Write) -> fmt::Result {
         }
         if g.omitted > 0 {
             writeln!(f, "    ... and {} more", g.omitted)?;
-        }
-        if let Some(h) = &g.hint {
-            writeln!(f)?;
-            writeln!(f, "  hint: {h}")?;
         }
         writeln!(f)?;
     }

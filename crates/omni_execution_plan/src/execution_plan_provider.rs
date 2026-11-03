@@ -516,6 +516,15 @@ mod tests {
         let text = d.to_text();
         assert!(text.contains("[500 tasks]"), "{text}");
         assert!(text.contains("hint: Did you mean `kind`?"), "{text}");
+        assert_eq!(
+            d.hints,
+            vec![
+                "Did you mean `kind`?".to_string(),
+                "To skip failing tasks instead, pass --meta-on-error exclude."
+                    .to_string()
+            ]
+        );
+        assert_eq!(d.to_json()["hints"][0], "Did you mean `kind`?");
         assert!(
             text.contains("hint: To skip failing tasks instead"),
             "{text}"

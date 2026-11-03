@@ -23,6 +23,7 @@ struct Variant {
     forward: Option<Ident>,
     code: Option<LitStr>,
     hints: Vec<LitStr>,
+    hints_fn: Option<syn::Path>,
     details_fn: Option<syn::Path>,
     detail_fields: Vec<(Ident, String)>,
     body_fn: Option<syn::Path>,
@@ -173,8 +174,11 @@ pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
                 .hints
                 .iter()
                 .map(|h| quote!(__h.push(::std::format!(#h));));
+            let extra =
+                v.hints_fn.as_ref().map(|p| quote!(__h.extend(#p(self));));
             quote!({
                 let mut __h = ::std::vec::Vec::<::std::string::String>::new();
+                #extra
                 #(#hs)*
                 __h
             })
@@ -337,6 +341,7 @@ fn build_variant(
         conflict(attrs.audience.map(|(_, s)| s));
         conflict(attrs.code.as_ref().map(|c| c.span()));
         conflict(attrs.hints.first().map(|h| h.span()));
+        conflict(attrs.hints_fn.as_ref().map(|p| p.span()));
         conflict(attrs.details.as_ref().map(|p| p.span()));
         conflict(attrs.body.as_ref().map(|p| p.span()));
         conflict(detail_span);
@@ -353,6 +358,7 @@ fn build_variant(
             forward: Some(binds[0].clone()),
             code: None,
             hints: Vec::new(),
+            hints_fn: None,
             details_fn: None,
             detail_fields: Vec::new(),
             body_fn: None,
@@ -406,6 +412,7 @@ fn build_variant(
         forward: None,
         code,
         hints,
+        hints_fn: attrs.hints_fn,
         details_fn: attrs.details,
         detail_fields,
         body_fn: attrs.body,

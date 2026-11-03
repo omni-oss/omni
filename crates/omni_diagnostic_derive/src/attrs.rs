@@ -23,6 +23,7 @@ pub struct Attrs {
     pub audience: Option<(AudienceAttr, Span)>,
     pub code: Option<LitStr>,
     pub hints: Vec<LitStr>,
+    pub hints_fn: Option<Path>,
     pub details: Option<Path>,
     pub body: Option<Path>,
     pub forward: Option<Span>,
@@ -69,6 +70,10 @@ pub fn parse_attrs(attrs: &[Attribute]) -> syn::Result<Attrs> {
                 Some("hint") => {
                     a.hints.push(m.value()?.parse()?);
                     Ok(())
+                }
+                Some("hints") => {
+                    let v: Path = m.value()?.parse()?;
+                    set_once(&mut a.hints_fn, v, &m)
                 }
                 Some("details") => {
                     let v: Path = m.value()?.parse()?;
