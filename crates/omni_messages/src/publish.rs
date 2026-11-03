@@ -7,7 +7,7 @@
 /// Only user-facing levels (`Info`, `Warn`, `Error`) are accepted; use
 /// `log::debug!` / `log::trace!` for developer diagnostics.
 ///
-/// The macro expands to a `Future` — callers must `.await` the result.
+/// The macro calls the subscriber's synchronous `on_notice` and returns `()`.
 ///
 /// `target` is automatically set to the invoking module's path via
 /// [`std::module_path!`].
@@ -18,10 +18,10 @@
 /// use omni_messages::publish::{notice, NoticeLevel};
 ///
 /// // Simple message
-/// notice!(subscriber, NoticeLevel::Info, "task started").await;
+/// notice!(subscriber, NoticeLevel::Info, "task started");
 ///
 /// // Format string
-/// notice!(subscriber, NoticeLevel::Warn, "processed {}/{}", done, total).await;
+/// notice!(subscriber, NoticeLevel::Warn, "processed {}/{}", done, total);
 /// ```
 ///
 /// [`NoticeEvent`]: crate::NoticeEvent

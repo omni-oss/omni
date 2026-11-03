@@ -274,7 +274,7 @@ pub(crate) async fn run_internal<'a, S: GeneratorEventSubscriber>(
         }
     }
 
-    trace::trace!(?values, "input_values");
+    trace::trace!(count = values.len(), "input_values");
 
     let mut context_values = config.context_values.clone();
 
