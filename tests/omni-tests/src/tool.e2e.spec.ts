@@ -103,7 +103,7 @@ describe.runIf(runtimeAvailable("deno"))(
                     "tool",
                     "run",
                     "greet",
-                    "--args-json",
+                    "--values-json",
                     JSON.stringify({ who: "world", times: 3 }),
                 ],
                 { cwd: ws.cwd },
@@ -117,18 +117,18 @@ describe.runIf(runtimeAvailable("deno"))(
             });
         });
 
-        it("merges --arg over --args-json with --arg winning", async () => {
+        it("merges --value over --values-json with --value winning", async () => {
             const ws = makeWorkspace(toolWorkspace());
             const result = await runOmni(
                 [
                     "tool",
                     "run",
                     "greet",
-                    "--args-json",
+                    "--values-json",
                     JSON.stringify({ who: "world" }),
-                    "--arg",
+                    "--value",
                     "who=alice",
-                    "--arg",
+                    "--value",
                     "times=5",
                 ],
                 { cwd: ws.cwd },
@@ -143,7 +143,7 @@ describe.runIf(runtimeAvailable("deno"))(
         it("fails when a required input is missing", async () => {
             const ws = makeWorkspace(toolWorkspace());
             const result = await runOmni(
-                ["tool", "run", "greet", "--arg", "times=2"],
+                ["tool", "run", "greet", "--value", "times=2"],
                 { cwd: ws.cwd },
             );
             expect(result.exitCode).not.toBe(0);
@@ -198,7 +198,7 @@ describe.runIf(runtimeAvailable("deno"))(
                     "tool",
                     "run",
                     "writer",
-                    "--args-json",
+                    "--values-json",
                     JSON.stringify({ path: "allowed.txt" }),
                 ],
                 { cwd: ws.cwd },
@@ -214,7 +214,7 @@ describe.runIf(runtimeAvailable("deno"))(
                     "tool",
                     "run",
                     "writer",
-                    "--args-json",
+                    "--values-json",
                     JSON.stringify({ path: "../escaped.txt" }),
                 ],
                 { cwd: ws.cwd },
@@ -304,7 +304,7 @@ describe.runIf(runtimeAvailable("deno"))(
                     "tool",
                     "run",
                     "report",
-                    "--args-json",
+                    "--values-json",
                     JSON.stringify({ dir: "/data" }),
                 ],
                 { cwd: ws.cwd },
@@ -367,7 +367,7 @@ describe.runIf(runtimeAvailable("deno"))(
                     "writer",
                     "--cwd",
                     "sub",
-                    "--args-json",
+                    "--values-json",
                     JSON.stringify({ path: "out.txt" }),
                 ],
                 { cwd: ws.cwd },
@@ -385,7 +385,7 @@ describe.runIf(runtimeAvailable("deno"))(
                     "writer",
                     "-p",
                     "pkg",
-                    "--args-json",
+                    "--values-json",
                     JSON.stringify({ path: "out.txt" }),
                 ],
                 { cwd: ws.cwd },
@@ -417,7 +417,7 @@ describe("+tool @e2e (working dir validation)", { tags: ["tool"] }, () => {
                 "writer",
                 "--cwd",
                 "does-not-exist",
-                "--args-json",
+                "--values-json",
                 JSON.stringify({ path: "out.txt" }),
             ],
             { cwd: ws.cwd },
@@ -434,7 +434,7 @@ describe("+tool @e2e (working dir validation)", { tags: ["tool"] }, () => {
                 "writer",
                 "-p",
                 "ghost",
-                "--args-json",
+                "--values-json",
                 JSON.stringify({ path: "out.txt" }),
             ],
             { cwd: ws.cwd },
