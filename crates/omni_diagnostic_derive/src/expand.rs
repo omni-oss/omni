@@ -18,6 +18,7 @@ fn push(errs: &mut Errs, e: syn::Error) {
 }
 
 struct Variant {
+    idx: usize,
     pat: TokenStream,
     audience: AudienceAttr,
     forward: Option<Ident>,
@@ -116,6 +117,30 @@ pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
         return Err(e);
     }
 
+    for (i, v) in variants.iter_mut().enumerate() {
+        v.idx = i;
+    }
+
+    // Callbacks are bound before any field pattern, so a field named like a
+    // callback (`hints`, `body`, ...) cannot shadow it.
+    let callbacks = variants.iter().map(|v| {
+        let i = v.idx;
+        let d = v.details_fn.as_ref().map(|p| {
+            let id = format_ident!("__details_{i}");
+            quote!(let #id: fn(&Self) -> ::omni_diagnostic::__private::serde_json::Value = #p;)
+        });
+        let h = v.hints_fn.as_ref().map(|p| {
+            let id = format_ident!("__hints_{i}");
+            quote!(let #id: fn(&Self) -> ::std::vec::Vec<::std::string::String> = #p;)
+        });
+        let b = v.body_fn.as_ref().map(|p| {
+            let id = format_ident!("__body_{i}");
+            quote!(let #id: fn(&Self, &mut dyn ::core::fmt::Write) -> ::core::fmt::Result = #p;)
+        });
+        quote!(#d #h #b)
+    });
+    let callbacks = quote!(#(#callbacks)*);
+
     let (ig, tg, wc) = input.generics.split_for_impl();
     let empty = variants.is_empty();
 
@@ -146,8 +171,9 @@ pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
     let details_body = arms(&|v| {
         if let Some(b) = &v.forward {
             quote!(::omni_diagnostic::Diagnostic::details(#b))
-        } else if let Some(p) = &v.details_fn {
-            quote!(::core::option::Option::Some(#p(self)))
+        } else if v.details_fn.is_some() {
+            let id = format_ident!("__details_{}", v.idx);
+            quote!(::core::option::Option::Some(#id(self)))
         } else if v.detail_fields.is_empty() {
             quote!(::core::option::Option::None)
         } else {
@@ -174,8 +200,10 @@ pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
                 .hints
                 .iter()
                 .map(|h| quote!(__h.push(::std::format!(#h));));
-            let extra =
-                v.hints_fn.as_ref().map(|p| quote!(__h.extend(#p(self));));
+            let extra = v.hints_fn.as_ref().map(|_| {
+                let id = format_ident!("__hints_{}", v.idx);
+                quote!(__h.extend(#id(self));)
+            });
             quote!({
                 let mut __h = ::std::vec::Vec::<::std::string::String>::new();
                 #extra
@@ -186,9 +214,10 @@ pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
     });
     let body_body = arms(&|v| {
         if let Some(b) = &v.forward {
-            quote!(::omni_diagnostic::Diagnostic::render_body(#b, out))
-        } else if let Some(p) = &v.body_fn {
-            quote!(#p(self, out))
+            quote!(::omni_diagnostic::Diagnostic::render_body(#b, __out))
+        } else if v.body_fn.is_some() {
+            let id = format_ident!("__body_{}", v.idx);
+            quote!(#id(self, __out))
         } else {
             quote!(::core::result::Result::Ok(()))
         }
@@ -244,17 +273,22 @@ pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
             fn details(
                 &self,
             ) -> ::core::option::Option<::omni_diagnostic::__private::serde_json::Value> {
+                #callbacks
                 #details_body
             }
 
             #[allow(unused_variables)]
-            fn hints(&self) -> ::std::vec::Vec<::std::string::String> { #hints_body }
+            fn hints(&self) -> ::std::vec::Vec<::std::string::String> {
+                #callbacks
+                #hints_body
+            }
 
             #[allow(unused_variables)]
             fn render_body(
                 &self,
-                out: &mut dyn ::core::fmt::Write,
+                __out: &mut dyn ::core::fmt::Write,
             ) -> ::core::fmt::Result {
+                #callbacks
                 #body_body
             }
         }
@@ -353,6 +387,7 @@ fn build_variant(
             return Ok(None);
         }
         return Ok(Some(Variant {
+            idx: 0,
             pat,
             audience,
             forward: Some(binds[0].clone()),
@@ -407,6 +442,7 @@ fn build_variant(
         .collect();
 
     Ok(Some(Variant {
+        idx: 0,
         pat,
         audience,
         forward: None,

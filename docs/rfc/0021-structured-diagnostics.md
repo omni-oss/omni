@@ -228,13 +228,16 @@ call site. With the explicit list, a registry test fails when a type derives
   the `omni` binary's tests and checks that a known list of diagnostic types is
   present.
 
-Completeness is also a release guarantee, not only a test: the `omni` e2e suite
-runs `omni diagnostics list --format json` against the release binary and
-asserts a known code is present, so a registration dropped by the linker fails
-CI on every shipped target.
-- Not verified: `cross` aarch64 and macOS/Windows builds, and wasm
-  (the `inventory` crate did not build with the toolchain used, because the
-  wasm target was not installed). These belong in the implementation PR's CI.
+The `omni` e2e suite also runs `omni diagnostics list --format json` against the
+built binary and asserts that `meta_filter.evaluation` is present. This checks
+**known** codes on the targets CI builds; it is not proof that every derived
+type is registered, because an omitted type that is also missing from the
+expected lists passes. Each migration PR that adds a diagnostic crate adds its
+type to `assert_types_registered` and its code to this check.
+- CI of the implementation PR builds and tests the `inventory` backend on
+  Linux x86_64, `cross` aarch64, macOS (x86_64 and aarch64) and Windows MSVC.
+  wasm was not verified (the target was not installed for the prototype) and
+  is not a shipped target.
 
 Context added with `wrap_err` above a diagnostic is preserved as a `context`
 array in both renderers (section 4.4), outermost first. This is what keeps the
@@ -353,8 +356,9 @@ JSON (`data` in MCP, stderr in `--error-format json`). The envelope is fixed;
 the old value. The RFC 0020 top-level `filter`/`total`/`other`/`groups` fields
 move under `details` with no compatibility copy, which breaks those clients
 too. RFC 0020 is days old and has no known external consumers, so a clean
-envelope is preferred over a deprecation period. Both are called out in the
-changelog.
+envelope is preferred over a deprecation period. Both are recorded as a
+`BREAKING CHANGE` footer on the commit, which is what the generated
+changelog (cocogitto) reads.
 
 Text:
 
@@ -441,8 +445,9 @@ pub enum ProjectFilterError {
 **Generated code**
 
 - `impl Diagnostic` with `code`, `audience`, `details`, `hints`
-  matching per variant. Omitted `audience`, `details` and `hint`s fall back to the trait defaults;
-  `code` has no default.
+  matching per variant. An omitted `audience` uses the variant's own, then the
+  type-level `audience`, then the trait default (`user`). Omitted `details` and
+  `hint`s fall back to the trait defaults; `code` has no default.
 - Registration for `find` (4.2) through `register!`, including per-variant
   metadata (`code`, `audience`). A `forward` variant adds **no** entry: the
   type it delegates to registers its own codes, and `omni diagnostics list`
@@ -539,10 +544,11 @@ is a separate piece of work: omni-oss/omni#47.
 - **Wire stability.** Codes and the JSON envelope become public. Mitigated by
   the docs table and a snapshot test per migrated code. The `kind` rename and
   the move of the meta filter fields under `details` are a deliberate break
-  (4.4), called out in the changelog.
+  (4.4), recorded as a `BREAKING CHANGE` commit footer for the generated
+  changelog.
 - **Exit code change.** Scripts that check `$? -eq 1` for user errors will see
   `2` for migrated diagnostics (same as omni's existing clap usage errors). Mitigated by migrating only the meta filter
-  error initially (it is a few days old) and calling this out in the changelog
+  error initially (it is a few days old) and calling this out in a `BREAKING CHANGE` commit footer
   before more codes adopt it.
 - **Downcast mechanism.** See section 8.
 

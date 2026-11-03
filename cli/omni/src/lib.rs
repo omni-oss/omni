@@ -176,19 +176,22 @@ async fn run_main() -> eyre::Result<()> {
 /// Whether JSON errors were asked for. Clap fails before the arguments are
 /// parsed, so this looks at the raw arguments and the environment.
 fn json_errors_requested() -> bool {
-    let mut args = std::env::args().skip(1);
-    let mut requested = std::env::var("OMNI_ERROR_FORMAT").ok();
+    // `args_os`: a non-Unicode argument must not panic the usage-error path.
+    let mut args = std::env::args_os().skip(1);
+    let mut requested = std::env::var_os("OMNI_ERROR_FORMAT");
     while let Some(a) = args.next() {
         if a == "--" {
             break;
         }
         if a == "--error-format" {
             requested = args.next();
-        } else if let Some(v) = a.strip_prefix("--error-format=") {
-            requested = Some(v.to_string());
+        } else if let Some(v) =
+            a.to_str().and_then(|a| a.strip_prefix("--error-format="))
+        {
+            requested = Some(v.into());
         }
     }
-    requested.as_deref() == Some("json")
+    requested.as_deref() == Some(std::ffi::OsStr::new("json"))
 }
 
 /// Clap exits on its own for `--help`/`--version`; usage errors are printed

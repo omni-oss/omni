@@ -195,3 +195,23 @@ fn wrapper_exposes_a_diagnostic_hidden_by_transparent() {
         "sample.inner"
     );
 }
+
+fn hints(_: &ShadowCb) -> Vec<String> {
+    vec!["from callback".into()]
+}
+
+#[derive(Debug, thiserror::Error, Diagnostic)]
+#[error("shadow")]
+#[diagnostic(code = "sample.shadow", hints = hints)]
+struct ShadowCb {
+    #[allow(dead_code)]
+    hints: String,
+}
+
+#[test]
+fn callbacks_are_not_shadowed_by_fields() {
+    let e = ShadowCb {
+        hints: "field".into(),
+    };
+    assert_eq!(e.hints(), vec!["from callback"]);
+}
