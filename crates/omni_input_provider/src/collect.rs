@@ -468,7 +468,7 @@ mod tests {
         let filter = omni_input_schema::NameFilter::new(std::sync::Arc::new(
             |n: &str| n == "creds.token",
         ));
-        let v = redact_leaves(
+        let v = super::redact_leaves(
             "creds",
             json!({"token": "t0k", "user": "bob"}),
             &filter,
