@@ -210,6 +210,23 @@ describe("+meta-filter-errors @e2e (cli)", () => {
     });
 });
 
+describe("+diagnostics @e2e (registry)", () => {
+    it("the built binary registers the meta filter diagnostic", async () => {
+        const ws = makeWorkspace(metaSpec());
+
+        const result = await runOmni(["diagnostics", "list", "--format", "json"], {
+            cwd: ws.cwd,
+        });
+
+        expect(result).toHaveSucceeded();
+        const json = result.stdout.slice(result.stdout.indexOf("["));
+        const codes = (JSON.parse(json) as Array<{ code: string }>).map(
+            (e) => e.code,
+        );
+        expect(codes).toContain("meta_filter.evaluation");
+    });
+});
+
 describe("+meta-filter-errors @e2e @mcp (task_run)", { tags: ["mcp"] }, () => {
     it("returns a structured error for a failing meta filter", async () => {
         const ws = makeWorkspace(metaSpec());

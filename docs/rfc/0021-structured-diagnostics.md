@@ -22,8 +22,9 @@ error type implements to describe itself (stable code, audience, summary,
 structured details, hints), and one set of renderers that turn any diagnostic
 into CLI text or an MCP error payload. Subsystems opt in by implementing the
 trait; everything else keeps working unchanged through `eyre`. The meta
-filter error is migrated first as proof, with no change in user-visible
-behaviour.
+filter error is migrated first as proof. Its text output keeps the RFC 0020
+layout; the observable changes are the `[code]` suffix, exit code `2` instead
+of `1`, and the MCP `data.kind` value (4.4, section 6).
 
 This is deliberately **not** a rewrite of error handling across the workspace.
 It is an additive layer at the two boundaries (CLI exit and MCP response) plus
@@ -226,6 +227,11 @@ call site. With the explicit list, a registry test fails when a type derives
   any item) restores them. Mitigation: `assert_registry_valid()` (4.7) runs in
   the `omni` binary's tests and checks that a known list of diagnostic types is
   present.
+
+Completeness is also a release guarantee, not only a test: the `omni` e2e suite
+runs `omni diagnostics list --format json` against the release binary and
+asserts a known code is present, so a registration dropped by the linker fails
+CI on every shipped target.
 - Not verified: `cross` aarch64 and macOS/Windows builds, and wasm
   (the `inventory` crate did not build with the toolchain used, because the
   wasm target was not installed). These belong in the implementation PR's CI.
@@ -342,11 +348,13 @@ JSON (`data` in MCP, stderr in `--error-format json`). The envelope is fixed;
 }
 ```
 
-For compatibility with RFC 0020 clients, `data.kind` for the meta filter
-changes from `"meta_filter_evaluation"` to `"meta_filter.evaluation"` and the
-existing `filter`/`total`/`other`/`groups` fields are **also** emitted at the top level
-of `data` for one release (marked deprecated in the docs), then removed. This
-is the only intentional wire change.
+`data.kind` for the meta filter changes from `"meta_filter_evaluation"` to
+`"meta_filter.evaluation"`. This **breaks** RFC 0020 clients that dispatch on
+the old value; the compatibility fields below do not restore it. The existing
+`filter`/`total`/`other`/`groups` fields are also emitted at the top level of
+`data` for one release (marked deprecated in the docs), then removed, so
+clients that only read those fields keep working. The `kind` value is the only
+intentional breaking wire change.
 
 Text:
 
@@ -433,9 +441,13 @@ pub enum ProjectFilterError {
 **Generated code**
 
 - `impl Diagnostic` with `code`, `audience`, `details`, `hints`
-  matching per variant. Omitted attributes fall back to the trait defaults.
+  matching per variant. Omitted `audience`, `details` and `hint`s fall back to the trait defaults;
+  `code` has no default.
 - Registration for `find` (4.2) through `register!`, including per-variant
-  metadata (`code`, `audience`). Types with generic parameters cannot be
+  metadata (`code`, `audience`). A `forward` variant adds **no** entry: the
+  type it delegates to registers its own codes, and `omni diagnostics list`
+  shows each code once, under the type that defines it. A wrapper that
+  forwards is still found first by `find` (outermost wins) and delegates. Types with generic parameters cannot be
   registered and fail with a clear error (use `no_register` or a concrete
   wrapper).
 
@@ -526,7 +538,8 @@ is a separate piece of work: omni-oss/omni#47.
   fallback making migration optional.
 - **Wire stability.** Codes and the JSON envelope become public. Mitigated by
   the docs table, a snapshot test per migrated code, and the one-release
-  compatibility fields in 4.4.
+  top-level fields in 4.4. The `kind` rename for the meta filter is a
+  deliberate break (4.4) and is called out in the changelog.
 - **Exit code change.** Scripts that check `$? -eq 1` for user errors will see
   `2` for migrated diagnostics (same as omni's existing clap usage errors). Mitigated by migrating only the meta filter
   error initially (it is a few days old) and calling this out in the changelog
