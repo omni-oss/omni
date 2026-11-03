@@ -1,8 +1,5 @@
 use ::trace as t;
 
-use crate::diagnostic::{
-    DiagnosticEvent, DiagnosticLevel, DiagnosticSubscriber,
-};
 use crate::execution::{
     CacheHitEvent, ExecutionCompleteEvent, ExecutionEventSubscriber,
     ExecutionPlanReadyEvent, TaskCompletedEvent, TaskFailedEvent,
@@ -15,10 +12,11 @@ use crate::generator::events::{
 use crate::generator::{
     GeneratorCompletedEvent, GeneratorEventSubscriber, GeneratorStartEvent,
 };
+use crate::notice::{NoticeEvent, NoticeLevel, NoticeSubscriber};
 
 /// `TracingSubscriber` translates events into `tracing` calls.
 ///
-/// - [`DiagnosticEvent`] → `tracing::info!/warn!/error!/debug!/trace!`
+/// - [`NoticeEvent`] → `tracing::info!/warn!/error!`
 /// - Lifecycle events → `tracing::debug!` with structured fields
 /// - `subscription_config().wants_task_output_stream == false` — no byte
 ///   streams are created, saving a pipe allocation per task.
@@ -27,16 +25,14 @@ use crate::generator::{
 /// no explicit subscriber.
 pub struct TracingSubscriber;
 
-impl DiagnosticSubscriber for TracingSubscriber {
-    fn on_diagnostic(&self, e: DiagnosticEvent) {
+impl NoticeSubscriber for TracingSubscriber {
+    fn on_notice(&self, e: NoticeEvent) {
         let msg = e.message.as_str();
         let target = e.target.as_str();
         match e.level {
-            DiagnosticLevel::Trace => t::trace!(target = target, "{msg}"),
-            DiagnosticLevel::Debug => t::debug!(target = target, "{msg}"),
-            DiagnosticLevel::Info => t::info!(target = target, "{msg}"),
-            DiagnosticLevel::Warn => t::warn!(target = target, "{msg}"),
-            DiagnosticLevel::Error => t::error!(target = target, "{msg}"),
+            NoticeLevel::Info => t::info!(target = target, "{msg}"),
+            NoticeLevel::Warn => t::warn!(target = target, "{msg}"),
+            NoticeLevel::Error => t::error!(target = target, "{msg}"),
         }
     }
 }
@@ -126,9 +122,9 @@ impl GeneratorEventSubscriber for TracingSubscriber {
 mod tests {
     use super::TracingSubscriber;
     use crate::{
-        DiagnosticEvent, DiagnosticLevel, ExecutionCompleteEvent,
-        TaskCompletedEvent, TaskStartedEvent, diagnostic::DiagnosticSubscriber,
-        execution::ExecutionEventSubscriber,
+        ExecutionCompleteEvent, NoticeEvent, NoticeLevel, TaskCompletedEvent,
+        TaskStartedEvent, execution::ExecutionEventSubscriber,
+        notice::NoticeSubscriber,
     };
     use std::time::Duration;
 
@@ -167,16 +163,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn tracing_subscriber_handles_all_diagnostic_levels() {
+    async fn tracing_subscriber_handles_all_notice_levels() {
         let sub = TracingSubscriber;
-        for level in [
-            DiagnosticLevel::Trace,
-            DiagnosticLevel::Debug,
-            DiagnosticLevel::Info,
-            DiagnosticLevel::Warn,
-            DiagnosticLevel::Error,
-        ] {
-            sub.on_diagnostic(DiagnosticEvent {
+        for level in [NoticeLevel::Info, NoticeLevel::Warn, NoticeLevel::Error]
+        {
+            sub.on_notice(NoticeEvent {
                 level,
                 message: format!("test at level {level}"),
                 fields: Default::default(),

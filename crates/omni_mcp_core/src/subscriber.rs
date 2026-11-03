@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use omni_messages::{
-    DiagnosticSubscriber, ExecutionEventSubscriber, GeneratorEventSubscriber,
+    ExecutionEventSubscriber, GeneratorEventSubscriber, NoticeSubscriber,
     TaskCompletedEvent, TaskFailedEvent, TaskOutputStreamEvent,
 };
 use omni_task_output_logs::LogsDisplay;
@@ -73,8 +73,8 @@ impl McpSubscriber {
     }
 }
 
-impl DiagnosticSubscriber for McpSubscriber {
-    fn wants_diagnostics(&self) -> bool {
+impl NoticeSubscriber for McpSubscriber {
+    fn wants_notices(&self) -> bool {
         false
     }
 }

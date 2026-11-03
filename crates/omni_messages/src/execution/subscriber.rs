@@ -1,5 +1,5 @@
-use crate::diagnostic::DiagnosticSubscriber;
 use crate::execution::events::{BatchCompletedEvent, BatchStartEvent};
+use crate::notice::NoticeSubscriber;
 
 use super::events::{
     CacheHitEvent, ExecutionCompleteEvent, ExecutionPlanReadyEvent,
@@ -10,8 +10,8 @@ use super::stream::TaskOutputStreamEvent;
 
 /// Subscriber for task-execution lifecycle events.
 ///
-/// Requires [`DiagnosticSubscriber`] — implement that trait on your type to
-/// receive (or opt out of) diagnostic events.
+/// Requires [`NoticeSubscriber`] — implement that trait on your type to
+/// receive (or opt out of) notice events.
 ///
 /// All methods are `async` (AFIT — no `#[async_trait]` required for generic
 /// usage). All methods take `&self`; use interior mutability when state is
@@ -19,7 +19,7 @@ use super::stream::TaskOutputStreamEvent;
 ///
 /// The two `wants_*` methods are read once at executor setup to decide whether
 /// to allocate pipe infrastructure for each spawned process.
-pub trait ExecutionEventSubscriber: DiagnosticSubscriber {
+pub trait ExecutionEventSubscriber: NoticeSubscriber {
     /// If `false`: task stdout/stderr is NOT piped. No `on_task_output_stream`
     /// call is made, and the executor skips the duplex-pipe alloc entirely
     /// (saves a tokio duplex alloc + copy task per spawned process).
@@ -63,7 +63,7 @@ pub trait ExecutionEventSubscriber: DiagnosticSubscriber {
 ///
 /// This lets `OmniApi` pass `&self.subscriber` into functions that take
 /// `S: ExecutionEventSubscriber` by value (e.g. `TaskExecutor::new`).
-/// `DiagnosticSubscriber for &S` is covered by the blanket in `diagnostic.rs`.
+/// `NoticeSubscriber for &S` is covered by the blanket in `notice.rs`.
 impl<S: ExecutionEventSubscriber> ExecutionEventSubscriber for &S {
     fn wants_task_output_stream(&self) -> bool {
         S::wants_task_output_stream(*self)

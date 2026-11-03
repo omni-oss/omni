@@ -1,21 +1,21 @@
 use crate::{
-    diagnostic::DiagnosticSubscriber,
     generator::events::{
         GeneratorActionFailedEvent, GeneratorActionInProgressEvent,
         GeneratorActionSkippedEvent, GeneratorActionSuccessEvent,
     },
+    notice::NoticeSubscriber,
 };
 
 use super::events::{GeneratorCompletedEvent, GeneratorStartEvent};
 
 /// Subscriber for generator lifecycle events.
 ///
-/// Requires [`DiagnosticSubscriber`] — implement that trait on your type to
-/// receive (or opt out of) diagnostic events.
+/// Requires [`NoticeSubscriber`] — implement that trait on your type to
+/// receive (or opt out of) notice events.
 ///
 /// All methods are `async` (AFIT — no `#[async_trait]` required for generic
 /// usage). All methods take `&self`.
-pub trait GeneratorEventSubscriber: DiagnosticSubscriber {
+pub trait GeneratorEventSubscriber: NoticeSubscriber {
     async fn on_generator_start(&self, _event: GeneratorStartEvent) {}
     async fn on_action_skipped(&self, _event: GeneratorActionSkippedEvent) {}
     async fn on_action_in_progress(
@@ -29,7 +29,7 @@ pub trait GeneratorEventSubscriber: DiagnosticSubscriber {
 }
 
 /// Forward all subscriber calls through a shared reference.
-/// `DiagnosticSubscriber for &S` is covered by the blanket in `diagnostic.rs`.
+/// `NoticeSubscriber for &S` is covered by the blanket in `notice.rs`.
 impl<S: GeneratorEventSubscriber> GeneratorEventSubscriber for &S {
     async fn on_generator_start(&self, event: GeneratorStartEvent) {
         S::on_generator_start(*self, event).await

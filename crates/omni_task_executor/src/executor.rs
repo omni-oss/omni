@@ -8,8 +8,8 @@ use omni_execution_plan::{
     MetaFilterErrorLimits,
 };
 use omni_messages::{
-    DiagnosticLevel, ExecutionCompleteEvent, ExecutionEventSubscriber,
-    ExecutionPlanReadyEvent, TracingSubscriber, diagnostic,
+    ExecutionCompleteEvent, ExecutionEventSubscriber, ExecutionPlanReadyEvent,
+    NoticeLevel, TracingSubscriber, notice,
 };
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
@@ -52,9 +52,9 @@ impl<'a, TSys: TaskExecutorSys, S: ExecutionEventSubscriber>
         let start_time = std::time::Instant::now();
 
         if self.config.dry_run() {
-            diagnostic!(
+            notice!(
                 self.subscriber,
-                DiagnosticLevel::Info,
+                NoticeLevel::Info,
                 "Dry run mode enabled, no command execution, cache recording, and cache replay will be performed",
             );
         }
