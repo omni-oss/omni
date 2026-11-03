@@ -234,6 +234,12 @@ Context added with `wrap_err` above a diagnostic is preserved as a `context`
 array in both renderers (section 4.4), outermost first. This is what keeps the
 cause chain that MCP currently loses.
 
+The diagnostic's own `std::error::Error::source()` chain (for example the
+`#[source] std::io::Error` of an environment failure) is rendered separately as
+a `causes` array, also outermost first, and as `caused by:` lines in the text
+output. `context` is what callers said they were doing; `causes` is what
+actually went wrong underneath.
+
 ### 4.3 Surfaces
 
 #### CLI
@@ -309,6 +315,7 @@ JSON (`data` in MCP, stderr in `--error-format json`). The envelope is fixed;
   "audience": "user",
   "message": "meta filter failed to evaluate for 500 task(s)",
   "context": ["planning tasks for `test`"],
+  "causes": ["unable to read `omni.yaml`: permission denied"],
   "details": { "filter": "knd == \"e2e\"", "total": 500, "groups": [ "..." ] },
   "hints": ["`knd` is not defined for this task. Did you mean `kind`?"]
 }
@@ -316,7 +323,7 @@ JSON (`data` in MCP, stderr in `--error-format json`). The envelope is fixed;
 
 For compatibility with RFC 0020 clients, `data.kind` for the meta filter
 changes from `"meta_filter_evaluation"` to `"meta_filter.evaluation"` and the
-existing `filter`/`total`/`groups` fields are **also** emitted at the top level
+existing `filter`/`total`/`other`/`groups` fields are **also** emitted at the top level
 of `data` for one release (marked deprecated in the docs), then removed. This
 is the only intentional wire change.
 
@@ -514,11 +521,25 @@ Each step is independently shippable.
    for un-migrated errors. Replaces the `meta_filter_error()` branch with the
    generic path once step 3 lands; until then keep both. Highest value, lowest
    risk.
-3. **Migrate `MetaFilterError`.** Derive `Diagnostic` (with `details =` and `body =` escape hatches)
-   (`meta_filter.evaluation`, `Audience::User`), delete `render_warning`/
-   `to_json`/`TaskExecutorError::meta_filter_error` in favour of the trait,
-   and keep the deprecated top-level JSON fields. Existing RFC 0020 tests must
-   pass unchanged apart from the `[code]` suffix and `kind` value.
+3. **Migrate `MetaFilterError`.** Derive `Diagnostic`
+   (`meta_filter.evaluation`, `Audience::User`) and delete `to_json` and
+   `TaskExecutorError::meta_filter_error` in favour of the trait.
+   - **`Display` becomes the one-line summary.** Today `Display` renders the
+     full multi-line RFC 0020 body. The migration splits it: `Display`
+     (still owned by `thiserror`, via `#[error("meta filter failed to evaluate
+     for {total} task(s)")]`) is the summary, and the grouped body moves
+     verbatim into the function named by `#[diagnostic(body = ...)]`, so the
+     CLI layout is unchanged. `details = ...` returns what `to_json` returns
+     today.
+   - **Compatibility fields:** the deprecated top-level `filter`, `total`,
+     `other` and `groups` are all kept for one release (`other` is the count
+     of failures whose causes were not retained), and snapshot tests cover
+     each.
+   - **Keep `render_warning`.** The `--meta-on-error exclude` path
+     (`execution_plan_provider.rs`) is a notice, which is out of scope (4.5),
+     so `render_warning` stays until the warnings RFC replaces it.
+   - Existing RFC 0020 tests must pass unchanged apart from the `[code]`
+     suffix and `kind` value.
 4. **CLI boundary.** `main` renders diagnostics, adds `--error-format` and exit
    codes, documents them.
 5. **Next migrations (separate PRs, one subsystem each).** Candidates in

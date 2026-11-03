@@ -1,0 +1,5 @@
+error: tuple fields need an explicit key: `detail = "key"`
+ --> tests/ui/tuple_detail_needs_key.rs:6:23
+  |
+6 | struct E(#[diagnostic(detail)] String);
+  |                       ^^^^^^

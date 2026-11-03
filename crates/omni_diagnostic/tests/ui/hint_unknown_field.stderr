@@ -1,0 +1,5 @@
+error: hint references field `nope`, which does not exist
+ --> tests/ui/hint_unknown_field.rs:5:35
+  |
+5 | #[diagnostic(code = "x.a", hint = "try {nope}")]
+  |                                   ^^^^^^^^^^^^

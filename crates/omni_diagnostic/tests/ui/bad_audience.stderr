@@ -1,0 +1,5 @@
+error: expected `user`, `environment` or `internal`
+ --> tests/ui/bad_audience.rs:5:39
+  |
+5 | #[diagnostic(code = "x.a", audience = everyone)]
+  |                                       ^^^^^^^^

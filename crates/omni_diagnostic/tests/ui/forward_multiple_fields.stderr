@@ -1,0 +1,5 @@
+error: `forward` requires exactly one field
+ --> tests/ui/forward_multiple_fields.rs:6:18
+  |
+6 |     #[diagnostic(forward)]
+  |                  ^^^^^^^

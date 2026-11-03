@@ -1,0 +1,5 @@
+error: missing `#[diagnostic(code = "...")]` (or `forward`)
+ --> tests/ui/missing_code.rs:9:5
+  |
+9 |     B,
+  |     ^
