@@ -4,7 +4,7 @@
 - **Owner:** TBD
 - **Date:** 2026-11-03
 - **Base branch:** `main`
-- **Affected crates/files:** new `omni_diagnostic` and `omni_diagnostic_derive` crates (the derive, the `Diagnostic` trait, `Severity`, `DiagnosticReport`, and the text/JSON renderers); `omni_execution_plan` (`meta_filter_error.rs` becomes the first implementor); `omni_task_executor` (`TaskExecutorError`); `omni_expressions` (`ErrorClass`); `omni_api`; `omni_cli_core`; `cli/omni` (`lib.rs`, top-level error handling); `omni_mcp_core` (`error.rs`, `server.rs`); `tests/omni-tests`
+- **Affected crates/files:** new `omni_diagnostic` and `omni_diagnostic_derive` crates (the derive, the `Diagnostic` trait, `Audience`, `DiagnosticReport`, and the text/JSON renderers); `omni_execution_plan` (`meta_filter_error.rs` becomes the first implementor); `omni_task_executor` (`TaskExecutorError`); `omni_expressions` (`ErrorClass`); `omni_api`; `omni_cli_core`; `cli/omni` (`lib.rs`, top-level error handling); `omni_mcp_core` (`error.rs`, `server.rs`); `tests/omni-tests`
 - **Follows:** RFC 0020 (meta filter runtime errors)
 
 ## 1. Summary
@@ -18,7 +18,7 @@ wants a good error has to repeat all of it, and until then it gets the generic
 path, which is poor on both surfaces.
 
 This RFC proposes a small, shared **diagnostic model**: one trait that an
-error type implements to describe itself (stable code, severity, summary,
+error type implements to describe itself (stable code, audience, summary,
 structured details, hints), and one set of renderers that turn any diagnostic
 into CLI text or an MCP error payload. Subsystems opt in by implementing the
 trait; everything else keeps working unchanged through `eyre`. The meta
@@ -56,9 +56,9 @@ Findings from the current tree (`main` @ `6441fa7b`):
   branch. It is the only `downcast_ref` for domain errors in the workspace,
   and it exists solely for RFC 0020. Adding a second structured error means
   adding a second branch to a function that knows about every subsystem.
-- **Warnings are strings.** Tolerated problems go through `log::warn!` with a
-  pre-rendered string (`MetaFilterError::render_warning`). MCP clients never
-  see them, and tests can only assert on substrings of log output.
+- **Tolerated problems are strings.** Non-fatal problems go through
+  `log::warn!` with a pre-rendered string (`MetaFilterError::render_warning`).
+  MCP clients never see them. Non-fatal reports are out of scope here (4.5).
 - **`omni_mcp_core::Error` is nearly empty.** It has a single `Custom` variant
   and `into_mcp_error` always produces `internal_error`.
 
@@ -91,14 +91,13 @@ Error: no tasks matched                 # generic; no code, no hint, exit 1
 
 ### Goals
 
-- One way for an error type to describe itself: stable code, severity,
+- One way for an error type to describe itself: stable code, audience,
   one-line summary, structured details, optional hints, optional source
   location.
 - One renderer per surface (CLI text, MCP JSON) that works for **any**
   implementor, so adding a diagnostic never touches `server.rs` or `main`.
 - MCP errors carry the right JSON-RPC class (`invalid_params` for user
   mistakes, `internal_error` for bugs) and keep the full cause chain.
-- Warnings use the same model, and MCP responses can include them.
 - Incremental adoption. Un-migrated errors keep working and are rendered at
   least as well as today.
 - RFC 0020's observable output (text and JSON) is preserved bit-for-bit where
@@ -112,8 +111,9 @@ Error: no tasks matched                 # generic; no code, no hint, exit 1
 - Localisation.
 - Changing exit status semantics for successful runs, or for the exit code
   of a task process that omni runs and forwards.
-- Tracing/log output format (`log`/`tracing` are unchanged apart from where
-  diagnostics are emitted as warnings).
+- Tracing/log output format (`log`/`tracing` are unchanged).
+- Non-fatal diagnostics (warnings) and their delivery to MCP. See 4.5.
+- Redefining notices. Tracked in omni-oss/omni#47.
 
 ## 4. Design
 
@@ -126,9 +126,6 @@ crate (so every crate may depend on it without creating cycles):
 pub trait Diagnostic: std::error::Error + Send + Sync + 'static {
     /// Stable, dotted, lowercase identifier. Part of the public interface.
     fn code(&self) -> &'static str;
-
-    /// Defaults to `Severity::Error`.
-    fn severity(&self) -> Severity { Severity::Error }
 
     /// Who is expected to act on this. Drives MCP error class and exit code.
     fn audience(&self) -> Audience { Audience::User }
@@ -143,8 +140,6 @@ pub trait Diagnostic: std::error::Error + Send + Sync + 'static {
     /// Default: nothing. MetaFilterError uses this for its grouped body.
     fn render_body(&self, _out: &mut dyn fmt::Write) -> fmt::Result { Ok(()) }
 }
-
-pub enum Severity { Error, Warning }
 
 pub enum Audience {
     /// The input is wrong: arguments, config, expression, files.
@@ -264,7 +259,6 @@ JSON (`data` in MCP, stderr in `--error-format json`). The envelope is fixed;
 ```json
 {
   "kind": "meta_filter.evaluation",
-  "severity": "error",
   "audience": "user",
   "message": "meta filter failed to evaluate for 500 task(s)",
   "context": ["planning tasks for `test`"],
@@ -293,25 +287,19 @@ error[meta_filter.evaluation]: meta filter failed to evaluate for 500 task(s)
 The `[code]` suffix is new and is the only change to the RFC 0020 text layout.
 Tests that assert on substrings from RFC 0020 are unaffected.
 
-### 4.5 Warnings
+### 4.5 Non-fatal reports (out of scope)
 
-`Severity::Warning` diagnostics are emitted through one function:
+`Diagnostic` describes **errors** only. v1 has no `Severity`, no
+`emit_warning`, and no MCP warning list: the only non-fatal case today
+(`--meta-on-error exclude`) stays a `NoticeLevel::Warn` notice with its
+details in `fields`, exactly as it is logged today.
 
-```rust
-pub fn emit_warning(d: &dyn Diagnostic);
-```
-
-which renders with the text renderer and writes through `log::warn!` (so
-existing log routing and `--quiet` handling apply). For MCP, a warning sink
-collected per request is attached to the tool result as
-`structuredContent._warnings` (array of the same envelope with
-`severity: "warning"`). This gives agents the `--meta-on-error exclude`
-report that today only appears in the server log.
-
-The per-request sink is passed down the same way the per-request working
-directory already is (RFC 0018); it must not be a global. If threading it is
-too invasive for the first PR, warnings stay log-only on MCP and this is
-tracked as a follow-up (section 7, step 4).
+Adding warnings later is additive: `severity()` would be a defaulted trait
+method returning `Error`, with a matching derive attribute and an optional
+`severity` field in the JSON envelope, so no existing diagnostic or client
+breaks. It is deferred until there are several real use cases, so severity
+and delivery can be designed together. Delivery to MCP overlaps with the
+notices redesign in omni-oss/omni#47.
 
 ### 4.6 Locations (reserved)
 
@@ -358,7 +346,6 @@ pub enum ProjectFilterError {
 | Where | Attribute | Effect |
 | --- | --- | --- |
 | type or variant | `audience = user\|environment\|internal` | Variant overrides type default. Type default is `user`. |
-| type or variant | `severity = error\|warning` | Default `error`. |
 | variant or struct | `code = "a.b"` | **Required** (see rules). Never derived from the name. |
 | variant or struct | `hint = "fmt"` | Repeatable. Same `{0}` / `{field}` / `{field:?}` interpolation as `thiserror`. |
 | field | `detail` / `detail = "key"` | Collected into the `details` JSON object (field must be `Serialize`). Key defaults to the field name. |
@@ -369,10 +356,10 @@ pub enum ProjectFilterError {
 
 **Generated code**
 
-- `impl Diagnostic` with `code`, `audience`, `severity`, `details`, `hints`
+- `impl Diagnostic` with `code`, `audience`, `details`, `hints`
   matching per variant. Omitted attributes fall back to the trait defaults.
 - Registration for `find` (4.2) via `inventory`, including per-variant metadata
-  (`code`, `audience`, `severity`). Types with generic parameters cannot be
+  (`code`, `audience`). Types with generic parameters cannot be
   registered and fail with a clear error (use `no_register` or a concrete
   wrapper).
 
@@ -431,12 +418,11 @@ The two are distinct:
 
 - A **notice** is a leveled, free-text runtime message pushed to
   subscribers while work is happening. It has no code, audience or details.
-- A **diagnostic** is a structured, coded error or warning that describes a
-  specific problem and is rendered at the CLI/MCP boundary.
+- A **diagnostic** is a structured, coded error that describes a specific
+  problem and is rendered at the CLI/MCP boundary.
 
-`Severity::Warning` diagnostics (4.5) are surfaced to the CLI through the
-notice channel (as `NoticeLevel::Warn`), so existing subscriber routing and
-`--quiet` handling apply.
+What a notice means across the CLI and MCP, and how notices are exposed on MCP,
+is a separate piece of work: omni-oss/omni#47.
 
 ## 5. Alternatives considered
 
@@ -474,7 +460,7 @@ notice channel (as `NoticeLevel::Warn`), so existing subscriber routing and
 
 Each step is independently shippable.
 
-1. **`omni_diagnostic` and `omni_diagnostic_derive` crates** (4.7). Trait, derive, `Severity`, `Audience`, `find`, text and
+1. **`omni_diagnostic` and `omni_diagnostic_derive` crates** (4.7). Trait, derive, `Audience`, `find`, text and
    JSON renderers, unit tests including `wrap_err` layering. No consumers yet.
 2. **MCP fallback fix.** `to_mcp_error` with `{:#}` and the `context` array
    for un-migrated errors. Replaces the `meta_filter_error()` branch with the
@@ -486,7 +472,7 @@ Each step is independently shippable.
    and keep the deprecated top-level JSON fields. Existing RFC 0020 tests must
    pass unchanged apart from the `[code]` suffix and `kind` value.
 4. **CLI boundary.** `main` renders diagnostics, adds `--error-format` and exit
-   codes, documents them. MCP warning sink (4.5) in this step or a follow-up.
+   codes, documents them.
 5. **Next migrations (separate PRs, one subsystem each).** Candidates in
    priority order, chosen because an agent or CI user hits them often:
    unknown project/task in filters, invalid `workspace.omni.yaml` / project
@@ -505,12 +491,9 @@ Each step is independently shippable.
 2. **Exit codes.** Are `2`/`3`/`70` right, or should omni stay at `1` and only
    add `--error-format json`? Exit codes are the most visible compatibility
    surface here.
-3. **Severity beyond error/warning.** Do we want `Note`/`Info` (for example,
-   "N tasks were excluded" success-path notices)? Left out of v1.
-4. **Warning delivery on MCP.** `structuredContent._warnings` versus an MCP
-   `notifications/message` log notification. The former is simpler and
-   deterministic for tests; the latter is more idiomatic but not all clients
-   surface it.
+3. **Non-fatal diagnostics.** Deferred (4.5). Revisit with severity and MCP
+   delivery together, alongside omni-oss/omni#47.
+4. **Notices on MCP.** Out of scope; tracked in omni-oss/omni#47.
 5. **Where does the code table live?** The docs site (proposed) versus a
    generated file from `register!` so it cannot drift from the source.
 6. **Scope of v1.** This RFC proposes the model plus the meta filter
