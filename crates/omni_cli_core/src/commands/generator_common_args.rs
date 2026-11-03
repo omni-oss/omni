@@ -5,7 +5,7 @@ pub struct GeneratorRunCommonArgs {
     #[arg(
         long,
         short,
-        help = "Prefill values to inputs",
+        help = "Prefill values to inputs. Values are passed as plain strings (unlike `omni tool run --value`, which parses JSON when possible)",
         value_parser = parse_key_value::<String, String>
     )]
     pub value: Vec<(String, String)>,

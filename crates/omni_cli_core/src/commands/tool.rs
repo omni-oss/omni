@@ -56,7 +56,7 @@ pub struct ToolRunCommand {
     #[arg(
         short = 'v',
         long = "value",
-        help = "A single k=v input value (repeatable); overrides matching --values-json keys. The value is parsed as JSON when possible, else treated as a string",
+        help = "A single k=v input value (repeatable); overrides matching --values-json keys. The value is parsed as JSON when possible, else treated as a string. Unlike `omni generator run --value`, which always passes a string",
         value_parser = parse_key_value::<String, String>
     )]
     pub arg: Vec<(String, String)>,
