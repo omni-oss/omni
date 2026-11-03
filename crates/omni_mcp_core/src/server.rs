@@ -494,6 +494,6 @@ mod tests {
             .unwrap();
         assert_eq!(params.working_dir, PathBuf::from("/workspace/sub"));
         assert_eq!(params.params.name, "writer");
-        assert_eq!(params.params.args, json!({}));
+        assert_eq!(params.params.input_values, json!({}));
     }
 }

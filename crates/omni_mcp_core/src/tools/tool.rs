@@ -60,7 +60,7 @@ where
             .map(|dir| omni_api::ToolWorkingDir::Path(dir.into()));
         let result = self
             .make_api()?
-            .tool_run(&params.name, params.args, working_dir)
+            .tool_run(&params.name, params.input_values, working_dir)
             .await?;
         Ok(ToolRunResult { result })
     }

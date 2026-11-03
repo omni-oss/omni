@@ -36,7 +36,7 @@ pub struct ToolRunParams {
     pub name: String,
     /// JSON object of input values, validated against the tool's declared inputs.
     #[serde(default = "default_empty_obj")]
-    pub args: Value,
+    pub input_values: Value,
     /// Directory the tool operates in; relative `ctx.sys` paths resolve here.
     /// Defaults to the workspace root.
     #[serde(default)]
@@ -49,7 +49,7 @@ pub struct SharedToolRunParams {
     pub name: String,
     /// JSON object of input values, validated against the tool's declared inputs.
     #[serde(default = "default_empty_obj")]
-    pub args: Value,
+    pub input_values: Value,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
