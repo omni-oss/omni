@@ -162,9 +162,8 @@ task.not_found                  cache.backend_unreachable
 config.invalid                  generator.input_invalid
 ```
 
-Codes are listed in one table in the docs site
-(`apps/site/content/docs/references/diagnostics`). Adding one is a docs change;
-renaming one is a breaking change.
+The code table is generated from the registry (section 4.7), not maintained by
+hand. Renaming a code is a breaking change.
 
 ### 4.2 Carrying diagnostics through `eyre`
 
@@ -176,21 +175,60 @@ pub fn find(report: &eyre::Report) -> Option<&dyn Diagnostic>;
 ```
 
 It walks `report.chain()` and returns the **outermost** error that is a
-diagnostic. Crates register their types once so the lookup does not need to
-know every type:
+diagnostic. `dyn Error` cannot be cast to `dyn Diagnostic` directly, and
+`Error::provide` is nightly-only, so each diagnostic type is **registered**
+once (automatically by the derive) and `find` asks every registration whether
+it recognises a given error.
 
 ```rust
-omni_diagnostic::register!(MetaFilterError);
+pub struct Registration {
+    pub type_name: &'static str,
+    pub codes: &'static [CodeInfo],          // code + audience per variant
+    pub lookup: for<'a> fn(&'a (dyn Error + 'static)) -> Option<&'a dyn Diagnostic>,
+}
+
+// derive expansion for `MetaFilterError`
+omni_diagnostic::register!(Registration {
+    type_name: "MetaFilterError",
+    codes: &[/* ... */],
+    lookup: |e| e.downcast_ref::<MetaFilterError>().map(|x| x as &dyn Diagnostic),
+});
 ```
 
-Implementation note: `dyn Error` cannot be downcast to `dyn Diagnostic`
-directly, so each implementor exposes itself through a small
-`as_diagnostic(&self) -> Option<&dyn Diagnostic>` hook on a thin wrapper
-(`DiagnosticError<E>`) that crates use as their inner variant, or via
-`eyre::Report::new(DiagnosticError(e))`. The final mechanism is an open
-question (section 8) because it affects how invasive adoption is; the
-requirement is that `find` works for an error wrapped by `.wrap_err(...)`
-layers added by callers.
+`lookup` is a plain `fn` (no captures), so a registration is a `const`-
+constructible value. `find` iterates registrations for each error in the chain.
+The cost is a few downcasts per error on the failure path only.
+
+**Backends.** `register!` is the only thing the derive emits, so the storage
+behind it can change without touching user code:
+
+| Backend         | Mechanism                                        | Targets                          |
+| --------------- | ------------------------------------------------ | -------------------------------- |
+| `inventory`     | Constructor section, runs before `main`          | Linux, macOS, Windows (omni's current targets) |
+| Explicit list   | `static REGISTRY: &[&Registration]` in the `omni` binary crate, hand-maintained, checked by a test | Any, including `wasm32` |
+
+`inventory` is the default. The explicit list is the supported fallback, kept
+behind a cargo feature (`omni_diagnostic/explicit-registry`) so a future target
+without constructor sections (notably wasm, where `inventory` registrations
+silently never run) can switch without changing any `#[derive(Diagnostic)]`
+call site. With the explicit list, a registry test fails when a type derives
+`Diagnostic` but is missing from the list.
+
+**Prototype findings** (throwaway workspace: `core` with `Registration` and
+`find`, an `errs` crate registering a type, `eyre` 0.6, edition 2024):
+
+- `find` located the diagnostic beneath two `wrap_err` layers, both through
+  `Report::chain()` and through the `source()` walk, in debug and in release
+  with `lto = "fat"`, `codegen-units = 1`, `strip = true`.
+- **Failure mode confirmed:** a crate that is a dependency but is never
+  referenced from the binary is dropped by the linker, and its registrations
+  are silently absent. Referencing the crate (`use that_crate as _;` or calling
+  any item) restores them. Mitigation: `assert_registry_valid()` (4.7) runs in
+  the `omni` binary's tests and checks that a known list of diagnostic types is
+  present.
+- Not verified: `cross` aarch64 and macOS/Windows builds, and wasm
+  (the `inventory` crate did not build with the toolchain used, because the
+  wasm target was not installed). These belong in the implementation PR's CI.
 
 Context added with `wrap_err` above a diagnostic is preserved as a `context`
 array in both renderers (section 4.4), outermost first. This is what keeps the
@@ -210,14 +248,23 @@ cause chain that MCP currently loses.
 `color_eyre` stays installed for panics and for un-migrated errors.
 The location section stays debug-only.
 
-Exit codes (new, documented):
+Exit codes (new, documented). POSIX only defines `0` as success and non-zero
+as failure; `1`-`125` are free for applications, `126`/`127` and `128+n` are
+reserved by shells for exec failures and signals. Beyond that the common
+convention (clap, `grep`, `diff`, Bash builtins) is `1` for a runtime failure
+and `2` for incorrect usage. BSD `sysexits.h` (`64`-`78`) is not part of POSIX,
+is rarely used by modern tools, and clap already uses `2`, so this RFC does not
+adopt it.
 
-| Code | Meaning                                              |
-| ---- | ---------------------------------------------------- |
-| `1`  | Generic failure (unchanged default, un-migrated)     |
-| `2`  | `Audience::User` (bad arguments/config/expression)   |
-| `3`  | `Audience::Environment` (network, filesystem, auth)  |
-| `70` | `Audience::Internal` (`EX_SOFTWARE`)                 |
+| Code | Meaning                                                        |
+| ---- | -------------------------------------------------------------- |
+| `0`  | Success                                                        |
+| `1`  | Failure (environment, internal, or un-migrated errors)         |
+| `2`  | `Audience::User` (bad arguments/config/expression), same as clap's usage errors |
+
+`Audience::Environment` and `Audience::Internal` are distinguished by the
+`audience` field of `--error-format json`, not by the exit code. Finer-grained
+codes can be added later without breaking scripts that test for non-zero.
 
 The exit status of a forwarded task process is never remapped.
 
@@ -358,8 +405,8 @@ pub enum ProjectFilterError {
 
 - `impl Diagnostic` with `code`, `audience`, `details`, `hints`
   matching per variant. Omitted attributes fall back to the trait defaults.
-- Registration for `find` (4.2) via `inventory`, including per-variant metadata
-  (`code`, `audience`). Types with generic parameters cannot be
+- Registration for `find` (4.2) through `register!`, including per-variant
+  metadata (`code`, `audience`). Types with generic parameters cannot be
   registered and fail with a clear error (use `no_register` or a concrete
   wrapper).
 
@@ -379,8 +426,9 @@ pub enum ProjectFilterError {
 proc-macro, so `omni_diagnostic::testing::assert_registry_valid()` iterates the
 registry and checks code format and global uniqueness. It runs in the `omni`
 binary's test suite, where every crate is linked. The same registry backs
-`omni diagnostics list [--format json]` and generates the docs code table
-(answers open question 5, no hand-maintained table to drift).
+`omni diagnostics list [--format <json|text|md>]`. `md` generates the docs code
+table, so there is no hand-maintained table to drift. `text` is the default for
+terminals, `json` is for tooling.
 
 **Design constraints**
 
@@ -451,7 +499,7 @@ is a separate piece of work: omni-oss/omni#47.
   the docs table, a snapshot test per migrated code, and the one-release
   compatibility fields in 4.4.
 - **Exit code change.** Scripts that check `$? -eq 1` for user errors will see
-  `2` for migrated diagnostics. Mitigated by migrating only the meta filter
+  `2` for migrated diagnostics (same as omni's existing clap usage errors). Mitigated by migrating only the meta filter
   error initially (it is a few days old) and calling this out in the changelog
   before more codes adopt it.
 - **Downcast mechanism.** See section 8.
@@ -481,21 +529,13 @@ Each step is independently shippable.
 
 ## 8. Open questions
 
-1. **Downcast mechanism (4.2).** Options: (a) a `register!` macro building a
-   `TypeId -> fn(&dyn Any) -> &dyn Diagnostic` table; (b) require diagnostics
-   to be constructed via `DiagnosticError<E>`; (c) a blanket `trait
-   AsDiagnostic` implemented through `eyre`'s `Report::downcast_ref` for each
-   known type behind a feature. Preference: (a), since it keeps existing
-   `thiserror` enums untouched. Needs a short prototype to confirm it works
-   through `wrap_err` layers.
-2. **Exit codes.** Are `2`/`3`/`70` right, or should omni stay at `1` and only
-   add `--error-format json`? Exit codes are the most visible compatibility
-   surface here.
-3. **Non-fatal diagnostics.** Deferred (4.5). Revisit with severity and MCP
-   delivery together, alongside omni-oss/omni#47.
+1. **Downcast mechanism (4.2).** Resolved: registry with `Registration`,
+   `inventory` by default and an explicit-list fallback behind a feature.
+   Remaining work is CI verification on `cross` aarch64, macOS and Windows.
+2. **Exit codes.** Resolved: `0`/`1`/`2` per POSIX and clap convention (4.3).
+3. **Non-fatal diagnostics.** Deferred to a separate RFC (4.5), together with
+   severity and MCP delivery, alongside omni-oss/omni#47.
 4. **Notices on MCP.** Out of scope; tracked in omni-oss/omni#47.
-5. **Where does the code table live?** The docs site (proposed) versus a
-   generated file from `register!` so it cannot drift from the source.
-6. **Scope of v1.** This RFC proposes the model plus the meta filter
-   migration. If preferred, it can be narrowed to the execution-plan and
-   task-executor subsystems only, leaving the CLI boundary for later.
+5. **Where does the code table live?** Resolved: generated from the registry
+   by `omni diagnostics list --format <json|text|md>` (4.7).
+6. **Scope of v1.** Resolved: errors only. Warnings get their own RFC.
