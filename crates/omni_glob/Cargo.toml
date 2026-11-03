@@ -19,3 +19,4 @@ globset = { workspace = true }
 omni_types = { workspace = true, default-features = false }
 omni_utils = { workspace = true }
 serde = { workspace = true, optional = true }
+thiserror = { workspace = true }

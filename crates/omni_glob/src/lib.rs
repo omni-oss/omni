@@ -1,3 +1,5 @@
+pub mod name;
+
 use std::{
     borrow::Cow,
     path::{Path, PathBuf},

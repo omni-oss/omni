@@ -7294,6 +7294,7 @@ dependencies = [
  "omni_types",
  "omni_utils",
  "serde",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -7603,6 +7604,13 @@ dependencies = [
  "trace",
  "tracing",
  "value-bag",
+]
+
+[[package]]
+name = "omni_redact"
+version = "0.0.0"
+dependencies = [
+ "omni_constants",
 ]
 
 [[package]]

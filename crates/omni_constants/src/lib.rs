@@ -171,3 +171,7 @@ mod tests {
         );
     }
 }
+
+/// The text that replaces a redacted value in logs, diagnostics and dry-run
+/// output. Every omni surface uses this one value.
+pub const REDACTED_PLACEHOLDER: &str = "<redacted>";
