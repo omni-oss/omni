@@ -336,6 +336,88 @@ pub struct CodeInfo {
 }
 ```
 
+**Layout.** Dependencies point one way, toward `omni_codes`:
+
+```mermaid
+flowchart TD
+    codes["omni_codes<br/>CodeInfo, CodeKind, NoticeLevel, Audience,<br/>registry, prefix ownership, validate()"]
+    support["omni_derive_support<br/>(plain lib: parse, docs, template, emit)"]
+    dderive["omni_diagnostic_derive"]
+    nderive["omni_notice_derive"]
+    diag["omni_diagnostic<br/>Diagnostic trait, find_in_error"]
+    notice["omni_notice<br/>Notice trait"]
+    msgs["omni_messages<br/>NoticeEvent, notice!, diagnostic_notice!"]
+    cli["omni_cli_core<br/>omni explain"]
+    mcp["omni_mcp_core<br/>explain tool, omni://codes/*"]
+    users["omni_cache, omni_generator, ...<br/>(#[derive(Notice)], #[derive(Diagnostic)])"]
+
+    support --> dderive
+    support --> nderive
+    dderive --> diag
+    nderive --> notice
+    codes --> diag
+    codes --> notice
+    notice --> msgs
+    diag --> msgs
+    users --> diag
+    users --> notice
+    codes --> cli
+    codes --> mcp
+```
+
+**Registration.** A derive expands to the trait impl plus one submission into
+`omni_codes`, using the backend `omni_diagnostic` has today (`inventory`, or
+the `explicit-registry` feature for targets without linker sections):
+
+```rust
+// omni_codes
+pub struct CodeRegistration {
+    pub crate_name: &'static str,          // env!("CARGO_PKG_NAME")
+    pub codes: &'static [CodeInfo],
+}
+
+pub fn all() -> impl Iterator<Item = &'static CodeInfo>;
+pub fn get(code: &str) -> Option<&'static CodeInfo>;
+pub fn close_matches(code: &str) -> Vec<&'static CodeInfo>;   // omni explain
+pub fn validate() -> Result<(), Vec<RegistryError>>;          // CI and debug startup
+
+/// Declares the prefixes the calling crate owns.
+omni_codes::prefixes!("cache");           // one line per crate, in lib.rs
+```
+
+```rust
+// #[derive(Notice)] on CacheWriteSkipped expands to roughly:
+impl Notice for CacheWriteSkipped { /* code, level, essential, fields */ }
+impl fmt::Display for CacheWriteSkipped { /* from `message` */ }
+omni_codes::submit!(CodeRegistration {
+    crate_name: env!("CARGO_PKG_NAME"),
+    codes: &[CodeInfo {
+        code: "cache.write_skipped",
+        kind: CodeKind::Notice,
+        summary: "Could not write a cache entry.",
+        explanation: "The task result is unaffected.",
+        related: &["cache.write_failed"],
+        level: Some(NoticeLevel::Error),
+        essential: false,
+        audience: None,
+        deprecated: false,
+    }],
+});
+
+// #[derive(Diagnostic)] expands to its existing impl, plus the same submission
+// with kind: CodeKind::Error and audience: Some(..). Its own
+// `omni_diagnostic::Registration` (with the `lookup` fn used by
+// `find_in_error`) is unchanged.
+```
+
+`validate()` checks, over everything submitted: every code is unique across
+kinds, every code's prefix is declared by the crate that submitted it, every
+`related` target exists, every code matches the format (`prefix.snake_case`),
+and a deprecated code is not reused. The same function backs the registry
+unit test, the debug-build startup check, and the generated docs page.
+`omni explain` and the MCP `explain` tool only call `get` and
+`close_matches`.
+
 - `omni_diagnostic` keeps its registry API, `Diagnostic` trait and
   `find_in_error`. Its derive additionally registers each type into
   `omni_codes` with `kind = Error`. The `Diagnostic` trait does not change.
