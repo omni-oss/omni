@@ -1,5 +1,5 @@
 //! The code table, rendered from the registry (RFC 0023). Backs
-//! `omni diagnostics list` and the generated docs page.
+//! `omni code list` and the `code_list` MCP tool.
 
 use std::fmt::Write as _;
 

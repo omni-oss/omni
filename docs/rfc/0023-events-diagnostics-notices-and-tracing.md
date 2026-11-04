@@ -514,7 +514,7 @@ also available to agents over MCP (4.5). `omni code explain` works for error cod
 and notice codes alike.
 
 `omni code list` prints every registered code, with `--format text|json|md` and
-`--kind error|notice`. The generated docs page is its `md` output. `omni code`
+`--kind error|notice`. Its `md` output is the code catalog table. `omni code`
 is the one command group for the registry; there is no top-level `omni explain`.
 
 #### Essential notices
@@ -735,7 +735,8 @@ further notices were omitted" when not. Tests cover both forms. The key uses the
 - The notice payload and its codes are a documented, versioned part of the
   MCP interface. Adding fields is non-breaking; renaming a code or removing a
   field is breaking.
-- **Explanation on demand.** A `code_explain` MCP tool takes a code and returns
+- **Explanation on demand.** A `code_list` MCP tool lists every code (optionally
+  one `kind`), and a `code_explain` MCP tool takes a code and returns
   the same fields as `omni code explain --format json`, for error and notice codes
   alike, and the catalog is also exposed as the resource
   `omni://codes/<code>`. An agent reads an explanation when it needs one
@@ -1049,6 +1050,9 @@ match it:
   use a `CliSubscriber` that prints each notice as it arrives.
 - **Dry-run command lines** (`Executing task '<id>': <command>`) are a result:
   they go to stdout and `-q` keeps them.
+- **Generated docs are not committed.** The command reference pages and the
+  code catalog table are generated output (`gen:refdocs`, `omni code list
+  --format md`), so this change does not check them in.
 - **Naming.** The CLI group is `omni code` (`list`, `explain`), and the MCP
   tool is `code_explain`, matching the `noun_verb` tool names. The explanation
   attribute is `#[notice(docs = ..)]`, the registry lookup is

@@ -2,7 +2,7 @@
 //!
 //! Diagnostics (fatal errors) and notices (non-fatal messages) both register
 //! here through their derives. Codes are unique across the whole application.
-//! `omni code`, the MCP `code_explain` tool and the docs page read this registry.
+//! `omni code`, the MCP `code_explain` and `code_list` tools and the docs read this registry.
 
 extern crate self as omni_codes;
 

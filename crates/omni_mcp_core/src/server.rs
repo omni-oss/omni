@@ -344,6 +344,7 @@ where
             }
             "ignore_sync" => call1(args, |p| self.tool_ignore_sync(p)).await,
             "ignore_clean" => call1(args, |p| self.tool_ignore_clean(p)).await,
+            "code_list" => call1(args, |p| self.tool_code_list(p)).await,
             "code_explain" => call1(args, |p| self.tool_code_explain(p)).await,
             unknown => Err(rmcp::model::ErrorData::new(
                 rmcp::model::ErrorCode::METHOD_NOT_FOUND,
@@ -389,6 +390,7 @@ fn shared_working_dir(
         "projection_prune" => parse::<ProjectionPruneParams>(args),
         "ignore_sync" => parse::<IgnoreSyncParams>(args),
         "ignore_clean" => parse::<IgnoreCleanParams>(args),
+        "code_list" => parse::<CodeListParams>(args),
         "code_explain" => parse::<CodeExplainParams>(args),
         unknown => Err(rmcp::model::ErrorData::new(
             rmcp::model::ErrorCode::METHOD_NOT_FOUND,

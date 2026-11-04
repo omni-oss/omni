@@ -337,7 +337,7 @@ describe(
         tags: ["mcp"],
     },
     () => {
-        it("tools/list returns all 23 expected tools", async () => {
+        it("tools/list returns all 24 expected tools", async () => {
             const ws = makeWorkspace(singleProjectSpec());
             const { client } = await connectMcp({ cwd: ws.cwd });
 
@@ -350,6 +350,7 @@ describe(
                     "cache_stats",
                     "exec_command",
                     "code_explain",
+                    "code_list",
                     "generator_inspect",
                     "generator_list",
                     "generator_run",
@@ -394,6 +395,7 @@ describe(
                 "tool_inspect",
                 "projection_status",
                 "code_explain",
+                "code_list",
             ];
             for (const name of readOnlyTools) {
                 expect(
@@ -2192,6 +2194,43 @@ describe(
             expect(error?.data.details.close_matches).toContain(
                 "meta.filter_failed",
             );
+        });
+
+        it("`code_list` lists codes and filters by kind", async () => {
+            const ws = makeWorkspace(singleProjectSpec());
+            const { client } = await connectMcp({ cwd: ws.cwd });
+
+            const list = async (args: Record<string, unknown>) =>
+                getContent<{ codes: Array<{ code: string; kind: string }> }>(
+                    await client.callTool({
+                        name: "code_list",
+                        arguments: args,
+                    }),
+                ).codes;
+
+            const all = await list({});
+            const errors = await list({ kind: "error" });
+            const notices = await list({ kind: "notice" });
+
+            expect(errors.length + notices.length).toBe(all.length);
+            expect(errors.every((c) => c.kind === "error")).toBe(true);
+            expect(notices.every((c) => c.kind === "notice")).toBe(true);
+            expect(all.map((c) => c.code)).toContain("meta.filter_excluded");
+            expect(all.map((c) => c.code)).toEqual(
+                all.map((c) => c.code).toSorted(),
+            );
+        });
+
+        it("`code_list` matches `omni code list --format json`", async () => {
+            const ws = makeWorkspace(singleProjectSpec());
+            const { client } = await connectMcp({ cwd: ws.cwd });
+
+            const cli = await runOmni(["code", "list", "--format", "json"]);
+            const tool = getContent<{ codes: unknown[] }>(
+                await client.callTool({ name: "code_list", arguments: {} }),
+            );
+
+            expect(JSON.parse(cli.stdout)).toEqual(tool.codes);
         });
 
         it("`omni://codes/<code>` returns the same entry as the tool", async () => {

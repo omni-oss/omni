@@ -45,8 +45,9 @@ omni code list --kind notice
 `omni code explain` works for error and notice codes. A code that does not exist
 lists close matches. `omni code list` prints every code (`--format text|json|md`,
 and `--kind error|notice` to narrow it). The same information is available to
-agents through the `code_explain` MCP tool and the `omni://codes/<code>`
-resource. Every code is listed on the [codes reference](/docs/references/codes).
+agents through the `code_explain` and `code_list` MCP tools and the
+`omni://codes/<code>` resource. `omni code list --format md` prints the whole
+catalog as a table.
 
 ## `-q`, `--quiet`
 

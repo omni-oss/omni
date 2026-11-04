@@ -134,6 +134,11 @@ pub fn tool_list_for_mode(shared: bool) -> Vec<rmcp::model::Tool> {
             "Remove omni's managed block from every configured ignore file",
             false,
         ),
+        schemas.typed::<CodeListParams>(
+            "code_list",
+            "List every error and notice code, optionally only one kind. Each entry has the same fields as code_explain",
+            true,
+        ),
         schemas.typed::<CodeExplainParams>(
             "code_explain",
             "Explain an error or notice code: kind, summary, explanation, level or audience, stability and related codes",
