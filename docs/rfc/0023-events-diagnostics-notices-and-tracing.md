@@ -252,7 +252,7 @@ implement `Error`, and nothing converts between the two.
 
 `NoticeEvent` stays the plain data that travels to subscribers. Presenters
 decide quiet-mode filtering and the MCP bound from the event's own
-`essential` field, never by looking the code up in the registry, so the value
+`level` and `essential` fields, never by looking the code up in the registry, so the value
 the emitter set cannot be overridden. `CodeInfo.essential` must equal
 `Notice::essential()`; the derive generates both from the same attribute, and
 a registry test fails if they differ.
@@ -392,8 +392,9 @@ and notice codes alike.
 
 #### Essential notices
 
-- An `essential` notice is never hidden by `-q` and is always delivered over
-  MCP (exempt from the bound): `sandbox.os_disabled`, `redact.disabled`. This
+- An `essential` notice is never hidden by `-q` (which otherwise hides `warn`
+  and `info` notices) and is always delivered over MCP (exempt from the
+  bound): `sandbox.os_disabled`, `redact.disabled`. This
   follows from RFC 0022's rule that loosening protections must stay visible.
 - **Essential notices are static.** The derive rejects `essential` on a type
   that has fields or a `message` with placeholders, so every emission of an
@@ -445,7 +446,22 @@ are unchanged.
 | Stream | Content |
 | --- | --- |
 | stdout | Command results and passed-through task output, nothing else |
-| stderr | Progress and status rendered from events, notices, the final error, developer traces when enabled |
+| stderr | Status lines rendered from events, the `indicatif` bar and generator spinners, notices, the final error, developer traces when enabled |
+
+The alternate-screen TUI is the exception: it owns the whole terminal on
+stdout. What each `--ui` mode draws, and where omni's own lines go:
+
+| `--ui` | Draws | Task output | omni's own lines and notices |
+| --- | --- | --- | --- |
+| `stream` | nothing | live on stdout | written directly to stderr |
+| `progress` | `indicatif` bar on stderr | captured, replayed per `--output-logs` | printed through the bar (`suspend`/`println`) |
+| `tui` | alternate screen on stdout | per-task screens | buffered (`emit_buffer`) and flushed after teardown |
+| `auto` | resolved at plan time | | `tui` for interactive or persistent tasks on a TTY, `progress` on a TTY otherwise, `stream` when not a TTY |
+
+Notices follow the same per-mode routing as lifecycle lines. Today
+`on_notice` writes straight to the terminal in `tui` mode while lifecycle
+lines are buffered, which can corrupt the alternate screen; the presenter
+routes both the same way.
 
 - `CliSubscriber` writes directly to the terminal (through the existing
   mux/progress handling), not through `log`.
@@ -470,11 +486,55 @@ are unchanged.
     sorting) and print once, with the count appended as ` (xN)`, for example
     `warning[cache.write_skipped]: could not write cache entry for 'app#build' (x3)`.
     A group of one has no suffix.
-- Verbosity flags replace the log-level flags for user output:
-  - `-q/--quiet`: results and errors only; progress and notices suppressed
-    (except `essential` ones). Rendering only: notices are still collected, so
-    the tracing mirror works as without `-q`.
-  - `--no-progress`: keep notices, drop progress (for CI logs).
+- **`-q/--quiet` replaces the log-level flags for user output.** It hides
+  omni's own narration, and never what the user asked for, what failed,
+  what needs a response, or a safety signal. For any line: if hiding it would
+  lose a result, a failure, a decision or a safety signal, `-q` shows it.
+  Invariants:
+  1. Rendering only. Events and notices are still emitted and collected; exit
+     status, MCP, the tracing mirror and `--trace` are unaffected.
+  2. It is a presenter setting (a field on `CliSubscriber` passed through
+     `resolve_subscriber`). Subsystems never see it, and MCP has no
+     equivalent.
+  3. It never rewrites another flag. `--output-logs` is untouched, an
+     explicit `--ui` is respected, and only `auto` resolves differently.
+  4. The summary-table gate that today reads `log::log_enabled!` becomes an
+     explicit read of this setting.
+
+  | Text | Under `-q` |
+  | --- | --- |
+  | Command results, dry-run command lines | Shown |
+  | Task stdout/stderr, including cached replay | Shown, governed by `--output-logs` |
+  | Final error, failed-task output | Shown |
+  | Prompts | Shown |
+  | Notices that are `essential` or level `error` | Shown |
+  | Notices at level `warn` or `info` | Hidden |
+  | Lifecycle lines (plan header, task started or finished, generator action lines) | Hidden |
+  | Spinner and progress bar | Not drawn |
+  | Summary table | Shown only if a task failed |
+  | Interactive and persistent task UI | Shown |
+
+  | `--ui` | Under `-q` |
+  | --- | --- |
+  | `stream` | Task output, failures, and `essential` or `error` notices only |
+  | `progress` (explicit) | Capture and replay kept, so output timing is unchanged, but no bar or spinner is drawn |
+  | `tui` (explicit) | Unchanged |
+  | `auto` | `stream`, or `tui` when interactive tasks exist, never `progress` |
+
+  There is no separate `--no-progress`: `--ui stream` and `-q` cover it.
+- **Tracing while a TUI or bar is live.** `--trace` writes to stderr, which
+  would corrupt the bar or the alternate screen. While either is live,
+  stderr traces are buffered and flushed after teardown (or suppressed);
+  `--trace-file` is the supported route for traces during such a run.
+- **Generators.** `generator run` always uses the stream subscriber, so
+  `--ui` does not apply. Spinners are drawn on stderr (probed with
+  `ProgressDrawTarget::stderr`) and only for depth-0 actions. The non-TTY
+  fallback that is `log::info!` today becomes status lines written to stderr
+  by the presenter. Notices during a live spinner print through
+  `multi.suspend`/`println`, and notices from sub-generators still print.
+  Under `-q` there are no spinners or action lines, while failed actions, the
+  final error and `essential` or `error` notices still show. Prompts
+  (`requestty`) are never suppressed.
 - Redaction (RFC 0022) is applied once, in the presenter, to every string it
   writes that came from a notice, event or diagnostic.
 
@@ -635,7 +695,7 @@ detail. It is never the way a user is told something.
 | `log::warn!`/`error!` in libraries, not user-relevant | `tracing::warn!`/`error!` |
 | `log::debug!`/`trace!` | `tracing::debug!`/`trace!` |
 | `trace::*` (wrapper crate), `trace::if_enabled!`, `enable-tracing` features | `tracing::*` directly; gating removed |
-| `-l/--stdout-log-level` | `-q/--quiet`, `--no-progress` |
+| `-l/--stdout-log-level` | `-q/--quiet` (omni's own lines always print by default, as with the current `info` default) |
 | `--stderr-log-level`, `--*-show-traces` | `--trace <filter>` |
 | `-f/--file-trace-level`, `--file-trace-output` | `--trace-file-level`, `--trace-file` |
 
@@ -665,14 +725,14 @@ decision. Expected buckets:
   unknown code, and its JSON output matches the MCP `explain` tool.
 - Presenter unit tests: `error`/`warning`/`note` prefixes with codes,
   collapsing of repeats (first-occurrence order, ` (xN)` suffix, grouping on
-  the redacted message), redaction, `-q` hides non-essential notices but not
-  essential ones, and `essential` is read from the event and matches the
+  the redacted message), redaction, `-q` hides `warn` and `info` notices but
+  not `error` or `essential` ones, and `essential` is read from the event and matches the
   registry.
 - CLI e2e:
   - stdout of `omni cache stats` and `omni project list` contains only
     results, with and without `--trace debug`.
   - A warning appears on stderr by default, does not change the exit status,
-    and `-q` hides it unless it is essential.
+    and `-q` hides a `warn` notice unless it is essential.
   - `omni explain <code>` prints the entry for an error code and a notice
     code.
   - `--meta-on-error fail` returns the fatal diagnostic and
@@ -698,8 +758,14 @@ decision. Expected buckets:
 - MCP with `--trace-file /dev/stdout` (and `/dev/fd/1`) fails at startup and never writes trace lines into the JSON-RPC stream; a regular file path still works.
 - Derive: `essential` on a type with fields or a templated message fails to compile.
 - Sealing: a hand-written `impl Notice` does not compile (compile-fail test).
-- Quiet mode: with `-q`, non-essential notices are not printed but the trace
-  mirror still records them.
+- Quiet mode: with `-q`, `warn` and `info` notices are not printed but the
+  trace mirror still records them. Per `--ui` mode: `stream` prints task
+  output only; explicit `progress` keeps capture and replay without a bar;
+  `auto` never resolves to `progress`; the summary table appears only on
+  failure; failed-task output and the final error always show.
+- TUI and progress: a notice published while the TUI is live is buffered and
+  flushed after teardown, and one published during `progress` prints through
+  the bar. `--trace` during `progress` or `tui` does not corrupt the display.
 - Lint: CI fails on `log::*` or `println!` in non-presenter omni crates, and on any use of the removed `trace` crate.
 - Generator: `omni generate crate` output compiles, passes clippy, contains no `trace`, `log` or `enable-tracing`.
 - Build: the workspace builds with the optional `tracing` release level cap set, and the four former `if_enabled!` sites behave identically at default settings.
@@ -748,7 +814,7 @@ Each step leaves the tree working.
 4. **MCP presenter.** Collect and return `notices`; add `command`; attach
    notices to error payloads.
 5. **CLI presenter.** Move `omni_cli_core` output off `log`; print notices on
-   stderr; add `-q`, `--no-progress`, and `omni explain` backed by `omni_codes`.
+   stderr; add `-q`, and `omni explain` backed by `omni_codes`.
    Add the MCP `explain` tool and `omni://codes/<code>` resource.
 6. **Tracing.** Remove `crates/trace` and the `enable-tracing` features (migrate to `tracing::*`, rewrite the four `if_enabled!` sites, update the crate generator). Migrate `log::*` to `tracing::*` with the triage, drop the
    stdout layer and `LogFilter`, add `--trace` and `--trace-file*`, remove the old flags
