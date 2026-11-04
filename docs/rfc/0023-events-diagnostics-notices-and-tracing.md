@@ -595,8 +595,10 @@ detail. It is never the way a user is told something.
   - A generated crate must build and pass clippy with the new lints; the
     generator's own tests (or a CI step that generates and checks one) cover
     it.
-- **`log` remains a dependency** solely so `tracing-log` can bridge
-  third-party crates. It is not imported by omni code.
+- **No omni crate depends on `log` directly.** `tracing-log` (kept) bridges
+  `log` records from third-party crates into `tracing`, so they appear only
+  under `--trace` or in the trace file. `log` stays in the build tree
+  transitively through that bridge, and omni code never imports it.
 - **Levels mean developer importance**: `error` (an unexpected failure omni
   recovered from), `warn` (suspicious but handled), `info` (major lifecycle
   points), `debug`, `trace`. A user is not expected to read any of them; if
