@@ -136,7 +136,7 @@ jobs:
         run: mkdir -p services/bridge-service/dist
 
       - name: No output macros or `log` in non-presenter crates
-        run: cargo clippy --workspace --lib --bins -- -D clippy::disallowed_macros
+        run: cargo clippy --workspace --lib --bins -- -A clippy::all -D clippy::disallowed_macros
 
       - name: Builds with a `tracing` release level cap
         run: cargo check -p omni --release --features tracing/release_max_level_info
