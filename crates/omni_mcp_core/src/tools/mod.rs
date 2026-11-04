@@ -1,4 +1,5 @@
 pub mod cache;
+pub mod explain;
 pub mod generator;
 pub mod hash;
 pub mod ignore;
@@ -132,6 +133,11 @@ pub fn tool_list_for_mode(shared: bool) -> Vec<rmcp::model::Tool> {
             "ignore_clean",
             "Remove omni's managed block from every configured ignore file",
             false,
+        ),
+        schemas.typed::<ExplainParams>(
+            "explain",
+            "Explain an error or notice code: kind, summary, explanation, level or audience, stability and related codes",
+            true,
         ),
     ]
 }

@@ -31,6 +31,9 @@ omni_context = { workspace = true }
 omni_tracing_subscriber = { workspace = true }
 omni_messages = { workspace = true }
 omni_diagnostic = { workspace = true }
+omni_notice = { workspace = true }
+omni_codes = { workspace = true }
+omni_redact = { workspace = true }
 omni_task_executor = { workspace = true }
 omni_generator = { workspace = true }
 omni_generator_configurations = { workspace = true }

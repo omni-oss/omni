@@ -30,6 +30,7 @@ struct Variant {
     detail_fields: Vec<(Ident, String)>,
     body_fn: Option<syn::Path>,
     stable: bool,
+    related: Vec<LitStr>,
     docs: (String, String),
 }
 
@@ -408,6 +409,7 @@ fn build_variant(
             detail_fields: Vec::new(),
             body_fn: None,
             stable: false,
+            related: Vec::new(),
             docs,
         }));
     }
@@ -465,6 +467,7 @@ fn build_variant(
         detail_fields,
         body_fn: attrs.body,
         stable: attrs.stable,
+        related: attrs.related,
         docs,
     }))
 }
@@ -562,7 +565,7 @@ fn code_impl(
                     code: c,
                     summary,
                     explanation: quote!(#explanation),
-                    related: &[],
+                    related: &v.related,
                     stable: v.stable,
                     deprecated: false,
                     detail: quote!(#codes::CodeDetail::Error {

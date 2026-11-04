@@ -1,5 +1,6 @@
 use omni_derive_support::{
-    CodeInfoTokens, code_info, doc_parts, has_placeholder, valid_code,
+    CodeInfoTokens, code_info, doc_parts, has_placeholder, placeholder_names,
+    valid_code,
 };
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
@@ -114,11 +115,37 @@ fn expand(input: DeriveInput) -> syn::Result<TokenStream2> {
         ));
     }
 
+    // Fields in `fields()`; a field marked `#[notice(skip)]` is only available
+    // to `message` (for text that is derived from other state).
+    let mut skipped: Vec<Ident> = Vec::new();
     let named: Vec<Ident> = match &input.data {
         Data::Struct(s) => match &s.fields {
             Fields::Unit => Vec::new(),
             Fields::Named(n) => {
-                n.named.iter().filter_map(|f| f.ident.clone()).collect()
+                let mut out = Vec::new();
+                for f in &n.named {
+                    let Some(id) = f.ident.clone() else { continue };
+                    let mut skip = false;
+                    for attr in
+                        f.attrs.iter().filter(|a| a.path().is_ident("notice"))
+                    {
+                        attr.parse_nested_meta(|m| {
+                            if m.path.is_ident("skip") {
+                                skip = true;
+                                Ok(())
+                            } else {
+                                Err(m
+                                    .error("only `skip` is allowed on a field"))
+                            }
+                        })?;
+                    }
+                    if skip {
+                        skipped.push(id);
+                    } else {
+                        out.push(id);
+                    }
+                }
+                out
             }
             Fields::Unnamed(u) => {
                 return Err(syn::Error::new(
@@ -135,7 +162,11 @@ fn expand(input: DeriveInput) -> syn::Result<TokenStream2> {
         }
     };
 
-    if a.essential && (!named.is_empty() || has_placeholder(&message.value())) {
+    if a.essential
+        && (!named.is_empty()
+            || !skipped.is_empty()
+            || has_placeholder(&message.value()))
+    {
         return Err(syn::Error::new(
             name.span(),
             "an `essential` notice must be static: no fields and no placeholders in `message`",
@@ -178,7 +209,14 @@ fn expand(input: DeriveInput) -> syn::Result<TokenStream2> {
             );
         }
     });
-    let fmt_args = named.iter().map(|f| quote!(#f = &self.#f));
+    // Only fields the message names are passed: an unused named argument is a
+    // compile error, and a field may exist only for `fields()`.
+    let used = placeholder_names(&message.value());
+    let fmt_args = named
+        .iter()
+        .chain(skipped.iter())
+        .filter(|f| used.contains(&f.to_string()))
+        .map(|f| quote!(#f = &self.#f));
 
     let err_check = quote! {
         const _: () = {

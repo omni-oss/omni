@@ -29,6 +29,7 @@ pub struct Attrs {
     pub forward: Option<Span>,
     pub no_register: Option<Span>,
     pub stable: bool,
+    pub related: Vec<LitStr>,
 }
 
 fn set_once<T>(
@@ -86,6 +87,10 @@ pub fn parse_attrs(attrs: &[Attribute]) -> syn::Result<Attrs> {
                 }
                 Some("forward") => {
                     set_once(&mut a.forward, m.path.span(), &m)
+                }
+                Some("related") => {
+                    a.related.push(m.value()?.parse()?);
+                    Ok(())
                 }
                 Some("stable") => {
                     a.stable = true;

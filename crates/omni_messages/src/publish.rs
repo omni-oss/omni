@@ -204,6 +204,8 @@ mod tests {
         assert_eq!(e[0].code(), "msgtest.essential");
         assert_eq!(e[0].message(), "static");
         assert_eq!(e[0].fields()["hints"][0], "try again");
+        // The body is a CLI layout aid and never travels in `fields`.
+        assert!(!e[0].fields().contains_key("body"));
     }
 
     #[test]

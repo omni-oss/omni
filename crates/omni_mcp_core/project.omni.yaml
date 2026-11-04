@@ -16,3 +16,9 @@ dependencies:
   - bridge_rpc_services
   - system_traits
   - omni_diagnostic
+  - omni_notice
+  - omni_codes
+  - omni_redact
+  - omni_generator_configurations
+  - omni_task_output_logs
+  - omni_tracing_subscriber

@@ -48,3 +48,4 @@ dependencies:
   - sets
   - trace
   - omni_codes
+  - omni_notice

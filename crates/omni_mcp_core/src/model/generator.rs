@@ -117,6 +117,9 @@ pub struct GeneratorRunResult {
     pub ok: bool,
     pub session_saved: bool,
     pub actions: Vec<Action>,
+    /// Non-fatal messages about this run. Match on `code`; omitted when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notices: Vec<crate::notices::NoticePayload>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]

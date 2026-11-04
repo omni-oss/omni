@@ -74,6 +74,41 @@ pub fn has_placeholder(template: &str) -> bool {
     false
 }
 
+/// Names referenced by `{name}` / `{name:?}` placeholders in a template, in
+/// order, without duplicates. `{{` is an escape, and positional placeholders
+/// (`{}` / `{0}`) are ignored.
+pub fn placeholder_names(template: &str) -> Vec<String> {
+    let b: Vec<char> = template.chars().collect();
+    let mut out: Vec<String> = Vec::new();
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == '{' {
+            if b.get(i + 1) == Some(&'{') {
+                i += 2;
+                continue;
+            }
+            let mut j = i + 1;
+            let mut name = String::new();
+            while j < b.len() && b[j] != '}' && b[j] != ':' {
+                name.push(b[j]);
+                j += 1;
+            }
+            let name = name.trim().to_string();
+            let is_ident = name
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_alphabetic() || c == '_');
+            if is_ident && !out.contains(&name) {
+                out.push(name);
+            }
+            i = j;
+        } else {
+            i += 1;
+        }
+    }
+    out
+}
+
 /// Everything needed to emit a `CodeInfo` expression.
 pub struct CodeInfoTokens<'a> {
     pub code: &'a LitStr,
@@ -121,6 +156,14 @@ mod tests {
         assert!(!has_placeholder("literal {{brace}}"));
         assert!(has_placeholder("value {x}"));
         assert!(has_placeholder("{{ and {x}"));
+    }
+
+    #[test]
+    fn placeholder_names_found() {
+        assert_eq!(
+            placeholder_names("a {x} {{y}} {z:?} {x} {0} {}"),
+            vec!["x".to_string(), "z".to_string()]
+        );
     }
 
     #[test]

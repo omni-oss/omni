@@ -21,6 +21,10 @@ pub struct NoticeEvent {
     /// Emitting module, for the `tracing` mirror. Not sent to MCP.
     #[serde(skip)]
     target: &'static str,
+    /// A diagnostic's rendered body (`diagnostic_notice!` only), for CLI
+    /// layout. The structured form is in `fields.details`; not sent to MCP.
+    #[serde(skip)]
+    body: Option<String>,
 }
 
 impl NoticeEvent {
@@ -32,6 +36,7 @@ impl NoticeEvent {
             message: n.to_string(),
             fields: n.fields(),
             target,
+            body: None,
         }
     }
 
@@ -46,6 +51,10 @@ impl NoticeEvent {
         let mut e = Self::from_notice(n, target);
         if let Some(details) = d.details() {
             e.fields.insert("details".into(), details);
+        }
+        let mut body = String::new();
+        if d.render_body(&mut body).is_ok() && !body.trim().is_empty() {
+            e.body = Some(body);
         }
         let hints = d.hints();
         if !hints.is_empty() {
@@ -72,6 +81,9 @@ impl NoticeEvent {
     pub fn target(&self) -> &'static str {
         self.target
     }
+    pub fn body(&self) -> Option<&str> {
+        self.body.as_deref()
+    }
 
     /// Redacts the message and every string in `fields` (RFC 0022).
     pub fn redact(&mut self, redactor: &omni_redact::Redactor) {
@@ -79,6 +91,9 @@ impl NoticeEvent {
             return;
         }
         self.message = redactor.redact(self.message.as_str()).into_owned();
+        if let Some(b) = &mut self.body {
+            *b = redactor.redact(b.as_str()).into_owned();
+        }
         for v in self.fields.values_mut() {
             redact_value(v, redactor);
         }

@@ -157,6 +157,7 @@ pub struct MetaFilterExcluded {
 #[derive(Debug, Clone, PartialEq, Eq, Diagnostic)]
 #[diagnostic(
     code = "meta.filter_failed",
+    related = "meta.filter_excluded",
     audience = user,
     details = details_json,
     body = write_body,

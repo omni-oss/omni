@@ -221,6 +221,21 @@ pub trait Code: __private::Sealed {
     fn info(&self) -> &'static CodeInfo;
 }
 
+/// A code that is not in the registry, with the closest known codes.
+#[derive(Debug, Clone)]
+pub struct UnknownCode {
+    pub code: String,
+    pub close_matches: Vec<&'static CodeInfo>,
+}
+
+/// Resolves a code for `omni explain` and the MCP `explain` tool.
+pub fn explain(code: &str) -> Result<&'static CodeInfo, UnknownCode> {
+    get(code).ok_or_else(|| UnknownCode {
+        code: code.to_string(),
+        close_matches: close_matches(code),
+    })
+}
+
 /// Codes close to `code`, for "did you mean" output.
 pub fn close_matches(code: &str) -> Vec<&'static CodeInfo> {
     let mut scored: Vec<(usize, &'static CodeInfo)> = all()
@@ -347,6 +362,14 @@ mod tests {
             serde_json::to_string(&NoticeLevel::Error).unwrap(),
             "\"error\""
         );
+    }
+
+    #[test]
+    fn explain_unknown_code_lists_matches_or_nothing() {
+        let e = explain("no.such_code").unwrap_err();
+        assert_eq!(e.code, "no.such_code");
+        // The unit-test binary registers nothing, so there is nothing close.
+        assert!(e.close_matches.is_empty());
     }
 
     #[test]

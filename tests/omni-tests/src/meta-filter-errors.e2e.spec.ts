@@ -280,4 +280,82 @@ describe("+meta-filter-errors @e2e @mcp (task_run)", { tags: ["mcp"] }, () => {
         expect(data.ok).toBe(true);
         expect(data.results.map((r) => r.project)).toEqual(["api"]);
     });
+
+    it("`meta_on_error: exclude` reports a `meta.filter_excluded` notice, not the fatal code", async () => {
+        const ws = makeWorkspace(metaSpec());
+        const { client } = await connectMcp({ cwd: ws.cwd });
+
+        const result = await client.callTool({
+            name: "task_run",
+            arguments: {
+                tasks: ["test"],
+                meta: 'kind == "e2e"',
+                meta_on_error: "exclude",
+            },
+        });
+
+        const data = result.structuredContent as {
+            notices?: Array<{
+                level: string;
+                code: string;
+                message: string;
+                fields: Record<string, any>;
+            }>;
+        };
+        const notice = data.notices?.find(
+            (n) => n.code === "meta.filter_excluded",
+        );
+        expect(notice).toBeDefined();
+        expect(notice?.level).toBe("error");
+        expect(notice?.fields.filter).toBe('kind == "e2e"');
+        expect(notice?.fields.count).toBe(1);
+        expect(notice?.fields.details).toBeDefined();
+        expect(data.notices?.map((n) => n.code)).not.toContain(
+            "meta.filter_failed",
+        );
+    });
+
+    it("omits `notices` when nothing was reported", async () => {
+        const ws = makeWorkspace(metaSpec());
+        const { client } = await connectMcp({ cwd: ws.cwd });
+
+        const result = await client.callTool({
+            name: "task_run",
+            arguments: {
+                tasks: ["test"],
+                project: ["web"],
+                meta: 'kind == "unit"',
+            },
+        });
+
+        expect(
+            (result.structuredContent as Record<string, unknown>).notices,
+        ).toBeUndefined();
+    });
+
+    it("carries notices raised before a failure under `data.notices`", async () => {
+        const ws = makeWorkspace(metaSpec());
+        const { client } = await connectMcp({ cwd: ws.cwd });
+
+        // Every task fails the filter and is excluded, so the run has nothing
+        // to execute. The notice was reported before that error.
+        const error = (await client
+            .callTool({
+                name: "task_run",
+                arguments: {
+                    tasks: ["test"],
+                    meta: 'knd == "e2e"',
+                    meta_on_error: "exclude",
+                },
+            })
+            .then(
+                () => undefined,
+                (e: unknown) => e,
+            )) as { data?: { notices?: Array<{ code: string }> } } | undefined;
+
+        expect(error).toBeDefined();
+        expect(error?.data?.notices?.map((n) => n.code)).toContain(
+            "meta.filter_excluded",
+        );
+    });
 });

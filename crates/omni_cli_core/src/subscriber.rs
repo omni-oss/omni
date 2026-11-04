@@ -322,12 +322,25 @@ fn render_notice(e: &NoticeEvent) -> String {
         NoticeLevel::Warn => ("warning", |s| s.yellow().bold().to_string()),
         NoticeLevel::Info => ("note", |s| s.cyan().bold().to_string()),
     };
-    format!(
-        "{}: {}\n  = run `omni explain {}` for details",
+    let mut out = format!(
+        "{}: {}",
         color(&format!("{label}[{}]", e.code())),
         escape_control_chars(e.message()),
+    );
+    if let Some(body) = e.body() {
+        out.push('\n');
+        out.push_str(body.trim_end());
+    }
+    if let Some(hints) = e.fields().get("hints").and_then(|h| h.as_array()) {
+        for h in hints.iter().filter_map(|h| h.as_str()) {
+            out.push_str(&format!("\n  = hint: {}", escape_control_chars(h)));
+        }
+    }
+    out.push_str(&format!(
+        "\n  = run `omni explain {}` for details",
         e.code()
-    )
+    ));
+    out
 }
 
 fn notice_emit_level(level: NoticeLevel) -> EmitLevel {
@@ -1004,5 +1017,52 @@ impl GeneratorEventSubscriber for CliSubscriber {
 
     async fn on_generator_completed(&self, e: GeneratorCompletedEvent) {
         self.with_progress(|p| p.generator_completed(&e.name));
+    }
+}
+
+#[cfg(test)]
+mod notice_render_tests {
+    use omni_messages::NoticeEvent;
+    use omni_notice::Notice;
+
+    use super::*;
+
+    omni_codes::prefixes!("clitest");
+
+    /// Sample.
+    #[derive(Notice)]
+    #[notice(code = "clitest.sample", level = warn, message = "line\nbreak {x}")]
+    struct Sample {
+        x: String,
+    }
+
+    fn plain(s: &str) -> String {
+        // Strip ANSI colour so assertions do not depend on the terminal.
+        let mut out = String::new();
+        let mut chars = s.chars().peekable();
+        while let Some(c) = chars.next() {
+            if c == '\u{1b}' {
+                for n in chars.by_ref() {
+                    if n == 'm' {
+                        break;
+                    }
+                }
+            } else {
+                out.push(c);
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn renders_level_code_message_and_explain_pointer() {
+        let e = NoticeEvent::from_notice(&Sample { x: "v".into() }, "t");
+        let text = plain(&render_notice(&e));
+        assert!(text.starts_with("warning[clitest.sample]: "));
+        // Control characters in the message cannot forge extra lines.
+        assert!(text.contains("line\\nbreak v"));
+        assert!(
+            text.ends_with("= run `omni explain clitest.sample` for details")
+        );
     }
 }

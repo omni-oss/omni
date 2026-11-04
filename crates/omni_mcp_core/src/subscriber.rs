@@ -2,10 +2,13 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use omni_messages::{
-    ExecutionEventSubscriber, GeneratorEventSubscriber, NoticeSubscriber,
-    TaskCompletedEvent, TaskFailedEvent, TaskOutputStreamEvent,
+    ExecutionEventSubscriber, GeneratorEventSubscriber, NoticeEvent,
+    NoticeSubscriber, TaskCompletedEvent, TaskFailedEvent,
+    TaskOutputStreamEvent, TaskStartedEvent,
 };
 use omni_task_output_logs::LogsDisplay;
+
+use crate::notices::{NoticeCollector, NoticePayload};
 use tokio::io::AsyncReadExt as _;
 use tokio::task::JoinHandle;
 
@@ -36,6 +39,11 @@ pub struct McpSubscriber {
     captures: Arc<Mutex<HashMap<String, PendingCapture>>>,
     /// Resolved logs per task (task_id → UTF-8 text).
     logs: Arc<Mutex<HashMap<String, String>>>,
+    /// Notices for this request: deduplicated and bounded.
+    notices: Mutex<NoticeCollector>,
+    /// Dry-run commands per task (task_id → redacted command line).
+    commands: Mutex<HashMap<String, String>>,
+    redactor: Option<omni_redact::Redactor>,
 }
 
 impl McpSubscriber {
@@ -44,7 +52,31 @@ impl McpSubscriber {
             include_logs,
             captures: Arc::new(Mutex::new(HashMap::new())),
             logs: Arc::new(Mutex::new(HashMap::new())),
+            notices: Mutex::new(NoticeCollector::new()),
+            commands: Mutex::new(HashMap::new()),
+            redactor: None,
         }
+    }
+
+    /// Redacts every notice before it is collected (RFC 0022).
+    pub fn with_redactor(mut self, redactor: omni_redact::Redactor) -> Self {
+        self.redactor = Some(redactor);
+        self
+    }
+
+    /// Takes the notices collected so far, appending the truncation entry
+    /// when some were omitted. Call once, after the request has finished.
+    pub fn take_notices(&self) -> Vec<NoticePayload> {
+        std::mem::replace(
+            &mut *self.notices.lock().unwrap(),
+            NoticeCollector::new(),
+        )
+        .finish()
+    }
+
+    /// Dry-run command lines keyed by full task name.
+    pub fn take_commands(&self) -> HashMap<String, String> {
+        std::mem::take(&mut *self.commands.lock().unwrap())
     }
 
     /// Drain all captured logs, leaving the internal map empty.
@@ -74,8 +106,12 @@ impl McpSubscriber {
 }
 
 impl NoticeSubscriber for McpSubscriber {
-    fn wants_notices(&self) -> bool {
-        false
+    fn redactor(&self) -> Option<&omni_redact::Redactor> {
+        self.redactor.as_ref()
+    }
+
+    fn on_notice(&self, event: NoticeEvent) {
+        self.notices.lock().unwrap().push(event);
     }
 }
 
@@ -133,6 +169,12 @@ impl ExecutionEventSubscriber for McpSubscriber {
             .lock()
             .unwrap()
             .insert(event.task_id, PendingCapture { handle, facet });
+    }
+
+    async fn on_task_started(&self, event: TaskStartedEvent) {
+        if let Some(command) = event.command {
+            self.commands.lock().unwrap().insert(event.task_id, command);
+        }
     }
 
     async fn on_task_completed(&self, event: TaskCompletedEvent) {

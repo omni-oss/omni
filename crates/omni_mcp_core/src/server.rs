@@ -146,6 +146,8 @@ where
             env!("CARGO_PKG_VERSION"),
         );
         info.capabilities.tools = Some(rmcp::model::ToolsCapability::default());
+        info.capabilities.resources =
+            Some(rmcp::model::ResourcesCapability::default());
         if self.is_shared() {
             info.instructions = Some("Every tool requires an absolute existing working_dir. Omni discovers the nearest workspace from the canonical physical directory. Each call is independent; no workspace selection is retained. Shared mode is not a filesystem sandbox.".into());
         }
@@ -165,6 +167,38 @@ where
             },
             ..Default::default()
         })
+    }
+
+    async fn list_resources(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<rmcp::model::ListResourcesResult, rmcp::model::ErrorData> {
+        Ok(rmcp::model::ListResourcesResult {
+            resources: crate::resources::list(),
+            ..Default::default()
+        })
+    }
+
+    async fn list_resource_templates(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<rmcp::model::ListResourceTemplatesResult, rmcp::model::ErrorData>
+    {
+        Ok(rmcp::model::ListResourceTemplatesResult {
+            resource_templates: crate::resources::templates(),
+            ..Default::default()
+        })
+    }
+
+    async fn read_resource(
+        &self,
+        request: rmcp::model::ReadResourceRequestParams,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<rmcp::model::ReadResourceResponse, rmcp::model::ErrorData> {
+        crate::resources::read(&request.uri)
+            .map(rmcp::model::ReadResourceResponse::from)
     }
 
     async fn call_tool(
@@ -310,6 +344,7 @@ where
             }
             "ignore_sync" => call1(args, |p| self.tool_ignore_sync(p)).await,
             "ignore_clean" => call1(args, |p| self.tool_ignore_clean(p)).await,
+            "explain" => call1(args, |p| self.tool_explain(p)).await,
             unknown => Err(rmcp::model::ErrorData::new(
                 rmcp::model::ErrorCode::METHOD_NOT_FOUND,
                 format!("unknown tool: {unknown}"),
@@ -354,6 +389,7 @@ fn shared_working_dir(
         "projection_prune" => parse::<ProjectionPruneParams>(args),
         "ignore_sync" => parse::<IgnoreSyncParams>(args),
         "ignore_clean" => parse::<IgnoreCleanParams>(args),
+        "explain" => parse::<ExplainParams>(args),
         unknown => Err(rmcp::model::ErrorData::new(
             rmcp::model::ErrorCode::METHOD_NOT_FOUND,
             format!("unknown tool: {unknown}"),

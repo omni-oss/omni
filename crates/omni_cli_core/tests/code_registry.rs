@@ -48,8 +48,10 @@ fn error_and_notice_pairs_are_related() {
 fn essential_codes_are_static() {
     // The derive rejects fields and placeholders on essential notices, so an
     // essential code's emissions are identical (MCP deduplicates by code).
-    let essential: Vec<_> =
-        omni_codes::all().filter(|c| c.essential()).map(|c| c.code).collect();
+    let essential: Vec<_> = omni_codes::all()
+        .filter(|c| c.essential())
+        .map(|c| c.code)
+        .collect();
     assert!(essential.contains(&"redact.disabled"));
     assert!(essential.contains(&"sandbox.os_disabled"));
 }
