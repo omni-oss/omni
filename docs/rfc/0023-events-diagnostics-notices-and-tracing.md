@@ -511,7 +511,19 @@ From the `log` triage (4.7):
 | `execution_plan_provider.rs`: tolerated meta filter errors | `log::warn!` | `diagnostic_notice!` with Error notice `meta.filter_excluded`, carrying the RFC 0020 details. The fatal `meta.filter_failed` is unchanged and `related` |
 | `omni_projections/ledger.rs` | `log::warn!` | Notice Warn `projections.*` |
 | `commands/env.rs`: missing variable | `log::warn!` | Notice Warn `env.var_missing` |
-| `omni_cache`, `omni_hasher` recovered errors | `log::error!` | Notice Error (for example `cache.write_skipped`) when the user's result is affected; otherwise `tracing` |
+| `omni_cache`, `omni_hasher`, `omni_setup` recovered errors | `log::error!` | Decided by the rule below, per site |
+
+**Rule for a recovered error.** It is a notice if the user could notice or act
+on the consequence, and developer-only `tracing` otherwise:
+- Notice `Error`: the user loses something they expected and can act on it
+  (a cache entry was not written, so the next run is slower, as in
+  `cache.write_skipped`; a configured setting was ignored).
+- Notice `Warn`: the run is degraded but the result is the same, and it will
+  recur until the user changes something.
+- `tracing::warn!`/`error!`: an internal fallback with the same result and
+  nothing for the user to do (a retried read, a rebuilt in-memory index).
+A site that is uncertain defaults to `tracing`, since a notice is a public
+code that cannot be removed later.
 
 ### 4.5 Output: presenters
 
@@ -713,8 +725,8 @@ detail. It is never the way a user is told something.
   atomic check, and `tracing`'s `max_level_*` / `release_max_level_*` features
   cap levels at compile time for events and spans alike. So omni code uses
   `tracing::*` directly, `crates/trace` and the `enable-tracing` features are
-  removed, and a release level cap, if wanted, is one workspace-level
-  `tracing` feature. The four `if_enabled!` sites change:
+  removed. There is no release level cap yet; if one is wanted later it is one
+  workspace-level `tracing` feature. The four `if_enabled!` sites change:
   - `bridge_rpc_core/bridge/bridge_impl.rs` (two): use
     `.instrument(tracing::info_span!(..))` unconditionally.
   - `omni_term_ui/mux_output_presenter/tui_presenter.rs` (two): create and
@@ -906,16 +918,22 @@ Each step leaves the tree working.
 
 ## 8. Open questions
 
-- **Release level cap.** Whether release builds set `release_max_level_*`, and at which level.
-- **Crate count.** Four new crates. `omni_notice` could live in
-  `omni_messages` if the trait stays free of event dependencies.
-- **Code stability tiers.** Whether every code is covered by the MCP stability
-  promise, or only those marked stable in the registry.
-- **Prefix declaration.** `omni_codes::prefix!("cache")` per crate versus a
-  list in the registry.
-- **Flag names.** `--trace` versus `--debug-log`. `-v` stays free for `-v/--value` (#51).
-- **Recovered cache/hash errors.** `Error` notice or developer-only tracing?
-  Decided per site in the triage.
+- **Prefix declaration.** `omni_codes::prefixes!("cache")` per crate versus a
+  list in the registry. To be revisited when the registry is implemented.
+
+### Decided
+
+- **Release level cap.** None for now (4.6).
+- **Crate count.** `omni_notice` stays its own crate, with `omni_codes`,
+  `omni_notice_derive` and `omni_derive_support`.
+- **Code stability.** omni has no formal MCP stability promise today. This
+  RFC does not add tiers: a code is stable once released, as RFC 0021 already
+  says for diagnostics. Codes and the `level` and `fields` keys of a notice
+  are part of the contract; `message` text is not and may change. Before the
+  first release anything may change.
+- **Flag names.** `--trace` and `--trace-file`. `-v` stays free for
+  `-v/--value` (#51).
+- **Recovered cache/hash errors.** Decided per site with the rule in 4.4.
 
 ## 9. Deferred, can be explored later
 
