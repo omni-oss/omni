@@ -358,7 +358,7 @@ pub(crate) async fn run_internal<'a, S: GeneratorEventSubscriber>(
         }
     }
 
-    trace::trace!(count = values.len(), "input_values");
+    tracing::trace!(count = values.len(), "input_values");
 
     let redactor = build_input_redactor(r#gen, &values, config);
 

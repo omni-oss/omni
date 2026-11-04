@@ -27,7 +27,7 @@ describe("+env @env (resolution output)", () => {
     it("`env all` prints KEY=VALUE for every resolved var", async () => {
         const ws = envWorkspace({ FOO: "foo", BAR: "bar" });
 
-        const result = await runOmni(["-l", "off", "env", "all"], {
+        const result = await runOmni(["-q", "env", "all"], {
             cwd: ws.cwd,
         });
 
@@ -39,7 +39,7 @@ describe("+env @env (resolution output)", () => {
     it("`env get <key>` prints the value with no trailing newline", async () => {
         const ws = envWorkspace({ FOO: "foo" });
 
-        const result = await runOmni(["-l", "off", "env", "get", "FOO"], {
+        const result = await runOmni(["-q", "env", "get", "FOO"], {
             cwd: ws.cwd,
         });
 
@@ -55,10 +55,10 @@ describe("+env @env (resolution output)", () => {
             cwd: ws.cwd,
         });
         expect(warned).toHaveSucceeded();
-        expect(warned).toOutputContaining("does not exists");
+        expect(warned).toHaveStderrContaining("does not exists");
 
         // ...and with logs off there is no value (or anything) on stdout.
-        const silent = await runOmni(["-l", "off", "env", "get", "MISSING"], {
+        const silent = await runOmni(["-q", "env", "get", "MISSING"], {
             cwd: ws.cwd,
         });
         expect(silent.stdout).toBe("");
@@ -75,7 +75,7 @@ describe("+env @env (merging & flags)", () => {
             },
         });
 
-        const result = await runOmni(["-l", "off", "env", "all"], {
+        const result = await runOmni(["-q", "env", "all"], {
             cwd: ws.path("sub"),
         });
 
@@ -87,11 +87,11 @@ describe("+env @env (merging & flags)", () => {
     it("--inherit-env-vars surfaces parent process vars in `env all`", async () => {
         const ws = envWorkspace({ FOO: "foo" });
 
-        const inherited = await runOmni(["-l", "off", "-i", "env", "all"], {
+        const inherited = await runOmni(["-q", "-i", "env", "all"], {
             cwd: ws.cwd,
             env: { PARENT_MARKER: "hello" },
         });
-        const isolated = await runOmni(["-l", "off", "env", "all"], {
+        const isolated = await runOmni(["-q", "env", "all"], {
             cwd: ws.cwd,
             env: { PARENT_MARKER: "hello" },
         });
@@ -108,8 +108,7 @@ describe("+env @env (merging & flags)", () => {
 
         const result = await runOmni(
             [
-                "-l",
-                "off",
+                "-q",
                 "-e",
                 ".env.{ENV}",
                 "--env",
@@ -135,8 +134,7 @@ describe("+env @env (precedence & combined flags)", () => {
 
         const result = await runOmni(
             [
-                "-l",
-                "off",
+                "-q",
                 "-i",
                 "--env",
                 "production",
@@ -162,7 +160,7 @@ describe("+env @env (precedence & combined flags)", () => {
         const ws = envWorkspace({ SHARED: "fromfile" });
 
         const result = await runOmni(
-            ["-l", "off", "-i", "env", "get", "SHARED"],
+            ["-q", "-i", "env", "get", "SHARED"],
             {
                 cwd: ws.cwd,
                 env: { SHARED: "fromparent" },
@@ -185,8 +183,7 @@ describe("+env @env (precedence & combined flags)", () => {
 
         const result = await runOmni(
             [
-                "-l",
-                "off",
+                "-q",
                 "-e",
                 ".env.one",
                 "--env-file",
@@ -216,7 +213,7 @@ describe("+env @env (precedence & combined flags)", () => {
         });
 
         const result = await runOmni(
-            ["-l", "off", "-r", "mark.txt", "env", "all"],
+            ["-q", "-r", "mark.txt", "env", "all"],
             {
                 cwd: ws.path("sub"),
             },

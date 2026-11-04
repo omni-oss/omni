@@ -2,28 +2,27 @@ use std::path::PathBuf;
 
 use crate::Level;
 
+/// Where developer traces go (RFC 0023, 4.6).
+///
+/// There is no stdout sink: stdout belongs to command results, and traces
+/// there would corrupt piped output and the MCP stdio transport. Users who
+/// want traces in a stream use `2>&1` or `--trace-file /dev/stdout`.
 #[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct TracingConfig {
-    pub stdout_level: Level,
-    pub stdout_show_traces: bool,
+    /// `EnvFilter` directives for stderr (`omni_cache=debug`). `None` is off.
+    pub stderr_filter: Option<String>,
     pub file_level: Level,
     pub file_path: Option<PathBuf>,
-    pub stderr_level: Level,
-    pub stderr_show_traces: bool,
 }
 
 impl TracingConfig {
-    /// Returns a config where every level is off and no file sink is used.
-    /// Suitable for library consumers that manage tracing externally or do not
-    /// want any file-based tracing output.
+    /// Returns a config where every sink is off. Suitable for library
+    /// consumers that manage tracing externally.
     pub fn disabled() -> Self {
         Self {
-            stdout_level: Level::Off,
-            stdout_show_traces: false,
+            stderr_filter: None,
             file_level: Level::Off,
             file_path: None,
-            stderr_level: Level::Off,
-            stderr_show_traces: false,
         }
     }
 }

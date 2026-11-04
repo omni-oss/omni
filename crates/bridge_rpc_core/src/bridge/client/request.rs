@@ -28,7 +28,7 @@ pub struct PendingRequest {
 }
 
 impl PendingRequest {
-    #[cfg_attr(feature = "enable-tracing", tracing::instrument(skip_all, fields(request_id = ?self.id)))]
+    #[tracing::instrument(skip_all, fields(request_id = ?self.id))]
     pub async fn start_with_headers(
         mut self,
         headers: Headers,
@@ -50,7 +50,7 @@ impl PendingRequest {
         ))
     }
 
-    #[cfg_attr(feature = "enable-tracing", tracing::instrument(skip_all, fields(request_id = ?self.id)))]
+    #[tracing::instrument(skip_all, fields(request_id = ?self.id))]
     pub async fn start(mut self) -> RequestResult<ActiveRequest> {
         send_frame(
             &self.frame_sender,
@@ -88,7 +88,7 @@ impl Drop for RequestDataImpl {
             let result = tx.send(frame).await;
 
             if let Err(e) = result {
-                trace::error!(error = ?e, "failed_to_send_stream_end_frame");
+                tracing::error!(error = ?e, "failed_to_send_stream_end_frame");
             }
         });
     }
@@ -133,7 +133,7 @@ impl ActiveRequest {
         return_if_error(&mut self.response_error_receiver).await
     }
 
-    #[cfg_attr(feature = "enable-tracing", tracing::instrument(skip_all, fields(request_id = ?self.data.id)))]
+    #[tracing::instrument(skip_all, fields(request_id = ?self.data.id))]
     pub async fn write_body_chunk(
         &mut self,
         bytes: Vec<u8>,
@@ -151,7 +151,7 @@ impl ActiveRequest {
         Ok(())
     }
 
-    #[cfg_attr(feature = "enable-tracing", tracing::instrument(skip_all, fields(request_id = ?self.data.id)))]
+    #[tracing::instrument(skip_all, fields(request_id = ?self.data.id))]
     async fn end_inner(
         mut self,
         trailers: Option<Trailers>,
@@ -176,12 +176,12 @@ impl ActiveRequest {
         ))
     }
 
-    #[cfg_attr(feature = "enable-tracing", tracing::instrument(skip_all, fields(request_id = ?self.data.id)))]
+    #[tracing::instrument(skip_all, fields(request_id = ?self.data.id))]
     pub async fn end(self) -> RequestResult<PendingResponse> {
         self.end_inner(None).await
     }
 
-    #[cfg_attr(feature = "enable-tracing", tracing::instrument(skip_all, fields(request_id = ?self.data.id)))]
+    #[tracing::instrument(skip_all, fields(request_id = ?self.data.id))]
     pub async fn end_with_trailers(
         self,
         trailers: Trailers,
@@ -189,7 +189,7 @@ impl ActiveRequest {
         self.end_inner(Some(trailers)).await
     }
 
-    #[cfg_attr(feature = "enable-tracing", tracing::instrument(skip_all, fields(request_id = ?self.data.id)))]
+    #[tracing::instrument(skip_all, fields(request_id = ?self.data.id))]
     pub async fn error(
         mut self,
         code: RequestErrorCode,

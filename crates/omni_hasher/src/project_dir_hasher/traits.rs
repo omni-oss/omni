@@ -16,7 +16,7 @@ pub trait ProjectDirHasher {
         project_dir: &Path,
         files: &[OmniPath],
     ) -> Result<Hash<THasher>, Self::Error> {
-        trace::info!(
+        tracing::info!(
             project_name = project_name,
             project_dir = ?project_dir,
             files = ?files,

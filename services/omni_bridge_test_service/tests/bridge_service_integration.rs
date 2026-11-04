@@ -173,7 +173,7 @@ impl BridgeServiceGuard {
     /// Spawn the bridge-service and return a guard owning the live host.
     async fn new() -> Self {
         let cli_path = bridge_service_cli_path();
-        log::info!("cli path {cli_path:?}");
+        tracing::info!("cli path {cli_path:?}");
         let options = bridge_service_spawn_options(&cli_path);
         let router = bridge_service_host_router();
 
@@ -202,7 +202,7 @@ impl BridgeServiceGuard {
         if let Some(host) = self.host.take()
             && let Err(err) = host.shutdown().await
         {
-            log::warn!("bridge-service shutdown failed: {err}");
+            tracing::warn!("bridge-service shutdown failed: {err}");
         }
     }
 }

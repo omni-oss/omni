@@ -12,7 +12,7 @@ where
 }
 
 #[inline(always)]
-#[cfg_attr(feature = "enable-tracing", tracing::instrument(skip_all, fields(bytes_length = ?bytes.len())))]
+#[tracing::instrument(skip_all, fields(bytes_length = ?bytes.len()))]
 pub async fn send_bytes_to_transport<TTransport: Transport>(
     transport: &TTransport,
     bytes: Vec<u8>,

@@ -6,8 +6,6 @@ version = "0.8.0"
 repository.workspace = true
 
 [features]
-default = ["enable-tracing"]
-enable-tracing = ["trace/enabled"]
 vendored-openssl = [
     "omni_cache/vendored-openssl",
     "omni_execution_plan/vendored-openssl",
@@ -22,7 +20,6 @@ harness = false
 serde = { workspace = true }
 thiserror = { workspace = true }
 eyre = { workspace = true }
-trace = { workspace = true }
 tracing = { workspace = true }
 strum = { workspace = true }
 system_traits = { workspace = true }
@@ -63,7 +60,6 @@ omni_execution_plan = { workspace = true }
 omni_setup = { workspace = true }
 omni_configuration_discovery = { workspace = true }
 serde_json = { workspace = true }
-log = { workspace = true }
 target-lexicon = { workspace = true }
 
 [dev-dependencies]

@@ -26,6 +26,7 @@ pub struct ExecCommand {
 pub async fn run(
     command: &ExecCommand,
     ctx: &Context,
+    quiet: bool,
 ) -> eyre::Result<ExitCode> {
     if command.cmd.is_empty() {
         eyre::bail!(
@@ -57,7 +58,7 @@ pub async fn run(
     let config = builder.build()?;
 
     let ctx = ctx.clone().into_loaded().await?;
-    let sub = resolve_subscriber(command.run.ui, ctx.scratch_dir());
+    let sub = resolve_subscriber(command.run.ui, ctx.scratch_dir(), quiet);
     let executor = TaskExecutor::new(config, &ctx, &sub);
 
     let results = executor.run().await?;

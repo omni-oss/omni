@@ -7,6 +7,7 @@ use crate::{
 };
 
 use super::events::{GeneratorCompletedEvent, GeneratorStartEvent};
+use super::script_log::ScriptLogEvent;
 
 /// Subscriber for generator lifecycle events.
 ///
@@ -26,6 +27,13 @@ pub trait GeneratorEventSubscriber: NoticeSubscriber {
     async fn on_action_success(&self, _event: GeneratorActionSuccessEvent) {}
     async fn on_action_failed(&self, _event: GeneratorActionFailedEvent) {}
     async fn on_generator_completed(&self, _event: GeneratorCompletedEvent) {}
+
+    /// A line a script logged. Synchronous so it can be delivered from the
+    /// batch the script runner returns. The default sends it to `tracing`
+    /// only; presenters override it to show `info`/`warn`/`error`.
+    fn on_script_log(&self, event: ScriptLogEvent) {
+        event.mirror_to_tracing();
+    }
 }
 
 /// Forward all subscriber calls through a shared reference.
@@ -51,5 +59,8 @@ impl<S: GeneratorEventSubscriber> GeneratorEventSubscriber for &S {
     }
     async fn on_generator_completed(&self, event: GeneratorCompletedEvent) {
         S::on_generator_completed(*self, event).await
+    }
+    fn on_script_log(&self, event: ScriptLogEvent) {
+        S::on_script_log(*self, event)
     }
 }

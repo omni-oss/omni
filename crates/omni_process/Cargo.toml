@@ -5,10 +5,6 @@ edition.workspace = true
 version = "0.4.0"
 repository.workspace = true
 
-[features]
-default = ["enable-tracing"]
-enable-tracing = ["trace/enabled"]
-
 [dependencies]
 eyre = { workspace = true }
 thiserror = { workspace = true }
@@ -19,8 +15,6 @@ omni_command_config = { workspace = true }
 portable-pty = { workspace = true }
 terminal_size = { workspace = true }
 atty = { workspace = true }
-trace = { workspace = true }
-log = { workspace = true }
 tracing = { workspace = true }
 system_traits = { workspace = true }
 bytes = { workspace = true }

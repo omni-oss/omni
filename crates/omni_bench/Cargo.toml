@@ -17,7 +17,6 @@ path = "benches/task_execution.rs"
 harness = false
 
 [features]
-default = []
 # Expand the scenario matrix with larger scales/shapes. Off by default so the
 # suite stays runnable in a few minutes / in CI.
 full-matrix = []

@@ -22,7 +22,11 @@ pub struct EnvCommand {
     subcommand: EnvSubcommands,
 }
 
-pub async fn run(env: &EnvCommand, ctx: &Context) -> eyre::Result<()> {
+pub async fn run(
+    env: &EnvCommand,
+    ctx: &Context,
+    quiet: bool,
+) -> eyre::Result<()> {
     let api = OmniApi::new_with_sys(ctx.clone(), NoopSubscriber);
 
     match env.subcommand {
@@ -35,7 +39,10 @@ pub async fn run(env: &EnvCommand, ctx: &Context) -> eyre::Result<()> {
             if let Some(val) = response.vars.get(key.as_str()) {
                 print!("{val}");
             } else {
-                log::warn!("environmental variable does not exists: {}", key);
+                crate::subscriber::print_notice(
+                    &crate::notices::EnvVarMissing { name: key.clone() },
+                    quiet,
+                );
             }
         }
         EnvSubcommands::All => {

@@ -5,4 +5,3 @@ extends:
 dependencies:
   - dir_walker
   - omni_glob
-  - trace

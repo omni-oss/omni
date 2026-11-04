@@ -89,12 +89,14 @@ impl std::fmt::Debug for Store {
 impl Drop for Store {
     fn drop(&mut self) {
         if self.backing.is_none() {
-            log::debug!("dropping store {self:?}")
+            tracing::debug!("dropping store {self:?}")
         } else {
-            log::debug!("Saving store {self:?} on drop...");
+            tracing::debug!("Saving store {self:?} on drop...");
             match self.save() {
-                Ok(_) => log::debug!("Save of store {self:?} completed"),
-                Err(e) => log::error!("Save of store {self:?} failed: {e:?}"),
+                Ok(_) => tracing::debug!("Save of store {self:?} completed"),
+                Err(e) => {
+                    tracing::error!("Save of store {self:?} failed: {e:?}")
+                }
             }
         }
     }
@@ -183,7 +185,7 @@ impl Store {
                 inner_store: Weak::new(),
             }),
         };
-        log::debug!("Created new store: {store:?}");
+        tracing::debug!("Created new store: {store:?}");
         let result = Arc::new(store);
         result.set_store(result.clone());
         result

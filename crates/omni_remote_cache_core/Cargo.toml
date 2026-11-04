@@ -40,7 +40,6 @@ thiserror = { workspace = true }
 time = { workspace = true }
 tracing = { workspace = true }
 utoipa = { workspace = true }
-log = { workspace = true }
 
 [target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
 time = { workspace = true, features = ["wasm-bindgen"] }

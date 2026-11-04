@@ -120,7 +120,7 @@ pub fn relative_path(value: &str, args: Kwargs, _: &State) -> Result<String> {
     let root =
         omni_utils::path::clean(Path::new(&args.must_get::<&str>("root")?));
 
-    log::debug!(
+    tracing::debug!(
         "calculated relative path between root {root:?} and value {path:?}"
     );
     let relative_path =
@@ -129,7 +129,7 @@ pub fn relative_path(value: &str, args: Kwargs, _: &State) -> Result<String> {
                 format!("unable to find relative path between root ({root:?}) and path ({path:?})")
             )
         })?;
-    log::debug!(
+    tracing::debug!(
         "calculated relative path between root {:?} and value {:?}, result: {:?}",
         root,
         path,

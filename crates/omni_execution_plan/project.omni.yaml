@@ -19,4 +19,3 @@ dependencies:
   - omni_diagnostic
   - omni_notice
   - omni_codes
-  - trace

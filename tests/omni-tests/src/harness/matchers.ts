@@ -111,6 +111,15 @@ expect.extend({
                 `expected stderr to contain ${JSON.stringify(substring)}\n${describeResult(result)}`,
         };
     },
+
+    toHaveStderrMatching(received: unknown, pattern: RegExp) {
+        const result = guard(received);
+        return {
+            pass: pattern.test(result.stderr),
+            message: () =>
+                `expected stderr to match ${pattern}\n${describeResult(result)}`,
+        };
+    },
 });
 
 interface OmniMatchers<R = unknown> {
@@ -128,6 +137,8 @@ interface OmniMatchers<R = unknown> {
     toMatchOutput(pattern: RegExp): R;
     /** Asserts raw stderr contains the given substring. */
     toHaveStderrContaining(substring: string): R;
+    /** Asserts raw stderr matches the given pattern. */
+    toHaveStderrMatching(pattern: RegExp): R;
 }
 
 declare module "vitest" {

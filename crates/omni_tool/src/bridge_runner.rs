@@ -128,7 +128,7 @@ where
                 } else {
                     "you selected"
                 };
-                trace::warn!(
+                tracing::warn!(
                     "{how} the `{}` runtime, which is experimental and not \
                      fully sandboxed on every platform; only `deno` is fully \
                      supported. Install/select `deno` for enforced capability \
@@ -152,12 +152,12 @@ where
                         message: e.to_string(),
                     })?;
             for diagnostic in diagnostics {
-                trace::warn!("{}", diagnostic.message());
+                tracing::warn!("{}", diagnostic.message());
             }
             (spawn, shim)
         } else {
             if policy.levels.iter().any(|level| !level.is_empty()) {
-                trace::warn!(
+                tracing::warn!(
                     "a capability policy is declared but the capabilities \
                      feature is experimental and disabled; it is ignored and \
                      the tool runs unconfined — enable it with \

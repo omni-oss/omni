@@ -6,13 +6,8 @@ version = "0.1.0"
 authors.workspace = true
 repository.workspace = true
 
-[features]
-default = ["enable-tracing"]
-enable-tracing = ["trace/enabled"]
-
-
 [dependencies]
-trace = { workspace = true }
+tracing = { workspace = true }
 thiserror = { workspace = true }
 env = { workspace = true }
 system_traits = { workspace = true, features = ["memory-sync"] }

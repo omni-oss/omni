@@ -1905,7 +1905,7 @@ describe(
                 files: { ".omni/sources/generator/.keep": "" },
             });
             const args = [
-                "-l",
+                "--trace",
                 "debug",
                 "generator",
                 "run",
@@ -1922,15 +1922,15 @@ describe(
             ];
 
             const hidden = await runOmni(args, { cwd: ws.cwd });
-            expect(hidden.out).not.toContain("pass-secret-1");
-            expect(hidden.out).not.toContain("token-secret-1");
-            expect(hidden.out).toContain("plain-open-1");
-            expect(hidden.out).toContain("<redacted>");
+            expect(hidden.err).not.toContain("pass-secret-1");
+            expect(hidden.err).not.toContain("token-secret-1");
+            expect(hidden.err).toContain("plain-open-1");
+            expect(hidden.err).toContain("<redacted>");
 
             const shown = await runOmni([...args, "--redact", "none"], {
                 cwd: ws.cwd,
             });
-            expect(shown.out).toContain("token-secret-1");
+            expect(shown.err).toContain("token-secret-1");
         });
     },
 );

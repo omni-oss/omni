@@ -209,7 +209,7 @@ async fn get_input_value<
 ) -> Result<OwnedValueBag, Error> {
     let input = input.borrow();
     if let Some(v) = pre_exec_value {
-        log::debug!(
+        tracing::debug!(
             "using pre-exec value for input {key}: {}",
             display_value(config, input, key, v)
         );
@@ -227,7 +227,7 @@ async fn get_input_value<
         } else {
             expr
         };
-        log::debug!(
+        tracing::debug!(
             "evaluating dynamic default expression for input {key}: {shown_expr}"
         );
         let expanded = omni_tera::one_off(
@@ -243,7 +243,7 @@ async fn get_input_value<
     } else if config.use_defaults
         && let Some(default) = input.static_default_value_bag()
     {
-        log::debug!(
+        tracing::debug!(
             "using default value for input {key}: {}",
             display_value(config, input, key, &default)
         );
@@ -252,7 +252,7 @@ async fn get_input_value<
         )
         .await
     } else {
-        log::debug!("collecting input {key} from provider");
+        tracing::debug!("collecting input {key} from provider");
         get_raw_input_value(input, ctx, provider, config, MAX_RETRIES).await
     }
 }
@@ -296,7 +296,7 @@ async fn process_pre_filled_value<
             break 'expand value;
         }
         let Some(tmpl) = value.by_ref().to_str() else {
-            log::warn!(
+            tracing::warn!(
                 "failed to expand default for {key}: not a string; \
                  using original value"
             );
@@ -390,7 +390,7 @@ async fn get_raw_input_value<
             if tries >= max_retries {
                 return Err(err);
             }
-            log::warn!(
+            tracing::warn!(
                 "re-collecting input {} due to validation error: {}",
                 input.base().name,
                 err

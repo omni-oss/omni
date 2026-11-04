@@ -161,7 +161,7 @@ describe("+cache @cache (cache dir)", () => {
         for (let i = 0; i < 2; i++) {
             const cached = await runOmni(args, { cwd: ws.cwd });
             expect(cached).toHaveSucceeded();
-            expect(cached).toOutputContaining("Cache hit for task 'app#build'");
+            expect(cached).toHaveStderrContaining("Cache hit for task 'app#build'");
         }
     });
 });
@@ -179,11 +179,11 @@ describe("+cache @cache @e2e (run cache hit / log replay)", () => {
             { cwd: ws.cwd },
         );
         expect(second).toHaveSucceeded();
-        expect(second).toOutputContaining("Cache hit for task 'app#build'");
-        expect(second).toOutputContaining("(replaying logs)");
+        expect(second).toHaveStderrContaining("Cache hit for task 'app#build'");
+        expect(second).toHaveStderrContaining("(replaying logs)");
         // The recorded stdout is replayed.
         expect(second).toOutputContaining("build app");
-        expect(second).toOutputContaining("Cache hits");
+        expect(second).toHaveStderrContaining("Cache hits");
     });
 
     it("a successful cache hit stays quiet by default (failed policy)", async () => {
@@ -193,8 +193,8 @@ describe("+cache @cache @e2e (run cache hit / log replay)", () => {
 
         const replayed = await runOmni(["run", "build"], { cwd: ws.cwd });
         expect(replayed).toHaveSucceeded();
-        expect(replayed).toOutputContaining("Cache hit for task 'app#build'");
-        expect(replayed).toOutputContaining("(skipping logs)");
+        expect(replayed).toHaveStderrContaining("Cache hit for task 'app#build'");
+        expect(replayed).toHaveStderrContaining("(skipping logs)");
         // With the default `failed` policy, a successful cache hit is not replayed.
         expect(replayed.stdout).not.toContain("build app");
     });
@@ -211,8 +211,8 @@ describe("+cache @cache @e2e (run cache hit / log replay)", () => {
             },
         );
         expect(replayed).toHaveSucceeded();
-        expect(replayed).toOutputContaining("Cache hit for task 'app#build'");
-        expect(replayed).toOutputContaining("(skipping logs)");
+        expect(replayed).toHaveStderrContaining("Cache hit for task 'app#build'");
+        expect(replayed).toHaveStderrContaining("(skipping logs)");
         // With logs skipped, the cached task's stdout is not replayed.
         expect(replayed.stdout).not.toContain("build app");
     });
@@ -245,7 +245,7 @@ describe("+cache @cache (run cache persistence)", () => {
         });
         expect(forced).toHaveSucceeded();
         // Forced execution re-runs the task instead of replaying the cache.
-        expect(forced).toOutputContaining("Executed task 'app#build'");
+        expect(forced).toHaveStderrContaining("Executed task 'app#build'");
         expect(forced.stdout).not.toContain("Cache hits");
         expect(forced.stdout).not.toContain("Cache hit for task");
     });
@@ -841,11 +841,19 @@ describe("+cache @cache (remote setup)", () => {
         expect(first.exists("shared-cache/remote-cache.omni.enc")).toBe(true);
         for (const ws of [first, second]) {
             const loaded = await runOmni(
-                ["cache", "dir", "--cache-dir", cache],
+                [
+                    "--trace",
+                    "omni_context=debug",
+                    "cache",
+                    "dir",
+                    "--cache-dir",
+                    cache,
+                ],
                 { cwd: ws.cwd },
             );
             expect(loaded).toHaveSucceeded();
-            expect(loaded).toOutputContaining("Remote caching is enabled");
+            // A developer trace now, not user output (RFC 0023).
+            expect(loaded).toHaveStderrContaining("Remote caching is enabled");
         }
     });
 
@@ -935,7 +943,7 @@ describe("+cache @cache @e2e (flaky failure superseded by a later success)", () 
             env: { FLAKY_SHOULD_FAIL: "1" },
         });
         expect(served).toHaveSucceeded();
-        expect(served).toOutputContaining("Cache hit for task 'app#flaky'");
+        expect(served).toHaveStderrContaining("Cache hit for task 'app#flaky'");
     });
 
     it("a later failure never overwrites a cached success", async () => {
@@ -959,7 +967,7 @@ describe("+cache @cache @e2e (flaky failure superseded by a later success)", () 
             env: { FLAKY_SHOULD_FAIL: "1" },
         });
         expect(served).toHaveSucceeded();
-        expect(served).toOutputContaining("Cache hit for task 'app#flaky'");
+        expect(served).toHaveStderrContaining("Cache hit for task 'app#flaky'");
     });
 });
 
@@ -1010,7 +1018,7 @@ describe("+cache @cache @output @e2e (output artifact caching)", () => {
 
         const second = await runOmni(["run", "build"], { cwd: ws.cwd });
         expect(second).toHaveSucceeded();
-        expect(second).toOutputContaining("Cache hit for task 'app#build'");
+        expect(second).toHaveStderrContaining("Cache hit for task 'app#build'");
 
         // The task body is random per run, so a matching restored body proves
         // the file came from the cache rather than a re-execution.
@@ -1042,7 +1050,7 @@ describe("+cache @cache @output @e2e (output artifact caching)", () => {
 
         const second = await runOmni(["run", "build"], { cwd: ws.cwd });
         expect(second).toHaveSucceeded();
-        expect(second).toOutputContaining("Cache hit for task 'app#build'");
+        expect(second).toHaveStderrContaining("Cache hit for task 'app#build'");
 
         expect(ws.exists(artifact)).toBe(true);
         expect(ws.read(artifact)).toBe(original);
@@ -1083,7 +1091,7 @@ describe("+cache @cache @output @e2e (output artifact caching)", () => {
 
         const second = await runOmni(["run", "build"], { cwd: ws.cwd });
         expect(second).toHaveSucceeded();
-        expect(second).toOutputContaining("Cache hit for task 'app#build'");
+        expect(second).toHaveStderrContaining("Cache hit for task 'app#build'");
 
         expect(ws.read(taskArtifact)).toBe(originalTask);
         expect(ws.read(projectArtifact)).toBe(originalProject);

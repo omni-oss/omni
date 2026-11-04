@@ -24,7 +24,7 @@ use omni_utils::path::{
 use system_traits::{
     FsCanonicalize, FsMetadata, FsMetadataAsync, auto_impl, impls::RealSys,
 };
-use trace::Level;
+use tracing::Level;
 
 use crate::error::{Error, ErrorInner};
 
@@ -181,7 +181,7 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
                 Ok(target) if target.starts_with(&canonical_cache) => false,
                 Ok(target) if target.starts_with(&canonical_root) => true,
                 Ok(target) => {
-                    trace::warn!(
+                    tracing::warn!(
                         link = ?link,
                         target = ?target,
                         "excluding symlink whose target escapes the workspace root"
@@ -327,14 +327,11 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
         Ok(tree.root().expect("unable to get root"))
     }
 
-    #[cfg_attr(
-        feature = "enable-tracing",
-        tracing::instrument(
+    #[tracing::instrument(
             level = Level::DEBUG,
             skip_all,
             fields(project_tasks_count = project_tasks.len()),
-        )
-    )]
+        )]
     pub async fn collect(
         &self,
         project_tasks: &[ProjectTaskInfo<'a>],
@@ -342,7 +339,7 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
     ) -> Result<Vec<CollectResult<'a>>, Error> {
         let mut to_process = Vec::with_capacity(project_tasks.len());
 
-        trace::trace!(?project_tasks, ?config, "begin_collect");
+        tracing::trace!(?project_tasks, ?config, "begin_collect");
 
         let should_collect_input_files =
             config.input_files || config.digests || config.cache_output_dirs;
@@ -374,7 +371,7 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
         let mut alignment = PatternAlignment::new(self.ws_root_dir, &self.sys);
 
         for project in project_tasks {
-            trace::trace!(
+            tracing::trace!(
                 project_name = ?project.project_name,
                 "processing_project"
             );
@@ -563,7 +560,7 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
                             }
                             let contained = target.starts_with(&canonical_root);
                             if !contained {
-                                trace::warn!(
+                                tracing::warn!(
                                     root = ?root,
                                     target = ?target,
                                     "excluding walk root whose target escapes the workspace root"
@@ -578,9 +575,9 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
             let topmost =
                 topmost.iter().map(|p| p.as_path()).collect::<Vec<_>>();
 
-            log::trace!("topmost: {topmost:?}");
+            tracing::trace!("topmost: {topmost:?}");
 
-            trace::trace!(
+            tracing::trace!(
                 forced_includes = ?forced_includes,
                 topmost = ?topmost,
                 "before_walk"
@@ -607,7 +604,7 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
                     let res = match res {
                         Ok(entry) => entry,
                         Err(err) if is_symlink_loop(&err) => {
-                            trace::warn!(
+                            tracing::warn!(
                                 error = %err,
                                 "skipping symlink loop while hashing"
                             );
@@ -617,7 +614,7 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
                     };
                     let original_file_abs_path = res.path();
 
-                    log::trace!("walked path {original_file_abs_path:?}");
+                    tracing::trace!("walked path {original_file_abs_path:?}");
 
                     // Prefer the cheap `d_type` reported by the walker's
                     // `readdir`/`getdents` to avoid a per-entry `stat` syscall
@@ -701,7 +698,7 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
                             && let Some(resolved_input_files) =
                                 project.resolved_input_files.as_mut()
                         {
-                            trace::trace!(
+                            tracing::trace!(
                                 file = ?original_file_abs_path,
                                 "found_input_file",
                             );
@@ -719,7 +716,7 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
                             && let Some(resolved_output_files) =
                                 project.resolved_output_files.as_mut()
                         {
-                            trace::trace!(
+                            tracing::trace!(
                                 file = ?original_file_abs_path,
                                 "found_output_file",
                             );
@@ -854,7 +851,7 @@ fn populate_includes_and_patterns(
     patterns: &mut Vec<String>,
     alignment: &mut PatternAlignment<'_, impl FsCanonicalize>,
 ) -> Result<(), Error> {
-    trace::trace!(
+    tracing::trace!(
         files = ?files,
         project_dir = ?project_dir,
         roots = ?roots,

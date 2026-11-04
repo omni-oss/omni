@@ -62,9 +62,10 @@ pub fn exit_code(results: &[TaskExecutionResult]) -> ExitCode {
 pub fn resolve_subscriber(
     ui: Option<EnumValueAdapter<Ui>>,
     scratch_dir: PathBuf,
+    quiet: bool,
 ) -> CliSubscriber {
     use omni_configurations::Ui::*;
-    match ui.as_ref().map(|u| u.value()) {
+    let sub = match ui.as_ref().map(|u| u.value()) {
         Some(Tui) => {
             if atty::is(atty::Stream::Stdout) {
                 CliSubscriber::new_tui(scratch_dir)
@@ -75,5 +76,6 @@ pub fn resolve_subscriber(
         Some(Stream) => CliSubscriber::new_stream(scratch_dir),
         Some(Progress) => CliSubscriber::new_progress(scratch_dir),
         Some(Auto) | None => CliSubscriber::new_auto(scratch_dir),
-    }
+    };
+    sub.with_quiet(quiet)
 }

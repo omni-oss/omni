@@ -63,7 +63,7 @@ where
     .await?
         && !did_overwrite
     {
-        log::info!("Skipped writing to path {}", output_path.display());
+        tracing::info!("Skipped writing to path {}", output_path.display());
         return Ok(());
     }
 
@@ -83,7 +83,7 @@ where
         .await
         .map_err(|e| ErrorInner::new_failed_to_write_file(output_path, e))?;
 
-    log::debug!("Wrote to path {}", output_path.display());
+    tracing::debug!("Wrote to path {}", output_path.display());
 
     Ok(())
 }

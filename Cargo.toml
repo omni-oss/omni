@@ -28,11 +28,10 @@ system_traits = { path = "./crates/system_traits" }
 async-trait = { version = "^0.1.92" }
 serde_json = { version = "^1.0.154" }
 serde_bytes = { version = "^0.11.19" }
-trace = { path = "./crates/trace" }
 tracing = { version = "^0.1.44" }
 tracing-log = { version = "^0.2.0" }
 tracing-core = { version = "^0.1.36" }
-tracing-subscriber = { version = "^0.3.23", features = ["json"] }
+tracing-subscriber = { version = "^0.3.23", features = ["json", "env-filter"] }
 test-log = { version = "=0.2.20", default-features = false, features = [
     "trace",
 ] }

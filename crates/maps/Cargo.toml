@@ -6,7 +6,6 @@ repository.workspace = true
 version = "0.1.0"
 
 [features]
-default = []
 serde = ["indexmap/serde", "dashmap/serde"]
 rayon = ["indexmap/rayon", "dashmap/rayon"]
 concurrent = ["dep:dashmap"]

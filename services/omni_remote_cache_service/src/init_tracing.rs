@@ -4,10 +4,7 @@ use omni_tracing_subscriber::{Level, TracingConfig, TracingSubscriber};
 
 pub fn init_tracing() -> eyre::Result<()> {
     let tracing_config = TracingConfig {
-        stderr_level: Level::Warn,
-        stdout_level: Level::Info,
-        stderr_show_traces: true,
-        stdout_show_traces: true,
+        stderr_filter: Some("info".to_string()),
         file_path: Some(PathBuf::from(
             "./.omni/trace/omni-remote-cache-service.log",
         )),

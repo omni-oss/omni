@@ -84,7 +84,6 @@ include = [
     "crates/omni_path_utils/**",
     "crates/sets/**",
     "crates/maps/**",
-    "crates/trace/**",
 ]
 public_api = true
 
@@ -306,11 +305,6 @@ public_api = false
 [monorepo.packages.system_traits]
 path = "crates/system_traits"
 include = ["crates/system_traits/**"]
-public_api = false
-
-[monorepo.packages.trace]
-path = "crates/trace"
-include = ["crates/trace/**"]
 public_api = false
 
 [monorepo.packages.omni_lockfile]

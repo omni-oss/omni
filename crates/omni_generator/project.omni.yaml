@@ -35,4 +35,3 @@ dependencies:
   - omni_notice
   - omni_codes
   - env
-  - trace

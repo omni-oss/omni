@@ -121,7 +121,7 @@ async fn run_print_config(
             )?;
         }
         Err(e) => {
-            log::error!("{}", e);
+            eprintln!("error: {e}");
         }
     }
 

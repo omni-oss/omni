@@ -89,7 +89,7 @@ where
         })? {
             num_iterations += 1;
             let f = f.map_err(ErrorInner::new_failed_to_get_dir_entry)?;
-            trace::trace!(path = ?f.path(), "checking_path");
+            tracing::trace!(path = ?f.path(), "checking_path");
 
             if f.is_dir() {
                 continue;
@@ -98,7 +98,7 @@ where
             if matcher.is_match(f.path()) {
                 for file_name in self.config_files {
                     if *f.file_name().to_string_lossy() == *file_name.as_ref() {
-                        log::trace!(
+                        tracing::trace!(
                             "Found {} config: {:?}",
                             self.config_name,
                             f.path()
@@ -110,7 +110,7 @@ where
             }
         }
 
-        log::debug!(
+        tracing::debug!(
             "Found {} {} configs in {:?}, walked {} items",
             discovered.len(),
             self.config_name,

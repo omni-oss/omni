@@ -82,7 +82,7 @@ describe(
             const withoutFile = await connectMcp({
                 cwd: launch.cwd,
                 shared: true,
-                args: ["--file-trace-level", "debug"],
+                args: ["--trace-file-level", "debug"],
             });
             await withoutFile.client.listTools();
             expect(readdirSync(launch.cwd)).toEqual([]);
@@ -91,9 +91,9 @@ describe(
                 cwd: launch.cwd,
                 shared: true,
                 args: [
-                    "--file-trace-level",
+                    "--trace-file-level",
                     "debug",
-                    "--file-trace-output",
+                    "--trace-file",
                     "logs/shared.log",
                 ],
             });
@@ -101,6 +101,21 @@ describe(
             expect(launch.exists("logs/shared.log")).toBe(true);
             expect(launch.exists(".omni")).toBe(false);
         });
+
+        it.each(["/dev/stdout", "/dev/fd/1", "/proc/self/fd/1"])(
+            "rejects `--trace-file %s` at startup: stdout carries JSON-RPC",
+            async (path) => {
+                const launch = launchDir();
+
+                await expect(
+                    connectMcp({
+                        cwd: launch.cwd,
+                        shared: true,
+                        args: ["--trace-file-level", "debug", "--trace-file", path],
+                    }),
+                ).rejects.toThrow();
+            },
+        );
 
         it("preserves bound schemas, operation fields, defaults and annotations while requiring one shared directory", async () => {
             const ws = makeWorkspace(singleProjectSpec());

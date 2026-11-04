@@ -24,7 +24,7 @@ use omni_task_context::{TaskContext, TaskContextProviderExt as _};
 use omni_task_output_logs::{EffectiveOutputLogs, LogsDisplay};
 use omni_types::{OmniPath, Root, RootMap, enum_map};
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
-use trace::Level;
+use tracing::Level;
 
 use crate::{
     OnFailure, SkipReason, TaskDetails, TaskExecutionResult, TaskExecutorSys,
@@ -123,7 +123,7 @@ where
             task_ctx.env_vars.keys().map(String::as_str),
         );
         if !unmatched.is_empty() {
-            log::debug!(
+            tracing::debug!(
                 "redact.env patterns for task '{}' matched no env var: {}",
                 task_ctx.node.full_task_name(),
                 unmatched.join(", ")
@@ -260,7 +260,7 @@ where
                     file.original_path.path().expect("should be resolved");
 
                 if self.sys.fs_exists_async(original_path).await? {
-                    log::debug!(
+                    tracing::debug!(
                         "file already exists {original_path:?}, skipping cache restore",
                     );
                     continue;
@@ -285,7 +285,7 @@ where
 
                     // Copy when the filesystem or its permissions prevent
                     // hardlinking. Other failures must not be masked by a copy.
-                    log::debug!(
+                    tracing::debug!(
                         "Restoring cached file by copy because hardlinking was unavailable ({err}): {:?}",
                         original_path
                     );
@@ -297,7 +297,7 @@ where
                         .await?;
                 }
 
-                log::debug!(
+                tracing::debug!(
                     "restored cached file {:?} to {:?}",
                     file.cached_path,
                     original_path,
@@ -308,7 +308,7 @@ where
         Ok(())
     }
 
-    #[cfg_attr(feature = "enable-tracing", tracing::instrument(level = Level::DEBUG, skip_all))]
+    #[tracing::instrument(level = Level::DEBUG, skip_all)]
     fn expand_templates<'a>(
         &self,
         task_contexts: impl IntoIterator<Item = &'a TaskContext<'a>>,
@@ -656,7 +656,7 @@ where
                 .inspect_err(|_| {
                     // Fire-and-forget diagnostic; we're in a sync context so we
                     // can't await here. Use log:: as a fallback.
-                    log::error!(
+                    tracing::error!(
                         "Failed to get hash for task '{}', this is a bug, if you see this please report it to the maintainers",
                         fname
                     );
@@ -693,14 +693,11 @@ where
         Ok(new_results)
     }
 
-    #[cfg_attr(
-        feature = "enable-tracing",
-        tracing::instrument(
+    #[tracing::instrument(
             level = Level::DEBUG,
             skip_all,
             fields(batch_size = batch.len(), overall_results_count = overall_results.len())
-        )
-    )]
+        )]
     pub async fn execute_batch<'a>(
         &mut self,
         batch: &'a [TaskExecutionNode],

@@ -77,7 +77,7 @@ pub async fn put_artifact(
         std::future::ready(match r {
             Ok(b) => Some(b),
             Err(e) => {
-                log::error!("Error reading from stream: {}", e);
+                tracing::error!("Error reading from stream: {}", e);
                 None
             }
         })

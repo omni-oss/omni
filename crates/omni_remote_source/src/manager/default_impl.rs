@@ -244,7 +244,7 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
                 if !retained_dirs.contains(&commit_dir) {
                     self.sys.fs_remove_dir_all_async(&commit_dir).await?;
                     removed += 1;
-                    log::debug!(
+                    tracing::debug!(
                         "removed unreferenced store checkout: {commit_dir:?}"
                     );
                 }
@@ -332,7 +332,7 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
             dest,
         )
         .await?;
-        log::trace!(
+        tracing::trace!(
             "cloned git repo uri: {}, rev: {}",
             omni_redact::redact_url_userinfo(uri.as_ref()),
             commit,

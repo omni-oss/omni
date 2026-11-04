@@ -49,11 +49,13 @@ impl CacheResolutionState {
         let primary = match discover(root) {
             Ok(Some(layout)) => mapped_workspace(root, layout, sys),
             Ok(None) => {
-                log::debug!("No supported checkout; using local cache policy");
+                tracing::debug!(
+                    "No supported checkout; using local cache policy"
+                );
                 None
             }
             Err(error) => {
-                log::debug!(
+                tracing::debug!(
                     "Checkout discovery failed; using local cache policy: {error:#}"
                 );
                 None
@@ -125,7 +127,7 @@ impl CacheResolutionState {
                 )).into());
             }
         }
-        log::debug!(
+        tracing::debug!(
             "Cache directory {} selected from {source:?}",
             path.display()
         );
@@ -157,7 +159,7 @@ fn mapped_workspace(
             .then_some(mapped)
     })();
     if mapped.is_none() {
-        log::debug!(
+        tracing::debug!(
             "No safe corresponding primary workspace; using local cache policy"
         );
     }

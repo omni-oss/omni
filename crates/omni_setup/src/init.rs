@@ -1,6 +1,6 @@
 use bon::Builder;
 use directories::ProjectDirs;
-use trace::Level;
+use tracing::Level;
 
 use crate::fallback_store;
 
@@ -10,9 +10,9 @@ pub struct InitConfig {
     pub use_fallback_store: bool,
 }
 
-#[cfg_attr(feature = "enable-tracing", tracing::instrument(level = Level::DEBUG))]
+#[tracing::instrument(level = Level::DEBUG)]
 pub fn initialize(config: InitConfig) -> eyre::Result<()> {
-    trace::trace!("initializing_omni_setup");
+    tracing::trace!("initializing_omni_setup");
 
     if config.use_fallback_store {
         return Ok(init_fallback()?);
@@ -62,13 +62,13 @@ pub fn initialize(config: InitConfig) -> eyre::Result<()> {
     };
 
     if let Err(keyring_core::Error::PlatformFailure(error)) = result {
-        trace::error!(%error, "keyring_store_platform_failure");
-        log::warn!(
+        tracing::error!(%error, "keyring_store_platform_failure");
+        tracing::warn!(
             "Using fallback store due to keyring store platform failure"
         );
         init_fallback()?;
     } else {
-        trace::trace!("initialized_omni_setup");
+        tracing::trace!("initialized_omni_setup");
     }
 
     Ok(())
@@ -79,9 +79,9 @@ fn init_fallback() -> keyring_core::Result<()> {
         let backing_file = project_dirs.config_dir().join("keystore");
         let keystore = fallback_store::Store::new_with_backing(&backing_file)?;
         keyring_core::set_default_store(keystore);
-        trace::trace!("initialized_omni_setup");
+        tracing::trace!("initialized_omni_setup");
     } else {
-        log::error!(
+        tracing::error!(
             "Failed to initialize fallback keyring store, no project config folder was determined"
         );
     }
@@ -90,8 +90,8 @@ fn init_fallback() -> keyring_core::Result<()> {
 }
 
 pub fn deinitialize() -> eyre::Result<()> {
-    trace::trace!("deinitializing_omni_setup");
+    tracing::trace!("deinitializing_omni_setup");
     keyring_core::unset_default_store();
-    trace::trace!("deinitialized_omni_setup");
+    tracing::trace!("deinitialized_omni_setup");
     Ok(())
 }

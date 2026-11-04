@@ -75,7 +75,7 @@ pub async fn load<S: FsReadAsync + Sync>(
 ) -> Ledger {
     match sys.fs_read_async(ledger_path).await {
         Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or_else(|e| {
-            log::warn!(
+            tracing::warn!(
                 "projection ledger at {} is unreadable, treating as empty: {e}",
                 ledger_path.display()
             );

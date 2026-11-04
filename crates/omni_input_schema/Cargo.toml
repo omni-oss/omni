@@ -10,14 +10,7 @@ repository.workspace = true
 name = "omni_input_schema"
 path = "src/lib.rs"
 
-
-[features]
-default = ["enable-tracing"]
-enable-tracing = ["trace/enabled"]
-
 [dependencies]
-trace = { workspace = true }
-log = { workspace = true }
 tracing = { workspace = true }
 thiserror = { workspace = true }
 eyre = { workspace = true }

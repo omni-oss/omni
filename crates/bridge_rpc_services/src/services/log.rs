@@ -11,6 +11,68 @@ use serde::Deserialize;
 
 use super::common::respond_empty;
 
+/// Severity of a record forwarded from a script.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScriptLogLevel {
+    Error,
+    Warn,
+    Info,
+    Debug,
+    Trace,
+}
+
+/// A log record sent by a script over the bridge.
+#[derive(Debug, Clone)]
+pub struct ScriptLogRecord {
+    pub level: ScriptLogLevel,
+    pub target: String,
+    pub message: String,
+}
+
+/// A [`Log`] that hands each record to a callback instead of a global logger,
+/// so a caller can route script logs through its own channel without
+/// depending on the `log` crate.
+#[derive(Clone)]
+pub struct CallbackLogger {
+    f: std::sync::Arc<dyn Fn(ScriptLogRecord) + Send + Sync>,
+}
+
+impl CallbackLogger {
+    pub fn new(f: impl Fn(ScriptLogRecord) + Send + Sync + 'static) -> Self {
+        Self {
+            f: std::sync::Arc::new(f),
+        }
+    }
+}
+
+impl std::fmt::Debug for CallbackLogger {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CallbackLogger").finish_non_exhaustive()
+    }
+}
+
+impl Log for CallbackLogger {
+    fn enabled(&self, _: &log::Metadata) -> bool {
+        true
+    }
+
+    fn log(&self, record: &log::Record) {
+        (self.f)(ScriptLogRecord {
+            level: match record.level() {
+                log::Level::Error => ScriptLogLevel::Error,
+                log::Level::Warn => ScriptLogLevel::Warn,
+                log::Level::Info => ScriptLogLevel::Info,
+                log::Level::Debug => ScriptLogLevel::Debug,
+                log::Level::Trace => ScriptLogLevel::Trace,
+            },
+            target: record.target().to_string(),
+            message: record.args().to_string(),
+        });
+    }
+
+    fn flush(&self) {}
+}
+
 #[derive(Clone, Debug)]
 pub struct LogService<L> {
     logger: L,
@@ -40,24 +102,31 @@ impl<L: Log + 'static> Service for LogService<L> {
             .await
             .map_err(ServiceError::custom_error)?;
 
-        if let Some(fields) = json.fields {
-            log::log!(
-                logger: &self.logger,
-                target: &json.target.join("::"),
-                json.level.to_log_level(),
-                fields:serde,
-                timestamp = json.timestamp;
-                "{}",
-                json.message,
-            );
-        } else {
-            log::log!(
-                logger: &self.logger,
-                target: &json.target.join("::"),
-                json.level.to_log_level(),
-                timestamp = json.timestamp;
-                "{}",
-                json.message
+        // Build the record by hand and call the logger directly. The `log!`
+        // macros consult the global max level first and would drop the record
+        // when no global log consumer is installed, which is exactly when a
+        // caller supplies its own logger (see `CallbackLogger`).
+        {
+            let target = json.target.join("::");
+            let mut kvs: Vec<(String, log::kv::Value<'_>)> = Vec::new();
+            kvs.push((
+                "timestamp".to_string(),
+                log::kv::Value::from(json.timestamp),
+            ));
+            if let Some(fields) = &json.fields {
+                for (k, v) in fields {
+                    kvs.push((k.clone(), log::kv::Value::from_serde(v)));
+                }
+            }
+            let source: Vec<(&str, log::kv::Value<'_>)> =
+                kvs.iter().map(|(k, v)| (k.as_str(), v.clone())).collect();
+            self.logger.log(
+                &log::Record::builder()
+                    .level(json.level.to_log_level())
+                    .target(&target)
+                    .args(format_args!("{}", json.message))
+                    .key_values(&source.as_slice())
+                    .build(),
             );
         }
 
@@ -171,6 +240,26 @@ mod tests {
         let result = service.run(ctx).await;
 
         (logger, result)
+    }
+
+    #[test]
+    fn callback_logger_forwards_level_target_and_message() {
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let sink = seen.clone();
+        let logger = super::CallbackLogger::new(move |r| {
+            sink.lock().unwrap().push(r);
+        });
+        logger.log(
+            &Record::builder()
+                .level(Level::Warn)
+                .target("a::b")
+                .args(format_args!("hi"))
+                .build(),
+        );
+        let seen = seen.lock().unwrap();
+        assert_eq!(seen[0].level, super::ScriptLogLevel::Warn);
+        assert_eq!(seen[0].target, "a::b");
+        assert_eq!(seen[0].message, "hi");
     }
 
     #[tokio::test]

@@ -1869,8 +1869,8 @@ describe(
                 // Non-fatal: the broker/shim still run as defense in depth.
                 expect(result).toHaveSucceeded();
                 expect(ws.read("out/floor.txt")).toBe("ran");
-                expect(result).toOutputContaining(FLOOR_WARNING);
-                expect(result).toOutputContaining(`${domain} is enforced only`);
+                expect(result).toHaveStderrContaining(FLOOR_WARNING);
+                expect(result).toHaveStderrContaining(`${domain} is enforced only`);
             });
         }
 
@@ -2055,9 +2055,9 @@ describe(
 
                 expect(result).toHaveSucceeded();
                 expect(ws.read("out/floor.txt")).toBe("ran");
-                expect(result).toOutputContaining(FLOOR_WARNING);
+                expect(result).toHaveStderrContaining(FLOOR_WARNING);
                 // The coarse-floor diagnostic names the superset, not "enforced only".
-                expect(result).toOutputContaining("could not be represented");
+                expect(result).toHaveStderrContaining("could not be represented");
             });
 
             it(`${rt}: require-floor refuses when governed ${domain} is only coarsely floored`, async (ctx) => {

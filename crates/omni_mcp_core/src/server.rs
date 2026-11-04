@@ -102,7 +102,7 @@ where
 
         if fingerprint != state.fingerprint {
             let ctx = state.ctx.reload()?;
-            trace::info!("workspace configuration changed, context reloaded");
+            tracing::info!("workspace configuration changed, context reloaded");
             *state = ContextState { ctx, fingerprint };
         }
 

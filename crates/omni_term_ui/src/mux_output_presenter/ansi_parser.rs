@@ -394,7 +394,7 @@ impl AnsiToGrid {
                     1 => self.erase_in_line_start_to_cursor(),
                     2 => self.erase_line_all(),
                     _ => {
-                        log::warn!("unsupported erase line param: {i}");
+                        tracing::warn!("unsupported erase line param: {i}");
                     }
                 }
             }
@@ -449,7 +449,7 @@ impl AnsiToGrid {
                 self.cursor.x = 0;
             }
             _ => {
-                log::warn!("unsupported erase in display mode: {mode}");
+                tracing::warn!("unsupported erase in display mode: {mode}");
             }
         }
     }
@@ -550,7 +550,7 @@ impl AnsiToGrid {
                 39 => self.current_span_state.fg = None,
                 49 => self.current_span_state.bg = None,
                 u => {
-                    log::warn!("unknown escape sequence: {}", u);
+                    tracing::warn!("unknown escape sequence: {}", u);
                 }
             }
             i += 1;
@@ -637,7 +637,7 @@ impl AnsiToGrid {
                 }
             }
             c => {
-                log::warn!(
+                tracing::warn!(
                     "unsupported movement action: {c}, if seen please contact the maintainers to add support"
                 );
             }
@@ -699,7 +699,7 @@ impl Perform for AnsiToGrid {
             b'\n' => self.newline(),
             b'\r' => self.carriage_return(),
             b => {
-                log::warn!(
+                tracing::warn!(
                     "unsupported byte: {b:?}, if seen please contact the maintainers to add support"
                 );
             }
@@ -734,7 +734,7 @@ impl Perform for AnsiToGrid {
             }
             'h' | 'l' => { /* ignore */ }
             c => {
-                log::warn!(
+                tracing::warn!(
                     "unsupported CSI action: {c} (params = {params:?}), if seen please contact the maintainers to add support"
                 );
             }

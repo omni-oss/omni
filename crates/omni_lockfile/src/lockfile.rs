@@ -6,7 +6,7 @@ use std::{
 use derive_new::new;
 use maps::map;
 use tokio::sync::Mutex;
-use trace::Level;
+use tracing::Level;
 use url::Url;
 
 use crate::{
@@ -68,10 +68,7 @@ impl Lockfile {
         Ok(())
     }
 
-    #[cfg_attr(
-        feature = "enable-tracing",
-        tracing::instrument(level = Level::DEBUG, skip_all)
-    )]
+    #[tracing::instrument(level = Level::DEBUG, skip_all)]
     pub async fn lock_git_commit(
         &self,
         uri: &Url,
@@ -82,7 +79,9 @@ impl Lockfile {
         let rev = rev.to_string();
         let commit = commit.to_string();
 
-        log::trace!("locking git repo: {uri}, rev: {rev}, commit: {commit}");
+        tracing::trace!(
+            "locking git repo: {uri}, rev: {rev}, commit: {commit}"
+        );
         self.modify(|d| {
             match d {
                 LockfileData::V1_0_0(v1) => {
@@ -109,7 +108,7 @@ impl Lockfile {
         })
         .await?;
 
-        log::trace!("lock successful");
+        tracing::trace!("lock successful");
 
         Ok(())
     }

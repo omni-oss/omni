@@ -46,7 +46,10 @@ use bridge_rpc_runner::{
 };
 use bridge_rpc_runner::{CapabilitiesIgnored, CapabilitiesImportScan};
 use bridge_rpc_services::{
-    RegisterServicesOptions, register_services_with_defaults,
+    RegisterServicesOptions,
+    log::{CallbackLogger, ScriptLogRecord},
+    proc::StdArgsProvider,
+    register_services,
 };
 use omni_capabilities::{CapabilityFloors, CapabilityRules, PathRoots, Root};
 use omni_capability_enforcement::{ShimPolicy, SpawnPolicy};
@@ -150,6 +153,9 @@ pub struct ScriptInvocation {
 #[derive(Debug, Clone, Default)]
 pub struct RunScriptResult {
     pub diagnostics: Vec<NoticeEvent>,
+    /// Lines the scripts logged during the call (`ctx.log.*`), in order. The
+    /// caller delivers them to the run's subscriber.
+    pub logs: Vec<ScriptLogRecord>,
 }
 
 /// Abstraction over the JavaScript script execution backend.
@@ -200,7 +206,12 @@ pub struct LazyScriptRunner {
     /// generator's read set is not recomputed on every call.
     closure_cache: ClosureCache,
     factory: RunnerFactory,
+    /// Script log records, collected by the log service as they arrive and
+    /// drained into each [`RunScriptResult`].
+    script_logs: ScriptLogBuffer,
 }
+
+type ScriptLogBuffer = Arc<std::sync::Mutex<Vec<ScriptLogRecord>>>;
 
 impl std::fmt::Debug for LazyScriptRunner {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -226,9 +237,12 @@ impl LazyScriptRunner {
     where
         S: GeneratorSys,
     {
+        let script_logs: ScriptLogBuffer = Default::default();
+        let log_buffer = script_logs.clone();
         let factory: RunnerFactory = Box::new(
             move |runtime, authorizer, mut spawn_policy, shim_json| {
                 let sys = sys.clone();
+                let log_buffer = log_buffer.clone();
                 let context_dir = context_dir.clone();
                 let version = version.clone();
 
@@ -270,9 +284,13 @@ impl LazyScriptRunner {
                     // other ambient variable is dropped.
                     spawn_policy.env = Some(enforcing.env_snapshot());
 
-                    register_services_with_defaults(
+                    register_services(
                         &mut router,
                         Arc::new(enforcing),
+                        Arc::new(StdArgsProvider),
+                        CallbackLogger::new(move |record| {
+                            log_buffer.lock().unwrap().push(record);
+                        }),
                         RegisterServicesOptions::default(),
                     );
 
@@ -310,6 +328,7 @@ impl LazyScriptRunner {
             scan_pool: RunnerPool::new(),
             closure_cache: ClosureCache::new(),
             factory,
+            script_logs,
         }
     }
 
@@ -459,7 +478,8 @@ impl JsScriptRunner for LazyScriptRunner {
             .map_err(|e| Error::custom(e.to_string()))?;
         read_scope.revoke();
 
-        Ok(RunScriptResult { diagnostics })
+        let logs = std::mem::take(&mut *self.script_logs.lock().unwrap());
+        Ok(RunScriptResult { diagnostics, logs })
     }
 }
 

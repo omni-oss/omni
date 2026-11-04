@@ -3,7 +3,6 @@ name: omni_mcp_core
 extends:
   - "@workspace/omni/presets/rust-lib.omni.yaml"
 dependencies:
-  - trace
   - omni_api
   - omni_context
   - omni_messages

@@ -120,7 +120,7 @@ impl<'a> Discovery<'a> {
         })? {
             num_iterations += 1;
             let f = f.map_err(ErrorInner::new_failed_to_get_dir_entry)?;
-            trace::trace!(path = ?f.path(), "checking_path");
+            tracing::trace!(path = ?f.path(), "checking_path");
 
             if f.is_dir() {
                 continue;
@@ -131,7 +131,7 @@ impl<'a> Discovery<'a> {
             }
         }
 
-        log::debug!(
+        tracing::debug!(
             "Found {} files in {:?}, walked {} items",
             discovered.len(),
             start_walk_time.elapsed().unwrap_or_default(),

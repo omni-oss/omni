@@ -120,7 +120,7 @@ pub async fn build_merkle_tree<THasher: Hasher>(
             sys.fs_read_async(&partial_hashes_file)
                 .await
                 .inspect_err(|e| {
-                    log::error!("Failed to read partial hashes file {partial_hashes_file:?}: {e}");
+                    tracing::error!("Failed to read partial hashes file {partial_hashes_file:?}: {e}");
                 })?;
 
         // The cache file is written by potentially many concurrent tasks. A
@@ -140,7 +140,7 @@ pub async fn build_merkle_tree<THasher: Hasher>(
                 file_entries
             }
             Err(e) => {
-                log::warn!(
+                tracing::warn!(
                     "Ignoring corrupt partial hashes file {partial_hashes_file:?}: {e}"
                 );
                 vec![]
@@ -207,13 +207,13 @@ pub async fn build_merkle_tree<THasher: Hasher>(
         sys.fs_write_async(&tmp_file, &bytes)
             .await
             .inspect_err(|e| {
-                log::error!(
+                tracing::error!(
                     "Failed to write partial hashes temp file {tmp_file:?}: {e}"
                 );
             })?;
 
         sys.fs_rename_async(&tmp_file, &partial_hashes_file).await.inspect_err(|e| {
-            log::error!("Failed to rename partial hashes file into place {partial_hashes_file:?}: {e}");
+            tracing::error!("Failed to rename partial hashes file into place {partial_hashes_file:?}: {e}");
         })?;
     }
 

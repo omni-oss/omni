@@ -5,7 +5,6 @@ extends:
   - "@workspace/omni/presets/rust-lib.omni.yaml"
 
 dependencies:
-  - trace
   - omni_configurations
   - omni_remote_cache_client
   - omni_file_data_serde

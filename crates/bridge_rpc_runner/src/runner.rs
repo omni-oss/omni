@@ -362,7 +362,7 @@ impl<TService: Service> BridgeServiceRunner<TService> {
             let rpc = rpc.clone();
             tokio::spawn(async move {
                 if let Err(e) = rpc.run().await {
-                    trace::error!(error = %e, "bridge_service_rpc_loop_ended");
+                    tracing::error!(error = %e, "bridge_service_rpc_loop_ended");
                 }
             })
         };
@@ -438,7 +438,7 @@ impl<TService: Service> BridgeServiceRunner<TService> {
                     // The child will then fail to read the un-granted paths and
                     // the `call` will surface that loudly; log so the cause is
                     // findable.
-                    trace::warn!(
+                    tracing::warn!(
                         error = %e,
                         "failed to grant read scope to confined bridge child"
                     );
@@ -847,7 +847,7 @@ fn build_command(
             ConfinedLaunchProgram::BareName => program,
             ConfinedLaunchProgram::RealBinary(real) => real.into_os_string(),
             ConfinedLaunchProgram::Degraded => {
-                trace::warn!(
+                tracing::warn!(
                     runtime = ?runtime,
                     "confined launch could not resolve the real runtime \
                      binary; falling back to the bare name, which may fail or \

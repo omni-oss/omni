@@ -10,14 +10,10 @@ repository.workspace = true
 name = "omni_git_utils"
 path = "src/lib.rs"
 
-[features]
-default = []
-
 [dependencies]
 eyre = { workspace = true }
 thiserror = { workspace = true }
 strum = { workspace = true }
-log = { workspace = true }
 derive-new = { workspace = true }
 gix = { workspace = true }
 system_traits = { workspace = true }

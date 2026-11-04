@@ -113,7 +113,7 @@ describe(
 
             expect(result).toHaveSucceeded();
             expect(ws.read("escaped.txt")).toBe("leak");
-            expect(result).toOutputContaining(
+            expect(result).toHaveStderrContaining(
                 "capabilities feature is experimental and disabled",
             );
         });
@@ -161,7 +161,7 @@ describe(
 
             expect(result).toHaveSucceeded();
             expect(ws.read("escaped.txt")).toBe("leak");
-            expect(result).toOutputContaining(
+            expect(result).toHaveStderrContaining(
                 "capabilities feature is experimental and disabled",
             );
         });

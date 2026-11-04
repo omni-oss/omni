@@ -12,7 +12,6 @@ use omni_diagnostic::DiagnosticReport;
 use omni_tracing_subscriber::TracingConfig;
 use scopeguard::defer;
 use system_traits::impls::RealSys;
-use trace::Level;
 
 #[cfg(feature = "dhat-heap")]
 #[global_allocator]
@@ -22,7 +21,6 @@ static ALLOC: dhat::Alloc = dhat::Alloc;
 #[global_allocator]
 static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
-#[cfg(feature = "enable-tracing")]
 fn init_tracing(
     config: &omni_tracing_subscriber::TracingConfig,
 ) -> eyre::Result<()> {
@@ -46,7 +44,7 @@ fn ctx(
     tracing: &TracingConfig,
     ws_root_dir: Option<&Path>,
 ) -> Result<Context<RealSys>, ContextError> {
-    trace::trace!(?args, "cli_args_received");
+    tracing::trace!(?args, "cli_args_received");
 
     let sys = RealSys;
     if let Some(root) = ws_root_dir {
@@ -74,16 +72,16 @@ pub async fn run(
         }
         CliSubcommands::Exec(exec) => {
             let context = create_ctx()?;
-            let res = commands::exec::run(exec, &context).await?;
+            let res = commands::exec::run(exec, &context, args.quiet).await?;
             exit(res);
         }
         CliSubcommands::Env(env) => {
             let context = create_ctx()?;
-            commands::env::run(env, &context).await?;
+            commands::env::run(env, &context, args.quiet).await?;
         }
         CliSubcommands::Run(run) => {
             let context = create_ctx()?;
-            let res = commands::run::run(run, &context).await?;
+            let res = commands::run::run(run, &context, args.quiet).await?;
             exit(res);
         }
         CliSubcommands::Hash(hash_command) => {
@@ -102,7 +100,7 @@ pub async fn run(
         }
         CliSubcommands::Generator(command) => {
             let context = create_ctx()?;
-            commands::generator::run(command, &context).await?;
+            commands::generator::run(command, &context, args.quiet).await?;
         }
         CliSubcommands::Init(command) => {
             commands::init::run(command).await?;
@@ -155,7 +153,7 @@ pub async fn run(
     Ok(())
 }
 
-#[cfg_attr(feature = "enable-tracing", tracing::instrument(level = Level::DEBUG, err))]
+#[tracing::instrument(level = tracing::Level::DEBUG, err)]
 async fn run_main() -> eyre::Result<()> {
     color_eyre::config::HookBuilder::default()
         .display_location_section(cfg!(debug_assertions))
@@ -252,7 +250,7 @@ async fn run_cli(cli: Cli) -> eyre::Result<()> {
         get_root_dir(&RealSys).ok()
     };
 
-    let trace_file_path = cli.args.file_trace_output.clone().or_else(|| {
+    let trace_file_path = cli.args.trace_file.clone().or_else(|| {
         (!shared_mcp).then(|| PathBuf::from("./.omni/trace/omni.log"))
     });
 
@@ -273,37 +271,33 @@ async fn run_cli(cli: Cli) -> eyre::Result<()> {
     let file_level = if shared_mcp && trace_file_path.is_none() {
         omni_tracing_subscriber::Level::Off
     } else {
-        cli.args.file_trace_level.value()
+        cli.args.trace_file_level.value()
     };
+    if cli.subcommand.is_mcp()
+        && let Some(path) = &trace_file_path
+        && commands::mcp::is_stdout_path(path)
+    {
+        eyre::bail!(
+            "`--trace-file {}` resolves to stdout, which carries the MCP JSON-RPC stream; choose a regular file",
+            path.display()
+        );
+    }
+
     let tracing_config = TracingConfig {
+        stderr_filter: cli.args.trace.clone(),
         file_path: trace_file_path,
         file_level,
-        stdout_level: if cli.subcommand.is_mcp() {
-            omni_tracing_subscriber::Level::Off
-        } else {
-            cli.args.stdout_log_level.value()
-        },
-        stdout_show_traces: cli.args.stdout_show_traces,
-        stderr_level: if shared_mcp {
-            omni_tracing_subscriber::Level::Info
-        } else {
-            cli.args.stderr_log_level.value()
-        },
-        stderr_show_traces: cli.args.stderr_show_traces,
     };
 
-    #[cfg(feature = "enable-tracing")]
-    {
-        init_tracing(&tracing_config)?;
-        trace::trace!(?tracing_config, "tracing_initialized");
-    }
+    init_tracing(&tracing_config)?;
+    tracing::trace!(?tracing_config, "tracing_initialized");
 
     omni_setup::initialize(omni_setup::InitConfig::builder().build())?;
     defer! {
         let res = omni_setup::deinitialize();
 
         if let Err(error) = res {
-            trace::error!(%error, "deinit_failed");
+            tracing::error!(%error, "deinit_failed");
         }
     };
 

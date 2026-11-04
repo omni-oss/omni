@@ -28,7 +28,7 @@ describe("+context @config (root & project discovery)", () => {
         });
 
         // Run from a nested directory; the root `.env` must still resolve.
-        const result = await runOmni(["-l", "off", "env", "get", "ROOTVAR"], {
+        const result = await runOmni(["-q", "env", "get", "ROOTVAR"], {
             cwd: ws.path("a", "b", "c"),
         });
 
@@ -62,13 +62,13 @@ describe("+context @config (root & project discovery)", () => {
         });
 
         const inGlob = await runOmni(
-            ["-l", "off", "hash", "project", "in-glob"],
+            ["-q", "hash", "project", "in-glob"],
             {
                 cwd: ws.cwd,
             },
         );
         const outOfGlob = await runOmni(
-            ["-l", "off", "hash", "project", "out-of-glob"],
+            ["-q", "hash", "project", "out-of-glob"],
             {
                 cwd: ws.cwd,
             },
@@ -84,7 +84,7 @@ describe("+context @config (root & project discovery)", () => {
 
         for (const name of ["yaml-app", "yml-app", "json-app", "toml-app"]) {
             const result = await runOmni(
-                ["-l", "off", "hash", "project", name],
+                ["-q", "hash", "project", name],
                 {
                     cwd: ws.cwd,
                 },
@@ -110,11 +110,11 @@ describe("+context @config (root & project discovery)", () => {
         });
 
         const ignored = await runOmni(
-            ["-l", "off", "hash", "project", "ignored-app"],
+            ["-q", "hash", "project", "ignored-app"],
             { cwd: ws.cwd },
         );
         const visible = await runOmni(
-            ["-l", "off", "hash", "project", "visible-app"],
+            ["-q", "hash", "project", "visible-app"],
             { cwd: ws.cwd },
         );
 
@@ -128,10 +128,10 @@ describe("+context @config (base & extends)", () => {
     it("treats `base: true` projects as templates, not runnable projects", async () => {
         const ws = makeWorkspace(extendsSpec());
 
-        const base = await runOmni(["-l", "off", "hash", "project", "base"], {
+        const base = await runOmni(["-q", "hash", "project", "base"], {
             cwd: ws.cwd,
         });
-        const child = await runOmni(["-l", "off", "hash", "project", "child"], {
+        const child = await runOmni(["-q", "hash", "project", "child"], {
             cwd: ws.cwd,
         });
 
@@ -146,8 +146,7 @@ describe("+context @config (base & extends)", () => {
         // `from-base` is only defined on the base; the child gets it via extends.
         const result = await runOmni(
             [
-                "-l",
-                "off",
+                "-q",
                 "run",
                 "from-base",
                 "-p",
@@ -189,7 +188,7 @@ describe("+context @config (base & extends)", () => {
         });
 
         const result = await runOmni(
-            ["-l", "off", "run", "from-gp", "-p", "child", "--output-logs=all"],
+            ["-q", "run", "from-gp", "-p", "child", "--output-logs=all"],
             { cwd: ws.cwd },
         );
 
@@ -218,7 +217,7 @@ describe("+context @config (base & extends)", () => {
 
         const list = await runOmni(["project", "list", "-r"], { cwd: ws.cwd });
         const run = await runOmni(
-            ["-l", "off", "run", "from-aaa", "-p", "zzz", "--output-logs=all"],
+            ["-q", "run", "from-aaa", "-p", "zzz", "--output-logs=all"],
             { cwd: ws.cwd },
         );
 
@@ -242,13 +241,13 @@ describe("+context @config (base & extends)", () => {
         });
 
         const short = await runOmni(
-            ["-l", "off", "run", "short", "--output-logs=all"],
+            ["-q", "run", "short", "--output-logs=all"],
             {
                 cwd: ws.cwd,
             },
         );
         const long = await runOmni(
-            ["-l", "off", "run", "long", "--output-logs=all"],
+            ["-q", "run", "long", "--output-logs=all"],
             {
                 cwd: ws.cwd,
             },
@@ -334,7 +333,7 @@ describe("+context @config (errors & env files)", () => {
             "name: bad\ntasks:\n  build: [oops: not\n",
         );
 
-        const result = await runOmni(["-l", "off", "run", "build"], {
+        const result = await runOmni(["-q", "run", "build"], {
             cwd: ws.cwd,
         });
 
@@ -354,7 +353,7 @@ describe("+context @config (errors & env files)", () => {
             },
         });
 
-        const result = await runOmni(["-l", "off", "env", "all"], {
+        const result = await runOmni(["-q", "env", "all"], {
             cwd: ws.cwd,
         });
         const out = result.out;

@@ -44,7 +44,7 @@ describe("+run @e2e (basic execution)", () => {
         expect(result).toHaveSucceeded();
         expect(result).toOutputContaining("build app");
         expect(result).toOutputContaining("test app");
-        expect(result).toMatchOutput(/Succeeded[^\n]*2/);
+        expect(result).toHaveStderrMatching(/Succeeded[^\n]*2/);
     });
 });
 
@@ -302,7 +302,7 @@ describe("+run @e2e @exitcode (cycles & gating)", () => {
             cwd: ws.cwd,
         });
         expect(gated).toHaveSucceeded();
-        expect(gated).toOutputContaining("Skipping disabled task 'app#gated'");
+        expect(gated).toHaveStderrContaining("Skipping disabled task 'app#gated'");
         expect(gated.stdout).not.toContain("SHOULD-NOT-RUN");
 
         const live = await runOmni(
@@ -343,7 +343,7 @@ describe("+run @e2e (on-failure)", () => {
         });
 
         expect(result).toHaveFailed();
-        expect(result).toOutputContaining(
+        expect(result).toHaveStderrContaining(
             "Skipping task 'app#dependent' due to failed dependency 'app#base'",
         );
         expect(result.stdout).not.toContain("DEPENDENT-RAN");
@@ -397,7 +397,9 @@ describe("+run @e2e (retries & persistence)", () => {
 
         expect(result).toHaveFailed();
         // `max_retries: 2` produces two retry attempts before the final failure.
-        const attempts = (result.stdout.match(/retrying\.\.\./g) ?? []).length;
+        const attempts = (
+            result.stderr.match(/retrying( in \S+)?\.\.\./g) ?? []
+        ).length;
         expect(attempts).toBe(2);
     });
 
@@ -453,7 +455,7 @@ describe("+run @e2e (filter + dependency combinations)", () => {
         // No dependencies run: neither the local `build` nor `project-2#list`.
         expect(result.stdout).not.toContain("build project-1");
         expect(result.stdout).not.toContain("list project-2");
-        expect(result).toMatchOutput(/Succeeded[^\n]*1/);
+        expect(result).toHaveStderrMatching(/Succeeded[^\n]*1/);
     });
 
     it("`-w` + `-m` filters roots by meta, then pulls dependents in by task name", async () => {
@@ -547,7 +549,7 @@ describe("+run @e2e (filter + dependency combinations)", () => {
         expect(result).toOutputContaining("TWO-BUILD");
         expect(result).toOutputContaining("TWO-TEST");
         expect(result.stdout).not.toContain("OTHER-BUILD");
-        expect(result).toMatchOutput(/Succeeded[^\n]*4/);
+        expect(result).toHaveStderrMatching(/Succeeded[^\n]*4/);
     });
 });
 
@@ -577,7 +579,7 @@ describe("+run @cache (force + cache flag combinations)", () => {
 
         // Now that the miss above persisted, a third run is a cache hit.
         const hit = await runOmni(["run", "build"], { cwd: ws.cwd });
-        expect(hit).toOutputContaining("Cache hits");
+        expect(hit).toHaveStderrContaining("Cache hits");
     });
 
     it("`-f` + `--output-logs all` re-executes and shows fresh (not replayed) logs", async () => {
@@ -709,7 +711,7 @@ describe("+run @e2e (arg-gated execution)", () => {
             { cwd: ws.cwd },
         );
         expect(disabled).toHaveSucceeded();
-        expect(disabled).toOutputContaining(
+        expect(disabled).toHaveStderrContaining(
             "Skipping disabled task 'app#gated'",
         );
         expect(disabled.stdout).not.toContain("GATED-RAN");

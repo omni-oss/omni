@@ -9,7 +9,7 @@ use petgraph::{
 };
 use serde::{Deserialize, Serialize};
 use strum::{EnumDiscriminants, IntoDiscriminant};
-use trace::Level;
+use tracing::Level;
 
 use crate::{Project, TaskExecutionGraph, TaskExecutionGraphResult};
 
@@ -301,10 +301,7 @@ impl ProjectGraph {
         Ok(projects)
     }
 
-    #[cfg_attr(
-        feature = "enable-tracing",
-        tracing::instrument(level = Level::DEBUG, skip_all)
-    )]
+    #[tracing::instrument(level = Level::DEBUG, skip_all)]
     pub fn get_task_execution_graph(
         &self,
     ) -> TaskExecutionGraphResult<TaskExecutionGraph> {

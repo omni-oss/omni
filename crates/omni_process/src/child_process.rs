@@ -10,7 +10,7 @@ use tokio::io::{
     AsyncBufReadExt as _, AsyncRead, AsyncReadExt as _, AsyncWrite,
     AsyncWriteExt as _, BufReader,
 };
-use trace::Level;
+use tracing::Level;
 
 use crate::{Child, ChildError};
 
@@ -112,10 +112,7 @@ impl ChildProcess {
         self
     }
 
-    #[cfg_attr(
-        feature = "enable-tracing",
-        tracing::instrument(level = Level::DEBUG, skip_all)
-    )]
+    #[tracing::instrument(level = Level::DEBUG, skip_all)]
     pub async fn exec(
         mut self,
     ) -> Result<ChildProcessResult, ChildProcessError> {
@@ -143,7 +140,7 @@ impl ChildProcess {
 
         let start_time = std::time::Instant::now();
 
-        log::trace!(
+        tracing::trace!(
             "executing command: {}",
             omni_command_config::format_argv(
                 std::iter::once(program.as_str())
@@ -175,7 +172,7 @@ impl ChildProcess {
         let mut writer = self.output_writer.take();
         let logs_output_task = tokio::spawn(async move {
             if !self.record_logs && writer.is_none() {
-                log::trace!("no logs output, exit early");
+                tracing::trace!("no logs output, exit early");
                 return Ok::<_, ChildProcessError>(None);
             }
 
@@ -185,7 +182,7 @@ impl ChildProcess {
                 None
             };
 
-            log::trace!("logs output task started");
+            tracing::trace!("logs output task started");
 
             let mut stderr = stderr.map(BufReader::new);
             let mut stdout = BufReader::new(stdout);
@@ -200,7 +197,7 @@ impl ChildProcess {
                             n = res?;
                             if n == 0 {
                                 stderr = None;
-                                log::trace!("stderr is empty, breaking");
+                                tracing::trace!("stderr is empty, breaking");
                                 continue;
                             }
                             line = stderr_line;
@@ -208,7 +205,7 @@ impl ChildProcess {
                         res = stdout.read_line(&mut stdout_line) => {
                             n = res?;
                             if n == 0 {
-                                log::trace!("stdout is empty, breaking");
+                                tracing::trace!("stdout is empty, breaking");
                                 break;
                             }
                             line = stdout_line;
@@ -218,25 +215,25 @@ impl ChildProcess {
                     let mut stdout_line = String::new();
                     n = stdout.read_line(&mut stdout_line).await?;
                     if n == 0 {
-                        log::trace!("stdout is empty, breaking");
+                        tracing::trace!("stdout is empty, breaking");
                         break;
                     }
                     line = stdout_line;
                 }
 
-                log::trace!("received log chunk to write: {}", n);
+                tracing::trace!("received log chunk to write: {}", n);
 
                 if let Some(logs_output) = &mut logs_output {
-                    log::trace!("writing log chunk to logs output");
+                    tracing::trace!("writing log chunk to logs output");
                     logs_output.put_slice(line.as_bytes());
                 }
 
                 if let Some(writer) = writer.as_mut() {
-                    log::trace!("writing log chunk to output writer");
+                    tracing::trace!("writing log chunk to output writer");
                     writer.write_all(line.as_bytes()).await?;
                 }
             }
-            log::trace!("logs output task done");
+            tracing::trace!("logs output task done");
             Ok::<_, ChildProcessError>(logs_output.map(|b| b.freeze()))
         });
 
@@ -255,7 +252,7 @@ impl ChildProcess {
 
             tasks.push(stdin_task);
         } else if !self.keep_stdin_open {
-            trace::trace!("dropping_input");
+            tracing::trace!("dropping_input");
             std::mem::drop(input);
         }
 

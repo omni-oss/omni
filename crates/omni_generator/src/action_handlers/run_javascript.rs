@@ -1,4 +1,5 @@
 use bridge_rpc_runner::DelegatingJsRuntimeOption;
+use bridge_rpc_services::log::ScriptLogLevel;
 use omni_capabilities::{CapabilityRules, PathRoots, Root};
 use omni_generator_configurations::{
     Generator, GeneratorContext, JsRuntimeOption,
@@ -119,6 +120,20 @@ pub async fn run_javascript<'a, S: GeneratorEventSubscriber>(
     diagnostics.append(&mut result.diagnostics);
 
     publish_batch(&ctx.subscriber, diagnostics);
+
+    for log in std::mem::take(&mut result.logs) {
+        ctx.subscriber.on_script_log(omni_messages::ScriptLogEvent {
+            level: match log.level {
+                ScriptLogLevel::Error => omni_messages::ScriptLogLevel::Error,
+                ScriptLogLevel::Warn => omni_messages::ScriptLogLevel::Warn,
+                ScriptLogLevel::Info => omni_messages::ScriptLogLevel::Info,
+                ScriptLogLevel::Debug => omni_messages::ScriptLogLevel::Debug,
+                ScriptLogLevel::Trace => omni_messages::ScriptLogLevel::Trace,
+            },
+            target: log.target,
+            message: log.message,
+        });
+    }
 
     Ok(())
 }

@@ -10,17 +10,11 @@ repository.workspace = true
 name = "omni_tool"
 path = "src/lib.rs"
 
-[features]
-default = ["enable-tracing"]
-enable-tracing = ["dep:tracing", "trace/enabled"]
-
 [dependencies]
 eyre = { workspace = true }
 thiserror = { workspace = true }
 strum = { workspace = true }
-trace = { workspace = true }
-tracing = { workspace = true, optional = true }
-log = { workspace = true }
+tracing = { workspace = true }
 bon = { workspace = true }
 derive-new = { workspace = true }
 serde = { workspace = true }

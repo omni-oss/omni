@@ -159,7 +159,7 @@ describe("+command @e2e (empty command executes as a successful no-op)", () => {
         expect(result).toHaveSucceeded();
         // It actually ran (empty_command_is_success), it was NOT skipped.
         expect(result.stdout).not.toContain("no command to execute");
-        expect(result).toMatchOutput(/Succeeded[^\n]*1/);
+        expect(result).toHaveStderrMatching(/Succeeded[^\n]*1/);
     });
 
     it("an empty argv sequence executes (counted as succeeded) instead of panicking", async () => {
@@ -169,7 +169,7 @@ describe("+command @e2e (empty command executes as a successful no-op)", () => {
 
         expect(result).toHaveSucceeded();
         expect(result.stdout).not.toContain("no command to execute");
-        expect(result).toMatchOutput(/Succeeded[^\n]*1/);
+        expect(result).toHaveStderrMatching(/Succeeded[^\n]*1/);
     });
 });
 
@@ -181,7 +181,7 @@ describe("+command @e2e (null command is skipped, not executed)", () => {
 
         // A missing command is a skip, not a failure and not a no-op success.
         expect(result).toHaveSucceeded();
-        expect(result).toOutputContaining("no command to execute");
-        expect(result).toMatchOutput(/Skipped[^\n]*1/);
+        expect(result).toHaveStderrContaining("no command to execute");
+        expect(result).toHaveStderrMatching(/Skipped[^\n]*1/);
     });
 });

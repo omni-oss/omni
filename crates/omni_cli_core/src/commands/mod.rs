@@ -79,58 +79,38 @@ pub enum ErrorFormat {
 #[command()]
 pub struct CliArgs {
     #[arg(
-        short = 'l',
-        long = "stdout-log-level",
-        help = "Max level of logs to stdout",
-        value_enum,
-        default_value = "info",
-        env = "OMNI_STDOUT_LOG_LEVEL"
-    )]
-    pub stdout_log_level: EnumValueAdapter<Level>,
-
-    #[arg(
-        short = 't',
-        long = "stdout-show-traces",
-        help = "Include traces to stdout",
-        default_value_t = false,
-        action = clap::ArgAction::SetTrue,
-        env = "OMNI_STDOUT_SHOW_TRACES"
-    )]
-    pub stdout_show_traces: bool,
-
-    #[arg(
+        short = 'q',
         long,
-        help = "Max level of logs to stderr",
-        env = "OMNI_STDERR_LOG_LEVEL",
-        default_value = "off",
-        value_enum
-    )]
-    pub stderr_log_level: EnumValueAdapter<Level>,
-
-    #[arg(
-        long = "stderr-show-traces",
-        help = "Include error traces to stderr",
+        help = "Hide omni's own narration: lifecycle lines, progress, and warning/info notices. Results, failures, task output and essential notices still show",
         default_value_t = false,
         action = clap::ArgAction::SetTrue,
-        env = "OMNI_STDERR_SHOW_TRACES"
+        env = "OMNI_QUIET",
+        global = true
     )]
-    pub stderr_show_traces: bool,
+    pub quiet: bool,
 
     #[arg(
-        long = "file-trace-output",
+        long = "trace",
+        value_name = "FILTER",
+        help = "Write developer traces to stderr, using tracing filter directives (for example `omni_cache=debug` or `debug`)",
+        env = "OMNI_TRACE"
+    )]
+    pub trace: Option<String>,
+
+    #[arg(
+        long = "trace-file",
         help = "The file to write traces to (default: ./.omni/trace/omni.log, except in shared MCP mode)"
     )]
-    pub file_trace_output: Option<PathBuf>,
+    pub trace_file: Option<PathBuf>,
 
     #[arg(
-        short = 'f',
-        long,
+        long = "trace-file-level",
         help = "The trace level to use for file traces",
         value_enum,
         default_value = "off",
-        env = "OMNI_FILE_TRACE_LEVEL"
+        env = "OMNI_TRACE_FILE_LEVEL"
     )]
-    pub file_trace_level: EnumValueAdapter<Level>,
+    pub trace_file_level: EnumValueAdapter<Level>,
 
     #[arg(
         short = 'r',
@@ -183,16 +163,14 @@ pub struct CliArgs {
 impl Default for CliArgs {
     fn default() -> Self {
         Self {
-            stdout_log_level: EnumValueAdapter::new(Level::Off),
-            stderr_log_level: EnumValueAdapter::new(Level::Off),
-            file_trace_output: None,
-            file_trace_level: EnumValueAdapter::new(Level::Off),
+            quiet: false,
+            trace: None,
+            trace_file: None,
+            trace_file_level: EnumValueAdapter::new(Level::Off),
             env_root_dir_marker: None,
             env_file: None,
             env: None,
             inherit_env_vars: false,
-            stdout_show_traces: false,
-            stderr_show_traces: false,
             cache_dir: None,
             error_format: ErrorFormat::Text,
         }

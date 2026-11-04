@@ -352,7 +352,7 @@ describe("+init @e2e @exitcode (error paths)", { tags: ["generator"] }, () => {
             );
 
             expect(result).toHaveExitCode(0);
-            expect(result).toOutputContaining("No primary generator is found");
+            expect(result).toHaveStderrContaining("No primary generator is found");
             expect(ws.exists("empty/workspace.omni.yaml")).toBe(false);
         },
         CLONE_TIMEOUT_MS,

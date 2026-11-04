@@ -26,11 +26,11 @@ pub async fn add_many<'a, S: GeneratorEventSubscriber>(
 
     let templates = discovery.discover().await?;
 
-    log::trace!("discovered {} template files", templates.len());
+    tracing::trace!("discovered {} template files", templates.len());
 
     let generator_dir = format!("{}/**", ctx.generator_dir.display());
 
-    log::trace!("running generator in dir {generator_dir}");
+    tracing::trace!("running generator in dir {generator_dir}");
 
     let templates = templates
         .into_iter()
@@ -47,7 +47,7 @@ pub async fn add_many<'a, S: GeneratorEventSubscriber>(
     let tera = omni_tera::new_with_files(&templates)?;
 
     for template_file in templates.iter().filter_map(|(_, sp)| sp.as_deref()) {
-        log::trace!("processing template tile {template_file:?}");
+        tracing::trace!("processing template tile {template_file:?}");
 
         add_one(
             Path::new(template_file),

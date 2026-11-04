@@ -58,7 +58,7 @@ impl<TRequestContext, TResponseContext>
         let request_session = concurrent(RequestSession::new(id, context));
         self.request_sessions.insert(id, request_session.clone());
 
-        trace::trace!(id = ?id, "start_request_session");
+        tracing::trace!(id = ?id, "start_request_session");
 
         Ok(request_session)
     }
@@ -72,7 +72,7 @@ impl<TRequestContext, TResponseContext>
 
     pub async fn close_request_session(&self, id: Id) {
         if let Some((_, request_session)) = self.request_sessions.remove(&id) {
-            trace::trace!(id = ?id, "close_request_session");
+            tracing::trace!(id = ?id, "close_request_session");
             request_session.lock().await.close().await;
         }
     }
@@ -90,7 +90,7 @@ impl<TRequestContext, TResponseContext>
         let response_session = concurrent(ResponseSession::new(id, context));
         self.response_sessions.insert(id, response_session.clone());
 
-        trace::trace!(id = ?id, "start_response_session");
+        tracing::trace!(id = ?id, "start_response_session");
 
         Ok(response_session)
     }
@@ -111,7 +111,7 @@ impl<TRequestContext, TResponseContext>
         if let Some((_, response_session)) = self.response_sessions.remove(&id)
         {
             response_session.lock().await.close().await;
-            trace::trace!(id = ?id, "close_response_session");
+            tracing::trace!(id = ?id, "close_response_session");
         }
     }
 }

@@ -99,7 +99,7 @@ impl IgnoreRealDirWalkerConfig {
             }
 
             let overrides = overrides.build()?;
-            trace::trace!("added_overrides_to_ignore_builder");
+            tracing::trace!("added_overrides_to_ignore_builder");
             builder.overrides(overrides);
         }
 
@@ -189,7 +189,7 @@ impl DirWalkerBase for IgnoreRealDirWalker {
                         && let Some(err) = err.io_error()
                         && err.kind() == std::io::ErrorKind::NotFound
                     {
-                        log::trace!("Not found error, ignoring");
+                        tracing::trace!("Not found error, ignoring");
                         return WalkState::Continue;
                     }
 
@@ -197,7 +197,7 @@ impl DirWalkerBase for IgnoreRealDirWalker {
 
                     if let Err(err) = result {
                         let path = err.0.as_ref().ok().map(|f| f.path());
-                        log::error!(
+                        tracing::error!(
                             "Encountered during traversal: {err}, path: {path:?}",
                         );
 

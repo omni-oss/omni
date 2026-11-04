@@ -17,7 +17,7 @@ pub fn validate_str<V: Borrow<str>>(value: &V) -> Result<(), String> {
     if let Err(error) = result
         && let omni_tera::ErrorKind::SyntaxError(error) = error.kind()
     {
-        trace::error!(
+        tracing::error!(
             expr = value,
             span = %error.span(),
             error = error.message(),

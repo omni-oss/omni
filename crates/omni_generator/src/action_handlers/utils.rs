@@ -175,13 +175,13 @@ pub async fn overwrite(
         let output_path_d = output_path.display();
         if overwrite {
             if sys.fs_is_dir_async(output_path).await? {
-                log::debug!(
+                tracing::debug!(
                     "Removing directory and it's contents at path {}",
                     output_path_d
                 );
                 sys.fs_remove_dir_all_async(output_path).await?;
             } else {
-                log::debug!("Overwriting path at {}", output_path_d);
+                tracing::debug!("Overwriting path at {}", output_path_d);
             }
 
             return Ok(Some(true));
@@ -235,7 +235,7 @@ pub async fn resolve_target_dir<'a>(
         // it (mirrors `prompt_target_file`); the loop exists precisely so the
         // user can correct the value.
         if let Err(err) = validate_target(output_dir, path) {
-            log::error!("Invalid target dir: {}", err);
+            tracing::error!("Invalid target dir: {}", err);
             continue;
         }
 
@@ -306,14 +306,14 @@ pub async fn prompt_target_file<S: GeneratorEventSubscriber>(
         let path = if let Ok(path) = path_str.as_ref().parse::<OmniPath>() {
             path
         } else {
-            log::warn!("Invalid path: {}", path_str);
+            tracing::warn!("Invalid path: {}", path_str);
             continue;
         };
 
         let resolved = path.resolve(&base);
 
         if !sys.fs_exists_async(resolved.as_ref()).await? {
-            log::warn!("File does not exist: {}", resolved.display());
+            tracing::warn!("File does not exist: {}", resolved.display());
         }
 
         break Ok(resolved.to_path_buf());

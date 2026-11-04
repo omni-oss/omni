@@ -40,6 +40,7 @@ pub use execution::{
 };
 pub use generator::{
     GeneratorCompletedEvent, GeneratorEventSubscriber, GeneratorStartEvent,
+    ScriptLogEvent, ScriptLogLevel,
 };
 pub use noop::NoopSubscriber;
 pub use notice::{NoticeEvent, NoticeLevel, NoticeSubscriber};

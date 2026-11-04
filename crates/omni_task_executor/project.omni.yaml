@@ -42,6 +42,5 @@ dependencies:
   - omni_codes
   - omni_task_output_logs
   - omni_utils
-  - trace
   - omni_test_utils
   - omni_tracing_subscriber

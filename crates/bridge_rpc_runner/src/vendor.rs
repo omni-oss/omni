@@ -155,7 +155,7 @@ impl VendoredBridgeService {
         let entrypoint = root.join(ENTRYPOINT_REL);
 
         if self.is_up_to_date(&root, &entrypoint).await {
-            trace::trace!(
+            tracing::trace!(
                 root = %root.display(),
                 "vendored bridge-service already up to date"
             );
@@ -165,7 +165,7 @@ impl VendoredBridgeService {
             });
         }
 
-        trace::debug!(
+        tracing::debug!(
             root = %root.display(),
             version = %&self.version,
             hash = %&self.hash,

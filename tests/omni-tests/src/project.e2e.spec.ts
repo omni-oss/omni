@@ -253,7 +253,7 @@ describe("+project @exitcode (errors)", () => {
 
         // The command logs the error and still exits 0 (no config is printed).
         expect(result).toHaveSucceeded();
-        expect(result).toOutputContaining("No project named 'nope' found");
+        expect(result).toHaveStderrContaining("No project named 'nope' found");
         expect(result.stdout).not.toContain("{");
     });
 });
@@ -474,7 +474,7 @@ describe("+project @config (print-config selection)", () => {
         );
 
         expect(result).toHaveSucceeded();
-        expect(result).toOutputContaining("no loaded project configuration");
+        expect(result).toHaveStderrContaining("no loaded project configuration");
         expect(result.stdout).not.toContain("{");
     });
 
@@ -541,9 +541,9 @@ describe("+project @config (print-config selection)", () => {
         });
 
         expect(result).toHaveSucceeded();
-        expect(result).toOutputContaining("duplicate project name");
-        expect(result).toOutputContaining("apps/app/project.omni.yaml");
-        expect(result).toOutputContaining("apps/app2/project.omni.yaml");
+        expect(result).toHaveStderrContaining("duplicate project name");
+        expect(result).toHaveStderrContaining("apps/app/project.omni.yaml");
+        expect(result).toHaveStderrContaining("apps/app2/project.omni.yaml");
         expect(result.stdout).not.toContain("{");
     });
 });

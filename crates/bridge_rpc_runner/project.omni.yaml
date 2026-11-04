@@ -18,4 +18,3 @@ dependencies:
   - omni_messages
   - omni_notice
   - omni_codes
-  - trace

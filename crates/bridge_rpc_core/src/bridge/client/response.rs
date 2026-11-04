@@ -99,7 +99,7 @@ pub struct ResponseReader {
 }
 
 impl ResponseReader {
-    #[cfg_attr(feature = "enable-tracing", tracing::instrument(skip_all, fields(response_id = ?self.id)))]
+    #[tracing::instrument(skip_all, fields(response_id = ?self.id))]
     pub async fn read_body_chunk(
         &mut self,
     ) -> Result<Option<Vec<u8>>, super::response_error::ResponseError> {

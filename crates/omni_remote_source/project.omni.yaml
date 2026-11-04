@@ -3,7 +3,6 @@ name: omni_remote_source
 extends:
   - "@workspace/omni/presets/rust-lib.omni.yaml"
 dependencies:
-  - trace
   - omni_lockfile
   - omni_git_utils
   - omni_utils

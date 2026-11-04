@@ -46,6 +46,5 @@ dependencies:
   - maps
   - omni_task_output_logs
   - sets
-  - trace
   - omni_codes
   - omni_notice
