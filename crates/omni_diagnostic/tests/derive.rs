@@ -215,3 +215,48 @@ fn callbacks_are_not_shadowed_by_fields() {
     };
     assert_eq!(e.hints(), vec!["from callback"]);
 }
+
+#[cfg(not(feature = "explicit-registry"))]
+mod codes_registry {
+    use omni_codes::Code;
+
+    use super::*;
+
+    #[test]
+    fn diagnostic_code_matches_code_info() {
+        let cases = [
+            Sample::Unknown {
+                name: "a".into(),
+                suggestion: "b".into(),
+            },
+            Sample::Body,
+            Sample::Tuple("x".into()),
+        ];
+        // `Sample` forwards one variant, so it has no static `Code` impl;
+        // the registry entries still exist for its own codes.
+        for c in &cases {
+            let code = Diagnostic::code(c);
+            let info = omni_codes::get(code).expect("registered");
+            assert_eq!(info.code, code);
+            assert_eq!(info.audience(), Some(Diagnostic::audience(c)));
+        }
+    }
+
+    #[derive(Debug, thiserror::Error, Diagnostic)]
+    #[error("plain")]
+    #[diagnostic(code = "plain.thing", audience = environment, stable)]
+    /// Plain thing happened.
+    ///
+    /// More detail.
+    struct Plain;
+
+    #[test]
+    fn code_impl_matches_diagnostic() {
+        assert_eq!(Code::info(&Plain).code, Diagnostic::code(&Plain));
+        let i = Code::info(&Plain);
+        assert_eq!(i.summary, "Plain thing happened.");
+        assert_eq!(i.explanation, "More detail.");
+        assert!(i.stable);
+        assert_eq!(i.audience(), Some(omni_codes::Audience::Environment));
+    }
+}

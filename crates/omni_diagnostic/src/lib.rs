@@ -20,44 +20,7 @@ pub use registry::install;
 pub use registry::{Registration, registrations};
 pub use render::DiagnosticReport;
 
-/// Who is expected to act on a diagnostic.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize,
-)]
-#[serde(rename_all = "lowercase")]
-pub enum Audience {
-    /// The input is wrong: arguments, config, expression, files.
-    User,
-    /// Environment or external system: network, disk, permissions.
-    Environment,
-    /// omni itself misbehaved.
-    Internal,
-}
-
-impl Audience {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::User => "user",
-            Self::Environment => "environment",
-            Self::Internal => "internal",
-        }
-    }
-
-    /// Process exit code: `2` for user errors (same as clap usage errors),
-    /// `1` for everything else.
-    pub const fn exit_code(self) -> i32 {
-        match self {
-            Self::User => 2,
-            Self::Environment | Self::Internal => 1,
-        }
-    }
-}
-
-impl fmt::Display for Audience {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
+pub use omni_codes::Audience;
 
 /// An error that describes itself to users and agents.
 ///
@@ -109,6 +72,7 @@ pub fn find(report: &eyre::Report) -> Option<&dyn Diagnostic> {
 
 #[doc(hidden)]
 pub mod __private {
+    pub use omni_codes;
     pub use serde_json;
 
     #[cfg(all(feature = "inventory", not(feature = "explicit-registry")))]

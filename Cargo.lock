@@ -7093,6 +7093,7 @@ version = "0.22.0"
 dependencies = [
  "eyre",
  "inventory",
+ "omni_codes",
  "omni_diagnostic_derive",
  "omni_redact",
  "serde",
@@ -7105,6 +7106,7 @@ dependencies = [
 name = "omni_diagnostic_derive"
 version = "0.22.0"
 dependencies = [
+ "omni_derive_support",
  "proc-macro2",
  "quote",
  "syn 2.0.119",
