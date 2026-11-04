@@ -608,7 +608,7 @@ routes both the same way.
     notices that differ only in a secret collapse into one.
   - Repeats are identical `(code, message)` after redaction among notices
     that are still to be shown. Groups keep first-occurrence order (no
-    sorting) and print once, with the count appended as ` (xN)`, for example
+    sorting) and print once, with the count appended as `(xN)` after a space, for example
     `warning[cache.write_skipped]: could not write cache entry for 'app#build' (x3)`.
     A group of one has no suffix.
 - **`-q/--quiet` replaces the log-level flags for user output.** It hides
@@ -679,11 +679,13 @@ routes both the same way.
   fixed by the registry. An
   essential notice arriving after the cap is reached is still delivered and
   never evicted. The maximum `notices` length is therefore 50 plus the number
-  of essential codes, plus one truncation entry. When the bound is hit, the
-  presenter appends one final entry reporting how many were dropped. It is a
+  of essential codes, plus one truncation entry. The presenter finalizes after collecting every notice for the request. Only
+  if at least one unique notice was omitted does it append one final entry
+  reporting how many were dropped, so exactly 50 unique non-essential notices
+  produce no entry, and a late essential notice always precedes it. It is a
   derived notice (`NoticesTruncated { dropped }`, declared `code =
   "notices.truncated", level = info`, not `essential`, since it carries a
-  field), emitted at most once per request, after the 50 retained ones, and
+  field), emitted at most once per request, last in the array, and
   exempt from the bound, so an agent is never handed a capped array without
   being told. `dropped` counts unique `(code, message, fields)`
   notices omitted *after* deduplication, so repeats of an already retained
@@ -961,8 +963,9 @@ Each step leaves the tree working.
   the registry carries one flag: `stable`.
   - A code is unstable by default. Marking it `stable` in its derive
     (`#[notice(code = .., stable)]`, or the diagnostic equivalent) is a
-    deliberate review step that promises the code, its `level` or
-    `audience`, and the key names in `fields`. `message` text is never part
+    deliberate review step that promises the code, its kind (`Error` or
+    `Notice`), its `level` or `audience`, whether it is `essential`, and the
+    key names in `fields`. `message` text is never part
     of the promise.
   - An unstable code may change or be removed in any release, but its name
     is still never reused for a different meaning.
