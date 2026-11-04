@@ -735,6 +735,9 @@ impl NoticeSubscriber for CliSubscriber {
 /// subscriber). Same layout as the run presenter.
 pub fn print_notice<N: omni_notice::Notice>(n: &N, quiet: bool) {
     let e = NoticeEvent::from_notice(n, module_path!());
+    // Like every published notice, it is recorded in the trace even when `-q`
+    // hides it.
+    omni_messages::publish::mirror_to_tracing(&e);
     if quiet && !e.essential() && e.level() != omni_messages::NoticeLevel::Error
     {
         return;

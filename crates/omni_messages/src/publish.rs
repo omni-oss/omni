@@ -12,7 +12,7 @@ pub fn publish_event<S: NoticeSubscriber + ?Sized>(
     if let Some(r) = sub.redactor() {
         event.redact(&r);
     }
-    mirror(&event);
+    mirror_to_tracing(&event);
     sub.on_notice(event);
 }
 
@@ -29,8 +29,10 @@ pub fn publish_batch<S: NoticeSubscriber + ?Sized>(
     }
 }
 
+/// Mirrors a notice into `tracing` at its own level, with its code. Every
+/// published notice goes through here, so trace files stay complete.
 #[cfg(feature = "tracing")]
-fn mirror(e: &NoticeEvent) {
+pub fn mirror_to_tracing(e: &NoticeEvent) {
     let (code, msg, source) = (e.code(), e.message(), e.target());
     match e.level() {
         NoticeLevel::Info => tracing::info!(code, source, "{msg}"),
@@ -40,7 +42,7 @@ fn mirror(e: &NoticeEvent) {
 }
 
 #[cfg(not(feature = "tracing"))]
-fn mirror(_: &NoticeEvent) {}
+pub fn mirror_to_tracing(_: &NoticeEvent) {}
 
 /// Emits a [`Notice`](omni_notice::Notice) through a subscriber.
 ///
