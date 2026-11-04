@@ -321,10 +321,12 @@ diagnostic_notice!(sub, MetaFilterExcluded { count }, &meta_filter_error);
 - A site that returns notices to a caller for batch publishing
   (`capability_plan.rs`, `script_runner.rs`) returns `Vec<NoticeEvent>`.
 - Every published notice is mirrored as a `tracing` event at the matching
-  level, with its code, so trace files stay complete. The mirror receives the
-  message and fields after RFC 0022 redaction, the same redacted form the
-  presenters get, so no tracing sink or custom output sees unredacted notice
-  data.
+  level, with its code, so trace files stay complete. Redaction runs once per
+  notice inside `notice!`, before dispatch to any subscriber or the mirror, and
+  produces the redacted `message` and `fields` that presenters and the mirror
+  both consume. No tracing sink, custom sink included, sees unredacted notice
+  data. The redaction test covers a declared secret in a notice's message and
+  fields against a custom tracing sink as well as presenter output.
 
 #### One canonical code registry
 
@@ -668,8 +670,9 @@ routes both the same way.
   Under `-q` there are no spinners or action lines, while failed actions, the
   final error and `essential` or `error` notices still show. Prompts
   (`requestty`) are never suppressed.
-- Redaction (RFC 0022) is applied once, in the presenter, to every string it
-  writes that came from a notice, event or diagnostic.
+- Redaction (RFC 0022) is applied once per notice in `notice!` (see 4.3), and
+  in the presenter to every other string it writes that came from an event or
+  diagnostic.
 
 #### MCP
 
@@ -697,7 +700,10 @@ routes both the same way.
   exempt from the bound, so an agent is never handed a capped array without
   being told. `dropped` counts unique `(code, message, fields)`
   notices omitted *after* deduplication, so repeats of an already retained
-  notice collapse first and do not count. The key uses the canonical
+  notice collapse first and do not count. Tracking is bounded too: the
+  presenter keeps omitted keys only up to 1,000 per request, as hashes, and
+  beyond that `dropped` is reported as a lower bound with `dropped_exact =
+  false`. A high-volume unique-notice test covers it. The key uses the canonical
   redacted form of `fields`: object keys are sorted recursively at every
   nesting depth, arrays keep their order (it is meaningful), and the result
   is serialised compactly, so two notices with the same
@@ -973,8 +979,9 @@ Each step leaves the tree working.
     (`#[notice(code = .., stable)]`, or the diagnostic equivalent) is a
     deliberate review step that promises the code, its kind (`Error` or
     `Notice`), its `level` or `audience`, whether it is `essential`, and the
-    key names in `fields`. `message` text is never part
-    of the promise.
+    key names, value types and meaning in `fields`. Changing a field's type
+    or meaning is a breaking change, covered by a compatibility test.
+    `message` text is never part of the promise.
   - An unstable code may change or be removed in any release, but its name
     is still never reused for a different meaning.
   - A stable code is changed only as a breaking change. It is retired by
