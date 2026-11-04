@@ -371,7 +371,7 @@ rustdoc.
   `notices.deny`) so CI and local runs agree. CLI flags can tighten but not
   loosen config, consistent with RFC 0022.
 - An `essential` notice cannot be allowed or suppressed:
-  `sandbox.os_disabled`, `redact.disabled`. This follows from RFC 0022's rule
+  `sandbox.os_disabled`, `redact.disabled`, `notices.truncated`. This follows from RFC 0022's rule
   that loosening protections must stay visible.
 - `--allow` and `--deny` apply only to notice codes. Using one with an error
   code is rejected with a message. A fatal diagnostic is not controllable.
@@ -452,7 +452,11 @@ Each surface has one presenter that owns all user-visible text.
   `NoticesTruncated { dropped }` type, so it has a `message`) appended after
   the 50 retained ones, and it is exempt from the bound like essential
   notices, so the array holds at most 50 non-essential entries plus the
-  truncation entry:
+  truncation entry. `notices.truncated` is itself `essential`, so server
+  configuration cannot `allow` it away and an agent is never handed a capped
+  array without being told. `dropped` counts unique `(code, message)` notices
+  omitted *after* deduplication, so repeats of an already retained notice
+  collapse first and do not count:
 
   ```json
   { "level": "info", "code": "notices.truncated",
@@ -618,8 +622,10 @@ decision. Expected buckets:
   otherwise; carried in `data.notices` on failure; per-call isolation under
   concurrency; cap and dedup; an `essential` notice emitted after the cap is
   reached still appears in `notices`, and the truncation entry (with a
-  `message`) is appended after exactly 50 retained entries, is not itself
-  counted against the bound, and reports the dropped count; the wire format of each `level` is exactly `"info"`,
+  `message`, `essential`, unaffected by an allow rule targeting
+  `notices.truncated`) is appended after exactly 50 retained entries, is not itself
+  counted against the bound, and reports the dropped count of unique notices after deduplication (duplicates
+  overflowing the cap do not inflate it); the wire format of each `level` is exactly `"info"`,
   `"warn"`, `"error"`; tool parameters cannot allow or deny; `command`
   returned in dry runs.
 - Quiet mode: with `-q`, notices are not printed but `--deny <code>` still
