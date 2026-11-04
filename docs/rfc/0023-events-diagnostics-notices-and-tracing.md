@@ -443,7 +443,10 @@ Each surface has one presenter that owns all user-visible text.
 #### MCP
 
 - `McpSubscriber` becomes `McpPresenter`, with `wants_notices() == true`. It
-  collects notices per request (non-essential bounded at 50, deduplicated by
+  processes each notice in a fixed order: **allow, then deduplicate, then
+  bound**. Server-side `allow` runs first, so an allowed non-essential notice
+  is never retained and never counted in `dropped`. It collects notices per
+  request (non-essential bounded at 50, deduplicated by
   `(code, message)`, redacted) next to the per-task log capture. `essential`
   notices are **exempt from the bound**: they are few (a fixed, small set) and
   deduplicated, so an essential notice arriving after the cap is reached is
@@ -626,7 +629,9 @@ decision. Expected buckets:
   `notices.truncated`) is appended after exactly 50 retained entries, is not itself
   counted against the bound, and reports the dropped count of unique notices after deduplication (duplicates
   overflowing the cap do not inflate it); the wire format of each `level` is exactly `"info"`,
-  `"warn"`, `"error"`; tool parameters cannot allow or deny; `command`
+  `"warn"`, `"error"`; a server-allowed non-essential notice that would
+  have exceeded the bound is neither in `notices` nor counted in `dropped`;
+  tool parameters cannot allow or deny; `command`
   returned in dry runs.
 - Quiet mode: with `-q`, notices are not printed but `--deny <code>` still
   fails the run and the trace mirror still records them.
