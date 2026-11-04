@@ -2115,7 +2115,10 @@ describe.runIf(denoAvailable())(
             const run = getContent<{ result: { greeting: string } }>(
                 await client.callTool({
                     name: "tool_run",
-                    arguments: { name: "greet", input_values: { who: "world" } },
+                    arguments: {
+                        name: "greet",
+                        input_values: { who: "world" },
+                    },
                 }),
             );
             expect(run.result).toEqual({ greeting: "hello world" });

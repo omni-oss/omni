@@ -1,0 +1,91 @@
+---
+title: "Output, notices and traces"
+description: "What omni prints, where, and how to quiet it or look closer"
+---
+
+omni keeps four kinds of output apart, so what you see does not depend on a log
+level.
+
+| Stream | What it carries |
+| ------ | --------------- |
+| stdout | Results of the command you ran, and task output passed through |
+| stderr | omni's own status: progress, summary, notices, the final error |
+| trace file or `--trace` | Developer traces. Never part of normal output |
+
+`omni ... | jq` is safe: nothing but the result is ever written to stdout, at
+any setting. The same holds for `omni mcp`, where stdout carries the protocol.
+
+## Notices
+
+A **notice** is a message about *this run* that you may want to know even though
+the operation completed. It never changes the exit status.
+
+```text
+warning[sandbox.os_disabled]: OS-level sandbox is DISABLED for this run
+  = run `omni explain sandbox.os_disabled` for details
+error[meta.filter_excluded]: meta filter `kind == "e2e"` failed for 1 task(s); they were excluded (see --meta-on-error)
+note[notices.truncated]: 12 further notices were omitted
+```
+
+- The prefix is the level: `error`, `warning` or `note`.
+- The code in brackets is stable and can be looked up (below).
+- Identical notices are shown once, with a count: `... (x3)`.
+
+A returned **error** is different: it stops the operation, and its code names
+the failure the same way.
+
+### `omni explain`
+
+```bash
+omni explain meta.filter_failed
+omni explain --format json sandbox.os_disabled
+```
+
+Both error and notice codes work. A code that does not exist lists close
+matches. The same information is available to agents through the `explain` MCP
+tool and the `omni://codes/<code>` resource. Every code is listed on the
+[codes reference](/docs/references/codes).
+
+## `-q`, `--quiet`
+
+`-q` hides omni's own narration. It never hides what you asked for, what failed,
+what needs an answer, or a safety signal.
+
+| Text | Under `-q` |
+| ---- | ---------- |
+| Command results, dry-run command lines | Shown |
+| Task output, including cached replay | Shown (see `--output-logs`) |
+| Final error, failed-task output | Shown |
+| Prompts | Shown |
+| `error` notices and **essential** notices | Shown |
+| `warning` and `note` notices | Hidden |
+| Lifecycle lines, spinner and progress bar | Hidden |
+| Summary table | Only if a task failed |
+
+`-q` only changes what is printed. Exit status, MCP and traces are unaffected.
+With `--ui auto` it never resolves to a progress bar.
+
+## Traces
+
+Traces are for omni developers and bug reports.
+
+```bash
+omni --trace debug run build              # all crates at debug, to stderr
+omni --trace omni_cache=debug run build   # one crate
+omni --trace-file ./trace.log --trace-file-level debug run build
+```
+
+- `--trace <filter>` (env `OMNI_TRACE`) takes
+  [tracing filter directives](https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html#directives).
+- `--trace-file <path>` and `--trace-file-level <level>` (env
+  `OMNI_TRACE_FILE_LEVEL`) write JSON traces to a file. The default path is
+  `./.omni/trace/omni.log`.
+- While a progress bar or the TUI is on screen, stderr traces are held back and
+  printed afterwards. Use `--trace-file` to follow traces during such a run.
+- There is no stdout trace sink. If you really want traces in the same stream,
+  use `2>&1` or `--trace-file /dev/stdout`.
+- `omni mcp` refuses a `--trace-file` that resolves to stdout.
+
+The old `-l/--stdout-log-level`, `-t/--stdout-show-traces`,
+`--stderr-log-level`, `--stderr-show-traces`, `-f/--file-trace-level` and
+`--file-trace-output` flags and their environment variables are removed.

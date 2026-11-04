@@ -111,7 +111,12 @@ describe(
                     connectMcp({
                         cwd: launch.cwd,
                         shared: true,
-                        args: ["--trace-file-level", "debug", "--trace-file", path],
+                        args: [
+                            "--trace-file-level",
+                            "debug",
+                            "--trace-file",
+                            path,
+                        ],
                     }),
                 ).rejects.toThrow();
             },

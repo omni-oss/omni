@@ -229,6 +229,53 @@ mod tests {
         );
     }
 
+    /// A tracing sink that records every event it sees, as text.
+    #[derive(Clone, Default)]
+    struct Capture(Arc<Mutex<Vec<u8>>>);
+
+    impl std::io::Write for Capture {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(buf);
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for Capture {
+        type Writer = Capture;
+        fn make_writer(&'a self) -> Self::Writer {
+            self.clone()
+        }
+    }
+
+    #[test]
+    fn a_secret_never_reaches_a_custom_tracing_sink() {
+        let r = omni_redact::Redactor::builder().value("hunter2").build();
+        let (sub, events) = collect(Some(r));
+        let sink = Capture::default();
+        let subscriber = tracing_subscriber::fmt()
+            .with_writer(sink.clone())
+            .with_max_level(tracing::Level::TRACE)
+            .finish();
+
+        tracing::subscriber::with_default(subscriber, || {
+            notice!(
+                sub,
+                Sample {
+                    name: "n".into(),
+                    secret: "hunter2".into()
+                }
+            );
+        });
+
+        let traced = String::from_utf8(sink.0.lock().unwrap().clone()).unwrap();
+        assert!(traced.contains("msgtest.sample"), "mirrored: {traced}");
+        assert!(!traced.contains("hunter2"), "leaked into trace: {traced}");
+        assert!(!events.lock().unwrap()[0].message().contains("hunter2"));
+    }
+
     #[test]
     fn batch_is_published_and_skipped_when_unwanted() {
         let (sub, events) = collect(None);

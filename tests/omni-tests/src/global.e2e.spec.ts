@@ -163,9 +163,12 @@ describe("+global @cli (--trace)", () => {
     it("--trace <filter> writes traces to stderr, never to stdout", async () => {
         const ws = envWorkspace();
 
-        const result = await runOmni(["--trace", "trace", "env", "get", "FOO"], {
-            cwd: ws.cwd,
-        });
+        const result = await runOmni(
+            ["--trace", "trace", "env", "get", "FOO"],
+            {
+                cwd: ws.cwd,
+            },
+        );
 
         expect(result).toHaveSucceeded();
         expect(result).toHaveStderrContaining(NATIVE_TRACE);
@@ -193,10 +196,13 @@ describe("+global @cli (--trace)", () => {
             cwd: ws.cwd,
             env: { OMNI_TRACE: "trace" },
         });
-        const overridden = await runOmni(["--trace", "error", "env", "get", "FOO"], {
-            cwd: ws.cwd,
-            env: { OMNI_TRACE: "trace" },
-        });
+        const overridden = await runOmni(
+            ["--trace", "error", "env", "get", "FOO"],
+            {
+                cwd: ws.cwd,
+                env: { OMNI_TRACE: "trace" },
+            },
+        );
 
         expect(fromEnv).toHaveStderrContaining(NATIVE_TRACE);
         expect(overridden.err).not.toContain(NATIVE_TRACE);
@@ -261,9 +267,12 @@ describe("+global @cli (file traces)", () => {
     it("defaults the trace file to ./.omni/trace/omni.log", async () => {
         const ws = envWorkspace();
 
-        const result = await runOmni(["--trace-file-level", "info", "env", "get", "FOO"], {
-            cwd: ws.cwd,
-        });
+        const result = await runOmni(
+            ["--trace-file-level", "info", "env", "get", "FOO"],
+            {
+                cwd: ws.cwd,
+            },
+        );
 
         expect(result).toHaveSucceeded();
         expect(ws.exists(".omni/trace/omni.log")).toBe(true);
@@ -275,9 +284,12 @@ describe("+global @cli (file traces)", () => {
             files: { "sub/deep/.keep": "" },
         });
 
-        const result = await runOmni(["--trace-file-level", "info", "env", "get", "FOO"], {
-            cwd: ws.path("sub", "deep"),
-        });
+        const result = await runOmni(
+            ["--trace-file-level", "info", "env", "get", "FOO"],
+            {
+                cwd: ws.path("sub", "deep"),
+            },
+        );
 
         expect(result).toHaveSucceeded();
         expect(ws.exists(".omni/trace/omni.log")).toBe(true);

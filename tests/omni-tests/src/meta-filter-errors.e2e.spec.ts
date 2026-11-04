@@ -45,9 +45,12 @@ describe("+meta-filter-errors @e2e (cli)", () => {
     it("a typo fails with the filter, cause, samples and a hint", async () => {
         const ws = makeWorkspace(metaSpec());
 
-        const result = await runOmni(["run", "test", "--meta", 'knd == "e2e"'], {
-            cwd: ws.cwd,
-        });
+        const result = await runOmni(
+            ["run", "test", "--meta", 'knd == "e2e"'],
+            {
+                cwd: ws.cwd,
+            },
+        );
 
         expect(result).toHaveFailed();
         const out = result.stdout + result.stderr;
@@ -72,9 +75,7 @@ describe("+meta-filter-errors @e2e (cli)", () => {
         );
 
         expect(result.exitCode).toBe(2);
-        const line = result.stderr
-            .split("\n")
-            .find((l) => l.startsWith("{"));
+        const line = result.stderr.split("\n").find((l) => l.startsWith("{"));
         const body = JSON.parse(line ?? "{}");
         expect(body.kind).toBe("meta.filter_failed");
         expect(body.audience).toBe("user");
@@ -84,9 +85,12 @@ describe("+meta-filter-errors @e2e (cli)", () => {
     it("a key missing on some tasks fails, naming the task without meta", async () => {
         const ws = makeWorkspace(metaSpec());
 
-        const result = await runOmni(["run", "test", "--meta", 'kind == "e2e"'], {
-            cwd: ws.cwd,
-        });
+        const result = await runOmni(
+            ["run", "test", "--meta", 'kind == "e2e"'],
+            {
+                cwd: ws.cwd,
+            },
+        );
 
         expect(result).toHaveFailed();
         const out = result.stdout + result.stderr;
@@ -167,7 +171,14 @@ describe("+meta-filter-errors @e2e (cli)", () => {
 
         const run = (samples: string) =>
             runOmni(
-                ["run", "test", "--meta", "knd == 1", "--meta-error-samples", samples],
+                [
+                    "run",
+                    "test",
+                    "--meta",
+                    "knd == 1",
+                    "--meta-error-samples",
+                    samples,
+                ],
                 { cwd: ws.cwd },
             );
 
@@ -215,14 +226,17 @@ describe("+diagnostics @e2e (registry)", () => {
     it("the built binary registers the meta filter diagnostic", async () => {
         const ws = makeWorkspace(metaSpec());
 
-        const result = await runOmni(["diagnostics", "list", "--format", "json"], {
-            cwd: ws.cwd,
-        });
+        const result = await runOmni(
+            ["diagnostics", "list", "--format", "json"],
+            {
+                cwd: ws.cwd,
+            },
+        );
 
         expect(result).toHaveSucceeded();
-        const codes = (JSON.parse(result.stdout) as Array<{ code: string }>).map(
-            (e) => e.code,
-        );
+        const codes = (
+            JSON.parse(result.stdout) as Array<{ code: string }>
+        ).map((e) => e.code);
         expect(codes).toContain("meta.filter_failed");
     });
 });

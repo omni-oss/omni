@@ -114,6 +114,35 @@ jobs:
       - name: Prune Unused Caches
         run: omni -i cache prune -sy -o="7d" # Remove stale caches older than 7 days
 
+  # RFC 0023: libraries have no user-facing text sinks, and `log` and the
+  # retired `trace` wrapper crate are not used. Presenter crates opt out with a
+  # crate-level `#![allow(clippy::disallowed_macros)]`; tests are not linted.
+  lint-output:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Tools
+        uses: ./.github/actions/setup-tools
+        with:
+          install-all: false
+          install-rust: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: No output macros or `log` in non-presenter crates
+        run: cargo clippy --workspace --lib --bins -- -D clippy::disallowed_macros
+
+      - name: Builds with a `tracing` release level cap
+        run: cargo check -p omni --release --features tracing/release_max_level_info
+
+      - name: The `trace` crate and `enable-tracing` features are gone
+        run: |
+          if grep -rEn '^trace = |enable-tracing' --include=Cargo.toml --include='*.rs' crates cli services Cargo.toml; then
+            echo "the \`trace\` crate and \`enable-tracing\` features were removed (RFC 0023); use \`tracing\` directly" >&2
+            exit 1
+          fi
+
   test-rust:
     needs:
       - plan

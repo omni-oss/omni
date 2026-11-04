@@ -34,15 +34,22 @@ fn unknown_code_hints(e: &UnknownCode) -> Vec<String> {
     }
 }
 
-pub(crate) fn unknown_code(e: omni_codes::UnknownCode) -> UnknownCode {
-    UnknownCode {
-        code: e.code,
-        close_matches: e
-            .close_matches
-            .into_iter()
-            .map(|c| c.code.to_string())
-            .collect(),
+impl UnknownCode {
+    /// Wraps a registry miss as a user-facing diagnostic.
+    pub fn from_registry(e: omni_codes::UnknownCode) -> Self {
+        Self {
+            code: e.code,
+            close_matches: e
+                .close_matches
+                .into_iter()
+                .map(|c| c.code.to_string())
+                .collect(),
+        }
     }
+}
+
+pub(crate) fn unknown_code(e: omni_codes::UnknownCode) -> UnknownCode {
+    UnknownCode::from_registry(e)
 }
 
 pub use UnknownCode as ExplainUnknownCode;

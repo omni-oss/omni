@@ -2,4 +2,3 @@
 name: omni_lockfile
 extends:
   - "@workspace/omni/presets/rust-lib.omni.yaml"
-dependencies:

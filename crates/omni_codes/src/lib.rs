@@ -6,6 +6,7 @@
 
 extern crate self as omni_codes;
 
+pub mod catalog;
 mod registry;
 mod validate;
 

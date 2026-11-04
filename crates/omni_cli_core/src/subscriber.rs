@@ -1186,6 +1186,106 @@ mod notice_render_tests {
         out
     }
 
+    /// Essential sample.
+    #[derive(Notice)]
+    #[notice(code = "clitest.essential", level = warn, essential, message = "static")]
+    struct Essential;
+
+    /// Error sample.
+    #[derive(Notice)]
+    #[notice(code = "clitest.error", level = error, message = "failed {x}")]
+    struct Failed {
+        x: u8,
+    }
+
+    fn groups(sub: &CliSubscriber) -> Vec<(String, usize)> {
+        sub.notice_groups
+            .lock()
+            .iter()
+            .map(|g| (g.event.code().to_string(), g.count))
+            .collect()
+    }
+
+    fn sample(x: &str) -> NoticeEvent {
+        NoticeEvent::from_notice(&Sample { x: x.into() }, "t")
+    }
+
+    #[test]
+    fn identical_notices_collapse_in_first_occurrence_order() {
+        let sub = CliSubscriber::new_stream(std::env::temp_dir());
+        sub.on_notice(sample("a"));
+        sub.on_notice(NoticeEvent::from_notice(&Failed { x: 1 }, "t"));
+        sub.on_notice(sample("a"));
+        sub.on_notice(sample("b"));
+        sub.on_notice(sample("a"));
+
+        assert_eq!(
+            groups(&sub),
+            vec![
+                ("clitest.sample".to_string(), 3),
+                ("clitest.error".to_string(), 1),
+                ("clitest.sample".to_string(), 1),
+            ]
+        );
+    }
+
+    #[test]
+    fn the_count_suffix_follows_the_message_and_a_single_has_none() {
+        let e = sample("a");
+        assert!(
+            plain(&render_notice(&e, 3))
+                .starts_with("warning[clitest.sample]: line\\nbreak a (x3)")
+        );
+        assert!(!plain(&render_notice(&e, 1)).contains("(x"));
+    }
+
+    #[test]
+    fn quiet_hides_warn_but_not_error_or_essential() {
+        let sub =
+            CliSubscriber::new_stream(std::env::temp_dir()).with_quiet(true);
+        sub.on_notice(sample("a"));
+        sub.on_notice(NoticeEvent::from_notice(&Failed { x: 1 }, "t"));
+        sub.on_notice(NoticeEvent::from_notice(&Essential, "t"));
+
+        let codes: Vec<String> =
+            groups(&sub).into_iter().map(|(c, _)| c).collect();
+        assert_eq!(codes, vec!["clitest.error", "clitest.essential"]);
+    }
+
+    #[test]
+    fn a_notice_published_while_the_tui_is_live_is_buffered_not_printed() {
+        let sub = CliSubscriber::new_with(
+            CliUiMode::Tui,
+            std::env::temp_dir(),
+            Arc::new(OnceLock::new()),
+        );
+        let _ = sub.resolved_mode.set(CliUiMode::Tui);
+
+        sub.on_notice(sample("a"));
+        sub.flush_notices();
+
+        // Held for `flush_emit_buffer` after teardown, never written to the
+        // terminal that the alternate screen owns.
+        let buffered = sub.emit_buffer.lock();
+        assert_eq!(buffered.len(), 1);
+        assert!(buffered[0].0.contains("clitest.sample"));
+        assert!(sub.notice_groups.lock().is_empty());
+    }
+
+    #[test]
+    fn not_quiet_keeps_everything() {
+        let sub = CliSubscriber::new_stream(std::env::temp_dir());
+        sub.on_notice(sample("a"));
+        assert_eq!(groups(&sub).len(), 1);
+    }
+
+    #[test]
+    fn essential_is_read_from_the_event_and_matches_the_registry() {
+        let e = NoticeEvent::from_notice(&Essential, "t");
+        assert!(e.essential());
+        assert!(omni_codes::get(e.code()).unwrap().essential());
+    }
+
     #[test]
     fn renders_level_code_message_and_explain_pointer() {
         let e = NoticeEvent::from_notice(&Sample { x: "v".into() }, "t");

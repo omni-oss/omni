@@ -1,3 +1,6 @@
+// The binary prints the final error and nothing else (RFC 0023).
+#![allow(clippy::disallowed_macros)]
+
 use std::{
     path::{Path, PathBuf},
     process::ExitCode,
@@ -90,6 +93,9 @@ pub async fn run(
         }
         CliSubcommands::Declspec(declspec_command) => {
             commands::declspec::run(declspec_command).await?;
+        }
+        CliSubcommands::Explain(cmd) => {
+            commands::explain::run(cmd).await?;
         }
         CliSubcommands::Diagnostics(cmd) => {
             commands::diagnostics::run(cmd).await?;

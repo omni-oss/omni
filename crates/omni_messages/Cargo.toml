@@ -28,3 +28,4 @@ omni_task_output_logs = { workspace = true }
 
 [dev-dependencies]
 thiserror = { workspace = true }
+tracing-subscriber = { workspace = true }

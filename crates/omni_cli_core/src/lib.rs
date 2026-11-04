@@ -1,4 +1,6 @@
 #![allow(clippy::redundant_field_names)]
+// Presenter crate (RFC 0023): the only place user-facing text is written.
+#![allow(clippy::disallowed_macros)]
 
 pub mod build;
 pub mod commands;

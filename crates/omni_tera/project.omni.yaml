@@ -2,4 +2,3 @@
 name: omni_tera
 extends:
   - "@workspace/omni/presets/rust-lib.omni.yaml"
-dependencies:

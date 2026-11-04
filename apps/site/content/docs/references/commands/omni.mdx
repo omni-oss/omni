@@ -26,21 +26,9 @@ omni [OPTIONS] <SUBCOMMAND>
 
 ## Options
 
-### `-l`, `--stdout-log-level`
+### `-q`, `--quiet`
 
-Max level of logs to stdout
-
-- **Required:** No
-
-- **Default:** `info`
-
-- **Possible values:** `off`, `error`, `warn`, `info`, `debug`, `trace`
-
-- **Environment variable:** `OMNI_STDOUT_LOG_LEVEL`
-
-### `-t`, `--stdout-show-traces`
-
-Include traces to stdout
+Hide omni's own narration: lifecycle lines, progress, and warning/info notices. Results, failures, task output and essential notices still show
 
 - **Required:** No
 
@@ -48,41 +36,23 @@ Include traces to stdout
 
 - **Possible values:** `true`, `false`
 
-- **Environment variable:** `OMNI_STDOUT_SHOW_TRACES`
+- **Environment variable:** `OMNI_QUIET`
 
-### `--stderr-log-level`
+### `--trace`
 
-Max level of logs to stderr
-
-- **Required:** No
-
-- **Default:** `off`
-
-- **Possible values:** `off`, `error`, `warn`, `info`, `debug`, `trace`
-
-- **Environment variable:** `OMNI_STDERR_LOG_LEVEL`
-
-### `--stderr-show-traces`
-
-Include error traces to stderr
+Write developer traces to stderr, using tracing filter directives (for example `omni_cache=debug` or `debug`)
 
 - **Required:** No
 
-- **Default:** `false`
+- **Environment variable:** `OMNI_TRACE`
 
-- **Possible values:** `true`, `false`
+### `--trace-file`
 
-- **Environment variable:** `OMNI_STDERR_SHOW_TRACES`
-
-### `--file-trace-output`
-
-The file to write traces to
+The file to write traces to (default: ./.omni/trace/omni.log, except in shared MCP mode)
 
 - **Required:** No
 
-- **Default:** `./.omni/trace/omni.log`
-
-### `-f`, `--file-trace-level`
+### `--trace-file-level`
 
 The trace level to use for file traces
 
@@ -92,7 +62,7 @@ The trace level to use for file traces
 
 - **Possible values:** `off`, `error`, `warn`, `info`, `debug`, `trace`
 
-- **Environment variable:** `OMNI_FILE_TRACE_LEVEL`
+- **Environment variable:** `OMNI_TRACE_FILE_LEVEL`
 
 ### `-r`, `--env-root-dir-marker`
 
@@ -126,6 +96,26 @@ Inherit environment variables from the parent process
 
 - **Possible values:** `true`, `false`
 
+### `--error-format`
+
+How to print a failure: `text` for people, `json` for scripts and CI
+
+- **Required:** No
+
+- **Default:** `text`
+
+- **Possible values:** `text`, `json`
+
+- **Environment variable:** `OMNI_ERROR_FORMAT`
+
+### `--cache-dir`
+
+The directory to use for the cache
+
+- **Required:** No
+
+- **Environment variable:** `OMNI_CACHE_DIR`
+
 ---
 
 ## Subcommands
@@ -143,6 +133,10 @@ Inherit environment variables from the parent process
 - [`hash`](omni/hash) - Get hash for workspace or projects
 
 - [`declspec`](omni/declspec) - Generate machine readable CLI specification
+
+- [`diagnostics`](omni/diagnostics) - Inspect diagnostic codes
+
+- [`explain`](omni/explain) - Explain an error or notice code
 
 - [`cache`](omni/cache) - Cache related subcommands
 

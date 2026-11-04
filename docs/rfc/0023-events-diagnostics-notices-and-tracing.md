@@ -1,6 +1,6 @@
 # RFC 0023: Events, diagnostics, notices, output and tracing
 
-- **Status:** Draft <!-- Draft | Accepted | Implemented | Superseded -->
+- **Status:** Implemented, with the deviations in section 10 <!-- Draft | Accepted | Implemented | Superseded -->
 - **Owner:** TBD
 - **Date:** 2026-11-03
 - **Base branch:** `main`
@@ -1019,3 +1019,37 @@ both CLI and MCP. Ideas for later, if users ask:
   parameters, so an agent cannot suppress a notice or change what fails a run.
 - **Validation.** Unknown codes are an error, so a typo cannot silently do
   nothing.
+
+## 10. Implementation notes
+
+Where the implementation made a decision the RFC left open, or does not yet
+match it:
+
+- **Fatal code name.** RFC 0021 shipped the meta filter diagnostic as
+  `meta_filter.evaluation`; this RFC calls it `meta.filter_failed`. The code is
+  renamed to `meta.filter_failed` (before any release), with `related =
+  "meta.filter_excluded"`.
+- **`log` in one crate.** `bridge_rpc_services` still depends on `log`: its
+  `/log` service forwards script records with *dynamic* targets into an injected
+  `log::Log`, which `tracing` cannot express. Every other omni crate uses
+  `tracing` only.
+- **Script logs (`ctx.log.*`).** The RFC does not place them. They are the
+  script author's own output, so they are a `ScriptLogEvent`
+  (`GeneratorEventSubscriber::on_script_log`): `info`, `warn` and `error` are
+  shown on stderr and are not hidden by `-q`; `debug` and `trace` go to
+  `tracing` only.
+- **Dry-run command lines** (`Executing task '<id>': <command>`) are a result:
+  they go to stdout and `-q` keeps them.
+- **`explain` in shared MCP mode** takes `working_dir` like every other tool,
+  so the shared-schema invariant (every tool requires one directory) holds.
+- **Not done yet.**
+  - The `projections.*` ledger notice: `ledger::load` has no subscriber to
+    report through, so it still logs with `tracing::warn!`.
+  - `omni_tool` (`bridge_runner.rs`) has no subscriber, so its experimental
+    runtime and capability warnings are `tracing::warn!` rather than notices.
+  - No workspace `Redactor` is wired into `CliSubscriber` or `McpSubscriber`
+    yet. The mechanism (`NoticeSubscriber::redactor`, applied once in
+    `publish_event` before the `tracing` mirror and any sink) is in place and
+    tested; today notice text is not run through a workspace redactor.
+  - The optional `tracing` release level cap is not set, as decided in 4.6.
+

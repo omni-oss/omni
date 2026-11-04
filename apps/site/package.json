@@ -13,7 +13,8 @@
         "test:integration": "vitest --config vitest.config.integration.ts run",
         "lint": "oxlint src",
         "gen:declspec": "omni declspec dump >| omni-declspec.json",
-        "gen:refdocs": "bun run ./scripts/generate-references ./omni-declspec.json ./content/docs/references"
+        "gen:refdocs": "bun run ./scripts/generate-references ./omni-declspec.json ./content/docs/references",
+        "gen:codes": "bun run ./scripts/generate-codes.ts"
     },
     "dependencies": {
         "@remix-run/cookie": "catalog:",

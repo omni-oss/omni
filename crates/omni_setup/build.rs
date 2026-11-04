@@ -1,3 +1,6 @@
+// Build scripts talk to cargo through stdout.
+#![allow(clippy::disallowed_macros)]
+
 use std::env;
 use std::fs;
 use std::path::Path;

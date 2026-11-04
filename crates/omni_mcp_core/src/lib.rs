@@ -1,3 +1,6 @@
+// Presenter crate (RFC 0023).
+#![allow(clippy::disallowed_macros)]
+
 pub mod codes;
 pub mod error;
 pub mod model;

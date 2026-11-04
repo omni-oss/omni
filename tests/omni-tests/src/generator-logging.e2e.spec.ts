@@ -141,7 +141,9 @@ describe(
                         cwd: ws.cwd,
                     });
                     expect(result).toHaveSucceeded();
-                    expect(result).toHaveStderrContaining("GEN_LOG_TAIL_MARKER");
+                    expect(result).toHaveStderrContaining(
+                        "GEN_LOG_TAIL_MARKER",
+                    );
                 }
             },
         );
@@ -211,12 +213,9 @@ describe(
                 ),
             );
 
-            const result = await runOmni(
-                [...RUN_ARGS, "--dry-run"],
-                {
-                    cwd: ws.cwd,
-                },
-            );
+            const result = await runOmni([...RUN_ARGS, "--dry-run"], {
+                cwd: ws.cwd,
+            });
 
             expect(result).toHaveSucceeded();
             // The script ran (and logged), but its write was rolled back.

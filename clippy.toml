@@ -1,0 +1,17 @@
+# RFC 0023: library crates have no user-facing text sinks. Users are told
+# things through a return value, an event, a returned error or a notice, and
+# developers through `tracing`. Presenter crates (`omni_cli_core`,
+# `omni_mcp_core`, `omni_term_ui`) and binaries opt out with a crate-level
+# `#![allow(clippy::disallowed_macros)]`.
+disallowed-macros = [
+    { path = "std::println", reason = "libraries do not print; return a value, emit an event or notice, or use `tracing`" },
+    { path = "std::print", reason = "libraries do not print; return a value, emit an event or notice, or use `tracing`" },
+    { path = "std::eprintln", reason = "libraries do not print; return a value, emit an event or notice, or use `tracing`" },
+    { path = "std::eprint", reason = "libraries do not print; return a value, emit an event or notice, or use `tracing`" },
+    { path = "log::trace", reason = "use `tracing::trace!`" },
+    { path = "log::debug", reason = "use `tracing::debug!`" },
+    { path = "log::info", reason = "use `tracing::info!`" },
+    { path = "log::warn", reason = "use `tracing::warn!`" },
+    { path = "log::error", reason = "use `tracing::error!`" },
+    { path = "log::log", reason = "use `tracing`" },
+]

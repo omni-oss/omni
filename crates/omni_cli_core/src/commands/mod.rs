@@ -20,10 +20,11 @@ use crate::{
     build,
     commands::{
         cache::CacheCommand, declspec::DeclspecCommand,
-        diagnostics::DiagnosticsCommand, generator::GeneratorCommand,
-        hash::HashCommand, ignore::IgnoreCommand, init::InitCommand,
-        project::ProjectCommand, projection::ProjectionCommand,
-        remote_source::RemoteSourcesCommand, tool::ToolCommand,
+        diagnostics::DiagnosticsCommand, explain::ExplainCommand,
+        generator::GeneratorCommand, hash::HashCommand, ignore::IgnoreCommand,
+        init::InitCommand, project::ProjectCommand,
+        projection::ProjectionCommand, remote_source::RemoteSourcesCommand,
+        tool::ToolCommand,
     },
 };
 
@@ -34,6 +35,7 @@ pub mod declspec;
 pub mod diagnostics;
 pub mod env;
 pub mod exec;
+pub mod explain;
 pub mod generator;
 mod generator_utils;
 pub mod hash;
@@ -203,6 +205,9 @@ pub enum CliSubcommands {
 
     #[command(about = "Inspect diagnostic codes")]
     Diagnostics(DiagnosticsCommand),
+
+    #[command(about = "Explain an error or notice code")]
+    Explain(ExplainCommand),
 
     #[command(about = "Cache related subcommands")]
     Cache(CacheCommand),
