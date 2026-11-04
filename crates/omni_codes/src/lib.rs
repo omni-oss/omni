@@ -20,10 +20,21 @@ pub use validate::{RegistryError, retired_codes, validate, validate_set};
 
 /// Severity of a notice. Serialises lowercase (`"info"`, `"warn"`, `"error"`).
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    PartialOrd,
+    Ord,
+    serde::Serialize,
     serde::Deserialize,
+    strum::Display,
+    strum::IntoStaticStr,
 )]
 #[serde(rename_all = "lowercase")]
+#[strum(serialize_all = "lowercase")]
 pub enum NoticeLevel {
     Info,
     Warn,
@@ -31,30 +42,27 @@ pub enum NoticeLevel {
 }
 
 impl NoticeLevel {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Info => "info",
-            Self::Warn => "warn",
-            Self::Error => "error",
-        }
-    }
-}
-
-impl fmt::Display for NoticeLevel {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::Info => "Info",
-            Self::Warn => "Warn",
-            Self::Error => "Error",
-        })
+    pub fn as_str(self) -> &'static str {
+        self.into()
     }
 }
 
 /// Who is expected to act on a diagnostic.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    PartialOrd,
+    Ord,
+    serde::Serialize,
+    strum::Display,
+    strum::IntoStaticStr,
 )]
 #[serde(rename_all = "lowercase")]
+#[strum(serialize_all = "lowercase")]
 pub enum Audience {
     /// The input is wrong: arguments, config, expression, files.
     User,
@@ -65,12 +73,8 @@ pub enum Audience {
 }
 
 impl Audience {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::User => "user",
-            Self::Environment => "environment",
-            Self::Internal => "internal",
-        }
+    pub fn as_str(self) -> &'static str {
+        self.into()
     }
 
     /// Process exit code: `2` for user errors (same as clap usage errors),
@@ -83,24 +87,18 @@ impl Audience {
     }
 }
 
-impl fmt::Display for Audience {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, strum::Display, strum::IntoStaticStr,
+)]
+#[strum(serialize_all = "lowercase")]
 pub enum CodeKind {
     Error,
     Notice,
 }
 
 impl CodeKind {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Error => "error",
-            Self::Notice => "notice",
-        }
+    pub fn as_str(self) -> &'static str {
+        self.into()
     }
 }
 

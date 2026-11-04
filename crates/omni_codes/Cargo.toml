@@ -18,4 +18,5 @@ explicit-registry = []
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
+strum = { workspace = true }
 inventory = { workspace = true, optional = true }
