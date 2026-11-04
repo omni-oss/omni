@@ -235,7 +235,12 @@ pub async fn resolve_target_dir<'a>(
         // it (mirrors `prompt_target_file`); the loop exists precisely so the
         // user can correct the value.
         if let Err(err) = validate_target(output_dir, path) {
-            tracing::error!("Invalid target dir: {}", err);
+            // Interactive prompt: the rejection must be visible even when
+            // no tracing layer is enabled.
+            let _ = std::io::Write::write_fmt(
+                &mut std::io::stderr(),
+                format_args!("error: invalid target dir: {err}\n"),
+            );
             continue;
         }
 
