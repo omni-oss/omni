@@ -211,10 +211,17 @@ on chosen notices is deferred, section 9.)
 A notice is a small derived type. Diagnostics stay as in RFC 0021.
 
 ```rust
-pub trait Notice: fmt::Display + Send + Sync + 'static {
-    fn code(&self) -> &'static str;
-    fn level(&self) -> NoticeLevel;
-    fn essential(&self) -> bool { false }
+// omni_codes: implemented by both derives, sealed (derive-only)
+pub trait Code {
+    const CODES: &'static [CodeInfo];       // one for a notice, one per variant for a diagnostic enum
+    fn info(&self) -> &'static CodeInfo;
+}
+
+// omni_notice
+pub trait Notice: Code + fmt::Display + Send + Sync + 'static {
+    fn code(&self) -> &'static str { self.info().code }
+    fn level(&self) -> NoticeLevel { /* from info().detail */ }
+    fn essential(&self) -> bool { /* from info().detail */ }
     fn fields(&self) -> BTreeMap<String, serde_json::Value>;   // from struct fields
 }
 
@@ -253,17 +260,18 @@ implement `Error`, and nothing converts between the two.
 `NoticeEvent` stays the plain data that travels to subscribers. Presenters
 decide quiet-mode filtering and the MCP bound from the event's own
 `level` and `essential` fields, never by looking the code up in the registry, so the value
-the emitter set cannot be overridden. `CodeInfo.essential` must equal
-`Notice::essential()`; the derive generates both from the same attribute, and
-a registry test fails if they differ.
+the emitter set cannot be overridden. A notice has no second copy of its
+`code`, `level` or `essential`: `Notice`'s methods read `Code::info()`, and
+the derive generates `info()` and the registry entry from the same
+attribute, so they cannot differ.
 
-`Notice` is **sealed**: it cannot be implemented by hand. The derive emits a
-hidden marker impl the trait requires, so every `Notice` is a derived type,
-is registered in `omni_codes`, and has its `code`, `level` and `essential`
-generated from one attribute. A hand-written impl that reports a different
-`code`, `level` or `essential` than the registry is therefore not
-expressible, and the registry test covers every `Notice` type in the
-workspace.
+`Code` and `Notice` are **sealed**: they cannot be implemented by hand. The
+derive emits a hidden marker impl the traits require, so every `Notice` is a
+derived type, is registered in `omni_codes`, and has its `code`, `level` and
+`essential` generated from one attribute. A hand-written impl that reports a
+different `code`, `level` or `essential` than the registry is therefore not
+expressible, and the registry test covers every type implementing `Code` in
+the workspace.
 
 ```rust
 pub struct NoticeEvent {
@@ -321,27 +329,42 @@ A new crate `omni_codes` holds the only list of codes. It has no dependency
 on `eyre`, `omni_messages` or either derive.
 
 ```rust
-pub enum CodeKind { Error, Notice }
-
 pub struct CodeInfo {
     pub code: &'static str,
-    pub kind: CodeKind,
     pub summary: &'static str,          // first doc line
     pub explanation: &'static str,      // rest of the doc comment
     pub related: &'static [&'static str],
-    pub level: Option<NoticeLevel>,     // notices
-    pub essential: bool,                // notices
-    pub audience: Option<Audience>,     // errors
     pub stable: bool,                   // covered by the stability promise
     pub deprecated: bool,
+    pub detail: CodeDetail,
 }
+
+pub enum CodeDetail {
+    Notice { level: NoticeLevel, essential: bool },
+    Error  { audience: Audience },
+}
+// CodeInfo::kind() -> CodeKind { Error, Notice } is derived from `detail`.
 ```
+
+`detail` is an enum so a notice has no `audience` and an error has no
+`level`: no `Option` fields to unwrap, and the invalid combinations cannot be
+built.
+
+**`Code`, not a per-kind lookup.** `Code` is the one trait both derives
+implement, so generic code works on either kind: a shared renderer taking
+`&dyn Code` for the code, summary and `related` pointer, `explain` resolving
+a value to its entry, and one registry test for all kinds. It is standalone
+in `omni_codes`. `Notice` has it as a supertrait because `Notice` is new.
+`Diagnostic` does **not** gain a supertrait: its derive emits `impl Code`
+beside its existing impl, so the `Diagnostic` trait and RFC 0021 are
+unchanged. `Diagnostic::code()` and `Code::info().code` return the same
+string for the same value, which the derive guarantees and a test pins.
 
 **Layout.** Dependencies point one way, toward `omni_codes`:
 
 ```mermaid
 flowchart TD
-    codes["omni_codes<br/>CodeInfo, CodeKind, NoticeLevel, Audience,<br/>registry, prefix ownership, validate()"]
+    codes["omni_codes<br/>Code trait, CodeInfo, CodeDetail, NoticeLevel, Audience,<br/>registry, prefix ownership, validate()"]
     support["omni_derive_support<br/>(plain lib: parse, docs, template, emit)"]
     dderive["omni_diagnostic_derive"]
     nderive["omni_notice_derive"]
@@ -388,28 +411,30 @@ omni_codes::prefixes!("cache");           // one line per crate, in lib.rs
 
 ```rust
 // #[derive(Notice)] on CacheWriteSkipped expands to roughly:
-impl Notice for CacheWriteSkipped { /* code, level, essential, fields */ }
+impl Code for CacheWriteSkipped {
+    const CODES: &'static [CodeInfo] = &[CACHE_WRITE_SKIPPED];
+    fn info(&self) -> &'static CodeInfo { &CACHE_WRITE_SKIPPED }
+}
+impl Notice for CacheWriteSkipped { /* fields(); code, level, essential read info() */ }
 impl fmt::Display for CacheWriteSkipped { /* from `message` */ }
+static CACHE_WRITE_SKIPPED: CodeInfo = CodeInfo {
+    code: "cache.write_skipped",
+    summary: "Could not write a cache entry.",
+    explanation: "The task result is unaffected.",
+    related: &["cache.write_failed"],
+    stable: true,
+    deprecated: false,
+    detail: CodeDetail::Notice { level: NoticeLevel::Error, essential: false },
+};
 omni_codes::submit!(CodeRegistration {
     crate_name: env!("CARGO_PKG_NAME"),
-    codes: &[CodeInfo {
-        code: "cache.write_skipped",
-        kind: CodeKind::Notice,
-        summary: "Could not write a cache entry.",
-        explanation: "The task result is unaffected.",
-        related: &["cache.write_failed"],
-        level: Some(NoticeLevel::Error),
-        essential: false,
-        audience: None,
-        stable: true,
-        deprecated: false,
-    }],
+    codes: <CacheWriteSkipped as Code>::CODES,
 });
 
-// #[derive(Diagnostic)] expands to its existing impl, plus the same submission
-// with kind: CodeKind::Error and audience: Some(..). Its own
-// `omni_diagnostic::Registration` (with the `lookup` fn used by
-// `find_in_error`) is unchanged.
+// #[derive(Diagnostic)] expands to its existing impl, plus `impl Code` (one
+// CodeInfo per variant, `detail: CodeDetail::Error { audience }`) and the
+// same submission. Its own `omni_diagnostic::Registration` (with the
+// `lookup` fn used by `find_in_error`) is unchanged.
 ```
 
 `validate()` checks, over everything submitted: every code is unique across
@@ -422,9 +447,11 @@ unit test, the debug-build startup check, and the generated docs page.
 `close_matches`.
 
 - `omni_diagnostic` keeps its registry API, `Diagnostic` trait and
-  `find_in_error`. Its derive additionally registers each type into
-  `omni_codes` with `kind = Error`. The `Diagnostic` trait does not change.
-- `omni_notice`'s derive registers with `kind = Notice`.
+  `find_in_error`. Its derive additionally implements `Code` and registers
+  each type into `omni_codes` (`CodeDetail::Error`). The `Diagnostic` trait
+  does not change.
+- `omni_notice`'s derive implements `Code` and `Notice` and registers with
+  `CodeDetail::Notice`.
 - **The registry owns its metadata types.** `NoticeLevel` and `Audience` are
   defined in `omni_codes` (so the dependency points one way: `omni_diagnostic`
   and `omni_messages` depend on `omni_codes`, never the reverse) and
@@ -818,7 +845,7 @@ decision. Expected buckets:
   adds the diagnostic's details and hints.
 - `omni_codes`: error and notice codes share one namespace with no
   duplicates; prefix ownership is enforced; every `related` target exists; a
-  retired code is never reused; a `deprecated` code is `stable`; `stable` is shown by `explain`; every `essential` code is listed; `omni
+  retired code is never reused; a `deprecated` code is `stable`; for every `Diagnostic`, `Diagnostic::code()` equals `Code::info().code`; `stable` is shown by `explain`; every `essential` code is listed; `omni
   explain` works for both kinds, shows `related`, lists close matches for an
   unknown code, and its JSON output matches the MCP `explain` tool.
 - Presenter unit tests: `error`/`warning`/`note` prefixes with codes,
