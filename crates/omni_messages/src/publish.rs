@@ -263,6 +263,20 @@ mod tests {
             .finish();
 
         tracing::subscriber::with_default(subscriber, || {
+            // Tests run in parallel, and another may have registered the
+            // mirror's callsite while no subscriber existed, which caches
+            // "never". A permissive global default keeps every callsite
+            // interested, and the cache is rebuilt once it is installed.
+            static GLOBAL: std::sync::Once = std::sync::Once::new();
+            GLOBAL.call_once(|| {
+                let _ = tracing::subscriber::set_global_default(
+                    tracing_subscriber::fmt()
+                        .with_writer(std::io::sink)
+                        .with_max_level(tracing::Level::TRACE)
+                        .finish(),
+                );
+            });
+            tracing::callsite::rebuild_interest_cache();
             notice!(
                 sub,
                 Sample {
