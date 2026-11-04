@@ -983,8 +983,11 @@ Each step leaves the tree working.
     key names, value types and meaning in `fields`. Changing a field's type
     or meaning is a breaking change, covered by a compatibility test.
     `message` text is never part of the promise.
-  - An unstable code may change or be removed in any release, but its name
-    is still never reused for a different meaning.
+  - An unstable code may change its message text, docs, `level`, `audience`,
+    `essential` and `fields` in any release. Its code string is never renamed
+    or reused, and its meaning never changes: a new meaning requires a new
+    code. It may be removed, and its name then stays reserved as a tombstone
+    (4.3).
   - A stable code is changed only as a breaking change. It is retired by
     marking it `deprecated`, not by deleting it.
   - `omni explain`, the MCP `explain` tool and the docs page show the flag,
