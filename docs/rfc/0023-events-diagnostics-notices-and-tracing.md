@@ -4,7 +4,7 @@
 - **Owner:** TBD
 - **Date:** 2026-11-03
 - **Base branch:** `main`
-- **Affected crates/files:** `omni_messages` (`notice.rs`, `publish.rs`: `NoticeEvent` built from a `Notice`, `notice!` and `diagnostic_notice!`; `channel.rs`, `tracing_impl.rs`; events extended); new `omni_codes` (canonical code registry, `explain`), `omni_notice` and `omni_notice_derive` (`Notice` trait and derive), `omni_derive_support` (shared derive logic); `omni_diagnostic` and `omni_diagnostic_derive` (register into `omni_codes`; the `Diagnostic` trait itself is unchanged); `omni_tracing_subscriber` (`LogFilter` and stdout layer removed); `crates/trace` removed and its ~177 call sites and ~40 `enable-tracing` features migrated to `tracing`; `omni_cli_core` (`subscriber.rs` becomes a presenter, `commands/*`, global flags); `cli/omni` (`lib.rs` tracing setup); `omni_mcp_core` (`subscriber.rs`, `model/*`, `tools/*`, `server.rs`); notice call sites in `omni_task_executor`, `omni_generator`, `bridge_rpc_runner`, `omni_execution_plan`; every crate that calls `log::*`; `clippy.toml`; `generators/crate` (`generator.omni.yaml`, `templates/Cargo.toml.tpl`, `templates/project.omni.yaml.tpl`, `templates/src/main.rs.tpl`); `services/omni_bridge_test_service`; `tests/omni-tests`
+- **Affected crates/files:** `omni_messages` (`notice.rs`, `publish.rs`: `NoticeEvent` built from a `Notice`, `notice!` and `diagnostic_notice!`; `channel.rs`, `tracing_impl.rs`; events extended); new `omni_codes` (canonical code registry, `explain`), `omni_notice` and `omni_notice_derive` (`Notice` trait and derive), `omni_derive_support` (shared derive logic); `omni_diagnostic` and `omni_diagnostic_derive` (register into `omni_codes`; the `Diagnostic` trait itself is unchanged); `omni_tracing_subscriber` (`LogFilter` and stdout layer removed); `crates/trace` removed and its ~177 call sites and ~40 `enable-tracing` features migrated to `tracing`; `omni_cli_core` (`subscriber.rs` (`CliSubscriber`) acts as the CLI presenter, `commands/*`, global flags); `cli/omni` (`lib.rs` tracing setup); `omni_mcp_core` (`subscriber.rs`, `model/*`, `tools/*`, `server.rs`); notice call sites in `omni_task_executor`, `omni_generator`, `bridge_rpc_runner`, `omni_execution_plan`; every crate that calls `log::*`; `clippy.toml`; `generators/crate` (`generator.omni.yaml`, `templates/Cargo.toml.tpl`, `templates/project.omni.yaml.tpl`, `templates/src/main.rs.tpl`); `services/omni_bridge_test_service`; `tests/omni-tests`
 - **Follows:** RFC 0021 (structured diagnostics), whose 4.5 it resolves without changing it; RFC 0022 (redaction); PR #45 (notices); issue omni-oss/omni#47
 
 ## 1. Summary
@@ -442,7 +442,13 @@ From the `log` triage (4.7):
 
 ### 4.5 Output: presenters
 
-Each surface has one presenter that owns all user-visible text.
+Each surface has one presenter that owns all user-visible text. "Presenter"
+is a role, not a new type or trait: it is the existing subscriber type for
+that surface (`CliSubscriber`, `McpSubscriber`), which already implements
+`NoticeSubscriber`, `ExecutionEventSubscriber` and `GeneratorEventSubscriber`.
+The types keep their names. It is unrelated to `MuxOutputPresenter` and
+`TuiPresenter` in `omni_term_ui`, which render task output inside the TUI and
+are unchanged.
 
 #### CLI
 
@@ -451,8 +457,8 @@ Each surface has one presenter that owns all user-visible text.
 | stdout | Command results and passed-through task output, nothing else |
 | stderr | Progress and status rendered from events, notices, the final error, developer traces when enabled |
 
-- `CliSubscriber` becomes `CliPresenter` and writes directly to the terminal
-  (through the existing mux/progress handling), not through `log`.
+- `CliSubscriber` writes directly to the terminal (through the existing
+  mux/progress handling), not through `log`.
 - Commands (`cache`, `init`, `project`, `env`, `generator`) return data; the
   command layer renders it on stdout.
 - Notices print as
@@ -487,7 +493,7 @@ Each surface has one presenter that owns all user-visible text.
 
 #### MCP
 
-- `McpSubscriber` becomes `McpPresenter`, with `wants_notices() == true`. It
+- `McpSubscriber` returns `true` from `wants_notices()`. It
   processes each notice in a fixed order: **redact, then deny, then allow,
   then deduplicate, then bound**. Redaction (RFC 0022) comes first, so two
   same-code messages that differ only in a secret deduplicate into one entry
@@ -570,7 +576,8 @@ detail. It is never the way a user is told something.
 - **One API.** omni crates use `tracing::{trace,debug,info,warn,error}!` and
   `#[instrument]`. All `log::*` calls are migrated. A `clippy.toml`
   `disallowed_macros` entry for `log::*` and for `println!`/`eprintln!`
-  outside presenter crates keeps it that way.
+  outside the crates that act as presenters (`omni_cli_core`, `omni_mcp_core`,
+  `omni_term_ui`) keeps it that way.
 - **The `trace` wrapper crate is retired.** It was meant to compile tracing
   out of a build, and it does not do that:
   - `default = ["enabled"]` is on for every crate, nothing sets
