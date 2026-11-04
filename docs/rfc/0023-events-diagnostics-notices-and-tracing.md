@@ -256,6 +256,14 @@ the emitter set cannot be overridden. `CodeInfo.essential` must equal
 `Notice::essential()`; the derive generates both from the same attribute, and
 a registry test fails if they differ.
 
+`Notice` is **sealed**: it cannot be implemented by hand. The derive emits a
+hidden marker impl the trait requires, so every `Notice` is a derived type,
+is registered in `omni_codes`, and has its `code`, `level` and `essential`
+generated from one attribute. A hand-written impl that reports a different
+`code`, `level` or `essential` than the registry is therefore not
+expressible, and the registry test covers every `Notice` type in the
+workspace.
+
 ```rust
 pub struct NoticeEvent {
     level: NoticeLevel,
@@ -482,7 +490,7 @@ Each surface has one presenter that owns all user-visible text.
   allowed non-essential notice is never retained and never counted in
   `dropped`. It collects notices per
   request (non-essential bounded at 50, deduplicated by
-  `(code, message)`, redacted) next to the per-task log capture. `essential`
+  `(code, message, fields)`, redacted) next to the per-task log capture. `essential`
   notices are **exempt from the bound**: they are few (a fixed, small set) and
   deduplicated, so an essential notice arriving after the cap is reached is
   still delivered and never evicted. When the bound is hit, one final
@@ -492,9 +500,11 @@ Each surface has one presenter that owns all user-visible text.
   notices, so the array holds at most 50 non-essential entries plus the
   truncation entry. `notices.truncated` is itself `essential`, so server
   configuration cannot `allow` it away and an agent is never handed a capped
-  array without being told. `dropped` counts unique `(code, message)` notices
-  omitted *after* deduplication, so repeats of an already retained notice
-  collapse first and do not count:
+  array without being told. `dropped` counts unique `(code, message, fields)`
+  notices omitted *after* deduplication, so repeats of an already retained
+  notice collapse first and do not count. The key uses the canonical
+  (key-sorted) redacted form of `fields`, so two notices with the same
+  message but different field values both reach the agent:
 
   ```json
   { "level": "info", "code": "notices.truncated",
@@ -534,7 +544,11 @@ Each surface has one presenter that owns all user-visible text.
 - Events stay internal to MCP and are summarized into results
   (`TaskExecutionSummary`, `GeneratorRunResult`). Streaming notices or events
   as MCP notifications is a later, additive change.
-- MCP never receives tracing output.
+- MCP never receives tracing output. Because stdout carries JSON-RPC, `omni
+  mcp` **rejects at startup** a `--trace-file` that resolves to stdout
+  (`/dev/stdout`, `/dev/fd/1`, `/proc/self/fd/1`, or the inherited stdout
+  device) with an error, and its stdout trace layer stays off. The CLI keeps
+  `/dev/stdout` as the user's explicit choice (4.6); MCP does not.
 
 ### 4.6 Tracing
 
@@ -605,7 +619,8 @@ detail. It is never the way a user is told something.
   - stderr: off by default; `--trace <filter>` (env `OMNI_TRACE`) enables it
     with `EnvFilter` directives (`--trace omni_cache=debug`).
   - file: unchanged in behavior, renamed `--trace-file` /
-    `--trace-file-level`; shared MCP mode keeps its current rules.
+    `--trace-file-level`; shared MCP mode keeps its current rules, plus the
+    stdout-path rejection in 4.5.
   - custom outputs: unchanged.
 - **`LogFilter` and `--*-show-traces` are removed.**
 - **Redaction**: values governed by RFC 0022 must not go into tracing fields.
@@ -682,10 +697,13 @@ decision. Expected buckets:
   failure envelope and is listed unless a matching `allow` hides it (the status
   is kept either way), `deny` wins over `allow` for the
   same code, and a fatal diagnostic stays the failure; two same-code notices differing only in a declared
-  secret deduplicate into one entry and one slot; a server-allowed non-essential notice that would
+  secret deduplicate into one entry and one slot; two same-code, same-message
+  notices with different `fields` stay separate; a server-allowed non-essential notice that would
   have exceeded the bound is neither in `notices` nor counted in `dropped`;
   tool parameters cannot allow or deny; `command`
   returned in dry runs.
+- MCP with `--trace-file /dev/stdout` (and `/dev/fd/1`) fails at startup and never writes trace lines into the JSON-RPC stream; a regular file path still works.
+- Sealing: a hand-written `impl Notice` does not compile (compile-fail test).
 - Quiet mode: with `-q`, notices are not printed but `--deny <code>` still
   fails the run and the trace mirror still records them.
 - Lint: CI fails on `log::*` or `println!` in non-presenter omni crates, and on any use of the removed `trace` crate.
