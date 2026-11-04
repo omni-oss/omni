@@ -1,16 +1,16 @@
 /**
  * Generates `content/docs/references/codes.mdx` from the code registry
- * (`omni diagnostics list --format md`). Run with `bun run gen:codes`.
+ * (`omni explain list --format md`). Run with `bun run gen:codes`.
  */
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-const table = Bun.spawnSync(["omni", "diagnostics", "list", "--format", "md"], {
+const table = Bun.spawnSync(["omni", "explain", "list", "--format", "md"], {
     stdout: "pipe",
     stderr: "inherit",
 });
 if (table.exitCode !== 0) {
-    throw new Error("`omni diagnostics list` failed");
+    throw new Error("`omni explain list` failed");
 }
 
 const page = `---

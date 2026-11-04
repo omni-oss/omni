@@ -1,4 +1,4 @@
-use omni_codes::catalog::{self, Format};
+use omni_diagnostic::catalog::{self, Format};
 
 #[derive(clap::Args)]
 pub struct DiagnosticsCommand {
@@ -8,7 +8,7 @@ pub struct DiagnosticsCommand {
 
 #[derive(clap::Subcommand)]
 enum DiagnosticsSubcommand {
-    #[command(about = "List every error and notice code")]
+    #[command(about = "List every diagnostic code")]
     List(ListArgs),
 }
 

@@ -42,7 +42,8 @@ omni explain --format json sandbox.os_disabled
 ```
 
 Both error and notice codes work. A code that does not exist lists close
-matches. The same information is available to agents through the `explain` MCP
+matches. `omni explain list` prints every code (`--format text|json|md`, and
+`--kind error|notice` to narrow it). The same information is available to agents through the `explain` MCP
 tool and the `omni://codes/<code>` resource. Every code is listed on the
 [codes reference](/docs/references/codes).
 

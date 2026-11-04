@@ -250,8 +250,75 @@ describe("+explain @cli", () => {
     });
 });
 
-describe("+notices @cli (code registry)", () => {
-    it("every code in the built binary is valid and `omni diagnostics list` still works", async () => {
+describe("+explain @cli (list)", () => {
+    it("`explain list --format json` lists error and notice codes, valid and unique", async () => {
+        const result = await runOmni(["explain", "list", "--format", "json"]);
+
+        expect(result).toHaveSucceeded();
+        const entries = JSON.parse(result.stdout) as Array<{
+            code: string;
+            kind: string;
+        }>;
+        const codes = entries.map((e) => e.code);
+        expect(new Set(codes).size).toBe(codes.length);
+        expect(codes).toContain("meta.filter_failed");
+        expect(codes).toContain("sandbox.os_disabled");
+        expect(new Set(entries.map((e) => e.kind))).toEqual(
+            new Set(["error", "notice"]),
+        );
+        for (const code of codes) {
+            expect(code).toMatch(/^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$/);
+        }
+    });
+
+    it("`explain list --format md` is a table with one row per code", async () => {
+        const json = JSON.parse(
+            (await runOmni(["explain", "list", "--format", "json"])).stdout,
+        ) as unknown[];
+        const md = await runOmni(["explain", "list", "--format", "md"]);
+
+        expect(md).toHaveSucceeded();
+        expect(md.stdout.trim().split("\n")).toHaveLength(json.length + 2);
+    });
+
+    it("`explain list --kind` filters by error or notice", async () => {
+        const kinds = async (kind: string) =>
+            new Set(
+                (
+                    JSON.parse(
+                        (
+                            await runOmni([
+                                "explain",
+                                "list",
+                                "--kind",
+                                kind,
+                                "--format",
+                                "json",
+                            ])
+                        ).stdout,
+                    ) as Array<{ kind: string }>
+                ).map((e) => e.kind),
+            );
+
+        expect(await kinds("error")).toEqual(new Set(["error"]));
+        expect(await kinds("notice")).toEqual(new Set(["notice"]));
+    });
+
+    it("`explain list --kind` rejects an unknown kind", async () => {
+        const result = await runOmni(["explain", "list", "--kind", "warning"]);
+
+        expect(result).toHaveFailed();
+        expect(result).toHaveStderrContaining("possible values");
+    });
+
+    it("`explain` with no code points at `explain list`", async () => {
+        const result = await runOmni(["explain"]);
+
+        expect(result).toHaveFailed();
+        expect(result).toHaveStderrContaining("explain list");
+    });
+
+    it("`diagnostics list` still lists only error codes", async () => {
         const result = await runOmni([
             "diagnostics",
             "list",
@@ -264,6 +331,7 @@ describe("+notices @cli (code registry)", () => {
             JSON.parse(result.stdout) as Array<{ code: string }>
         ).map((e) => e.code);
         expect(codes).toContain("meta.filter_failed");
+        expect(codes).not.toContain("sandbox.os_disabled");
     });
 });
 
