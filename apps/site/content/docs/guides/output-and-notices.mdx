@@ -22,7 +22,7 @@ the operation completed. It never changes the exit status.
 
 ```text
 warning[sandbox.os_disabled]: OS-level sandbox is DISABLED for this run
-  = run `omni explain sandbox.os_disabled` for details
+  = run `omni code explain sandbox.os_disabled` for details
 error[meta.filter_excluded]: meta filter `kind == "e2e"` failed for 1 task(s); they were excluded (see --meta-on-error)
 note[notices.truncated]: 12 further notices were omitted
 ```
@@ -34,18 +34,19 @@ note[notices.truncated]: 12 further notices were omitted
 A returned **error** is different: it stops the operation, and its code names
 the failure the same way.
 
-### `omni explain`
+### `omni code`
 
 ```bash
-omni explain meta.filter_failed
-omni explain --format json sandbox.os_disabled
+omni code explain meta.filter_failed
+omni code explain --format json sandbox.os_disabled
+omni code list --kind notice
 ```
 
-Both error and notice codes work. A code that does not exist lists close
-matches. `omni explain list` prints every code (`--format text|json|md`, and
-`--kind error|notice` to narrow it). The same information is available to agents through the `explain` MCP
-tool and the `omni://codes/<code>` resource. Every code is listed on the
-[codes reference](/docs/references/codes).
+`omni code explain` works for error and notice codes. A code that does not exist
+lists close matches. `omni code list` prints every code (`--format text|json|md`,
+and `--kind error|notice` to narrow it). The same information is available to
+agents through the `code_explain` MCP tool and the `omni://codes/<code>`
+resource. Every code is listed on the [codes reference](/docs/references/codes).
 
 ## `-q`, `--quiet`
 

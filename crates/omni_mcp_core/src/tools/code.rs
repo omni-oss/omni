@@ -3,7 +3,9 @@ use omni_generator::GeneratorSys;
 use omni_task_executor::TaskExecutorSys;
 use serde_json::Value;
 
-use crate::{codes::unknown_code, model::ExplainParams, server::OmniMcpServer};
+use crate::{
+    codes::unknown_code, model::CodeExplainParams, server::OmniMcpServer,
+};
 
 impl<TSys> OmniMcpServer<TSys>
 where
@@ -16,19 +18,19 @@ where
         + 'static,
 {
     /// Returns the registry entry for a code: the same fields as
-    /// `omni explain --format json`.
-    pub(crate) async fn tool_explain(
+    /// `omni code explain --format json`.
+    pub(crate) async fn tool_code_explain(
         &self,
-        params: ExplainParams,
+        params: CodeExplainParams,
     ) -> eyre::Result<Value> {
-        Ok(explain_json(&params.code)?)
+        Ok(code_json(&params.code)?)
     }
 }
 
-pub(crate) fn explain_json(
+pub(crate) fn code_json(
     code: &str,
 ) -> Result<Value, crate::codes::UnknownCode> {
-    omni_codes::explain(code)
+    omni_codes::lookup(code)
         .map(|c| c.to_json())
         .map_err(unknown_code)
 }

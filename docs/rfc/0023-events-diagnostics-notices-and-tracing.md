@@ -4,7 +4,7 @@
 - **Owner:** TBD
 - **Date:** 2026-11-03
 - **Base branch:** `main`
-- **Affected crates/files:** `omni_messages` (`notice.rs`, `publish.rs`: `NoticeEvent` built from a `Notice`, `notice!` and `diagnostic_notice!`; `channel.rs`, `tracing_impl.rs`; events extended); new `omni_codes` (canonical code registry, `explain`), `omni_notice` and `omni_notice_derive` (`Notice` trait and derive), `omni_derive_support` (shared derive logic); `omni_diagnostic` and `omni_diagnostic_derive` (register into `omni_codes`; the `Diagnostic` trait itself is unchanged); `omni_tracing_subscriber` (`LogFilter` and stdout layer removed); `crates/trace` removed and its ~177 call sites and ~40 `enable-tracing` features migrated to `tracing`; `omni_cli_core` (`subscriber.rs` (`CliSubscriber`) acts as the CLI presenter, `commands/*`, global flags); `cli/omni` (`lib.rs` tracing setup); `omni_mcp_core` (`subscriber.rs`, `model/*`, `tools/*`, `server.rs`); notice call sites in `omni_task_executor`, `omni_generator`, `bridge_rpc_runner`, `omni_execution_plan`; every crate that calls `log::*`; `clippy.toml`; `generators/crate` (`generator.omni.yaml`, `templates/Cargo.toml.tpl`, `templates/project.omni.yaml.tpl`, `templates/src/main.rs.tpl`); `services/omni_bridge_test_service`; `tests/omni-tests`
+- **Affected crates/files:** `omni_messages` (`notice.rs`, `publish.rs`: `NoticeEvent` built from a `Notice`, `notice!` and `diagnostic_notice!`; `channel.rs`, `tracing_impl.rs`; events extended); new `omni_codes` (canonical code registry, `lookup`), `omni_notice` and `omni_notice_derive` (`Notice` trait and derive), `omni_derive_support` (shared derive logic); `omni_diagnostic` and `omni_diagnostic_derive` (register into `omni_codes`; the `Diagnostic` trait itself is unchanged); `omni_tracing_subscriber` (`LogFilter` and stdout layer removed); `crates/trace` removed and its ~177 call sites and ~40 `enable-tracing` features migrated to `tracing`; `omni_cli_core` (`subscriber.rs` (`CliSubscriber`) acts as the CLI presenter, `commands/*`, global flags); `cli/omni` (`lib.rs` tracing setup); `omni_mcp_core` (`subscriber.rs`, `model/*`, `tools/*`, `server.rs`); notice call sites in `omni_task_executor`, `omni_generator`, `bridge_rpc_runner`, `omni_execution_plan`; every crate that calls `log::*`; `clippy.toml`; `generators/crate` (`generator.omni.yaml`, `templates/Cargo.toml.tpl`, `templates/project.omni.yaml.tpl`, `templates/src/main.rs.tpl`); `services/omni_bridge_test_service`; `tests/omni-tests`
 - **Follows:** RFC 0021 (structured diagnostics), whose 4.5 it resolves without changing it; RFC 0022 (redaction); PR #45 (notices); issue omni-oss/omni#47
 
 ## 1. Summary
@@ -36,7 +36,7 @@ This RFC gives each concern one owner and keeps them separate:
   described twice (4.3).
 - **One canonical code list.** Diagnostics and notices register into a common
   `omni_codes` registry. Codes are unique across the whole application, and
-  `omni explain` (CLI and MCP) and agent matching all use it (4.3).
+  `omni code explain` (CLI and MCP) and agent matching all use it (4.3).
 - **`log` is retired as an API.** omni code uses `tracing` only, for developer
   output. Tracing is never user output.
 
@@ -358,7 +358,7 @@ built.
 **`Code`, not a per-kind lookup.** `Code` is the one trait both derives
 implement, so generic code works on either kind: a shared renderer taking
 `&CodeInfo` (from `value.info()`; `Code` has an associated const, so it is not
-object-safe and is never used as `dyn Code`) for the code, summary and `related` pointer, `explain` resolving
+object-safe and is never used as `dyn Code`) for the code, summary and `related` pointer, `code explain` resolving
 a value to its entry, and one registry test for all kinds. It is standalone
 in `omni_codes`. `Notice` has it as a supertrait because `Notice` is new.
 `Diagnostic` does **not** gain a supertrait: its derive emits `impl Code`
@@ -377,8 +377,8 @@ flowchart TD
     diag["omni_diagnostic<br/>Diagnostic trait, find_in_error"]
     notice["omni_notice<br/>Notice trait"]
     msgs["omni_messages<br/>NoticeEvent, notice!, diagnostic_notice!"]
-    cli["omni_cli_core<br/>omni explain"]
-    mcp["omni_mcp_core<br/>explain tool, omni://codes/*"]
+    cli["omni_cli_core<br/>omni code"]
+    mcp["omni_mcp_core<br/>code_explain tool, omni://codes/*"]
     users["omni_cache, omni_generator, ...<br/>(#[derive(Notice)], #[derive(Diagnostic)])"]
 
     support --> dderive
@@ -408,7 +408,7 @@ pub struct CodeRegistration {
 
 pub fn all() -> impl Iterator<Item = &'static CodeInfo>;
 pub fn get(code: &str) -> Option<&'static CodeInfo>;
-pub fn close_matches(code: &str) -> Vec<&'static CodeInfo>;   // omni explain
+pub fn close_matches(code: &str) -> Vec<&'static CodeInfo>;   // omni code explain
 pub fn validate() -> Result<(), Vec<RegistryError>>;          // CI and debug startup
 
 /// Declares the prefixes the calling crate owns.
@@ -453,7 +453,7 @@ a test removes an unstable code and checks that re-registering its name
 fails. A `deprecated` code must also be
 `stable`. The same function backs the registry
 unit test, the debug-build startup check, and the generated docs page.
-`omni explain` and the MCP `explain` tool only call `get` and
+`omni code explain` and the MCP `code_explain` tool only call `get` and
 `close_matches`.
 
 - `omni_diagnostic` keeps its registry API, `Diagnostic` trait and
@@ -480,14 +480,14 @@ unit test, the debug-build startup check, and the generated docs page.
   are thin wrappers.
 
 **Codes are unique across the whole application, regardless of subsystem.**
-`omni explain`, docs and agent matching take a bare code with no subsystem
+`omni code`, docs and agent matching take a bare code with no subsystem
 context, and a code is a public contract.
 
 - The first dotted segment names the owning subsystem (`cache.*`, `sandbox.*`,
   `meta.*`, `capabilities.*`). A crate declares the prefixes it owns, and the
   registry test fails if a code uses a prefix its crate does not own.
 - A code appears once, as `Error` or `Notice`. A duplicate fails the registry
-  test in CI and panics at startup in debug builds. `omni explain` therefore
+  test in CI and panics at startup in debug builds. `omni code explain` therefore
   never has to choose between two entries.
 - A condition that exists as both an error and a notice gets two codes with
   `related` links (`meta.filter_failed` and `meta.filter_excluded`). The test
@@ -501,17 +501,21 @@ context, and a code is a public contract.
 **Documentation lives in the registry entry, not on the traits.** The derives
 read the `///` doc comments on the type: the first line is `summary`, the rest
 is `explanation`. A long explanation can use
-`#[notice(explain = include_str!(..))]` (or the diagnostic equivalent), which
-takes precedence. A missing summary is a compile error. `omni explain <code>`
+`#[notice(docs = include_str!(..))]` (or the diagnostic equivalent), which
+takes precedence. A missing summary is a compile error. `omni code explain <code>`
 and the generated docs page read the registry, and the same text appears in
 rustdoc.
 
-`omni explain <code>` prints kind, summary, explanation, level or audience,
-`essential`, `stable`, and `related` codes (for example `omni explain
+`omni code explain <code>` prints kind, summary, explanation, level or audience,
+`essential`, `stable`, and `related` codes (for example `omni code explain
 meta.filter_failed` points to `meta.filter_excluded`). `--format json` prints
 the same fields. An unknown code is an error that lists close matches. It is
-also available to agents over MCP (4.5). `omni explain` works for error codes
+also available to agents over MCP (4.5). `omni code explain` works for error codes
 and notice codes alike.
+
+`omni code list` prints every registered code, with `--format text|json|md` and
+`--kind error|notice`. The generated docs page is its `md` output. `omni code`
+is the one command group for the registry; there is no top-level `omni explain`.
 
 #### Essential notices
 
@@ -606,7 +610,7 @@ routes both the same way.
 
   ```text
   warning[sandbox.os_disabled]: OS-level sandbox is DISABLED for this run
-    = run `omni explain sandbox.os_disabled` for details
+    = run `omni code explain sandbox.os_disabled` for details
   error[cache.write_skipped]: could not write cache entry for 'app#build'
   note[source.fallback]: resolved 'templates' from the fallback source
   ```
@@ -731,8 +735,8 @@ further notices were omitted" when not. Tests cover both forms. The key uses the
 - The notice payload and its codes are a documented, versioned part of the
   MCP interface. Adding fields is non-breaking; renaming a code or removing a
   field is breaking.
-- **Explanation on demand.** An `explain` MCP tool takes a code and returns
-  the same fields as `omni explain --format json`, for error and notice codes
+- **Explanation on demand.** A `code_explain` MCP tool takes a code and returns
+  the same fields as `omni code explain --format json`, for error and notice codes
   alike, and the catalog is also exposed as the resource
   `omni://codes/<code>`. An agent reads an explanation when it needs one
   instead of receiving it in every response.
@@ -862,9 +866,9 @@ decision. Expected buckets:
   adds the diagnostic's details and hints.
 - `omni_codes`: error and notice codes share one namespace with no
   duplicates; prefix ownership is enforced; every `related` target exists; a
-  retired code is never reused; a `deprecated` code is `stable`; for every `Diagnostic`, `Diagnostic::code()` equals `Code::info().code`; `stable` is shown by `explain`; every `essential` code is listed; `omni
-  explain` works for both kinds, shows `related`, lists close matches for an
-  unknown code, and its JSON output matches the MCP `explain` tool.
+  retired code is never reused; a `deprecated` code is `stable`; for every `Diagnostic`, `Diagnostic::code()` equals `Code::info().code`; `stable` is shown by `code explain`; every `essential` code is listed; `omni
+  code explain` works for both kinds, shows `related`, lists close matches for an
+  unknown code, and its JSON output matches the MCP `code_explain` tool.
 - Presenter unit tests: `error`/`warning`/`note` prefixes with codes,
   collapsing of repeats (first-occurrence order, ` (xN)` suffix, grouping on
   the redacted message), redaction, `-q` hides `warn` and `info` notices but
@@ -875,7 +879,7 @@ decision. Expected buckets:
     results, with and without `--trace debug`.
   - A warning appears on stderr by default, does not change the exit status,
     and `-q` hides a `warn` notice unless it is essential.
-  - `omni explain <code>` prints the entry for an error code and a notice
+  - `omni code explain <code>` prints the entry for an error code and a notice
     code.
   - `--meta-on-error fail` returns the fatal diagnostic and
     `--meta-on-error exclude` reports the notice, with different codes.
@@ -895,7 +899,7 @@ decision. Expected buckets:
   entry and one slot; two same-code, same-message notices with different
   `fields` stay separate, and notices whose `fields` differ only in nested
   object key order deduplicate into one entry (arrays in a different order
-  stay separate); `command` returned in dry runs; the `explain` tool and
+  stay separate); `command` returned in dry runs; the `code_explain` tool and
   `omni://codes/<code>` return the registry entry.
 - MCP with `--trace-file /dev/stdout` (and `/dev/fd/1`) fails at startup and never writes trace lines into the JSON-RPC stream; a regular file path still works.
 - Derive: `essential` on a type with fields or a templated message fails to compile.
@@ -956,8 +960,8 @@ Each step leaves the tree working.
 4. **MCP presenter.** Collect and return `notices`; add `command`; attach
    notices to error payloads.
 5. **CLI presenter.** Move `omni_cli_core` output off `log`; print notices on
-   stderr; add `-q`, and `omni explain` backed by `omni_codes`.
-   Add the MCP `explain` tool and `omni://codes/<code>` resource.
+   stderr; add `-q`, and `omni code` (`list` and `explain`) backed by `omni_codes`.
+   Add the MCP `code_explain` tool and `omni://codes/<code>` resource.
 6. **Tracing.** Remove `crates/trace` and the `enable-tracing` features (migrate to `tracing::*`, rewrite the four `if_enabled!` sites, update the crate generator). Migrate `log::*` to `tracing::*` with the triage, drop the
    stdout layer and `LogFilter`, add `--trace` and `--trace-file*`, remove the old flags
    and env vars, add the lint.
@@ -990,7 +994,7 @@ Each step leaves the tree working.
     (4.3).
   - A stable code is changed only as a breaking change. It is retired by
     marking it `deprecated`, not by deleting it.
-  - `omni explain`, the MCP `explain` tool and the docs page show the flag,
+  - `omni code explain`, the MCP `code_explain` tool and the docs page show the flag,
     so an agent or script knows which codes it may match on.
   - Existing RFC 0021 diagnostic codes are marked `stable` when they ship
     with that RFC. Before the first release anything may change.
@@ -1045,7 +1049,11 @@ match it:
   use a `CliSubscriber` that prints each notice as it arrives.
 - **Dry-run command lines** (`Executing task '<id>': <command>`) are a result:
   they go to stdout and `-q` keeps them.
-- **`explain` in shared MCP mode** takes `working_dir` like every other tool,
+- **Naming.** The CLI group is `omni code` (`list`, `explain`), and the MCP
+  tool is `code_explain`, matching the `noun_verb` tool names. The explanation
+  attribute is `#[notice(docs = ..)]`, the registry lookup is
+  `omni_codes::lookup`, and the unknown-code diagnostic is `code.unknown`.
+- **`code_explain` in shared MCP mode** takes `working_dir` like every other tool,
   so the shared-schema invariant (every tool requires one directory) holds.
 - **Redaction wiring.** `NoticeSubscriber::redactor` returns the run's secrets
   and `extend_redactor` grows them. The executor calls it with each task's

@@ -333,7 +333,7 @@ fn write_stdout(bytes: &[u8]) {
 }
 
 /// Renders a notice as `warning[code]: message`, followed by a pointer to
-/// `omni explain`. Level names follow rustc: `error`, `warning`, `note`.
+/// `omni code explain`. Level names follow rustc: `error`, `warning`, `note`.
 fn render_notice(e: &NoticeEvent, count: usize) -> String {
     let (label, color): (&str, fn(&str) -> String) = match e.level() {
         NoticeLevel::Error => ("error", |s| s.red().bold().to_string()),
@@ -358,7 +358,7 @@ fn render_notice(e: &NoticeEvent, count: usize) -> String {
         }
     }
     out.push_str(&format!(
-        "\n  = run `omni explain {}` for details",
+        "\n  = run `omni code explain {}` for details",
         e.code()
     ));
     out
@@ -1337,14 +1337,16 @@ mod notice_render_tests {
     }
 
     #[test]
-    fn renders_level_code_message_and_explain_pointer() {
+    fn renders_level_code_message_and_code_explain_pointer() {
         let e = NoticeEvent::from_notice(&Sample { x: "v".into() }, "t");
         let text = plain(&render_notice(&e, 1));
         assert!(text.starts_with("warning[clitest.sample]: "));
         // Control characters in the message cannot forge extra lines.
         assert!(text.contains("line\\nbreak v"));
         assert!(
-            text.ends_with("= run `omni explain clitest.sample` for details")
+            text.ends_with(
+                "= run `omni code explain clitest.sample` for details"
+            )
         );
     }
 }

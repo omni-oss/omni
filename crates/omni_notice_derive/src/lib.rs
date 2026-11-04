@@ -38,7 +38,7 @@ struct Attrs {
     stable: bool,
     deprecated: bool,
     related: Vec<LitStr>,
-    explain: Option<Expr>,
+    docs: Option<Expr>,
 }
 
 fn parse_attrs(input: &DeriveInput) -> syn::Result<Attrs> {
@@ -54,7 +54,7 @@ fn parse_attrs(input: &DeriveInput) -> syn::Result<Attrs> {
                 Some("stable") => a.stable = true,
                 Some("deprecated") => a.deprecated = true,
                 Some("related") => a.related.push(m.value()?.parse()?),
-                Some("explain") => a.explain = Some(m.value()?.parse()?),
+                Some("docs") => a.docs = Some(m.value()?.parse()?),
                 _ => return Err(m.error("unknown `notice` attribute")),
             }
             Ok(())
@@ -111,7 +111,7 @@ fn expand(input: DeriveInput) -> syn::Result<TokenStream2> {
     if summary.is_empty() {
         return Err(syn::Error::new(
             name.span(),
-            "a notice needs a doc comment: its first line is the summary shown by `omni explain`",
+            "a notice needs a doc comment: its first line is the summary shown by `omni code explain`",
         ));
     }
 
@@ -177,7 +177,7 @@ fn expand(input: DeriveInput) -> syn::Result<TokenStream2> {
         format_ident!("__{}_CODE_INFO", name.to_string().to_uppercase());
     let codes = quote!(::omni_notice::__private::omni_codes);
     let essential = a.essential;
-    let explanation_tokens = match &a.explain {
+    let explanation_tokens = match &a.docs {
         Some(e) => quote!(#e),
         None => {
             let e = explanation.as_str();

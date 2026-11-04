@@ -24,7 +24,7 @@ pub fn templates() -> Vec<ResourceTemplate> {
     vec![
         ResourceTemplate::new(format!("{PREFIX}{{code}}"), "code")
             .with_description(
-                "Registry entry for an error or notice code, as returned by the `explain` tool",
+                "Registry entry for an error or notice code, as returned by the `code_explain` tool",
             )
             .with_mime_type(MIME),
     ]
@@ -37,7 +37,7 @@ pub fn read(uri: &str) -> Result<ReadResourceResult, ErrorData> {
             None,
         ));
     };
-    let json = crate::tools::explain::explain_json(code)
+    let json = crate::tools::code::code_json(code)
         .map_err(|e| crate::error::report_to_mcp_error(eyre::Report::new(e)))?;
     Ok(ReadResourceResult::new(vec![
         ResourceContents::TextResourceContents {
@@ -74,9 +74,8 @@ mod tests {
     }
 
     #[test]
-    fn resource_json_matches_the_explain_tool() {
-        let a =
-            crate::tools::explain::explain_json("notices.truncated").unwrap();
+    fn resource_json_matches_the_code_explain_tool() {
+        let a = crate::tools::code::code_json("notices.truncated").unwrap();
         let r = read("omni://codes/notices.truncated").unwrap();
         let ResourceContents::TextResourceContents { text, .. } =
             &r.contents[0]

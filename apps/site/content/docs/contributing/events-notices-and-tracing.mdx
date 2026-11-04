@@ -70,7 +70,7 @@ struct CacheWriteSkipped { entry: String }
 omni_messages::notice!(subscriber, CacheWriteSkipped { entry: id.clone() });
 ```
 
-- The first doc line is the summary shown by `omni explain`; the rest is the
+- The first doc line is the summary shown by `omni code explain`; the rest is the
   explanation. A missing summary is a compile error.
 - The level is fixed by the type. `essential` notices (never hidden by `-q`,
   always sent over MCP) must be static: no fields, no placeholders.

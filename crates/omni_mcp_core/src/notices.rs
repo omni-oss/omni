@@ -43,7 +43,7 @@ pub struct NoticesTruncated {
 pub struct NoticePayload {
     /// `info`, `warn` or `error`.
     pub level: String,
-    /// Stable code; agents match on this. See the `explain` tool.
+    /// Stable code; agents match on this. See the `code_explain` tool.
     pub code: String,
     pub message: String,
     #[serde(default)]

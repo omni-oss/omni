@@ -1,16 +1,16 @@
 /**
  * Generates `content/docs/references/codes.mdx` from the code registry
- * (`omni explain list --format md`). Run with `bun run gen:codes`.
+ * (`omni code list --format md`). Run with `bun run gen:codes`.
  */
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-const table = Bun.spawnSync(["omni", "explain", "list", "--format", "md"], {
+const table = Bun.spawnSync(["omni", "code", "list", "--format", "md"], {
     stdout: "pipe",
     stderr: "inherit",
 });
 if (table.exitCode !== 0) {
-    throw new Error("`omni explain list` failed");
+    throw new Error("`omni code list` failed");
 }
 
 const page = `---
@@ -19,7 +19,7 @@ description: "Every error and notice code omni can report"
 ---
 
 Every message omni reports about a run or a failure has a code. Look one up with
-\`omni explain <code>\` (or the \`explain\` MCP tool, or the
+\`omni code explain <code>\` (or the \`code_explain\` MCP tool, or the
 \`omni://codes/<code>\` resource).
 
 - **error** codes belong to a returned failure: the operation stopped.

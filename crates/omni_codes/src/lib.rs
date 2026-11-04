@@ -2,7 +2,7 @@
 //!
 //! Diagnostics (fatal errors) and notices (non-fatal messages) both register
 //! here through their derives. Codes are unique across the whole application.
-//! `omni explain`, the MCP `explain` tool and the docs page read this registry.
+//! `omni code`, the MCP `code_explain` tool and the docs page read this registry.
 
 extern crate self as omni_codes;
 
@@ -160,8 +160,8 @@ impl CodeInfo {
         }
     }
 
-    /// The JSON form shared by `omni explain --format json` and the MCP
-    /// `explain` tool.
+    /// The JSON form shared by `omni code explain --format json` and the MCP
+    /// `code_explain` tool.
     pub fn to_json(&self) -> Value {
         let mut v = json!({
             "code": self.code,
@@ -182,7 +182,7 @@ impl CodeInfo {
         v
     }
 
-    /// Plain-text form used by `omni explain`.
+    /// Plain-text form used by `omni code explain`.
     pub fn render_text(&self) -> String {
         use fmt::Write as _;
         let mut out = String::new();
@@ -229,8 +229,8 @@ pub struct UnknownCode {
     pub close_matches: Vec<&'static CodeInfo>,
 }
 
-/// Resolves a code for `omni explain` and the MCP `explain` tool.
-pub fn explain(code: &str) -> Result<&'static CodeInfo, UnknownCode> {
+/// Resolves a code for `omni code explain` and the MCP `code_explain` tool.
+pub fn lookup(code: &str) -> Result<&'static CodeInfo, UnknownCode> {
     get(code).ok_or_else(|| UnknownCode {
         code: code.to_string(),
         close_matches: close_matches(code),
@@ -366,8 +366,8 @@ mod tests {
     }
 
     #[test]
-    fn explain_unknown_code_lists_matches_or_nothing() {
-        let e = explain("no.such_code").unwrap_err();
+    fn lookup_unknown_code_lists_matches_or_nothing() {
+        let e = lookup("no.such_code").unwrap_err();
         assert_eq!(e.code, "no.such_code");
         // The unit-test binary registers nothing, so there is nothing close.
         assert!(e.close_matches.is_empty());

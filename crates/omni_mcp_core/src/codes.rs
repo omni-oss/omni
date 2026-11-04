@@ -1,18 +1,17 @@
-//! The error raised when `explain` is given a code that does not exist.
+//! The error raised when `code_explain` is given a code that does not exist.
 
 use omni_diagnostic::Diagnostic;
 
-omni_codes::prefixes!("explain");
+omni_codes::prefixes!("code");
 
 /// The code is not in the registry.
 ///
-/// Codes are listed by `omni explain --list`-style tooling and appear in
-/// notices and diagnostics. Check the spelling, or pick one of the close
-/// matches.
+/// Codes appear in notices and diagnostics; `omni code list` prints them all.
+/// Check the spelling, or pick one of the close matches.
 #[derive(Debug, thiserror::Error, Diagnostic)]
 #[error("unknown code `{code}`")]
 #[diagnostic(
-    code = "explain.unknown_code",
+    code = "code.unknown",
     audience = user,
     details = unknown_code_details,
     hints = unknown_code_hints,
@@ -51,5 +50,3 @@ impl UnknownCode {
 pub(crate) fn unknown_code(e: omni_codes::UnknownCode) -> UnknownCode {
     UnknownCode::from_registry(e)
 }
-
-pub use UnknownCode as ExplainUnknownCode;

@@ -97,7 +97,9 @@ describe("+global @cli (notices and -q)", () => {
         expect(result).toHaveSucceeded();
         expect(result).toHaveStderrContaining("warning[env.var_missing]");
         expect(result).toHaveStderrContaining(MISSING_WARN);
-        expect(result).toHaveStderrContaining("omni explain env.var_missing");
+        expect(result).toHaveStderrContaining(
+            "omni code explain env.var_missing",
+        );
         // stdout carries results only.
         expect(result.stdout).toBe("");
     });

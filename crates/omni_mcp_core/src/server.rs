@@ -344,7 +344,7 @@ where
             }
             "ignore_sync" => call1(args, |p| self.tool_ignore_sync(p)).await,
             "ignore_clean" => call1(args, |p| self.tool_ignore_clean(p)).await,
-            "explain" => call1(args, |p| self.tool_explain(p)).await,
+            "code_explain" => call1(args, |p| self.tool_code_explain(p)).await,
             unknown => Err(rmcp::model::ErrorData::new(
                 rmcp::model::ErrorCode::METHOD_NOT_FOUND,
                 format!("unknown tool: {unknown}"),
@@ -389,7 +389,7 @@ fn shared_working_dir(
         "projection_prune" => parse::<ProjectionPruneParams>(args),
         "ignore_sync" => parse::<IgnoreSyncParams>(args),
         "ignore_clean" => parse::<IgnoreCleanParams>(args),
-        "explain" => parse::<ExplainParams>(args),
+        "code_explain" => parse::<CodeExplainParams>(args),
         unknown => Err(rmcp::model::ErrorData::new(
             rmcp::model::ErrorCode::METHOD_NOT_FOUND,
             format!("unknown tool: {unknown}"),

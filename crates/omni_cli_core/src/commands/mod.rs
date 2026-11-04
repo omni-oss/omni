@@ -19,23 +19,23 @@ mod utils;
 use crate::{
     build,
     commands::{
-        cache::CacheCommand, declspec::DeclspecCommand,
-        diagnostics::DiagnosticsCommand, explain::ExplainCommand,
-        generator::GeneratorCommand, hash::HashCommand, ignore::IgnoreCommand,
-        init::InitCommand, project::ProjectCommand,
-        projection::ProjectionCommand, remote_source::RemoteSourcesCommand,
-        tool::ToolCommand,
+        cache::CacheCommand, code::CodeCommand, declspec::DeclspecCommand,
+        diagnostics::DiagnosticsCommand, generator::GeneratorCommand,
+        hash::HashCommand, ignore::IgnoreCommand, init::InitCommand,
+        project::ProjectCommand, projection::ProjectionCommand,
+        remote_source::RemoteSourcesCommand, tool::ToolCommand,
     },
 };
 
 pub mod cache;
+pub mod code;
 pub mod completion;
 pub mod config;
 pub mod declspec;
 pub mod diagnostics;
 pub mod env;
 pub mod exec;
-pub mod explain;
+
 pub mod generator;
 mod generator_utils;
 pub mod hash;
@@ -206,8 +206,8 @@ pub enum CliSubcommands {
     #[command(about = "Inspect diagnostic codes")]
     Diagnostics(DiagnosticsCommand),
 
-    #[command(about = "Explain an error or notice code")]
-    Explain(ExplainCommand),
+    #[command(about = "Look up error and notice codes")]
+    Code(CodeCommand),
 
     #[command(about = "Cache related subcommands")]
     Cache(CacheCommand),

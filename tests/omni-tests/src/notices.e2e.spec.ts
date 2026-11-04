@@ -1,9 +1,9 @@
 /**
  * Events, diagnostics, notices and output (RFC 0023): what the CLI prints,
- * where, and what `-q` and `omni explain` do.
+ * where, and what `-q` and `omni code` do.
  *
  * Pinned to `crates/omni_cli_core/src/subscriber.rs` (the CLI presenter) and
- * `crates/omni_cli_core/src/commands/explain.rs`.
+ * `crates/omni_cli_core/src/commands/code.rs`.
  */
 
 import { describe, expect, it } from "vitest";
@@ -199,30 +199,37 @@ describe("+notices @cli (redaction)", () => {
 
         expect(result).toHaveSucceeded();
         expect(result).toHaveStderrContaining("warning[redact.disabled]");
-        expect(result).toHaveStderrContaining("omni explain redact.disabled");
+        expect(result).toHaveStderrContaining(
+            "omni code explain redact.disabled",
+        );
         const count = (result.err.match(/warning\[redact\.disabled\]/g) ?? [])
             .length;
         expect(count).toBe(1);
     });
 });
 
-describe("+explain @cli", () => {
+describe("+code @cli (explain)", () => {
     it("explains an error code and a notice code", async () => {
-        const error = await runOmni(["explain", "meta.filter_failed"]);
+        const error = await runOmni(["code", "explain", "meta.filter_failed"]);
         expect(error).toHaveSucceeded();
         expect(error).toOutputContaining("meta.filter_failed");
         expect(error).toOutputContaining("error");
         // `related` points at the tolerated form of the same condition.
         expect(error).toOutputContaining("meta.filter_excluded");
 
-        const notice = await runOmni(["explain", "sandbox.os_disabled"]);
+        const notice = await runOmni([
+            "code",
+            "explain",
+            "sandbox.os_disabled",
+        ]);
         expect(notice).toHaveSucceeded();
         expect(notice).toOutputContaining("notice");
         expect(notice).toOutputContaining("essential:  true");
     });
 
-    it("`--format json` matches the MCP `explain` tool", async () => {
+    it("`--format json` matches the MCP `code_explain` tool", async () => {
         const cli = await runOmni([
+            "code",
             "explain",
             "--format",
             "json",
@@ -233,7 +240,7 @@ describe("+explain @cli", () => {
         const ws = makeWorkspace(singleProjectSpec());
         const { client } = await connectMcp({ cwd: ws.cwd });
         const tool = await client.callTool({
-            name: "explain",
+            name: "code_explain",
             arguments: { code: "meta.filter_excluded" },
         });
 
@@ -241,7 +248,7 @@ describe("+explain @cli", () => {
     });
 
     it("an unknown code is a usage error that lists close matches", async () => {
-        const result = await runOmni(["explain", "meta.filter_faild"]);
+        const result = await runOmni(["code", "explain", "meta.filter_faild"]);
 
         expect(result).toHaveFailed();
         expect(result.exitCode).toBe(2);
@@ -250,9 +257,9 @@ describe("+explain @cli", () => {
     });
 });
 
-describe("+explain @cli (list)", () => {
-    it("`explain list --format json` lists error and notice codes, valid and unique", async () => {
-        const result = await runOmni(["explain", "list", "--format", "json"]);
+describe("+code @cli (list)", () => {
+    it("`code list --format json` lists error and notice codes, valid and unique", async () => {
+        const result = await runOmni(["code", "list", "--format", "json"]);
 
         expect(result).toHaveSucceeded();
         const entries = JSON.parse(result.stdout) as Array<{
@@ -271,24 +278,24 @@ describe("+explain @cli (list)", () => {
         }
     });
 
-    it("`explain list --format md` is a table with one row per code", async () => {
+    it("`code list --format md` is a table with one row per code", async () => {
         const json = JSON.parse(
-            (await runOmni(["explain", "list", "--format", "json"])).stdout,
+            (await runOmni(["code", "list", "--format", "json"])).stdout,
         ) as unknown[];
-        const md = await runOmni(["explain", "list", "--format", "md"]);
+        const md = await runOmni(["code", "list", "--format", "md"]);
 
         expect(md).toHaveSucceeded();
         expect(md.stdout.trim().split("\n")).toHaveLength(json.length + 2);
     });
 
-    it("`explain list --kind` filters by error or notice", async () => {
+    it("`code list --kind` filters by error or notice", async () => {
         const kinds = async (kind: string) =>
             new Set(
                 (
                     JSON.parse(
                         (
                             await runOmni([
-                                "explain",
+                                "code",
                                 "list",
                                 "--kind",
                                 kind,
@@ -304,18 +311,19 @@ describe("+explain @cli (list)", () => {
         expect(await kinds("notice")).toEqual(new Set(["notice"]));
     });
 
-    it("`explain list --kind` rejects an unknown kind", async () => {
-        const result = await runOmni(["explain", "list", "--kind", "warning"]);
+    it("`omni code` with no subcommand shows its help", async () => {
+        const result = await runOmni(["code"]);
+
+        expect(result).toHaveFailed();
+        expect(result).toHaveStderrContaining("explain");
+        expect(result).toHaveStderrContaining("list");
+    });
+
+    it("`code list --kind` rejects an unknown kind", async () => {
+        const result = await runOmni(["code", "list", "--kind", "warning"]);
 
         expect(result).toHaveFailed();
         expect(result).toHaveStderrContaining("possible values");
-    });
-
-    it("`explain` with no code points at `explain list`", async () => {
-        const result = await runOmni(["explain"]);
-
-        expect(result).toHaveFailed();
-        expect(result).toHaveStderrContaining("explain list");
     });
 
     it("`diagnostics list` still lists only error codes", async () => {
@@ -371,7 +379,7 @@ describe("+notices @cli (tool runs)", () => {
             "capabilities.ignored",
             "capabilities.not_enforced",
         ]) {
-            const result = await runOmni(["explain", code]);
+            const result = await runOmni(["code", "explain", code]);
             expect(result).toHaveSucceeded();
         }
     });

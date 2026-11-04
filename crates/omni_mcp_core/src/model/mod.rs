@@ -1,5 +1,5 @@
 pub mod cache;
-pub mod explain;
+pub mod code;
 pub mod generator;
 pub mod hash;
 pub mod ignore;
@@ -10,7 +10,7 @@ pub mod tool;
 pub mod workspace;
 
 pub use cache::*;
-pub use explain::*;
+pub use code::*;
 pub use generator::*;
 pub use hash::*;
 pub use ignore::*;

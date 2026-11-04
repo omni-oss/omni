@@ -94,8 +94,8 @@ pub async fn run(
         CliSubcommands::Declspec(declspec_command) => {
             commands::declspec::run(declspec_command).await?;
         }
-        CliSubcommands::Explain(cmd) => {
-            commands::explain::run(cmd).await?;
+        CliSubcommands::Code(cmd) => {
+            commands::code::run(cmd).await?;
         }
         CliSubcommands::Diagnostics(cmd) => {
             commands::diagnostics::run(cmd).await?;
