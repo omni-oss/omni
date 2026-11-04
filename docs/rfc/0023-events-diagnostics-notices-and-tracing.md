@@ -231,7 +231,7 @@ struct SandboxOsDisabled;
 
 /// Could not write a cache entry. The task result is unaffected.
 #[derive(Notice, Serialize)]
-#[notice(code = "cache.write_skipped", level = error,
+#[notice(code = "cache.write_skipped", level = error, stable,
          message = "could not write cache entry for '{entry}'",
          related = "cache.write_failed")]
 struct CacheWriteSkipped { entry: String }
@@ -332,6 +332,7 @@ pub struct CodeInfo {
     pub level: Option<NoticeLevel>,     // notices
     pub essential: bool,                // notices
     pub audience: Option<Audience>,     // errors
+    pub stable: bool,                   // covered by the stability promise
     pub deprecated: bool,
 }
 ```
@@ -400,6 +401,7 @@ omni_codes::submit!(CodeRegistration {
         level: Some(NoticeLevel::Error),
         essential: false,
         audience: None,
+        stable: true,
         deprecated: false,
     }],
 });
@@ -413,7 +415,8 @@ omni_codes::submit!(CodeRegistration {
 `validate()` checks, over everything submitted: every code is unique across
 kinds, every code's prefix is declared by the crate that submitted it, every
 `related` target exists, every code matches the format (`prefix.snake_case`),
-and a deprecated code is not reused. The same function backs the registry
+and a deprecated code is not reused. A `deprecated` code must also be
+`stable`. The same function backs the registry
 unit test, the debug-build startup check, and the generated docs page.
 `omni explain` and the MCP `explain` tool only call `get` and
 `close_matches`.
@@ -452,7 +455,8 @@ context, and a code is a public contract.
 - A condition that exists as both an error and a notice gets two codes with
   `related` links (`meta.filter_failed` and `meta.filter_excluded`). The test
   checks that each `related` target exists.
-- Codes are permanent. Renaming or removing one is breaking. A retired code is
+- Stable codes are permanent. Renaming or removing a `stable` code is
+  breaking; an unstable one may change (section 8, "Code stability"). A retired code is
   marked `deprecated` and never reused for a different meaning, so an old
   reference in a script, doc or an agent's notes cannot silently match
   something new.
@@ -466,7 +470,7 @@ and the generated docs page read the registry, and the same text appears in
 rustdoc.
 
 `omni explain <code>` prints kind, summary, explanation, level or audience,
-`essential`, and `related` codes (for example `omni explain
+`essential`, `stable`, and `related` codes (for example `omni explain
 meta.filter_failed` points to `meta.filter_excluded`). `--format json` prints
 the same fields. An unknown code is an error that lists close matches. It is
 also available to agents over MCP (4.5). `omni explain` works for error codes
@@ -814,7 +818,7 @@ decision. Expected buckets:
   adds the diagnostic's details and hints.
 - `omni_codes`: error and notice codes share one namespace with no
   duplicates; prefix ownership is enforced; every `related` target exists; a
-  retired code is never reused; every `essential` code is listed; `omni
+  retired code is never reused; a `deprecated` code is `stable`; `stable` is shown by `explain`; every `essential` code is listed; `omni
   explain` works for both kinds, shows `related`, lists close matches for an
   unknown code, and its JSON output matches the MCP `explain` tool.
 - Presenter unit tests: `error`/`warning`/`note` prefixes with codes,
@@ -926,11 +930,21 @@ Each step leaves the tree working.
 - **Release level cap.** None for now (4.6).
 - **Crate count.** `omni_notice` stays its own crate, with `omni_codes`,
   `omni_notice_derive` and `omni_derive_support`.
-- **Code stability.** omni has no formal MCP stability promise today. This
-  RFC does not add tiers: a code is stable once released, as RFC 0021 already
-  says for diagnostics. Codes and the `level` and `fields` keys of a notice
-  are part of the contract; `message` text is not and may change. Before the
-  first release anything may change.
+- **Code stability.** omni has no formal MCP stability promise today, so
+  the registry carries one flag: `stable`.
+  - A code is unstable by default. Marking it `stable` in its derive
+    (`#[notice(code = .., stable)]`, or the diagnostic equivalent) is a
+    deliberate review step that promises the code, its `level` or
+    `audience`, and the key names in `fields`. `message` text is never part
+    of the promise.
+  - An unstable code may change or be removed in any release, but its name
+    is still never reused for a different meaning.
+  - A stable code is changed only as a breaking change. It is retired by
+    marking it `deprecated`, not by deleting it.
+  - `omni explain`, the MCP `explain` tool and the docs page show the flag,
+    so an agent or script knows which codes it may match on.
+  - Existing RFC 0021 diagnostic codes are marked `stable` when they ship
+    with that RFC. Before the first release anything may change.
 - **Flag names.** `--trace` and `--trace-file`. `-v` stays free for
   `-v/--value` (#51).
 - **Recovered cache/hash errors.** Decided per site with the rule in 4.4.
