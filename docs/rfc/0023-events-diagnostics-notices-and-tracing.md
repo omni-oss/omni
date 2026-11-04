@@ -401,8 +401,12 @@ rustdoc.
   `notices.deny`) so CI and local runs agree. CLI flags can tighten but not
   loosen config, consistent with RFC 0022.
 - An `essential` notice cannot be allowed or suppressed:
-  `sandbox.os_disabled`, `redact.disabled`, `notices.truncated`. This follows from RFC 0022's rule
+  `sandbox.os_disabled`, `redact.disabled`. This follows from RFC 0022's rule
   that loosening protections must stay visible.
+- **Essential notices are static.** The derive rejects `essential` on a type
+  that has fields or a `message` with placeholders, so every emission of an
+  essential code is identical. That is what lets MCP deduplicate essential
+  notices by code alone without discarding data.
 - `--allow` and `--deny` apply only to notice codes. Using one with an error
   code is rejected with a message. A fatal diagnostic is not controllable.
 - MCP cannot set allow or deny through tool parameters, only through server
@@ -493,19 +497,20 @@ Each surface has one presenter that owns all user-visible text.
   request (non-essential bounded at 50, deduplicated by
   `(code, message, fields)`, redacted) next to the per-task log capture. `essential`
   notices are **exempt from the bound** and are deduplicated by `code` alone
-  (the first occurrence is kept), so each essential code appears at most
-  once and the number of essential entries is fixed by the registry. An
+  (every emission of an essential code is identical, because the derive
+  requires a fixed message and no fields, so nothing is lost), so each
+  essential code appears at most once and the number of essential entries is
+  fixed by the registry. An
   essential notice arriving after the cap is reached is still delivered and
   never evicted. The maximum `notices` length is therefore 50 plus the number
-  of essential codes, which includes `notices.truncated`. When the bound is hit, one final
-  entry reports how many were dropped. It is a normal notice (a derived
-  `NoticesTruncated { dropped }` type, so it has a `message`; declared
-  `code = "notices.truncated", level = info, essential`) appended after
-  the 50 retained ones, and it is exempt from the bound like essential
-  notices, so the array holds at most 50 non-essential entries plus the
-  truncation entry. `notices.truncated` is itself `essential`, so server
-  configuration cannot `allow` it away and an agent is never handed a capped
-  array without being told. `dropped` counts unique `(code, message, fields)`
+  of essential codes, plus one truncation entry. When the bound is hit, the
+  presenter appends one final entry reporting how many were dropped. It is a
+  derived notice (`NoticesTruncated { dropped }`, declared `code =
+  "notices.truncated", level = info`, not `essential`, since it carries a
+  field), emitted at most once per request, after the 50 retained ones, and
+  exempt from the bound. The MCP presenter appends it directly and **ignores
+  `allow` for this code**, so server configuration cannot hide it and an agent
+  is never handed a capped array without being told. `dropped` counts unique `(code, message, fields)`
   notices omitted *after* deduplication, so repeats of an already retained
   notice collapse first and do not count. The key uses the canonical
   redacted form of `fields`: object keys are sorted recursively at every
@@ -696,8 +701,8 @@ decision. Expected buckets:
   otherwise; carried in `data.notices` on failure; per-call isolation under
   concurrency; cap and dedup; an `essential` notice emitted after the cap is
   reached still appears in `notices`, and the truncation entry (with a
-  `message`, `essential`, unaffected by an allow rule targeting
-  `notices.truncated`) is appended after exactly 50 retained entries, is not itself
+  `message`, not `essential`, unaffected by an allow rule targeting
+  `notices.truncated`, which the presenter ignores for this code) is appended after exactly 50 retained entries, is not itself
   counted against the bound, and reports the dropped count of unique notices after deduplication (duplicates
   overflowing the cap do not inflate it); the wire format of each `level` is exactly `"info"`,
   `"warn"`, `"error"`; a server-denied notice fails an otherwise successful run with the
@@ -712,6 +717,7 @@ decision. Expected buckets:
   tool parameters cannot allow or deny; `command`
   returned in dry runs.
 - MCP with `--trace-file /dev/stdout` (and `/dev/fd/1`) fails at startup and never writes trace lines into the JSON-RPC stream; a regular file path still works.
+- Derive: `essential` on a type with fields or a templated message fails to compile.
 - Sealing: a hand-written `impl Notice` does not compile (compile-fail test).
 - Quiet mode: with `-q`, notices are not printed but `--deny <code>` still
   fails the run and the trace mirror still records them.
