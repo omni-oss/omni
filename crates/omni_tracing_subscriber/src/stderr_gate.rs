@@ -11,15 +11,21 @@ use std::sync::atomic::{AtomicBool, Ordering};
 static PAUSED: AtomicBool = AtomicBool::new(false);
 static BUFFER: Mutex<Vec<u8>> = Mutex::new(Vec::new());
 
+fn buffer() -> std::sync::MutexGuard<'static, Vec<u8>> {
+    BUFFER.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 /// Buffers stderr traces until [`resume_stderr`] is called.
 pub fn pause_stderr() {
+    let _guard = buffer();
     PAUSED.store(true, Ordering::SeqCst);
 }
 
 /// Flushes anything buffered while paused and resumes writing directly.
 pub fn resume_stderr() {
+    let mut guard = buffer();
     if PAUSED.swap(false, Ordering::SeqCst) {
-        let buffered = std::mem::take(&mut *BUFFER.lock().unwrap());
+        let buffered = std::mem::take(&mut *guard);
         if !buffered.is_empty() {
             let _ = io::stderr().write_all(&buffered);
         }
@@ -35,8 +41,9 @@ pub(crate) struct GatedStderr;
 
 impl Write for GatedStderr {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let mut guard = buffer();
         if PAUSED.load(Ordering::SeqCst) {
-            BUFFER.lock().unwrap().extend_from_slice(buf);
+            guard.extend_from_slice(buf);
             Ok(buf.len())
         } else {
             io::stderr().write(buf)

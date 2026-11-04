@@ -6,7 +6,8 @@ use crate::Level;
 ///
 /// There is no stdout sink: stdout belongs to command results, and traces
 /// there would corrupt piped output and the MCP stdio transport. Users who
-/// want traces in a stream use `2>&1` or `--trace-file /dev/stdout`.
+/// want traces in a stream use `2>&1` or `--trace-file /dev/stdout --trace-file-level debug` (the file level
+/// defaults to off).
 #[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct TracingConfig {
     /// `EnvFilter` directives for stderr (`omni_cache=debug`). `None` is off.

@@ -12,8 +12,10 @@ level.
 | stderr | omni's own status: progress, summary, notices, the final error |
 | trace file or `--trace` | Developer traces. Never part of normal output |
 
-`omni ... | jq` is safe: nothing but the result is ever written to stdout, at
-any setting. The same holds for `omni mcp`, where stdout carries the protocol.
+Omni itself writes nothing but the command's result to stdout, at any setting,
+so piping a JSON-producing command (for example `omni code list --format json`)
+into `jq` is safe. Commands that default to text need `--format json`, and task
+output can also appear on stdout. The same holds for `omni mcp`, where stdout carries the protocol.
 
 ## Notices
 
@@ -86,7 +88,8 @@ omni --trace-file ./trace.log --trace-file-level debug run build
 - While a progress bar or the TUI is on screen, stderr traces are held back and
   printed afterwards. Use `--trace-file` to follow traces during such a run.
 - There is no stdout trace sink. If you really want traces in the same stream,
-  use `2>&1` or `--trace-file /dev/stdout`.
+  use `2>&1` or `--trace-file /dev/stdout --trace-file-level debug` (the file
+  level defaults to off).
 - `omni mcp` refuses a `--trace-file` that resolves to stdout.
 
 The old `-l/--stdout-log-level`, `-t/--stdout-show-traces`,

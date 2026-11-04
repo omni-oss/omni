@@ -472,11 +472,15 @@ impl JsScriptRunner for LazyScriptRunner {
             runner.grant_read_scope(&[])
         };
 
-        runner
-            .call(EXEC_GENERATOR_SCRIPT_PATH, invocations)
-            .await
-            .map_err(|e| Error::custom(e.to_string()))?;
+        let call_result =
+            runner.call(EXEC_GENERATOR_SCRIPT_PATH, invocations).await;
         read_scope.revoke();
+        if let Err(e) = call_result {
+            for log in std::mem::take(&mut *self.script_logs.lock().unwrap()) {
+                tracing::debug!(target: "omni_generator::script", "{log:?}");
+            }
+            return Err(Error::custom(e.to_string()));
+        }
 
         let logs = std::mem::take(&mut *self.script_logs.lock().unwrap());
         Ok(RunScriptResult { diagnostics, logs })

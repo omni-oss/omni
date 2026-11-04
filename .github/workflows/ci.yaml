@@ -344,6 +344,7 @@ jobs:
     name: CI Passed
     needs:
       - plan
+      - lint-output
       - test-rust
       - test-typescript
       - build-rust
@@ -369,6 +370,7 @@ jobs:
           RESULTS_JSON: |
             {
               "plan": "${{ needs.plan.result }}",
+              "lint-output": "${{ needs.lint-output.result }}",
               "test-rust": "${{ needs.test-rust.result }}",
               "test-typescript": "${{ needs.test-typescript.result }}",
               "build-rust": "${{ needs.build-rust.result }}",
