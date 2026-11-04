@@ -246,7 +246,7 @@ implement `Error`, and nothing converts between the two.
   concatenated fragments), so it can be translated later.
 - Typed fields give machine-readable values (the import-scan note, the runtime
   name) without hand-built maps. Keys are `snake_case`.
-- The deriver adds no `target` field. The macro records the emitting module
+- The derive adds no `target` field. The macro records the emitting module
   for the `tracing` mirror, not sent to MCP.
 
 `NoticeEvent` stays the plain data that travels to subscribers:
@@ -271,6 +271,11 @@ diagnostic_notice!(sub, MetaFilterExcluded { count }, &meta_filter_error);
 
 - `notice!` builds the event only when `wants_notices()` is true, so disabled
   surfaces pay nothing, including the construction of the value.
+  `wants_notices()` reflects whether any consumer needs notices *collected*:
+  a presenter, `--deny` evaluation, or the `tracing` mirror. It is not a
+  rendering decision. `-q/--quiet` (4.5) only changes what the presenter
+  prints, so `wants_notices()` stays `true` in quiet mode and `--deny` and the
+  trace mirror keep working.
 - `diagnostic_notice!(sub, notice, &diagnostic)` publishes `notice` and adds
   the diagnostic's `details()` and `hints()` to its `fields` under `details`
   and `hints`. The code, level and message come from the notice type; it never
@@ -310,6 +315,15 @@ pub struct CodeInfo {
   `find_in_error`. Its derive additionally registers each type into
   `omni_codes` with `kind = Error`. The `Diagnostic` trait does not change.
 - `omni_notice`'s derive registers with `kind = Notice`.
+- **The registry owns its metadata types.** `NoticeLevel` and `Audience` are
+  defined in `omni_codes` (so the dependency points one way: `omni_diagnostic`
+  and `omni_messages` depend on `omni_codes`, never the reverse) and
+  re-exported from their current paths (`omni_messages::NoticeLevel`,
+  `omni_diagnostic::Audience`), so existing imports keep working.
+- **`NoticeLevel` serialises lowercase** (`#[serde(rename_all = "lowercase")]`:
+  `"info"`, `"warn"`, `"error"`). This is the wire format used by MCP and
+  `--format json` output, pinned by a test. The type is not serialised
+  anywhere today, so there is no existing consumer to break.
 - Registration uses the mechanism `omni_diagnostic` uses today, moved into
   `omni_codes`.
 - `omni_derive_support` is a plain library (a proc-macro crate cannot export
@@ -420,7 +434,8 @@ Each surface has one presenter that owns all user-visible text.
   diagnostic keeps the RFC 0021 layout.
 - Verbosity flags replace the log-level flags for user output:
   - `-q/--quiet`: results and errors only; progress and notices suppressed
-    (except `essential` ones).
+    (except `essential` ones). Rendering only: notices are still collected, so
+    `--deny` and the tracing mirror work as without `-q`.
   - `--no-progress`: keep notices, drop progress (for CI logs).
 - Redaction (RFC 0022) is applied once, in the presenter, to every string it
   writes that came from a notice, event or diagnostic.
@@ -428,8 +443,13 @@ Each surface has one presenter that owns all user-visible text.
 #### MCP
 
 - `McpSubscriber` becomes `McpPresenter`, with `wants_notices() == true`. It
-  collects notices per request (bounded at 50, deduplicated by
-  `(code, message)`, redacted) next to the per-task log capture.
+  collects notices per request (non-essential bounded at 50, deduplicated by
+  `(code, message)`, redacted) next to the per-task log capture. `essential`
+  notices are **exempt from the bound**: they are few (a fixed, small set) and
+  deduplicated, so an essential notice arriving after the cap is reached is
+  still delivered and never evicted. When the bound is hit, a final
+  `{"level": "info", "code": "notices.truncated", "fields": {"dropped": N}}`
+  entry reports how many were dropped.
 - Every tool result that runs engine code gains
 
   ```json
@@ -584,11 +604,17 @@ decision. Expected buckets:
   - `--meta-on-error fail` returns the fatal diagnostic and
     `--meta-on-error exclude` reports the notice, with different codes.
   - Dry-run command lines are unchanged; the dry-run header is gone.
-  - Nothing tracing-related reaches stdout at any setting.
+  - No tracing layer writes to stdout at any setting. An explicit user-chosen
+    `--trace-file /dev/stdout` is excluded; it is an ordinary file path.
 - MCP: `notices` present for a run with a capability warning, absent
   otherwise; carried in `data.notices` on failure; per-call isolation under
-  concurrency; cap and dedup; tool parameters cannot allow or deny; `command`
+  concurrency; cap and dedup; an `essential` notice emitted after the cap is
+  reached still appears in `notices`, and the truncation entry reports the
+  dropped count; the wire format of each `level` is exactly `"info"`,
+  `"warn"`, `"error"`; tool parameters cannot allow or deny; `command`
   returned in dry runs.
+- Quiet mode: with `-q`, notices are not printed but `--deny <code>` still
+  fails the run and the trace mirror still records them.
 - Lint: CI fails on `log::*` or `println!` in non-presenter omni crates, and on any use of the removed `trace` crate.
 - Generator: `omni generate crate` output compiles, passes clippy, contains no `trace`, `log` or `enable-tracing`.
 - Build: the workspace builds with the optional `tracing` release level cap set, and the four former `if_enabled!` sites behave identically at default settings.
@@ -653,4 +679,5 @@ Each step leaves the tree working.
   `--debug-log`. `-v` stays free for `-v/--value` (#51).
 - **Recovered cache/hash errors.** `Error` notice or developer-only tracing?
   Decided per site in the triage.
-- **Cap value** of 50 notices per MCP call.
+- **Cap value** of 50 non-essential notices per MCP call. Essential notices
+  are exempt (4.5); only the number is open.
