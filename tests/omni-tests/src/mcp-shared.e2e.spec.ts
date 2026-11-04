@@ -102,7 +102,10 @@ describe(
             expect(launch.exists(".omni")).toBe(false);
         });
 
-        it.each(["/dev/stdout", "/dev/fd/1", "/proc/self/fd/1"])(
+        // These are POSIX stdout aliases; Windows has no such paths.
+        it
+            .skipIf(process.platform === "win32")
+            .each(["/dev/stdout", "/dev/fd/1", "/proc/self/fd/1"])(
             "rejects `--trace-file %s` at startup: stdout carries JSON-RPC",
             async (path) => {
                 const launch = launchDir();
