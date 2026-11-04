@@ -1038,18 +1038,21 @@ match it:
   (`GeneratorEventSubscriber::on_script_log`): `info`, `warn` and `error` are
   shown on stderr and are not hidden by `-q`; `debug` and `trace` go to
   `tracing` only.
+- **Notices from non-run entry points.** `ledger::load_checked` and
+  `LazyToolRunner::take_notices` hand notices back to `OmniApi`, which publishes
+  them (`projections.ledger_unreadable`, `runtime.experimental`,
+  `capabilities.*` for `omni tool run`). `omni projection` and `omni tool run`
+  use a `CliSubscriber` that prints each notice as it arrives.
 - **Dry-run command lines** (`Executing task '<id>': <command>`) are a result:
   they go to stdout and `-q` keeps them.
 - **`explain` in shared MCP mode** takes `working_dir` like every other tool,
   so the shared-schema invariant (every tool requires one directory) holds.
-- **Not done yet.**
-  - The `projections.*` ledger notice: `ledger::load` has no subscriber to
-    report through, so it still logs with `tracing::warn!`.
-  - `omni_tool` (`bridge_runner.rs`) has no subscriber, so its experimental
-    runtime and capability warnings are `tracing::warn!` rather than notices.
-  - No workspace `Redactor` is wired into `CliSubscriber` or `McpSubscriber`
-    yet. The mechanism (`NoticeSubscriber::redactor`, applied once in
-    `publish_event` before the `tracing` mirror and any sink) is in place and
-    tested; today notice text is not run through a workspace redactor.
-  - The optional `tracing` release level cap is not set, as decided in 4.6.
-
+- **Redaction wiring.** `NoticeSubscriber::redactor` returns the run's secrets
+  and `extend_redactor` grows them. The executor calls it with each task's
+  redactor (RFC 0022), and `CliSubscriber` and `McpSubscriber` keep the union,
+  so notices raised once a task is planned are redacted before collapsing,
+  deduplication, the `tracing` mirror and any sink. A notice raised before any
+  task is planned (for example `redact.disabled`) is redacted with nothing,
+  because there are no secrets to know yet; those notices are static.
+- **Not done.** The optional `tracing` release level cap is not set, as decided
+  in 4.6.

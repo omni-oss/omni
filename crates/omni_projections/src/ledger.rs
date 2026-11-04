@@ -66,6 +66,27 @@ pub struct LedgerLink {
     pub backup: Option<String>,
 }
 
+omni_codes::prefixes!("projections");
+
+/// The projection ledger could not be read.
+///
+/// The ledger at `path` is corrupt or unparseable, so it is treated as empty:
+/// the configuration stays authoritative and nothing is torn down. Links
+/// recorded only in the ledger are no longer tracked, so a later `sync` may
+/// leave them in place.
+///
+/// Fix: inspect or delete the ledger file, then run `omni projection sync`.
+#[derive(omni_notice::Notice)]
+#[notice(
+    code = "projections.ledger_unreadable",
+    level = warn,
+    message = "projection ledger at {path} is unreadable, treating as empty: {reason}"
+)]
+pub struct LedgerUnreadable {
+    pub path: String,
+    pub reason: String,
+}
+
 /// Load the ledger from `ledger_path`. A missing, corrupt, or unparseable
 /// ledger is treated as empty (config stays authoritative) and never triggers a
 /// destructive teardown. The caller owns where the ledger lives.
@@ -73,15 +94,27 @@ pub async fn load<S: FsReadAsync + Sync>(
     sys: &S,
     ledger_path: &Path,
 ) -> Ledger {
+    load_checked(sys, ledger_path).await.0
+}
+
+/// Like [`load`], also reporting a ledger that exists but is unreadable so the
+/// caller can tell the user.
+pub async fn load_checked<S: FsReadAsync + Sync>(
+    sys: &S,
+    ledger_path: &Path,
+) -> (Ledger, Option<LedgerUnreadable>) {
     match sys.fs_read_async(ledger_path).await {
-        Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or_else(|e| {
-            tracing::warn!(
-                "projection ledger at {} is unreadable, treating as empty: {e}",
-                ledger_path.display()
-            );
-            Ledger::default()
-        }),
-        Err(_) => Ledger::default(),
+        Ok(bytes) => match serde_json::from_slice(&bytes) {
+            Ok(l) => (l, None),
+            Err(e) => (
+                Ledger::default(),
+                Some(LedgerUnreadable {
+                    path: ledger_path.display().to_string(),
+                    reason: e.to_string(),
+                }),
+            ),
+        },
+        Err(_) => (Ledger::default(), None),
     }
 }
 
@@ -500,6 +533,19 @@ mod tests {
 
         let ledger = load(&RealSys, &path).await;
         assert!(ledger.links().is_empty());
+
+        // ...and the caller can tell the user.
+        let (_, bad) = load_checked(&RealSys, &path).await;
+        let bad = bad.expect("an unreadable ledger is reported");
+        assert!(bad.path.ends_with("links.json"));
+    }
+
+    #[tokio::test]
+    async fn absent_ledger_is_not_reported() {
+        let dir = tempfile::tempdir().unwrap();
+        let (_, bad) =
+            load_checked(&RealSys, &dir.path().join("links.json")).await;
+        assert!(bad.is_none());
     }
 
     #[tokio::test]

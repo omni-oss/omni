@@ -266,3 +266,45 @@ describe("+notices @cli (code registry)", () => {
         expect(codes).toContain("meta.filter_failed");
     });
 });
+
+describe("+notices @cli (projections ledger)", () => {
+    it("reports an unreadable ledger as `projections.ledger_unreadable` and carries on", async () => {
+        const ws = makeWorkspace(singleProjectSpec());
+        ws.write(".omni/sources/projection/links.json", "{ not valid json");
+
+        const result = await runOmni(["projection", "status"], {
+            cwd: ws.cwd,
+        });
+
+        expect(result).toHaveSucceeded();
+        expect(result).toHaveStderrContaining(
+            "warning[projections.ledger_unreadable]",
+        );
+        expect(result).toHaveStderrContaining("links.json");
+    });
+
+    it("`-q` hides it, since it is a plain warning", async () => {
+        const ws = makeWorkspace(singleProjectSpec());
+        ws.write(".omni/sources/projection/links.json", "{ not valid json");
+
+        const result = await runOmni(["-q", "projection", "status"], {
+            cwd: ws.cwd,
+        });
+
+        expect(result).toHaveSucceeded();
+        expect(result.err).not.toContain("projections.ledger_unreadable");
+    });
+});
+
+describe("+notices @cli (tool runs)", () => {
+    it("every notice code raised by tools is registered", async () => {
+        for (const code of [
+            "runtime.experimental",
+            "capabilities.ignored",
+            "capabilities.not_enforced",
+        ]) {
+            const result = await runOmni(["explain", code]);
+            expect(result).toHaveSucceeded();
+        }
+    });
+});

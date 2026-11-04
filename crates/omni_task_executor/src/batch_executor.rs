@@ -150,7 +150,10 @@ where
             None => Redactor::builder().build(),
         };
 
-        env.union(&args)
+        // Notices published from here on are redacted with the run's secrets.
+        let redactor = env.union(&args);
+        self.subscriber.extend_redactor(&redactor);
+        redactor
     }
 
     fn should_skip_batch_on_error(
@@ -603,6 +606,9 @@ where
                     })
                     .await;
             } else {
+                // Not shown here, but a notice raised later in the run must
+                // still be redacted with this task's secrets.
+                let _ = self.build_redactor(task_ctx);
                 futs.push(run_process(
                     self.subscriber,
                     self.wants_task_output_stream,

@@ -11,3 +11,5 @@ dependencies:
   - omni_hasher
   - dir_walker
   - system_traits
+  - omni_notice
+  - omni_codes

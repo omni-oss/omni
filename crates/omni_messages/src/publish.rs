@@ -10,7 +10,7 @@ pub fn publish_event<S: NoticeSubscriber + ?Sized>(
     mut event: NoticeEvent,
 ) {
     if let Some(r) = sub.redactor() {
-        event.redact(r);
+        event.redact(&r);
     }
     mirror(&event);
     sub.on_notice(event);
@@ -133,8 +133,8 @@ mod tests {
     }
 
     impl NoticeSubscriber for Collect {
-        fn redactor(&self) -> Option<&omni_redact::Redactor> {
-            self.redactor.as_ref()
+        fn redactor(&self) -> Option<Arc<omni_redact::Redactor>> {
+            self.redactor.clone().map(Arc::new)
         }
         fn on_notice(&self, e: NoticeEvent) {
             self.events.lock().unwrap().push(e);

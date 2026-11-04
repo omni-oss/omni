@@ -79,6 +79,7 @@ omni_term_ui = { workspace = true }
 omni_messages = { workspace = true }
 omni_command_config = { workspace = true }
 omni_codes = { workspace = true }
+omni_redact = { workspace = true }
 omni_notice = { workspace = true }
 omni_diagnostic = { workspace = true }
 omni_task_executor = { workspace = true }

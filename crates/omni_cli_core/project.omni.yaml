@@ -48,3 +48,4 @@ dependencies:
   - sets
   - omni_codes
   - omni_notice
+  - omni_redact

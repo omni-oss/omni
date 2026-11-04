@@ -418,6 +418,10 @@ pub struct CliSubscriber {
     /// Notices waiting to be printed, collapsed by `(code, message)` in
     /// first-occurrence order.
     notice_groups: Arc<Mutex<Vec<NoticeGroup>>>,
+    /// Secrets of the run, grown as tasks are planned (RFC 0022).
+    redactor: Arc<omni_messages::SharedRedactor>,
+    /// Print each notice as it arrives (commands with no run to flush at).
+    immediate_notices: bool,
 }
 
 /// A run of identical notices (same code and redacted message).
@@ -455,7 +459,16 @@ impl CliSubscriber {
             emit_buffer: Arc::new(Mutex::new(Vec::new())),
             quiet: false,
             notice_groups: Arc::new(Mutex::new(Vec::new())),
+            redactor: Default::default(),
+            immediate_notices: false,
         }
+    }
+
+    /// For one-shot commands that have no run to flush notices at: print each
+    /// notice as it arrives.
+    pub fn with_immediate_notices(mut self) -> Self {
+        self.immediate_notices = true;
+        self
     }
 
     /// Hide omni's own narration (RFC 0023, 4.5). Rendering only.
@@ -687,6 +700,14 @@ impl CliSubscriber {
 }
 
 impl NoticeSubscriber for CliSubscriber {
+    fn redactor(&self) -> Option<Arc<omni_redact::Redactor>> {
+        self.redactor.get()
+    }
+
+    fn extend_redactor(&self, redactor: &omni_redact::Redactor) {
+        self.redactor.extend(redactor);
+    }
+
     fn on_notice(&self, e: NoticeEvent) {
         // `-q` hides warn and info notices, never `error` or `essential`
         // ones. The level and `essential` come from the event, not a lookup.
@@ -702,6 +723,10 @@ impl NoticeSubscriber for CliSubscriber {
         }) {
             Some(g) => g.count += 1,
             None => groups.push(NoticeGroup { event: e, count: 1 }),
+        }
+        drop(groups);
+        if self.immediate_notices {
+            self.flush_notices_after_teardown();
         }
     }
 }
@@ -1270,6 +1295,28 @@ mod notice_render_tests {
         assert_eq!(buffered.len(), 1);
         assert!(buffered[0].0.contains("clitest.sample"));
         assert!(sub.notice_groups.lock().is_empty());
+    }
+
+    #[test]
+    fn a_secret_learned_from_the_run_is_redacted_before_collapsing() {
+        let sub = CliSubscriber::new_stream(std::env::temp_dir());
+        sub.extend_redactor(
+            &omni_redact::Redactor::builder().value("hunter2").build(),
+        );
+
+        omni_messages::publish::publish_event(&sub, sample("hunter2"));
+        omni_messages::publish::publish_event(&sub, sample("hunter2"));
+
+        let groups = sub.notice_groups.lock();
+        assert_eq!(groups.len(), 1, "same text once redacted");
+        assert_eq!(groups[0].count, 2);
+        assert!(!groups[0].event.message().contains("hunter2"));
+        assert!(
+            !groups[0].event.fields()["x"]
+                .as_str()
+                .unwrap()
+                .contains("hunter2")
+        );
     }
 
     #[test]

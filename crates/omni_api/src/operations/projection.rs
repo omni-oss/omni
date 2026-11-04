@@ -160,6 +160,7 @@ struct PreparedSource {
 pub async fn handle_projection_sync<TSys>(
     ctx: &Context<TSys>,
     req: ProjectionSyncRequest,
+    notices: &mut Vec<omni_messages::NoticeEvent>,
 ) -> eyre::Result<ProjectionSyncResponse>
 where
     TSys: ProjectionSys,
@@ -193,7 +194,7 @@ where
     let sources = &sources;
 
     let ledger_path = ledger_path(ctx);
-    let mut ledger = omni_projections::load(&sys, &ledger_path).await;
+    let mut ledger = load_ledger(&sys, &ledger_path, notices).await;
     let prior_ledger = ledger.clone();
 
     let mut response = ProjectionSyncResponse {
@@ -434,6 +435,7 @@ where
 pub async fn handle_projection_status<TSys>(
     ctx: &Context<TSys>,
     _req: ProjectionStatusRequest,
+    notices: &mut Vec<omni_messages::NoticeEvent>,
 ) -> eyre::Result<ProjectionStatusResponse>
 where
     TSys: ContextSys,
@@ -441,7 +443,7 @@ where
     let sys = ctx.sys().clone();
     let workspace_root = ctx.root_dir().to_path_buf();
 
-    let ledger = omni_projections::load(&sys, &ledger_path(ctx)).await;
+    let ledger = load_ledger(&sys, &ledger_path(ctx), notices).await;
     let report =
         omni_projections::status(&sys, &workspace_root, &ledger).await?;
 
@@ -475,6 +477,7 @@ where
 pub async fn handle_projection_unlink<TSys>(
     ctx: &Context<TSys>,
     req: ProjectionUnlinkRequest,
+    notices: &mut Vec<omni_messages::NoticeEvent>,
 ) -> eyre::Result<ProjectionUnlinkResponse>
 where
     TSys: ContextSys + ApplierSys + FsReadAsync,
@@ -483,7 +486,7 @@ where
     let workspace_root = ctx.root_dir().to_path_buf();
 
     let ledger_path = ledger_path(ctx);
-    let mut ledger = omni_projections::load(&sys, &ledger_path).await;
+    let mut ledger = load_ledger(&sys, &ledger_path, notices).await;
     let report = omni_projections::unlink(
         &sys,
         &workspace_root,
@@ -514,6 +517,7 @@ where
 pub async fn handle_projection_prune<TSys>(
     ctx: &Context<TSys>,
     req: ProjectionPruneRequest,
+    notices: &mut Vec<omni_messages::NoticeEvent>,
 ) -> eyre::Result<ProjectionPruneResponse>
 where
     TSys: ContextSys + ApplierSys,
@@ -522,7 +526,7 @@ where
     let workspace_root = ctx.root_dir().to_path_buf();
 
     let ledger_path = ledger_path(ctx);
-    let mut ledger = omni_projections::load(&sys, &ledger_path).await;
+    let mut ledger = load_ledger(&sys, &ledger_path, notices).await;
 
     if req.dry_run {
         // A prune preview classifies broken links without removing them.
@@ -1068,4 +1072,17 @@ mod tests {
             "a bundle manifest cannot be overridden by top-level routes"
         );
     }
+}
+
+/// Loads the ledger, queuing a notice when it exists but is unreadable.
+async fn load_ledger<S: system_traits::FsReadAsync + Sync>(
+    sys: &S,
+    path: &std::path::Path,
+    notices: &mut Vec<omni_messages::NoticeEvent>,
+) -> omni_projections::Ledger {
+    let (ledger, bad) = omni_projections::load_checked(sys, path).await;
+    if let Some(n) = bad {
+        notices.push(omni_messages::notice_event!(n));
+    }
+    ledger
 }

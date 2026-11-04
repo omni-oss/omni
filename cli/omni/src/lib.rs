@@ -117,7 +117,7 @@ pub async fn run(
         }
         CliSubcommands::Projection(cmd) => {
             let context = create_ctx()?;
-            commands::projection::run(cmd, &context).await?;
+            commands::projection::run(cmd, &context, args.quiet).await?;
         }
         CliSubcommands::Pack(cmd) => {
             let context = create_ctx()?;
@@ -130,7 +130,7 @@ pub async fn run(
         }
         CliSubcommands::Tool(cmd) => {
             let context = create_ctx()?;
-            commands::tool::run(cmd, &context).await?;
+            commands::tool::run(cmd, &context, args.quiet).await?;
         }
         CliSubcommands::RemoteSources(cmd) => {
             let context = create_ctx()?;

@@ -47,6 +47,8 @@ pub struct LazyToolRunner<S> {
     working_dir: PathBuf,
     version: String,
     pool: RunnerPool<(DelegatingJsRuntimeOption, String)>,
+    /// Notices raised while launching tools, for the caller to publish.
+    notices: std::sync::Mutex<Vec<omni_messages::NoticeEvent>>,
 }
 
 impl<S> LazyToolRunner<S> {
@@ -62,7 +64,14 @@ impl<S> LazyToolRunner<S> {
             working_dir,
             version,
             pool: RunnerPool::new(),
+            notices: Default::default(),
         }
+    }
+
+    /// Takes the notices raised so far (experimental runtime, capability
+    /// warnings). The caller publishes them through its subscriber.
+    pub fn take_notices(&self) -> Vec<omni_messages::NoticeEvent> {
+        std::mem::take(&mut *self.notices.lock().unwrap())
     }
 
     /// Shuts down every spawned runner. Best-effort.
@@ -128,12 +137,13 @@ where
                 } else {
                     "you selected"
                 };
-                tracing::warn!(
-                    "{how} the `{}` runtime, which is experimental and not \
-                     fully sandboxed on every platform; only `deno` is fully \
-                     supported. Install/select `deno` for enforced capability \
-                     confinement.",
-                    runtime_name(resolved)
+                self.notices.lock().unwrap().push(
+                    omni_messages::notice_event!(
+                        bridge_rpc_runner::RuntimeExperimental {
+                            how: how.to_string(),
+                            runtime: runtime_name(resolved).to_string(),
+                        }
+                    ),
                 );
             }
             DelegatingJsRuntimeOption::Deno
@@ -151,18 +161,14 @@ where
                     .map_err(|e| ErrorInner::CapabilityEnforcement {
                         message: e.to_string(),
                     })?;
-            for diagnostic in diagnostics {
-                tracing::warn!("{}", diagnostic.message());
-            }
+            self.notices.lock().unwrap().extend(diagnostics);
             (spawn, shim)
         } else {
             if policy.levels.iter().any(|level| !level.is_empty()) {
-                tracing::warn!(
-                    "a capability policy is declared but the capabilities \
-                     feature is experimental and disabled; it is ignored and \
-                     the tool runs unconfined — enable it with \
-                     `enable_experimental: true` (or `enable_experimental: \
-                     {{ capabilities: true }}`) in the workspace configuration"
+                self.notices.lock().unwrap().push(
+                    omni_messages::notice_event!(
+                        bridge_rpc_runner::CapabilitiesIgnored
+                    ),
                 );
             }
             (build_unconfined_plan(resolved), ShimPolicy::new())

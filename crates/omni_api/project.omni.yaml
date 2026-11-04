@@ -41,3 +41,5 @@ dependencies:
   - omni_capabilities
   - omni_input_schema
   - bridge_rpc_services
+  - omni_task_output_logs
+  - omni_utils

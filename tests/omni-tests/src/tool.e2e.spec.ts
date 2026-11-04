@@ -442,3 +442,41 @@ describe("+tool @e2e (working dir validation)", { tags: ["tool"] }, () => {
         expect(result.exitCode).not.toBe(0);
     });
 });
+
+describe.runIf(runtimeAvailable("node"))(
+    "+tool @e2e (notices, RFC 0023)",
+    { tags: ["tool"] },
+    () => {
+        it("a tool on the experimental node runtime raises `runtime.experimental` on stderr, keeping stdout to the value", async () => {
+            const ws = makeWorkspace({
+                workspace: {
+                    projects: ["**"],
+                    tools: [{ source: "local", path: "tools/**" }],
+                },
+                files: {
+                    "tools/greet/tool.omni.yaml": `${GREET_TOOL}runtime: node\n`,
+                    "tools/greet/index.mjs": GREET_SCRIPT,
+                },
+            });
+
+            const result = await runOmni(
+                [
+                    "tool",
+                    "run",
+                    "greet",
+                    "--values-json",
+                    JSON.stringify({ who: "world" }),
+                ],
+                { cwd: ws.cwd },
+            );
+
+            expect(result).toHaveSucceeded();
+            expect(result).toHaveStderrContaining(
+                "warning[runtime.experimental]",
+            );
+            expect(parseJsonOutput(result.stdout)).toMatchObject({
+                greeting: "hello world",
+            });
+        });
+    },
+);

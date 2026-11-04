@@ -43,7 +43,7 @@ pub struct McpSubscriber {
     notices: Mutex<NoticeCollector>,
     /// Dry-run commands per task (task_id → redacted command line).
     commands: Mutex<HashMap<String, String>>,
-    redactor: Option<omni_redact::Redactor>,
+    redactor: omni_messages::SharedRedactor,
 }
 
 impl McpSubscriber {
@@ -54,13 +54,13 @@ impl McpSubscriber {
             logs: Arc::new(Mutex::new(HashMap::new())),
             notices: Mutex::new(NoticeCollector::new()),
             commands: Mutex::new(HashMap::new()),
-            redactor: None,
+            redactor: Default::default(),
         }
     }
 
     /// Redacts every notice before it is collected (RFC 0022).
-    pub fn with_redactor(mut self, redactor: omni_redact::Redactor) -> Self {
-        self.redactor = Some(redactor);
+    pub fn with_redactor(self, redactor: omni_redact::Redactor) -> Self {
+        self.redactor.extend(&redactor);
         self
     }
 
@@ -106,8 +106,12 @@ impl McpSubscriber {
 }
 
 impl NoticeSubscriber for McpSubscriber {
-    fn redactor(&self) -> Option<&omni_redact::Redactor> {
-        self.redactor.as_ref()
+    fn redactor(&self) -> Option<std::sync::Arc<omni_redact::Redactor>> {
+        self.redactor.get()
+    }
+
+    fn extend_redactor(&self, redactor: &omni_redact::Redactor) {
+        self.redactor.extend(redactor);
     }
 
     fn on_notice(&self, event: NoticeEvent) {
@@ -249,6 +253,39 @@ mod tests {
         task_id: &str,
     ) -> Option<&'a str> {
         logs.get(task_id).map(String::as_str)
+    }
+
+    #[test]
+    fn notices_are_redacted_before_they_are_collected() {
+        use omni_notice::Notice;
+
+        omni_codes::prefixes!("mcpsub");
+
+        /// Sample.
+        #[derive(Notice)]
+        #[notice(code = "mcpsub.sample", level = warn, message = "got {v}")]
+        struct Sample {
+            v: String,
+        }
+
+        let sub = McpSubscriber::new(LogsDisplay::Never);
+        sub.extend_redactor(
+            &omni_redact::Redactor::builder().value("hunter2").build(),
+        );
+        omni_messages::publish::publish_event(
+            &sub,
+            omni_messages::NoticeEvent::from_notice(
+                &Sample {
+                    v: "hunter2".into(),
+                },
+                "t",
+            ),
+        );
+
+        let notices = sub.take_notices();
+        assert_eq!(notices.len(), 1);
+        assert!(!notices[0].message.contains("hunter2"));
+        assert!(!notices[0].fields["v"].as_str().unwrap().contains("hunter2"));
     }
 
     #[test]

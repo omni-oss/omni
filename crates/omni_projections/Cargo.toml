@@ -16,6 +16,8 @@ system_traits = { workspace = true, features = [
 ] }
 dir_walker = { workspace = true }
 omni_hasher = { workspace = true }
+omni_notice = { workspace = true }
+omni_codes = { workspace = true }
 omni_types = { workspace = true }
 omni_glob = { workspace = true }
 path-clean = { workspace = true }

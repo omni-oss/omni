@@ -105,6 +105,7 @@ pub async fn handle_tool_run<TSys>(
     args: serde_json::Value,
     working_dir: Option<ToolWorkingDir>,
     redact: &omni_configurations::RedactOverrides,
+    notices: &mut Vec<omni_messages::NoticeEvent>,
 ) -> eyre::Result<serde_json::Value>
 where
     TSys: ContextSys
@@ -233,6 +234,13 @@ where
 
     let result = run_named(&tools, name, args, &runner, &enforcement).await;
     runner.shutdown().await;
+
+    // Notices carry no tool input values, but redact them with the same
+    // policy as errors so a declared secret can never reach a presenter.
+    for mut n in runner.take_notices() {
+        n.redact(&redactor);
+        notices.push(n);
+    }
 
     match result {
         Ok(value) => Ok(value),
