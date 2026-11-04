@@ -135,18 +135,15 @@ fn expand(input: DeriveInput) -> syn::Result<TokenStream2> {
         }
     };
 
-    if a.essential && (!named.is_empty() || has_placeholder(&message.value()))
-    {
+    if a.essential && (!named.is_empty() || has_placeholder(&message.value())) {
         return Err(syn::Error::new(
             name.span(),
             "an `essential` notice must be static: no fields and no placeholders in `message`",
         ));
     }
 
-    let info_ident = format_ident!(
-        "__{}_CODE_INFO",
-        name.to_string().to_uppercase()
-    );
+    let info_ident =
+        format_ident!("__{}_CODE_INFO", name.to_string().to_uppercase());
     let codes = quote!(::omni_notice::__private::omni_codes);
     let essential = a.essential;
     let explanation_tokens = match &a.explain {

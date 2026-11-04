@@ -42,7 +42,8 @@ pub fn doc_parts(attrs: &[Attribute]) -> (String, String) {
             }) = &nv.value
         {
             let v = s.value();
-            lines.push(v.strip_prefix(' ').unwrap_or(&v).trim_end().to_string());
+            lines
+                .push(v.strip_prefix(' ').unwrap_or(&v).trim_end().to_string());
         }
     }
     while lines.first().is_some_and(|l| l.is_empty()) {

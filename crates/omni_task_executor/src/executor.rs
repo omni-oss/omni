@@ -5,11 +5,12 @@ use omni_context::LoadedContext;
 use omni_core::{ProjectGraphError, TaskExecutionGraphError};
 use omni_execution_plan::{
     ExecutionPlanProvider as _, ExecutionPlanProviderError, MetaErrorOptions,
-    MetaFilterErrorLimits,
+    MetaFilterErrorLimits, MetaFilterExcluded,
 };
 use omni_messages::{
     ExecutionCompleteEvent, ExecutionEventSubscriber, ExecutionPlanReadyEvent,
-    NoticeLevel, TracingSubscriber, notice,
+    PlanRedactMode, TracingSubscriber,
+    publish::{diagnostic_notice, notice},
 };
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
@@ -18,6 +19,7 @@ use derive_new::new;
 use crate::{
     Call, ExecutionConfig, TaskExecutionResult, TaskExecutorSys,
     execution_plan_provider::ContextExecutionPlanProvider,
+    notices::RedactDisabled,
     pipeline::{ExecutionPipeline, ExecutionPipelineError},
 };
 
@@ -59,47 +61,46 @@ impl<'a, TSys: TaskExecutorSys, S: ExecutionEventSubscriber>
                 .unwrap_or_default(),
         );
         if redact_mode == omni_configurations::RedactMode::None {
-            notice!(
-                self.subscriber,
-                NoticeLevel::Warn,
-                "Redaction is disabled (--redact none): sensitive values may appear in output",
-            );
+            notice!(self.subscriber, RedactDisabled);
         }
 
-        if self.config.dry_run() {
-            notice!(
-                self.subscriber,
-                NoticeLevel::Info,
-                "Dry run mode enabled, no command execution, cache recording, and cache replay will be performed",
-            );
-        }
-
-        let plan = ContextExecutionPlanProvider::new(self.context)
+        let provider = ContextExecutionPlanProvider::new(self.context)
             .with_meta_error_options(MetaErrorOptions {
                 on_error: self.config.meta_on_error(),
                 limits: MetaFilterErrorLimits::with_samples(
                     self.config.meta_error_samples(),
                 ),
-            })
-            .get_execution_plan(
-                self.config.call(),
-                self.config
-                    .project_filters()
-                    .iter()
-                    .map(|s| s.as_str())
-                    .collect::<Vec<_>>()
-                    .as_slice(),
-                self.config
-                    .dir_filters()
-                    .iter()
-                    .map(|s| s.as_str())
-                    .collect::<Vec<_>>()
-                    .as_slice(),
-                self.config.meta_filter().as_deref(),
-                self.config.scm_affected_filter().as_ref(),
-                self.config.ignore_dependencies(),
-                self.config.with_dependents(),
-            )?;
+            });
+        let plan = provider.get_execution_plan(
+            self.config.call(),
+            self.config
+                .project_filters()
+                .iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>()
+                .as_slice(),
+            self.config
+                .dir_filters()
+                .iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>()
+                .as_slice(),
+            self.config.meta_filter().as_deref(),
+            self.config.scm_affected_filter().as_ref(),
+            self.config.ignore_dependencies(),
+            self.config.with_dependents(),
+        )?;
+
+        for excluded in provider.take_excluded_meta_errors() {
+            diagnostic_notice!(
+                self.subscriber,
+                MetaFilterExcluded {
+                    filter: excluded.filter.clone(),
+                    count: excluded.total,
+                },
+                &excluded
+            );
+        }
 
         let empty = plan.is_empty() || plan.iter().all(|b| b.is_empty());
 
@@ -127,6 +128,20 @@ impl<'a, TSys: TaskExecutorSys, S: ExecutionEventSubscriber>
                     .iter()
                     .flatten()
                     .any(|t| t.interactive() || t.persistent()),
+                dry_run: self.config.dry_run(),
+                remote_cache: self
+                    .context
+                    .remote_cache_configuration()
+                    .is_some(),
+                redact_mode: match redact_mode {
+                    omni_configurations::RedactMode::Declared => {
+                        PlanRedactMode::Declared
+                    }
+                    omni_configurations::RedactMode::All => PlanRedactMode::All,
+                    omni_configurations::RedactMode::None => {
+                        PlanRedactMode::None
+                    }
+                },
             })
             .await;
 

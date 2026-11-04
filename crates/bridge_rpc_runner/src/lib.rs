@@ -20,6 +20,7 @@
 
 mod capability_plan;
 mod error;
+mod notices;
 mod pool;
 mod runner;
 mod runtime;
@@ -27,6 +28,7 @@ mod vendor;
 
 pub use capability_plan::*;
 pub use error::*;
+pub use notices::*;
 pub use pool::*;
 pub use runner::*;
 pub use runtime::*;

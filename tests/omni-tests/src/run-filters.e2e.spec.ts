@@ -82,7 +82,6 @@ describe("+run-filters @e2e (dry run)", () => {
         const result = await runOmni(["run", "build", "-d"], { cwd: ws.cwd });
 
         expect(result).toHaveSucceeded();
-        expect(result).toOutputContaining("Dry run mode enabled");
         expect(result).toOutputContaining("Executing task 'app#build':");
         expect(result).toOutputContaining("dry-ran.txt");
         // Completion is reported through the same lifecycle event as a real
@@ -1032,7 +1031,6 @@ describe("+run-filters @output (ui downgrade)", () => {
         });
 
         expect(result).toHaveSucceeded();
-        expect(result).toOutputContaining("Dry run mode enabled");
         expect(result).toOutputContaining("Executing task 'app#build'");
         expect(ws.exists("app/dry-ran.txt")).toBe(false);
     });

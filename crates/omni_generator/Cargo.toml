@@ -30,6 +30,8 @@ omni_generator_configurations = { workspace = true }
 omni_input_provider = { workspace = true }
 omni_input_schema = { workspace = true }
 omni_messages = { workspace = true }
+omni_notice = { workspace = true }
+omni_codes = { workspace = true }
 omni_discovery = { workspace = true }
 omni_glob = { workspace = true }
 system_traits = { workspace = true, features = [

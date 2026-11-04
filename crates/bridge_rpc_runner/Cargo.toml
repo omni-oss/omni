@@ -36,6 +36,8 @@ merge = { workspace = true }
 omni_capabilities = { workspace = true }
 omni_capability_enforcement = { workspace = true }
 omni_messages = { workspace = true }
+omni_notice = { workspace = true }
+omni_codes = { workspace = true }
 omni_utils = { workspace = true }
 
 [dev-dependencies]

@@ -33,6 +33,8 @@ bs58 = { workspace = true }
 omni_scm = { workspace = true }
 omni_types = { workspace = true }
 omni_diagnostic = { workspace = true }
+omni_notice = { workspace = true }
+omni_codes = { workspace = true }
 path-clean = { workspace = true }
 omni_config_types = { workspace = true }
 strsim = { workspace = true }

@@ -22,7 +22,9 @@ pub trait Notice: Code + fmt::Display + Send + Sync + 'static {
     fn level(&self) -> NoticeLevel {
         match self.info().detail {
             CodeDetail::Notice { level, .. } => level,
-            CodeDetail::Error { .. } => unreachable!("a notice is never an error code"),
+            CodeDetail::Error { .. } => {
+                unreachable!("a notice is never an error code")
+            }
         }
     }
 

@@ -4,11 +4,14 @@ use omni_generator_configurations::{
     Generator, GeneratorContext, JsRuntimeOption,
     RunJavaScriptActionConfiguration,
 };
-use omni_messages::{GeneratorEventSubscriber, NoticeLevel, notice_event};
+use omni_messages::{
+    GeneratorEventSubscriber, notice_event, publish::publish_batch,
+};
 
 use crate::{
     EffectivePolicy, GeneratorSys, ScriptInvocation, ScriptParams,
-    action_handlers::HandlerContext, error::Error, utils::expand_json_value,
+    action_handlers::HandlerContext, error::Error,
+    notices::RuntimeExperimental, utils::expand_json_value,
 };
 
 #[allow(clippy::result_large_err)]
@@ -98,13 +101,10 @@ pub async fn run_javascript<'a, S: GeneratorEventSubscriber>(
             } else {
                 "you selected"
             };
-            diagnostics.push(notice_event!(
-                NoticeLevel::Warn,
-                "{how} the `{name}` runtime, which is experimental and not \
-                 fully sandboxed on every platform; only `deno` is fully \
-                 supported. Install/select `deno` for enforced capability \
-                 confinement.",
-            ));
+            diagnostics.push(notice_event!(RuntimeExperimental {
+                how: how.to_string(),
+                runtime: name.to_string(),
+            }));
         }
     }
 
@@ -118,7 +118,7 @@ pub async fn run_javascript<'a, S: GeneratorEventSubscriber>(
     // the choice is visible rather than silent.
     diagnostics.append(&mut result.diagnostics);
 
-    ctx.subscriber.on_notices_batched(diagnostics);
+    publish_batch(&ctx.subscriber, diagnostics);
 
     Ok(())
 }

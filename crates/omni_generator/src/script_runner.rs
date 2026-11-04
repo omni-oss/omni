@@ -44,6 +44,7 @@ use bridge_rpc_runner::{
     VendoredBridgeService, build_scan_plan,
     build_spawn_plan as build_spawn_plan_generic, build_unconfined_plan,
 };
+use bridge_rpc_runner::{CapabilitiesIgnored, CapabilitiesImportScan};
 use bridge_rpc_services::{
     RegisterServicesOptions, register_services_with_defaults,
 };
@@ -51,7 +52,7 @@ use omni_capabilities::{CapabilityFloors, CapabilityRules, PathRoots, Root};
 use omni_capability_enforcement::{ShimPolicy, SpawnPolicy};
 use omni_capability_sys::{EvaluatingAuthorizer, PolicyEnforcingSys};
 use omni_generator_configurations::Generator;
-use omni_messages::{NoticeEvent, notice_event, publish::NoticeLevel};
+use omni_messages::{NoticeEvent, notice_event};
 use serde::Serialize;
 use system_traits::EnvSnapshot;
 
@@ -343,14 +344,7 @@ impl JsScriptRunner for LazyScriptRunner {
             // policy, surface a warning so it is not silently ignored.
             let mut diagnostics = Vec::new();
             if policy.levels.iter().any(|level| !level.is_empty()) {
-                diagnostics.push(notice_event!(
-                    NoticeLevel::Warn,
-                    "a capability policy is declared but the capabilities \
-                     feature is experimental and disabled; it is ignored and \
-                     scripts run unconfined — enable it with \
-                     `enable_experimental: true` (or `enable_experimental: \
-                     {{ capabilities: true }}`) in the workspace configuration",
-                ));
+                diagnostics.push(notice_event!(CapabilitiesIgnored));
             }
             (
                 build_unconfined_plan(resolved),
@@ -449,10 +443,9 @@ impl JsScriptRunner for LazyScriptRunner {
                 .await?;
 
             for note in &closure.diagnostics {
-                diagnostics.push(notice_event!(
-                    NoticeLevel::Warn,
-                    "import-scan: {note}",
-                ));
+                diagnostics.push(notice_event!(CapabilitiesImportScan {
+                    note: note.to_string(),
+                }));
             }
 
             runner.grant_read_scope(&closure.paths)
@@ -520,10 +513,8 @@ mod tests {
         )
         .expect("warn never refuses on a floor gap");
         assert!(
-            diagnostics
-                .iter()
-                .any(|d| d.message.contains("floor")
-                    && d.message.contains("net")),
+            diagnostics.iter().any(|d| d.message().contains("floor")
+                && d.message().contains("net")),
             "expected a net floor-gap diagnostic, got: {diagnostics:?}"
         );
     }
@@ -574,7 +565,7 @@ mod tests {
         assert!(
             !before
                 .iter()
-                .any(|d| d.message.contains("OS-level sandbox is DISABLED")),
+                .any(|d| d.message().contains("OS-level sandbox is DISABLED")),
             "must not warn about a disabled sandbox when the hatch is \
              unset, got: {before:?}"
         );
@@ -589,9 +580,13 @@ mod tests {
         )
         .expect("the warn stance never refuses on a floor gap");
         assert!(
-            after.iter().any(|d| matches!(d.level, NoticeLevel::Warn)
-                && d.message.contains("OS-level sandbox is DISABLED")
-                && d.message.contains("OMNI_DISABLE_OS_SANDBOX")),
+            after.iter().any(|d| matches!(
+                d.level(),
+                omni_messages::NoticeLevel::Warn
+            ) && d
+                .message()
+                .contains("OS-level sandbox is DISABLED")
+                && d.message().contains("OMNI_DISABLE_OS_SANDBOX")),
             "expected a loud OS-sandbox-disabled warning when the hatch is \
              set, got: {after:?}"
         );

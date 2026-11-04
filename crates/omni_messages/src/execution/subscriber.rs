@@ -128,6 +128,7 @@ mod tests {
                 task_id: "p::t".into(),
                 project: "p".into(),
                 task: "t".into(),
+                command: None,
             })
             .await;
     }

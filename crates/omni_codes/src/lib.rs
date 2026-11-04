@@ -13,9 +13,9 @@ use std::fmt;
 
 use serde_json::{Value, json};
 
-pub use registry::{CodeRegistration, all, get, registrations};
 #[cfg(feature = "explicit-registry")]
 pub use registry::install;
+pub use registry::{CodeRegistration, all, get, registrations};
 pub use validate::{RegistryError, retired_codes, validate, validate_set};
 
 /// Severity of a notice. Serialises lowercase (`"info"`, `"warn"`, `"error"`).
@@ -88,7 +88,14 @@ impl Audience {
 }
 
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, strum::Display, strum::IntoStaticStr,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    strum::Display,
+    strum::IntoStaticStr,
 )]
 #[strum(serialize_all = "lowercase")]
 pub enum CodeKind {
@@ -219,7 +226,8 @@ pub fn close_matches(code: &str) -> Vec<&'static CodeInfo> {
     let mut scored: Vec<(usize, &'static CodeInfo)> = all()
         .filter_map(|c| {
             let d = edit_distance(code, c.code);
-            let same_prefix = code.split('.').next() == c.code.split('.').next()
+            let same_prefix = code.split('.').next()
+                == c.code.split('.').next()
                 && code.contains('.');
             let contains = !code.is_empty()
                 && (c.code.contains(code) || code.contains(c.code));
@@ -327,9 +335,18 @@ mod tests {
 
     #[test]
     fn level_wire_format() {
-        assert_eq!(serde_json::to_string(&NoticeLevel::Info).unwrap(), "\"info\"");
-        assert_eq!(serde_json::to_string(&NoticeLevel::Warn).unwrap(), "\"warn\"");
-        assert_eq!(serde_json::to_string(&NoticeLevel::Error).unwrap(), "\"error\"");
+        assert_eq!(
+            serde_json::to_string(&NoticeLevel::Info).unwrap(),
+            "\"info\""
+        );
+        assert_eq!(
+            serde_json::to_string(&NoticeLevel::Warn).unwrap(),
+            "\"warn\""
+        );
+        assert_eq!(
+            serde_json::to_string(&NoticeLevel::Error).unwrap(),
+            "\"error\""
+        );
     }
 
     #[test]

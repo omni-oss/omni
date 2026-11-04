@@ -130,9 +130,33 @@ pub struct MetaFilterGroup {
     pub hint: Option<String>,
 }
 
+omni_codes::prefixes!("meta");
+
+/// Tasks were excluded because their meta filter failed.
+///
+/// `--meta-on-error exclude` tolerates a meta filter that fails to evaluate
+/// for some tasks: those tasks are dropped from the plan and the run
+/// continues. The fatal form of the same condition is `meta.filter_failed`.
+#[derive(omni_notice::Notice)]
+#[notice(
+    code = "meta.filter_excluded",
+    level = error,
+    related = "meta.filter_failed",
+    message = "meta filter `{filter}` failed for {count} task(s); they were excluded (see --meta-on-error)"
+)]
+pub struct MetaFilterExcluded {
+    pub filter: String,
+    pub count: usize,
+}
+
+/// A meta filter failed to evaluate for some tasks.
+///
+/// The filter expression raised an error for one or more tasks, so the plan
+/// cannot be trusted and the run stops. The tolerated form of the same
+/// condition is the notice `meta.filter_excluded`.
 #[derive(Debug, Clone, PartialEq, Eq, Diagnostic)]
 #[diagnostic(
-    code = "meta_filter.evaluation",
+    code = "meta.filter_failed",
     audience = user,
     details = details_json,
     body = write_body,

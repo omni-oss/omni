@@ -17,3 +17,6 @@ dependencies:
   - omni_glob
   - omni_command_config
   - omni_diagnostic
+  - omni_notice
+  - omni_codes
+  - trace

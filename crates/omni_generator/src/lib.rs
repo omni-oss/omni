@@ -6,6 +6,7 @@ pub mod error;
 mod execute_actions;
 mod gen_session;
 mod import_scan;
+mod notices;
 mod run;
 mod scoping;
 mod script_runner;

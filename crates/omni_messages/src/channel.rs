@@ -151,6 +151,7 @@ mod tests {
             task_id: "p::t".to_string(),
             project: "p".to_string(),
             task: "t".to_string(),
+            command: None,
         })
         .await;
 

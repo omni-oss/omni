@@ -152,7 +152,7 @@ where
                         message: e.to_string(),
                     })?;
             for diagnostic in diagnostics {
-                trace::warn!("{}", diagnostic.message);
+                trace::warn!("{}", diagnostic.message());
             }
             (spawn, shim)
         } else {

@@ -14,6 +14,7 @@ const RETIRED: &[(&str, &str)] = &[];
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RegistryError {
     BadFormat { code: String },
+    PrefixConflict { prefix: String, crates: Vec<String> },
     Duplicate { code: String },
     UndeclaredPrefix { code: String, crate_name: String },
     MissingRelated { code: String, related: String },
@@ -27,6 +28,11 @@ impl fmt::Display for RegistryError {
             Self::BadFormat { code } => {
                 write!(f, "`{code}` is not `prefix.snake_case`")
             }
+            Self::PrefixConflict { prefix, crates } => write!(
+                f,
+                "prefix `{prefix}` is declared by more than one crate: {}",
+                crates.join(", ")
+            ),
             Self::Duplicate { code } => {
                 write!(f, "`{code}` is registered more than once")
             }
@@ -69,6 +75,23 @@ pub fn validate_set(
             .entry(r.crate_name)
             .or_default()
             .extend(r.prefixes.iter().copied());
+    }
+
+    let mut owners: HashMap<&str, Vec<&str>> = HashMap::new();
+    for (krate, set) in &prefixes {
+        for p in set {
+            owners.entry(p).or_default().push(krate);
+        }
+    }
+    let mut conflicts: Vec<_> =
+        owners.into_iter().filter(|(_, v)| v.len() > 1).collect();
+    conflicts.sort();
+    for (prefix, mut crates) in conflicts {
+        crates.sort();
+        errors.push(RegistryError::PrefixConflict {
+            prefix: prefix.into(),
+            crates: crates.into_iter().map(String::from).collect(),
+        });
     }
 
     let mut seen: HashSet<&str> = HashSet::new();
@@ -122,7 +145,11 @@ pub fn validate_set(
         }
     }
 
-    if errors.is_empty() { Ok(()) } else { Err(errors) }
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors)
+    }
 }
 
 #[cfg(test)]
@@ -188,6 +215,18 @@ mod tests {
         let a = reg(FOREIGN, &["cache"]);
         let e = validate_set(&[&a], &[]).unwrap_err();
         assert!(matches!(e[0], RegistryError::UndeclaredPrefix { .. }));
+    }
+
+    #[test]
+    fn a_prefix_has_one_owner() {
+        let a = reg(A, &["cache"]);
+        let b = CodeRegistration {
+            crate_name: "other",
+            codes: &[],
+            prefixes: &["cache"],
+        };
+        let e = validate_set(&[&a, &b], &[]).unwrap_err();
+        assert!(matches!(e[0], RegistryError::PrefixConflict { .. }));
     }
 
     #[test]

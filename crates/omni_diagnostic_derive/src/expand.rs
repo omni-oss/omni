@@ -1,8 +1,8 @@
 use std::collections::HashSet;
 
+use omni_derive_support::{CodeInfoTokens, code_info, doc_parts};
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote};
-use omni_derive_support::{CodeInfoTokens, code_info, doc_parts};
 use syn::{Data, DeriveInput, Fields, Ident, LitStr, spanned::Spanned};
 
 use crate::attrs::{
@@ -575,13 +575,15 @@ fn code_impl(
     let statics: Vec<Ident> = (0..infos.len())
         .map(|i| format_ident!("__CODE_INFO_{}", i))
         .collect();
-    let arms = variants.iter().filter(|v| v.code.is_some()).enumerate().map(
-        |(i, v)| {
+    let arms = variants
+        .iter()
+        .filter(|v| v.code.is_some())
+        .enumerate()
+        .map(|(i, v)| {
             let pat = &v.pat;
             let s = &statics[i];
             quote!(#pat => &#s,)
-        },
-    );
+        });
     let empty = infos.is_empty();
     let body = if empty {
         quote!(match *self {})

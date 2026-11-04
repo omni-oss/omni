@@ -1,29 +1,101 @@
 use std::collections::BTreeMap;
 
-use serde::{Deserialize, Serialize};
+use omni_diagnostic::Diagnostic;
+use omni_notice::Notice;
+use serde::Serialize;
 
-/// A structured notice message emitted by business logic in place of
-/// direct `log::*` / `println!` calls.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+pub use omni_codes::NoticeLevel;
+
+/// The plain data of a published [`Notice`], as delivered to subscribers.
+///
+/// Fields are private and [`NoticeEvent::from_notice`] is the only
+/// constructor, so an event whose `(code, level, essential)` disagrees with
+/// its notice type cannot be built.
+#[derive(Debug, Clone, Serialize)]
 pub struct NoticeEvent {
-    pub level: NoticeLevel,
-    pub message: String,
-    pub fields: BTreeMap<String, serde_json::Value>,
-    pub target: String,
+    level: NoticeLevel,
+    code: &'static str,
+    essential: bool,
+    message: String,
+    fields: BTreeMap<String, serde_json::Value>,
+    /// Emitting module, for the `tracing` mirror. Not sent to MCP.
+    #[serde(skip)]
+    target: &'static str,
 }
 
-/// Severity of a [`NoticeEvent`].
-///
-/// Notices are user-facing messages, so only `Info`, `Warn` and `Error` exist.
-/// Developer-oriented `debug` / `trace` output belongs in `log::*` /
-/// `tracing::*` and is intentionally not representable here.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, strum::Display,
-)]
-pub enum NoticeLevel {
-    Info,
-    Warn,
-    Error,
+impl NoticeEvent {
+    pub fn from_notice<N: Notice>(n: &N, target: &'static str) -> Self {
+        Self {
+            level: n.level(),
+            code: n.code(),
+            essential: n.essential(),
+            message: n.to_string(),
+            fields: n.fields(),
+            target,
+        }
+    }
+
+    /// Like [`from_notice`](Self::from_notice), adding the diagnostic's
+    /// `details` and `hints` to `fields`. The code, level and message always
+    /// come from the notice, never from the diagnostic.
+    pub fn from_diagnostic_notice<N: Notice, D: Diagnostic + ?Sized>(
+        n: &N,
+        d: &D,
+        target: &'static str,
+    ) -> Self {
+        let mut e = Self::from_notice(n, target);
+        if let Some(details) = d.details() {
+            e.fields.insert("details".into(), details);
+        }
+        let hints = d.hints();
+        if !hints.is_empty() {
+            e.fields.insert("hints".into(), serde_json::json!(hints));
+        }
+        e
+    }
+
+    pub fn level(&self) -> NoticeLevel {
+        self.level
+    }
+    pub fn code(&self) -> &'static str {
+        self.code
+    }
+    pub fn essential(&self) -> bool {
+        self.essential
+    }
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+    pub fn fields(&self) -> &BTreeMap<String, serde_json::Value> {
+        &self.fields
+    }
+    pub fn target(&self) -> &'static str {
+        self.target
+    }
+
+    /// Redacts the message and every string in `fields` (RFC 0022).
+    pub fn redact(&mut self, redactor: &omni_redact::Redactor) {
+        if redactor.is_empty() {
+            return;
+        }
+        self.message = redactor.redact(self.message.as_str()).into_owned();
+        for v in self.fields.values_mut() {
+            redact_value(v, redactor);
+        }
+    }
+}
+
+fn redact_value(v: &mut serde_json::Value, r: &omni_redact::Redactor) {
+    match v {
+        serde_json::Value::String(s) => *s = r.redact(s.as_str()).into_owned(),
+        serde_json::Value::Array(a) => {
+            a.iter_mut().for_each(|x| redact_value(x, r))
+        }
+        serde_json::Value::Object(o) => {
+            o.values_mut().for_each(|x| redact_value(x, r))
+        }
+        _ => {}
+    }
 }
 
 /// Shared notice channel used by both execution and generator subscribers.
@@ -50,6 +122,11 @@ pub trait NoticeSubscriber: Send + Sync {
         true
     }
 
+    /// Redactor applied once per notice before dispatch (RFC 0022).
+    fn redactor(&self) -> Option<&omni_redact::Redactor> {
+        None
+    }
+
     fn on_notice(&self, _event: NoticeEvent) {}
 
     /// Specialized version of [`on_notice`] for batched notice events.
@@ -69,6 +146,9 @@ pub trait NoticeSubscriber: Send + Sync {
 impl<S: NoticeSubscriber> NoticeSubscriber for &S {
     fn wants_notices(&self) -> bool {
         S::wants_notices(*self)
+    }
+    fn redactor(&self) -> Option<&omni_redact::Redactor> {
+        S::redactor(*self)
     }
     fn on_notice(&self, event: NoticeEvent) {
         S::on_notice(*self, event)

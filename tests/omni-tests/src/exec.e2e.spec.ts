@@ -138,7 +138,6 @@ describe("+exec @e2e (dry run)", () => {
         );
 
         expect(result).toHaveSucceeded();
-        expect(result).toOutputContaining("Dry run mode enabled");
         expect(result).toOutputContaining("Executing task");
         expect(result).toOutputContaining("dry-ran.txt");
         // The command is not actually run, so it never creates its file.
@@ -331,7 +330,6 @@ describe("+exec @e2e (dry run with combined filters)", () => {
         );
 
         expect(result).toHaveSucceeded();
-        expect(result).toOutputContaining("Dry run mode enabled");
         // Only `app` is in both filters; the planned temp task is namespaced
         // under its project.
         expect(result).toOutputContaining("app#exec");

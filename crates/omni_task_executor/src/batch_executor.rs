@@ -4,8 +4,7 @@ use futures::stream::{FuturesUnordered, StreamExt as _};
 use maps::{UnorderedMap, unordered_map};
 use omni_cache::{CachedTaskExecution, TaskExecutionCacheStore};
 use omni_command_config::{
-    Command, CommandConfig, escape_control_chars, resolve_command,
-    resolve_command_with,
+    Command, CommandConfig, resolve_command, resolve_command_with,
 };
 use omni_config_types::TeraExprBoolean;
 use omni_configurations::{RedactCategory, RedactOverrides};
@@ -13,10 +12,9 @@ use omni_context::LoadedContext;
 use omni_core::TaskExecutionNode;
 use omni_hasher::impls::DefaultHash;
 use omni_messages::{
-    CacheHitEvent, ExecutionEventSubscriber, NoticeLevel, TaskCompletedEvent,
+    CacheHitEvent, ExecutionEventSubscriber, TaskCompletedEvent,
     TaskFailedEvent, TaskOutputStream, TaskOutputStreamEvent,
     TaskRetryingEvent, TaskSkipReason, TaskSkippedEvent, TaskStartedEvent,
-    publish::notice,
 };
 use omni_process::{
     ChildProcessError, TaskChildProcess, TaskChildProcessResult,
@@ -574,24 +572,12 @@ where
                         task_id: task_id.clone(),
                         project: task_ctx.node.project_name().to_string(),
                         task: task_ctx.node.task_name().to_string(),
+                        command: display_command
+                            .as_ref()
+                            .map(|c| c.to_string())
+                            .filter(|c| !c.is_empty()),
                     })
                     .await;
-
-                match &display_command {
-                    Some(command) if !command.is_empty() => notice!(
-                        self.subscriber,
-                        NoticeLevel::Info,
-                        "Executing task '{}': {}",
-                        escape_control_chars(&task_id),
-                        command,
-                    ),
-                    _ => notice!(
-                        self.subscriber,
-                        NoticeLevel::Info,
-                        "Executing task '{}'",
-                        escape_control_chars(&task_id),
-                    ),
-                }
 
                 let node = task_ctx.node.clone();
                 fut_results.push(TaskResultContext::new_completed(
@@ -929,6 +915,7 @@ async fn run_process<'a, S: ExecutionEventSubscriber>(
             task_id: task_ctx.node.full_task_name().to_string(),
             project: task_ctx.node.project_name().to_string(),
             task: task_ctx.node.task_name().to_string(),
+            command: None,
         })
         .await;
 
@@ -1021,13 +1008,6 @@ async fn run_process<'a, S: ExecutionEventSubscriber>(
             if let Some(duration) = retry_duration
                 && !duration.is_zero()
             {
-                notice!(
-                    subscriber,
-                    NoticeLevel::Warn,
-                    "Waiting for '{:?}' before retrying task '{}'",
-                    duration,
-                    task_ctx.node.full_task_name(),
-                );
                 tokio::time::sleep(duration).await;
             }
 

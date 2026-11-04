@@ -60,7 +60,7 @@ describe("+meta-filter-errors @e2e (cli)", () => {
         expect(out).toContain('"kind": "unit"');
         expect(out).toContain("Did you mean `kind`?");
         expect(out).not.toContain("RAN-");
-        expect(out).toContain("error[meta_filter.evaluation]");
+        expect(out).toContain("error[meta.filter_failed]");
     });
 
     it("exits 2 and prints JSON with --error-format json", async () => {
@@ -76,7 +76,7 @@ describe("+meta-filter-errors @e2e (cli)", () => {
             .split("\n")
             .find((l) => l.startsWith("{"));
         const body = JSON.parse(line ?? "{}");
-        expect(body.kind).toBe("meta_filter.evaluation");
+        expect(body.kind).toBe("meta.filter_failed");
         expect(body.audience).toBe("user");
         expect(body.details.total).toBe(3);
     });
@@ -156,6 +156,7 @@ describe("+meta-filter-errors @e2e (cli)", () => {
         expect(result).toHaveSucceeded();
         const out = result.stdout + result.stderr;
         expect(out).toContain("they were excluded");
+        expect(out).toContain("error[meta.filter_excluded]");
         expect(out).toContain("docs#test");
         expect(out).toContain("RAN-api");
         expect(out).not.toContain("RAN-docs");
@@ -222,7 +223,7 @@ describe("+diagnostics @e2e (registry)", () => {
         const codes = (JSON.parse(result.stdout) as Array<{ code: string }>).map(
             (e) => e.code,
         );
-        expect(codes).toContain("meta_filter.evaluation");
+        expect(codes).toContain("meta.filter_failed");
     });
 });
 
@@ -243,7 +244,7 @@ describe("+meta-filter-errors @e2e @mcp (task_run)", { tags: ["mcp"] }, () => {
 
         expect(error).toBeDefined();
         expect(error?.code).toBe(-32602);
-        expect(error?.data.kind).toBe("meta_filter.evaluation");
+        expect(error?.data.kind).toBe("meta.filter_failed");
         expect(error?.data.audience).toBe("user");
         const details = error?.data.details;
         expect(details.filter).toBe('knd == "e2e"');

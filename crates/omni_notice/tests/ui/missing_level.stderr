@@ -1,0 +1,5 @@
+error: missing `level = info | warn | error` in `#[notice]`
+ --> tests/ui/missing_level.rs:6:8
+  |
+6 | struct N;
+  |        ^

@@ -1,0 +1,5 @@
+error: a notice needs a doc comment: its first line is the summary shown by `omni explain`
+ --> tests/ui/missing_doc.rs:5:8
+  |
+5 | struct N;
+  |        ^

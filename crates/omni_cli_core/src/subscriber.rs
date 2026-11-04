@@ -9,6 +9,7 @@ use comfy_table::{Cell, Color, Table, presets::UTF8_FULL};
 use indicatif::{
     MultiProgress, ProgressBar, ProgressDrawTarget, ProgressStyle,
 };
+use omni_command_config::escape_control_chars;
 use omni_messages::execution::events::BatchCompletedEvent;
 use omni_messages::generator::events::{
     GeneratorActionFailedEvent, GeneratorActionInProgressEvent,
@@ -313,13 +314,27 @@ fn write_stdout(bytes: &[u8]) {
     let _ = out.flush();
 }
 
-/// Emit a single notice through `log` so level filtering and formatting
-/// still apply.
-fn log_notice(e: &NoticeEvent) {
-    match e.level {
-        NoticeLevel::Info => log::info!("{}", e.message),
-        NoticeLevel::Warn => log::warn!("{}", e.message),
-        NoticeLevel::Error => log::error!("{}", e.message),
+/// Renders a notice as `warning[code]: message`, followed by a pointer to
+/// `omni explain`. Level names follow rustc: `error`, `warning`, `note`.
+fn render_notice(e: &NoticeEvent) -> String {
+    let (label, color): (&str, fn(&str) -> String) = match e.level() {
+        NoticeLevel::Error => ("error", |s| s.red().bold().to_string()),
+        NoticeLevel::Warn => ("warning", |s| s.yellow().bold().to_string()),
+        NoticeLevel::Info => ("note", |s| s.cyan().bold().to_string()),
+    };
+    format!(
+        "{}: {}\n  = run `omni explain {}` for details",
+        color(&format!("{label}[{}]", e.code())),
+        escape_control_chars(e.message()),
+        e.code()
+    )
+}
+
+fn notice_emit_level(level: NoticeLevel) -> EmitLevel {
+    match level {
+        NoticeLevel::Error => EmitLevel::Error,
+        NoticeLevel::Warn => EmitLevel::Warn,
+        NoticeLevel::Info => EmitLevel::Info,
     }
 }
 
@@ -581,18 +596,9 @@ impl CliSubscriber {
 
 impl NoticeSubscriber for CliSubscriber {
     fn on_notice(&self, e: NoticeEvent) {
-        self.suspend_for_output(|| log_notice(&e));
-    }
-
-    fn on_notices_batched(
-        &self,
-        events: impl IntoIterator<Item = NoticeEvent>,
-    ) {
-        self.suspend_for_output(|| {
-            for e in events {
-                log_notice(&e);
-            }
-        });
+        // Same per-mode routing as lifecycle lines: through the bar in
+        // `progress`, buffered while the TUI owns the terminal.
+        self.emit(render_notice(&e), notice_emit_level(e.level()));
     }
 }
 
@@ -607,6 +613,16 @@ impl ExecutionEventSubscriber for CliSubscriber {
 
     async fn on_task_started(&self, e: TaskStartedEvent) {
         log::debug!("Starting task '{}'", e.task_id);
+        if let Some(command) = &e.command {
+            self.emit(
+                format!(
+                    "Executing task '{}': {}",
+                    escape_control_chars(&e.task_id),
+                    command
+                ),
+                EmitLevel::Info,
+            );
+        }
         self.with_task_progress(|tp| tp.task_started(&e.task_id));
     }
 
@@ -659,6 +675,10 @@ impl ExecutionEventSubscriber for CliSubscriber {
             let multi = self.shared_multi();
             *self.task_progress.lock() =
                 Some(TaskProgress::new(multi, e.total));
+        }
+
+        if e.remote_cache {
+            self.emit("Remote caching enabled".to_string(), EmitLevel::Info);
         }
     }
 
@@ -822,8 +842,12 @@ impl ExecutionEventSubscriber for CliSubscriber {
     }
 
     async fn on_task_retrying(&self, e: TaskRetryingEvent) {
+        let wait = match e.delay {
+            Some(d) if !d.is_zero() => format!(" in {d:?}"),
+            _ => String::new(),
+        };
         let msg = format!(
-            "Task '{}' is retrying... (attempt {}/{})",
+            "Task '{}' is retrying{wait}... (attempt {}/{})",
             e.task_id, e.attempt, e.max_retries
         );
         self.emit(msg.yellow().dimmed().to_string(), EmitLevel::Warn);
