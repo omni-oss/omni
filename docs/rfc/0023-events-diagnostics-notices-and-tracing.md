@@ -249,12 +249,18 @@ implement `Error`, and nothing converts between the two.
 - The derive adds no `target` field. The macro records the emitting module
   for the `tracing` mirror, not sent to MCP.
 
-`NoticeEvent` stays the plain data that travels to subscribers:
+`NoticeEvent` stays the plain data that travels to subscribers. Presenters
+decide quiet-mode filtering, the MCP bound and `allow` from the event's own
+`essential` field, never by looking the code up in the registry, so the value
+the emitter set cannot be overridden. `CodeInfo.essential` must equal
+`Notice::essential()`; the derive generates both from the same attribute, and
+a registry test fails if they differ.
 
 ```rust
 pub struct NoticeEvent {
     pub level: NoticeLevel,
     pub code: &'static str,                       // always present
+    pub essential: bool,                          // from Notice::essential(); presenters read this
     pub message: String,
     pub fields: BTreeMap<String, serde_json::Value>,
     pub target: &'static str,
@@ -367,6 +373,9 @@ rustdoc.
 - `--deny <code>`, and `--deny-warnings` for all `Warn` and `Error` notices,
   makes a reported notice fail the run with exit code `2` after it completes.
   The notice itself is unchanged; only the final status is.
+- **`deny` takes precedence over `allow`.** If a code matches both, the notice
+  is still shown and still fails the run, so a config cannot be loosened by a
+  stray allow. Neither policy can suppress an `essential` notice.
 - Both are also settable in `workspace.omni.yaml` (`notices.allow` /
   `notices.deny`) so CI and local runs agree. CLI flags can tighten but not
   loosen config, consistent with RFC 0022.
@@ -430,8 +439,19 @@ Each surface has one presenter that owns all user-visible text.
   note[source.fallback]: resolved 'templates' from the fallback source
   ```
 
-  Identical `(code, message)` notices are collapsed with a count. A returned
-  diagnostic keeps the RFC 0021 layout.
+  A returned diagnostic keeps the RFC 0021 layout.
+- **Processing order (CLI).** For each notice: redact (RFC 0022), then decide
+  `deny` status (below), then apply `allow` and quiet filtering, then
+  collapse repeats, then render. Concretely:
+  - Redaction happens first, so grouping keys on the redacted message and two
+    notices that differ only in a secret collapse into one.
+  - `deny` status is evaluated on every notice, including ones `allow` or `-q`
+    hide, so hiding output never changes the exit status.
+  - Repeats are identical `(code, message)` after redaction among notices
+    that are still to be shown. Groups keep first-occurrence order (no
+    sorting) and print once, with the count appended as ` (xN)`, for example
+    `warning[cache.write_skipped]: could not write cache entry for 'app#build' (x3)`.
+    A group of one has no suffix.
 - Verbosity flags replace the log-level flags for user output:
   - `-q/--quiet`: results and errors only; progress and notices suppressed
     (except `essential` ones). Rendering only: notices are still collected, so
@@ -443,9 +463,10 @@ Each surface has one presenter that owns all user-visible text.
 #### MCP
 
 - `McpSubscriber` becomes `McpPresenter`, with `wants_notices() == true`. It
-  processes each notice in a fixed order: **allow, then deduplicate, then
-  bound**. Server-side `allow` runs first, so an allowed non-essential notice
-  is never retained and never counted in `dropped`. It collects notices per
+  processes each notice in a fixed order: **deny, then allow, then
+  deduplicate, then bound**. Server-side `allow` runs before the bound, so an
+  allowed non-essential notice is never retained and never counted in
+  `dropped`. It collects notices per
   request (non-essential bounded at 50, deduplicated by
   `(code, message)`, redacted) next to the per-task log capture. `essential`
   notices are **exempt from the bound**: they are few (a fixed, small set) and
@@ -477,6 +498,14 @@ Each surface has one presenter that owns all user-visible text.
   omitted when empty. `target` is not sent. Agents match on `code`.
 - On failure, the RFC 0021 error payload carries notices collected before the
   failure under `data.notices`.
+- **Server-side `deny`** is evaluated on every reported notice, before `allow`
+  and independent of the bound, and takes precedence over `allow` for the
+  same code. It is a status decision, not payload filtering: the denied
+  notice is not removed from `notices`. A denied notice turns an otherwise
+  successful run into the RFC 0021 failure envelope with the notices under
+  `data.notices`. If the run already ended in a fatal diagnostic, that
+  diagnostic remains the failure. Essential notices cannot be suppressed by
+  either policy.
 - `ToolRunResult.result` is the tool's own return value and stays untouched;
   `notices` is a sibling field.
 - Allow and deny come only from server configuration, never from tool
@@ -609,7 +638,11 @@ decision. Expected buckets:
   explain` works for both kinds and shows `related`; `--allow` on an error code
   is rejected.
 - Presenter unit tests: `error`/`warning`/`note` prefixes with codes,
-  collapsing of repeats, redaction, `-q` hides non-essential notices.
+  collapsing of repeats (first-occurrence order, ` (xN)` suffix, grouping on
+  the redacted message), redaction, `-q` hides non-essential notices, and
+  `--deny` still fails the run when `-q` or `--allow` hides the notice;
+  `deny` wins over `allow` for the same code; `essential` is read from the
+  event and matches the registry.
 - CLI e2e:
   - stdout of `omni cache stats` and `omni project list` contains only
     results, with and without `--trace debug`.
@@ -629,7 +662,9 @@ decision. Expected buckets:
   `notices.truncated`) is appended after exactly 50 retained entries, is not itself
   counted against the bound, and reports the dropped count of unique notices after deduplication (duplicates
   overflowing the cap do not inflate it); the wire format of each `level` is exactly `"info"`,
-  `"warn"`, `"error"`; a server-allowed non-essential notice that would
+  `"warn"`, `"error"`; a server-denied notice fails an otherwise successful run with the
+  failure envelope and is still listed, `deny` wins over `allow` for the
+  same code, and a fatal diagnostic stays the failure; a server-allowed non-essential notice that would
   have exceeded the bound is neither in `notices` nor counted in `dropped`;
   tool parameters cannot allow or deny; `command`
   returned in dry runs.
@@ -699,5 +734,3 @@ Each step leaves the tree working.
   `--debug-log`. `-v` stays free for `-v/--value` (#51).
 - **Recovered cache/hash errors.** `Error` notice or developer-only tracing?
   Decided per site in the triage.
-- **Cap value** of 50 non-essential notices per MCP call. Essential notices
-  are exempt (4.5); only the number is open.
