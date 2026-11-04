@@ -199,7 +199,8 @@ is. It does not say whether the operation stopped: a notice never means that.
   because their meta filter failed).
 - `Warn`: nothing failed, but something is risky or degraded (security
   downgrade, ignored configuration, experimental feature in use).
-- `Info`: a fact that is not a problem (a source was resolved from a fallback). Rare; currently no site needs it.
+- `Info`: a fact that is not a problem (a source was resolved from a fallback,
+  or `notices.truncated`, which reports that notices were omitted). Rare.
 
 The level is fixed by the notice type, so one code is never `Warn` in one place
 and `Error` in another. A notice at any level leaves the exit status alone
@@ -491,11 +492,15 @@ Each surface has one presenter that owns all user-visible text.
   `dropped`. It collects notices per
   request (non-essential bounded at 50, deduplicated by
   `(code, message, fields)`, redacted) next to the per-task log capture. `essential`
-  notices are **exempt from the bound**: they are few (a fixed, small set) and
-  deduplicated, so an essential notice arriving after the cap is reached is
-  still delivered and never evicted. When the bound is hit, one final
+  notices are **exempt from the bound** and are deduplicated by `code` alone
+  (the first occurrence is kept), so each essential code appears at most
+  once and the number of essential entries is fixed by the registry. An
+  essential notice arriving after the cap is reached is still delivered and
+  never evicted. The maximum `notices` length is therefore 50 plus the number
+  of essential codes, which includes `notices.truncated`. When the bound is hit, one final
   entry reports how many were dropped. It is a normal notice (a derived
-  `NoticesTruncated { dropped }` type, so it has a `message`) appended after
+  `NoticesTruncated { dropped }` type, so it has a `message`; declared
+  `code = "notices.truncated", level = info, essential`) appended after
   the 50 retained ones, and it is exempt from the bound like essential
   notices, so the array holds at most 50 non-essential entries plus the
   truncation entry. `notices.truncated` is itself `essential`, so server
@@ -726,9 +731,11 @@ decision. Expected buckets:
   move to stderr with codes; the dry-run header is gone. Scripts parsing stdout
   for results get cleaner output; scripts parsing log lines break.
 - **MCP is additive.** `notices` and `command` are optional fields.
-- **Rust API.** `NoticeEvent` gains a required `code`; `notice!` takes a
-  `Notice` value instead of a level and string; `Notice`, `diagnostic_notice!`
-  and four crates are new. Internal to the workspace.
+- **Rust API.** `NoticeEvent` changes shape: it gains a required `code` and
+  `essential`, `target` becomes `&'static str`, its fields become private, and
+  `NoticeEvent::from_notice` is the only constructor. `notice!` takes a
+  `Notice` value instead of a level and string; `Notice` (sealed),
+  `diagnostic_notice!` and four crates are new. Internal to the workspace.
 - **RFC 0021 is unchanged.** The `Diagnostic` trait and its registry API are
   as before; its derive additionally registers into `omni_codes`. Its 4.5
   ("non-fatal reports, out of scope") is answered by notices, not by extending
@@ -743,8 +750,12 @@ Each step leaves the tree working.
 1. **Registry and notices.** Add `omni_codes` and move the registry there;
    make `omni_diagnostic` register into it (deduplicating across kinds); add
    `omni_derive_support`, `omni_notice`, `omni_notice_derive`; give
-   `NoticeEvent` a required code; add `diagnostic_notice!`; rewrite the
-   `omni_messages` docs. Define notice types for the surviving sites in 4.4.
+   `NoticeEvent` the new shape (required `code` and `essential`, static
+   `target`, private fields, `from_notice`); migrate the sites that build or
+   read it directly: the `notice_event!` struct literal in `publish.rs`, the
+   test literal in `tracing_impl.rs`, and the direct field reads in
+   `log_notice`, which move to `from_notice` and the accessors; add
+   `diagnostic_notice!`; rewrite the `omni_messages` docs. Define notice types for the surviving sites in 4.4.
 2. **Events.** Add the fields in 4.2 and render dry-run, retry and plan state
    from them. Delete the narrating notices.
 3. **Meta filter.** Split `meta.filter_failed` (fatal, unchanged) from
