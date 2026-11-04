@@ -503,7 +503,9 @@ Each surface has one presenter that owns all user-visible text.
   array without being told. `dropped` counts unique `(code, message, fields)`
   notices omitted *after* deduplication, so repeats of an already retained
   notice collapse first and do not count. The key uses the canonical
-  (key-sorted) redacted form of `fields`, so two notices with the same
+  redacted form of `fields`: object keys are sorted recursively at every
+  nesting depth, arrays keep their order (it is meaningful), and the result
+  is serialised compactly, so two notices with the same
   message but different field values both reach the agent:
 
   ```json
@@ -698,7 +700,9 @@ decision. Expected buckets:
   is kept either way), `deny` wins over `allow` for the
   same code, and a fatal diagnostic stays the failure; two same-code notices differing only in a declared
   secret deduplicate into one entry and one slot; two same-code, same-message
-  notices with different `fields` stay separate; a server-allowed non-essential notice that would
+  notices with different `fields` stay separate, and notices whose `fields`
+  differ only in nested object key order deduplicate into one entry (arrays
+  in a different order stay separate); a server-allowed non-essential notice that would
   have exceeded the bound is neither in `notices` nor counted in `dropped`;
   tool parameters cannot allow or deny; `command`
   returned in dry runs.
