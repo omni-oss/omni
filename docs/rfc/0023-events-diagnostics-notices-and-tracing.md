@@ -321,7 +321,10 @@ diagnostic_notice!(sub, MetaFilterExcluded { count }, &meta_filter_error);
 - A site that returns notices to a caller for batch publishing
   (`capability_plan.rs`, `script_runner.rs`) returns `Vec<NoticeEvent>`.
 - Every published notice is mirrored as a `tracing` event at the matching
-  level, with its code, so trace files stay complete.
+  level, with its code, so trace files stay complete. The mirror receives the
+  message and fields after RFC 0022 redaction, the same redacted form the
+  presenters get, so no tracing sink or custom output sees unredacted notice
+  data.
 
 #### One canonical code registry
 
@@ -352,7 +355,8 @@ built.
 
 **`Code`, not a per-kind lookup.** `Code` is the one trait both derives
 implement, so generic code works on either kind: a shared renderer taking
-`&dyn Code` for the code, summary and `related` pointer, `explain` resolving
+`&CodeInfo` (from `value.info()`; `Code` has an associated const, so it is not
+object-safe and is never used as `dyn Code`) for the code, summary and `related` pointer, `explain` resolving
 a value to its entry, and one registry test for all kinds. It is standalone
 in `omni_codes`. `Notice` has it as a supertrait because `Notice` is new.
 `Diagnostic` does **not** gain a supertrait: its derive emits `impl Code`
@@ -440,7 +444,11 @@ omni_codes::submit!(CodeRegistration {
 `validate()` checks, over everything submitted: every code is unique across
 kinds, every code's prefix is declared by the crate that submitted it, every
 `related` target exists, every code matches the format (`prefix.snake_case`),
-and a deprecated code is not reused. A `deprecated` code must also be
+and a removed code is not reused. Removed codes are kept as tombstones
+(`code`, release removed) in a checked-in `retired_codes` list in
+`omni_codes`, and `validate()` rejects any registration whose code is in it;
+a test removes an unstable code and checks that re-registering its name
+fails. A `deprecated` code must also be
 `stable`. The same function backs the registry
 unit test, the debug-build startup check, and the generated docs page.
 `omni explain` and the MCP `explain` tool only call `get` and
