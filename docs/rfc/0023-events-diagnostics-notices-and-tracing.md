@@ -258,14 +258,24 @@ a registry test fails if they differ.
 
 ```rust
 pub struct NoticeEvent {
-    pub level: NoticeLevel,
-    pub code: &'static str,                       // always present
-    pub essential: bool,                          // from Notice::essential(); presenters read this
-    pub message: String,
-    pub fields: BTreeMap<String, serde_json::Value>,
-    pub target: &'static str,
+    level: NoticeLevel,
+    code: &'static str,                           // always present
+    essential: bool,                              // from Notice::essential(); presenters read this
+    message: String,
+    fields: BTreeMap<String, serde_json::Value>,
+    target: &'static str,
+}
+
+impl NoticeEvent {
+    pub fn from_notice<N: Notice>(n: &N, target: &'static str) -> Self { .. }
+    // read-only accessors for each field
 }
 ```
+
+The fields are private and `from_notice` is the only constructor, so an event
+whose `(code, essential)` pair disagrees with its `Notice` cannot be built
+(for example `sandbox.os_disabled` with `essential = false`). `notice!`,
+`diagnostic_notice!` and the `Vec<NoticeEvent>` batch path all go through it.
 
 #### Emitting
 
@@ -374,8 +384,10 @@ rustdoc.
   makes a reported notice fail the run with exit code `2` after it completes.
   The notice itself is unchanged; only the final status is.
 - **`deny` takes precedence over `allow`.** If a code matches both, the notice
-  is still shown and still fails the run, so a config cannot be loosened by a
-  stray allow. Neither policy can suppress an `essential` notice.
+  still fails the run, so a config cannot be loosened by a stray allow.
+  `deny` decides the final status only, not visibility: `allow` or `-q` can
+  still hide the notice from output. Neither policy can suppress an
+  `essential` notice.
 - Both are also settable in `workspace.omni.yaml` (`notices.allow` /
   `notices.deny`) so CI and local runs agree. CLI flags can tighten but not
   loosen config, consistent with RFC 0022.
@@ -463,8 +475,10 @@ Each surface has one presenter that owns all user-visible text.
 #### MCP
 
 - `McpSubscriber` becomes `McpPresenter`, with `wants_notices() == true`. It
-  processes each notice in a fixed order: **deny, then allow, then
-  deduplicate, then bound**. Server-side `allow` runs before the bound, so an
+  processes each notice in a fixed order: **redact, then deny, then allow,
+  then deduplicate, then bound**. Redaction (RFC 0022) comes first, so two
+  same-code messages that differ only in a secret deduplicate into one entry
+  and use one slot of the bound. Server-side `allow` runs before the bound, so an
   allowed non-essential notice is never retained and never counted in
   `dropped`. It collects notices per
   request (non-essential bounded at 50, deduplicated by
@@ -500,8 +514,9 @@ Each surface has one presenter that owns all user-visible text.
   failure under `data.notices`.
 - **Server-side `deny`** is evaluated on every reported notice, before `allow`
   and independent of the bound, and takes precedence over `allow` for the
-  same code. It is a status decision, not payload filtering: the denied
-  notice is not removed from `notices`. A denied notice turns an otherwise
+  same code. It is a status decision, not payload filtering: `deny` itself
+  never removes a notice from `notices` (a matching `allow` can still hide a
+  non-essential one from the payload, while the status is kept). A denied notice turns an otherwise
   successful run into the RFC 0021 failure envelope with the notices under
   `data.notices`. If the run already ended in a fatal diagnostic, that
   diagnostic remains the failure. Essential notices cannot be suppressed by
@@ -641,7 +656,8 @@ decision. Expected buckets:
   collapsing of repeats (first-occurrence order, ` (xN)` suffix, grouping on
   the redacted message), redaction, `-q` hides non-essential notices, and
   `--deny` still fails the run when `-q` or `--allow` hides the notice;
-  `deny` wins over `allow` for the same code; `essential` is read from the
+  `deny` wins over `allow` for the same code (status kept, visibility follows
+  `allow`); `essential` is read from the
   event and matches the registry.
 - CLI e2e:
   - stdout of `omni cache stats` and `omni project list` contains only
@@ -663,8 +679,10 @@ decision. Expected buckets:
   counted against the bound, and reports the dropped count of unique notices after deduplication (duplicates
   overflowing the cap do not inflate it); the wire format of each `level` is exactly `"info"`,
   `"warn"`, `"error"`; a server-denied notice fails an otherwise successful run with the
-  failure envelope and is still listed, `deny` wins over `allow` for the
-  same code, and a fatal diagnostic stays the failure; a server-allowed non-essential notice that would
+  failure envelope and is listed unless a matching `allow` hides it (the status
+  is kept either way), `deny` wins over `allow` for the
+  same code, and a fatal diagnostic stays the failure; two same-code notices differing only in a declared
+  secret deduplicate into one entry and one slot; a server-allowed non-essential notice that would
   have exceeded the bound is neither in `notices` nor counted in `dropped`;
   tool parameters cannot allow or deny; `command`
   returned in dry runs.
