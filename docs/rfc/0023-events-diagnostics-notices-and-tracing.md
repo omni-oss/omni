@@ -447,9 +447,17 @@ Each surface has one presenter that owns all user-visible text.
   `(code, message)`, redacted) next to the per-task log capture. `essential`
   notices are **exempt from the bound**: they are few (a fixed, small set) and
   deduplicated, so an essential notice arriving after the cap is reached is
-  still delivered and never evicted. When the bound is hit, a final
-  `{"level": "info", "code": "notices.truncated", "fields": {"dropped": N}}`
-  entry reports how many were dropped.
+  still delivered and never evicted. When the bound is hit, one final
+  entry reports how many were dropped. It is a normal notice (a derived
+  `NoticesTruncated { dropped }` type, so it has a `message`) appended after
+  the 50 retained ones, and it is exempt from the bound like essential
+  notices, so the array holds at most 50 non-essential entries plus the
+  truncation entry:
+
+  ```json
+  { "level": "info", "code": "notices.truncated",
+    "message": "12 further notices were omitted", "fields": { "dropped": 12 } }
+  ```
 - Every tool result that runs engine code gains
 
   ```json
@@ -609,8 +617,9 @@ decision. Expected buckets:
 - MCP: `notices` present for a run with a capability warning, absent
   otherwise; carried in `data.notices` on failure; per-call isolation under
   concurrency; cap and dedup; an `essential` notice emitted after the cap is
-  reached still appears in `notices`, and the truncation entry reports the
-  dropped count; the wire format of each `level` is exactly `"info"`,
+  reached still appears in `notices`, and the truncation entry (with a
+  `message`) is appended after exactly 50 retained entries, is not itself
+  counted against the bound, and reports the dropped count; the wire format of each `level` is exactly `"info"`,
   `"warn"`, `"error"`; tool parameters cannot allow or deny; `command`
   returned in dry runs.
 - Quiet mode: with `-q`, notices are not printed but `--deny <code>` still
