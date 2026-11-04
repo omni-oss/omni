@@ -694,7 +694,7 @@ routes both the same way.
   if at least one unique notice was omitted does it append one final entry
   reporting how many were dropped, so exactly 50 unique non-essential notices
   produce no entry, and a late essential notice always precedes it. It is a
-  derived notice (`NoticesTruncated { dropped }`, declared `code =
+  derived notice (`NoticesTruncated { dropped, dropped_exact }`, declared `code =
   "notices.truncated", level = info`, not `essential`, since it carries a
   field), emitted at most once per request, last in the array, and
   exempt from the bound, so an agent is never handed a capped array without
@@ -703,7 +703,7 @@ routes both the same way.
   notice collapse first and do not count. Tracking is bounded too: the
   presenter keeps omitted keys only up to 1,000 per request, as hashes, and
   beyond that `dropped` is reported as a lower bound with `dropped_exact =
-  false`. A high-volume unique-notice test covers it. The key uses the canonical
+  false`. Tests cover both an exact and a lower-bound response. The key uses the canonical
   redacted form of `fields`: object keys are sorted recursively at every
   nesting depth, arrays keep their order (it is meaningful), and the result
   is serialised compactly, so two notices with the same
@@ -711,7 +711,7 @@ routes both the same way.
 
   ```json
   { "level": "info", "code": "notices.truncated",
-    "message": "12 further notices were omitted", "fields": { "dropped": 12 } }
+    "message": "12 further notices were omitted", "fields": { "dropped": 12, "dropped_exact": true } }
   ```
 - Every tool result that runs engine code gains
 
