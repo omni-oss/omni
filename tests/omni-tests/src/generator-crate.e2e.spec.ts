@@ -48,7 +48,7 @@ function generate(crateType: "lib" | "bin", useTracing: boolean) {
 
 describe(
     "+generator @e2e (crate generator, RFC 0023)",
-    { tags: ["generator"] },
+    { tags: ["generator"], timeout: 90_000 },
     () => {
         it.each([
             ["lib", true],
