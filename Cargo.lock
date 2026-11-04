@@ -6853,6 +6853,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "omni_codes"
+version = "0.22.0"
+dependencies = [
+ "inventory",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "omni_collector"
 version = "0.6.0"
 dependencies = [
@@ -7066,6 +7075,15 @@ dependencies = [
  "thiserror 2.0.21",
  "trace",
  "tracing",
+]
+
+[[package]]
+name = "omni_derive_support"
+version = "0.22.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
 ]
 
 [[package]]
@@ -7522,6 +7540,28 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio 1.54.1",
  "url",
+]
+
+[[package]]
+name = "omni_notice"
+version = "0.22.0"
+dependencies = [
+ "omni_codes",
+ "omni_notice_derive",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "trybuild",
+]
+
+[[package]]
+name = "omni_notice_derive"
+version = "0.22.0"
+dependencies = [
+ "omni_derive_support",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
 ]
 
 [[package]]
