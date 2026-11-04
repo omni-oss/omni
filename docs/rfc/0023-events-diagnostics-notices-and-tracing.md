@@ -36,7 +36,7 @@ This RFC gives each concern one owner and keeps them separate:
   described twice (4.3).
 - **One canonical code list.** Diagnostics and notices register into a common
   `omni_codes` registry. Codes are unique across the whole application, and
-  `omni explain`, `--allow`, `--deny` and MCP matching all use it (4.3).
+  `omni explain` (CLI and MCP) and agent matching all use it (4.3).
 - **`log` is retired as an API.** omni code uses `tracing` only, for developer
   output. Tracing is never user output.
 
@@ -77,9 +77,8 @@ the `log` crate unless `--stdout-show-traces` is set. So today:
    policy was ignored or that redaction is off.
 5. **Notices have no contract and no identity.** `NoticeEvent` is documented
    as a replacement for `log::*`/`println!`, which invites narration. With no
-   stable identity a user cannot silence an accepted warning, fail CI on a
-   chosen one, or ask what one means, and an agent cannot match one without
-   parsing prose.
+   stable identity a user cannot ask what one means, and an agent cannot match
+   one without parsing prose.
 6. **Swallowed errors are invisible or noisy.** `log::error!` in a library
    that then continues (`omni_hasher`, `omni_cache`, `omni_setup`) prints a red
    line, or nothing, depending on level, and never reaches MCP.
@@ -92,8 +91,8 @@ the `log` crate unless `--stdout-show-traces` is set. So today:
 - Library crates never decide how something is displayed.
 - The same information reaches CLI and MCP, in the form each surface needs.
 - Notices are visible by default, independent of tracing configuration, and
-  controllable per code.
-- Keep notices cheap to emit: no new type per notice.
+  identified by a stable code that anyone can look up.
+- Keep notices cheap to emit: a derived type of a few lines.
 - Developer telemetry is complete, structured, and off the terminal by
   default.
 - RFC 0022 redaction applies at every user-facing exit, in one place per
@@ -203,8 +202,9 @@ is. It does not say whether the operation stopped: a notice never means that.
   or `notices.truncated`, which reports that notices were omitted). Rare.
 
 The level is fixed by the notice type, so one code is never `Warn` in one place
-and `Error` in another. A notice at any level leaves the exit status alone
-unless the user opts in with `--deny` (below).
+and `Error` in another. A notice at any level never aborts the run and never
+changes the exit status: it is reported and execution continues. (Failing a run
+on chosen notices is deferred, section 9.)
 
 #### The `Notice` trait and derive
 
@@ -251,7 +251,7 @@ implement `Error`, and nothing converts between the two.
   for the `tracing` mirror, not sent to MCP.
 
 `NoticeEvent` stays the plain data that travels to subscribers. Presenters
-decide quiet-mode filtering, the MCP bound and `allow` from the event's own
+decide quiet-mode filtering and the MCP bound from the event's own
 `essential` field, never by looking the code up in the registry, so the value
 the emitter set cannot be overridden. `CodeInfo.essential` must equal
 `Notice::essential()`; the derive generates both from the same attribute, and
@@ -297,10 +297,10 @@ diagnostic_notice!(sub, MetaFilterExcluded { count }, &meta_filter_error);
 - `notice!` builds the event only when `wants_notices()` is true, so disabled
   surfaces pay nothing, including the construction of the value.
   `wants_notices()` reflects whether any consumer needs notices *collected*:
-  a presenter, `--deny` evaluation, or the `tracing` mirror. It is not a
-  rendering decision. `-q/--quiet` (4.5) only changes what the presenter
-  prints, so `wants_notices()` stays `true` in quiet mode and `--deny` and the
-  trace mirror keep working.
+  a presenter or the `tracing` mirror. It is not a rendering decision.
+  `-q/--quiet` (4.5) only changes what the presenter prints, so
+  `wants_notices()` stays `true` in quiet mode and the trace mirror keeps
+  working.
 - `diagnostic_notice!(sub, notice, &diagnostic)` publishes `notice` and adds
   the diagnostic's `details()` and `hints()` to its `fields` under `details`
   and `hints`. The code, level and message come from the notice type; it never
@@ -358,8 +358,8 @@ pub struct CodeInfo {
   are thin wrappers.
 
 **Codes are unique across the whole application, regardless of subsystem.**
-`explain`, `--allow`, `--deny`, config and MCP matching take a bare code with
-no subsystem context, and a code is a public contract.
+`omni explain`, docs and agent matching take a bare code with no subsystem
+context, and a code is a public contract.
 
 - The first dotted segment names the owning subsystem (`cache.*`, `sandbox.*`,
   `meta.*`, `capabilities.*`). A crate declares the prefixes it owns, and the
@@ -372,7 +372,8 @@ no subsystem context, and a code is a public contract.
   checks that each `related` target exists.
 - Codes are permanent. Renaming or removing one is breaking. A retired code is
   marked `deprecated` and never reused for a different meaning, so an old
-  `--allow` in a config cannot silently match something new.
+  reference in a script, doc or an agent's notes cannot silently match
+  something new.
 
 **Documentation lives in the registry entry, not on the traits.** The derives
 read the `///` doc comments on the type: the first line is `summary`, the rest
@@ -383,34 +384,23 @@ and the generated docs page read the registry, and the same text appears in
 rustdoc.
 
 `omni explain <code>` prints kind, summary, explanation, level or audience,
-`essential`, and `related` codes.
+`essential`, and `related` codes (for example `omni explain
+meta.filter_failed` points to `meta.filter_excluded`). `--format json` prints
+the same fields. An unknown code is an error that lists close matches. It is
+also available to agents over MCP (4.5). `omni explain` works for error codes
+and notice codes alike.
 
-#### Control per code
+#### Essential notices
 
-- `--allow <code>` hides a notice the user has accepted (for example
-  `--allow runtime.experimental` in a repository that uses Bun on purpose).
-- `--deny <code>`, and `--deny-warnings` for all `Warn` and `Error` notices,
-  makes a reported notice fail the run with exit code `2` after it completes.
-  The notice itself is unchanged; only the final status is.
-- **`deny` takes precedence over `allow`.** If a code matches both, the notice
-  still fails the run, so a config cannot be loosened by a stray allow.
-  `deny` decides the final status only, not visibility: `allow` or `-q` can
-  still hide the notice from output. Neither policy can suppress an
-  `essential` notice.
-- Both are also settable in `workspace.omni.yaml` (`notices.allow` /
-  `notices.deny`) so CI and local runs agree. CLI flags can tighten but not
-  loosen config, consistent with RFC 0022.
-- An `essential` notice cannot be allowed or suppressed:
-  `sandbox.os_disabled`, `redact.disabled`. This follows from RFC 0022's rule
-  that loosening protections must stay visible.
+- An `essential` notice is never hidden by `-q` and is always delivered over
+  MCP (exempt from the bound): `sandbox.os_disabled`, `redact.disabled`. This
+  follows from RFC 0022's rule that loosening protections must stay visible.
 - **Essential notices are static.** The derive rejects `essential` on a type
   that has fields or a `message` with placeholders, so every emission of an
   essential code is identical. That is what lets MCP deduplicate essential
   notices by code alone without discarding data.
-- `--allow` and `--deny` apply only to notice codes. Using one with an error
-  code is rejected with a message. A fatal diagnostic is not controllable.
-- MCP cannot set allow or deny through tool parameters, only through server
-  configuration (4.5).
+- Per-code allow/deny of notices, and failing a run on a notice, are not part
+  of this RFC (section 9, deferred).
 
 ### 4.4 Audit of current sites
 
@@ -471,13 +461,10 @@ are unchanged.
   ```
 
   A returned diagnostic keeps the RFC 0021 layout.
-- **Processing order (CLI).** For each notice: redact (RFC 0022), then decide
-  `deny` status (below), then apply `allow` and quiet filtering, then
-  collapse repeats, then render. Concretely:
+- **Processing order (CLI).** For each notice: redact (RFC 0022), then
+  apply quiet filtering, then collapse repeats, then render.
   - Redaction happens first, so grouping keys on the redacted message and two
     notices that differ only in a secret collapse into one.
-  - `deny` status is evaluated on every notice, including ones `allow` or `-q`
-    hide, so hiding output never changes the exit status.
   - Repeats are identical `(code, message)` after redaction among notices
     that are still to be shown. Groups keep first-occurrence order (no
     sorting) and print once, with the count appended as ` (xN)`, for example
@@ -486,7 +473,7 @@ are unchanged.
 - Verbosity flags replace the log-level flags for user output:
   - `-q/--quiet`: results and errors only; progress and notices suppressed
     (except `essential` ones). Rendering only: notices are still collected, so
-    `--deny` and the tracing mirror work as without `-q`.
+    the tracing mirror works as without `-q`.
   - `--no-progress`: keep notices, drop progress (for CI logs).
 - Redaction (RFC 0022) is applied once, in the presenter, to every string it
   writes that came from a notice, event or diagnostic.
@@ -494,12 +481,10 @@ are unchanged.
 #### MCP
 
 - `McpSubscriber` returns `true` from `wants_notices()`. It
-  processes each notice in a fixed order: **redact, then deny, then allow,
-  then deduplicate, then bound**. Redaction (RFC 0022) comes first, so two
-  same-code messages that differ only in a secret deduplicate into one entry
-  and use one slot of the bound. Server-side `allow` runs before the bound, so an
-  allowed non-essential notice is never retained and never counted in
-  `dropped`. It collects notices per
+  processes each notice in a fixed order: **redact, then deduplicate, then
+  bound**. Redaction (RFC 0022) comes first, so two same-code messages that
+  differ only in a secret deduplicate into one entry and use one slot of the
+  bound. It collects notices per
   request (non-essential bounded at 50, deduplicated by
   `(code, message, fields)`, redacted) next to the per-task log capture. `essential`
   notices are **exempt from the bound** and are deduplicated by `code` alone
@@ -514,9 +499,8 @@ are unchanged.
   derived notice (`NoticesTruncated { dropped }`, declared `code =
   "notices.truncated", level = info`, not `essential`, since it carries a
   field), emitted at most once per request, after the 50 retained ones, and
-  exempt from the bound. The MCP presenter appends it directly and **ignores
-  `allow` for this code**, so server configuration cannot hide it and an agent
-  is never handed a capped array without being told. `dropped` counts unique `(code, message, fields)`
+  exempt from the bound, so an agent is never handed a capped array without
+  being told. `dropped` counts unique `(code, message, fields)`
   notices omitted *after* deduplication, so repeats of an already retained
   notice collapse first and do not count. The key uses the canonical
   redacted form of `fields`: object keys are sorted recursively at every
@@ -540,24 +524,15 @@ are unchanged.
   omitted when empty. `target` is not sent. Agents match on `code`.
 - On failure, the RFC 0021 error payload carries notices collected before the
   failure under `data.notices`.
-- **Server-side `deny`** is evaluated on every reported notice, before `allow`
-  and independent of the bound, and takes precedence over `allow` for the
-  same code. It is a status decision, not payload filtering: `deny` itself
-  never removes a notice from `notices` (a matching `allow` can still hide a
-  non-essential one from the payload, while the status is kept). A denied notice turns an otherwise
-  successful run into the RFC 0021 failure envelope with the notices under
-  `data.notices`. If the run already ended in a fatal diagnostic, that
-  diagnostic remains the failure. Essential notices cannot be suppressed by
-  either policy.
 - `ToolRunResult.result` is the tool's own return value and stays untouched;
   `notices` is a sibling field.
-- Allow and deny come only from server configuration, never from tool
-  parameters, so an agent cannot suppress a notice or change what fails a run.
-  `essential` notices are always delivered.
 - The notice payload and its codes are a documented, versioned part of the
   MCP interface. Adding fields is non-breaking; renaming a code or removing a
-  field is breaking. The catalog can also be exposed as an MCP resource
-  (`omni://notices/<code>`), so an agent reads an explanation on demand
+  field is breaking.
+- **Explanation on demand.** An `explain` MCP tool takes a code and returns
+  the same fields as `omni explain --format json`, for error and notice codes
+  alike, and the catalog is also exposed as the resource
+  `omni://codes/<code>`. An agent reads an explanation when it needs one
   instead of receiving it in every response.
 - Events stay internal to MCP and are summarized into results
   (`TaskExecutionSummary`, `GeneratorRunResult`). Streaming notices or events
@@ -684,21 +659,20 @@ decision. Expected buckets:
 - `omni_codes`: error and notice codes share one namespace with no
   duplicates; prefix ownership is enforced; every `related` target exists; a
   retired code is never reused; every `essential` code is listed; `omni
-  explain` works for both kinds and shows `related`; `--allow` on an error code
-  is rejected.
+  explain` works for both kinds, shows `related`, lists close matches for an
+  unknown code, and its JSON output matches the MCP `explain` tool.
 - Presenter unit tests: `error`/`warning`/`note` prefixes with codes,
   collapsing of repeats (first-occurrence order, ` (xN)` suffix, grouping on
-  the redacted message), redaction, `-q` hides non-essential notices, and
-  `--deny` still fails the run when `-q` or `--allow` hides the notice;
-  `deny` wins over `allow` for the same code (status kept, visibility follows
-  `allow`); `essential` is read from the
-  event and matches the registry.
+  the redacted message), redaction, `-q` hides non-essential notices but not
+  essential ones, and `essential` is read from the event and matches the
+  registry.
 - CLI e2e:
   - stdout of `omni cache stats` and `omni project list` contains only
     results, with and without `--trace debug`.
-  - A warning appears on stderr by default; `--allow <code>` hides it;
-    `--deny <code>` exits `2` after the run completes; an essential code
-    ignores `--allow`; `--allow` has no effect on a fatal diagnostic.
+  - A warning appears on stderr by default, does not change the exit status,
+    and `-q` hides it unless it is essential.
+  - `omni explain <code>` prints the entry for an error code and a notice
+    code.
   - `--meta-on-error fail` returns the fatal diagnostic and
     `--meta-on-error exclude` reports the notice, with different codes.
   - Dry-run command lines are unchanged; the dry-run header is gone.
@@ -707,27 +681,23 @@ decision. Expected buckets:
 - MCP: `notices` present for a run with a capability warning, absent
   otherwise; carried in `data.notices` on failure; per-call isolation under
   concurrency; cap and dedup; an `essential` notice emitted after the cap is
-  reached still appears in `notices`, and the truncation entry (with a
-  `message`, not `essential`, unaffected by an allow rule targeting
-  `notices.truncated`, which the presenter ignores for this code) is appended after exactly 50 retained entries, is not itself
-  counted against the bound, and reports the dropped count of unique notices after deduplication (duplicates
-  overflowing the cap do not inflate it); the wire format of each `level` is exactly `"info"`,
-  `"warn"`, `"error"`; a server-denied notice fails an otherwise successful run with the
-  failure envelope and is listed unless a matching `allow` hides it (the status
-  is kept either way), `deny` wins over `allow` for the
-  same code, and a fatal diagnostic stays the failure; two same-code notices differing only in a declared
-  secret deduplicate into one entry and one slot; two same-code, same-message
-  notices with different `fields` stay separate, and notices whose `fields`
-  differ only in nested object key order deduplicate into one entry (arrays
-  in a different order stay separate); a server-allowed non-essential notice that would
-  have exceeded the bound is neither in `notices` nor counted in `dropped`;
-  tool parameters cannot allow or deny; `command`
-  returned in dry runs.
+  reached still appears in `notices`, and essential notices deduplicate by
+  code alone; the truncation entry (with a `message`, not `essential`) is
+  appended after exactly 50 retained entries, is not itself counted against
+  the bound, and reports the dropped count of unique notices after
+  deduplication (duplicates overflowing the cap do not inflate it); the wire
+  format of each `level` is exactly `"info"`, `"warn"`, `"error"`; two
+  same-code notices differing only in a declared secret deduplicate into one
+  entry and one slot; two same-code, same-message notices with different
+  `fields` stay separate, and notices whose `fields` differ only in nested
+  object key order deduplicate into one entry (arrays in a different order
+  stay separate); `command` returned in dry runs; the `explain` tool and
+  `omni://codes/<code>` return the registry entry.
 - MCP with `--trace-file /dev/stdout` (and `/dev/fd/1`) fails at startup and never writes trace lines into the JSON-RPC stream; a regular file path still works.
 - Derive: `essential` on a type with fields or a templated message fails to compile.
 - Sealing: a hand-written `impl Notice` does not compile (compile-fail test).
-- Quiet mode: with `-q`, notices are not printed but `--deny <code>` still
-  fails the run and the trace mirror still records them.
+- Quiet mode: with `-q`, non-essential notices are not printed but the trace
+  mirror still records them.
 - Lint: CI fails on `log::*` or `println!` in non-presenter omni crates, and on any use of the removed `trace` crate.
 - Generator: `omni generate crate` output compiles, passes clippy, contains no `trace`, `log` or `enable-tracing`.
 - Build: the workspace builds with the optional `tracing` release level cap set, and the four former `if_enabled!` sites behave identically at default settings.
@@ -776,7 +746,8 @@ Each step leaves the tree working.
 4. **MCP presenter.** Collect and return `notices`; add `command`; attach
    notices to error payloads.
 5. **CLI presenter.** Move `omni_cli_core` output off `log`; print notices on
-   stderr; add `-q`, `--no-progress`, `--allow`, `--deny`, `omni explain` backed by `omni_codes`.
+   stderr; add `-q`, `--no-progress`, and `omni explain` backed by `omni_codes`.
+   Add the MCP `explain` tool and `omni://codes/<code>` resource.
 6. **Tracing.** Remove `crates/trace` and the `enable-tracing` features (migrate to `tracing::*`, rewrite the four `if_enabled!` sites, update the crate generator). Migrate `log::*` to `tracing::*` with the triage, drop the
    stdout layer and `LogFilter`, add `--trace` and `--trace-file*`, remove the old flags
    and env vars, add the lint.
@@ -792,9 +763,28 @@ Each step leaves the tree working.
   promise, or only those marked stable in the registry.
 - **Prefix declaration.** `omni_codes::prefix!("cache")` per crate versus a
   list in the registry.
-- **`notices.allow` in config.** Whether project-level config can allow
-  codes, or only the workspace.
-- **Flag names.** `--allow`/`--deny` versus `--allow-notice`; `--trace` versus
-  `--debug-log`. `-v` stays free for `-v/--value` (#51).
+- **Flag names.** `--trace` versus `--debug-log`. `-v` stays free for `-v/--value` (#51).
 - **Recovered cache/hash errors.** `Error` notice or developer-only tracing?
   Decided per site in the triage.
+
+## 9. Deferred, can be explored later
+
+Notices carry stable codes and live in one registry, so per-code control can
+be added later without breaking changes. It is deferred because omni has few
+notices (about seven) and the cost is real: precedence and ordering rules on
+both CLI and MCP. Ideas for later, if users ask:
+
+- **Silence an accepted warning.** `--allow-notice <code>` and
+  `notices.allow` in `workspace.omni.yaml`. `essential` codes stay
+  un-silenceable, and a code that is an error is rejected with a pointer to
+  its `related` notice. Name the flag for what it controls, since a bare
+  `--allow` suggests it can also silence fatal errors, which are never
+  downgraded.
+- **Fail a run on a notice.** `--deny-warnings`, and perhaps
+  `--deny-notice <code>`, evaluated after the run completes, so no result type
+  needs to carry a notice error up the call stack. Failing early would need
+  a cancellation path and is not proposed.
+- **MCP.** Server-side allow and deny configuration, never as tool
+  parameters, so an agent cannot suppress a notice or change what fails a run.
+- **Validation.** Unknown codes are an error, so a typo cannot silently do
+  nothing.
