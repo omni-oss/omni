@@ -60,7 +60,10 @@ pub async fn run(command: &InitCommand) -> eyre::Result<()> {
     }
 
     if let Some(url) = &command.args.git {
-        eprintln!("Cloning repository from {}...", url);
+        eprintln!(
+            "Cloning repository from {}...",
+            omni_redact::redact_url_userinfo(url)
+        );
         omni_git_utils::clone_repo(
             &sys,
             url,

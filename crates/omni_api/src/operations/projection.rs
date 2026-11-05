@@ -196,6 +196,12 @@ where
     let ledger_path = ledger_path(ctx);
     let (mut ledger, ledger_blocked) =
         load_ledger(&sys, &ledger_path, notices).await;
+    if ledger_blocked && !req.dry_run {
+        eyre::bail!(
+            "the projection ledger at {} could not be read; refusing to apply links that could not be recorded",
+            ledger_path.display()
+        );
+    }
     let prior_ledger = ledger.clone();
 
     let mut response = ProjectionSyncResponse {
