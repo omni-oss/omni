@@ -476,8 +476,15 @@ impl JsScriptRunner for LazyScriptRunner {
             runner.call(EXEC_GENERATOR_SCRIPT_PATH, invocations).await;
         read_scope.revoke();
         if let Err(e) = call_result {
+            // Messages can carry secrets and the run redactor is not available
+            // here, so only the record's level and target are traced.
             for log in std::mem::take(&mut *self.script_logs.lock().unwrap()) {
-                tracing::debug!(target: "omni_generator::script", "{log:?}");
+                tracing::debug!(
+                    target: "omni_generator::script",
+                    level = ?log.level,
+                    log_target = %log.target,
+                    "script log discarded after failure"
+                );
             }
             return Err(Error::custom(e.to_string()));
         }
