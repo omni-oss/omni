@@ -1,5 +1,5 @@
 /**
- * Events, diagnostics, notices and output (RFC 0023): what the CLI prints,
+ * Events, diagnostics, notices and output: what the CLI prints,
  * where, and what `-q` and `omni code` do.
  *
  * Pinned to `crates/omni_cli_core/src/subscriber.rs` (the CLI presenter) and
@@ -100,6 +100,21 @@ describe("+notices @cli (dry run)", () => {
 });
 
 describe("+notices @cli (-q)", () => {
+    it("applies quiet output options when the flag follows the subcommand", async () => {
+        const ws = makeWorkspace(failingSpec());
+        const result = await runOmni(
+            ["run", "ok", "--quiet", "--output-logs=all"],
+            {
+                cwd: ws.cwd,
+            },
+        );
+
+        expect(result).toHaveSucceeded();
+        expect(result).toOutputContaining("OK-RAN");
+        expect(result.err).not.toContain("Executed task");
+        expect(result.err).not.toMatch(/Succeeded/);
+    });
+
     it("hides lifecycle lines and the summary on success, keeping task output", async () => {
         const ws = makeWorkspace(failingSpec());
 

@@ -1,4 +1,4 @@
-//! The application-wide check of the code registry (RFC 0023): every crate
+//! The application-wide check of the code registry: every crate
 //! that registers codes is linked into `omni_cli_core`, so this sees them all.
 
 use omni_cli_core as _;

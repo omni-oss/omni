@@ -1,4 +1,4 @@
-//! The code table, rendered from the registry (RFC 0023). Backs
+//! The code table, rendered from the registry. Backs
 //! `omni code list` and the `code_list` MCP tool.
 
 use std::fmt::Write as _;

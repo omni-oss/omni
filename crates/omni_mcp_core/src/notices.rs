@@ -1,4 +1,4 @@
-//! Per-request notice collection for MCP (RFC 0023, 4.5).
+//! Per-request notice collection for MCP.
 //!
 //! Each notice is processed in a fixed order: redacted (by `publish_event`,
 //! before it reaches the collector), deduplicated, then bounded.

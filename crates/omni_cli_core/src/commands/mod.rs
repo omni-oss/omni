@@ -77,6 +77,42 @@ pub enum ErrorFormat {
     Json,
 }
 
+/// CLI presentation settings passed to commands, independent of workspace state.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct OutputOptions {
+    /// Hide omni's narration, but keep results, failures and essential notices.
+    pub quiet: bool,
+}
+
+impl From<&CliArgs> for OutputOptions {
+    fn from(args: &CliArgs) -> Self {
+        Self { quiet: args.quiet }
+    }
+}
+
+#[cfg(test)]
+mod output_options_tests {
+    use super::{CliArgs, OutputOptions};
+
+    #[test]
+    fn narration_is_enabled_by_default() {
+        assert_eq!(
+            OutputOptions::from(&CliArgs::default()),
+            OutputOptions::default()
+        );
+        assert!(!OutputOptions::default().quiet);
+    }
+
+    #[test]
+    fn quiet_is_copied_from_cli_args() {
+        let args = CliArgs {
+            quiet: true,
+            ..CliArgs::default()
+        };
+        assert!(OutputOptions::from(&args).quiet);
+    }
+}
+
 #[derive(Args, Debug)]
 #[command()]
 pub struct CliArgs {

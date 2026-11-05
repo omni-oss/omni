@@ -123,33 +123,36 @@ pub struct ProjectionPruneArgs {
 pub async fn run(
     cmd: &ProjectionCommand,
     ctx: &Context,
-    quiet: bool,
+    output: super::OutputOptions,
 ) -> eyre::Result<()> {
     match &cmd.subcommand {
-        ProjectionSubcommand::Sync(args) => run_sync(args, ctx, quiet).await,
+        ProjectionSubcommand::Sync(args) => run_sync(args, ctx, output).await,
         ProjectionSubcommand::Status(args) => {
-            run_status(args, ctx, quiet).await
+            run_status(args, ctx, output).await
         }
         ProjectionSubcommand::Unlink(args) => {
-            run_unlink(args, ctx, quiet).await
+            run_unlink(args, ctx, output).await
         }
-        ProjectionSubcommand::Prune(args) => run_prune(args, ctx, quiet).await,
+        ProjectionSubcommand::Prune(args) => run_prune(args, ctx, output).await,
     }
 }
 
 /// Presents notices (for example an unreadable ledger) on stderr.
-fn subscriber(ctx: &Context, quiet: bool) -> crate::subscriber::CliSubscriber {
+fn subscriber(
+    ctx: &Context,
+    output: super::OutputOptions,
+) -> crate::subscriber::CliSubscriber {
     crate::subscriber::CliSubscriber::new_stream(ctx.scratch_dir())
-        .with_quiet(quiet)
+        .with_quiet(output.quiet)
         .with_immediate_notices()
 }
 
 async fn run_sync(
     args: &ProjectionSyncArgs,
     ctx: &Context,
-    quiet: bool,
+    output: super::OutputOptions,
 ) -> eyre::Result<()> {
-    let response = OmniApi::new_with_sys(ctx.clone(), subscriber(ctx, quiet))
+    let response = OmniApi::new_with_sys(ctx.clone(), subscriber(ctx, output))
         .projection_sync(ProjectionSyncRequest {
             dry_run: args.dry_run,
             force: args.force,
@@ -190,9 +193,9 @@ async fn run_sync(
 async fn run_status(
     args: &ProjectionStatusArgs,
     ctx: &Context,
-    quiet: bool,
+    output: super::OutputOptions,
 ) -> eyre::Result<()> {
-    let response = OmniApi::new_with_sys(ctx.clone(), subscriber(ctx, quiet))
+    let response = OmniApi::new_with_sys(ctx.clone(), subscriber(ctx, output))
         .projection_status(ProjectionStatusRequest {
             verbose: args.verbose,
         })
@@ -335,9 +338,9 @@ fn render_level(
 async fn run_unlink(
     args: &ProjectionUnlinkArgs,
     ctx: &Context,
-    quiet: bool,
+    output: super::OutputOptions,
 ) -> eyre::Result<()> {
-    let response = OmniApi::new_with_sys(ctx.clone(), subscriber(ctx, quiet))
+    let response = OmniApi::new_with_sys(ctx.clone(), subscriber(ctx, output))
         .projection_unlink(ProjectionUnlinkRequest {
             id: args.id.clone(),
             backup_handling: args.backup_handling(),
@@ -361,9 +364,9 @@ async fn run_unlink(
 async fn run_prune(
     args: &ProjectionPruneArgs,
     ctx: &Context,
-    quiet: bool,
+    output: super::OutputOptions,
 ) -> eyre::Result<()> {
-    let response = OmniApi::new_with_sys(ctx.clone(), subscriber(ctx, quiet))
+    let response = OmniApi::new_with_sys(ctx.clone(), subscriber(ctx, output))
         .projection_prune(ProjectionPruneRequest {
             dry_run: args.dry_run,
         })

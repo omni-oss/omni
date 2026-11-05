@@ -156,7 +156,7 @@ describe("+hash @output (raw vs formatted)", () => {
         expect(formatted).toHaveSucceeded();
 
         // The non-raw run adds a trailing newline; the raw run has none. No
-        // log line shares stdout with the result (RFC 0023).
+        // log line shares stdout with the result.
         expect(formatted.stdout).not.toContain("INFO");
         expect(raw.stdout).not.toContain("\n");
         expect(extractHash(formatted.stdout)).toBe(extractHash(raw.stdout));

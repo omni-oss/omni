@@ -480,7 +480,7 @@ impl CliSubscriber {
         self
     }
 
-    /// Hide omni's own narration (RFC 0023, 4.5). Rendering only.
+    /// Hide omni's own narration without suppressing events. Rendering only.
     pub fn with_quiet(mut self, quiet: bool) -> Self {
         self.quiet = quiet;
         self

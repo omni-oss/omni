@@ -73,7 +73,7 @@ impl std::fmt::Display for McpFailure {
 impl std::error::Error for McpFailure {}
 
 /// Attaches the notices collected before a failure to the error payload as
-/// `data.notices` (RFC 0023, 4.5). Notices stay true about the run even when
+/// `data.notices`. Notices stay true about the run even when
 /// a later, unrelated error ends it.
 pub(crate) fn with_notices(
     report: eyre::Report,

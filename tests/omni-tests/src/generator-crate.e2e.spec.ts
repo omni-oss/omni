@@ -1,6 +1,6 @@
 /**
  * The `crate` generator (`generators/crate`) scaffolds crates in the shape
- * RFC 0023 requires: `tracing` only, no `trace` wrapper, no `log`, and no
+ * Generated crates use `tracing` only, no `trace` wrapper, no `log`, and no
  * `enable-tracing` feature. (The workspace-level check that a generated crate
  * builds and passes the `disallowed_macros` lint is `cargo clippy` in CI.)
  */
@@ -47,7 +47,7 @@ function generate(crateType: "lib" | "bin", useTracing: boolean) {
 }
 
 describe(
-    "+generator @e2e (crate generator, RFC 0023)",
+    "+generator @e2e (crate generator tracing conventions)",
     { tags: ["generator"], timeout: 90_000 },
     () => {
         it.each([

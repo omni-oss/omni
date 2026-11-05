@@ -852,7 +852,7 @@ describe("+cache @cache (remote setup)", () => {
                 { cwd: ws.cwd },
             );
             expect(loaded).toHaveSucceeded();
-            // A developer trace now, not user output (RFC 0023).
+            // Cache internals are developer traces, not user output.
             expect(loaded).toHaveStderrContaining("Remote caching is enabled");
         }
     });

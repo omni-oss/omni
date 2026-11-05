@@ -5,7 +5,9 @@ use eyre::OptionExt;
 use omni_configurations::Ui;
 
 use crate::{
-    commands::{common_args::RunArgs, common_types::SerializationFormat},
+    commands::{
+        OutputOptions, common_args::RunArgs, common_types::SerializationFormat,
+    },
     executor::TaskExecutionResult,
     subscriber::CliSubscriber,
 };
@@ -62,7 +64,7 @@ pub fn exit_code(results: &[TaskExecutionResult]) -> ExitCode {
 pub fn resolve_subscriber(
     ui: Option<EnumValueAdapter<Ui>>,
     scratch_dir: PathBuf,
-    quiet: bool,
+    output: OutputOptions,
 ) -> CliSubscriber {
     use omni_configurations::Ui::*;
     let sub = match ui.as_ref().map(|u| u.value()) {
@@ -77,5 +79,5 @@ pub fn resolve_subscriber(
         Some(Progress) => CliSubscriber::new_progress(scratch_dir),
         Some(Auto) | None => CliSubscriber::new_auto(scratch_dir),
     };
-    sub.with_quiet(quiet)
+    sub.with_quiet(output.quiet)
 }

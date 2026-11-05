@@ -13,7 +13,7 @@ use crate::{
     executor::{Call, OnFailure, TaskExecutor},
 };
 
-use super::utils::resolve_subscriber;
+use super::{OutputOptions, utils::resolve_subscriber};
 
 #[derive(Args)]
 pub struct RunCommand {
@@ -72,7 +72,7 @@ pub struct RunCommand {
 pub async fn run(
     command: &RunCommand,
     ctx: &Context,
-    quiet: bool,
+    output: OutputOptions,
 ) -> eyre::Result<ExitCode> {
     let output_settings = get_results_settings(&command.run)?;
 
@@ -97,7 +97,7 @@ pub async fn run(
     let config = builder.build()?;
 
     let ctx = ctx.clone().into_loaded().await?;
-    let sub = resolve_subscriber(command.run.ui, ctx.scratch_dir(), quiet);
+    let sub = resolve_subscriber(command.run.ui, ctx.scratch_dir(), output);
     let executor = TaskExecutor::new(config, &ctx, &sub);
 
     let results = match executor.run().await {

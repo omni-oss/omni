@@ -1,4 +1,4 @@
-//! Notices raised by the task executor (RFC 0023).
+//! Notices raised by the task executor.
 
 use omni_notice::Notice;
 

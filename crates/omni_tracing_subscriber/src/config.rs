@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use crate::Level;
 
-/// Where developer traces go (RFC 0023, 4.6).
+/// Where developer traces are written.
 ///
 /// There is no stdout sink: stdout belongs to command results, and traces
 /// there would corrupt piped output and the MCP stdio transport. Users who

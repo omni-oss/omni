@@ -1,4 +1,4 @@
-//! Capability and sandbox notices (RFC 0023).
+//! Capability and sandbox notices.
 
 use omni_notice::Notice;
 

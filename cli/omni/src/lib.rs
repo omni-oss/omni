@@ -1,4 +1,4 @@
-// The binary prints the final error and nothing else (RFC 0023).
+// The binary prints the final error; presenters handle other user-facing output.
 #![allow(clippy::disallowed_macros)]
 
 use std::{
@@ -8,7 +8,9 @@ use std::{
 
 use clap::Parser as _;
 use omni_cli_core::{
-    commands::{self, Cli, CliArgs, CliSubcommands, ErrorFormat},
+    commands::{
+        self, Cli, CliArgs, CliSubcommands, ErrorFormat, OutputOptions,
+    },
     context::{self, Context, ContextError, get_root_dir},
 };
 use omni_diagnostic::DiagnosticReport;
@@ -65,6 +67,7 @@ pub async fn run(
 ) -> eyre::Result<()> {
     #[allow(clippy::result_large_err)]
     let create_ctx = || ctx(args, tracing, ws_root_dir);
+    let output = OutputOptions::from(args);
 
     match sc {
         CliSubcommands::Config(config) => {
@@ -75,16 +78,16 @@ pub async fn run(
         }
         CliSubcommands::Exec(exec) => {
             let context = create_ctx()?;
-            let res = commands::exec::run(exec, &context, args.quiet).await?;
+            let res = commands::exec::run(exec, &context, output).await?;
             exit(res);
         }
         CliSubcommands::Env(env) => {
             let context = create_ctx()?;
-            commands::env::run(env, &context, args.quiet).await?;
+            commands::env::run(env, &context, output).await?;
         }
         CliSubcommands::Run(run) => {
             let context = create_ctx()?;
-            let res = commands::run::run(run, &context, args.quiet).await?;
+            let res = commands::run::run(run, &context, output).await?;
             exit(res);
         }
         CliSubcommands::Hash(hash_command) => {
@@ -106,7 +109,7 @@ pub async fn run(
         }
         CliSubcommands::Generator(command) => {
             let context = create_ctx()?;
-            commands::generator::run(command, &context, args.quiet).await?;
+            commands::generator::run(command, &context, output).await?;
         }
         CliSubcommands::Init(command) => {
             commands::init::run(command).await?;
@@ -117,7 +120,7 @@ pub async fn run(
         }
         CliSubcommands::Projection(cmd) => {
             let context = create_ctx()?;
-            commands::projection::run(cmd, &context, args.quiet).await?;
+            commands::projection::run(cmd, &context, output).await?;
         }
         CliSubcommands::Pack(cmd) => {
             let context = create_ctx()?;
@@ -130,7 +133,7 @@ pub async fn run(
         }
         CliSubcommands::Tool(cmd) => {
             let context = create_ctx()?;
-            commands::tool::run(cmd, &context, args.quiet).await?;
+            commands::tool::run(cmd, &context, output).await?;
         }
         CliSubcommands::RemoteSources(cmd) => {
             let context = create_ctx()?;

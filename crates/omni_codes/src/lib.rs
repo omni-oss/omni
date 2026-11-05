@@ -1,4 +1,4 @@
-//! The one canonical list of omni's diagnostic and notice codes (RFC 0023).
+//! The canonical registry of omni's diagnostic and notice codes.
 //!
 //! Diagnostics (fatal errors) and notices (non-fatal messages) both register
 //! here through their derives. Codes are unique across the whole application.

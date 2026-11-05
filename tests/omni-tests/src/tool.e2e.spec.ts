@@ -444,7 +444,7 @@ describe("+tool @e2e (working dir validation)", { tags: ["tool"] }, () => {
 });
 
 describe.runIf(runtimeAvailable("node"))(
-    "+tool @e2e (notices, RFC 0023)",
+    "+tool @e2e (notices)",
     { tags: ["tool"] },
     () => {
         it("a tool on the experimental node runtime raises `runtime.experimental` on stderr, keeping stdout to the value", async () => {

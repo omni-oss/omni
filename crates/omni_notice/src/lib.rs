@@ -1,4 +1,4 @@
-//! The `Notice` trait (RFC 0023).
+//! The `Notice` trait for structured, non-fatal diagnostics.
 //!
 //! A notice is a message about *this run* that the user may want to know even
 //! though the operation completed. It is a derived type with a mandatory

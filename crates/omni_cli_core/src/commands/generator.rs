@@ -141,11 +141,11 @@ pub struct GeneratorListArgs {}
 pub async fn run(
     generate: &GeneratorCommand,
     ctx: &Context,
-    quiet: bool,
+    output: super::OutputOptions,
 ) -> eyre::Result<()> {
     match &generate.subcommand {
         GeneratorSubcommand::Run(generator_run_command) => {
-            run_generator_run(generator_run_command, ctx, quiet).await?
+            run_generator_run(generator_run_command, ctx, output).await?
         }
         GeneratorSubcommand::List(generator_list_command) => {
             run_generator_list(generator_list_command, ctx).await?
@@ -158,7 +158,7 @@ pub async fn run(
 async fn run_generator_run(
     command: &GeneratorRunCommand,
     ctx: &Context,
-    quiet: bool,
+    output: super::OutputOptions,
 ) -> eyre::Result<()> {
     let loaded_context = ctx.clone().into_loaded().await?;
     let projects = loaded_context.projects();
@@ -183,7 +183,7 @@ async fn run_generator_run(
             (Some(out), Some(_)) => {
                 crate::subscriber::print_notice(
                     &crate::notices::OutputOverridesProject,
-                    quiet,
+                    output.quiet,
                 );
                 (out, None)
             }
@@ -223,7 +223,7 @@ async fn run_generator_run(
     let api = OmniApi::new_with_loaded_sys(
         loaded_context,
         crate::subscriber::CliSubscriber::new_stream(scratch_dir)
-            .with_quiet(quiet),
+            .with_quiet(output.quiet),
     );
     let response = api.generator_run(req).await?;
 

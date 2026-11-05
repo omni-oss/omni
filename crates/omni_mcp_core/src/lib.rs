@@ -1,4 +1,4 @@
-// Presenter crate (RFC 0023).
+// MCP presenter crate.
 #![allow(clippy::disallowed_macros)]
 
 pub mod codes;

@@ -1,4 +1,4 @@
-//! Notices raised by CLI commands (RFC 0023).
+//! Notices raised by CLI commands.
 
 use omni_notice::Notice;
 
