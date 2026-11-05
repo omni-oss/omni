@@ -308,9 +308,10 @@ only those they need) are:
    updated session state. This is the only hook that may parse declared input
    files.
 4. **`project_discovery.resolve_dependencies`** — runs after all plugins'
-   `infer_roots` complete; receives the accumulated session state plus the full
-   set of inferred roots, allowing cross-root and cross-plugin resolution
-   without guessing final omni names.
+   `infer_roots` complete; receives the accumulated session state, frozen
+   inference facts and the host-approved root catalog (including explicit-only
+   projects), allowing cross-root and cross-plugin resolution without guessing
+   final omni names.
 5. **`project_discovery.observe`** — optionally inspect the frozen, composed
    project/dependency snapshot and return notices or inspection metadata only.
    It cannot change roots, fields or edges. All fragment edits finish before
@@ -1380,3 +1381,129 @@ Required integration tests:
   explicit aliases override them. Enabled inferred/explicit collisions fail
   before hooks; disabled unnamed sources remain unfetched. Source deduplication
   is unaffected by aliases, and allowlists use resolved effective ids.
+
+## 16. End-to-end native plugin walkthrough
+
+This is a narrated simulation of the proposed design, not a description of
+functionality already implemented. Assume a workspace explicitly enables
+`@omni/javascript` and `@omni/rust`, omitting their consumer ids, and contains:
+
+- `packages/web/package.json` with a build script.
+- `packages/web/project.omni.yaml` extending inference and overriding only the
+  build command.
+- `crates/core/Cargo.toml` describing a Rust package.
+- Relevant workspace manifests and lockfiles.
+
+The user asks omni to run the web project's build task.
+
+### 16.1 Bootstrap and bind handlers
+
+Omni finds and loads `workspace.omni.yaml`, including project selection and
+explicit plugin activation. The effective ids default to `@omni/javascript`
+and `@omni/rust`.
+
+Their native implementations are already compiled into omni; nothing is
+downloaded. Other compiled-in plugins remain inactive. Omni looks up the two
+builtin descriptors, negotiates protocol/capability versions and validates
+handler registrations, supported hooks and effective-id uniqueness before any
+hook runs. Each handler is bound to its activation options, budgets and host-owned
+state namespace.
+
+### 16.2 Index candidates once
+
+The shared ignore-aware walk indexes explicit project files and the enabled
+plugins' markers. It finds the JavaScript and Cargo manifests. Lockfiles are
+available as declared supporting inputs or candidate triggers, not automatic
+project roots. Every candidate still obeys workspace selection, exclusions and
+containment rules.
+
+### 16.3 Read explicit configuration layers
+
+Omni loads the web file and its explicit extension closure into recursive
+presence-aware layers. Web extends inference and overrides its build command;
+other omitted fields remain absent instead of becoming default values.
+
+If web specified `inference: {mode: replace}`, omni would exclude that root
+from inference. Workspace inputs shared with other inferred roots may still be
+read where authorized; replacement skips contributions for a root, not all
+interpretation of its surrounding ecosystem.
+
+### 16.4 Initialize sessions
+
+Omni creates separate workspace/root state partitions for each plugin's
+discovery capability. Registered `on_workspace` hooks receive options and static
+scopes, without file-content access. Omni validates and commits their workspace
+state seeds. The handlers retain no mutable session state themselves.
+
+### 16.5 Filter candidates
+
+Each registered filter hook receives its relevant candidate batches and bounded
+file index. The JavaScript handler retains package candidates; the Rust handler
+retains Cargo package candidates. They may decline aggregate-only directories.
+No package manager or Cargo command runs.
+
+### 16.6 Infer project fragments
+
+Omni batches `infer_roots` calls as efficiently as permitted. The JavaScript
+handler reads `package.json` and relevant declared workspace/lockfile inputs
+through the tracked input service. It returns names, script task definitions,
+dependency facts, root-state updates and any notices. The Rust handler similarly
+returns project fragments and state derived from Cargo inputs.
+
+Both describe commands; neither executes them. Workspace state and stage-start
+root state are immutable inputs. Each invocation may return writes only for its
+assigned roots, independent of batch neighbors and invocation order.
+
+### 16.7 Commit the inference stage
+
+Omni validates root ownership, configuration fields, budgets, state updates and
+notices. Parallel batches cannot overwrite one another's roots. Only after all
+required invocations succeed does omni atomically commit that stage's results.
+A failed/cancelled stage publishes no partial state, contributions or notices;
+retrying uses the same stage-start snapshot.
+
+### 16.8 Resolve local dependencies
+
+Omni freezes the inference snapshot and invokes registered dependency hooks.
+They consume accumulated facts and return workspace-local root references,
+not guessed final names. Registry dependencies do not become omni project
+edges. Resolution can target host-approved explicit-only project roots as well
+as inferred roots: the read-only root catalog includes both. No dependency hook
+may edit project fragments after their freeze.
+
+### 16.9 Compose effective projects
+
+For each root, omni composes inferred fragments beneath explicit base layers and
+the concrete explicit file. The web build command wins; other inferred fields
+survive according to the shared merge rules. Conflicting contributions without
+an explicit resolution fail deterministically.
+
+Omni applies defaults only after composition, resolves task extensions and
+root-based edges to final project names, and validates configuration and graph
+invariants. Renaming web explicitly does not break root-based references to it.
+
+### 16.10 Observe the frozen result
+
+Registered observation hooks can inspect the final frozen projects/dependencies
+and return notices or inspection metadata. They cannot change project fields,
+edges or session state. Their outputs are validated and committed transactionally
+like other stage results.
+
+### 16.11 Use the normal execution pipeline
+
+The planner receives ordinary effective projects and tasks, not separate plugin
+execution paths. Omni selects web's effective build task, computes/checks its
+execution-cache identity and runs it through the existing executor and policies.
+The discovery plugin is not the task executor. Inference changes participate in
+effective configuration identity so an old result cannot mask a changed task.
+
+### 16.12 Reuse work on the next command
+
+Omni checks tracked inputs, options, builtin/build identity, negotiated versions,
+incoming state and relevant snapshots. Matching cached hook results can be
+restored without invoking handlers. Input edits invalidate dependent results;
+cross-root resolution also invalidates when its frozen catalog/facts change.
+Long-lived MCP sessions use the same invalidation rules as CLI invocations.
+
+In short: plugins contribute facts and configuration at defined stages; omni
+owns discovery boundaries, scheduling, state, composition, caching and execution.
