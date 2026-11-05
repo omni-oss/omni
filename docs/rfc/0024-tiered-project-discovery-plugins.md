@@ -144,6 +144,15 @@ manifest support without renaming; they do not imply that additional formats
 are supported today. Keep detailed ecosystem inference rules and fixtures with
 each adapter, separate from the generic contract.
 
+The initial plugins use **manifest-based project roots with lockfile-assisted
+inference**, not lockfile-only projects. JavaScript inputs may include
+`package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, `bun.lock` and legacy
+`bun.lockb`; Rust inputs may include `Cargo.lock`. Declare only formats the
+adapter can parse safely and document actual format/version coverage. These
+examples are not a promise that every lockfile version is supported initially.
+Lockfiles enrich workspace/dependency resolution but do not replace project
+manifests as the source of names, scripts or task definitions.
+
 ## 5. Activation, identity and delivery
 
 Proposed `workspace.omni.yaml`:
@@ -154,24 +163,21 @@ projects:
   exclude: ["**/fixtures/**"]
 
 plugins:
-  - id: javascript
-    enabled: true
+  - enabled: true
     source: builtin
-    name: "@omni/javascript"
+    name: "@omni/javascript" # effective id defaults to this full name
     options: {}
 
-  - id: rust
-    enabled: true
+  - enabled: true
     source: builtin
     name: "@omni/rust"
     options: {}
 
-  - id: company
-    enabled: true
+  - enabled: true
     source: local
-    path: ./omni/plugins/company
+    path: ./omni/plugins/company # id inferred from manifest name
 
-  - id: frontend
+  - id: frontend # optional consumer alias overrides the inferred id
     enabled: false
     source: git
     uri: https://github.com/example/omni-frontend.git
@@ -182,9 +188,11 @@ plugins:
 - `plugins` defaults to `[]`; each entry's `enabled` defaults to `false`.
   Disabled entries are not fetched, loaded or executed. Structural declaration
   errors are still reported without reading their source.
-- `id` is the consumer handle, unique within the workspace. External manifests
-  declare canonical `name` and metadata `version`, following RFC 0014's
-  consumer-id/author-name distinction.
+- `id` is optional. The effective consumer handle is an explicit `id`, otherwise
+  the full canonical plugin `name`: builtin locator name or external manifest
+  name, such as `@omni/javascript`. Do not strip the scope, infer from a repo
+  basename or append numeric suffixes. External manifests retain their author
+  `name` and metadata `version` independently of consumer aliases.
 - `builtin` resolves a compiled registry entry. External `local`/`git` entries
   resolve one `plugin.omni.*` manifest at the selected artifact directory using
   existing source materialization and immutable lock identity (RFC 0013), not
@@ -195,6 +203,38 @@ plugins:
 - A built-in's implementation identity includes the omni build. An external
   plugin's identity includes the verified artifact and bundled module digests;
   a version string alone is never a cache or trust identity.
+
+Effective ids must be unique across enabled activations, including explicit vs
+inferred collisions. Resolve all enabled descriptors and validate that uniqueness
+before invoking any hooks. Multiple activations of the same canonical plugin
+(different versions, subdirectories or options) need distinct explicit aliases
+where their inferred names would collide. Report both declaration locations and
+suggest `id`; list order never chooses a winner.
+
+Project `inference.plugins` allowlists, provenance, state partitions and cache
+keys use the effective id. For example, an unaliased Rust builtin is selected
+with `plugins: ["@omni/rust"]`; an explicitly aliased plugin uses its alias.
+Source fetch/pin/GC identity remains independent of the effective id.
+
+Validate explicit id syntax/duplicates from workspace declarations without
+source access. Resolve omitted external ids only for enabled entries; disabled
+entries remain unresolved and never require fetching a manifest merely to learn
+a name. Cross-source inferred-id collisions and allowlist resolution are checked
+against enabled descriptors. Before an id is known, identify errors by source
+locator and declaration location, not an invented placeholder plugin id.
+
+Canonical plugin names retain the shared `@scope/name` convention used by pack
+and projection manifests. Reserve `::` for system-composed parent/child
+hierarchies; it is not an alternate publisher-scope separator. Effective plugin
+ids are logical references, not filesystem paths.
+
+Unlike recursive pack/projection traversal, plugin source materialization does
+not require an id for pre-fetch subtree selection or composed child ids. This
+proposal therefore permits omitted ids for local/git plugin entries without
+changing other subsystems' required-id rules. A plugin author renaming its
+canonical name changes an unaliased effective id; stale allowlist references
+must fail clearly. Explicit aliases stabilize references across such updates;
+renames never silently transfer old session state to a different identity.
 
 An external manifest might be:
 
@@ -354,6 +394,39 @@ help interpretation but cannot bypass omni's selection boundary.
 Workspace-level manifests may be declared read-only inference inputs without
 making their directories projects. Return no project for aggregate-only
 manifests unless the ecosystem adapter can justify a runnable root project.
+
+#### Lockfiles as markers and inputs
+
+The static marker/input model permits lockfiles in either role. A marker hit
+requests evaluation of a candidate directory; it does **not** establish that
+directory as a project. A workspace lockfile may describe many packages and
+its directory may be aggregate-only. Inference may decline it or consult
+associated manifests through the tracked input service.
+
+For the initial JavaScript/Rust adapters, independently index supported project
+manifests during the shared walk. Lockfile/workspace membership may help select
+or interpret those candidates, but lockfile entries never directly create new
+roots. All returned roots must already be host-approved manifest candidates
+within `projects` includes/excludes and ignore/containment boundaries. A future
+bounded candidate-proposal stage would require separate validation and protocol
+design; it is not implicit permission granted by reading a lockfile.
+
+Workspace lockfiles can be tracked read-only inputs even when their own
+directories are not selected project roots, under the same workspace-input
+scope rules as aggregate manifests. Changes, creation/deletion and missing
+reads invalidate dependent hook results. Only validated workspace-local
+relationships become omni edges; registry packages in a lockfile are not
+projects. Do not infer a local edge from matching package names alone when
+the manifest/lockfile resolves that dependency externally.
+
+Parsing must stay inside the plugin's resource budget, with explicit supported
+format/version handling. Never invoke npm/Yarn/pnpm/Bun/Cargo or a formatter to
+decode, regenerate or normalize lockfiles during discovery. In particular,
+binary formats need a bounded in-process parser or an explicit unsupported
+format policy; do not fall back to running a package manager. An enabled adapter
+must not silently substitute stale lockfile facts after a parse failure. Follow
+the fatal-error policy, or document a deliberate manifest-only fallback with a
+notice when the omitted lockfile data is not required for a correct graph.
 
 ### 6.3 Data boundary
 
@@ -642,6 +715,10 @@ Required tests include:
   extension cases, including absence versus default-valued fields.
 - Explicit renaming preserves root-based dependency edges; unresolved/excluded
   local roots and cycles receive ordinary graph diagnostics.
+- Lockfile markers do not manufacture aggregate-root projects or bypass project
+  selection. Tests cover shared workspace locks, manifest/lock mismatches,
+  missing/changed locks, external same-name packages and unsupported formats,
+  without executing package managers to parse them.
 - Conflicts are deterministic under reordered scheduling; explicit replacements
   and allowlists resolve only the intended contributions.
 - Cache invalidation covers edits, new/deleted/missing inputs, directory
@@ -699,7 +776,7 @@ declaration contains its canonical name, API version range, required/optional
 flag, required features and supported hooks. The manifest also declares its
 supported protocol range. These are data, not executable handlers.
 
-The consumer activation id belongs to the host binding, not the author handler:
+The resolved effective activation id belongs to the host binding, not the author handler:
 the same artifact may be enabled with different ids/options. Native plugins
 register typed handlers using a host registry:
 
@@ -1019,7 +1096,8 @@ to descriptors; capability negotiation precedes hook scheduling.
 - JavaScript and Rust builtins discover projects without per-project omni files,
   with correct names, tasks and local dependency edges. JavaScript fixtures cover
   npm, Yarn, pnpm and Bun, including workspace and package-manager ambiguity;
-  Rust fixtures cover Cargo packages and workspaces.
+  Rust fixtures cover Cargo packages and workspaces. Both use manifest roots
+  with tracked lockfile-assisted inference, not lockfile-only project creation.
 - Extend/replace and allowlists work; conflicts are deterministic.
 - Wasm and JavaScript conformance fixtures match native output.
 - Benchmarks meet proposed budgets or revised documented budgets.
@@ -1202,10 +1280,12 @@ Explicit generator/tool/projection-only selection does not fetch plugins.
 
 For the selected plugin subsystem:
 
-1. Validate activation ids and source declarations; retain enabled entries only.
+1. Validate explicit activation ids and source declarations; retain enabled
+   entries only. Omitted ids do not prevent materialization by source locator.
 2. Materialize enabled Git sources through the shared manager, passing explicit
    update intent through the existing invalidation/re-resolution mechanism.
-3. Resolve/validate static manifests, module closure and selected artifact paths
+3. Resolve/validate static manifests, infer omitted effective ids and check
+   enabled-id uniqueness, module closure and selected artifact paths
    without executing plugin code. Enabled local sources use the same descriptor
    validation but do not produce remote GC references; builtins need no fetch.
 4. Return every resolved Git reference for the manager-owned `refs/plugin.json`
@@ -1296,3 +1376,7 @@ Required integration tests:
   module escape attempts fail before hooks run.
 - Shared source extraction preserves existing serde/schema/validation behavior
   and import paths for generators, tools, projections and packs.
+- Omitted ids resolve to full canonical names for builtin/local/git sources;
+  explicit aliases override them. Enabled inferred/explicit collisions fail
+  before hooks; disabled unnamed sources remain unfetched. Source deduplication
+  is unaffected by aliases, and allowlists use resolved effective ids.
