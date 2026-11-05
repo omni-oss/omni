@@ -29,10 +29,13 @@ fn who(c: &CodeInfo) -> String {
     }
 }
 
+/// Renders the registered codes in code order.
 pub fn render(format: Format) -> String {
     render_entries(&entries(), format)
 }
 
+/// Renders the supplied entries in their given order. JSON serialization
+/// failure yields an empty string.
 pub fn render_entries(entries: &[&CodeInfo], format: Format) -> String {
     match format {
         Format::Json => {

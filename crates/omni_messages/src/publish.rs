@@ -1,10 +1,8 @@
 use crate::notice::NoticeSubscriber;
 pub use crate::notice::{NoticeEvent, NoticeLevel};
 
-/// Redacts, mirrors to `tracing`, then dispatches one event.
-///
-/// Redaction runs here, once, before any subscriber or the `tracing` mirror
-/// sees the event, so no sink observes unredacted notice data.
+/// Applies the subscriber's redactor, if present, then mirrors to `tracing`
+/// when enabled and dispatches one event. This does not check `wants_notices`.
 pub fn publish_event<S: NoticeSubscriber + ?Sized>(
     sub: &S,
     mut event: NoticeEvent,
@@ -17,6 +15,7 @@ pub fn publish_event<S: NoticeSubscriber + ?Sized>(
 }
 
 /// Publishes a batch built without a subscriber (for example by a planner).
+/// If the subscriber opts out of notices, the batch is not dispatched.
 pub fn publish_batch<S: NoticeSubscriber + ?Sized>(
     sub: &S,
     events: impl IntoIterator<Item = NoticeEvent>,

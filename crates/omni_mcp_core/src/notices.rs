@@ -76,6 +76,10 @@ impl NoticeCollector {
         Self::default()
     }
 
+    /// Retains a distinct notice for the response. Essential notices are
+    /// deduplicated by code and exempt from the non-essential limit. Other
+    /// notices are deduplicated by code, message, and canonical fields;
+    /// notices beyond [`MAX_NOTICES`] are tracked for the truncation entry.
     pub fn push(&mut self, e: NoticeEvent) {
         if e.essential() {
             // Essential notices are static: the code alone identifies them.
@@ -112,7 +116,8 @@ impl NoticeCollector {
     }
 
     /// Returns the notices for the response, appending the truncation entry
-    /// last when at least one unique notice was omitted.
+    /// last when at least one unique notice was omitted. Its count becomes a
+    /// lower bound once tracking exceeds [`MAX_TRACKED_DROPPED`].
     pub fn finish(mut self) -> Vec<NoticePayload> {
         if !self.dropped.is_empty() || self.overflowed {
             let exact = !self.overflowed;
@@ -128,7 +133,8 @@ impl NoticeCollector {
     }
 }
 
-/// Object keys sorted recursively at every depth, arrays in order, compact.
+/// Serializes fields compactly, sorting object keys recursively while preserving
+/// array order. Returns an empty string if serialization fails.
 pub fn canonical_fields(fields: &BTreeMap<String, Value>) -> String {
     fn canon(v: &Value) -> Value {
         match v {

@@ -28,6 +28,8 @@ pub struct NoticeEvent {
 }
 
 impl NoticeEvent {
+    /// Builds an event from a notice. `target` is the source label used in
+    /// the tracing mirror.
     pub fn from_notice<N: Notice>(n: &N, target: &'static str) -> Self {
         Self {
             level: n.level(),
@@ -42,7 +44,9 @@ impl NoticeEvent {
 
     /// Like [`from_notice`](Self::from_notice), adding the diagnostic's
     /// `details` and `hints` to `fields`. The code, level and message always
-    /// come from the notice, never from the diagnostic.
+    /// come from the notice, never from the diagnostic. A nonempty rendered
+    /// diagnostic body is retained for presentation; rendering failures are
+    /// ignored.
     pub fn from_diagnostic_notice<N: Notice, D: Diagnostic + ?Sized>(
         n: &N,
         d: &D,
@@ -85,7 +89,8 @@ impl NoticeEvent {
         self.body.as_deref()
     }
 
-    /// Redacts the message and every string in `fields` (RFC 0022).
+    /// Redacts the message, rendered body, and string values in `fields`
+    /// recursively (RFC 0022). Object keys are unchanged.
     pub fn redact(&mut self, redactor: &omni_redact::Redactor) {
         if redactor.is_empty() {
             return;
@@ -201,11 +206,13 @@ impl Default for SharedRedactor {
 }
 
 impl SharedRedactor {
+    /// Returns the current redactor, or `None` if it has no secrets.
     pub fn get(&self) -> Option<std::sync::Arc<omni_redact::Redactor>> {
         let r = self.0.lock().unwrap().clone();
         (!r.is_empty()).then_some(r)
     }
 
+    /// Adds another redactor's secrets to the shared redactor.
     pub fn extend(&self, other: &omni_redact::Redactor) {
         if other.is_empty() {
             return;

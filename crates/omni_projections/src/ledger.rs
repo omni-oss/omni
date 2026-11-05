@@ -107,10 +107,10 @@ pub async fn load_checked<S: FsReadAsync + Sync>(
     (ledger, bad)
 }
 
-/// Like [`load_checked`], also reporting whether the file exists but could not
-/// be read (for example permission denied). Callers must not save over a
-/// ledger in that case, because the recorded links would be lost. Only a
-/// missing file counts as an absent ledger.
+/// Like [`load_checked`], also reporting whether reading failed for a reason
+/// other than a missing file (for example permission denied). Callers must not
+/// save over the ledger in that case, because recorded links could be lost.
+/// A parse failure returns a notice but leaves this flag false.
 pub async fn load_guarded<S: FsReadAsync + Sync>(
     sys: &S,
     ledger_path: &Path,

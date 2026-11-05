@@ -30,6 +30,8 @@ pub fn templates() -> Vec<ResourceTemplate> {
     ]
 }
 
+/// Reads an `omni://codes/<code>` resource as JSON. Unsupported URIs and
+/// unknown codes return MCP errors.
 pub fn read(uri: &str) -> Result<ReadResourceResult, ErrorData> {
     let Some(code) = uri.strip_prefix(PREFIX) else {
         return Err(ErrorData::resource_not_found(

@@ -51,6 +51,10 @@ pub struct TracingSubscriber {
 }
 
 impl TracingSubscriber {
+    /// Builds a subscriber with the configured stderr, file, and custom sinks.
+    /// An enabled file sink creates parent directories and truncates the file.
+    /// Invalid stderr filters, missing file paths, and filesystem errors are
+    /// returned to the caller.
     pub fn new(
         config: &TracingConfig,
         custom_outputs: Vec<CustomOutput>,

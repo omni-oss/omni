@@ -230,6 +230,7 @@ pub struct UnknownCode {
 }
 
 /// Resolves a code for `omni code explain` and the MCP `code_explain` tool.
+/// An unknown code returns [`UnknownCode`] with suggested matches.
 pub fn lookup(code: &str) -> Result<&'static CodeInfo, UnknownCode> {
     get(code).ok_or_else(|| UnknownCode {
         code: code.to_string(),
@@ -237,7 +238,8 @@ pub fn lookup(code: &str) -> Result<&'static CodeInfo, UnknownCode> {
     })
 }
 
-/// Codes close to `code`, for "did you mean" output.
+/// Up to five codes close to `code`, for "did you mean" output, ordered by
+/// edit distance and then code.
 pub fn close_matches(code: &str) -> Vec<&'static CodeInfo> {
     let mut scored: Vec<(usize, &'static CodeInfo)> = all()
         .filter_map(|c| {
