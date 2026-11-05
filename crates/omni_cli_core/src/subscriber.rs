@@ -79,9 +79,8 @@ enum GeneratorProgress {
 }
 
 impl GeneratorProgress {
-    /// Build the renderer from a shared, pre-probed `MultiProgress`. When
-    /// `multi` is `None` the terminal cannot render `indicatif`, so we fall
-    /// back to plain `log` lines.
+    /// Builds the renderer from a pre-probed `MultiProgress`. Without one,
+    /// status lines go to stderr; `quiet` suppresses them except for failures.
     fn new(multi: Option<MultiProgress>, quiet: bool) -> Self {
         match multi {
             Some(multi) => GeneratorProgress::Indicatif {

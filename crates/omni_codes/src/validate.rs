@@ -63,6 +63,10 @@ pub fn validate() -> Result<(), Vec<RegistryError>> {
 }
 
 /// Validates an explicit set of registrations against a retired list.
+/// Returns all detected registry errors, including malformed or duplicate
+/// codes, prefix ownership conflicts, missing related codes, reused retired
+/// codes, and deprecated codes that are not stable. Each retired entry pairs a
+/// code with the release in which it was removed.
 pub fn validate_set(
     regs: &[&CodeRegistration],
     retired: &[(&str, &str)],
