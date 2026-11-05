@@ -55,6 +55,9 @@ export async function connectMcp(
             ...(options.shared ? ["--shared"] : ["--root-dir", options.cwd]),
         ],
         cwd: options.cwd,
+        // The SDK inherits PATH but omits PATHEXT, which Windows runtime
+        // discovery needs to resolve extensionless names such as "node".
+        env: process.env.PATHEXT ? { PATHEXT: process.env.PATHEXT } : {},
         // Suppress server-side tracing from polluting test output.
         stderr: "ignore",
     });
