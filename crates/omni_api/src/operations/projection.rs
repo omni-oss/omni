@@ -194,9 +194,9 @@ where
     let sources = &sources;
 
     let ledger_path = ledger_path(ctx);
-    let (mut ledger, ledger_blocked) =
+    let (mut ledger, ledger_state) =
         load_ledger(&sys, &ledger_path, notices).await;
-    if ledger_blocked && !req.dry_run {
+    if ledger_state == LedgerLoadState::Unreadable && !req.dry_run {
         eyre::bail!(
             "the projection ledger at {} could not be read; refusing to apply links that could not be recorded",
             ledger_path.display()
@@ -425,7 +425,7 @@ where
         response.warnings.extend(report.warnings);
     }
 
-    if !ledger_blocked {
+    if ledger_state != LedgerLoadState::Unreadable {
         omni_projections::save(&sys, &ledger_path, &ledger).await?;
     }
 
@@ -495,11 +495,11 @@ where
     let workspace_root = ctx.root_dir().to_path_buf();
 
     let ledger_path = ledger_path(ctx);
-    let (mut ledger, ledger_blocked) =
+    let (mut ledger, ledger_state) =
         load_ledger(&sys, &ledger_path, notices).await;
-    if ledger_blocked {
+    if ledger_state != LedgerLoadState::Ready {
         eyre::bail!(
-            "the projection ledger at {} could not be read; refusing to unlink links that cannot be identified",
+            "the projection ledger at {} could not be read or parsed; refusing to unlink links that cannot be identified",
             ledger_path.display()
         );
     }
@@ -542,7 +542,7 @@ where
     let workspace_root = ctx.root_dir().to_path_buf();
 
     let ledger_path = ledger_path(ctx);
-    let (mut ledger, ledger_blocked) =
+    let (mut ledger, ledger_state) =
         load_ledger(&sys, &ledger_path, notices).await;
 
     if req.dry_run {
@@ -563,9 +563,9 @@ where
         });
     }
 
-    if ledger_blocked {
+    if ledger_state != LedgerLoadState::Ready {
         eyre::bail!(
-            "the projection ledger at {} could not be read; refusing to prune links that cannot be identified",
+            "the projection ledger at {} could not be read or parsed; refusing to prune links that cannot be identified",
             ledger_path.display()
         );
     }
@@ -1098,18 +1098,32 @@ mod tests {
     }
 }
 
-/// Loads the ledger, queuing a notice when it exists but is unreadable. The
-/// flag is `true` when the file could not be read at all, in which case the
-/// caller must not save over it.
+/// Distinguishes sync's recoverable parse errors from failed filesystem reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LedgerLoadState {
+    Ready,
+    Corrupt,
+    Unreadable,
+}
+
+/// Loads the ledger and queues a notice for either read or parse failure.
+/// Teardown requires `Ready`; sync may rebuild a `Corrupt` ledger from config.
 async fn load_ledger<S: system_traits::FsReadAsync + Sync>(
     sys: &S,
     path: &std::path::Path,
     notices: &mut Vec<omni_messages::NoticeEvent>,
-) -> (omni_projections::Ledger, bool) {
+) -> (omni_projections::Ledger, LedgerLoadState) {
     let (ledger, bad, read_failed) =
         omni_projections::load_guarded(sys, path).await;
+    let state = if read_failed {
+        LedgerLoadState::Unreadable
+    } else if bad.is_some() {
+        LedgerLoadState::Corrupt
+    } else {
+        LedgerLoadState::Ready
+    };
     if let Some(n) = bad {
         notices.push(omni_messages::notice_event!(n));
     }
-    (ledger, read_failed)
+    (ledger, state)
 }

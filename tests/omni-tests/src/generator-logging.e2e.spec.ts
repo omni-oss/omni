@@ -15,7 +15,12 @@
 
 import { describe, expect, it } from "vitest";
 
-import { makeWorkspace, runOmni, type WorkspaceSpec } from "@/harness";
+import {
+    connectMcp,
+    makeWorkspace,
+    runOmni,
+    type WorkspaceSpec,
+} from "@/harness";
 
 /**
  * A workspace whose `logger` generator runs {@link script} via a single
@@ -150,6 +155,63 @@ describe(
                 expect(ws.read("trace.jsonl")).not.toContain("hunter2-secret");
             },
         );
+
+        it("redacts messages and targets before the default MCP tracing callback", async () => {
+            const ws = makeWorkspace({
+                ...loggingGeneratorSpec(
+                    script(
+                        `ctx.log.child(ctx.data.pw).info("MCP_LOG " + ctx.data.pw);`,
+                    ),
+                ),
+                projects: {
+                    "generators/logger/generator.omni.yaml": {
+                        name: "logger",
+                        description: "logs a secret input through MCP",
+                        inputs: [
+                            {
+                                type: "string",
+                                name: "pw",
+                                message: "pw",
+                                secret: true,
+                            },
+                        ],
+                        actions: [
+                            {
+                                type: "run-javascript",
+                                script: "gen.mjs",
+                                data: { pw: "{{ inputs.pw }}" },
+                            },
+                        ],
+                    },
+                },
+            });
+            const mcp = await connectMcp({
+                cwd: ws.cwd,
+                args: [
+                    "--trace-file",
+                    ws.path("trace.jsonl"),
+                    "--trace-file-level",
+                    "debug",
+                ],
+            });
+            const result = await mcp.client.callTool({
+                name: "generator_run",
+                arguments: {
+                    name: "logger",
+                    output_dir: ws.path("out"),
+                    input_values: { pw: "mcp-secret-token" },
+                    use_defaults: true,
+                    save_session: false,
+                    ignore_session: true,
+                },
+            });
+            expect(result.isError).not.toBe(true);
+            await mcp.disconnect();
+            const trace = ws.read("trace.jsonl");
+            expect(trace).toContain("MCP_LOG");
+            expect(trace).toContain("script_target");
+            expect(trace).not.toContain("mcp-secret-token");
+        });
 
         it("maps log levels: info/warn/error show by default, debug/trace only under --trace", async () => {
             const ws = makeWorkspace(

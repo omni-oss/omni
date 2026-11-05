@@ -62,6 +62,9 @@ impl TracingSubscriber {
         let mut layers = Vec::new();
 
         let main_filters = Targets::new()
+            // rmcp debug/trace events contain raw request and response bodies,
+            // before operation-specific secret values can be identified.
+            .with_target("rmcp", LevelFilter::WARN)
             .with_target("globset", LevelFilter::OFF)
             .with_target("mio", LevelFilter::OFF)
             .with_target("ignore", LevelFilter::OFF);

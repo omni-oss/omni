@@ -33,7 +33,8 @@ pub trait GeneratorEventSubscriber: NoticeSubscriber {
     async fn on_generator_completed(&self, _event: GeneratorCompletedEvent) {}
 
     /// A line a script logged. Synchronous so it can be delivered from the
-    /// batch the script runner returns. The default sends it to `tracing`
+    /// batch the script runner returns. Generator dispatch redacts the message
+    /// and target before calling this method. The default sends it to `tracing`
     /// only; presenters override it to show `info`/`warn`/`error`.
     fn on_script_log(&self, event: ScriptLogEvent) {
         event.mirror_to_tracing();
