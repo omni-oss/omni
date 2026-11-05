@@ -187,7 +187,7 @@ existing source mechanism. No registry is required for v1.
 
 ## 6. Discovery and the host contract
 
-### 6.1 Hook-based lifecycle
+### 6.1 Hook namespaces and lifecycle
 
 Plugins are **stateless but not sessionless**: they do not retain their own
 memory between calls, and they never own mutable state. Instead, omni owns a
@@ -195,28 +195,38 @@ per-plugin, per-discovery **session state** that plugins populate and receive
 back in later hooks. This lets plugins be interrupted, retried, cached and
 scheduled freely while still accumulating context across a discovery pass.
 
-The contract is a set of **stage hooks**. The host decides when and how to invoke
-them, in the most efficient order and batching, while preserving the required
-stage ordering and data dependencies. Plugins never call back into omni
-arbitrarily; they only respond to host-invoked hooks.
+The contract is a set of **stage hooks**. Every hook is **namespaced by
+capability**, so adding a new capability later cannot collide with discovery
+hooks or with hooks from another capability. A hook name has the shape
+`<capability>.<stage>` (for example `project_discovery.infer_roots`). Plugins
+declare the capabilities they implement; the host invokes only the hooks for
+declared capabilities, and ignores unknown namespaces rather than failing.
 
-Proposed stages (each is a hook; plugins implement only those they need):
+The initial capability is `project_discovery`. Its stages (plugins implement
+only those they need) are:
 
-1. **`on_workspace`** — receive workspace options and static discovery scopes.
-   May return a small, serializable session state seed. No filesystem access
-   beyond declared inputs.
-2. **`filter_candidates`** — receive candidate roots and a bounded file index;
-   may decline roots or request additional declared inputs. Runs before any
-   heavy parsing.
-3. **`infer_roots`** — batched per plugin over multiple roots; returns project
-   fragments, local dependency references, and an updated session state. This is
-   the only hook that may parse declared input files.
-4. **`resolve_dependencies`** — runs after all plugins' `infer_roots` complete;
-   receives the accumulated session state plus the full set of inferred roots,
-   allowing cross-root and cross-plugin resolution without guessing final omni
-   names.
-5. **`finalize`** — last chance to emit notices or adjust fragments; no new
-   roots may be added.
+1. **`project_discovery.on_workspace`** — receive workspace options and static
+   discovery scopes. May return a small, serializable session state seed. No
+   filesystem access beyond declared inputs.
+2. **`project_discovery.filter_candidates`** — receive candidate roots and a
+   bounded file index; may decline roots or request additional declared inputs.
+   Runs before any heavy parsing.
+3. **`project_discovery.infer_roots`** — batched per plugin over multiple
+   roots; returns project fragments, local dependency references, and an
+   updated session state. This is the only hook that may parse declared input
+   files.
+4. **`project_discovery.resolve_dependencies`** — runs after all plugins'
+   `infer_roots` complete; receives the accumulated session state plus the full
+   set of inferred roots, allowing cross-root and cross-plugin resolution
+   without guessing final omni names.
+5. **`project_discovery.finalize`** — last chance to emit notices or adjust
+   fragments; no new roots may be added.
+
+Future capabilities (for example `generator_contribution` or
+`tool_contribution`) would define their own namespace and stages; the host
+schedules each capability's stages independently and never assumes a flat
+global hook list. Session state is also partitioned by capability namespace,
+so one capability's state cannot be read by another.
 
 The host may:
 
@@ -293,7 +303,8 @@ Session state is owned by omni: it is serialized, size-bounded, versioned, and
 included in cache identity. Plugins receive it and return a replacement; they
 never mutate a shared handle. State must not contain file contents beyond what
 is already tracked as declared input fingerprints, and must not be used to
-bypass input tracking.
+bypass input tracking. State is keyed by capability namespace, so a capability
+added later cannot read or overwrite another capability's state.
 
 Virtual projects need a stable logical configuration identity distinct from a
 physical filename. Preserve root and plugin/artifact provenance rather than
