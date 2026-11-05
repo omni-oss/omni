@@ -10,8 +10,9 @@
 ## 1. Summary
 
 Allow explicitly enabled plugins to infer projects from ecosystem manifests,
-without requiring a `project.omni.yaml` in every directory. A Cargo plugin could
-read `Cargo.toml`; a JavaScript ecosystem plugin could read `package.json`.
+without requiring a `project.omni.yaml` in every directory. The initial native
+plugins are `@omni/javascript`, reading `package.json`, and `@omni/rust`, reading
+Cargo manifests (`Cargo.toml`).
 The result is ordinary omni project configuration, not a second project model.
 
 One capability contract has three implementation tiers:
@@ -121,6 +122,28 @@ distribution must still not activate code transitively. If dynamic contributions
 prove necessary, add a separately enabled, versioned capability outside project
 discovery, using existing registries and collision rules.
 
+### 4.3 Initial native ecosystem plugins
+
+Name builtins consistently by ecosystem, not by a mix of language and tool:
+
+- **`@omni/javascript`** initially discovers JavaScript/TypeScript projects from
+  `package.json`, inferring package names, scripts, workspace membership and
+  local dependency edges. npm, Yarn, pnpm and Bun are supported package-manager
+  choices within this plugin, not separate discovery plugins. Package-manager
+  detection selects task commands without running installs or scripts during
+  discovery; document detection precedence and ambiguity handling in the adapter
+  specification before implementation.
+- **`@omni/rust`** initially discovers Cargo projects from `Cargo.toml`, including
+  workspace membership and local dependency edges, and infers ordinary Cargo
+  task definitions. It is not a promise to support every Rust build system or
+  every Cargo feature in the first release.
+
+Both are opt-in native handlers using `project_discovery` and the same lifecycle
+and host services as external plugins. Ecosystem names leave room for future
+manifest support without renaming; they do not imply that additional formats
+are supported today. Keep detailed ecosystem inference rules and fixtures with
+each adapter, separate from the generic contract.
+
 ## 5. Activation, identity and delivery
 
 Proposed `workspace.omni.yaml`:
@@ -131,10 +154,16 @@ projects:
   exclude: ["**/fixtures/**"]
 
 plugins:
-  - id: cargo
+  - id: javascript
     enabled: true
     source: builtin
-    name: "@omni/cargo"
+    name: "@omni/javascript"
+    options: {}
+
+  - id: rust
+    enabled: true
+    source: builtin
+    name: "@omni/rust"
     options: {}
 
   - id: company
@@ -575,10 +604,10 @@ untrusted data, not executable configuration.
    virtual identities, conflict handling, provenance, final-name dependency
    resolution, hook stage definitions, session-state serialization and
    zero-plugin regression tests. No runtime dependency needed.
-2. **Native pilot:** opt-in Cargo adapter behind the same protocol and hook
-   stages, host-owned candidate scan and input tracking. Specify ecosystem
-   inference rules in separate adapter documentation; do not promise every Cargo
-   feature here.
+2. **Native pilots:** opt-in `@omni/javascript` and `@omni/rust` handlers behind
+   the same protocol and hook stages, host-owned candidate scan and input
+   tracking. Specify package-manager detection and ecosystem inference rules
+   in separate adapter documentation; initial scope is §4.3.
 3. **Wasm:** versioned SDK/fixtures, pinned source loading, sandbox, resource
    enforcement and cache invalidation. No external runtime ships without its
    cancellation and containment tests.
@@ -649,9 +678,9 @@ Required tests include:
   deferring cross-root resolution, or reusing partial state. Recommend the
   hook model with omni-owned session state.
 
-Before acceptance, settle the initial built-in set, benchmark-calibrated limits
-and runtime engines. Extend remains the chosen default, with explicit full
-replacement. None of those decisions should weaken activation, explicit authority,
+Before acceptance, settle benchmark-calibrated limits and runtime engines. The
+initial builtin set is JavaScript and Rust (§4.3). Extend remains the chosen
+default, with explicit full replacement. None of those decisions should weaken activation, explicit authority,
 deterministic output or the ban on unbounded external execution.
 
 ## 12. Rust trait sketches (proposal)
@@ -850,7 +879,7 @@ namespace. Existing capability traits and hook names do not change.
 | `omni_plugin_configurations` | Activation/source declarations, manifests, capability/version/hook declarations, options and limit configuration; data only |
 | `omni_plugin` | Runtime-neutral contract: typed handlers/registration, requests/results, state views/updates, host-service interfaces and errors |
 | `omni_plugin_host` | Scheduling, batching, negotiated capabilities, transactional state/notices, budgets, cancellation and inference-cache orchestration |
-| `omni_plugin_builtins` | Native pilot handlers (Cargo first), compiled into omni |
+| `omni_plugin_builtins` | Initial native JavaScript and Rust handlers, compiled into omni |
 | `omni_plugin_runtime_wasm` | Later: Wasm adapter with fuel/epoch/memory limits |
 | `omni_plugin_runtime_js` | Later: JavaScript adapter with interrupt/heap limits |
 
@@ -923,12 +952,13 @@ to descriptors; capability negotiation precedes hook scheduling.
      extension graph + loader.
    - Tests: zero-plugin parity, extend/replace, absence vs default.
 
-2. **Native pilot.**
+2. **Native pilots.**
    - Implement `omni_plugin_host` with frozen stage snapshots, workspace/root
      partitions, hook-set validation, atomic commits, caching and budgets.
    - Test shuffled batch scheduling, cancellation/retries, no lost state, no
      duplicate notices and invalidation of cross-root resolution snapshots.
-   - Implement Cargo builtin behind `project_discovery` capability.
+   - Implement `@omni/javascript` (package.json; npm/Yarn/pnpm/Bun) and
+     `@omni/rust` (Cargo) behind the `project_discovery` capability.
    - Add plugin source contribution/descriptor resolution without executing
      hooks during source installation; see §15 for integration tests.
    - Wire into `Context::load_discovered_project_configs`.
@@ -986,8 +1016,10 @@ to descriptors; capability negotiation precedes hook scheduling.
 ### 13.6 Definition of done for v1
 
 - No enabled plugins: byte-for-byte equivalent discovery behavior and tests.
-- Cargo builtin discovers a no-omni-file workspace with correct names, tasks
-  and local dependency edges.
+- JavaScript and Rust builtins discover projects without per-project omni files,
+  with correct names, tasks and local dependency edges. JavaScript fixtures cover
+  npm, Yarn, pnpm and Bun, including workspace and package-manager ambiguity;
+  Rust fixtures cover Cargo packages and workspaces.
 - Extend/replace and allowlists work; conflicts are deterministic.
 - Wasm and JavaScript conformance fixtures match native output.
 - Benchmarks meet proposed budgets or revised documented budgets.
