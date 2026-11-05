@@ -583,3 +583,161 @@ Before acceptance, settle the initial built-in set, benchmark-calibrated limits,
 runtime engines and whether default extend is preferable to explicit opt-in
 extension. None of those decisions should weaken activation, explicit authority,
 deterministic output or the ban on unbounded external execution.
+
+## 12. Rust trait sketches (proposal)
+
+These are illustrative, not final APIs. Native plugins implement capability
+traits; external runtimes adapt the same logical calls over the wire. Hooks are
+namespaced by capability, so capability traits are separate and independently
+versioned. Plugins are stateless; all mutable progress lives in host-owned
+`PluginState`.
+
+### 12.1 Identity and capability registration
+
+```rust
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct PluginId(pub String);
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct CapabilityId(pub String); // e.g. "project_discovery"
+
+pub struct PluginManifest {
+    pub name: String,          // canonical author name, e.g. "@omni/cargo"
+    pub version: String,       // metadata only
+    pub api_version: u32,
+    pub runtime: RuntimeKind,  // Native | Wasm | JavaScript
+    pub capabilities: Vec<CapabilityId>,
+}
+
+pub trait Plugin: Send + Sync {
+    fn id(&self) -> &PluginId;
+    fn manifest(&self) -> &PluginManifest;
+    fn capabilities(&self) -> &[CapabilityId];
+}
+```
+
+### 12.2 Capability traits (plugin side)
+
+Each capability is its own trait. Adding a capability means adding a trait and a
+namespace; existing capabilities are untouched.
+
+```rust
+pub trait CapabilityPlugin: Plugin {
+    fn capability_id(&self) -> CapabilityId;
+}
+
+pub trait ProjectDiscoveryCapability: CapabilityPlugin {
+    fn on_workspace(
+        &self,
+        ctx: &HostContext,
+        req: OnWorkspaceRequest,
+        state: PluginState,
+    ) -> Result<OnWorkspaceResponse, PluginError>;
+
+    fn filter_candidates(
+        &self,
+        ctx: &HostContext,
+        req: FilterCandidatesRequest,
+        state: PluginState,
+    ) -> Result<FilterCandidatesResponse, PluginError>;
+
+    fn infer_roots(
+        &self,
+        ctx: &HostContext,
+        req: InferRootsRequest,
+        state: PluginState,
+    ) -> Result<InferRootsResponse, PluginError>;
+
+    fn resolve_dependencies(
+        &self,
+        ctx: &HostContext,
+        req: ResolveDependenciesRequest,
+        state: PluginState,
+    ) -> Result<ResolveDependenciesResponse, PluginError>;
+
+    fn finalize(
+        &self,
+        ctx: &HostContext,
+        req: FinalizeRequest,
+        state: PluginState,
+    ) -> Result<FinalizeResponse, PluginError>;
+}
+```
+
+### 12.3 Host-owned state
+
+```rust
+pub struct PluginState {
+    pub capability: CapabilityId, // namespace partition
+    pub version: u32,
+    pub bytes: Vec<u8>,           // serialized, size-bounded, host-owned
+}
+
+pub trait StateStore: Send + Sync {
+    fn load(&self, plugin: &PluginId, cap: &CapabilityId) -> Option<PluginState>;
+    fn store(&self, plugin: &PluginId, cap: &CapabilityId, state: PluginState);
+    fn invalidate(&self, plugin: &PluginId, cap: &CapabilityId);
+}
+```
+
+Plugins never hold a `StateStore`; the host injects state into each hook call and
+persists the returned replacement.
+
+### 12.4 Host services (plugin side view)
+
+```rust
+pub trait HostFs: Send + Sync {
+    fn read(&self, path: &Path) -> Result<Vec<u8>, HostError>;
+    fn exists(&self, path: &Path) -> Result<bool, HostError>;
+    fn canonicalize(&self, path: &Path) -> Result<PathBuf, HostError>;
+}
+
+pub struct HostContext<'a> {
+    pub fs: &'a dyn HostFs,
+    pub options: &'a PluginOptions,
+    pub limits: &'a PluginLimits,
+    pub reporter: &'a dyn NoticeReporter,
+}
+
+pub trait NoticeReporter: Send + Sync {
+    fn notice(&self, notice: PluginNotice);
+}
+```
+
+### 12.5 Runtime adapters
+
+External runtimes implement the same capability traits by serializing requests
+and enforcing budgets. The adapter owns the module handle; the plugin itself
+holds no state.
+
+```rust
+pub trait RuntimeAdapter: Send + Sync {
+    fn kind(&self) -> RuntimeKind;
+    fn invoke_hook(
+        &self,
+        module: &ModuleHandle,
+        hook: &str, // "<capability>.<stage>"
+        request_bytes: &[u8],
+        state_bytes: &[u8],
+        limits: &PluginLimits,
+    ) -> Result<(Vec<u8>, Vec<u8>), PluginError>; // (response, new state)
+}
+```
+
+### 12.6 Hook dispatch (host side)
+
+```rust
+pub trait HookDispatcher: Send + Sync {
+    fn dispatch<C: ProjectDiscoveryCapability>(
+        &self,
+        plugin: &C,
+        stage: ProjectDiscoveryStage,
+        ctx: &HostContext,
+        req: ProjectDiscoveryRequest,
+        state: PluginState,
+    ) -> Result<ProjectDiscoveryResponse, PluginError>;
+}
+```
+
+Adding a capability means adding a new `CapabilityId`, trait, request/response
+types and hook namespace. No existing capability trait or hook name changes.
