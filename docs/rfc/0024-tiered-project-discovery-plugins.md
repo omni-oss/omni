@@ -172,7 +172,11 @@ version: 0.1.0
 api_version: 1
 runtime: wasm # alternatively javascript
 entry: ./dist/plugin.wasm
-capabilities: [project-inference]
+capabilities:
+  - name: project_discovery
+    api_version: 1
+    required: true
+    hooks: [on_workspace, filter_candidates, infer_roots, resolve_dependencies]
 discovery:
   markers: [company.project.json]
   inputs: [company.project.json, company.workspace.json]
@@ -185,29 +189,40 @@ or ambient Node installation. Source and entry paths cannot escape the
 materialized source. Git source availability and offline behavior follow the
 existing source mechanism. No registry is required for v1.
 
+Capability names are canonical protocol identifiers; `project_discovery` is the
+initial namespace. Each capability has its own API version, independently of
+the plugin envelope's `api_version`. `required` defaults to `true`. An unknown
+or incompatible required capability fails activation; an explicitly optional
+one is skipped with a notice and an inspection entry. Unknown hooks within a
+supported capability are errors, not silently ignored. Hook declarations are
+validated against the handler's supported-hook set before scheduling.
+
 ## 6. Discovery and the host contract
 
 ### 6.1 Hook namespaces and lifecycle
 
 Plugins are **stateless but not sessionless**: they do not retain their own
 memory between calls, and they never own mutable state. Instead, omni owns a
-per-plugin, per-discovery **session state** that plugins populate and receive
-back in later hooks. This lets plugins be interrupted, retried, cached and
-scheduled freely while still accumulating context across a discovery pass.
+per-plugin, per-capability, per-discovery **session state** that plugins populate
+and receive back in later hooks. This lets plugins be interrupted, retried,
+cached and scheduled freely while still accumulating context across a pass.
 
 The contract is a set of **stage hooks**. Every hook is **namespaced by
 capability**, so adding a new capability later cannot collide with discovery
 hooks or with hooks from another capability. A hook name has the shape
 `<capability>.<stage>` (for example `project_discovery.infer_roots`). Plugins
-declare the capabilities they implement; the host invokes only the hooks for
-declared capabilities, and ignores unknown namespaces rather than failing.
+register separate typed capability handlers. Each capability owns a fixed
+namespace, version and hook vocabulary; there is no single `capability_id()`
+method on a multi-capability plugin. The host invokes only explicitly supported
+hooks of negotiated capabilities. Unsupported required capabilities fail;
+explicitly optional ones follow §5's skip policy.
 
 The initial capability is `project_discovery`. Its stages (plugins implement
 only those they need) are:
 
 1. **`project_discovery.on_workspace`** — receive workspace options and static
-   discovery scopes. May return a small, serializable session state seed. No
-   filesystem access beyond declared inputs.
+   discovery scopes. May return a small, serializable workspace state seed.
+   No file-content access.
 2. **`project_discovery.filter_candidates`** — receive candidate roots and a
    bounded file index; may decline roots or request additional declared inputs.
    Runs before any heavy parsing.
@@ -219,8 +234,10 @@ only those they need) are:
    `infer_roots` complete; receives the accumulated session state plus the full
    set of inferred roots, allowing cross-root and cross-plugin resolution
    without guessing final omni names.
-5. **`project_discovery.finalize`** — last chance to emit notices or adjust
-   fragments; no new roots may be added.
+5. **`project_discovery.observe`** — optionally inspect the frozen, composed
+   project/dependency snapshot and return notices or inspection metadata only.
+   It cannot change roots, fields or edges. All fragment edits finish before
+   dependency resolution; there is no mutating post-resolution finalizer.
 
 Future capabilities (for example `generator_contribution` or
 `tool_contribution`) would define their own namespace and stages; the host
@@ -233,7 +250,7 @@ The host may:
 - batch many roots into one `infer_roots` call instead of one call per
   directory;
 - run independent plugins concurrently;
-- defer or skip `resolve_dependencies` when no plugin requests it;
+- defer or skip unsupported hooks;
 - cache and reuse session state fragments keyed by inputs;
 - interrupt and retry a hook without leaking plugin memory, because the plugin
   holds no state of its own.
@@ -241,6 +258,33 @@ The host may:
 Plugins cannot assume invocation order beyond the stage order, and cannot assume
 they are the only plugin. They must tolerate re-invocation and must not depend
 on wall-clock or randomness.
+
+#### Session partitions and stage transactions
+
+Session state has two partitions: **workspace state**, written only by the
+singleton `on_workspace` hook, and **root state**, keyed by stable candidate
+root. Later hooks receive workspace state read-only. Root-oriented stages may
+replace state only for their assigned roots; cross-root knowledge is supplied
+through immutable stage snapshots, not shared writes.
+
+Every invocation within a stage reads the same committed stage-start snapshot.
+Omni assigns each root to at most one invocation in that stage. Batches may run
+in parallel, but cannot overwrite another batch's root state. Cross-root
+dependency resolution reads the complete frozen inference snapshot and emits
+only results for assigned source roots. A result for a root must be independent
+of its batch neighbors and invocation order.
+
+Omni validates all invocations before atomically committing that stage's state,
+contributions and notices. A failed or cancelled stage commits nothing; retries
+start from its original snapshot. There is no last-writer-wins merge and no
+plugin-defined state reducer. Workspace data discovered during inference can
+be represented as root-owned facts and queried in the next stage's snapshot,
+without introducing a mutable workspace accumulator.
+
+Observation has no state writes. Capability handlers declare a supported-hook
+set; typed methods have identity/no-op defaults for omitted hooks. SDK/native
+registration validation rejects declarations without implementations and
+implementations without declarations. The host never calls an omitted hook.
 
 ### 6.2 Pipeline
 
@@ -255,13 +299,15 @@ on wall-clock or randomness.
 4. Read explicit-file inference controls before scheduling plugin work. Roots
    marked `replace` need no inferred contribution. Batch remaining candidate
    roots by plugin; do not invoke an interpreter per directory.
-5. Invoke hooks in stage order, obtaining cached or freshly inferred fragments
-   and dependency references. Merge contributions deterministically, then apply
-   explicit layers (§7).
-6. Resolve project/task extensions in their established phases, finalize names,
-   resolve inferred local dependency references to final project identities,
-   and run ordinary configuration/graph validation. Produce one project model
-   for all downstream consumers.
+5. Load the explicit extension closure as presence-aware layers, preserving each
+   layer's path origin. Run inference hooks to produce fragments; freeze them
+   before plugin dependency-resolution hooks read the complete snapshot.
+   Resolution hooks return root-based edges, not edits to project fields.
+6. Compose inferred contributions beneath explicit base/concrete layers (§7),
+   apply defaults, and resolve task extensions. Resolve root-based edges to
+   final explicit project names, then run configuration/graph validation.
+7. Invoke optional read-only observation hooks on the final frozen snapshot.
+   Return one project model for all downstream consumers.
 
 Multiple markers at one canonical root produce one project, not duplicate
 projects. Nested roots are independent if selected; detecting a parent does not
@@ -281,7 +327,7 @@ unnecessary serialization round trip.
 Requests contain candidate root ids, a bounded file index, options and a
 read-only host file service. Responses contain project fragments keyed by root,
 local dependency references, provenance, structured non-fatal notices, and an
-updated session state. Represent local dependencies by stable workspace-relative
+stage-appropriate state replacements. Represent local dependencies by stable workspace-relative
 roots where possible, not guessed final omni names: explicit configuration may
 rename a project. Non-local package dependencies must not become spurious omni
 project edges.
@@ -299,12 +345,14 @@ input scopes. Additional inputs discovered from a manifest are allowed only
 within those scopes and are tracked. No raw host filesystem handle, environment,
 wall clock, randomness, network or subprocess service is exposed.
 
-Session state is owned by omni: it is serialized, size-bounded, versioned, and
-included in cache identity. Plugins receive it and return a replacement; they
-never mutate a shared handle. State must not contain file contents beyond what
-is already tracked as declared input fingerprints, and must not be used to
-bypass input tracking. State is keyed by capability namespace, so a capability
-added later cannot read or overwrite another capability's state.
+Session state is owned by omni: it is serializable, size-bounded and versioned.
+Hook cache keys include incoming state fingerprints; cache entries contain both
+outputs and state replacements with their tracked input dependencies. State may
+contain parsed facts derived from tracked inputs, but never bypass input
+tracking. Partition keys include workspace/session, plugin activation id,
+artifact identity, capability/version and (for root state) root id. Native
+handlers may use typed in-memory state without serialization on every call;
+external adapters and persistent caches use the versioned serialized form.
 
 Virtual projects need a stable logical configuration identity distinct from a
 physical filename. Preserve root and plugin/artifact provenance rather than
@@ -364,7 +412,8 @@ merely because another project references its file.
 **Preserve field presence until composition finishes.** Do not deserialize a
 partial explicit file into today's default-filled `ProjectConfiguration` and
 accidentally erase inference with missing fields. Introduce a typed project
-layer/patch representation, compose it, then apply defaults and validate the
+layer/patch representation recursively, including task/cache/environment layers,
+compose it, then apply defaults and validate the
 final `ProjectConfiguration`. Extend mode may omit `name` when inference
 provides it; replace mode must obtain a name from explicit configuration or its
 explicit bases, as normal. This is a deliberate schema/loader change.
@@ -433,8 +482,9 @@ and enabled work has measurable limits rather than unbounded startup cost.
 - No background inference for commands that do not need projects. Long-lived
   MCP state must invalidate on input, option and activation changes, including
   disabling a plugin or editing a local bundle.
-- Session state is cached as part of the inference result; a hook that only
-  needs cached state must not re-execute.
+- Reuse a cached hook result only when its request, incoming state and all
+  observed inputs/snapshots match. Cached state alone does not justify skipping
+  a hook: cross-root resolution also depends on the frozen root snapshot.
 
 ### 8.2 Tier-specific enforcement
 
@@ -473,7 +523,7 @@ equivalent results, not a plugin-enabled graph against an empty baseline.
 ## 9. Failures, security and observability
 
 Enabled-plugin failures are fatal by default: timeout, resource exhaustion,
-unsupported protocol, invalid output and inference errors must not quietly
+unsupported required protocol/capability, invalid output and inference errors must not quietly
 produce an incomplete graph. Commit no partial response from a failed batch;
 do not silently reuse stale output. No automatic “disable the slow plugin and
 continue” policy: command meaning must not depend on machine speed.
@@ -486,7 +536,11 @@ Use RFC 0021 diagnostics for fatal failures and RFC 0023 notices for successful
 but degraded interpretation (for example, an ecosystem feature deliberately not
 inferred). Present bounded, sanitized plugin text; provenance never exempts
 output from RFC 0022 redaction. Developer timings, cache reasons and host-call
-counts go to tracing, not routine terminal noise.
+counts go to tracing, not routine terminal noise. Hook notices are returned or
+buffered transactionally alongside contributions and state, never published
+immediately through a reporter. Failed attempts publish nothing; cached or
+retried successful results are committed once per stage in deterministic order.
+Immediate developer tracing is allowed and carries invocation/attempt ids.
 
 Propose CLI and MCP inspection operations for:
 
@@ -537,6 +591,13 @@ Required tests include:
 - Hook ordering and batching do not change normalized results.
 - Session state round-trips and cache invalidation work across hook
   re-invocation.
+- Parallel batches cannot lose state updates or write another batch's roots;
+  failed stages and retries publish neither partial state nor duplicate notices.
+- Required/optional capability negotiation and registered-hook validation reject
+  misspelled names and inconsistent exports. Multi-capability registrations keep
+  state and dispatch isolated.
+- Post-resolution observation cannot mutate projects/edges; dependency-hook
+  caches invalidate when their frozen cross-root snapshot changes.
 - No enabled plugins preserves existing discovery, extension, cache-exclusion
   and ignore behavior; disabled sources are never fetched or instantiated.
 - Inferred-only, extend, replace, missing-name, base-template and explicit
@@ -590,31 +651,43 @@ These are illustrative, not final APIs. Native plugins implement capability
 traits; external runtimes adapt the same logical calls over the wire. Hooks are
 namespaced by capability, so capability traits are separate and independently
 versioned. Plugins are stateless; all mutable progress lives in host-owned
-`PluginState`.
+workspace/root state partitions. Supporting request/result types are abbreviated
+below; these sketches describe ownership and dispatch, not a complete SDK.
 
 ### 12.1 Identity and capability registration
 
+`omni_plugin_configurations` owns manifest/configuration types. A capability
+declaration contains its canonical name, API version, required/optional flag
+and supported hooks. These are data, not executable handlers.
+
+The consumer activation id belongs to the host binding, not the author handler:
+the same artifact may be enabled with different ids/options. Native plugins
+register typed handlers using a host registry:
+
 ```rust
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct PluginId(pub String);
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct CapabilityId(pub String); // e.g. "project_discovery"
-
-pub struct PluginManifest {
-    pub name: String,          // canonical author name, e.g. "@omni/cargo"
-    pub version: String,       // metadata only
-    pub api_version: u32,
-    pub runtime: RuntimeKind,  // Native | Wasm | JavaScript
-    pub capabilities: Vec<CapabilityId>,
+pub trait Plugin: Send + Sync {
+    fn manifest(&self) -> &PluginManifest;
+    fn register(&self, registry: &mut CapabilityRegistry)
+        -> Result<(), PluginError>;
 }
 
-pub trait Plugin: Send + Sync {
-    fn id(&self) -> &PluginId;
-    fn manifest(&self) -> &PluginManifest;
-    fn capabilities(&self) -> &[CapabilityId];
+impl CapabilityRegistry {
+    pub fn project_discovery(
+        &mut self,
+        hooks: ProjectDiscoveryHooks,
+        handler: Arc<dyn ProjectDiscoveryCapability>,
+    ) -> Result<(), PluginError>;
 }
 ```
+
+The registration method fixes namespace `project_discovery` and capability
+version; it cannot register a discovery handler under an unrelated name. Future
+capabilities add typed registration entries. Duplicate registrations, unknown
+hooks, manifest/handler disagreement and hook implementation mismatches fail
+validation. SDK registration helpers/derive generate the supported-hook set from
+explicitly annotated implementations; do not attempt runtime reflection over
+Rust trait overrides. External modules provide the equivalent validated export
+table. One plugin can register several independent capability handlers.
 
 ### 12.2 Capability traits (plugin side)
 
@@ -622,87 +695,105 @@ Each capability is its own trait. Adding a capability means adding a trait and a
 namespace; existing capabilities are untouched.
 
 ```rust
-pub trait CapabilityPlugin: Plugin {
-    fn capability_id(&self) -> CapabilityId;
-}
-
-pub trait ProjectDiscoveryCapability: CapabilityPlugin {
+pub trait ProjectDiscoveryCapability: Send + Sync {
     fn on_workspace(
         &self,
-        ctx: &HostContext,
+        ctx: &WorkspaceContext<'_>,
         req: OnWorkspaceRequest,
-        state: PluginState,
-    ) -> Result<OnWorkspaceResponse, PluginError>;
+    ) -> Result<WorkspaceOutput, PluginError> {
+        Ok(WorkspaceOutput::unchanged())
+    }
 
     fn filter_candidates(
         &self,
-        ctx: &HostContext,
+        ctx: &CandidateContext<'_>,
         req: FilterCandidatesRequest,
-        state: PluginState,
-    ) -> Result<FilterCandidatesResponse, PluginError>;
+    ) -> Result<FilterCandidatesResponse, PluginError> {
+        Ok(FilterCandidatesResponse::keep_all(req))
+    }
 
     fn infer_roots(
         &self,
-        ctx: &HostContext,
+        ctx: &InferenceContext<'_>,
         req: InferRootsRequest,
-        state: PluginState,
-    ) -> Result<InferRootsResponse, PluginError>;
+    ) -> Result<InferRootsResponse, PluginError> {
+        Ok(InferRootsResponse::unchanged())
+    }
 
     fn resolve_dependencies(
         &self,
-        ctx: &HostContext,
+        ctx: &ResolutionContext<'_>,
         req: ResolveDependenciesRequest,
-        state: PluginState,
-    ) -> Result<ResolveDependenciesResponse, PluginError>;
+    ) -> Result<ResolveDependenciesResponse, PluginError> {
+        Ok(ResolveDependenciesResponse::unchanged())
+    }
 
-    fn finalize(
+    fn observe(
         &self,
-        ctx: &HostContext,
-        req: FinalizeRequest,
-        state: PluginState,
-    ) -> Result<FinalizeResponse, PluginError>;
+        ctx: &ObservationContext<'_>,
+        req: ObserveRequest,
+    ) -> Result<ObserveResponse, PluginError> {
+        Ok(ObserveResponse::empty())
+    }
 }
 ```
+
+Contexts contain read-only state views. Requests/results are distinct types per
+stage: inference may return project fragments, resolution may return root edges,
+and observation may return notices/inspection metadata only. Defaults preserve
+incoming state and produce no contributions; filtering's default keeps all
+candidates. Registered hooks are the only methods omni schedules.
 
 ### 12.3 Host-owned state
 
 ```rust
-pub struct PluginState {
-    pub capability: CapabilityId, // namespace partition
+pub struct StateValue {
     pub version: u32,
-    pub bytes: Vec<u8>,           // serialized, size-bounded, host-owned
+    pub bytes: Vec<u8>, // bounded serialized form
 }
 
-pub trait StateStore: Send + Sync {
-    fn load(&self, plugin: &PluginId, cap: &CapabilityId) -> Option<PluginState>;
-    fn store(&self, plugin: &PluginId, cap: &CapabilityId, state: PluginState);
-    fn invalidate(&self, plugin: &PluginId, cap: &CapabilityId);
+pub struct StateSnapshot {
+    pub workspace: Option<StateValue>,
+    pub roots: BTreeMap<ProjectRootId, StateValue>,
+}
+
+pub struct RootOutput<T> {
+    pub root: ProjectRootId,
+    pub contribution: T,
+    pub state: StateUpdate, // Keep | Replace(StateValue) | Clear
+    pub notices: Vec<PluginNotice>,
 }
 ```
 
-Plugins never hold a `StateStore`; the host injects state into each hook call and
-persists the returned replacement.
+Snapshots are immutable invocation inputs. The host checks root ownership,
+budgets and stage-allowed writes, then commits the entire validated stage
+transaction. Workspace output can update workspace state only during
+`on_workspace`. There is no plugin-visible `StateStore` or mutable shared
+handle. Serialized state is an interchange/cache format, not a requirement to
+encode/decode native state on every invocation.
 
 ### 12.4 Host services (plugin side view)
 
 ```rust
-pub trait HostFs: Send + Sync {
-    fn read(&self, path: &Path) -> Result<Vec<u8>, HostError>;
-    fn exists(&self, path: &Path) -> Result<bool, HostError>;
-    fn canonicalize(&self, path: &Path) -> Result<PathBuf, HostError>;
+pub trait TrackedInputs: Send + Sync {
+    fn read(&self, path: &WorkspaceInputPath) -> Result<InputBytes, HostError>;
 }
 
-pub struct HostContext<'a> {
-    pub fs: &'a dyn HostFs,
+pub struct InferenceContext<'a> {
+    pub inputs: &'a dyn TrackedInputs,
+    pub state: &'a StateSnapshot,
     pub options: &'a PluginOptions,
     pub limits: &'a PluginLimits,
-    pub reporter: &'a dyn NoticeReporter,
-}
-
-pub trait NoticeReporter: Send + Sync {
-    fn notice(&self, notice: PluginNotice);
+    pub cancellation: &'a Cancellation,
 }
 ```
+
+Only inference contexts expose file-content reads. Other contexts expose the
+appropriate bounded file index, immutable state or frozen project snapshot.
+The input service owns containment, declared-scope checks, negative-read
+tracking and allocation budgets. It never returns a raw filesystem handle or
+absolute canonical paths. No context exposes immediate user-facing publication;
+notices are transactional output values.
 
 ### 12.5 Runtime adapters
 
@@ -716,31 +807,27 @@ pub trait RuntimeAdapter: Send + Sync {
     fn invoke_hook(
         &self,
         module: &ModuleHandle,
-        hook: &str, // "<capability>.<stage>"
+        hook: &HookId, // validated namespace + stage + capability version
         request_bytes: &[u8],
-        state_bytes: &[u8],
+        state_bytes: &[u8], // immutable stage-start snapshot
+        services: &InvocationServices<'_>, // stage-scoped, tracked host imports
         limits: &PluginLimits,
-    ) -> Result<(Vec<u8>, Vec<u8>), PluginError>; // (response, new state)
+    ) -> Result<Vec<u8>, PluginError>; // encoded stage-specific output,
+                                      // including allowed state updates/notices
 }
 ```
 
 ### 12.6 Hook dispatch (host side)
 
-```rust
-pub trait HookDispatcher: Send + Sync {
-    fn dispatch<C: ProjectDiscoveryCapability>(
-        &self,
-        plugin: &C,
-        stage: ProjectDiscoveryStage,
-        ctx: &HostContext,
-        req: ProjectDiscoveryRequest,
-        state: PluginState,
-    ) -> Result<ProjectDiscoveryResponse, PluginError>;
-}
-```
+The host keeps heterogeneous registered handlers as typed trait objects, not a
+generic `dispatch<C>` trait. The scheduler matches the registered capability and
+stage to its typed request, calls the corresponding method, validates the
+stage-specific output and commits a stage transaction. Request/stage mismatches
+must not be representable in the typed native call path. External adapters
+validate the same pair at the wire boundary.
 
-Adding a capability means adding a new `CapabilityId`, trait, request/response
-types and hook namespace. No existing capability trait or hook name changes.
+Adding a capability adds its own trait, registration entry, stage types and
+namespace. Existing capability traits and hook names do not change.
 
 
 ## 13. Implementation plan
@@ -749,44 +836,78 @@ types and hook namespace. No existing capability trait or hook name changes.
 
 | Crate | Purpose |
 | --- | --- |
-| `omni_plugin` | Contract: manifests, capability ids, request/response types, traits, errors, limits, `PluginState` |
-| `omni_plugin_host` | Discovery orchestrator: hook scheduling, batching, budgets, cancellation, state store, caching glue |
-| `omni_plugin_runtime_wasm` | Wasm adapter (engine selected later) with fuel/epoch/memory limits |
-| `omni_plugin_runtime_js` | JavaScript adapter (engine selected later) with interrupt/heap limits |
-| `omni_plugin_builtins` | Native pilot adapters (Cargo first), compiled into omni |
+| `omni_plugin_configurations` | Activation/source declarations, manifests, capability/version/hook declarations, options and limit configuration; data only |
+| `omni_plugin` | Runtime-neutral contract: typed handlers/registration, requests/results, state views/updates, host-service interfaces and errors |
+| `omni_plugin_host` | Scheduling, batching, negotiated capabilities, transactional state/notices, budgets, cancellation and inference-cache orchestration |
+| `omni_plugin_builtins` | Native pilot handlers (Cargo first), compiled into omni |
+| `omni_plugin_runtime_wasm` | Later: Wasm adapter with fuel/epoch/memory limits |
+| `omni_plugin_runtime_js` | Later: JavaScript adapter with interrupt/heap limits |
 
-Keep `omni_plugin` free of runtime dependencies. Runtime crates depend on
-`omni_plugin` only. Builtins depend on `omni_plugin` and ecosystem parsers.
+Scaffold the configuration, contract and host foundations first, then the native
+pilot. Create runtime crates when implementing their adapters, not as empty
+placeholders. No runtime engine dependency belongs in the contract.
+
+Dependency direction (`A -> B` means A depends on B):
+
+```text
+omni_configurations -> omni_plugin_configurations
+omni_plugin -> omni_plugin_configurations + omni_configurations
+omni_plugin_host -> omni_plugin + existing source/cache services
+omni_plugin_builtins -> omni_plugin + ecosystem parsers
+omni_plugin_runtime_{wasm,js} -> omni_plugin + respective engine
+omni_context -> omni_plugin_host + omni_configurations
+CLI/MCP composition roots -> context + builtins + enabled runtime adapters
+```
+
+`omni_configurations` owns recursive project/task/cache/env layer types and the
+restricted plugin-contribution types that reuse them without allowing structural
+fields such as `extends`. `omni_plugin` uses those types in hook results;
+`omni_configurations` never depends on `omni_plugin` or the host. Manifest and
+activation types have exactly one owner: `omni_plugin_configurations`. Keep
+that crate independent of the contract and project configurations, preventing a
+dependency cycle. Use existing low-level types for paths/globs where needed.
+
+The host accepts a registry supplied by the CLI/MCP composition root; it does
+not import concrete builtins or engine adapters. No-plugin invocations need not
+initialize them. Source contributors bridge existing local/git materialization
+to descriptors; capability negotiation precedes hook scheduling.
 
 ### 13.2 Existing crates to change
 
 | Crate | Change |
 | --- | --- |
-| `omni_configurations` | Add `plugins` to `WorkspaceConfiguration`; add `PluginSourceConfiguration`; add `InferenceConfiguration` and project layer/patch types; add `plugin.omni.*` manifest types |
+| `omni_configurations` | Reference plugin configuration types for `plugins`; own inference controls, recursive project/task/cache/env layers and restricted inference contributions |
 | `omni_context` | Marker indexing, virtual root handling, hook scheduling integration, composition, conflict reporting, provenance |
 | `omni_configuration_discovery` | Optionally expose marker sets; keep one walk |
-| `omni_core` | Generalize `ExtensionGraphNode` identity if needed for virtual projects |
+| `omni_core` | Reuse the existing generic `ExtensionGraphNode::Id`; no trait generalization is required just to introduce logical identities |
 | `omni_task_executor` / `omni_cache` | Include inferred config fingerprint in effective cache identity |
 | `omni_cli_core`, `omni_mcp_core` | Inspection commands/tools and diagnostics/notices wiring |
 | `omni_messages` | Reuse notices/diagnostics; no new channel |
 | `omni_types` | Add logical project key / provenance types if identity changes |
+| `omni_remote_source_contributors` | Integrate enabled external descriptors with existing source materialization, identity and offline behavior |
 
 ### 13.3 Phases
 
 1. **Contract and composition first (no runtime).**
-   - Land `omni_plugin` types and traits.
+   - Land `omni_plugin_configurations`, then `omni_plugin` types and typed
+     capability registration, with required/optional negotiation tests.
    - Add `plugins` config (disabled by default) and validation.
    - Add `inference` controls to `ProjectConfiguration`.
-   - Introduce `ProjectLayer` (all fields optional) and composition into final
-     `ProjectConfiguration`, preserving presence.
+   - Introduce recursive presence-aware layers, including tasks/cache/env,
+     preserving omission, explicit values and existing merge operators.
+   - Replace eager explicit-file deserialization with layer loading; preserve
+     extension closure, per-layer path origins, aliases and existing ordering.
+     Apply defaults and final validation only after inference composition.
    - Implement conflict detection and provenance tracking.
    - Add virtual project identity (synthetic but stable logical key) and update
      extension graph + loader.
    - Tests: zero-plugin parity, extend/replace, absence vs default.
 
 2. **Native pilot.**
-   - Implement `omni_plugin_host` discovery orchestrator with stages, batching,
-     caching and budgets.
+   - Implement `omni_plugin_host` with frozen stage snapshots, workspace/root
+     partitions, hook-set validation, atomic commits, caching and budgets.
+   - Test shuffled batch scheduling, cancellation/retries, no lost state, no
+     duplicate notices and invalidation of cross-root resolution snapshots.
    - Implement Cargo builtin behind `project_discovery` capability.
    - Wire into `Context::load_discovered_project_configs`.
    - Benchmarks and regression tests.
@@ -810,20 +931,29 @@ Keep `omni_plugin` free of runtime dependencies. Runtime crates depend on
 - `Context::discover_project_paths` builds candidate roots and explicit files.
   Plugin scheduling happens after explicit inference controls are read.
 - `Context::load_discovered_project_configs` becomes:
-  1. Load explicit files and extension graph as today.
-  2. For roots without `replace`, run enabled plugin hooks in stage order.
-  3. Compose inferred layers with explicit layers.
-  4. Resolve task extensions after composition.
-- `ProjectConfigLoader::load_project_configs` stays for explicit files; inferred
-  projects are synthesized and merged in `Context`.
+  1. Load explicit files and their extension closure into recursive layers,
+     preserving field presence and path origins rather than applying defaults.
+  2. For roots without `replace`, invoke registered inference hooks using frozen
+     stage snapshots and transactional output commits.
+  3. Freeze inference fragments, then invoke dependency hooks for root-based
+     edges. No later plugin stage may edit project fields.
+  4. Compose inferred layers beneath explicit extension/concrete layers; apply
+     defaults, resolve task extensions and final root-to-name edges, validate.
+  5. Run optional read-only observation hooks and return the effective projects.
+- Refactor `ProjectConfigLoader` to expose layer loading and closure/path
+  resolution. Retaining its current eager `ProjectConfiguration::load` path for
+  plugin-enabled composition would lose presence and reject inferred names too
+  early. A no-plugin compatibility entry point may finalize the same layers.
 - Cache identity: combine explicit file fingerprints, plugin artifact/module
   fingerprints, options, and normalized inferred config.
 
 ### 13.5 Risky changes requiring care
 
-- Virtual project identity touches `ExtensionGraphNode`, cache keys and
-  inspection. Keep a synthetic `file`/`dir` only as identity/display; never
-  treat it as a real path for file reads.
+- Virtual project identity touches project graph nodes, cache keys and
+  inspection. Distinguish logical ids from optional physical config files;
+  `dir` remains the real project root, never a synthetic directory. Never pass
+  a logical config id into file-read APIs. Reuse the core graph's associated
+  identity type rather than assuming the generic trait itself must change.
 - Presence-aware deserialization is a schema/loader change; tests must cover
   absence vs default values.
 - Plugin output must be validated before entering graph state; malformed output
