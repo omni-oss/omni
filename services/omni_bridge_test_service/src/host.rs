@@ -255,11 +255,11 @@ impl Host {
         const RUN_DRAIN_GRACE: Duration = Duration::from_millis(500);
         match tokio::time::timeout(RUN_DRAIN_GRACE, run_handle).await {
             Ok(Ok(Ok(()))) => {
-                log::info!("bridge run loop drained successfully");
+                tracing::info!("bridge run loop drained successfully");
             }
             Ok(Ok(Err(err))) => return Err(err.into()),
             Ok(Err(join_err)) if join_err.is_cancelled() => {
-                log::info!("bridge run task was aborted during shutdown");
+                tracing::info!("bridge run task was aborted during shutdown");
             }
             Ok(Err(join_err)) => {
                 return Err(Error::from(ErrorInner::Custom(
@@ -291,7 +291,7 @@ impl Host {
             {
                 Ok(result) => result.map_err(ErrorInner::from)?,
                 Err(_elapsed) => {
-                    log::warn!("child did not exit in time — killing");
+                    tracing::warn!("child did not exit in time — killing");
                     child.start_kill().ok();
                     child.wait().await.map_err(ErrorInner::from)?
                 }
@@ -323,7 +323,7 @@ impl Host {
 pub async fn run_host(args: HostArgs) -> Result<()> {
     crate::tracing_setup::install_host_tracing(&args.log_level)?;
 
-    log::info!(
+    tracing::info!(
         "starting omni_bridge_test_service host (child={:?}, ping={})",
         args.child_binary,
         args.ping,
@@ -334,13 +334,13 @@ pub async fn run_host(args: HostArgs) -> Result<()> {
 
     if args.ping {
         let timeout = args.ping_timeout();
-        log::info!("pinging child (timeout={timeout:?})");
+        tracing::info!("pinging child (timeout={timeout:?})");
         let pong = host.ping(timeout).await?;
-        log::info!("ping result: {pong}");
+        tracing::info!("ping result: {pong}");
     }
 
     let status = host.shutdown().await?;
-    log::info!("child exited with status {status:?}");
+    tracing::info!("child exited with status {status:?}");
 
     Ok(())
 }

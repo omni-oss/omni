@@ -28,11 +28,10 @@ system_traits = { path = "./crates/system_traits" }
 async-trait = { version = "^0.1.92" }
 serde_json = { version = "^1.0.154" }
 serde_bytes = { version = "^0.11.19" }
-trace = { path = "./crates/trace" }
 tracing = { version = "^0.1.44" }
 tracing-log = { version = "^0.2.0" }
 tracing-core = { version = "^0.1.36" }
-tracing-subscriber = { version = "^0.3.23", features = ["json"] }
+tracing-subscriber = { version = "^0.3.23", features = ["json", "env-filter"] }
 test-log = { version = "=0.2.20", default-features = false, features = [
     "trace",
 ] }
@@ -213,6 +212,10 @@ proc-macro2 = { version = "^1.0" }
 inventory = { version = "^0.3.21" }
 trybuild = { version = "^1.0" }
 omni_redact = { path = "crates/omni_redact" }
+omni_codes = { path = "crates/omni_codes" }
+omni_derive_support = { path = "crates/omni_derive_support" }
+omni_notice = { path = "crates/omni_notice" }
+omni_notice_derive = { path = "crates/omni_notice_derive" }
 # @anchor:new-crate
 tracing-futures = { version = "^0.2.5", features = ["tokio"] }
 pathdiff = { version = "^0.2.3" }

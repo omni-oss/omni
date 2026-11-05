@@ -1,0 +1,5 @@
+error: an `essential` notice must be static: no fields and no placeholders in `message`
+ --> tests/ui/essential_with_placeholder.rs:6:8
+  |
+6 | struct N;
+  |        ^

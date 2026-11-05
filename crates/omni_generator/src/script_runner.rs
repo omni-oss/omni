@@ -44,14 +44,18 @@ use bridge_rpc_runner::{
     VendoredBridgeService, build_scan_plan,
     build_spawn_plan as build_spawn_plan_generic, build_unconfined_plan,
 };
+use bridge_rpc_runner::{CapabilitiesIgnored, CapabilitiesImportScan};
 use bridge_rpc_services::{
-    RegisterServicesOptions, register_services_with_defaults,
+    RegisterServicesOptions,
+    log::{CallbackLogger, ScriptLogRecord},
+    proc::StdArgsProvider,
+    register_services,
 };
 use omni_capabilities::{CapabilityFloors, CapabilityRules, PathRoots, Root};
 use omni_capability_enforcement::{ShimPolicy, SpawnPolicy};
 use omni_capability_sys::{EvaluatingAuthorizer, PolicyEnforcingSys};
 use omni_generator_configurations::Generator;
-use omni_messages::{NoticeEvent, notice_event, publish::NoticeLevel};
+use omni_messages::{NoticeEvent, notice_event};
 use serde::Serialize;
 use system_traits::EnvSnapshot;
 
@@ -149,6 +153,9 @@ pub struct ScriptInvocation {
 #[derive(Debug, Clone, Default)]
 pub struct RunScriptResult {
     pub diagnostics: Vec<NoticeEvent>,
+    /// Lines the scripts logged during the call (`ctx.log.*`), in order. The
+    /// caller delivers them to the run's subscriber.
+    pub logs: Vec<ScriptLogRecord>,
 }
 
 /// Abstraction over the JavaScript script execution backend.
@@ -199,7 +206,12 @@ pub struct LazyScriptRunner {
     /// generator's read set is not recomputed on every call.
     closure_cache: ClosureCache,
     factory: RunnerFactory,
+    /// Script log records, collected by the log service as they arrive and
+    /// drained into each [`RunScriptResult`].
+    script_logs: ScriptLogBuffer,
 }
+
+type ScriptLogBuffer = Arc<std::sync::Mutex<Vec<ScriptLogRecord>>>;
 
 impl std::fmt::Debug for LazyScriptRunner {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -225,9 +237,12 @@ impl LazyScriptRunner {
     where
         S: GeneratorSys,
     {
+        let script_logs: ScriptLogBuffer = Default::default();
+        let log_buffer = script_logs.clone();
         let factory: RunnerFactory = Box::new(
             move |runtime, authorizer, mut spawn_policy, shim_json| {
                 let sys = sys.clone();
+                let log_buffer = log_buffer.clone();
                 let context_dir = context_dir.clone();
                 let version = version.clone();
 
@@ -269,9 +284,13 @@ impl LazyScriptRunner {
                     // other ambient variable is dropped.
                     spawn_policy.env = Some(enforcing.env_snapshot());
 
-                    register_services_with_defaults(
+                    register_services(
                         &mut router,
                         Arc::new(enforcing),
+                        Arc::new(StdArgsProvider),
+                        CallbackLogger::new(move |record| {
+                            log_buffer.lock().unwrap().push(record);
+                        }),
                         RegisterServicesOptions::default(),
                     );
 
@@ -309,6 +328,7 @@ impl LazyScriptRunner {
             scan_pool: RunnerPool::new(),
             closure_cache: ClosureCache::new(),
             factory,
+            script_logs,
         }
     }
 
@@ -343,14 +363,7 @@ impl JsScriptRunner for LazyScriptRunner {
             // policy, surface a warning so it is not silently ignored.
             let mut diagnostics = Vec::new();
             if policy.levels.iter().any(|level| !level.is_empty()) {
-                diagnostics.push(notice_event!(
-                    NoticeLevel::Warn,
-                    "a capability policy is declared but the capabilities \
-                     feature is experimental and disabled; it is ignored and \
-                     scripts run unconfined — enable it with \
-                     `enable_experimental: true` (or `enable_experimental: \
-                     {{ capabilities: true }}`) in the workspace configuration",
-                ));
+                diagnostics.push(notice_event!(CapabilitiesIgnored));
             }
             (
                 build_unconfined_plan(resolved),
@@ -449,10 +462,9 @@ impl JsScriptRunner for LazyScriptRunner {
                 .await?;
 
             for note in &closure.diagnostics {
-                diagnostics.push(notice_event!(
-                    NoticeLevel::Warn,
-                    "import-scan: {note}",
-                ));
+                diagnostics.push(notice_event!(CapabilitiesImportScan {
+                    note: note.to_string(),
+                }));
             }
 
             runner.grant_read_scope(&closure.paths)
@@ -460,13 +472,24 @@ impl JsScriptRunner for LazyScriptRunner {
             runner.grant_read_scope(&[])
         };
 
-        runner
-            .call(EXEC_GENERATOR_SCRIPT_PATH, invocations)
-            .await
-            .map_err(|e| Error::custom(e.to_string()))?;
+        let call_result =
+            runner.call(EXEC_GENERATOR_SCRIPT_PATH, invocations).await;
         read_scope.revoke();
+        if let Err(e) = call_result {
+            // Messages and targets can carry secrets, and the run redactor is
+            // not available here, so only the record's level is traced.
+            for log in std::mem::take(&mut *self.script_logs.lock().unwrap()) {
+                tracing::debug!(
+                    target: "omni_generator::script",
+                    level = ?log.level,
+                    "script log discarded after failure"
+                );
+            }
+            return Err(Error::custom(e.to_string()));
+        }
 
-        Ok(RunScriptResult { diagnostics })
+        let logs = std::mem::take(&mut *self.script_logs.lock().unwrap());
+        Ok(RunScriptResult { diagnostics, logs })
     }
 }
 
@@ -520,10 +543,8 @@ mod tests {
         )
         .expect("warn never refuses on a floor gap");
         assert!(
-            diagnostics
-                .iter()
-                .any(|d| d.message.contains("floor")
-                    && d.message.contains("net")),
+            diagnostics.iter().any(|d| d.message().contains("floor")
+                && d.message().contains("net")),
             "expected a net floor-gap diagnostic, got: {diagnostics:?}"
         );
     }
@@ -574,7 +595,7 @@ mod tests {
         assert!(
             !before
                 .iter()
-                .any(|d| d.message.contains("OS-level sandbox is DISABLED")),
+                .any(|d| d.message().contains("OS-level sandbox is DISABLED")),
             "must not warn about a disabled sandbox when the hatch is \
              unset, got: {before:?}"
         );
@@ -589,9 +610,13 @@ mod tests {
         )
         .expect("the warn stance never refuses on a floor gap");
         assert!(
-            after.iter().any(|d| matches!(d.level, NoticeLevel::Warn)
-                && d.message.contains("OS-level sandbox is DISABLED")
-                && d.message.contains("OMNI_DISABLE_OS_SANDBOX")),
+            after.iter().any(|d| matches!(
+                d.level(),
+                omni_messages::NoticeLevel::Warn
+            ) && d
+                .message()
+                .contains("OS-level sandbox is DISABLED")
+                && d.message().contains("OMNI_DISABLE_OS_SANDBOX")),
             "expected a loud OS-sandbox-disabled warning when the hatch is \
              set, got: {after:?}"
         );

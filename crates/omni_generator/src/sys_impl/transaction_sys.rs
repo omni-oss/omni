@@ -190,7 +190,7 @@ impl<S: GeneratorSys> TransactionSys<S> {
         let mut st = self.state.lock().await;
         let len = st.actions.len();
         st.tx_stack.push(len);
-        log::debug!("Transaction: begin (depth {})", st.tx_stack.len());
+        tracing::debug!("Transaction: begin (depth {})", st.tx_stack.len());
     }
 
     /// Returns `true` if at least one transaction is currently open.
@@ -238,14 +238,14 @@ impl<S: GeneratorSys> TransactionSys<S> {
 
             // A nested commit keeps the actions buffered for the parent.
             if !st.tx_stack.is_empty() {
-                log::debug!(
+                tracing::debug!(
                     "Transaction: commit nested (depth {})",
                     st.tx_stack.len()
                 );
                 return Ok(());
             }
 
-            log::debug!(
+            tracing::debug!(
                 "Transaction: commit top-level ({} action(s))",
                 st.actions.len()
             );
@@ -268,7 +268,7 @@ impl<S: GeneratorSys> TransactionSys<S> {
             invalid("rollback_transaction: no active transaction")
         })?;
 
-        log::debug!(
+        tracing::debug!(
             "Transaction: rollback to action {} (was {})",
             start,
             st.actions.len()
@@ -284,7 +284,7 @@ impl<S: GeneratorSys> TransactionSys<S> {
     pub async fn commit(&self) -> io::Result<()> {
         let actions = {
             let mut st = self.state.lock().await;
-            log::debug!(
+            tracing::debug!(
                 "Transaction: force commit ({} action(s))",
                 st.actions.len()
             );
@@ -307,7 +307,7 @@ impl<S: GeneratorSys> TransactionSys<S> {
         st.next_checkpoint += 1;
         let len = st.actions.len();
         st.checkpoints.push((id, len));
-        log::debug!("Transaction: checkpoint {:?} at action {}", id, len);
+        tracing::debug!("Transaction: checkpoint {:?} at action {}", id, len);
         id
     }
 
@@ -328,7 +328,7 @@ impl<S: GeneratorSys> TransactionSys<S> {
             })?;
         let len = st.checkpoints[pos].1;
 
-        log::debug!(
+        tracing::debug!(
             "Transaction: rollback to checkpoint {:?} (action {})",
             checkpoint,
             len
@@ -385,7 +385,7 @@ impl<S: GeneratorSys> BaseFsWriteAsync for TransactionSys<S> {
         data: &[u8],
     ) -> io::Result<()> {
         let cp = self.resolve(path).await;
-        log::debug!("Transaction: write to {}", cp.display());
+        tracing::debug!("Transaction: write to {}", cp.display());
         let action = Action::Write {
             path: cp,
             data: data.to_vec(),
@@ -402,7 +402,7 @@ impl<S: GeneratorSys> BaseFsAppendAsync for TransactionSys<S> {
         data: &[u8],
     ) -> io::Result<()> {
         let cp = self.resolve(path).await;
-        log::debug!("Transaction: append to {}", cp.display());
+        tracing::debug!("Transaction: append to {}", cp.display());
         let action = Action::Append {
             path: cp,
             data: data.to_vec(),
@@ -419,7 +419,7 @@ impl<S: GeneratorSys> BaseFsCreateDirAsync for TransactionSys<S> {
         options: &CreateDirOptions,
     ) -> io::Result<()> {
         let cp = self.resolve(path).await;
-        log::debug!("Transaction: create directory {}", cp.display());
+        tracing::debug!("Transaction: create directory {}", cp.display());
         let action = Action::CreateDir {
             path: cp,
             options: *options,
@@ -432,7 +432,7 @@ impl<S: GeneratorSys> BaseFsCreateDirAsync for TransactionSys<S> {
 impl<S: GeneratorSys> BaseFsRemoveFileAsync for TransactionSys<S> {
     async fn base_fs_remove_file_async(&self, path: &Path) -> io::Result<()> {
         let cp = self.resolve(path).await;
-        log::debug!("Transaction: remove file {}", cp.display());
+        tracing::debug!("Transaction: remove file {}", cp.display());
         let action = Action::RemoveFile { path: cp };
         self.record(action).await
     }
@@ -442,7 +442,7 @@ impl<S: GeneratorSys> BaseFsRemoveFileAsync for TransactionSys<S> {
 impl<S: GeneratorSys> BaseFsRemoveDirAsync for TransactionSys<S> {
     async fn base_fs_remove_dir_async(&self, path: &Path) -> io::Result<()> {
         let cp = self.resolve(path).await;
-        log::debug!("Transaction: remove directory {}", cp.display());
+        tracing::debug!("Transaction: remove directory {}", cp.display());
         let action = Action::RemoveDir { path: cp };
         self.record(action).await
     }
@@ -455,7 +455,7 @@ impl<S: GeneratorSys> BaseFsRemoveDirAllAsync for TransactionSys<S> {
         path: &Path,
     ) -> io::Result<()> {
         let cp = self.resolve(path).await;
-        log::debug!(
+        tracing::debug!(
             "Transaction: remove directory and all of its contents {}",
             cp.display()
         );
@@ -473,7 +473,7 @@ impl<S: GeneratorSys> BaseFsRenameAsync for TransactionSys<S> {
     ) -> io::Result<()> {
         let from = self.resolve(from).await;
         let to = self.resolve(to).await;
-        log::debug!(
+        tracing::debug!(
             "Transaction: rename {} -> {}",
             from.display(),
             to.display()
@@ -492,7 +492,11 @@ impl<S: GeneratorSys> BaseFsCopyAsync for TransactionSys<S> {
     ) -> io::Result<u64> {
         let from = self.resolve(from).await;
         let to = self.resolve(to).await;
-        log::debug!("Transaction: copy {} -> {}", from.display(), to.display());
+        tracing::debug!(
+            "Transaction: copy {} -> {}",
+            from.display(),
+            to.display()
+        );
         let action = Action::Copy { from, to };
         self.record_with_result(action).await
     }
@@ -751,7 +755,7 @@ impl<S: GeneratorSys> BaseEnvSetCurrentDirAsync for TransactionSys<S> {
         path: &Path,
     ) -> io::Result<()> {
         let cp = self.resolve(path).await;
-        log::debug!("Transaction: set current dir {}", cp.display());
+        tracing::debug!("Transaction: set current dir {}", cp.display());
         let mut st = self.state.lock().await;
         st.cwd = Some(cp.clone());
         st.actions.push(Action::SetCurrentDir { path: cp });
@@ -889,7 +893,7 @@ async fn rebuild<S: GeneratorSys>(st: &mut State, real: &S) {
         )
         .await
         {
-            log::warn!("Transaction: failed to replay action: {err}");
+            tracing::warn!("Transaction: failed to replay action: {err}");
         }
     }
     st.actions = actions;

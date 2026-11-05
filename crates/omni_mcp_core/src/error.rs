@@ -41,6 +41,9 @@ pub(crate) enum ErrorInner {
 /// `invalid_params`, everything else `internal_error`. Other errors keep their
 /// full cause chain instead of only the outermost message.
 pub fn report_to_mcp_error(report: eyre::Report) -> McpError {
+    if let Some(failure) = report.downcast_ref::<McpFailure>() {
+        return failure.0.clone();
+    }
     let Some(d) = DiagnosticReport::from_report(&report) else {
         return McpError::internal_error(
             format!("{report:#}"),
@@ -56,9 +59,69 @@ pub fn report_to_mcp_error(report: eyre::Report) -> McpError {
     McpError::new(code, d.message, Some(data))
 }
 
+/// An already-built MCP error, carried through `eyre` so a tool can attach
+/// request-scoped data (notices) to the payload.
+#[derive(Debug)]
+pub(crate) struct McpFailure(McpError);
+
+impl std::fmt::Display for McpFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0.message)
+    }
+}
+
+impl std::error::Error for McpFailure {}
+
+/// Attaches the notices collected before a failure to the error payload as
+/// `data.notices`. Notices stay true about the run even when
+/// a later, unrelated error ends it.
+pub(crate) fn with_notices(
+    report: eyre::Report,
+    notices: Vec<crate::notices::NoticePayload>,
+) -> eyre::Report {
+    if notices.is_empty() {
+        return report;
+    }
+    let mut e = report_to_mcp_error(report);
+    let mut data = match e.data.take() {
+        Some(serde_json::Value::Object(o)) => o,
+        Some(other) => {
+            let mut m = serde_json::Map::new();
+            m.insert("detail".into(), other);
+            m
+        }
+        None => serde_json::Map::new(),
+    };
+    data.insert("notices".into(), json!(notices));
+    e.data = Some(serde_json::Value::Object(data));
+    eyre::Report::new(McpFailure(e))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn notices_are_attached_under_data_on_failure() {
+        use crate::notices::NoticePayload;
+        let notice = NoticePayload {
+            level: "warn".into(),
+            code: "x.y".into(),
+            message: "m".into(),
+            fields: Default::default(),
+        };
+        let r = with_notices(eyre::Report::msg("boom"), vec![notice]);
+        let e = report_to_mcp_error(r);
+        assert_eq!(e.message, "boom");
+        assert_eq!(e.data.unwrap()["notices"][0]["code"], "x.y");
+    }
+
+    #[test]
+    fn no_notices_leaves_the_error_untouched() {
+        let r = with_notices(eyre::Report::msg("boom"), vec![]);
+        let e = report_to_mcp_error(r);
+        assert!(e.data.unwrap().get("notices").is_none());
+    }
 
     #[test]
     fn plain_errors_keep_their_cause_chain() {

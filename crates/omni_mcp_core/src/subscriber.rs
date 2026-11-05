@@ -2,10 +2,13 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use omni_messages::{
-    ExecutionEventSubscriber, GeneratorEventSubscriber, NoticeSubscriber,
-    TaskCompletedEvent, TaskFailedEvent, TaskOutputStreamEvent,
+    ExecutionEventSubscriber, GeneratorEventSubscriber, NoticeEvent,
+    NoticeSubscriber, TaskCompletedEvent, TaskFailedEvent,
+    TaskOutputStreamEvent, TaskStartedEvent,
 };
 use omni_task_output_logs::LogsDisplay;
+
+use crate::notices::{NoticeCollector, NoticePayload};
 use tokio::io::AsyncReadExt as _;
 use tokio::task::JoinHandle;
 
@@ -36,6 +39,11 @@ pub struct McpSubscriber {
     captures: Arc<Mutex<HashMap<String, PendingCapture>>>,
     /// Resolved logs per task (task_id → UTF-8 text).
     logs: Arc<Mutex<HashMap<String, String>>>,
+    /// Notices for this request: deduplicated and bounded.
+    notices: Mutex<NoticeCollector>,
+    /// Dry-run commands per task (task_id → redacted command line).
+    commands: Mutex<HashMap<String, String>>,
+    redactor: omni_messages::SharedRedactor,
 }
 
 impl McpSubscriber {
@@ -44,7 +52,31 @@ impl McpSubscriber {
             include_logs,
             captures: Arc::new(Mutex::new(HashMap::new())),
             logs: Arc::new(Mutex::new(HashMap::new())),
+            notices: Mutex::new(NoticeCollector::new()),
+            commands: Mutex::new(HashMap::new()),
+            redactor: Default::default(),
         }
+    }
+
+    /// Redacts every notice before it is collected (RFC 0022).
+    pub fn with_redactor(self, redactor: omni_redact::Redactor) -> Self {
+        self.redactor.extend(&redactor);
+        self
+    }
+
+    /// Takes the notices collected so far, appending the truncation entry
+    /// when some were omitted. Call once, after the request has finished.
+    pub fn take_notices(&self) -> Vec<NoticePayload> {
+        std::mem::replace(
+            &mut *self.notices.lock().unwrap(),
+            NoticeCollector::new(),
+        )
+        .finish()
+    }
+
+    /// Dry-run command lines keyed by full task name.
+    pub fn take_commands(&self) -> HashMap<String, String> {
+        std::mem::take(&mut *self.commands.lock().unwrap())
     }
 
     /// Drain all captured logs, leaving the internal map empty.
@@ -74,8 +106,16 @@ impl McpSubscriber {
 }
 
 impl NoticeSubscriber for McpSubscriber {
-    fn wants_notices(&self) -> bool {
-        false
+    fn redactor(&self) -> Option<std::sync::Arc<omni_redact::Redactor>> {
+        self.redactor.get()
+    }
+
+    fn extend_redactor(&self, redactor: &omni_redact::Redactor) {
+        self.redactor.extend(redactor);
+    }
+
+    fn on_notice(&self, event: NoticeEvent) {
+        self.notices.lock().unwrap().push(event);
     }
 }
 
@@ -133,6 +173,12 @@ impl ExecutionEventSubscriber for McpSubscriber {
             .lock()
             .unwrap()
             .insert(event.task_id, PendingCapture { handle, facet });
+    }
+
+    async fn on_task_started(&self, event: TaskStartedEvent) {
+        if let Some(command) = event.command {
+            self.commands.lock().unwrap().insert(event.task_id, command);
+        }
     }
 
     async fn on_task_completed(&self, event: TaskCompletedEvent) {
@@ -207,6 +253,39 @@ mod tests {
         task_id: &str,
     ) -> Option<&'a str> {
         logs.get(task_id).map(String::as_str)
+    }
+
+    #[test]
+    fn notices_are_redacted_before_they_are_collected() {
+        use omni_notice::Notice;
+
+        omni_codes::prefixes!("mcpsub");
+
+        /// Sample.
+        #[derive(Notice)]
+        #[notice(code = "mcpsub.sample", level = warn, message = "got {v}")]
+        struct Sample {
+            v: String,
+        }
+
+        let sub = McpSubscriber::new(LogsDisplay::Never);
+        sub.extend_redactor(
+            &omni_redact::Redactor::builder().value("hunter2").build(),
+        );
+        omni_messages::publish::publish_event(
+            &sub,
+            omni_messages::NoticeEvent::from_notice(
+                &Sample {
+                    v: "hunter2".into(),
+                },
+                "t",
+            ),
+        );
+
+        let notices = sub.take_notices();
+        assert_eq!(notices.len(), 1);
+        assert!(!notices[0].message.contains("hunter2"));
+        assert!(!notices[0].fields["v"].as_str().unwrap().contains("hunter2"));
     }
 
     #[test]

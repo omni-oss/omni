@@ -141,10 +141,11 @@ pub struct GeneratorListArgs {}
 pub async fn run(
     generate: &GeneratorCommand,
     ctx: &Context,
+    output: super::OutputOptions,
 ) -> eyre::Result<()> {
     match &generate.subcommand {
         GeneratorSubcommand::Run(generator_run_command) => {
-            run_generator_run(generator_run_command, ctx).await?
+            run_generator_run(generator_run_command, ctx, output).await?
         }
         GeneratorSubcommand::List(generator_list_command) => {
             run_generator_list(generator_list_command, ctx).await?
@@ -157,6 +158,7 @@ pub async fn run(
 async fn run_generator_run(
     command: &GeneratorRunCommand,
     ctx: &Context,
+    output: super::OutputOptions,
 ) -> eyre::Result<()> {
     let loaded_context = ctx.clone().into_loaded().await?;
     let projects = loaded_context.projects();
@@ -179,14 +181,15 @@ async fn run_generator_run(
                 (path_clean::clean(current_dir.join(out)), None)
             }
             (Some(out), Some(_)) => {
-                log::warn!(
-                    "Both --output and --project are provided, using --output"
+                crate::subscriber::print_notice(
+                    &crate::notices::OutputOverridesProject,
+                    output.quiet,
                 );
                 (out, None)
             }
         };
 
-    log::trace!("Generator output directory: {}", output_dir.display());
+    tracing::trace!("Generator output directory: {}", output_dir.display());
 
     let sys = loaded_context.sys();
     let generators = get_generators(ctx, sys).await?;
@@ -219,7 +222,8 @@ async fn run_generator_run(
     let scratch_dir = loaded_context.scratch_dir();
     let api = OmniApi::new_with_loaded_sys(
         loaded_context,
-        crate::subscriber::CliSubscriber::new_stream(scratch_dir),
+        crate::subscriber::CliSubscriber::new_stream(scratch_dir)
+            .with_quiet(output.quiet),
     );
     let response = api.generator_run(req).await?;
 

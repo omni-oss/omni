@@ -13,7 +13,8 @@ use crate::generator::events::{
     GeneratorActionSkippedEvent, GeneratorActionSuccessEvent,
 };
 use crate::generator::{
-    GeneratorCompletedEvent, GeneratorEventSubscriber, GeneratorStartEvent,
+    GeneratorCompletedEvent, GeneratorEventSubscriber,
+    GeneratorPromptRejectedEvent, GeneratorStartEvent,
 };
 use crate::notice::{NoticeEvent, NoticeSubscriber};
 
@@ -37,6 +38,7 @@ pub enum OmniEventKind {
     Notice(NoticeEvent),
     // Generator lifecycle
     GeneratorStarted(GeneratorStartEvent),
+    GeneratorPromptRejected(GeneratorPromptRejectedEvent),
     GeneratorActionSkipped(GeneratorActionSkippedEvent),
     GeneratorActionInProgress(GeneratorActionInProgressEvent),
     GeneratorActionSuccess(GeneratorActionSuccessEvent),
@@ -118,6 +120,9 @@ impl ExecutionEventSubscriber for ChannelSubscriber {
 }
 
 impl GeneratorEventSubscriber for ChannelSubscriber {
+    async fn on_prompt_rejected(&self, e: GeneratorPromptRejectedEvent) {
+        self.send(OmniEventKind::GeneratorPromptRejected(e));
+    }
     async fn on_generator_start(&self, e: GeneratorStartEvent) {
         self.send(OmniEventKind::GeneratorStarted(e));
     }
@@ -151,6 +156,7 @@ mod tests {
             task_id: "p::t".to_string(),
             project: "p".to_string(),
             task: "t".to_string(),
+            command: None,
         })
         .await;
 

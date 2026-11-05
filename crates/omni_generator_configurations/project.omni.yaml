@@ -15,4 +15,3 @@ dependencies:
   - sets
   - omni_expressions
   - system_traits
-  - trace

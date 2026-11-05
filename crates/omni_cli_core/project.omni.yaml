@@ -42,3 +42,10 @@ dependencies:
   - omni_file_data_serde
   - omni_utils
   - omni_diagnostic
+  - omni_command_config
+  - maps
+  - omni_task_output_logs
+  - sets
+  - omni_codes
+  - omni_notice
+  - omni_redact

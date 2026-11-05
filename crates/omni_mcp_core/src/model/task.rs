@@ -1,4 +1,6 @@
 use omni_task_executor::{Force, MetaOnError};
+
+use crate::notices::NoticePayload;
 use omni_task_output_logs::LogsDisplay;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -50,6 +52,9 @@ fn default_meta_error_samples() -> usize {
 pub struct TaskRunResult {
     pub ok: bool,
     pub results: Vec<TaskExecutionSummary>,
+    /// Non-fatal messages about this run. Match on `code`; omitted when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notices: Vec<NoticePayload>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
@@ -60,6 +65,9 @@ pub struct TaskExecutionSummary {
     pub duration_ms: Option<u64>,
     pub exit_code: Option<u32>,
     pub logs: Option<String>,
+    /// The command line that would run. Set only in dry runs (redacted).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
@@ -84,6 +92,9 @@ pub struct ExecCommandParams {
 pub struct ExecCommandResult {
     pub ok: bool,
     pub results: Vec<TaskExecutionSummary>,
+    /// Non-fatal messages about this run. Match on `code`; omitted when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notices: Vec<NoticePayload>,
 }
 
 #[cfg(test)]

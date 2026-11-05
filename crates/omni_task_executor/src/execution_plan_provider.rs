@@ -23,6 +23,13 @@ impl<'a, TSys: ContextSys> ContextExecutionPlanProvider<'a, TSys> {
         self
     }
 
+    /// Meta filter errors tolerated by `--meta-on-error exclude`.
+    pub fn take_excluded_meta_errors(
+        &self,
+    ) -> Vec<omni_execution_plan::MetaFilterError> {
+        self.inner.take_excluded_meta_errors()
+    }
+
     pub fn new(context: &'a LoadedContext<TSys>) -> Self {
         Self {
             inner: DefaultExecutionPlanProvider::new(ContextWrapper {

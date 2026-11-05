@@ -111,7 +111,7 @@ describe("+run @output-logs (cached output policy)", () => {
             { cwd: ws.cwd },
         );
         expect(second).toHaveSucceeded();
-        expect(second).toOutputContaining("Cache hits");
+        expect(second).toHaveStderrContaining("Cache hits");
         expect(second).toOutputContaining("OUT-MARK");
     });
 
@@ -128,7 +128,7 @@ describe("+run @output-logs (cached output policy)", () => {
             },
         );
         expect(second).toHaveSucceeded();
-        expect(second).toOutputContaining("Cache hits");
+        expect(second).toHaveStderrContaining("Cache hits");
         expect(second.stdout).not.toContain("OUT-MARK");
     });
 });
@@ -295,7 +295,7 @@ describe("+run @output-logs (cached config + flag precedence)", () => {
         // The `cached` facet resolves to `all`, so the cache hit is replayed.
         const second = await runOmni(["run", "build"], { cwd: ws.cwd });
         expect(second).toHaveSucceeded();
-        expect(second).toOutputContaining("Cache hits");
+        expect(second).toHaveStderrContaining("Cache hits");
         expect(second).toOutputContaining("OUT-MARK");
     });
 
@@ -320,7 +320,7 @@ describe("+run @output-logs (cached config + flag precedence)", () => {
 
         const second = await runOmni(["run", "build"], { cwd: ws.cwd });
         expect(second).toHaveSucceeded();
-        expect(second).toOutputContaining("Cache hits");
+        expect(second).toHaveStderrContaining("Cache hits");
         expect(second.stdout).not.toContain("OUT-MARK");
     });
 
@@ -347,7 +347,7 @@ describe("+run @output-logs (cached config + flag precedence)", () => {
 
         const second = await runOmni(["run", "build"], { cwd: ws.cwd });
         expect(second).toHaveSucceeded();
-        expect(second).toOutputContaining("Cache hits");
+        expect(second).toHaveStderrContaining("Cache hits");
         expect(second).toOutputContaining("OUT-MARK");
     });
 
@@ -375,7 +375,7 @@ describe("+run @output-logs (cached config + flag precedence)", () => {
             },
         );
         expect(second).toHaveSucceeded();
-        expect(second).toOutputContaining("Cache hits");
+        expect(second).toHaveStderrContaining("Cache hits");
         expect(second.stdout).not.toContain("OUT-MARK");
     });
 
@@ -404,7 +404,7 @@ describe("+run @output-logs (cached config + flag precedence)", () => {
             cwd: ws.cwd,
         });
         expect(second).toHaveSucceeded();
-        expect(second).toOutputContaining("Cache hits");
+        expect(second).toHaveStderrContaining("Cache hits");
         expect(second).toOutputContaining("OUT-MARK");
     });
 });

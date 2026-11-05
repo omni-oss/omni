@@ -59,7 +59,7 @@ impl ChildProcessGuard {
         let ext = if cfg!(windows) { ".exe" } else { "" };
 
         let mut path: Option<&Path> = None;
-        log::info!("Host: {}", host);
+        tracing::info!("Host: {}", host);
         let default_path = ws_dir
             .join(format!("target/release/omni_remote_cache_service{}", ext));
         let lookup_paths = if !target.is_empty() {
@@ -96,7 +96,7 @@ impl ChildProcessGuard {
             );
         }
 
-        log::trace!(
+        tracing::trace!(
             "Starting omni_remote_cache_service at {}",
             path.unwrap().display()
         );
@@ -144,7 +144,7 @@ impl ChildProcessGuard {
                     }
                 }
             }
-            log::trace!(
+            tracing::trace!(
                 "Couldn't connect to server ({}), retrying ({})...",
                 api_base_url,
                 current_try
@@ -184,7 +184,7 @@ impl ChildProcessGuard {
                 );
             }
         } else {
-            log::trace!("Connected to server at {}", api_base_url);
+            tracing::trace!("Connected to server at {}", api_base_url);
         }
 
         Self {

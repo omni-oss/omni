@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{
+    error::with_notices,
     model::{
         ExecCommandParams, ExecCommandResult, TaskExecutionSummary,
         TaskRunParams, TaskRunResult,
@@ -50,18 +51,32 @@ where
             output_cached_logs: None,
         };
         let subscriber = McpSubscriber::new(include_logs);
-        let response = self
+        let response = match self
             .make_api_with_subscriber(&subscriber)?
             .task_run(req)
-            .await?;
+            .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                return Err(with_notices(
+                    eyre::Report::from(e),
+                    subscriber.take_notices(),
+                ));
+            }
+        };
         let ok = response.is_success();
         let mut logs = subscriber.take_logs();
+        let commands = subscriber.take_commands();
         let results = response
             .results
             .into_iter()
-            .map(|r| summarize_result(r, &mut logs))
+            .map(|r| summarize_result(r, &mut logs, &commands))
             .collect();
-        Ok(TaskRunResult { ok, results })
+        Ok(TaskRunResult {
+            ok,
+            results,
+            notices: subscriber.take_notices(),
+        })
     }
 
     pub(crate) async fn tool_exec_command(
@@ -82,24 +97,36 @@ where
             output_cached_logs: Some(include_logs),
         };
         let subscriber = McpSubscriber::new(include_logs);
-        let response = self
-            .make_api_with_subscriber(&subscriber)?
-            .exec(req)
-            .await?;
+        let response =
+            match self.make_api_with_subscriber(&subscriber)?.exec(req).await {
+                Ok(r) => r,
+                Err(e) => {
+                    return Err(with_notices(
+                        eyre::Report::from(e),
+                        subscriber.take_notices(),
+                    ));
+                }
+            };
         let ok = response.is_success();
         let mut logs = subscriber.take_logs();
+        let commands = subscriber.take_commands();
         let results = response
             .results
             .into_iter()
-            .map(|r| summarize_result(r, &mut logs))
+            .map(|r| summarize_result(r, &mut logs, &commands))
             .collect();
-        Ok(ExecCommandResult { ok, results })
+        Ok(ExecCommandResult {
+            ok,
+            results,
+            notices: subscriber.take_notices(),
+        })
     }
 }
 
 fn summarize_result(
     result: TaskExecutionResult,
     logs: &mut HashMap<String, String>,
+    commands: &HashMap<String, String>,
 ) -> TaskExecutionSummary {
     match result {
         TaskExecutionResult::Completed {
@@ -116,6 +143,7 @@ fn summarize_result(
                 duration_ms: Some(elapsed.as_millis() as u64),
                 exit_code: Some(exit_code),
                 logs: task_logs,
+                command: commands.get(task.full_task_name()).cloned(),
             }
         }
         TaskExecutionResult::Errored { task, .. } => {
@@ -127,6 +155,7 @@ fn summarize_result(
                 duration_ms: None,
                 exit_code: None,
                 logs: task_logs,
+                command: commands.get(task.full_task_name()).cloned(),
             }
         }
         TaskExecutionResult::Skipped {
@@ -138,6 +167,7 @@ fn summarize_result(
             duration_ms: None,
             exit_code: None,
             logs: None,
+            command: None,
         },
     }
 }

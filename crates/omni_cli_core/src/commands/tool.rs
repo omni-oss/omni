@@ -100,13 +100,19 @@ pub struct ToolRunCommand {
     pub pretty: bool,
 }
 
-pub async fn run(cmd: &ToolCommand, ctx: &Context) -> eyre::Result<()> {
+pub async fn run(
+    cmd: &ToolCommand,
+    ctx: &Context,
+    output: super::OutputOptions,
+) -> eyre::Result<()> {
     match &cmd.subcommand {
         ToolSubcommand::List(command) => run_tool_list(command, ctx).await,
         ToolSubcommand::Inspect(command) => {
             run_tool_inspect(command, ctx).await
         }
-        ToolSubcommand::Run(command) => run_tool_run(command, ctx).await,
+        ToolSubcommand::Run(command) => {
+            run_tool_run(command, ctx, output).await
+        }
     }
 }
 
@@ -151,6 +157,7 @@ async fn run_tool_inspect(
 async fn run_tool_run(
     command: &ToolRunCommand,
     ctx: &Context,
+    output: super::OutputOptions,
 ) -> eyre::Result<()> {
     let args = merge_tool_args(command.args_json.as_deref(), &command.arg)?;
 
@@ -161,18 +168,23 @@ async fn run_tool_run(
         (None, None) => None,
     };
 
-    let response = OmniApi::new_with_sys(ctx.clone(), NoopSubscriber)
-        .tool_run_redacted(
-            &command.name,
-            args,
-            working_dir,
-            &omni_configurations::RedactOverrides {
-                mode: command.redact.map(Into::into),
-                inputs: command.redact_input.clone(),
-                ..Default::default()
-            },
-        )
-        .await?;
+    let response = OmniApi::new_with_sys(
+        ctx.clone(),
+        crate::subscriber::CliSubscriber::new_stream(ctx.scratch_dir())
+            .with_quiet(output.quiet)
+            .with_immediate_notices(),
+    )
+    .tool_run_redacted(
+        &command.name,
+        args,
+        working_dir,
+        &omni_configurations::RedactOverrides {
+            mode: command.redact.map(Into::into),
+            inputs: command.redact_input.clone(),
+            ..Default::default()
+        },
+    )
+    .await?;
 
     if command.pretty {
         println!("{}", serde_json::to_string_pretty(&response)?);

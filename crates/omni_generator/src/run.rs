@@ -358,9 +358,15 @@ pub(crate) async fn run_internal<'a, S: GeneratorEventSubscriber>(
         }
     }
 
-    trace::trace!(count = values.len(), "input_values");
+    tracing::trace!(count = values.len(), "input_values");
 
     let redactor = build_input_redactor(r#gen, &values, config);
+    // Script logs and lifecycle messages reach presenters through the
+    // subscriber, so it must know this generator's secrets.
+    omni_messages::NoticeSubscriber::extend_redactor(
+        config.subscriber,
+        &redactor,
+    );
 
     let mut context_values = config.context_values.clone();
 

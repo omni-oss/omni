@@ -1,0 +1,22 @@
+[package]
+name = "omni_codes"
+rust-version.workspace = true
+edition.workspace = true
+version.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[lib]
+name = "omni_codes"
+path = "src/lib.rs"
+
+[features]
+default = ["inventory"]
+inventory = ["dep:inventory"]
+explicit-registry = []
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+strum = { workspace = true }
+inventory = { workspace = true, optional = true }

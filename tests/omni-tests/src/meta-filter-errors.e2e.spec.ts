@@ -45,9 +45,12 @@ describe("+meta-filter-errors @e2e (cli)", () => {
     it("a typo fails with the filter, cause, samples and a hint", async () => {
         const ws = makeWorkspace(metaSpec());
 
-        const result = await runOmni(["run", "test", "--meta", 'knd == "e2e"'], {
-            cwd: ws.cwd,
-        });
+        const result = await runOmni(
+            ["run", "test", "--meta", 'knd == "e2e"'],
+            {
+                cwd: ws.cwd,
+            },
+        );
 
         expect(result).toHaveFailed();
         const out = result.stdout + result.stderr;
@@ -60,7 +63,7 @@ describe("+meta-filter-errors @e2e (cli)", () => {
         expect(out).toContain('"kind": "unit"');
         expect(out).toContain("Did you mean `kind`?");
         expect(out).not.toContain("RAN-");
-        expect(out).toContain("error[meta_filter.evaluation]");
+        expect(out).toContain("error[meta.filter_failed]");
     });
 
     it("exits 2 and prints JSON with --error-format json", async () => {
@@ -72,11 +75,9 @@ describe("+meta-filter-errors @e2e (cli)", () => {
         );
 
         expect(result.exitCode).toBe(2);
-        const line = result.stderr
-            .split("\n")
-            .find((l) => l.startsWith("{"));
+        const line = result.stderr.split("\n").find((l) => l.startsWith("{"));
         const body = JSON.parse(line ?? "{}");
-        expect(body.kind).toBe("meta_filter.evaluation");
+        expect(body.kind).toBe("meta.filter_failed");
         expect(body.audience).toBe("user");
         expect(body.details.total).toBe(3);
     });
@@ -84,9 +85,12 @@ describe("+meta-filter-errors @e2e (cli)", () => {
     it("a key missing on some tasks fails, naming the task without meta", async () => {
         const ws = makeWorkspace(metaSpec());
 
-        const result = await runOmni(["run", "test", "--meta", 'kind == "e2e"'], {
-            cwd: ws.cwd,
-        });
+        const result = await runOmni(
+            ["run", "test", "--meta", 'kind == "e2e"'],
+            {
+                cwd: ws.cwd,
+            },
+        );
 
         expect(result).toHaveFailed();
         const out = result.stdout + result.stderr;
@@ -156,6 +160,7 @@ describe("+meta-filter-errors @e2e (cli)", () => {
         expect(result).toHaveSucceeded();
         const out = result.stdout + result.stderr;
         expect(out).toContain("they were excluded");
+        expect(out).toContain("error[meta.filter_excluded]");
         expect(out).toContain("docs#test");
         expect(out).toContain("RAN-api");
         expect(out).not.toContain("RAN-docs");
@@ -166,7 +171,14 @@ describe("+meta-filter-errors @e2e (cli)", () => {
 
         const run = (samples: string) =>
             runOmni(
-                ["run", "test", "--meta", "knd == 1", "--meta-error-samples", samples],
+                [
+                    "run",
+                    "test",
+                    "--meta",
+                    "knd == 1",
+                    "--meta-error-samples",
+                    samples,
+                ],
                 { cwd: ws.cwd },
             );
 
@@ -214,15 +226,18 @@ describe("+diagnostics @e2e (registry)", () => {
     it("the built binary registers the meta filter diagnostic", async () => {
         const ws = makeWorkspace(metaSpec());
 
-        const result = await runOmni(["diagnostics", "list", "--format", "json"], {
-            cwd: ws.cwd,
-        });
+        const result = await runOmni(
+            ["diagnostics", "list", "--format", "json"],
+            {
+                cwd: ws.cwd,
+            },
+        );
 
         expect(result).toHaveSucceeded();
-        const codes = (JSON.parse(result.stdout) as Array<{ code: string }>).map(
-            (e) => e.code,
-        );
-        expect(codes).toContain("meta_filter.evaluation");
+        const codes = (
+            JSON.parse(result.stdout) as Array<{ code: string }>
+        ).map((e) => e.code);
+        expect(codes).toContain("meta.filter_failed");
     });
 });
 
@@ -243,7 +258,7 @@ describe("+meta-filter-errors @e2e @mcp (task_run)", { tags: ["mcp"] }, () => {
 
         expect(error).toBeDefined();
         expect(error?.code).toBe(-32602);
-        expect(error?.data.kind).toBe("meta_filter.evaluation");
+        expect(error?.data.kind).toBe("meta.filter_failed");
         expect(error?.data.audience).toBe("user");
         const details = error?.data.details;
         expect(details.filter).toBe('knd == "e2e"');
@@ -278,5 +293,83 @@ describe("+meta-filter-errors @e2e @mcp (task_run)", { tags: ["mcp"] }, () => {
         };
         expect(data.ok).toBe(true);
         expect(data.results.map((r) => r.project)).toEqual(["api"]);
+    });
+
+    it("`meta_on_error: exclude` reports a `meta.filter_excluded` notice, not the fatal code", async () => {
+        const ws = makeWorkspace(metaSpec());
+        const { client } = await connectMcp({ cwd: ws.cwd });
+
+        const result = await client.callTool({
+            name: "task_run",
+            arguments: {
+                tasks: ["test"],
+                meta: 'kind == "e2e"',
+                meta_on_error: "exclude",
+            },
+        });
+
+        const data = result.structuredContent as {
+            notices?: Array<{
+                level: string;
+                code: string;
+                message: string;
+                fields: Record<string, any>;
+            }>;
+        };
+        const notice = data.notices?.find(
+            (n) => n.code === "meta.filter_excluded",
+        );
+        expect(notice).toBeDefined();
+        expect(notice?.level).toBe("error");
+        expect(notice?.fields.filter).toBe('kind == "e2e"');
+        expect(notice?.fields.count).toBe(1);
+        expect(notice?.fields.details).toBeDefined();
+        expect(data.notices?.map((n) => n.code)).not.toContain(
+            "meta.filter_failed",
+        );
+    });
+
+    it("omits `notices` when nothing was reported", async () => {
+        const ws = makeWorkspace(metaSpec());
+        const { client } = await connectMcp({ cwd: ws.cwd });
+
+        const result = await client.callTool({
+            name: "task_run",
+            arguments: {
+                tasks: ["test"],
+                project: ["web"],
+                meta: 'kind == "unit"',
+            },
+        });
+
+        expect(
+            (result.structuredContent as Record<string, unknown>).notices,
+        ).toBeUndefined();
+    });
+
+    it("carries notices raised before a failure under `data.notices`", async () => {
+        const ws = makeWorkspace(metaSpec());
+        const { client } = await connectMcp({ cwd: ws.cwd });
+
+        // Every task fails the filter and is excluded, so the run has nothing
+        // to execute. The notice was reported before that error.
+        const error = (await client
+            .callTool({
+                name: "task_run",
+                arguments: {
+                    tasks: ["test"],
+                    meta: 'knd == "e2e"',
+                    meta_on_error: "exclude",
+                },
+            })
+            .then(
+                () => undefined,
+                (e: unknown) => e,
+            )) as { data?: { notices?: Array<{ code: string }> } } | undefined;
+
+        expect(error).toBeDefined();
+        expect(error?.data?.notices?.map((n) => n.code)).toContain(
+            "meta.filter_excluded",
+        );
     });
 });

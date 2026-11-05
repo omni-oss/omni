@@ -28,6 +28,8 @@ pub struct Attrs {
     pub body: Option<Path>,
     pub forward: Option<Span>,
     pub no_register: Option<Span>,
+    pub stable: bool,
+    pub related: Vec<LitStr>,
 }
 
 fn set_once<T>(
@@ -86,6 +88,14 @@ pub fn parse_attrs(attrs: &[Attribute]) -> syn::Result<Attrs> {
                 Some("forward") => {
                     set_once(&mut a.forward, m.path.span(), &m)
                 }
+                Some("related") => {
+                    a.related.push(m.value()?.parse()?);
+                    Ok(())
+                }
+                Some("stable") => {
+                    a.stable = true;
+                    Ok(())
+                }
                 Some("no_register") => {
                     set_once(&mut a.no_register, m.path.span(), &m)
                 }
@@ -127,20 +137,4 @@ pub fn parse_field_attrs(
     Ok(out)
 }
 
-pub fn valid_code(code: &str) -> bool {
-    let mut segments = 0;
-    for seg in code.split('.') {
-        segments += 1;
-        let mut chars = seg.chars();
-        match chars.next() {
-            Some(c) if c.is_ascii_lowercase() => {}
-            _ => return false,
-        }
-        if !chars
-            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
-        {
-            return false;
-        }
-    }
-    segments >= 2
-}
+pub use omni_derive_support::valid_code;

@@ -47,6 +47,13 @@ pub struct LazyToolRunner<S> {
     working_dir: PathBuf,
     version: String,
     pool: RunnerPool<(DelegatingJsRuntimeOption, String)>,
+    /// Notices raised while launching tools, for the caller to publish.
+    notices: std::sync::Mutex<Vec<omni_messages::NoticeEvent>>,
+    /// When set, notices are sent here as they are raised instead of queued, so
+    /// a caller can show them before the tool starts running.
+    notice_tx: std::sync::Mutex<
+        Option<tokio::sync::mpsc::UnboundedSender<omni_messages::NoticeEvent>>,
+    >,
 }
 
 impl<S> LazyToolRunner<S> {
@@ -62,7 +69,33 @@ impl<S> LazyToolRunner<S> {
             working_dir,
             version,
             pool: RunnerPool::new(),
+            notices: Default::default(),
+            notice_tx: Default::default(),
         }
+    }
+
+    /// Streams notices to the returned receiver as they are raised, rather than
+    /// queueing them for [`Self::take_notices`].
+    pub fn stream_notices(
+        &self,
+    ) -> tokio::sync::mpsc::UnboundedReceiver<omni_messages::NoticeEvent> {
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        *self.notice_tx.lock().unwrap() = Some(tx);
+        rx
+    }
+
+    fn raise(&self, notice: omni_messages::NoticeEvent) {
+        if let Some(tx) = &*self.notice_tx.lock().unwrap() {
+            let _ = tx.send(notice);
+        } else {
+            self.notices.lock().unwrap().push(notice);
+        }
+    }
+
+    /// Takes the notices raised so far (experimental runtime, capability
+    /// warnings). The caller publishes them through its subscriber.
+    pub fn take_notices(&self) -> Vec<omni_messages::NoticeEvent> {
+        std::mem::take(&mut *self.notices.lock().unwrap())
     }
 
     /// Shuts down every spawned runner. Best-effort.
@@ -128,13 +161,12 @@ where
                 } else {
                     "you selected"
                 };
-                trace::warn!(
-                    "{how} the `{}` runtime, which is experimental and not \
-                     fully sandboxed on every platform; only `deno` is fully \
-                     supported. Install/select `deno` for enforced capability \
-                     confinement.",
-                    runtime_name(resolved)
-                );
+                self.raise(omni_messages::notice_event!(
+                    bridge_rpc_runner::RuntimeExperimental {
+                        how: how.to_string(),
+                        runtime: runtime_name(resolved).to_string(),
+                    }
+                ));
             }
             DelegatingJsRuntimeOption::Deno
             | DelegatingJsRuntimeOption::Auto => {}
@@ -151,19 +183,15 @@ where
                     .map_err(|e| ErrorInner::CapabilityEnforcement {
                         message: e.to_string(),
                     })?;
-            for diagnostic in diagnostics {
-                trace::warn!("{}", diagnostic.message);
+            for d in diagnostics {
+                self.raise(d);
             }
             (spawn, shim)
         } else {
             if policy.levels.iter().any(|level| !level.is_empty()) {
-                trace::warn!(
-                    "a capability policy is declared but the capabilities \
-                     feature is experimental and disabled; it is ignored and \
-                     the tool runs unconfined — enable it with \
-                     `enable_experimental: true` (or `enable_experimental: \
-                     {{ capabilities: true }}`) in the workspace configuration"
-                );
+                self.raise(omni_messages::notice_event!(
+                    bridge_rpc_runner::CapabilitiesIgnored
+                ));
             }
             (build_unconfined_plan(resolved), ShimPolicy::new())
         };

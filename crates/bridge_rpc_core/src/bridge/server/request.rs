@@ -65,7 +65,7 @@ pub struct RequestReader {
 }
 
 impl RequestReader {
-    #[cfg_attr(feature = "enable-tracing", tracing::instrument(skip_all, fields(request_id = ?self.id)))]
+    #[tracing::instrument(skip_all, fields(request_id = ?self.id))]
     pub async fn read_body_chunk(
         &mut self,
     ) -> Result<Option<Vec<u8>>, error::RequestError> {

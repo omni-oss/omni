@@ -1,4 +1,4 @@
-use ::trace as t;
+use ::tracing as t;
 
 use crate::execution::{
     CacheHitEvent, ExecutionCompleteEvent, ExecutionEventSubscriber,
@@ -12,11 +12,11 @@ use crate::generator::events::{
 use crate::generator::{
     GeneratorCompletedEvent, GeneratorEventSubscriber, GeneratorStartEvent,
 };
-use crate::notice::{NoticeEvent, NoticeLevel, NoticeSubscriber};
+use crate::notice::NoticeSubscriber;
 
 /// `TracingSubscriber` translates events into `tracing` calls.
 ///
-/// - [`NoticeEvent`] → `tracing::info!/warn!/error!`
+/// - Notices are mirrored by `publish_event`, not here.
 /// - Lifecycle events → `tracing::debug!` with structured fields
 /// - `subscription_config().wants_task_output_stream == false` — no byte
 ///   streams are created, saving a pipe allocation per task.
@@ -25,17 +25,9 @@ use crate::notice::{NoticeEvent, NoticeLevel, NoticeSubscriber};
 /// no explicit subscriber.
 pub struct TracingSubscriber;
 
-impl NoticeSubscriber for TracingSubscriber {
-    fn on_notice(&self, e: NoticeEvent) {
-        let msg = e.message.as_str();
-        let target = e.target.as_str();
-        match e.level {
-            NoticeLevel::Info => t::info!(target = target, "{msg}"),
-            NoticeLevel::Warn => t::warn!(target = target, "{msg}"),
-            NoticeLevel::Error => t::error!(target = target, "{msg}"),
-        }
-    }
-}
+// Notices are mirrored into `tracing` by `publish_event` before dispatch, so
+// this subscriber does not log them a second time.
+impl NoticeSubscriber for TracingSubscriber {}
 
 impl ExecutionEventSubscriber for TracingSubscriber {
     fn wants_task_output_stream(&self) -> bool {
@@ -122,9 +114,8 @@ impl GeneratorEventSubscriber for TracingSubscriber {
 mod tests {
     use super::TracingSubscriber;
     use crate::{
-        ExecutionCompleteEvent, NoticeEvent, NoticeLevel, TaskCompletedEvent,
-        TaskStartedEvent, execution::ExecutionEventSubscriber,
-        notice::NoticeSubscriber,
+        ExecutionCompleteEvent, TaskCompletedEvent, TaskStartedEvent,
+        execution::ExecutionEventSubscriber,
     };
     use std::time::Duration;
 
@@ -136,6 +127,7 @@ mod tests {
             task_id: "proj::task".into(),
             project: "proj".into(),
             task: "task".into(),
+            command: None,
         })
         .await;
 
@@ -160,20 +152,6 @@ mod tests {
             total_time_saved: Duration::ZERO,
         })
         .await;
-    }
-
-    #[tokio::test]
-    async fn tracing_subscriber_handles_all_notice_levels() {
-        let sub = TracingSubscriber;
-        for level in [NoticeLevel::Info, NoticeLevel::Warn, NoticeLevel::Error]
-        {
-            sub.on_notice(NoticeEvent {
-                level,
-                message: format!("test at level {level}"),
-                fields: Default::default(),
-                target: "omni::test".into(),
-            })
-        }
     }
 
     #[test]

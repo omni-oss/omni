@@ -28,6 +28,10 @@ pub struct DefaultExecutionPlanProvider<'a, TContext: Context + 'a> {
     _phantom: PhantomData<&'a ()>,
     #[new(default)]
     meta_error: MetaErrorOptions,
+    /// Tolerated meta filter errors (`--meta-on-error exclude`), for the
+    /// caller to report as notices.
+    #[new(default)]
+    excluded: std::sync::Mutex<Vec<MetaFilterError>>,
 }
 
 impl<'a, TContext: Context + 'a> DefaultExecutionPlanProvider<'a, TContext> {
@@ -37,6 +41,11 @@ impl<'a, TContext: Context + 'a> DefaultExecutionPlanProvider<'a, TContext> {
     ) -> Self {
         self.meta_error = options;
         self
+    }
+
+    /// Takes the meta filter errors that were tolerated while planning.
+    pub fn take_excluded_meta_errors(&self) -> Vec<MetaFilterError> {
+        std::mem::take(&mut *self.excluded.lock().unwrap())
     }
 
     fn handle_meta_error(
@@ -49,7 +58,7 @@ impl<'a, TContext: Context + 'a> DefaultExecutionPlanProvider<'a, TContext> {
                 Err(ExecutionPlanProviderErrorInner::MetaFilter(e).into())
             }
             (Some(e), MetaOnError::Exclude) => {
-                log::warn!("{}", e.render_warning());
+                self.excluded.lock().unwrap().push(e);
                 Ok(())
             }
         }
@@ -507,7 +516,7 @@ mod tests {
 
         let d = DiagnosticReport::from_report(&report)
             .expect("meta filter diagnostic");
-        assert_eq!(d.code, "meta_filter.evaluation");
+        assert_eq!(d.code, "meta.filter_failed");
         assert_eq!(d.context, vec!["planning tasks for `test`"]);
         assert_eq!(d.message, "meta filter failed to evaluate for 500 task(s)");
         assert_eq!(d.details.as_ref().unwrap()["other"], 2);

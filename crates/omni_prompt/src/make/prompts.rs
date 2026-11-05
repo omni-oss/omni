@@ -459,7 +459,7 @@ fn validate_for_requestty<T: std::fmt::Debug + Serialize + 'static>(
     validators: &[ValidateConfiguration],
     validation_value_name: Option<&str>,
 ) -> Result<(), String> {
-    trace::debug!(
+    tracing::debug!(
         validator_count = validators.len(),
         ?validation_value_name,
         ?value,
@@ -475,14 +475,14 @@ fn validate_for_requestty<T: std::fmt::Debug + Serialize + 'static>(
     );
     if let Err(err) = result {
         if let ErrorInner::InvalidValue { error_message, .. } = &err.0 {
-            trace::debug!(?err, "validation_failed");
+            tracing::debug!(?err, "validation_failed");
             Err(error_message.to_string())
         } else {
-            trace::debug!(?err, "validation_error");
+            tracing::debug!(?err, "validation_error");
             Err(format!("unexpected validation error: {err:?}"))
         }
     } else {
-        trace::debug!("validation_success");
+        tracing::debug!("validation_success");
         Ok(())
     }
 }

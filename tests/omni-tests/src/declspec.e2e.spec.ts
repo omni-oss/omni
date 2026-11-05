@@ -75,8 +75,13 @@ describe("+declspec @output (dump)", () => {
 
         // A couple of representative global options guard against spec drift.
         const longOpts = spec.opts.map((opt) => opt.long);
-        expect(longOpts).toContain("stdout-log-level");
+        expect(longOpts).toContain("quiet");
+        expect(longOpts).toContain("trace");
+        expect(longOpts).toContain("trace-file");
         expect(longOpts).toContain("env-file");
+        // The removed log/trace flags are gone from the spec.
+        expect(longOpts).not.toContain("stdout-log-level");
+        expect(longOpts).not.toContain("stdout-show-traces");
     });
 });
 

@@ -20,6 +20,7 @@ use omni_task_executor::TaskExecutorSys;
 use value_bag::{OwnedValueBag, ValueBag};
 
 use crate::{
+    error::with_notices,
     model::{
         GeneratorInspectParams, GeneratorInspectResult, GeneratorListResult,
         GeneratorRunParams, GeneratorRunResult, GeneratorSummary,
@@ -29,7 +30,9 @@ use crate::{
         McpSubGeneratorValidationResult, McpTargetSpec, McpValidator,
     },
     server::OmniMcpServer,
+    subscriber::McpSubscriber,
 };
+use omni_task_output_logs::LogsDisplay;
 
 impl<TSys> OmniMcpServer<TSys>
 where
@@ -90,11 +93,25 @@ where
             // The mode never comes from tool parameters.
             redact: Default::default(),
         };
-        let response = self.make_api()?.generator_run(req).await?;
+        let subscriber = McpSubscriber::new(LogsDisplay::Never);
+        let response = match self
+            .make_api_with_subscriber(&subscriber)?
+            .generator_run(req)
+            .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                return Err(with_notices(
+                    eyre::Report::from(e),
+                    subscriber.take_notices(),
+                ));
+            }
+        };
         Ok(GeneratorRunResult {
             ok: true,
             session_saved: response.session_saved,
             actions: response.actions,
+            notices: subscriber.take_notices(),
         })
     }
 

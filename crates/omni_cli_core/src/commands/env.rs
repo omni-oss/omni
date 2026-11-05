@@ -3,6 +3,8 @@ use omni_api::{EnvRequest, OmniApi};
 use omni_context::Context;
 use omni_messages::NoopSubscriber;
 
+use super::OutputOptions;
+
 #[derive(Subcommand)]
 #[command(rename_all = "kebab-case")]
 enum EnvSubcommands {
@@ -22,7 +24,11 @@ pub struct EnvCommand {
     subcommand: EnvSubcommands,
 }
 
-pub async fn run(env: &EnvCommand, ctx: &Context) -> eyre::Result<()> {
+pub async fn run(
+    env: &EnvCommand,
+    ctx: &Context,
+    output: OutputOptions,
+) -> eyre::Result<()> {
     let api = OmniApi::new_with_sys(ctx.clone(), NoopSubscriber);
 
     match env.subcommand {
@@ -35,7 +41,10 @@ pub async fn run(env: &EnvCommand, ctx: &Context) -> eyre::Result<()> {
             if let Some(val) = response.vars.get(key.as_str()) {
                 print!("{val}");
             } else {
-                log::warn!("environmental variable does not exists: {}", key);
+                crate::subscriber::print_notice(
+                    &crate::notices::EnvVarMissing { name: key.clone() },
+                    output.quiet,
+                );
             }
         }
         EnvSubcommands::All => {

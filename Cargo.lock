@@ -1432,7 +1432,6 @@ dependencies = [
  "tokio 1.54.1",
  "tokio-stream",
  "tokio-util",
- "trace",
  "tracing",
 ]
 
@@ -1452,7 +1451,6 @@ dependencies = [
  "test-log",
  "thiserror 2.0.21",
  "tokio 1.54.1",
- "trace",
  "tracing",
 ]
 
@@ -1467,7 +1465,9 @@ dependencies = [
  "merge",
  "omni_capabilities",
  "omni_capability_enforcement",
+ "omni_codes",
  "omni_messages",
+ "omni_notice",
  "omni_utils",
  "rust-embed",
  "schemars",
@@ -1477,7 +1477,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "tokio 1.54.1",
- "trace",
+ "tracing",
  "which",
 ]
 
@@ -1504,7 +1504,6 @@ dependencies = [
  "test-log",
  "thiserror 2.0.21",
  "tokio 1.54.1",
- "trace",
  "tracing",
 ]
 
@@ -1515,7 +1514,6 @@ dependencies = [
  "bridge_rpc_core",
  "derive-new",
  "eyre",
- "log",
  "rstest",
  "rstest_reuse",
  "serde",
@@ -1524,7 +1522,6 @@ dependencies = [
  "test-log",
  "thiserror 2.0.21",
  "tokio 1.54.1",
- "trace",
  "tracing",
 ]
 
@@ -2796,13 +2793,11 @@ dependencies = [
  "derive_more",
  "globset",
  "ignore",
- "log",
  "num_cpus",
  "path-slash",
  "strum 0.28.0",
  "tempfile",
  "thiserror 2.0.21",
- "trace",
  "tracing",
 ]
 
@@ -3101,7 +3096,7 @@ dependencies = [
  "strum 0.28.0",
  "system_traits",
  "thiserror 2.0.21",
- "trace",
+ "tracing",
 ]
 
 [[package]]
@@ -6552,7 +6547,6 @@ dependencies = [
  "system_traits",
  "tempfile",
  "tokio 1.54.1",
- "trace",
  "tracing",
  "tracing-log",
  "tracing-subscriber",
@@ -6568,7 +6562,6 @@ dependencies = [
  "derive-new",
  "either",
  "eyre",
- "log",
  "maps",
  "omni_cache",
  "omni_capabilities",
@@ -6614,7 +6607,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "tokio 1.54.1",
- "trace",
+ "tracing",
  "url",
  "value-bag",
 ]
@@ -6650,7 +6643,6 @@ dependencies = [
  "clap",
  "derive-new",
  "eyre",
- "log",
  "ntest",
  "omni_utils",
  "os_pipe",
@@ -6664,7 +6656,6 @@ dependencies = [
  "test-log",
  "thiserror 2.0.21",
  "tokio 1.54.1",
- "trace",
  "tracing",
  "tracing-log",
  "tracing-subscriber",
@@ -6684,7 +6675,6 @@ dependencies = [
  "eyre",
  "flate2",
  "globset",
- "log",
  "maps",
  "omni_collector",
  "omni_command_config",
@@ -6709,7 +6699,6 @@ dependencies = [
  "thiserror 2.0.21",
  "time",
  "tokio 1.54.1",
- "trace",
  "tracing",
  "yoke",
 ]
@@ -6790,13 +6779,14 @@ dependencies = [
  "indicatif",
  "itertools 0.15.0",
  "lazy-regex",
- "log",
  "maps",
  "merge",
  "num_cpus",
  "omni_api",
  "omni_cache",
+ "omni_codes",
  "omni_collector",
+ "omni_command_config",
  "omni_configurations",
  "omni_constants",
  "omni_context",
@@ -6812,8 +6802,10 @@ dependencies = [
  "omni_input_provider",
  "omni_mcp_core",
  "omni_messages",
+ "omni_notice",
  "omni_process",
  "omni_prompt",
+ "omni_redact",
  "omni_remote_source",
  "omni_remote_source_contributors",
  "omni_scm",
@@ -6844,12 +6836,21 @@ dependencies = [
  "tokio 1.54.1",
  "tokio-util",
  "toml",
- "trace",
  "tracing",
  "tracing-core",
  "tracing-futures",
  "tracing-subscriber",
  "value-bag",
+]
+
+[[package]]
+name = "omni_codes"
+version = "0.22.0"
+dependencies = [
+ "inventory",
+ "serde",
+ "serde_json",
+ "strum 0.28.0",
 ]
 
 [[package]]
@@ -6862,7 +6863,6 @@ dependencies = [
  "enum-map",
  "eyre",
  "globset",
- "log",
  "maps",
  "omni_command_config",
  "omni_constants",
@@ -6876,7 +6876,6 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "tokio 1.54.1",
- "trace",
  "tracing",
 ]
 
@@ -6919,7 +6918,6 @@ dependencies = [
  "strum 0.28.0",
  "test-log",
  "thiserror 2.0.21",
- "trace",
  "tracing",
 ]
 
@@ -6931,14 +6929,12 @@ dependencies = [
  "dir_walker",
  "eyre",
  "globset",
- "log",
  "omni_glob",
  "strum 0.28.0",
  "system_traits",
  "tempfile",
  "thiserror 2.0.21",
  "tokio 1.54.1",
- "trace",
  "tracing",
 ]
 
@@ -6981,7 +6977,6 @@ dependencies = [
  "system_traits",
  "thiserror 2.0.21",
  "toml",
- "trace",
  "tracing",
  "url",
 ]
@@ -7006,7 +7001,6 @@ dependencies = [
  "env_loader",
  "eyre",
  "globset",
- "log",
  "maps",
  "merge",
  "omni_cache",
@@ -7042,7 +7036,6 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "tokio 1.54.1",
- "trace",
  "tracing",
 ]
 
@@ -7064,8 +7057,16 @@ dependencies = [
  "sets",
  "strum 0.28.0",
  "thiserror 2.0.21",
- "trace",
  "tracing",
+]
+
+[[package]]
+name = "omni_derive_support"
+version = "0.22.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
 ]
 
 [[package]]
@@ -7074,6 +7075,7 @@ version = "0.22.0"
 dependencies = [
  "eyre",
  "inventory",
+ "omni_codes",
  "omni_diagnostic_derive",
  "omni_redact",
  "serde",
@@ -7086,6 +7088,7 @@ dependencies = [
 name = "omni_diagnostic_derive"
 version = "0.22.0"
 dependencies = [
+ "omni_derive_support",
  "proc-macro2",
  "quote",
  "syn 2.0.119",
@@ -7100,11 +7103,9 @@ dependencies = [
  "dir_walker",
  "eyre",
  "globset",
- "log",
  "omni_glob",
  "strum 0.28.0",
  "thiserror 2.0.21",
- "trace",
  "tracing",
 ]
 
@@ -7118,8 +7119,8 @@ dependencies = [
  "derive-new",
  "eyre",
  "globset",
- "log",
  "maps",
+ "omni_codes",
  "omni_command_config",
  "omni_config_types",
  "omni_configurations",
@@ -7127,6 +7128,7 @@ dependencies = [
  "omni_diagnostic",
  "omni_expressions",
  "omni_glob",
+ "omni_notice",
  "omni_scm",
  "omni_types",
  "omni_utils",
@@ -7138,7 +7140,6 @@ dependencies = [
  "strum 0.28.0",
  "test-log",
  "thiserror 2.0.21",
- "trace",
  "tracing",
 ]
 
@@ -7198,12 +7199,12 @@ dependencies = [
  "enum-map",
  "env",
  "eyre",
- "log",
  "maps",
  "merge",
  "omni_capabilities",
  "omni_capability_enforcement",
  "omni_capability_sys",
+ "omni_codes",
  "omni_command_config",
  "omni_config_types",
  "omni_configuration_discovery",
@@ -7216,6 +7217,7 @@ dependencies = [
  "omni_input_provider",
  "omni_input_schema",
  "omni_messages",
+ "omni_notice",
  "omni_process",
  "omni_redact",
  "omni_tera",
@@ -7234,7 +7236,6 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "tokio 1.54.1",
- "trace",
  "tracing",
  "value-bag",
  "which",
@@ -7269,7 +7270,6 @@ dependencies = [
  "strum 0.28.0",
  "system_traits",
  "thiserror 2.0.21",
- "trace",
  "tracing",
  "value-bag",
 ]
@@ -7281,7 +7281,6 @@ dependencies = [
  "derive-new",
  "eyre",
  "gix",
- "log",
  "omni_utils",
  "rstest",
  "rstest_reuse",
@@ -7334,7 +7333,6 @@ dependencies = [
  "dir_walker",
  "eyre",
  "futures 0.3.34",
- "log",
  "omni_types",
  "omni_utils",
  "path-clean",
@@ -7345,7 +7343,6 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "tokio 1.54.1",
- "trace",
  "tracing",
 ]
 
@@ -7387,7 +7384,6 @@ dependencies = [
  "either",
  "eyre",
  "garde",
- "log",
  "maps",
  "omni_config_types",
  "omni_constants",
@@ -7404,7 +7400,6 @@ dependencies = [
  "strum 0.28.0",
  "thiserror 2.0.21",
  "tokio 1.54.1",
- "trace",
  "tracing",
  "value-bag",
 ]
@@ -7417,7 +7412,6 @@ dependencies = [
  "enumset",
  "eyre",
  "garde",
- "log",
  "maps",
  "omni_config_types",
  "omni_redact",
@@ -7431,7 +7425,6 @@ dependencies = [
  "sets",
  "strum 0.28.0",
  "thiserror 2.0.21",
- "trace",
  "tracing",
  "value-bag",
 ]
@@ -7442,7 +7435,6 @@ version = "0.2.0"
 dependencies = [
  "derive-new",
  "eyre",
- "log",
  "maps",
  "omni_file_data_serde",
  "parking_lot 0.13.0",
@@ -7452,7 +7444,6 @@ dependencies = [
  "test-log",
  "thiserror 2.0.21",
  "tokio 1.54.1",
- "trace",
  "tracing",
  "url",
 ]
@@ -7467,9 +7458,9 @@ dependencies = [
  "either",
  "eyre",
  "humantime-serde",
- "log",
  "maps",
  "omni_api",
+ "omni_codes",
  "omni_config_types",
  "omni_context",
  "omni_diagnostic",
@@ -7477,6 +7468,8 @@ dependencies = [
  "omni_generator_configurations",
  "omni_input_provider",
  "omni_messages",
+ "omni_notice",
+ "omni_redact",
  "omni_task_executor",
  "omni_task_output_logs",
  "omni_tera",
@@ -7493,7 +7486,6 @@ dependencies = [
  "test-log",
  "thiserror 2.0.21",
  "tokio 1.54.1",
- "trace",
  "tracing",
  "value-bag",
 ]
@@ -7502,13 +7494,18 @@ dependencies = [
 name = "omni_messages"
 version = "0.22.0"
 dependencies = [
+ "omni_codes",
+ "omni_diagnostic",
+ "omni_notice",
+ "omni_redact",
  "omni_task_output_logs",
  "serde",
  "serde_json",
  "strum 0.28.0",
+ "thiserror 2.0.21",
  "tokio 1.54.1",
- "trace",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -7525,6 +7522,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "omni_notice"
+version = "0.22.0"
+dependencies = [
+ "omni_codes",
+ "omni_notice_derive",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "trybuild",
+]
+
+[[package]]
+name = "omni_notice_derive"
+version = "0.22.0"
+dependencies = [
+ "omni_derive_support",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "omni_path_utils"
 version = "0.1.0"
 
@@ -7538,7 +7557,6 @@ dependencies = [
  "derive-new",
  "eyre",
  "futures 0.3.34",
- "log",
  "maps",
  "nix 0.31.3",
  "omni_command_config",
@@ -7549,7 +7567,6 @@ dependencies = [
  "terminal_size",
  "thiserror 2.0.21",
  "tokio 1.54.1",
- "trace",
  "tracing",
 ]
 
@@ -7577,10 +7594,11 @@ dependencies = [
  "derive-new",
  "dir_walker",
  "eyre",
- "log",
+ "omni_codes",
  "omni_constants",
  "omni_glob",
  "omni_hasher",
+ "omni_notice",
  "omni_projection_configurations",
  "omni_types",
  "path-clean",
@@ -7593,6 +7611,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "tokio 1.54.1",
+ "tracing",
 ]
 
 [[package]]
@@ -7602,7 +7621,6 @@ dependencies = [
  "async-trait",
  "either",
  "eyre",
- "log",
  "omni_config_types",
  "omni_generator_configurations",
  "omni_input_provider",
@@ -7612,7 +7630,6 @@ dependencies = [
  "serde_json",
  "sets",
  "tokio 1.54.1",
- "trace",
  "tracing",
  "value-bag",
 ]
@@ -7634,7 +7651,6 @@ dependencies = [
  "eyre",
  "http 1.5.0",
  "http-body 1.1.0",
- "log",
  "ntest",
  "reqwest",
  "reqwest-middleware",
@@ -7645,7 +7661,6 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio 1.54.1",
  "tower",
- "trace",
  "tracing",
 ]
 
@@ -7663,7 +7678,6 @@ dependencies = [
  "futures 0.3.34",
  "http 1.5.0",
  "http-body 1.1.0",
- "log",
  "maps",
  "noyalib",
  "omni_path_utils",
@@ -7692,7 +7706,6 @@ dependencies = [
  "derive-new",
  "eyre",
  "http 1.5.0",
- "log",
  "maps",
  "omni_remote_cache_core",
  "omni_remote_cache_storage_core",
@@ -7738,7 +7751,6 @@ dependencies = [
  "derive-new",
  "eyre",
  "futures 0.3.34",
- "log",
  "omni_remote_cache_storage_core",
  "tempfile",
  "tokio 1.54.1",
@@ -7788,7 +7800,6 @@ dependencies = [
  "derive-new",
  "http 1.5.0",
  "http-body 1.1.0",
- "log",
  "omni_remote_cache_storage_core",
  "serde",
  "tempfile",
@@ -7819,7 +7830,6 @@ dependencies = [
  "bon",
  "derive-new",
  "eyre",
- "log",
  "mockall",
  "omni_constants",
  "omni_file_data_serde",
@@ -7834,7 +7844,6 @@ dependencies = [
  "test-log",
  "thiserror 2.0.21",
  "tokio 1.54.1",
- "trace",
  "tracing",
  "url",
 ]
@@ -7867,12 +7876,12 @@ dependencies = [
  "derive-new",
  "eyre",
  "gix",
- "log",
  "serde",
  "strum 0.28.0",
  "tempfile",
  "thiserror 2.0.21",
  "tokio 1.54.1",
+ "tracing",
 ]
 
 [[package]]
@@ -7883,7 +7892,6 @@ dependencies = [
  "omni_tera",
  "serde",
  "serde_validate",
- "trace",
  "tracing",
 ]
 
@@ -7902,7 +7910,6 @@ dependencies = [
  "fastrand",
  "keyring-core",
  "linux-keyutils-keyring-store",
- "log",
  "machine-uid",
  "omni_configurations",
  "omni_file_data_serde",
@@ -7917,7 +7924,6 @@ dependencies = [
  "thiserror 2.0.21",
  "time",
  "tokio 1.54.1",
- "trace",
  "tracing",
  "uuid",
  "windows-native-keyring-store",
@@ -7944,7 +7950,6 @@ dependencies = [
  "serde_json",
  "strum 0.28.0",
  "thiserror 2.0.21",
- "trace",
  "tracing",
 ]
 
@@ -7966,10 +7971,10 @@ dependencies = [
  "futures 0.3.34",
  "getset",
  "globset",
- "log",
  "maps",
  "num_cpus",
  "omni_cache",
+ "omni_codes",
  "omni_collector",
  "omni_command_config",
  "omni_config_types",
@@ -7982,6 +7987,7 @@ dependencies = [
  "omni_glob",
  "omni_hasher",
  "omni_messages",
+ "omni_notice",
  "omni_process",
  "omni_redact",
  "omni_task_context",
@@ -8001,7 +8007,6 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio 1.54.1",
  "tokio-util",
- "trace",
  "tracing",
 ]
 
@@ -8024,13 +8029,13 @@ version = "0.7.0"
 dependencies = [
  "cruet",
  "heck",
- "log",
  "omni_utils",
  "pathdiff",
  "serde",
  "target-lexicon",
  "tera",
  "tera-contrib",
+ "tracing",
 ]
 
 [[package]]
@@ -8045,7 +8050,6 @@ dependencies = [
  "enumflags2",
  "eyre",
  "futures 0.3.34",
- "log",
  "maps",
  "parking_lot 0.13.0",
  "ratatui",
@@ -8054,7 +8058,6 @@ dependencies = [
  "system_traits",
  "thiserror 2.0.21",
  "tokio 1.54.1",
- "trace",
  "tracing",
  "unicode-width",
  "vte 0.15.0",
@@ -8080,7 +8083,6 @@ dependencies = [
  "bridge_rpc_services",
  "derive-new",
  "eyre",
- "log",
  "omni_capabilities",
  "omni_capability_enforcement",
  "omni_capability_sys",
@@ -8101,7 +8103,6 @@ dependencies = [
  "test-log",
  "thiserror 2.0.21",
  "tokio 1.54.1",
- "trace",
  "tracing",
 ]
 
@@ -8112,7 +8113,6 @@ dependencies = [
  "derive-new",
  "eyre",
  "garde",
- "log",
  "maps",
  "omni_capabilities",
  "omni_input_schema",
@@ -8124,7 +8124,6 @@ dependencies = [
  "strum 0.28.0",
  "test-log",
  "thiserror 2.0.21",
- "trace",
  "tracing",
 ]
 
@@ -11458,13 +11457,6 @@ name = "tower-service"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8df9b6e13f2d32c91b9bd719c00d1958837bc7dec474d94952798cc8e69eeec3"
-
-[[package]]
-name = "trace"
-version = "0.2.0"
-dependencies = [
- "tracing",
-]
 
 [[package]]
 name = "tracing"

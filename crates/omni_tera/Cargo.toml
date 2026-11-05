@@ -9,12 +9,10 @@ repository.workspace = true
 [lib]
 name = "omni_tera"
 path = "src/lib.rs"
-[features]
-default = []
 
 [dependencies]
+tracing = { workspace = true }
 omni_utils = { workspace = true }
-log = { workspace = true }
 tera = { workspace = true }
 tera-contrib = { workspace = true }
 heck = { workspace = true }

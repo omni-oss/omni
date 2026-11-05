@@ -84,10 +84,10 @@ describe("+global @exitcode (dispatch errors)", () => {
     });
 });
 
-describe("+global @cli (stdout logging)", () => {
+describe("+global @cli (notices and -q)", () => {
     const MISSING_WARN = "environmental variable does not exists";
 
-    it("emits warn-level logs to stdout at the default level", async () => {
+    it("reports a notice on stderr with its code, without changing the exit status", async () => {
         const ws = envWorkspace();
 
         const result = await runOmni(["env", "get", "MISSING_VAR"], {
@@ -95,140 +95,164 @@ describe("+global @cli (stdout logging)", () => {
         });
 
         expect(result).toHaveSucceeded();
-        expect(result).toOutputContaining(MISSING_WARN);
+        expect(result).toHaveStderrContaining("warning[env.var_missing]");
+        expect(result).toHaveStderrContaining(MISSING_WARN);
+        expect(result).toHaveStderrContaining(
+            "omni code explain env.var_missing",
+        );
+        // stdout carries results only.
+        expect(result.stdout).toBe("");
     });
 
-    it("-l/--stdout-log-level off silences stdout logs", async () => {
+    it("-q/--quiet hides warn notices", async () => {
         const ws = envWorkspace();
 
-        const result = await runOmni(["-l", "off", "env", "get", "MISSING"], {
+        const result = await runOmni(["-q", "env", "get", "MISSING"], {
             cwd: ws.cwd,
         });
 
         expect(result).toHaveSucceeded();
-        expect(result.out).not.toContain(MISSING_WARN);
+        expect(result.err).not.toContain(MISSING_WARN);
     });
 
-    it("honors OMNI_STDOUT_LOG_LEVEL", async () => {
+    it("honors OMNI_QUIET", async () => {
         const ws = envWorkspace();
 
         const result = await runOmni(["env", "get", "MISSING"], {
             cwd: ws.cwd,
-            env: { OMNI_STDOUT_LOG_LEVEL: "off" },
+            env: { OMNI_QUIET: "true" },
         });
 
         expect(result).toHaveSucceeded();
-        expect(result.out).not.toContain(MISSING_WARN);
+        expect(result.err).not.toContain(MISSING_WARN);
+    });
+
+    it.each([
+        ["-l", "off"],
+        ["--stdout-log-level", "off"],
+        ["--stderr-log-level", "warn"],
+        ["-t"],
+        ["--stdout-show-traces"],
+        ["--stderr-show-traces"],
+        ["--file-trace-output", "x.log"],
+        ["-f", "info"],
+    ])("the removed flag `%s` is an unknown argument", async (...flag) => {
+        const ws = envWorkspace();
+
+        const result = await runOmni([...flag, "env", "get", "FOO"], {
+            cwd: ws.cwd,
+        });
+
+        expect(result).toHaveFailed();
+        expect(result).toHaveStderrContaining("unexpected argument");
     });
 });
 
-describe("+global @cli (stdout traces)", () => {
-    // `tracing_initialized` is emitted via a native `trace!` (not the `log`
-    // facade), so it only surfaces on stdout when traces are explicitly enabled.
+describe("+global @cli (--trace)", () => {
+    // `tracing_initialized` is a native `trace!` event, so it only appears when
+    // developer traces are enabled.
     const NATIVE_TRACE = "tracing_initialized";
 
-    it("-t/--stdout-show-traces surfaces native traces on stdout", async () => {
+    it("is off by default", async () => {
         const ws = envWorkspace();
 
-        const withTraces = await runOmni(
-            ["-l", "trace", "-t", "env", "get", "FOO"],
-            { cwd: ws.cwd },
-        );
-        const withoutTraces = await runOmni(
-            ["-l", "trace", "env", "get", "FOO"],
-            { cwd: ws.cwd },
-        );
+        const result = await runOmni(["env", "get", "FOO"], { cwd: ws.cwd });
 
-        expect(withTraces).toOutputContaining(NATIVE_TRACE);
-        expect(withoutTraces.out).not.toContain(NATIVE_TRACE);
+        expect(result).toHaveSucceeded();
+        expect(result.err).not.toContain(NATIVE_TRACE);
     });
 
-    it("honors OMNI_STDOUT_SHOW_TRACES", async () => {
+    it("--trace <filter> writes traces to stderr, never to stdout", async () => {
         const ws = envWorkspace();
 
-        const result = await runOmni(["-l", "trace", "env", "get", "FOO"], {
-            cwd: ws.cwd,
-            env: { OMNI_STDOUT_SHOW_TRACES: "true" },
-        });
-
-        expect(result).toOutputContaining(NATIVE_TRACE);
-    });
-});
-
-describe("+global @cli (stderr logging)", () => {
-    // The eyre report is always printed to stderr on failure; the error *trace*
-    // (`ERROR omni:`) is what the stderr log layer adds, so we assert on that.
-    const ERROR_TRACE = "ERROR omni:";
-
-    function failingWorkspace() {
-        return makeWorkspace({
-            workspace: { projects: ["**"] },
-            projects: {
-                app: { name: "app", tasks: { build: "echo hi" } },
-            },
-        });
-    }
-
-    it("--stderr-log-level=warn gates the stderr log layer", async () => {
-        const ws = failingWorkspace();
-
-        const enabled = await runOmni(
-            ["--stderr-log-level=warn", "--stderr-show-traces", "run", "nope"],
-            { cwd: ws.cwd },
-        );
-        const disabled = await runOmni(
-            ["--stderr-show-traces", "run", "nope"],
-            { cwd: ws.cwd },
-        );
-
-        expect(enabled).toHaveFailed();
-        expect(enabled).toHaveStderrContaining(ERROR_TRACE);
-        expect(disabled).toHaveFailed();
-        expect(disabled.err).not.toContain(ERROR_TRACE);
-    });
-
-    it("honors OMNI_STDERR_LOG_LEVEL", async () => {
-        const ws = failingWorkspace();
-
-        const result = await runOmni(["--stderr-show-traces", "run", "nope"], {
-            cwd: ws.cwd,
-            env: { OMNI_STDERR_LOG_LEVEL: "warn" },
-        });
-
-        expect(result).toHaveStderrContaining(ERROR_TRACE);
-    });
-
-    it("--stderr-show-traces toggles error traces on stderr", async () => {
-        const ws = failingWorkspace();
-
-        const withTraces = await runOmni(
-            ["--stderr-log-level=warn", "--stderr-show-traces", "run", "nope"],
-            { cwd: ws.cwd },
-        );
-        const withoutTraces = await runOmni(
-            ["--stderr-log-level=warn", "run", "nope"],
+        const result = await runOmni(
+            ["--trace", "trace", "env", "get", "FOO"],
             {
                 cwd: ws.cwd,
             },
         );
 
-        expect(withTraces).toHaveStderrContaining(ERROR_TRACE);
-        expect(withoutTraces).toHaveFailed();
-        expect(withoutTraces.err).not.toContain(ERROR_TRACE);
+        expect(result).toHaveSucceeded();
+        expect(result).toHaveStderrContaining(NATIVE_TRACE);
+        expect(result.stdout).toBe("bar");
+    });
+
+    it("the filter selects what is shown", async () => {
+        const ws = envWorkspace();
+
+        const error = await runOmni(["--trace", "error", "env", "get", "FOO"], {
+            cwd: ws.cwd,
+        });
+        const all = await runOmni(["--trace", "trace", "env", "get", "FOO"], {
+            cwd: ws.cwd,
+        });
+
+        expect(error.err).not.toContain(NATIVE_TRACE);
+        expect(all).toHaveStderrContaining(NATIVE_TRACE);
+    });
+
+    it("honors OMNI_TRACE, and an explicit flag overrides it", async () => {
+        const ws = envWorkspace();
+
+        const fromEnv = await runOmni(["env", "get", "FOO"], {
+            cwd: ws.cwd,
+            env: { OMNI_TRACE: "trace" },
+        });
+        const overridden = await runOmni(
+            ["--trace", "error", "env", "get", "FOO"],
+            {
+                cwd: ws.cwd,
+                env: { OMNI_TRACE: "trace" },
+            },
+        );
+
+        expect(fromEnv).toHaveStderrContaining(NATIVE_TRACE);
+        expect(overridden.err).not.toContain(NATIVE_TRACE);
+    });
+
+    it("an invalid filter is reported", async () => {
+        const ws = envWorkspace();
+
+        const result = await runOmni(["--trace", "=,=", "env", "get", "FOO"], {
+            cwd: ws.cwd,
+        });
+
+        expect(result).toHaveFailed();
+        expect(result).toHaveStderrContaining("--trace");
+    });
+
+    it("no tracing layer writes to stdout, at any setting", async () => {
+        const ws = envWorkspace();
+
+        const result = await runOmni(
+            [
+                "--trace",
+                "trace",
+                "--trace-file-level",
+                "trace",
+                "env",
+                "get",
+                "FOO",
+            ],
+            { cwd: ws.cwd },
+        );
+
+        expect(result).toHaveSucceeded();
+        expect(result.stdout).toBe("bar");
     });
 });
 
 describe("+global @cli (file traces)", () => {
-    it("--file-trace-output + -f write JSON traces to the given file", async () => {
+    it("--trace-file + --trace-file-level write JSON traces to the given file", async () => {
         const ws = envWorkspace();
 
         // Query a missing var so a warn-level event is actually written to the
         // file (an existing var logs nothing at the `info` file level).
         const result = await runOmni(
             [
-                "-f",
+                "--trace-file-level",
                 "info",
-                "--file-trace-output",
+                "--trace-file",
                 "./trace.log",
                 "env",
                 "get",
@@ -245,9 +269,12 @@ describe("+global @cli (file traces)", () => {
     it("defaults the trace file to ./.omni/trace/omni.log", async () => {
         const ws = envWorkspace();
 
-        const result = await runOmni(["-f", "info", "env", "get", "FOO"], {
-            cwd: ws.cwd,
-        });
+        const result = await runOmni(
+            ["--trace-file-level", "info", "env", "get", "FOO"],
+            {
+                cwd: ws.cwd,
+            },
+        );
 
         expect(result).toHaveSucceeded();
         expect(ws.exists(".omni/trace/omni.log")).toBe(true);
@@ -259,9 +286,12 @@ describe("+global @cli (file traces)", () => {
             files: { "sub/deep/.keep": "" },
         });
 
-        const result = await runOmni(["-f", "info", "env", "get", "FOO"], {
-            cwd: ws.path("sub", "deep"),
-        });
+        const result = await runOmni(
+            ["--trace-file-level", "info", "env", "get", "FOO"],
+            {
+                cwd: ws.path("sub", "deep"),
+            },
+        );
 
         expect(result).toHaveSucceeded();
         expect(ws.exists(".omni/trace/omni.log")).toBe(true);
@@ -377,71 +407,15 @@ describe("+global @env (env resolution)", () => {
     });
 });
 
-describe("+global @cli (trace gating by stdout level)", () => {
-    // The stdout fmt layer (and thus any native trace it would print) is only
-    // installed when the stdout level is not `off` - see TracingSubscriber::new
-    // in `crates/omni_tracing_subscriber/src/lib.rs`. So `-t` can only surface
-    // traces when there is a stdout layer for them to attach to.
-    const NATIVE_TRACE = "tracing_initialized";
-
-    it("`-l off` suppresses native traces even with `-t`", async () => {
-        const ws = envWorkspace();
-
-        const off = await runOmni(["-l", "off", "-t", "env", "get", "FOO"], {
-            cwd: ws.cwd,
-        });
-        const on = await runOmni(["-l", "trace", "-t", "env", "get", "FOO"], {
-            cwd: ws.cwd,
-        });
-
-        // No stdout layer at `off`, so the native trace never reaches stdout...
-        expect(off.out).not.toContain(NATIVE_TRACE);
-        // ...but it does once a stdout layer exists (here at `trace`).
-        expect(on).toOutputContaining(NATIVE_TRACE);
-    });
-});
-
-describe("+global @cli (stderr error logs + traces together)", () => {
-    // The error *trace* the stderr log layer adds is prefixed `ERROR omni:`; the
-    // eyre report (`Error:`) is the always-printed human-readable failure.
-    const ERROR_TRACE = "ERROR omni:";
-
-    function failingWorkspace() {
-        return makeWorkspace({
-            workspace: { projects: ["**"] },
-            projects: {
-                app: { name: "app", tasks: { build: "echo hi" } },
-            },
-        });
-    }
-
-    it("`--stderr-log-level=warn --stderr-show-traces` routes error logs and traces to stderr", async () => {
-        const ws = failingWorkspace();
-
-        const result = await runOmni(
-            ["--stderr-log-level=warn", "--stderr-show-traces", "run", "nope"],
-            { cwd: ws.cwd },
-        );
-
-        expect(result).toHaveFailed();
-        // The error trace from the stderr log layer...
-        expect(result).toHaveStderrContaining(ERROR_TRACE);
-        // ...and the eyre report both land on stderr, together.
-        expect(result).toHaveStderrContaining("Error:");
-        // Neither leaks onto stdout.
-        expect(result.out).not.toContain(ERROR_TRACE);
-    });
-});
-
 describe("+global @cli (file traces at a requested level)", () => {
-    it("`--file-trace-output <path>` + `-f debug` writes debug traces there", async () => {
+    it("`--trace-file <path>` + `--trace-file-level debug` writes debug traces there", async () => {
         const ws = envWorkspace();
 
         const result = await runOmni(
             [
-                "-f",
+                "--trace-file-level",
                 "debug",
-                "--file-trace-output",
+                "--trace-file",
                 "./debug-trace.log",
                 "env",
                 "get",
@@ -462,27 +436,6 @@ describe("+global @cli (file traces at a requested level)", () => {
 describe("+global @cli (explicit flags override env-var forms)", () => {
     const MISSING_WARN = "environmental variable does not exists";
 
-    it("`-l <level>` overrides OMNI_STDOUT_LOG_LEVEL", async () => {
-        const ws = envWorkspace();
-
-        // The env var silences stdout logs, but the explicit flag re-enables
-        // warn-level output (so the missing-var warning appears).
-        const overridden = await runOmni(
-            ["-l", "warn", "env", "get", "MISSING"],
-            {
-                cwd: ws.cwd,
-                env: { OMNI_STDOUT_LOG_LEVEL: "off" },
-            },
-        );
-        const fromEnv = await runOmni(["env", "get", "MISSING"], {
-            cwd: ws.cwd,
-            env: { OMNI_STDOUT_LOG_LEVEL: "off" },
-        });
-
-        expect(overridden).toOutputContaining(MISSING_WARN);
-        expect(fromEnv.out).not.toContain(MISSING_WARN);
-    });
-
     it("`--env <env>` overrides OMNI_ENV", async () => {
         const ws = makeWorkspace({
             workspace: { projects: ["**"] },
@@ -496,8 +449,7 @@ describe("+global @cli (explicit flags override env-var forms)", () => {
         // development file is selected.
         const result = await runOmni(
             [
-                "-l",
-                "off",
+                "-q",
                 "-e",
                 ".env.{ENV}",
                 "--env",
@@ -512,24 +464,23 @@ describe("+global @cli (explicit flags override env-var forms)", () => {
         expect(result.stdout).toBe("dev");
     });
 
-    it("`-f <level>` overrides OMNI_FILE_TRACE_LEVEL", async () => {
+    it("`--trace-file-level` overrides OMNI_TRACE_FILE_LEVEL", async () => {
         const ws = envWorkspace();
 
         // The env var disables file traces; the explicit flag turns them back
         // on, so the trace file is created.
         const result = await runOmni(
             [
-                "-l",
-                "off",
-                "-f",
+                "-q",
+                "--trace-file-level",
                 "info",
-                "--file-trace-output",
+                "--trace-file",
                 "./override.log",
                 "env",
                 "get",
                 "MISSING",
             ],
-            { cwd: ws.cwd, env: { OMNI_FILE_TRACE_LEVEL: "off" } },
+            { cwd: ws.cwd, env: { OMNI_TRACE_FILE_LEVEL: "off" } },
         );
 
         expect(result).toHaveSucceeded();
@@ -552,8 +503,7 @@ describe("+global @env (global flags take effect before the subcommand)", () => 
 
         const result = await runOmni(
             [
-                "-l",
-                "off",
+                "-q",
                 "-r",
                 "mark.txt",
                 "--env",

@@ -16,7 +16,7 @@ use petgraph::{
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use strum::{EnumDiscriminants, IntoDiscriminant};
-use trace::Level;
+use tracing::Level;
 
 use crate::{Project, ProjectGraph, ProjectGraphError};
 
@@ -951,10 +951,7 @@ impl TaskExecutionGraph {
             .collect())
     }
 
-    #[cfg_attr(
-        feature = "enable-tracing",
-        tracing::instrument(level = Level::DEBUG, skip_all)
-    )]
+    #[tracing::instrument(level = Level::DEBUG, skip_all)]
     pub fn get_batched_execution_plan(
         &self,
         filter: impl Fn(&TaskExecutionNode) -> Result<bool, eyre::Report>,
@@ -962,10 +959,7 @@ impl TaskExecutionGraph {
         self.get_batched_execution_plan_impl(filter, false, |_| Ok(false))
     }
 
-    #[cfg_attr(
-        feature = "enable-tracing",
-        tracing::instrument(level = Level::DEBUG, skip_all)
-    )]
+    #[tracing::instrument(level = Level::DEBUG, skip_all)]
     pub fn get_batched_execution_plan_with_dependents(
         &self,
         filter: impl Fn(&TaskExecutionNode) -> Result<bool, eyre::Report>,

@@ -19,7 +19,7 @@ mod utils;
 use crate::{
     build,
     commands::{
-        cache::CacheCommand, declspec::DeclspecCommand,
+        cache::CacheCommand, code::CodeCommand, declspec::DeclspecCommand,
         diagnostics::DiagnosticsCommand, generator::GeneratorCommand,
         hash::HashCommand, ignore::IgnoreCommand, init::InitCommand,
         project::ProjectCommand, projection::ProjectionCommand,
@@ -28,12 +28,14 @@ use crate::{
 };
 
 pub mod cache;
+pub mod code;
 pub mod completion;
 pub mod config;
 pub mod declspec;
 pub mod diagnostics;
 pub mod env;
 pub mod exec;
+
 pub mod generator;
 mod generator_utils;
 pub mod hash;
@@ -75,62 +77,74 @@ pub enum ErrorFormat {
     Json,
 }
 
+/// CLI presentation settings passed to commands, independent of workspace state.
+#[derive(Args, Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct OutputOptions {
+    /// Hide omni's narration, but keep results, failures and essential notices.
+    #[arg(
+        short = 'q',
+        long,
+        help = "Hide omni's own narration: lifecycle lines, progress, and warning/info notices. Results, failures, task output and essential notices still show",
+        default_value_t = false,
+        action = clap::ArgAction::SetTrue,
+        env = "OMNI_QUIET",
+        global = true
+    )]
+    pub quiet: bool,
+}
+
+#[cfg(test)]
+mod output_options_tests {
+    use clap::Parser;
+
+    use super::{Cli, CliArgs, OutputOptions};
+
+    #[test]
+    fn narration_is_enabled_by_default() {
+        assert_eq!(CliArgs::default().output, OutputOptions::default());
+        assert!(!OutputOptions::default().quiet);
+    }
+
+    #[test]
+    fn quiet_is_flattened_and_global() {
+        for args in [
+            vec!["omni", "-q", "env", "all"],
+            vec!["omni", "env", "all", "--quiet"],
+        ] {
+            let cli = Cli::try_parse_from(args).unwrap();
+            assert!(cli.args.output.quiet);
+        }
+    }
+}
+
 #[derive(Args, Debug)]
 #[command()]
 pub struct CliArgs {
-    #[arg(
-        short = 'l',
-        long = "stdout-log-level",
-        help = "Max level of logs to stdout",
-        value_enum,
-        default_value = "info",
-        env = "OMNI_STDOUT_LOG_LEVEL"
-    )]
-    pub stdout_log_level: EnumValueAdapter<Level>,
+    #[command(flatten)]
+    pub output: OutputOptions,
 
     #[arg(
-        short = 't',
-        long = "stdout-show-traces",
-        help = "Include traces to stdout",
-        default_value_t = false,
-        action = clap::ArgAction::SetTrue,
-        env = "OMNI_STDOUT_SHOW_TRACES"
+        long = "trace",
+        value_name = "FILTER",
+        help = "Write developer traces to stderr, using tracing filter directives (for example `omni_cache=debug` or `debug`)",
+        env = "OMNI_TRACE"
     )]
-    pub stdout_show_traces: bool,
+    pub trace: Option<String>,
 
     #[arg(
-        long,
-        help = "Max level of logs to stderr",
-        env = "OMNI_STDERR_LOG_LEVEL",
-        default_value = "off",
-        value_enum
-    )]
-    pub stderr_log_level: EnumValueAdapter<Level>,
-
-    #[arg(
-        long = "stderr-show-traces",
-        help = "Include error traces to stderr",
-        default_value_t = false,
-        action = clap::ArgAction::SetTrue,
-        env = "OMNI_STDERR_SHOW_TRACES"
-    )]
-    pub stderr_show_traces: bool,
-
-    #[arg(
-        long = "file-trace-output",
+        long = "trace-file",
         help = "The file to write traces to (default: ./.omni/trace/omni.log, except in shared MCP mode)"
     )]
-    pub file_trace_output: Option<PathBuf>,
+    pub trace_file: Option<PathBuf>,
 
     #[arg(
-        short = 'f',
-        long,
+        long = "trace-file-level",
         help = "The trace level to use for file traces",
         value_enum,
         default_value = "off",
-        env = "OMNI_FILE_TRACE_LEVEL"
+        env = "OMNI_TRACE_FILE_LEVEL"
     )]
-    pub file_trace_level: EnumValueAdapter<Level>,
+    pub trace_file_level: EnumValueAdapter<Level>,
 
     #[arg(
         short = 'r',
@@ -183,16 +197,14 @@ pub struct CliArgs {
 impl Default for CliArgs {
     fn default() -> Self {
         Self {
-            stdout_log_level: EnumValueAdapter::new(Level::Off),
-            stderr_log_level: EnumValueAdapter::new(Level::Off),
-            file_trace_output: None,
-            file_trace_level: EnumValueAdapter::new(Level::Off),
+            output: OutputOptions::default(),
+            trace: None,
+            trace_file: None,
+            trace_file_level: EnumValueAdapter::new(Level::Off),
             env_root_dir_marker: None,
             env_file: None,
             env: None,
             inherit_env_vars: false,
-            stdout_show_traces: false,
-            stderr_show_traces: false,
             cache_dir: None,
             error_format: ErrorFormat::Text,
         }
@@ -225,6 +237,9 @@ pub enum CliSubcommands {
 
     #[command(about = "Inspect diagnostic codes")]
     Diagnostics(DiagnosticsCommand),
+
+    #[command(about = "Look up error and notice codes")]
+    Code(CodeCommand),
 
     #[command(about = "Cache related subcommands")]
     Cache(CacheCommand),

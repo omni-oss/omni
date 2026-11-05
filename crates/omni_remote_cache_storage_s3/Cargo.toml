@@ -21,7 +21,6 @@ bytesize = { workspace = true }
 derive-new = { workspace = true }
 http = { workspace = true }
 http-body = { workspace = true }
-log = { workspace = true }
 serde = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true }

@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 
+use omni_derive_support::{CodeInfoTokens, code_info, doc_parts};
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote};
 use syn::{Data, DeriveInput, Fields, Ident, LitStr, spanned::Spanned};
@@ -28,6 +29,9 @@ struct Variant {
     details_fn: Option<syn::Path>,
     detail_fields: Vec<(Ident, String)>,
     body_fn: Option<syn::Path>,
+    stable: bool,
+    related: Vec<LitStr>,
+    docs: (String, String),
 }
 
 pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
@@ -48,6 +52,7 @@ pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
                 a,
                 None,
                 name.span(),
+                doc_parts(&input.attrs),
                 &mut errs,
             )? {
                 variants.push(v);
@@ -73,6 +78,7 @@ pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
                     a,
                     type_audience,
                     vi.span(),
+                    doc_parts(&v.attrs),
                     &mut errs,
                 )? {
                     variants.push(v);
@@ -223,6 +229,7 @@ pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
         }
     });
 
+    let has_forward = variants.iter().any(|v| v.forward.is_some());
     let registration = if no_register.is_none() {
         let codes = variants.iter().filter_map(|v| {
             let c = v.code.as_ref()?;
@@ -232,7 +239,10 @@ pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
                 audience: ::omni_diagnostic::Audience::#a,
             }))
         });
+        let code_impl = code_impl(&name, &variants, has_forward);
         quote! {
+            #code_impl
+
             impl #name {
                 #[doc(hidden)]
                 #[allow(dead_code)]
@@ -322,6 +332,7 @@ fn build_variant(
     attrs: Attrs,
     default_audience: Option<AudienceAttr>,
     name_span: Span,
+    docs: (String, String),
     errs: &mut Errs,
 ) -> syn::Result<Option<Variant>> {
     let mut binds = Vec::new();
@@ -397,6 +408,9 @@ fn build_variant(
             details_fn: None,
             detail_fields: Vec::new(),
             body_fn: None,
+            stable: false,
+            related: Vec::new(),
+            docs,
         }));
     }
 
@@ -452,6 +466,9 @@ fn build_variant(
         details_fn: attrs.details,
         detail_fields,
         body_fn: attrs.body,
+        stable: attrs.stable,
+        related: attrs.related,
+        docs,
     }))
 }
 
@@ -526,4 +543,81 @@ fn rewrite_hint(lit: &LitStr, fields: &Fields, errs: &mut Errs) -> LitStr {
         }
     }
     LitStr::new(&out, lit.span())
+}
+
+/// `impl Code`, the sealed marker and the `omni_codes` submission for a type
+/// whose variants all carry their own code.
+fn code_impl(
+    name: &Ident,
+    variants: &[Variant],
+    has_forward: bool,
+) -> TokenStream {
+    let codes = quote!(::omni_diagnostic::__private::omni_codes);
+    let infos: Vec<TokenStream> = variants
+        .iter()
+        .filter_map(|v| {
+            let c = v.code.as_ref()?;
+            let a = format_ident!("{}", v.audience.variant());
+            let (summary, explanation) = &v.docs;
+            Some(code_info(
+                &codes,
+                &CodeInfoTokens {
+                    code: c,
+                    summary,
+                    explanation: quote!(#explanation),
+                    related: &v.related,
+                    stable: v.stable,
+                    deprecated: false,
+                    detail: quote!(#codes::CodeDetail::Error {
+                        audience: #codes::Audience::#a,
+                    }),
+                },
+            ))
+        })
+        .collect();
+    let statics: Vec<Ident> = (0..infos.len())
+        .map(|i| format_ident!("__CODE_INFO_{}", i))
+        .collect();
+    let arms = variants
+        .iter()
+        .filter(|v| v.code.is_some())
+        .enumerate()
+        .map(|(i, v)| {
+            let pat = &v.pat;
+            let s = &statics[i];
+            quote!(#pat => &#s,)
+        });
+    let empty = infos.is_empty();
+    let body = if empty {
+        quote!(match *self {})
+    } else {
+        quote!(match self { #(#arms)* })
+    };
+    let submit = quote! {
+        #codes::submit!(#codes::CodeRegistration {
+            crate_name: ::core::env!("CARGO_PKG_NAME"),
+            codes: &[#(#infos),*],
+            prefixes: &[],
+        });
+    };
+    // A forwarding variant has no code of its own, so `Code::info` cannot be
+    // answered statically for the type; its own codes are still registered.
+    if has_forward {
+        return quote!(const _: () = { #submit };);
+    }
+    quote! {
+        const _: () = {
+            #(static #statics: #codes::CodeInfo = #infos;)*
+
+            impl #codes::__private::Sealed for #name {}
+
+            impl #codes::Code for #name {
+                const CODES: &'static [#codes::CodeInfo] = &[#(#infos),*];
+                #[allow(unused_variables)]
+                fn info(&self) -> &'static #codes::CodeInfo { #body }
+            }
+
+            #submit
+        };
+    }
 }

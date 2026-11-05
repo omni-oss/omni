@@ -36,7 +36,7 @@ pub(crate) async fn transform_one<S: GeneratorEventSubscriber>(
     // Honour the same dry-run contract as the other "run" actions: skip the
     // (potentially side-effecting) command unless it explicitly opts in.
     if ctx.dry_run && !common.supports_dry_run {
-        log::debug!("Skipped transforming {} (dry run)", file.display());
+        tracing::debug!("Skipped transforming {} (dry run)", file.display());
         return Ok(());
     }
 
@@ -60,7 +60,7 @@ pub(crate) async fn transform_one<S: GeneratorEventSubscriber>(
     // the command string, mirroring `run-command`'s command expansion.
     let command = ::env::expand(&command, &env);
 
-    log::debug!(
+    tracing::debug!(
         "Transforming {} through command: {}",
         file.display(),
         ctx.redactor.redact(command.as_str())
@@ -79,7 +79,7 @@ pub(crate) async fn transform_one<S: GeneratorEventSubscriber>(
         .await
         .map_err(|e| ErrorInner::new_failed_to_write_file(file, e))?;
 
-    log::debug!("Wrote transformed output to {}", file.display());
+    tracing::debug!("Wrote transformed output to {}", file.display());
 
     Ok(())
 }
@@ -119,7 +119,7 @@ async fn run_transform_command(
     // must not create them here (that would be an uncommitted side effect).
     let spawn_cwd = nearest_existing_dir(cwd);
 
-    log::trace!(
+    tracing::trace!(
         "running command: {program} {args:?}, cwd: {spawn_cwd:?}, env: {env:?}"
     );
 
@@ -193,7 +193,10 @@ async fn run_transform_command(
     let exit_code = status.code().unwrap_or(0) as u32;
 
     if !stderr_buf.is_empty() {
-        log::debug!("command stderr: {}", String::from_utf8_lossy(&stderr_buf));
+        tracing::debug!(
+            "command stderr: {}",
+            String::from_utf8_lossy(&stderr_buf)
+        );
     }
 
     Ok(TransformOutput {

@@ -9,7 +9,3 @@ extends:
   - "@workspace/omni/presets/rust-lib.omni.yaml"
 {%- endif %}
 
-{%- if inputs.use_tracing %}
-dependencies:
-  - trace
-{%- endif %}

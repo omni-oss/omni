@@ -1,5 +1,11 @@
+// MCP presenter crate.
+#![allow(clippy::disallowed_macros)]
+
+pub mod codes;
 pub mod error;
 pub mod model;
+pub mod notices;
+pub mod resources;
 pub mod server;
 pub mod subscriber;
 mod tools;

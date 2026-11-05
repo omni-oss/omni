@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use clap::Args;
 use omni_mcp_core::{OmniMcpServer, serve_stdio};
-use omni_tracing_subscriber::{Level, TracingSubscriber};
+use omni_tracing_subscriber::TracingSubscriber;
 use system_traits::impls::RealSys;
 use tracing_futures::WithSubscriber;
 
@@ -31,10 +31,13 @@ pub async fn run(cmd: &McpCommand, ctx: &Context<RealSys>) -> eyre::Result<()> {
     }
     let server = OmniMcpServer::new(ctx.clone());
     let mut config = ctx.tracing_config().clone();
-    config.stdout_level = Level::Off;
-    // stdio logging is used for the MCP protocol, so we don't want to log anything to stdout.
-    // We do want to log to stderr, so we set the stderr level to Info.
-    config.stderr_level = Level::Info;
+    // stdout carries the MCP protocol, and there is no stdout trace sink. A
+    // trace file that resolves to stdout is rejected at startup (see
+    // `reject_stdout_trace_file`). Traces go to stderr at `info` unless the
+    // user chose a filter.
+    config
+        .stderr_filter
+        .get_or_insert_with(|| "info".to_string());
     let sub = TracingSubscriber::new(&config, vec![])
         .expect("Failed to create tracing subscriber");
     serve_stdio(server).with_subscriber(sub).await
@@ -45,9 +48,55 @@ pub async fn run_shared(
     tracing: &TracingConfig,
 ) -> eyre::Result<()> {
     let mut tracing = tracing.clone();
-    tracing.stdout_level = Level::Off;
-    tracing.stderr_level = Level::Info;
+    tracing
+        .stderr_filter
+        .get_or_insert_with(|| "info".to_string());
     let server = OmniMcpServer::new_shared(RealSys, config, tracing.clone());
     let sub = TracingSubscriber::new(&tracing, vec![])?;
     serve_stdio(server).with_subscriber(sub).await
+}
+
+/// `true` if `path` is the process's stdout (`/dev/stdout`, `/dev/fd/1`,
+/// `/proc/self/fd/1`, or any path naming the same device as the inherited
+/// stdout). MCP rejects such a trace file: stdout carries JSON-RPC.
+pub fn is_stdout_path(path: &std::path::Path) -> bool {
+    let literal = [
+        std::path::Path::new("/dev/stdout"),
+        std::path::Path::new("/dev/fd/1"),
+        std::path::Path::new("/proc/self/fd/1"),
+    ];
+    if literal.iter().any(|p| path == *p) {
+        return true;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt as _;
+        if let (Ok(a), Ok(b)) =
+            (std::fs::metadata(path), std::fs::metadata("/dev/stdout"))
+        {
+            return a.dev() == b.dev() && a.ino() == b.ino();
+        }
+    }
+    false
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::*;
+
+    #[test]
+    fn stdout_aliases_are_detected() {
+        for p in ["/dev/stdout", "/dev/fd/1", "/proc/self/fd/1"] {
+            assert!(is_stdout_path(Path::new(p)), "{p}");
+        }
+    }
+
+    #[test]
+    fn ordinary_paths_are_not() {
+        let dir = std::env::temp_dir().join("omni-trace-test.log");
+        assert!(!is_stdout_path(&dir));
+        assert!(!is_stdout_path(Path::new("./.omni/trace/omni.log")));
+    }
 }

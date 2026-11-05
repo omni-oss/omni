@@ -2,7 +2,7 @@ use omni_generator_configurations::{
     BooleanBuilderGenBaseExt, Generator, OmniPath, OverwriteConfiguration,
     Root, StringBuilderGenBaseExt,
 };
-use omni_messages::GeneratorEventSubscriber;
+use omni_messages::{GeneratorEventSubscriber, GeneratorPromptRejectedEvent};
 use std::{
     borrow::Cow,
     path::{self, Path, PathBuf},
@@ -175,13 +175,13 @@ pub async fn overwrite(
         let output_path_d = output_path.display();
         if overwrite {
             if sys.fs_is_dir_async(output_path).await? {
-                log::debug!(
+                tracing::debug!(
                     "Removing directory and it's contents at path {}",
                     output_path_d
                 );
                 sys.fs_remove_dir_all_async(output_path).await?;
             } else {
-                log::debug!("Overwriting path at {}", output_path_d);
+                tracing::debug!("Overwriting path at {}", output_path_d);
             }
 
             return Ok(Some(true));
@@ -193,8 +193,8 @@ pub async fn overwrite(
     Ok(None)
 }
 
-#[allow(clippy::result_large_err)]
-pub async fn resolve_target_dir<'a>(
+#[allow(clippy::result_large_err, clippy::too_many_arguments)]
+pub async fn resolve_target_dir<'a, S: GeneratorEventSubscriber>(
     target_name: &str,
     target_overrides: &'a UnorderedMap<String, OmniPath>,
     generator_targets: &'a UnorderedMap<String, OmniPath>,
@@ -202,6 +202,7 @@ pub async fn resolve_target_dir<'a>(
     generator: &'a str,
     session: &'a GenSession,
     provider: &'a dyn InputProvider<Generator>,
+    subscriber: &'a S,
 ) -> Result<Cow<'a, OmniPath>, Error> {
     let target = target_overrides
         .get(target_name)
@@ -235,7 +236,11 @@ pub async fn resolve_target_dir<'a>(
         // it (mirrors `prompt_target_file`); the loop exists precisely so the
         // user can correct the value.
         if let Err(err) = validate_target(output_dir, path) {
-            log::error!("Invalid target dir: {}", err);
+            subscriber
+                .on_prompt_rejected(GeneratorPromptRejectedEvent {
+                    message: format!("invalid target dir: {err}"),
+                })
+                .await;
             continue;
         }
 
@@ -306,14 +311,18 @@ pub async fn prompt_target_file<S: GeneratorEventSubscriber>(
         let path = if let Ok(path) = path_str.as_ref().parse::<OmniPath>() {
             path
         } else {
-            log::warn!("Invalid path: {}", path_str);
+            ctx.subscriber
+                .on_prompt_rejected(GeneratorPromptRejectedEvent {
+                    message: format!("Invalid path: {path_str}"),
+                })
+                .await;
             continue;
         };
 
         let resolved = path.resolve(&base);
 
         if !sys.fs_exists_async(resolved.as_ref()).await? {
-            log::warn!("File does not exist: {}", resolved.display());
+            tracing::warn!("File does not exist: {}", resolved.display());
         }
 
         break Ok(resolved.to_path_buf());
@@ -385,6 +394,7 @@ pub async fn resolve_output_path<
                 ctx.generator_name,
                 session,
                 provider,
+                ctx.subscriber,
             )
             .await?,
         )

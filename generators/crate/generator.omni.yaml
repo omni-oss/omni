@@ -6,7 +6,7 @@ description: Generate a new rust crate
 inputs:
   - type: boolean
     name: use_tracing
-    message: Use tracing
+    message: Add the `tracing` dependency
     default: true
 
   - type: string

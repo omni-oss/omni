@@ -45,7 +45,7 @@ pub fn discover_checkout(path: &Path) -> eyre::Result<Option<CheckoutLayout>> {
             .then_some(root)
         }),
         Err(error) => {
-            log::debug!("Primary Git checkout unavailable: {error}");
+            tracing::debug!("Primary Git checkout unavailable: {error}");
             None
         }
     };

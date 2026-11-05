@@ -49,7 +49,7 @@ async function fixture() {
 
 async function cacheDir(cwd: string, args: string[] = []) {
     const result = await runOmni(
-        ["--stdout-log-level", "error", ...args, "cache", "dir"],
+        [...args, "cache", "dir"],
         { cwd },
     );
     expect(result).toHaveSucceeded();
@@ -63,11 +63,11 @@ describe("automatic Git worktree cache sharing", { tags: ["caching"] }, () => {
         expect(await cacheDir(linked)).toBe(await cacheDir(primary));
         const first = await runOmni(["run", "build"], { cwd: primary });
         expect(first).toHaveSucceeded();
-        expect(first).toOutputContaining("Executed task 'app#build'");
+        expect(first).toHaveStderrContaining("Executed task 'app#build'");
         const artifact = ws.read("primary/app/artifact.txt");
         const cached = await runOmni(["run", "build"], { cwd: linked });
         expect(cached).toHaveSucceeded();
-        expect(cached).toOutputContaining("Cache hit for task 'app#build'");
+        expect(cached).toHaveStderrContaining("Cache hit for task 'app#build'");
         expect(ws.read("linked/app/artifact.txt")).toBe(artifact);
 
         // Another checkout must not reuse the primary's size/mtime file hash.
@@ -82,7 +82,7 @@ describe("automatic Git worktree cache sharing", { tags: ["caching"] }, () => {
             cwd: changedCheckout,
         });
         expect(changed).toHaveSucceeded();
-        expect(changed).toOutputContaining("Executed task 'app#build'");
+        expect(changed).toHaveStderrContaining("Executed task 'app#build'");
         expect(ws.read("changed/app/artifact.txt")).toMatch(/^bbbb/);
         expect(ws.read("primary/app/artifact.txt")).toBe(artifact);
     });

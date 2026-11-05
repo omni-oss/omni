@@ -1,4 +1,6 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/json-schemas/refs/heads/main/project.json
-name: trace
+name: omni_notice_derive
 extends:
   - "@workspace/omni/presets/rust-lib.omni.yaml"
+dependencies:
+  - omni_derive_support

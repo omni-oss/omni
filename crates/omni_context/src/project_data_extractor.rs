@@ -23,7 +23,7 @@ use omni_types::OmniPathError;
 use serde::{Deserialize, Serialize};
 use sets::UnorderedSet;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
-use trace::Level;
+use tracing::Level;
 
 use crate::{
     EnvLoader, EnvVarsMap, GetVarsArgs, build,
@@ -68,10 +68,7 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
         Ok((ws_vars, ws_vars_os))
     }
 
-    #[cfg_attr(
-        feature = "enable-tracing",
-        tracing::instrument(level = Level::DEBUG, skip_all)
-    )]
+    #[tracing::instrument(level = Level::DEBUG, skip_all)]
     pub fn extract_all(
         &mut self,
         project_configs: &[ProjectConfiguration],
@@ -121,7 +118,7 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
         ];
 
         for project_config in filtered {
-            trace::debug!(
+            tracing::debug!(
                 project_configuration = ?project_config,
                 "processing_project_config",
             );

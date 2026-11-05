@@ -16,7 +16,6 @@ bytes = { workspace = true }
 bytesize = { workspace = true }
 derive-new = { workspace = true }
 eyre = { workspace = true }
-log = { workspace = true }
 tokio = { workspace = true }
 tokio-stream = { workspace = true }
 tokio-util = { workspace = true, features = ["io"] }

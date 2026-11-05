@@ -126,7 +126,7 @@ describe("+cross @cache @perf (concurrent cache access)", () => {
         // A subsequent run still reads a valid entry - the cache wasn't corrupted.
         const replay = await runOmni(["run", "build"], { cwd: ws.cwd });
         expect(replay).toHaveSucceeded();
-        expect(replay).toOutputContaining("Cache hits");
+        expect(replay).toHaveStderrContaining("Cache hits");
     });
 });
 
@@ -213,8 +213,7 @@ describe("+cross @output (global flags + run filters)", () => {
 
         const result = await runOmni(
             [
-                "-l",
-                "off",
+                "-q",
                 "run",
                 "build",
                 "-p",
@@ -254,7 +253,7 @@ describe("+cross @cache (run + exec coexistence)", () => {
         // The second run is served from the cache.
         const cached = await runOmni(["run", "build"], { cwd: ws.cwd });
         expect(cached).toHaveSucceeded();
-        expect(cached).toOutputContaining("Cache hits");
+        expect(cached).toHaveStderrContaining("Cache hits");
 
         // exec runs an entirely different ad-hoc command, bypassing the cache.
         const exec = await runOmni(
@@ -271,7 +270,7 @@ describe("+cross @cache (run + exec coexistence)", () => {
         // The run cache is still intact after the exec.
         const replay = await runOmni(["run", "build"], { cwd: ws.cwd });
         expect(replay).toHaveSucceeded();
-        expect(replay).toOutputContaining("Cache hits");
+        expect(replay).toHaveStderrContaining("Cache hits");
     });
 });
 
@@ -375,8 +374,7 @@ describe("+cross @cli (many args + long values)", () => {
         // stays contiguous and the long value can be matched in one piece.
         const result = await runOmni(
             [
-                "-l",
-                "off",
+                "-q",
                 "run",
                 "greet",
                 "--output-logs=all",

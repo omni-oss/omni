@@ -17,4 +17,3 @@ dependencies:
   - omni_capabilities
   - omni_capability_enforcement
   - omni_capability_sys
-  - trace

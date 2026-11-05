@@ -14,3 +14,7 @@ dependencies:
   - bridge_rpc_core
   - bridge_rpc_router
   - "@omni-oss/bridge-service"
+  - omni_capabilities
+  - omni_messages
+  - omni_notice
+  - omni_codes

@@ -20,7 +20,7 @@ pub struct PendingResponse {
 }
 
 impl PendingResponse {
-    #[cfg_attr(feature = "enable-tracing", tracing::instrument(skip_all, fields(response_id = ?self.id)))]
+    #[tracing::instrument(skip_all, fields(response_id = ?self.id))]
     pub async fn start_with_headers(
         self,
         status: ResponseStatusCode,
@@ -29,7 +29,7 @@ impl PendingResponse {
         self.start_inner(status, Some(headers)).await
     }
 
-    #[cfg_attr(feature = "enable-tracing", tracing::instrument(skip_all, fields(response_id = ?self.id)))]
+    #[tracing::instrument(skip_all, fields(response_id = ?self.id))]
     pub async fn start(
         self,
         status: ResponseStatusCode,
@@ -70,7 +70,7 @@ impl Drop for ResponseDataImpl {
             let result = tx.send(frame).await;
 
             if let Err(e) = result {
-                trace::error!(error = ?e, "failed_to_send_stream_end_frame");
+                tracing::error!(error = ?e, "failed_to_send_stream_end_frame");
             }
         });
     }
@@ -99,7 +99,7 @@ impl ActiveResponse {
 }
 
 impl ActiveResponse {
-    #[cfg_attr(feature = "enable-tracing", tracing::instrument(skip_all, fields(response_id = ?self.data.id)))]
+    #[tracing::instrument(skip_all, fields(response_id = ?self.data.id))]
     pub async fn write_body_chunk(
         &mut self,
         bytes: Vec<u8>,
@@ -113,12 +113,12 @@ impl ActiveResponse {
         Ok(())
     }
 
-    #[cfg_attr(feature = "enable-tracing", tracing::instrument(skip_all, fields(response_id = ?self.data.id)))]
+    #[tracing::instrument(skip_all, fields(response_id = ?self.data.id))]
     pub async fn end(self) -> ResponseResult<()> {
         self.end_inner(None).await
     }
 
-    #[cfg_attr(feature = "enable-tracing", tracing::instrument(skip_all, fields(response_id = ?self.data.id)))]
+    #[tracing::instrument(skip_all, fields(response_id = ?self.data.id))]
     pub async fn end_with_trailers(
         self,
         trailers: Trailers,
@@ -141,7 +141,7 @@ impl ActiveResponse {
         Ok(())
     }
 
-    #[cfg_attr(feature = "enable-tracing", tracing::instrument(skip_all, fields(response_id = ?self.data.id)))]
+    #[tracing::instrument(skip_all, fields(response_id = ?self.data.id))]
     pub async fn error(
         self,
         code: ResponseErrorCode,

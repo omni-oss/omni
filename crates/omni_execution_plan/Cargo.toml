@@ -6,8 +6,6 @@ version = "0.6.0"
 repository.workspace = true
 
 [features]
-default = ["enable-tracing"]
-enable-tracing = ["trace/enabled"]
 vendored-openssl = []
 
 [dependencies]
@@ -17,8 +15,6 @@ strum = { workspace = true }
 serde = { workspace = true }
 derive-new = { workspace = true }
 globset = { workspace = true }
-trace = { workspace = true }
-log = { workspace = true }
 tracing = { workspace = true }
 omni_configurations = { workspace = true }
 omni_core = { workspace = true }
@@ -33,6 +29,8 @@ bs58 = { workspace = true }
 omni_scm = { workspace = true }
 omni_types = { workspace = true }
 omni_diagnostic = { workspace = true }
+omni_notice = { workspace = true }
+omni_codes = { workspace = true }
 path-clean = { workspace = true }
 omni_config_types = { workspace = true }
 strsim = { workspace = true }

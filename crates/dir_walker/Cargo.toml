@@ -11,12 +11,11 @@ repository.workspace = true
 path = "src/lib.rs"
 
 [features]
-default = ["full", "enable-tracing"]
+default = ["full"]
 full = ["ignore", "memory", "glob"]
 ignore = ["dep:ignore"]
 memory = []
 glob = ["ignore", "dep:globset"]
-enable-tracing = ["trace/enabled"]
 
 [dependencies]
 ignore = { workspace = true, optional = true }
@@ -24,9 +23,7 @@ derive_more = { workspace = true }
 thiserror = { workspace = true }
 globset = { workspace = true, optional = true }
 strum = { workspace = true }
-trace = { workspace = true }
-log = { workspace = true }
-tracing = { workspace = true, optional = true }
+tracing = { workspace = true }
 derive-new = { workspace = true }
 crossbeam-channel = { workspace = true }
 num_cpus = { workspace = true }

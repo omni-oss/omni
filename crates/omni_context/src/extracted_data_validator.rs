@@ -3,7 +3,7 @@ use std::{collections::HashSet, path::PathBuf};
 use derive_new::new;
 use omni_core::TaskDependency;
 use strum::{EnumDiscriminants, EnumIs, IntoDiscriminant as _};
-use trace::Level;
+use tracing::Level;
 
 use crate::project_data_extractor::ProjectDataExtractions;
 
@@ -86,17 +86,14 @@ impl ExtractedDataValidator {
         }
     }
 
-    #[cfg_attr(
-        feature = "enable-tracing",
-        tracing::instrument(
+    #[tracing::instrument(
             level = Level::DEBUG,
             skip_all,
             fields(
                 fail_fast = self.fail_fast,
                 projects_count = extractions.projects.len()
             )
-        )
-    )]
+        )]
     pub fn validate(
         &self,
         extractions: &ProjectDataExtractions,

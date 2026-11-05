@@ -6,4 +6,3 @@ dependencies:
   - omni_input_schema
   - omni_capabilities
   - maps
-  - trace

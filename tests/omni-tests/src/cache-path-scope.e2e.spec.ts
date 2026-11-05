@@ -102,11 +102,11 @@ describe("cache paths outside the project", { tags: ["caching"] }, () => {
             const before = await projectHash(ws.cwd);
             const first = await runOmni(["run", "build"], { cwd: ws.cwd });
             expect(first).toHaveSucceeded();
-            expect(first).toOutputContaining("Executed task 'app#build'");
+            expect(first).toHaveStderrContaining("Executed task 'app#build'");
 
             const cached = await runOmni(["run", "build"], { cwd: ws.cwd });
             expect(cached).toHaveSucceeded();
-            expect(cached).toOutputContaining("Cache hit for task 'app#build'");
+            expect(cached).toHaveStderrContaining("Cache hit for task 'app#build'");
 
             ws.write(
                 "shared/input.txt",
@@ -115,7 +115,7 @@ describe("cache paths outside the project", { tags: ["caching"] }, () => {
             expect(await projectHash(ws.cwd)).not.toBe(before);
             const changed = await runOmni(["run", "build"], { cwd: ws.cwd });
             expect(changed).toHaveSucceeded();
-            expect(changed).toOutputContaining("Executed task 'app#build'");
+            expect(changed).toHaveStderrContaining("Executed task 'app#build'");
             expect(changed.stdout).not.toContain("Cache hit for task");
         },
     );
@@ -153,7 +153,7 @@ describe("cache paths outside the project", { tags: ["caching"] }, () => {
 
             const cached = await runOmni(["run", "build"], { cwd: ws.cwd });
             expect(cached).toHaveSucceeded();
-            expect(cached).toOutputContaining("Cache hit for task 'app#build'");
+            expect(cached).toHaveStderrContaining("Cache hit for task 'app#build'");
             // A rerun writes a new UUID, so equal bytes prove actual restoration.
             expect(ws.read("shared/artifact.txt")).toBe(original);
         },
@@ -197,7 +197,7 @@ describe("cache paths outside the project", { tags: ["caching"] }, () => {
 
             const cached = await runOmni(["run", "build"], { cwd });
             expect(cached).toHaveSucceeded();
-            expect(cached).toOutputContaining("Cache hit for task 'app#build'");
+            expect(cached).toHaveStderrContaining("Cache hit for task 'app#build'");
             expect(ws.exists("external/artifact.txt")).toBe(false);
 
             ws.write(

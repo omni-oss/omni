@@ -6,9 +6,6 @@ version = "0.1.1"
 authors.workspace = true
 repository.workspace = true
 
-[features]
-default = []
-
 [dependencies]
 eyre = { workspace = true }
 thiserror = { workspace = true }

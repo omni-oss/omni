@@ -1,10 +1,13 @@
-use bridge_rpc_runner::DelegatingJsRuntimeOption;
+use bridge_rpc_runner::{DelegatingJsRuntimeOption, RuntimeExperimental};
+use bridge_rpc_services::log::ScriptLogLevel;
 use omni_capabilities::{CapabilityRules, PathRoots, Root};
 use omni_generator_configurations::{
     Generator, GeneratorContext, JsRuntimeOption,
     RunJavaScriptActionConfiguration,
 };
-use omni_messages::{GeneratorEventSubscriber, NoticeLevel, notice_event};
+use omni_messages::{
+    GeneratorEventSubscriber, notice_event, publish::publish_batch,
+};
 
 use crate::{
     EffectivePolicy, GeneratorSys, ScriptInvocation, ScriptParams,
@@ -98,13 +101,10 @@ pub async fn run_javascript<'a, S: GeneratorEventSubscriber>(
             } else {
                 "you selected"
             };
-            diagnostics.push(notice_event!(
-                NoticeLevel::Warn,
-                "{how} the `{name}` runtime, which is experimental and not \
-                 fully sandboxed on every platform; only `deno` is fully \
-                 supported. Install/select `deno` for enforced capability \
-                 confinement.",
-            ));
+            diagnostics.push(notice_event!(RuntimeExperimental {
+                how: how.to_string(),
+                runtime: name.to_string(),
+            }));
         }
     }
 
@@ -118,9 +118,33 @@ pub async fn run_javascript<'a, S: GeneratorEventSubscriber>(
     // the choice is visible rather than silent.
     diagnostics.append(&mut result.diagnostics);
 
-    ctx.subscriber.on_notices_batched(diagnostics);
+    publish_batch(&ctx.subscriber, diagnostics);
+
+    for log in std::mem::take(&mut result.logs) {
+        dispatch_script_log(ctx.subscriber, ctx.redactor, log);
+    }
 
     Ok(())
+}
+
+/// Redacts before dispatch so even subscribers that only mirror to tracing
+/// never receive the generator's raw secret values.
+fn dispatch_script_log<S: GeneratorEventSubscriber>(
+    subscriber: &S,
+    redactor: &omni_redact::Redactor,
+    log: bridge_rpc_services::log::ScriptLogRecord,
+) {
+    subscriber.on_script_log(omni_messages::ScriptLogEvent {
+        level: match log.level {
+            ScriptLogLevel::Error => omni_messages::ScriptLogLevel::Error,
+            ScriptLogLevel::Warn => omni_messages::ScriptLogLevel::Warn,
+            ScriptLogLevel::Info => omni_messages::ScriptLogLevel::Info,
+            ScriptLogLevel::Debug => omni_messages::ScriptLogLevel::Debug,
+            ScriptLogLevel::Trace => omni_messages::ScriptLogLevel::Trace,
+        },
+        target: redactor.redact(log.target).into_owned(),
+        message: redactor.redact(log.message).into_owned(),
+    });
 }
 
 fn map_runtime(runtime: JsRuntimeOption) -> DelegatingJsRuntimeOption {
@@ -144,7 +168,38 @@ mod tests {
     use system_traits::impls::RealSys;
 
     use super::super::test_harness::{Fixture, MockJsScriptRunner};
-    use super::{map_runtime, run_javascript};
+    use super::{dispatch_script_log, map_runtime, run_javascript};
+
+    #[test]
+    fn redacts_script_logs_before_any_subscriber_receives_them() {
+        #[derive(Default)]
+        struct Capture(std::sync::Mutex<Vec<omni_messages::ScriptLogEvent>>);
+        impl omni_messages::NoticeSubscriber for Capture {}
+        impl omni_messages::GeneratorEventSubscriber for Capture {
+            fn on_script_log(&self, event: omni_messages::ScriptLogEvent) {
+                self.0.lock().unwrap().push(event);
+            }
+        }
+
+        let subscriber = Capture::default();
+        let redactor = omni_redact::Redactor::builder()
+            .value("secret-token")
+            .build();
+        dispatch_script_log(
+            &subscriber,
+            &redactor,
+            bridge_rpc_services::log::ScriptLogRecord {
+                level: bridge_rpc_services::log::ScriptLogLevel::Trace,
+                target: "child.secret-token".into(),
+                message: "token=secret-token".into(),
+            },
+        );
+        let logs = subscriber.0.lock().unwrap();
+        assert_eq!(logs.len(), 1);
+        assert!(!logs[0].target.contains("secret-token"));
+        assert!(!logs[0].message.contains("secret-token"));
+        assert_eq!(logs[0].level, omni_messages::ScriptLogLevel::Trace);
+    }
 
     fn config(
         script: &str,

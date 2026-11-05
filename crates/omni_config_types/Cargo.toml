@@ -10,8 +10,7 @@ repository.workspace = true
 name = "omni_config_types"
 path = "src/lib.rs"
 [features]
-default = ["enable-tracing", "merge", "serde", "schemars"]
-enable-tracing = ["dep:tracing", "trace/enabled"]
+default = ["merge", "serde", "schemars"]
 merge = ["dep:merge"]
 serde = [
     "dep:serde",
@@ -25,8 +24,7 @@ config_utils = { workspace = true }
 maps = { workspace = true }
 thiserror = { workspace = true }
 strum = { workspace = true }
-trace = { workspace = true }
-tracing = { workspace = true, optional = true }
+tracing = { workspace = true }
 derive-new = { workspace = true }
 omni_serde_validators = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }

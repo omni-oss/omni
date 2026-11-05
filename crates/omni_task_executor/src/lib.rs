@@ -8,6 +8,7 @@ mod execution_plan_provider;
 mod executor;
 mod force;
 
+mod notices;
 mod on_failure;
 mod pipeline;
 mod result;

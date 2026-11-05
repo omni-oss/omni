@@ -1,3 +1,4 @@
+use eyre::WrapErr as _;
 use std::{collections::HashMap, time::Duration};
 
 use base64::Engine;
@@ -255,11 +256,9 @@ pub async fn run(command: &CacheCommand, ctx: &Context) -> eyre::Result<()> {
                     secure: args.secure,
                 })
                 .await
-                .inspect_err(|_| {
-                    log::error!(
-                        "Failed to setup remote caching. Please check your credentials and try again."
-                    );
-                })?;
+                .wrap_err(
+                    "Failed to setup remote caching. Please check your credentials and try again.",
+                )?;
             }
         },
     }
@@ -271,7 +270,7 @@ async fn prune(
     api: &OmniApi<system_traits::impls::RealSys, omni_messages::NoopSubscriber>,
     args: &PruneArgs,
 ) -> eyre::Result<()> {
-    trace::debug!(?args, "prune");
+    tracing::debug!(?args, "prune");
 
     // Step 1: get the candidate list (always dry-run first).
     let prune_result = api
@@ -290,7 +289,7 @@ async fn prune(
     let pruned = prune_result.entries;
 
     if pruned.is_empty() {
-        log::warn!("No cache entries matched the given filters");
+        println!("No cache entries matched the given filters");
         return Ok(());
     }
 
@@ -308,10 +307,9 @@ async fn prune(
         .len();
 
     if args.dry_run {
-        log::info!(
+        println!(
             "Dry mode enabled, would prune {} cache entries from {} projects",
-            pruned_count,
-            project_count,
+            pruned_count, project_count,
         );
         return Ok(());
     }
@@ -332,7 +330,7 @@ async fn prune(
     }
 
     api.cache_force_prune(pruned).await?;
-    log::info!(
+    println!(
         "{}",
         format!(
             "Pruned {} cache entries from {} projects",

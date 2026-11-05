@@ -84,7 +84,7 @@ where
 {
     type Error = StreamTransportError;
 
-    #[cfg_attr(feature = "enable-tracing", tracing::instrument(skip_all, fields(transport_id = ?self.id)))]
+    #[tracing::instrument(skip_all, fields(transport_id = ?self.id))]
     async fn send(&self, data: Bytes) -> Result<(), Self::Error> {
         let frame = self.write_framer.frame(data);
         let mut output = self.output.lock().await;
@@ -94,27 +94,27 @@ where
         // in particular an unflushed child-stdin write can leave a request
         // sitting in a buffer while both sides wait on each other.
         output.flush().await?;
-        trace::trace!(
+        tracing::trace!(
             bytes_sent = frame.length.len() + frame.data.len(),
             "sent_frame"
         );
         Ok(())
     }
 
-    #[cfg_attr(feature = "enable-tracing", tracing::instrument(skip_all, fields(transport_id = ?self.id)))]
+    #[tracing::instrument(skip_all, fields(transport_id = ?self.id))]
     async fn receive(&self) -> Result<Bytes, Self::Error> {
-        trace::trace!("starting_receive");
+        tracing::trace!("starting_receive");
         // If we have a buffered frame, return it and remove it from the buffer
         if let Some(frame) = self.buffered_frames.lock().await.pop_front() {
-            trace::trace!("got_frame_from_buffer");
+            tracing::trace!("got_frame_from_buffer");
             return Ok(frame);
         }
 
         let mut buf = [0; STREAM_BUFFER_SIZE];
         loop {
-            trace::trace!("reading_from_input");
+            tracing::trace!("reading_from_input");
             let n_bytes_read = self.input.lock().await.read(&mut buf).await?;
-            trace::trace!(bytes_read = n_bytes_read, "received_bytes");
+            tracing::trace!(bytes_read = n_bytes_read, "received_bytes");
 
             if n_bytes_read == 0 {
                 let mut read_framer = self.read_framer.lock().await;
@@ -127,10 +127,10 @@ where
                 if let Some(frame) =
                     self.buffered_frames.lock().await.pop_front()
                 {
-                    trace::trace!("got_frame_from_buffer");
+                    tracing::trace!("got_frame_from_buffer");
                     return Ok(frame);
                 } else {
-                    trace::error!("no_frame_found_returning_end_of_stream");
+                    tracing::error!("no_frame_found_returning_end_of_stream");
                     return Err(StreamTransportErrorInner::EndOfStream.into());
                 }
             }
@@ -144,12 +144,12 @@ where
             if let Some(frame) = frame
                 && !frame.is_empty()
             {
-                trace::trace!("completed_frame_from_framer");
+                tracing::trace!("completed_frame_from_framer");
                 self.buffered_frames.lock().await.extend(frame);
             }
 
             if let Some(frame) = self.buffered_frames.lock().await.pop_front() {
-                trace::trace!("got_frame_from_buffer");
+                tracing::trace!("got_frame_from_buffer");
                 return Ok(frame);
             }
         }

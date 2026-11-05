@@ -39,31 +39,39 @@ impl Default for DefaultRemoteCacheClient {
 
 struct LogRequestMiddleware;
 
+/// Headers for trace output with credentials masked.
+fn loggable_headers(headers: &http::HeaderMap) -> http::HeaderMap {
+    let mut out = headers.clone();
+    for name in ["x-api-key", "x-omni-tenant", "authorization"] {
+        if let Some(v) = out.get_mut(name) {
+            *v = http::HeaderValue::from_static("<redacted>");
+        }
+    }
+    out
+}
+
 #[async_trait]
 impl Middleware for LogRequestMiddleware {
-    #[cfg_attr(
-        feature = "enable-tracing",
-        tracing::instrument(level = Level::DEBUG, skip_all)
-    )]
+    #[tracing::instrument(level = tracing::Level::DEBUG, skip_all)]
     async fn handle(
         &self,
         req: Request,
         extensions: &mut Extensions,
         next: Next<'_>,
     ) -> reqwest_middleware::Result<Response> {
-        log::trace!(
+        tracing::trace!(
             "Request: {:?}\n{} {}\nHeaders:\n{:#?}\n",
             req.version(),
             req.method(),
             req.url(),
-            req.headers(),
+            loggable_headers(req.headers()),
         );
 
         let res = next.run(req, extensions).await.inspect_err(|e| {
-            trace::error!(error = %e, "response_error");
+            tracing::error!(error = %e, "response_error");
         })?;
 
-        log::trace!(
+        tracing::trace!(
             "Response: {:?}\n{} {}\nHeaders:\n{:#?}\nContent Length: {:?}\n",
             res.version(),
             res.status(),
@@ -115,7 +123,7 @@ impl RemoteCacheClient for DefaultRemoteCacheClient {
             .await
             .map_err(RemoteCacheClientError::custom)
             .inspect_err(|e| {
-                trace::error!(error = ?e, "get_artifact_failed");
+                tracing::error!(error = ?e, "get_artifact_failed");
             })?;
 
         let status = response.status();
@@ -153,7 +161,7 @@ impl RemoteCacheClient for DefaultRemoteCacheClient {
             .await
             .map_err(RemoteCacheClientError::custom)
             .inspect_err(|e| {
-                trace::error!(error = ?e, "validate_access_failed");
+                tracing::error!(error = ?e, "validate_access_failed");
             })?;
 
         let status = response.status();
@@ -192,7 +200,7 @@ impl RemoteCacheClient for DefaultRemoteCacheClient {
             .await
             .map_err(RemoteCacheClientError::custom)
             .inspect_err(|e| {
-                trace::error!(error = ?e, "artifact_exists_failed");
+                tracing::error!(error = ?e, "artifact_exists_failed");
             })?;
 
         if response.status().is_success() {
@@ -226,7 +234,7 @@ impl RemoteCacheClient for DefaultRemoteCacheClient {
             .await
             .map_err(RemoteCacheClientError::custom)
             .inspect_err(|e| {
-                trace::error!(error = ?e, "put_artifact_failed");
+                tracing::error!(error = ?e, "put_artifact_failed");
             })?;
 
         if response.status().is_success() {

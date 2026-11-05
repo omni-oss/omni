@@ -1,0 +1,5 @@
+error: code must be lowercase `snake_case` segments separated by dots, at least two (for example `cache.write_skipped`)
+ --> tests/ui/bad_code_format.rs:5:17
+  |
+5 | #[notice(code = "NoDots", level = warn, message = "m")]
+  |                 ^^^^^^^^

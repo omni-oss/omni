@@ -11,7 +11,6 @@ dependencies:
   - sets
   - omni_expressions
   - system_traits
-  - trace
   - omni_config_types
   - omni_glob_config
   - omni_experimental_features

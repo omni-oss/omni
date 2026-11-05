@@ -60,7 +60,10 @@ pub async fn run(command: &InitCommand) -> eyre::Result<()> {
     }
 
     if let Some(url) = &command.args.git {
-        log::info!("Cloning repository from {}...", url);
+        eprintln!(
+            "Cloning repository from {}...",
+            omni_redact::redact_url_userinfo(url)
+        );
         omni_git_utils::clone_repo(
             &sys,
             url,
@@ -68,7 +71,7 @@ pub async fn run(command: &InitCommand) -> eyre::Result<()> {
             dir.path(),
         )
         .await?;
-        log::info!("Repository cloned successfully.");
+        eprintln!("Repository cloned successfully.");
     } else {
         eyre::bail!(
             "No source provided for initialization. Please provide a git repository using the --git option."
@@ -81,16 +84,15 @@ pub async fn run(command: &InitCommand) -> eyre::Result<()> {
     let generator = if let Some(generator) = primary_generator {
         generator
     } else {
-        log::error!(
-            "No primary generator is found, generators used as initializer must have one generator config in the root of the source folder",
+        eyre::bail!(
+            "No primary generator is found, generators used as initializer must have one generator config in the root of the source folder"
         );
-        return Ok(());
     };
 
     let all_generators =
         omni_generator::discover(dir.path(), &["**"], &sys).await?;
 
-    log::info!("Found {} generator(s) in the source.", all_generators.len());
+    eprintln!("Found {} generator(s) in the source.", all_generators.len());
 
     let pre_exec_values = get_input_values(&command.args.common.value);
 

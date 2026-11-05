@@ -34,16 +34,19 @@ mod tracing_impl;
 pub use channel::{ChannelSubscriber, OmniEventKind};
 pub use execution::{
     CacheHitEvent, ExecutionCompleteEvent, ExecutionEventSubscriber,
-    ExecutionPlanReadyEvent, TaskCompletedEvent, TaskFailedEvent,
-    TaskOutputStream, TaskOutputStreamEvent, TaskRetryingEvent, TaskSkipReason,
-    TaskSkippedEvent, TaskStartedEvent,
+    ExecutionPlanReadyEvent, PlanRedactMode, TaskCompletedEvent,
+    TaskFailedEvent, TaskOutputStream, TaskOutputStreamEvent,
+    TaskRetryingEvent, TaskSkipReason, TaskSkippedEvent, TaskStartedEvent,
 };
 pub use generator::{
-    GeneratorCompletedEvent, GeneratorEventSubscriber, GeneratorStartEvent,
+    GeneratorCompletedEvent, GeneratorEventSubscriber,
+    GeneratorPromptRejectedEvent, GeneratorStartEvent, ScriptLogEvent,
+    ScriptLogLevel,
 };
 pub use noop::NoopSubscriber;
-pub use notice::{NoticeEvent, NoticeLevel, NoticeSubscriber};
+pub use notice::{NoticeEvent, NoticeLevel, NoticeSubscriber, SharedRedactor};
 pub use omni::OmniEventSubscriber;
+pub use omni_notice::Notice;
 
 #[cfg(feature = "tracing")]
 pub use tracing_impl::TracingSubscriber;

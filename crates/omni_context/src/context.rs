@@ -11,7 +11,7 @@ use omni_tracing_subscriber::TracingConfig;
 use owo_colors::OwoColorize as _;
 use sets::UnorderedSet;
 use strum::{EnumDiscriminants, EnumIs, IntoDiscriminant as _};
-use trace::Level;
+use tracing::Level;
 
 use crate::{
     ContextSys, LoadedContext,
@@ -189,7 +189,7 @@ impl<TSys: ContextSys> Context<TSys> {
             tracing_config: tracing_config.clone(),
         };
 
-        trace::trace!(
+        tracing::trace!(
             ?context.env,
             ?context.inherit_env_vars,
             ?context.override_env_files,
@@ -316,7 +316,7 @@ impl<TSys: ContextSys> Context<TSys> {
         self.remote_cache.as_ref()
     }
 
-    #[cfg_attr(feature = "enable-tracing", tracing::instrument(level = Level::DEBUG, skip_all))]
+    #[tracing::instrument(level = Level::DEBUG, skip_all)]
     #[allow(clippy::result_large_err)]
     pub async fn load_project_configurations(
         &self,
@@ -328,7 +328,7 @@ impl<TSys: ContextSys> Context<TSys> {
 
     /// Loads every project configuration, including those reached only
     /// through `extends`, tagged with whether discovery found it.
-    #[cfg_attr(feature = "enable-tracing", tracing::instrument(level = Level::DEBUG, skip_all))]
+    #[tracing::instrument(level = Level::DEBUG, skip_all)]
     #[allow(clippy::result_large_err)]
     pub async fn load_project_config_entries(
         &self,
@@ -353,7 +353,7 @@ impl<TSys: ContextSys> Context<TSys> {
             })
             .collect();
 
-        log::info!(
+        tracing::debug!(
             "{}",
             format!("Loaded project configurations in {:?}", start.elapsed())
                 .bold()
@@ -362,7 +362,7 @@ impl<TSys: ContextSys> Context<TSys> {
         Ok(entries)
     }
 
-    #[cfg_attr(feature = "enable-tracing", tracing::instrument(level = Level::DEBUG, skip_all))]
+    #[tracing::instrument(level = Level::DEBUG, skip_all)]
     #[allow(clippy::result_large_err)]
     pub async fn into_loaded(
         self,
@@ -372,7 +372,7 @@ impl<TSys: ContextSys> Context<TSys> {
 
         let result = self.into_loaded_impl(project_paths).await;
 
-        log::info!(
+        tracing::debug!(
             "{}",
             format!("Loaded context in {:?}", start.elapsed()).bold()
         );
@@ -380,7 +380,7 @@ impl<TSys: ContextSys> Context<TSys> {
         result
     }
 
-    #[cfg_attr(feature = "enable-tracing", tracing::instrument(level = Level::DEBUG, skip_all))]
+    #[tracing::instrument(level = Level::DEBUG, skip_all)]
     #[allow(clippy::result_large_err)]
     pub async fn into_loaded_with_walker<TDirWalker: DirWalker>(
         self,
@@ -398,7 +398,7 @@ impl<TSys: ContextSys> Context<TSys> {
 
         let result = self.into_loaded_impl(project_paths).await;
 
-        log::info!(
+        tracing::debug!(
             "{}",
             format!("Loaded context in {:?}", start.elapsed()).bold()
         );
@@ -406,7 +406,7 @@ impl<TSys: ContextSys> Context<TSys> {
         result
     }
 
-    #[cfg_attr(feature = "enable-tracing", tracing::instrument(level = Level::DEBUG, skip(self)))]
+    #[tracing::instrument(level = Level::DEBUG, skip(self))]
     #[allow(clippy::result_large_err)]
     async fn into_loaded_impl(
         self,
@@ -420,7 +420,7 @@ impl<TSys: ContextSys> Context<TSys> {
 
         let mut env_loader = self.create_env_loader();
 
-        trace::trace!(
+        tracing::trace!(
             inherit_env_vars = self.inherit_env_vars,
             root_dir = ?self.root_dir,
             "extacting_project_data",
@@ -435,7 +435,7 @@ impl<TSys: ContextSys> Context<TSys> {
         )
         .extract_all(&project_configs, &project_paths, &xt_graph)?;
 
-        trace::trace!("extacted_project_data");
+        tracing::trace!("extacted_project_data");
 
         // run validations
         ExtractedDataValidator::new(false).validate(&extractions)?;
@@ -681,7 +681,7 @@ fn get_remote_cache_configuration(
     }
 
     if rc_path.is_none() {
-        log::debug!("No remote cache configuration found");
+        tracing::debug!("No remote cache configuration found");
         return Ok(None);
     }
 
@@ -696,7 +696,7 @@ fn get_remote_cache_configuration(
         sys,
     )?;
 
-    log::info!("Remote caching is enabled");
+    tracing::debug!("Remote caching is enabled");
 
     Ok(Some(rc))
 }

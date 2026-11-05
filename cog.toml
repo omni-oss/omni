@@ -84,7 +84,6 @@ include = [
     "crates/omni_path_utils/**",
     "crates/sets/**",
     "crates/maps/**",
-    "crates/trace/**",
 ]
 public_api = true
 
@@ -308,11 +307,6 @@ path = "crates/system_traits"
 include = ["crates/system_traits/**"]
 public_api = false
 
-[monorepo.packages.trace]
-path = "crates/trace"
-include = ["crates/trace/**"]
-public_api = false
-
 [monorepo.packages.omni_lockfile]
 path = "crates/omni_lockfile"
 include = ["crates/omni_lockfile/**"]
@@ -513,6 +507,34 @@ public_api = false
 path = "crates/omni_redact"
 include = [
     "crates/omni_redact/**",
+]
+public_api = false
+
+[monorepo.packages.omni_codes]
+path = "crates/omni_codes"
+include = [
+    "crates/omni_codes/**",
+]
+public_api = false
+
+[monorepo.packages.omni_derive_support]
+path = "crates/omni_derive_support"
+include = [
+    "crates/omni_derive_support/**",
+]
+public_api = false
+
+[monorepo.packages.omni_notice]
+path = "crates/omni_notice"
+include = [
+    "crates/omni_notice/**",
+]
+public_api = false
+
+[monorepo.packages.omni_notice_derive]
+path = "crates/omni_notice_derive"
+include = [
+    "crates/omni_notice_derive/**",
 ]
 public_api = false
 

@@ -6,8 +6,6 @@ version = "0.11.0"
 repository.workspace = true
 
 [features]
-default = ["enable-tracing"]
-enable-tracing = ["trace/enabled"]
 # Exposes internal pipeline components (plan provider, cache manager, task
 # context provider) so the crate's own criterion benches can measure
 # individual stages in isolation. Not for production use.
@@ -39,8 +37,6 @@ tokio-util = { workspace = true }
 omni_core = { workspace = true }
 omni_command_config = { workspace = true }
 
-trace = { workspace = true }
-log = { workspace = true }
 tracing = { workspace = true }
 shlex = { workspace = true }
 omni_hasher = { workspace = true }
@@ -69,6 +65,8 @@ ahash = { workspace = true }
 bs58 = { workspace = true }
 num_cpus = { workspace = true }
 omni_messages = { workspace = true }
+omni_notice = { workspace = true }
+omni_codes = { workspace = true }
 omni_diagnostic = { workspace = true }
 
 omni_execution_plan = { workspace = true }

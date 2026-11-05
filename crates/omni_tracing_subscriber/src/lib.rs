@@ -3,10 +3,11 @@
 mod config;
 pub mod custom_output;
 mod level;
-mod log_handling;
+mod stderr_gate;
 
 pub use config::*;
 pub use level::*;
+pub use stderr_gate::{pause_stderr, resume_stderr, stderr_paused};
 use tracing_subscriber::Layer;
 use tracing_subscriber::filter::FilterExt;
 use tracing_subscriber::fmt::FormatEvent;
@@ -31,17 +32,14 @@ use crate::custom_output::CustomOutput;
 use crate::custom_output::CustomOutputFactory;
 use crate::custom_output::FormatOption;
 use crate::custom_output::FormatOptions;
-use crate::log_handling::LogFilter;
+use crate::stderr_gate::GatedStderr;
 
 pub fn noop_subscriber() -> TracingSubscriber {
     TracingSubscriber::new(
         &TracingConfig {
             file_path: None,
             file_level: Level::Off,
-            stderr_level: Level::Off,
-            stdout_level: Level::Off,
-            stderr_show_traces: false,
-            stdout_show_traces: false,
+            stderr_filter: None,
         },
         vec![],
     )
@@ -53,6 +51,10 @@ pub struct TracingSubscriber {
 }
 
 impl TracingSubscriber {
+    /// Builds a subscriber with the configured stderr, file, and custom sinks.
+    /// An enabled file sink creates parent directories and truncates the file.
+    /// Invalid stderr filters, missing file paths, and filesystem errors are
+    /// returned to the caller.
     pub fn new(
         config: &TracingConfig,
         custom_outputs: Vec<CustomOutput>,
@@ -60,44 +62,27 @@ impl TracingSubscriber {
         let mut layers = Vec::new();
 
         let main_filters = Targets::new()
+            // rmcp debug/trace events contain raw request and response bodies,
+            // before operation-specific secret values can be identified.
+            .with_target("rmcp", LevelFilter::WARN)
             .with_target("globset", LevelFilter::OFF)
             .with_target("mio", LevelFilter::OFF)
             .with_target("ignore", LevelFilter::OFF);
 
-        if !config.stdout_level.is_off() {
-            let filter: LevelFilter = config.stdout_level.into();
-            let stdout_layer = tracing_subscriber::fmt::layer()
-                .pretty()
-                .compact()
-                .without_time()
-                .with_ansi_sanitization(false)
-                .with_writer(std::io::stdout)
-                .with_ansi(atty::is(atty::Stream::Stdout))
-                .with_file(false)
-                .with_target(false)
-                .with_line_number(false)
-                .with_filter(
-                    main_filters
-                        .clone()
-                        .with_default(filter)
-                        .and(LogFilter::new(config.stdout_show_traces)),
-                )
-                .boxed();
-
-            layers.push(stdout_layer);
-        }
-
-        if !config.stderr_level.is_off() {
-            let filter: LevelFilter = config.stderr_level.into();
+        if let Some(directives) = &config.stderr_filter {
+            let env_filter = tracing_subscriber::EnvFilter::try_new(directives)
+                .map_err(|e| {
+                    eyre::eyre!("invalid --trace filter `{directives}`: {e}")
+                })?;
             let stderr_layer = tracing_subscriber::fmt::layer()
                 .with_ansi(atty::is(atty::Stream::Stderr))
                 .with_ansi_sanitization(false)
-                .with_writer(std::io::stderr)
+                .with_writer(GatedStderr)
                 .with_filter(
                     main_filters
                         .clone()
-                        .with_default(filter)
-                        .and(LogFilter::new(config.stderr_show_traces)),
+                        .with_default(LevelFilter::TRACE)
+                        .and(env_filter),
                 )
                 .boxed();
 

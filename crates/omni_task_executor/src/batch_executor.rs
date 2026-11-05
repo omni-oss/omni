@@ -4,8 +4,7 @@ use futures::stream::{FuturesUnordered, StreamExt as _};
 use maps::{UnorderedMap, unordered_map};
 use omni_cache::{CachedTaskExecution, TaskExecutionCacheStore};
 use omni_command_config::{
-    Command, CommandConfig, escape_control_chars, resolve_command,
-    resolve_command_with,
+    Command, CommandConfig, resolve_command, resolve_command_with,
 };
 use omni_config_types::TeraExprBoolean;
 use omni_configurations::{RedactCategory, RedactOverrides};
@@ -13,10 +12,9 @@ use omni_context::LoadedContext;
 use omni_core::TaskExecutionNode;
 use omni_hasher::impls::DefaultHash;
 use omni_messages::{
-    CacheHitEvent, ExecutionEventSubscriber, NoticeLevel, TaskCompletedEvent,
+    CacheHitEvent, ExecutionEventSubscriber, TaskCompletedEvent,
     TaskFailedEvent, TaskOutputStream, TaskOutputStreamEvent,
     TaskRetryingEvent, TaskSkipReason, TaskSkippedEvent, TaskStartedEvent,
-    publish::notice,
 };
 use omni_process::{
     ChildProcessError, TaskChildProcess, TaskChildProcessResult,
@@ -26,7 +24,7 @@ use omni_task_context::{TaskContext, TaskContextProviderExt as _};
 use omni_task_output_logs::{EffectiveOutputLogs, LogsDisplay};
 use omni_types::{OmniPath, Root, RootMap, enum_map};
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
-use trace::Level;
+use tracing::Level;
 
 use crate::{
     OnFailure, SkipReason, TaskDetails, TaskExecutionResult, TaskExecutorSys,
@@ -125,7 +123,7 @@ where
             task_ctx.env_vars.keys().map(String::as_str),
         );
         if !unmatched.is_empty() {
-            log::debug!(
+            tracing::debug!(
                 "redact.env patterns for task '{}' matched no env var: {}",
                 task_ctx.node.full_task_name(),
                 unmatched.join(", ")
@@ -152,7 +150,10 @@ where
             None => Redactor::builder().build(),
         };
 
-        env.union(&args)
+        // Notices published from here on are redacted with the run's secrets.
+        let redactor = env.union(&args);
+        self.subscriber.extend_redactor(&redactor);
+        redactor
     }
 
     fn should_skip_batch_on_error(
@@ -262,7 +263,7 @@ where
                     file.original_path.path().expect("should be resolved");
 
                 if self.sys.fs_exists_async(original_path).await? {
-                    log::debug!(
+                    tracing::debug!(
                         "file already exists {original_path:?}, skipping cache restore",
                     );
                     continue;
@@ -287,7 +288,7 @@ where
 
                     // Copy when the filesystem or its permissions prevent
                     // hardlinking. Other failures must not be masked by a copy.
-                    log::debug!(
+                    tracing::debug!(
                         "Restoring cached file by copy because hardlinking was unavailable ({err}): {:?}",
                         original_path
                     );
@@ -299,7 +300,7 @@ where
                         .await?;
                 }
 
-                log::debug!(
+                tracing::debug!(
                     "restored cached file {:?} to {:?}",
                     file.cached_path,
                     original_path,
@@ -310,7 +311,7 @@ where
         Ok(())
     }
 
-    #[cfg_attr(feature = "enable-tracing", tracing::instrument(level = Level::DEBUG, skip_all))]
+    #[tracing::instrument(level = Level::DEBUG, skip_all)]
     fn expand_templates<'a>(
         &self,
         task_contexts: impl IntoIterator<Item = &'a TaskContext<'a>>,
@@ -574,24 +575,12 @@ where
                         task_id: task_id.clone(),
                         project: task_ctx.node.project_name().to_string(),
                         task: task_ctx.node.task_name().to_string(),
+                        command: display_command
+                            .as_ref()
+                            .map(|c| c.to_string())
+                            .filter(|c| !c.is_empty()),
                     })
                     .await;
-
-                match &display_command {
-                    Some(command) if !command.is_empty() => notice!(
-                        self.subscriber,
-                        NoticeLevel::Info,
-                        "Executing task '{}': {}",
-                        escape_control_chars(&task_id),
-                        command,
-                    ),
-                    _ => notice!(
-                        self.subscriber,
-                        NoticeLevel::Info,
-                        "Executing task '{}'",
-                        escape_control_chars(&task_id),
-                    ),
-                }
 
                 let node = task_ctx.node.clone();
                 fut_results.push(TaskResultContext::new_completed(
@@ -617,6 +606,9 @@ where
                     })
                     .await;
             } else {
+                // Not shown here, but a notice raised later in the run must
+                // still be redacted with this task's secrets.
+                let _ = self.build_redactor(task_ctx);
                 futs.push(run_process(
                     self.subscriber,
                     self.wants_task_output_stream,
@@ -670,7 +662,7 @@ where
                 .inspect_err(|_| {
                     // Fire-and-forget diagnostic; we're in a sync context so we
                     // can't await here. Use log:: as a fallback.
-                    log::error!(
+                    tracing::error!(
                         "Failed to get hash for task '{}', this is a bug, if you see this please report it to the maintainers",
                         fname
                     );
@@ -707,14 +699,11 @@ where
         Ok(new_results)
     }
 
-    #[cfg_attr(
-        feature = "enable-tracing",
-        tracing::instrument(
+    #[tracing::instrument(
             level = Level::DEBUG,
             skip_all,
             fields(batch_size = batch.len(), overall_results_count = overall_results.len())
-        )
-    )]
+        )]
     pub async fn execute_batch<'a>(
         &mut self,
         batch: &'a [TaskExecutionNode],
@@ -929,6 +918,7 @@ async fn run_process<'a, S: ExecutionEventSubscriber>(
             task_id: task_ctx.node.full_task_name().to_string(),
             project: task_ctx.node.project_name().to_string(),
             task: task_ctx.node.task_name().to_string(),
+            command: None,
         })
         .await;
 
@@ -1021,13 +1011,6 @@ async fn run_process<'a, S: ExecutionEventSubscriber>(
             if let Some(duration) = retry_duration
                 && !duration.is_zero()
             {
-                notice!(
-                    subscriber,
-                    NoticeLevel::Warn,
-                    "Waiting for '{:?}' before retrying task '{}'",
-                    duration,
-                    task_ctx.node.full_task_name(),
-                );
                 tokio::time::sleep(duration).await;
             }
 

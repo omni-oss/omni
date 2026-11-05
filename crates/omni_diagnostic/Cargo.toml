@@ -13,13 +13,14 @@ path = "src/lib.rs"
 [features]
 default = ["inventory"]
 # Default registry backend: constructor sections (Linux, macOS, Windows).
-inventory = ["dep:inventory"]
+inventory = ["dep:inventory", "omni_codes/inventory"]
 # Fallback for targets without constructor sections (e.g. wasm): the binary
 # installs an explicit list with `registry::install`.
-explicit-registry = []
+explicit-registry = ["omni_codes/explicit-registry"]
 
 [dependencies]
 omni_redact = { workspace = true }
+omni_codes = { workspace = true }
 eyre = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

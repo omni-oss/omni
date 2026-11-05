@@ -40,7 +40,7 @@ pub async fn transform_many<'a, S: GeneratorEventSubscriber>(
             .collect()
     };
 
-    log::trace!("transform-many matched {} file(s)", files.len());
+    tracing::trace!("transform-many matched {} file(s)", files.len());
 
     for file in files {
         transform_one(&file, &config.command, &config.common, ctx, sys).await?;

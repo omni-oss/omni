@@ -17,7 +17,11 @@ impl Scm for Git {
         base: &str,
         target: &str,
     ) -> Result<Vec<PathBuf>, Error> {
-        log::trace!("getting changed files between {} and {}", base, target);
+        tracing::trace!(
+            "getting changed files between {} and {}",
+            base,
+            target
+        );
         let base = get_tree_from_spec(&self.repo, base)?;
         let target = get_tree_from_spec(&self.repo, target)?;
 
@@ -31,7 +35,7 @@ impl Scm for Git {
                 entry.location().to_path().map(|p| p.to_path_buf()).ok()
             })
             .collect();
-        log::trace!("git diff {}..{}: {:#?}", base.id(), target.id(), diff);
+        tracing::trace!("git diff {}..{}: {:#?}", base.id(), target.id(), diff);
         Ok(diff)
     }
 

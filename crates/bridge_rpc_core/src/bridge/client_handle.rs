@@ -36,7 +36,7 @@ impl ClientHandle {
 }
 
 impl ClientHandle {
-    #[cfg_attr(feature = "enable-tracing", tracing::instrument(skip_all, fields(rpc_id = ?self.id, request_id = ?request_id, path = path.as_ref())))]
+    #[tracing::instrument(skip_all, fields(rpc_id = ?self.id, request_id = ?request_id, path = path.as_ref()))]
     pub(crate) async fn request_with_id(
         &self,
         request_id: Id,
@@ -62,7 +62,7 @@ impl ClientHandle {
     async fn clone_bytes_sender(
         &self,
     ) -> ClientHandleResult<mpsc::Sender<Frame>> {
-        trace::trace!("cloning_bytes_sender");
+        tracing::trace!("cloning_bytes_sender");
         let frame_transporter = self.frame_transporter.lock().await;
         if let Some(frame_transporter) = frame_transporter.as_ref() {
             Ok(frame_transporter.sender.clone())

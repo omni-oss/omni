@@ -11,7 +11,7 @@ use tokio::{
     io::{AsyncRead, AsyncReadExt as _, AsyncWrite, AsyncWriteExt as _},
     task::JoinHandle,
 };
-use trace::Level;
+use tracing::Level;
 use tracing::{dispatcher, field};
 
 use crate::utils::{get_pty_size, should_use_pty};
@@ -30,10 +30,7 @@ pub struct Child {
 }
 
 impl Child {
-    #[cfg_attr(
-        feature = "enable-tracing",
-        tracing::instrument(level = Level::DEBUG, skip_all, fields(command = field::Empty, args = field::Empty))
-    )]
+    #[tracing::instrument(level = Level::DEBUG, skip_all, fields(command = field::Empty, args = field::Empty))]
     pub fn spawn(
         command: impl Into<String>,
         args: impl Into<Vec<String>>,
@@ -43,12 +40,9 @@ impl Child {
         let command = command.into();
         let args = args.into();
 
-        if cfg!(feature = "enable-tracing") {
-            let span = tracing::Span::current();
-
-            span.record("command", &command);
-            span.record("args", format_args!("{args:?}"));
-        }
+        let span = tracing::Span::current();
+        span.record("command", &command);
+        span.record("args", format_args!("{args:?}"));
 
         let child = create_inner(command, args, cwd.into(), env.into())?;
 
@@ -59,7 +53,7 @@ impl Child {
     }
 
     fn spawn_pty(cmd: PtyCommand) -> Result<Self, ChildError> {
-        log::trace!("spawning pty");
+        tracing::trace!("spawning pty");
 
         let mut writer = cmd
             .master
@@ -103,9 +97,9 @@ impl Child {
                     nix::sys::termios::SetArg::TCSANOW,
                     &termios,
                 ) {
-                    log::debug!("failed to set termios: {e}");
+                    tracing::debug!("failed to set termios: {e}");
                 } else {
-                    log::trace!("termios set");
+                    tracing::trace!("termios set");
                 }
             }
         }
@@ -199,7 +193,7 @@ impl Child {
     }
 
     fn spawn_normal(mut cmd: StdCommand) -> Result<Self, ChildError> {
-        log::trace!("spawning normal");
+        tracing::trace!("spawning normal");
         let builder = cmd
             .cmd
             .stdin(Stdio::piped())
@@ -217,7 +211,7 @@ impl Child {
                             "failed to create child process group: {e}"
                         )
                     })?;
-                    log::debug!("child process group created");
+                    tracing::debug!("child process group created");
                     Ok(())
                 });
             }
@@ -275,10 +269,7 @@ impl Child {
         self.pid
     }
 
-    #[cfg_attr(
-        feature = "enable-tracing",
-        tracing::instrument(level = Level::DEBUG, skip_all)
-    )]
+    #[tracing::instrument(level = Level::DEBUG, skip_all)]
     pub async fn wait(self) -> Result<u32, ChildError> {
         match self.inner {
             ChildInner::Pty {
@@ -302,16 +293,16 @@ impl Child {
                 writer?;
                 let status = status?;
 
-                log::trace!("child exited with status: {status:?}");
+                tracing::trace!("child exited with status: {status:?}");
 
                 Ok(status.exit_code())
             }
             ChildInner::Normal(mut child) => {
                 let status = child.wait().await.inspect_err(|e| {
-                    log::error!("wait error: {e}");
+                    tracing::error!("wait error: {e}");
                 })?;
 
-                log::trace!("child exited with status: {status:?}");
+                tracing::trace!("child exited with status: {status:?}");
 
                 Ok(status.code().unwrap_or(0) as u32)
             }
@@ -410,7 +401,7 @@ fn create_inner(
                 }));
             }
             Err(e) => {
-                log::warn!(
+                tracing::warn!(
                     "failed to open pty ({e}); falling back to a piped process"
                 );
             }

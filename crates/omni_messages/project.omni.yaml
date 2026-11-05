@@ -2,3 +2,9 @@
 name: omni_messages
 extends:
   - "@workspace/omni/presets/rust-lib.omni.yaml"
+dependencies:
+  - omni_task_output_logs
+  - omni_codes
+  - omni_notice
+  - omni_diagnostic
+  - omni_redact

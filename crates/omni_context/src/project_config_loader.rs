@@ -13,7 +13,7 @@ use omni_types::{OmniPath, Root};
 use path_clean::clean;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 use thiserror::Error;
-use trace::Level;
+use tracing::Level;
 
 use crate::ContextSys;
 
@@ -32,10 +32,7 @@ struct RelatedPath {
 }
 
 impl<'a, TSys: ContextSys> ProjectConfigLoader<'a, TSys> {
-    #[cfg_attr(
-        feature = "enable-tracing",
-        tracing::instrument(level = Level::DEBUG, skip(self))
-    )]
+    #[tracing::instrument(level = Level::DEBUG, skip(self))]
     #[allow(clippy::result_large_err)]
     pub async fn load_project_configs(
         &self,
@@ -81,7 +78,7 @@ impl<'a, TSys: ContextSys> ProjectConfigLoader<'a, TSys> {
                     })?;
 
             let elapsed = start_time.elapsed().unwrap_or_default();
-            trace::trace!(
+            tracing::trace!(
                 project_configuration = ?project,
                 "loaded project configuration file {:?} in {} ms",
                 conf,

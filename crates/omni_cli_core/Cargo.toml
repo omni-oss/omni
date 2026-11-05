@@ -7,14 +7,6 @@ repository.workspace = true
 version = "0.21.0"
 
 [features]
-default = ["enable-tracing"]
-enable-tracing = [
-    "trace/enabled",
-    "dep:tracing",
-    "dep:tracing-core",
-    "dep:tracing-subscriber",
-    "dep:tracing-futures",
-]
 vendored-openssl = [
     "omni_cache/vendored-openssl",
     "omni_execution_plan/vendored-openssl",
@@ -30,12 +22,10 @@ shadow-rs = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 futures = { workspace = true }
-trace = { workspace = true }
-log = { workspace = true }
-tracing = { workspace = true, optional = true }
-tracing-core = { workspace = true, optional = true }
-tracing-subscriber = { workspace = true, optional = true }
-tracing-futures = { workspace = true, optional = true }
+tracing = { workspace = true }
+tracing-core = { workspace = true }
+tracing-subscriber = { workspace = true }
+tracing-futures = { workspace = true }
 omni_types = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -87,6 +77,10 @@ omni_generator = { workspace = true }
 omni_context = { workspace = true }
 omni_term_ui = { workspace = true }
 omni_messages = { workspace = true }
+omni_command_config = { workspace = true }
+omni_codes = { workspace = true }
+omni_redact = { workspace = true }
+omni_notice = { workspace = true }
 omni_diagnostic = { workspace = true }
 omni_task_executor = { workspace = true }
 omni_task_output_logs = { workspace = true }
@@ -117,7 +111,6 @@ indicatif = { workspace = true }
 omni_file_data_serde = { workspace = true }
 comfy-table = { workspace = true }
 omni_utils = { workspace = true }
-
 
 [build-dependencies]
 shadow-rs = { workspace = true, features = ["default"] }

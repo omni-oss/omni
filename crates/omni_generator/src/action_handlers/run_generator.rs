@@ -36,7 +36,7 @@ pub async fn run_generator<'a, S: GeneratorEventSubscriber>(
     let input_values = resolve_input_values(parent_inputs, config, ctx)?;
 
     // Values may be secrets; log only how many were resolved.
-    log::trace!("resolved {} prompt value(s)", input_values.len());
+    tracing::trace!("resolved {} prompt value(s)", input_values.len());
 
     let target_overrides = if config.targets.is_empty() {
         Cow::Borrowed(ctx.target_overrides)
@@ -52,7 +52,7 @@ pub async fn run_generator<'a, S: GeneratorEventSubscriber>(
         Cow::Owned(map)
     };
 
-    log::trace!("resolved target overrides: {target_overrides:#?}");
+    tracing::trace!("resolved target overrides: {target_overrides:#?}");
 
     let override_output_dir = config.output_dir.as_ref().map(|d| {
         let base = enum_map::enum_map! {

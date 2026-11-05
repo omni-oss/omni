@@ -4,7 +4,7 @@ use maps::Map;
 use omni_core::TaskExecutionNode;
 use system_traits::auto_impl;
 use tokio::io::{AsyncRead, AsyncWrite};
-use trace::Level;
+use tracing::Level;
 
 use crate::{ChildProcess, ChildProcessError};
 
@@ -102,10 +102,7 @@ impl TaskChildProcess {
         self
     }
 
-    #[cfg_attr(
-        feature = "enable-tracing",
-        tracing::instrument(level = Level::DEBUG, skip_all, fields(task = self.task.full_task_name()))
-    )]
+    #[tracing::instrument(level = Level::DEBUG, skip_all, fields(task = self.task.full_task_name()))]
     pub async fn exec(
         self,
     ) -> Result<TaskChildProcessResult, ChildProcessError> {

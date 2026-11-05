@@ -20,20 +20,12 @@ path = "src/main.rs"
 name = "{{ inputs.crate_name }}"
 path = "src/lib.rs"
 
-{%- if inputs.use_tracing %}
-[features]
-default = ["enable-tracing"]
-enable-tracing = ["dep:tracing", "trace/enabled"]
-{%- endif %}
-
 [dependencies]
 eyre = { workspace = true }
 thiserror = { workspace = true }
 strum = { workspace = true }
 {%- if inputs.use_tracing %}
-trace = { workspace = true }
-tracing = { workspace = true, optional = true }
-log = { workspace = true }
+tracing = { workspace = true }
 {%- endif %}
 bon = { workspace = true }
 derive-new = { workspace = true }

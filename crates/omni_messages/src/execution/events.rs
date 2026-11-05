@@ -9,6 +9,10 @@ pub struct TaskStartedEvent {
     pub task_id: String,
     pub project: String,
     pub task: String,
+    /// The command that would run. Set only in dry runs, already redacted
+    /// (RFC 0022), so presenters can show it without running anything.
+    #[serde(default)]
+    pub command: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -74,6 +78,27 @@ pub struct ExecutionPlanReadyEvent {
     /// Subscribers may use this to select an appropriate output presenter
     /// (e.g. upgrade from stream to TUI mode before the first task starts).
     pub has_interactive_or_persistent_tasks: bool,
+    /// No command execution, cache recording or cache replay will happen.
+    #[serde(default)]
+    pub dry_run: bool,
+    /// A remote cache is configured for this run.
+    #[serde(default)]
+    pub remote_cache: bool,
+    /// Redaction mode in effect for this run.
+    #[serde(default)]
+    pub redact_mode: PlanRedactMode,
+}
+
+/// Redaction mode in effect for a run (RFC 0022), as presenters see it.
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize,
+)]
+#[serde(rename_all = "lowercase")]
+pub enum PlanRedactMode {
+    #[default]
+    Declared,
+    All,
+    None,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

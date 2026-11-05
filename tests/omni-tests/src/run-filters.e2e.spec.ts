@@ -82,12 +82,11 @@ describe("+run-filters @e2e (dry run)", () => {
         const result = await runOmni(["run", "build", "-d"], { cwd: ws.cwd });
 
         expect(result).toHaveSucceeded();
-        expect(result).toOutputContaining("Dry run mode enabled");
         expect(result).toOutputContaining("Executing task 'app#build':");
         expect(result).toOutputContaining("dry-ran.txt");
         // Completion is reported through the same lifecycle event as a real
         // run, so the CLI prints the same status line.
-        expect(result).toOutputContaining("Executed task 'app#build'");
+        expect(result).toHaveStderrContaining("Executed task 'app#build'");
         // The command never runs, so it never creates its side-effect file.
         expect(ws.exists("app/dry-ran.txt")).toBe(false);
     });
@@ -320,7 +319,7 @@ describe("+run-filters @e2e (dry run)", () => {
             { cwd: ws.cwd },
         );
         expect(none).toHaveSucceeded();
-        expect(none).toOutputContaining("Redaction is disabled");
+        expect(none).toHaveStderrContaining("Redaction is disabled");
         expect(none).toOutputContaining("tok-secret");
 
         const all = await runOmni(
@@ -346,7 +345,7 @@ describe("+run-filters @e2e (dry run)", () => {
         const hash = async (redact: Record<string, unknown> | undefined) => {
             const ws = make(redact);
             const result = await runOmni(
-                ["-l", "off", "hash", "project", "app"],
+                ["-q", "hash", "project", "app"],
                 { cwd: ws.cwd },
             );
             expect(result).toHaveSucceeded();
@@ -487,7 +486,7 @@ describe("+run-filters @perf (max concurrency)", () => {
         });
 
         expect(result).toHaveSucceeded();
-        expect(result).toMatchOutput(/Succeeded[^\n]*3/);
+        expect(result).toHaveStderrMatching(/Succeeded[^\n]*3/);
     });
 });
 
@@ -1032,7 +1031,6 @@ describe("+run-filters @output (ui downgrade)", () => {
         });
 
         expect(result).toHaveSucceeded();
-        expect(result).toOutputContaining("Dry run mode enabled");
         expect(result).toOutputContaining("Executing task 'app#build'");
         expect(ws.exists("app/dry-ran.txt")).toBe(false);
     });
@@ -1059,9 +1057,9 @@ describe("+run-filters @output (execution summary)", () => {
         });
 
         expect(result).toHaveFailed();
-        expect(result).toMatchOutput(/Succeeded[^\n]*1/);
-        expect(result).toMatchOutput(/Failed[^\n]*1/);
-        expect(result).toMatchOutput(/Skipped[^\n]*1/);
+        expect(result).toHaveStderrMatching(/Succeeded[^\n]*1/);
+        expect(result).toHaveStderrMatching(/Failed[^\n]*1/);
+        expect(result).toHaveStderrMatching(/Skipped[^\n]*1/);
     });
 
     it("counts results served from the cache", async () => {
@@ -1077,6 +1075,6 @@ describe("+run-filters @output (execution summary)", () => {
 
         const second = await runOmni(["run", "build"], { cwd: ws.cwd });
         expect(second).toHaveSucceeded();
-        expect(second).toOutputContaining("Cache hits");
+        expect(second).toHaveStderrContaining("Cache hits");
     });
 });

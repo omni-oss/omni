@@ -155,9 +155,9 @@ describe("+hash @output (raw vs formatted)", () => {
         expect(raw).toHaveSucceeded();
         expect(formatted).toHaveSucceeded();
 
-        // The non-raw run adds a trailing newline and an INFO log line; the raw
-        // run has neither. Once that noise is stripped, the hash is identical.
-        expect(formatted.stdout).toContain("INFO");
+        // The non-raw run adds a trailing newline; the raw run has none. No
+        // log line shares stdout with the result.
+        expect(formatted.stdout).not.toContain("INFO");
         expect(raw.stdout).not.toContain("\n");
         expect(extractHash(formatted.stdout)).toBe(extractHash(raw.stdout));
     });

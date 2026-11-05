@@ -66,10 +66,6 @@ impl<'a, TSys: TaskExecutorSys, S: ExecutionEventSubscriber>
 
         let mut results_accumulator = unordered_map!(cap: task_count);
 
-        if self.context.remote_cache_configuration().is_some() {
-            log::info!("Remote caching enabled");
-        }
-
         let mut batch_exec = BatchExecutor::new(
             self.context,
             cache_manager,

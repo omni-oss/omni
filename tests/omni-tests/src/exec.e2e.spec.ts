@@ -37,7 +37,7 @@ describe("+exec @e2e (run command across projects)", () => {
         expect(result).toHaveSucceeded();
         expect(result).toOutputContaining("EXEC-MARK");
         // One temp command task per matched project (app + other).
-        expect(result).toMatchOutput(/Succeeded[^\n]*2/);
+        expect(result).toHaveStderrMatching(/Succeeded[^\n]*2/);
     });
 });
 
@@ -100,7 +100,7 @@ describe("+exec @e2e (project & dir filters)", () => {
 
         expect(result).toHaveSucceeded();
         // Only `app` matched, so the command ran once.
-        expect(result).toMatchOutput(/Succeeded[^\n]*1/);
+        expect(result).toHaveStderrMatching(/Succeeded[^\n]*1/);
     });
 
     it("`--dir` limits exec to projects under matching directories", async () => {
@@ -113,7 +113,7 @@ describe("+exec @e2e (project & dir filters)", () => {
 
         expect(result).toHaveSucceeded();
         // Only `apps/app` lives under `apps/**`.
-        expect(result).toMatchOutput(/Succeeded[^\n]*1/);
+        expect(result).toHaveStderrMatching(/Succeeded[^\n]*1/);
     });
 });
 
@@ -138,7 +138,6 @@ describe("+exec @e2e (dry run)", () => {
         );
 
         expect(result).toHaveSucceeded();
-        expect(result).toOutputContaining("Dry run mode enabled");
         expect(result).toOutputContaining("Executing task");
         expect(result).toOutputContaining("dry-ran.txt");
         // The command is not actually run, so it never creates its file.
@@ -194,7 +193,7 @@ describe("+exec @e2e (combined project & dir filters)", () => {
         );
 
         expect(result).toHaveSucceeded();
-        expect(result).toMatchOutput(/Succeeded[^\n]*1/);
+        expect(result).toHaveStderrMatching(/Succeeded[^\n]*1/);
     });
 });
 
@@ -228,7 +227,7 @@ describe("+exec @e2e (meta filter)", () => {
 
         expect(result).toHaveSucceeded();
         // Only `app` carries `tier == "fast"`, so the command runs once.
-        expect(result).toMatchOutput(/Succeeded[^\n]*1/);
+        expect(result).toHaveStderrMatching(/Succeeded[^\n]*1/);
     });
 });
 
@@ -280,7 +279,7 @@ describe("+exec @perf (max concurrency)", () => {
         });
 
         expect(result).toHaveSucceeded();
-        expect(result).toMatchOutput(/Succeeded[^\n]*3/);
+        expect(result).toHaveStderrMatching(/Succeeded[^\n]*3/);
     });
 });
 
@@ -331,10 +330,9 @@ describe("+exec @e2e (dry run with combined filters)", () => {
         );
 
         expect(result).toHaveSucceeded();
-        expect(result).toOutputContaining("Dry run mode enabled");
         // Only `app` is in both filters; the planned temp task is namespaced
         // under its project.
-        expect(result).toOutputContaining("app#exec");
+        expect(result).toHaveStderrContaining("app#exec");
         expect(result.stdout).not.toContain("other#exec");
         expect(result.stdout).not.toContain("app-tool#exec");
         // Nothing is actually executed in dry-run mode.

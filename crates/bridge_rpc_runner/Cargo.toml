@@ -11,16 +11,15 @@ name = "bridge_rpc_runner"
 path = "src/lib.rs"
 
 [features]
-default = ["enable-tracing", "schemars"]
-enable-tracing = ["trace/enabled"]
+default = ["schemars"]
 schemars = ["dep:schemars"]
 
 [dependencies]
+tracing = { workspace = true }
 blake3 = { workspace = true }
 tokio = { workspace = true }
 thiserror = { workspace = true }
 eyre = { workspace = true }
-trace = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 strum = { workspace = true }
@@ -36,6 +35,8 @@ merge = { workspace = true }
 omni_capabilities = { workspace = true }
 omni_capability_enforcement = { workspace = true }
 omni_messages = { workspace = true }
+omni_notice = { workspace = true }
+omni_codes = { workspace = true }
 omni_utils = { workspace = true }
 
 [dev-dependencies]

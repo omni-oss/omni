@@ -4,8 +4,8 @@ pub mod subscriber;
 
 pub use events::{
     CacheHitEvent, ExecutionCompleteEvent, ExecutionPlanReadyEvent,
-    TaskCompletedEvent, TaskFailedEvent, TaskRetryingEvent, TaskSkipReason,
-    TaskSkippedEvent, TaskStartedEvent,
+    PlanRedactMode, TaskCompletedEvent, TaskFailedEvent, TaskRetryingEvent,
+    TaskSkipReason, TaskSkippedEvent, TaskStartedEvent,
 };
 pub use stream::{TaskOutputStream, TaskOutputStreamEvent};
 pub use subscriber::ExecutionEventSubscriber;

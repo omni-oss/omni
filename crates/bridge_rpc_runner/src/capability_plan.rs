@@ -30,7 +30,11 @@ use omni_capability_enforcement::{
     NativeOsSandbox, NodePermissions, ScriptShimBroker, ShimPolicy,
     SpawnPolicy, UnenforceablePolicy, build_plan_layered,
 };
-use omni_messages::{NoticeEvent, notice_event, publish::NoticeLevel};
+use omni_messages::{NoticeEvent, notice_event};
+
+use crate::notices::{
+    CapabilitiesNoFloor, CapabilitiesNotEnforced, SandboxOsDisabled,
+};
 
 use crate::DelegatingJsRuntimeOption;
 
@@ -293,28 +297,18 @@ where
     // downgrade that is easy to enable unknowingly, so surface it prominently
     // and up front — ahead of the per-domain floor-gap warnings.
     if os_sandbox_disabled {
-        diagnostics.push(notice_event!(
-            NoticeLevel::Warn,
-            "OS-level sandbox is DISABLED for this run \
-             (OMNI_DISABLE_OS_SANDBOX is set): filesystem confinement falls \
-             back to the bypassable in-process broker and the kernel backstop \
-             against direct syscalls is dropped. This is a security downgrade — \
-             unset OMNI_DISABLE_OS_SANDBOX to restore OS-level confinement.",
-        ));
+        diagnostics.push(notice_event!(SandboxOsDisabled));
     }
 
     for warning in plan.warnings {
-        diagnostics.push(notice_event!(
-            NoticeLevel::Warn,
-            "capability policy not fully enforced: {warning}",
-        ));
+        diagnostics.push(notice_event!(CapabilitiesNotEnforced {
+            warning: warning.to_string(),
+        }));
     }
     for gap in plan.floor_gaps {
-        diagnostics.push(notice_event!(
-            NoticeLevel::Warn,
-            "capability enforced without an un-bypassable floor: {}",
-            gap.reason
-        ));
+        diagnostics.push(notice_event!(CapabilitiesNoFloor {
+            reason: gap.reason.to_string(),
+        }));
     }
 
     Ok((plan.spawn, plan.shim, diagnostics))

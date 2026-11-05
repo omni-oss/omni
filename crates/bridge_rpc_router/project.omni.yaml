@@ -3,5 +3,4 @@ name: bridge_rpc_router
 extends:
   - "@workspace/omni/presets/rust-lib.omni.yaml"
 dependencies:
-  - trace
   - bridge_rpc_core

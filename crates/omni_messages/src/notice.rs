@@ -1,29 +1,121 @@
 use std::collections::BTreeMap;
 
-use serde::{Deserialize, Serialize};
+use omni_diagnostic::Diagnostic;
+use omni_notice::Notice;
+use serde::Serialize;
 
-/// A structured notice message emitted by business logic in place of
-/// direct `log::*` / `println!` calls.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+pub use omni_codes::NoticeLevel;
+
+/// The plain data of a published [`Notice`], as delivered to subscribers.
+///
+/// Fields are private and [`NoticeEvent::from_notice`] is the only
+/// constructor, so an event whose `(code, level, essential)` disagrees with
+/// its notice type cannot be built.
+#[derive(Debug, Clone, Serialize)]
 pub struct NoticeEvent {
-    pub level: NoticeLevel,
-    pub message: String,
-    pub fields: BTreeMap<String, serde_json::Value>,
-    pub target: String,
+    level: NoticeLevel,
+    code: &'static str,
+    essential: bool,
+    message: String,
+    fields: BTreeMap<String, serde_json::Value>,
+    /// Emitting module, for the `tracing` mirror. Not sent to MCP.
+    #[serde(skip)]
+    target: &'static str,
+    /// A diagnostic's rendered body (`diagnostic_notice!` only), for CLI
+    /// layout. The structured form is in `fields.details`; not sent to MCP.
+    #[serde(skip)]
+    body: Option<String>,
 }
 
-/// Severity of a [`NoticeEvent`].
-///
-/// Notices are user-facing messages, so only `Info`, `Warn` and `Error` exist.
-/// Developer-oriented `debug` / `trace` output belongs in `log::*` /
-/// `tracing::*` and is intentionally not representable here.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, strum::Display,
-)]
-pub enum NoticeLevel {
-    Info,
-    Warn,
-    Error,
+impl NoticeEvent {
+    /// Builds an event from a notice. `target` is the source label used in
+    /// the tracing mirror.
+    pub fn from_notice<N: Notice>(n: &N, target: &'static str) -> Self {
+        Self {
+            level: n.level(),
+            code: n.code(),
+            essential: n.essential(),
+            message: n.to_string(),
+            fields: n.fields(),
+            target,
+            body: None,
+        }
+    }
+
+    /// Like [`from_notice`](Self::from_notice), adding the diagnostic's
+    /// `details` and `hints` to `fields`. The code, level and message always
+    /// come from the notice, never from the diagnostic. A nonempty rendered
+    /// diagnostic body is retained for presentation; rendering failures are
+    /// ignored.
+    pub fn from_diagnostic_notice<N: Notice, D: Diagnostic + ?Sized>(
+        n: &N,
+        d: &D,
+        target: &'static str,
+    ) -> Self {
+        let mut e = Self::from_notice(n, target);
+        if let Some(details) = d.details() {
+            e.fields.insert("details".into(), details);
+        }
+        let mut body = String::new();
+        if d.render_body(&mut body).is_ok() && !body.trim().is_empty() {
+            e.body = Some(body);
+        }
+        let hints = d.hints();
+        if !hints.is_empty() {
+            e.fields.insert("hints".into(), serde_json::json!(hints));
+        }
+        e
+    }
+
+    pub fn level(&self) -> NoticeLevel {
+        self.level
+    }
+    pub fn code(&self) -> &'static str {
+        self.code
+    }
+    pub fn essential(&self) -> bool {
+        self.essential
+    }
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+    pub fn fields(&self) -> &BTreeMap<String, serde_json::Value> {
+        &self.fields
+    }
+    pub fn target(&self) -> &'static str {
+        self.target
+    }
+    pub fn body(&self) -> Option<&str> {
+        self.body.as_deref()
+    }
+
+    /// Redacts the message, rendered body, and string values in `fields`
+    /// recursively (RFC 0022). Object keys are unchanged.
+    pub fn redact(&mut self, redactor: &omni_redact::Redactor) {
+        if redactor.is_empty() {
+            return;
+        }
+        self.message = redactor.redact(self.message.as_str()).into_owned();
+        if let Some(b) = &mut self.body {
+            *b = redactor.redact(b.as_str()).into_owned();
+        }
+        for v in self.fields.values_mut() {
+            redact_value(v, redactor);
+        }
+    }
+}
+
+fn redact_value(v: &mut serde_json::Value, r: &omni_redact::Redactor) {
+    match v {
+        serde_json::Value::String(s) => *s = r.redact(s.as_str()).into_owned(),
+        serde_json::Value::Array(a) => {
+            a.iter_mut().for_each(|x| redact_value(x, r))
+        }
+        serde_json::Value::Object(o) => {
+            o.values_mut().for_each(|x| redact_value(x, r))
+        }
+        _ => {}
+    }
 }
 
 /// Shared notice channel used by both execution and generator subscribers.
@@ -50,6 +142,16 @@ pub trait NoticeSubscriber: Send + Sync {
         true
     }
 
+    /// Redactor applied once per notice before dispatch (RFC 0022).
+    fn redactor(&self) -> Option<std::sync::Arc<omni_redact::Redactor>> {
+        None
+    }
+
+    /// Adds a run's secrets to the redactor (the executor calls this with each
+    /// task's redactor). Subscribers that redact keep the union; the default
+    /// ignores it.
+    fn extend_redactor(&self, _redactor: &omni_redact::Redactor) {}
+
     fn on_notice(&self, _event: NoticeEvent) {}
 
     /// Specialized version of [`on_notice`] for batched notice events.
@@ -70,6 +172,12 @@ impl<S: NoticeSubscriber> NoticeSubscriber for &S {
     fn wants_notices(&self) -> bool {
         S::wants_notices(*self)
     }
+    fn redactor(&self) -> Option<std::sync::Arc<omni_redact::Redactor>> {
+        S::redactor(*self)
+    }
+    fn extend_redactor(&self, redactor: &omni_redact::Redactor) {
+        S::extend_redactor(*self, redactor)
+    }
     fn on_notice(&self, event: NoticeEvent) {
         S::on_notice(*self, event)
     }
@@ -78,5 +186,57 @@ impl<S: NoticeSubscriber> NoticeSubscriber for &S {
         events: impl IntoIterator<Item = NoticeEvent>,
     ) {
         S::on_notices_batched(*self, events)
+    }
+}
+
+/// A redactor that grows as a run learns more secrets. Embed it in a
+/// subscriber and forward [`NoticeSubscriber::redactor`] and
+/// [`NoticeSubscriber::extend_redactor`] to it.
+#[derive(Debug)]
+pub struct SharedRedactor(
+    std::sync::Mutex<std::sync::Arc<omni_redact::Redactor>>,
+);
+
+impl Default for SharedRedactor {
+    fn default() -> Self {
+        Self(std::sync::Mutex::new(std::sync::Arc::new(
+            omni_redact::Redactor::builder().build(),
+        )))
+    }
+}
+
+impl SharedRedactor {
+    /// Returns the current redactor, or `None` if it has no secrets.
+    pub fn get(&self) -> Option<std::sync::Arc<omni_redact::Redactor>> {
+        let r = self.0.lock().unwrap().clone();
+        (!r.is_empty()).then_some(r)
+    }
+
+    /// Adds another redactor's secrets to the shared redactor.
+    pub fn extend(&self, other: &omni_redact::Redactor) {
+        if other.is_empty() {
+            return;
+        }
+        let mut g = self.0.lock().unwrap();
+        *g = std::sync::Arc::new(g.union(other));
+    }
+}
+
+#[cfg(test)]
+mod shared_redactor_tests {
+    use super::*;
+
+    #[test]
+    fn grows_as_secrets_are_learned_and_is_off_until_then() {
+        let shared = SharedRedactor::default();
+        assert!(shared.get().is_none());
+
+        shared.extend(&omni_redact::Redactor::builder().value("one").build());
+        shared.extend(&omni_redact::Redactor::builder().value("two").build());
+
+        let r = shared.get().expect("secrets were added");
+        let out = r.redact("one and two and three");
+        assert!(!out.contains("one") && !out.contains("two"));
+        assert!(out.contains("three"));
     }
 }

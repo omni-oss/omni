@@ -160,6 +160,7 @@ struct PreparedSource {
 pub async fn handle_projection_sync<TSys>(
     ctx: &Context<TSys>,
     req: ProjectionSyncRequest,
+    notices: &mut Vec<omni_messages::NoticeEvent>,
 ) -> eyre::Result<ProjectionSyncResponse>
 where
     TSys: ProjectionSys,
@@ -193,7 +194,14 @@ where
     let sources = &sources;
 
     let ledger_path = ledger_path(ctx);
-    let mut ledger = omni_projections::load(&sys, &ledger_path).await;
+    let (mut ledger, ledger_state) =
+        load_ledger(&sys, &ledger_path, notices).await;
+    if ledger_state == LedgerLoadState::Unreadable && !req.dry_run {
+        eyre::bail!(
+            "the projection ledger at {} could not be read; refusing to apply links that could not be recorded",
+            ledger_path.display()
+        );
+    }
     let prior_ledger = ledger.clone();
 
     let mut response = ProjectionSyncResponse {
@@ -417,7 +425,9 @@ where
         response.warnings.extend(report.warnings);
     }
 
-    omni_projections::save(&sys, &ledger_path, &ledger).await?;
+    if ledger_state != LedgerLoadState::Unreadable {
+        omni_projections::save(&sys, &ledger_path, &ledger).await?;
+    }
 
     // Refresh the projection reference set on a full sync so `install`'s union
     // GC keeps every source this sync materialized. A targeted run sees only a
@@ -434,6 +444,7 @@ where
 pub async fn handle_projection_status<TSys>(
     ctx: &Context<TSys>,
     _req: ProjectionStatusRequest,
+    notices: &mut Vec<omni_messages::NoticeEvent>,
 ) -> eyre::Result<ProjectionStatusResponse>
 where
     TSys: ContextSys,
@@ -441,7 +452,7 @@ where
     let sys = ctx.sys().clone();
     let workspace_root = ctx.root_dir().to_path_buf();
 
-    let ledger = omni_projections::load(&sys, &ledger_path(ctx)).await;
+    let (ledger, _) = load_ledger(&sys, &ledger_path(ctx), notices).await;
     let report =
         omni_projections::status(&sys, &workspace_root, &ledger).await?;
 
@@ -475,6 +486,7 @@ where
 pub async fn handle_projection_unlink<TSys>(
     ctx: &Context<TSys>,
     req: ProjectionUnlinkRequest,
+    notices: &mut Vec<omni_messages::NoticeEvent>,
 ) -> eyre::Result<ProjectionUnlinkResponse>
 where
     TSys: ContextSys + ApplierSys + FsReadAsync,
@@ -483,7 +495,14 @@ where
     let workspace_root = ctx.root_dir().to_path_buf();
 
     let ledger_path = ledger_path(ctx);
-    let mut ledger = omni_projections::load(&sys, &ledger_path).await;
+    let (mut ledger, ledger_state) =
+        load_ledger(&sys, &ledger_path, notices).await;
+    if ledger_state != LedgerLoadState::Ready {
+        eyre::bail!(
+            "the projection ledger at {} could not be read or parsed; refusing to unlink links that cannot be identified",
+            ledger_path.display()
+        );
+    }
     let report = omni_projections::unlink(
         &sys,
         &workspace_root,
@@ -514,6 +533,7 @@ where
 pub async fn handle_projection_prune<TSys>(
     ctx: &Context<TSys>,
     req: ProjectionPruneRequest,
+    notices: &mut Vec<omni_messages::NoticeEvent>,
 ) -> eyre::Result<ProjectionPruneResponse>
 where
     TSys: ContextSys + ApplierSys,
@@ -522,7 +542,8 @@ where
     let workspace_root = ctx.root_dir().to_path_buf();
 
     let ledger_path = ledger_path(ctx);
-    let mut ledger = omni_projections::load(&sys, &ledger_path).await;
+    let (mut ledger, ledger_state) =
+        load_ledger(&sys, &ledger_path, notices).await;
 
     if req.dry_run {
         // A prune preview classifies broken links without removing them.
@@ -540,6 +561,13 @@ where
             dry_run: true,
             removed,
         });
+    }
+
+    if ledger_state != LedgerLoadState::Ready {
+        eyre::bail!(
+            "the projection ledger at {} could not be read or parsed; refusing to prune links that cannot be identified",
+            ledger_path.display()
+        );
     }
 
     let report =
@@ -1068,4 +1096,34 @@ mod tests {
             "a bundle manifest cannot be overridden by top-level routes"
         );
     }
+}
+
+/// Distinguishes sync's recoverable parse errors from failed filesystem reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LedgerLoadState {
+    Ready,
+    Corrupt,
+    Unreadable,
+}
+
+/// Loads the ledger and queues a notice for either read or parse failure.
+/// Teardown requires `Ready`; sync may rebuild a `Corrupt` ledger from config.
+async fn load_ledger<S: system_traits::FsReadAsync + Sync>(
+    sys: &S,
+    path: &std::path::Path,
+    notices: &mut Vec<omni_messages::NoticeEvent>,
+) -> (omni_projections::Ledger, LedgerLoadState) {
+    let (ledger, bad, read_failed) =
+        omni_projections::load_guarded(sys, path).await;
+    let state = if read_failed {
+        LedgerLoadState::Unreadable
+    } else if bad.is_some() {
+        LedgerLoadState::Corrupt
+    } else {
+        LedgerLoadState::Ready
+    };
+    if let Some(n) = bad {
+        notices.push(omni_messages::notice_event!(n));
+    }
+    (ledger, state)
 }

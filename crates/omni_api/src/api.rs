@@ -601,12 +601,18 @@ where
     {
         let mut ctx = self.ctx.lock().await;
         ctx.load().await?;
+        let subscriber = &self.subscriber;
         crate::operations::tool::handle_tool_run(
             ctx.as_loaded_context(),
             name,
             args,
             working_dir,
             redact,
+            &mut |n| {
+                if omni_messages::NoticeSubscriber::wants_notices(subscriber) {
+                    omni_messages::publish::publish_event(subscriber, n);
+                }
+            },
         )
         .await
     }
@@ -627,11 +633,15 @@ where
     ) -> eyre::Result<crate::operations::projection::ProjectionSyncResponse>
     {
         let ctx = self.ctx.lock().await;
-        crate::operations::projection::handle_projection_sync(
+        let mut notices = Vec::new();
+        let result = crate::operations::projection::handle_projection_sync(
             ctx.as_context(),
             req,
+            &mut notices,
         )
-        .await
+        .await;
+        omni_messages::publish::publish_batch(&self.subscriber, notices);
+        result
     }
 
     /// Report the state of every recorded projection link (read-only).
@@ -641,11 +651,15 @@ where
     ) -> eyre::Result<crate::operations::projection::ProjectionStatusResponse>
     {
         let ctx = self.ctx.lock().await;
-        crate::operations::projection::handle_projection_status(
+        let mut notices = Vec::new();
+        let result = crate::operations::projection::handle_projection_status(
             ctx.as_context(),
             req,
+            &mut notices,
         )
-        .await
+        .await;
+        omni_messages::publish::publish_batch(&self.subscriber, notices);
+        result
     }
 
     /// Tear down the links recorded for a single projection source `id`.
@@ -655,11 +669,15 @@ where
     ) -> eyre::Result<crate::operations::projection::ProjectionUnlinkResponse>
     {
         let ctx = self.ctx.lock().await;
-        crate::operations::projection::handle_projection_unlink(
+        let mut notices = Vec::new();
+        let result = crate::operations::projection::handle_projection_unlink(
             ctx.as_context(),
             req,
+            &mut notices,
         )
-        .await
+        .await;
+        omni_messages::publish::publish_batch(&self.subscriber, notices);
+        result
     }
 
     /// Remove ledger-recorded links whose destinations have become dangling.
@@ -669,11 +687,15 @@ where
     ) -> eyre::Result<crate::operations::projection::ProjectionPruneResponse>
     {
         let ctx = self.ctx.lock().await;
-        crate::operations::projection::handle_projection_prune(
+        let mut notices = Vec::new();
+        let result = crate::operations::projection::handle_projection_prune(
             ctx.as_context(),
             req,
+            &mut notices,
         )
-        .await
+        .await;
+        omni_messages::publish::publish_batch(&self.subscriber, notices);
+        result
     }
 }
 

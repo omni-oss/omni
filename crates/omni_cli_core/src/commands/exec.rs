@@ -12,7 +12,7 @@ use crate::{
     executor::{Call, TaskExecutor},
 };
 
-use super::utils::resolve_subscriber;
+use super::{OutputOptions, utils::resolve_subscriber};
 
 #[derive(Args, Debug)]
 pub struct ExecCommand {
@@ -26,6 +26,7 @@ pub struct ExecCommand {
 pub async fn run(
     command: &ExecCommand,
     ctx: &Context,
+    output: OutputOptions,
 ) -> eyre::Result<ExitCode> {
     if command.cmd.is_empty() {
         eyre::bail!(
@@ -57,10 +58,16 @@ pub async fn run(
     let config = builder.build()?;
 
     let ctx = ctx.clone().into_loaded().await?;
-    let sub = resolve_subscriber(command.run.ui, ctx.scratch_dir());
+    let sub = resolve_subscriber(command.run.ui, ctx.scratch_dir(), output);
     let executor = TaskExecutor::new(config, &ctx, &sub);
 
-    let results = executor.run().await?;
+    let results = match executor.run().await {
+        Ok(results) => results,
+        Err(err) => {
+            sub.wait().await;
+            return Err(err.into());
+        }
+    };
 
     sub.wait().await;
 

@@ -7,7 +7,14 @@
  * `crates/omni_cli_core/src/commands/projection.rs`.
  */
 
-import { readdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+    lstatSync,
+    mkdirSync,
+    readdirSync,
+    renameSync,
+    rmSync,
+    writeFileSync,
+} from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
@@ -395,6 +402,91 @@ describe("+projection @e2e", { tags: ["projection"] }, () => {
         expect(result).toHaveSucceeded();
         expect(ws.exists(".agents/skills/rust.md")).toBe(false);
         expect(ws.exists(".agents/skills/sub/python.md")).toBe(false);
+    });
+
+    it.each([["unlink", "local-skills"], ["prune"]])(
+        "refuses %s when the ledger cannot be read",
+        async (...command) => {
+            const ws = makeWorkspace(projectionWorkspace());
+            expect(
+                await runOmni(["projection", "sync"], { cwd: ws.cwd }),
+            ).toHaveSucceeded();
+            const ledger = ".omni/sources/projection/links.json";
+            const original = ws.read(ledger);
+            renameSync(ws.path(ledger), ws.path(`${ledger}.backup`));
+            // A directory causes a read failure even when tests run as root.
+            mkdirSync(ws.path(ledger));
+            ws.write(`${ledger}/keep`, "do not overwrite");
+            rmSync(ws.path("vendor/skills/rust.md"));
+
+            const result = await runOmni(["projection", ...command], {
+                cwd: ws.cwd,
+            });
+            expect(result).toHaveFailed();
+            expect(result).toHaveStderrContaining(
+                "could not be read or parsed; refusing to",
+            );
+            expect(
+                lstatSync(ws.path(".agents/skills/rust.md")).isSymbolicLink(),
+            ).toBe(true);
+            expect(ws.read(`${ledger}.backup`)).toBe(original);
+            expect(ws.read(`${ledger}/keep`)).toBe("do not overwrite");
+
+            if (command[0] === "prune") {
+                const preview = await runOmni(
+                    ["projection", "prune", "--dry-run"],
+                    { cwd: ws.cwd },
+                );
+                expect(preview).toHaveSucceeded();
+                expect(preview).toHaveStderrContaining(
+                    "projections.ledger_unreadable",
+                );
+            }
+        },
+    );
+
+    it.each([["unlink", "local-skills"], ["prune"]])(
+        "preserves a corrupt ledger during %s",
+        async (...command) => {
+            const ws = makeWorkspace(projectionWorkspace());
+            expect(
+                await runOmni(["projection", "sync"], { cwd: ws.cwd }),
+            ).toHaveSucceeded();
+            const ledger = ".omni/sources/projection/links.json";
+            const corrupt = '{"links": [unfinished';
+            ws.write(ledger, corrupt);
+            rmSync(ws.path("vendor/skills/rust.md"));
+
+            const result = await runOmni(["projection", ...command], {
+                cwd: ws.cwd,
+            });
+            expect(result).toHaveFailed();
+            expect(result).toHaveStderrContaining(
+                "could not be read or parsed; refusing to",
+            );
+            expect(ws.read(ledger)).toBe(corrupt);
+            expect(
+                lstatSync(ws.path(".agents/skills/rust.md")).isSymbolicLink(),
+            ).toBe(true);
+
+            if (command[0] === "prune") {
+                const preview = await runOmni(
+                    ["projection", "prune", "--dry-run"],
+                    { cwd: ws.cwd },
+                );
+                expect(preview).toHaveSucceeded();
+                expect(ws.read(ledger)).toBe(corrupt);
+            }
+        },
+    );
+
+    it("sync still rebuilds a corrupt ledger from configuration", async () => {
+        const ws = makeWorkspace(projectionWorkspace());
+        ws.write(".omni/sources/projection/links.json", "{broken");
+        const result = await runOmni(["projection", "sync"], { cwd: ws.cwd });
+        expect(result).toHaveSucceeded();
+        expect(result).toHaveStderrContaining("projections.ledger_unreadable");
+        expect(ledgerLinkCount(ws)).toBe(2);
     });
 
     it("prunes only the ledger links that have gone dangling", async () => {

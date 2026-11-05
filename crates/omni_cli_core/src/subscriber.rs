@@ -9,6 +9,7 @@ use comfy_table::{Cell, Color, Table, presets::UTF8_FULL};
 use indicatif::{
     MultiProgress, ProgressBar, ProgressDrawTarget, ProgressStyle,
 };
+use omni_command_config::escape_control_chars;
 use omni_messages::execution::events::BatchCompletedEvent;
 use omni_messages::generator::events::{
     GeneratorActionFailedEvent, GeneratorActionInProgressEvent,
@@ -72,21 +73,22 @@ enum GeneratorProgress {
         multi: MultiProgress,
         current: Option<ProgressBar>,
     },
-    /// Terminal cannot render `indicatif`; emit plain `log` lines instead.
-    Log,
+    /// Terminal cannot render `indicatif` (or `-q` asked for no spinner):
+    /// write plain status lines to stderr. Under `-q` only failures print.
+    Log { quiet: bool },
 }
 
 impl GeneratorProgress {
     /// Build the renderer from a shared, pre-probed `MultiProgress`. When
     /// `multi` is `None` the terminal cannot render `indicatif`, so we fall
     /// back to plain `log` lines.
-    fn new(multi: Option<MultiProgress>) -> Self {
+    fn new(multi: Option<MultiProgress>, quiet: bool) -> Self {
         match multi {
             Some(multi) => GeneratorProgress::Indicatif {
                 multi,
                 current: None,
             },
-            None => GeneratorProgress::Log,
+            None => GeneratorProgress::Log { quiet },
         }
     }
 
@@ -109,8 +111,10 @@ impl GeneratorProgress {
                     format!("Running generator '{}'", name).bold().to_string(),
                 );
             }
-            GeneratorProgress::Log => {
-                log::info!("Running generator '{}'", name);
+            GeneratorProgress::Log { quiet } => {
+                if !*quiet {
+                    eprintln!("Running generator '{}'", name);
+                }
             }
         }
     }
@@ -128,8 +132,10 @@ impl GeneratorProgress {
                 pb.set_message(text);
                 *current = Some(pb);
             }
-            GeneratorProgress::Log => {
-                log::info!("{}", text);
+            GeneratorProgress::Log { quiet } => {
+                if !*quiet {
+                    eprintln!("{}", text);
+                }
             }
         }
     }
@@ -145,8 +151,10 @@ impl GeneratorProgress {
                     text.green()
                 ));
             }
-            GeneratorProgress::Log => {
-                log::info!("{}", text.green());
+            GeneratorProgress::Log { quiet } => {
+                if !*quiet {
+                    eprintln!("{}", text.green());
+                }
             }
         }
     }
@@ -162,8 +170,8 @@ impl GeneratorProgress {
                     text.red()
                 ));
             }
-            GeneratorProgress::Log => {
-                log::error!("{}", text.red());
+            GeneratorProgress::Log { .. } => {
+                eprintln!("{}", text.red());
             }
         }
     }
@@ -182,8 +190,8 @@ impl GeneratorProgress {
                     format!("{} {}", "\u{229d}", msg).dimmed().to_string(),
                 );
             }
-            GeneratorProgress::Log => {
-                log::debug!("{}", msg);
+            GeneratorProgress::Log { .. } => {
+                tracing::debug!("{}", msg);
             }
         }
     }
@@ -195,8 +203,10 @@ impl GeneratorProgress {
                 Self::clear_current(current);
                 let _ = multi.println(msg.green().bold().to_string());
             }
-            GeneratorProgress::Log => {
-                log::info!("{}", msg.green().bold());
+            GeneratorProgress::Log { quiet } => {
+                if !*quiet {
+                    eprintln!("{}", msg.green().bold());
+                }
             }
         }
     }
@@ -289,7 +299,7 @@ impl TaskProgress {
             TaskProgress::Indicatif { multi, .. } => {
                 let _ = multi.println(msg);
             }
-            TaskProgress::Log => log::info!("{}", msg),
+            TaskProgress::Log => eprintln!("{}", msg),
         }
     }
 
@@ -306,6 +316,15 @@ impl TaskProgress {
     }
 }
 
+/// Writes one presenter line: results to stdout, everything else to stderr.
+fn write_line(msg: &str, level: EmitLevel) {
+    if level == EmitLevel::Result {
+        println!("{msg}");
+    } else {
+        eprintln!("{msg}");
+    }
+}
+
 fn write_stdout(bytes: &[u8]) {
     use std::io::Write as _;
     let mut out = std::io::stdout();
@@ -313,13 +332,52 @@ fn write_stdout(bytes: &[u8]) {
     let _ = out.flush();
 }
 
-/// Emit a single notice through `log` so level filtering and formatting
-/// still apply.
-fn log_notice(e: &NoticeEvent) {
-    match e.level {
-        NoticeLevel::Info => log::info!("{}", e.message),
-        NoticeLevel::Warn => log::warn!("{}", e.message),
-        NoticeLevel::Error => log::error!("{}", e.message),
+/// Escapes control characters in each line, keeping the line breaks.
+fn escape_control_chars_multiline(input: &str) -> String {
+    input
+        .split('\n')
+        .map(|l| escape_control_chars(l).into_owned())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Renders a notice as `warning[code]: message`, followed by a pointer to
+/// `omni code explain`. Level names follow rustc: `error`, `warning`, `note`.
+fn render_notice(e: &NoticeEvent, count: usize) -> String {
+    let (label, color): (&str, fn(&str) -> String) = match e.level() {
+        NoticeLevel::Error => ("error", |s| s.red().bold().to_string()),
+        NoticeLevel::Warn => ("warning", |s| s.yellow().bold().to_string()),
+        NoticeLevel::Info => ("note", |s| s.cyan().bold().to_string()),
+    };
+    let mut out = format!(
+        "{}: {}",
+        color(&format!("{label}[{}]", e.code())),
+        escape_control_chars(e.message()),
+    );
+    if count > 1 {
+        out.push_str(&format!(" (x{count})"));
+    }
+    if let Some(body) = e.body() {
+        out.push('\n');
+        out.push_str(&escape_control_chars_multiline(body.trim_end()));
+    }
+    if let Some(hints) = e.fields().get("hints").and_then(|h| h.as_array()) {
+        for h in hints.iter().filter_map(|h| h.as_str()) {
+            out.push_str(&format!("\n  = hint: {}", escape_control_chars(h)));
+        }
+    }
+    out.push_str(&format!(
+        "\n  = run `omni code explain {}` for details",
+        e.code()
+    ));
+    out
+}
+
+fn notice_emit_level(level: NoticeLevel) -> EmitLevel {
+    match level {
+        NoticeLevel::Error => EmitLevel::Error,
+        NoticeLevel::Warn => EmitLevel::Warn,
+        NoticeLevel::Info => EmitLevel::Info,
     }
 }
 
@@ -363,6 +421,22 @@ pub struct CliSubscriber {
     /// the UI is torn down (see `emit` and `flush_emit_buffer`). Each entry is
     /// `(message, is_error)`.
     emit_buffer: Arc<Mutex<Vec<(String, EmitLevel)>>>,
+    /// `-q/--quiet`: a presenter setting only. Events and notices are still
+    /// emitted and collected; this changes what is printed.
+    quiet: bool,
+    /// Notices waiting to be printed, collapsed by `(code, message)` in
+    /// first-occurrence order.
+    notice_groups: Arc<Mutex<Vec<NoticeGroup>>>,
+    /// Secrets of the run, grown as tasks are planned (RFC 0022).
+    redactor: Arc<omni_messages::SharedRedactor>,
+    /// Print each notice as it arrives (commands with no run to flush at).
+    immediate_notices: bool,
+}
+
+/// A run of identical notices (same code and redacted message).
+struct NoticeGroup {
+    event: NoticeEvent,
+    count: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -370,6 +444,9 @@ enum EmitLevel {
     Info,
     Error,
     Warn,
+    /// A result the user asked for (a dry-run command line). Goes to stdout
+    /// and is never hidden by `-q`.
+    Result,
 }
 
 impl CliSubscriber {
@@ -389,7 +466,24 @@ impl CliSubscriber {
             generator_progress: Arc::new(Mutex::new(None)),
             task_progress: Arc::new(Mutex::new(None)),
             emit_buffer: Arc::new(Mutex::new(Vec::new())),
+            quiet: false,
+            notice_groups: Arc::new(Mutex::new(Vec::new())),
+            redactor: Default::default(),
+            immediate_notices: false,
         }
+    }
+
+    /// For one-shot commands that have no run to flush notices at: print each
+    /// notice as it arrives.
+    pub fn with_immediate_notices(mut self) -> Self {
+        self.immediate_notices = true;
+        self
+    }
+
+    /// Hide omni's own narration without suppressing events. Rendering only.
+    pub fn with_quiet(mut self, quiet: bool) -> Self {
+        self.quiet = quiet;
+        self
     }
 
     /// Always use stream output mode.
@@ -449,7 +543,7 @@ impl CliSubscriber {
     fn shared_multi(&self) -> Option<MultiProgress> {
         self.multi
             .get_or_init(|| {
-                if ProgressDrawTarget::stderr().is_hidden() {
+                if self.quiet || ProgressDrawTarget::stderr().is_hidden() {
                     None
                 } else {
                     Some(MultiProgress::new())
@@ -463,7 +557,9 @@ impl CliSubscriber {
     fn with_progress(&self, f: impl FnOnce(&mut GeneratorProgress)) {
         let multi = self.shared_multi();
         let mut guard = self.generator_progress.lock();
-        f(guard.get_or_insert_with(move || GeneratorProgress::new(multi)));
+        let quiet = self.quiet;
+        f(guard
+            .get_or_insert_with(move || GeneratorProgress::new(multi, quiet)));
     }
 
     /// Run `f` against the task progress renderer, if it has been seeded.
@@ -486,26 +582,61 @@ impl CliSubscriber {
         }
     }
 
-    /// Emit a lifecycle line, routing through the progress bar in `progress`
-    /// mode so the bar is not corrupted, and through `log` otherwise.
+    /// Emit a lifecycle line. Under `-q` only failures print.
     fn emit(&self, msg: String, level: EmitLevel) {
+        if self.quiet && !matches!(level, EmitLevel::Error | EmitLevel::Result)
+        {
+            return;
+        }
+        self.emit_always(msg, level);
+    }
+
+    /// Write a line to the terminal regardless of `-q`, routed per `--ui`
+    /// mode: through the bar in `progress`, buffered while the TUI owns the
+    /// terminal (flushed by `flush_emit_buffer`), directly to stderr
+    /// otherwise.
+    fn emit_always(&self, msg: String, level: EmitLevel) {
         match self.resolved_mode() {
             CliUiMode::Progress => {
                 self.with_task_progress(|tp| tp.println(&msg));
             }
             // The TUI owns the terminal (alternate screen + raw mode), so
-            // writing log lines here would bleed straight onto/under the UI
-            // and corrupt it. Buffer them instead and flush once the TUI has
-            // been torn down (see `flush_emit_buffer`, called from
-            // `on_execution_complete`).
+            // writing lines here would corrupt it. Buffer them and flush
+            // once the TUI has been torn down.
             CliUiMode::Tui => {
                 self.emit_buffer.lock().push((msg, level));
             }
-            _ => match level {
-                EmitLevel::Error => log::error!("{}", msg),
-                EmitLevel::Warn => log::warn!("{}", msg),
-                EmitLevel::Info => log::info!("{}", msg),
-            },
+            // A generator spinner may be live on the shared `MultiProgress`.
+            _ => self.suspend_for_output(|| write_line(&msg, level)),
+        }
+    }
+
+    /// Print every pending notice group. Redaction already happened in
+    /// `publish_event`, and `-q` filtering in `on_notice`; this collapses
+    /// repeats (`(xN)`) and renders in first-occurrence order.
+    fn flush_notices(&self) {
+        let groups: Vec<NoticeGroup> =
+            std::mem::take(&mut *self.notice_groups.lock());
+        for g in groups {
+            self.emit_always(
+                render_notice(&g.event, g.count),
+                notice_emit_level(g.event.level()),
+            );
+        }
+    }
+
+    /// Like [`flush_notices`](Self::flush_notices), for after the TUI has been
+    /// torn down: the terminal is free, so nothing is re-buffered.
+    fn flush_notices_after_teardown(&self) {
+        let groups: Vec<NoticeGroup> =
+            std::mem::take(&mut *self.notice_groups.lock());
+        for g in groups {
+            let text = render_notice(&g.event, g.count);
+            if self.resolved_mode() == CliUiMode::Progress {
+                self.with_task_progress(|tp| tp.println(&text));
+            } else {
+                eprintln!("{text}");
+            }
         }
     }
 
@@ -515,11 +646,7 @@ impl CliSubscriber {
     /// nothing was buffered.
     fn flush_emit_buffer(&self) {
         for (msg, level) in self.emit_buffer.lock().drain(..) {
-            match level {
-                EmitLevel::Error => log::error!("{}", msg),
-                EmitLevel::Warn => log::warn!("{}", msg),
-                EmitLevel::Info => log::info!("{}", msg),
-            }
+            write_line(&msg, level);
         }
     }
 
@@ -576,24 +703,55 @@ impl CliSubscriber {
         // not lost. No-op when the buffer is already empty.
         self.get_mux().shutdown().await;
         self.flush_emit_buffer();
+        self.flush_notices_after_teardown();
+        omni_tracing_subscriber::resume_stderr();
     }
 }
 
 impl NoticeSubscriber for CliSubscriber {
-    fn on_notice(&self, e: NoticeEvent) {
-        self.suspend_for_output(|| log_notice(&e));
+    fn redactor(&self) -> Option<Arc<omni_redact::Redactor>> {
+        self.redactor.get()
     }
 
-    fn on_notices_batched(
-        &self,
-        events: impl IntoIterator<Item = NoticeEvent>,
-    ) {
-        self.suspend_for_output(|| {
-            for e in events {
-                log_notice(&e);
-            }
-        });
+    fn extend_redactor(&self, redactor: &omni_redact::Redactor) {
+        self.redactor.extend(redactor);
     }
+
+    fn on_notice(&self, e: NoticeEvent) {
+        // `-q` hides warn and info notices, never `error` or `essential`
+        // ones. The level and `essential` come from the event, not a lookup.
+        if self.quiet
+            && !e.essential()
+            && e.level() != omni_messages::NoticeLevel::Error
+        {
+            return;
+        }
+        let mut groups = self.notice_groups.lock();
+        match groups.iter_mut().find(|g| {
+            g.event.code() == e.code() && g.event.message() == e.message()
+        }) {
+            Some(g) => g.count += 1,
+            None => groups.push(NoticeGroup { event: e, count: 1 }),
+        }
+        drop(groups);
+        if self.immediate_notices {
+            self.flush_notices_after_teardown();
+        }
+    }
+}
+
+/// Prints a notice raised outside an event run (a command with no
+/// subscriber). Same layout as the run presenter.
+pub fn print_notice<N: omni_notice::Notice>(n: &N, quiet: bool) {
+    let e = NoticeEvent::from_notice(n, module_path!());
+    // Like every published notice, it is recorded in the trace even when `-q`
+    // hides it.
+    omni_messages::publish::mirror_to_tracing(&e);
+    if quiet && !e.essential() && e.level() != omni_messages::NoticeLevel::Error
+    {
+        return;
+    }
+    eprintln!("{}", render_notice(&e, 1));
 }
 
 impl ExecutionEventSubscriber for CliSubscriber {
@@ -606,7 +764,17 @@ impl ExecutionEventSubscriber for CliSubscriber {
     }
 
     async fn on_task_started(&self, e: TaskStartedEvent) {
-        log::debug!("Starting task '{}'", e.task_id);
+        tracing::debug!("Starting task '{}'", e.task_id);
+        if let Some(command) = &e.command {
+            self.emit(
+                format!(
+                    "Executing task '{}': {}",
+                    escape_control_chars(&e.task_id),
+                    command
+                ),
+                EmitLevel::Result,
+            );
+        }
         self.with_task_progress(|tp| tp.task_started(&e.task_id));
     }
 
@@ -626,6 +794,9 @@ impl ExecutionEventSubscriber for CliSubscriber {
                     CliUiMode::Stream
                 } else if e.has_interactive_or_persistent_tasks {
                     CliUiMode::Tui
+                } else if self.quiet && self.mode == CliUiMode::Auto {
+                    // `-q` never resolves `auto` to a progress bar.
+                    CliUiMode::Stream
                 } else {
                     CliUiMode::Progress
                 }
@@ -660,6 +831,20 @@ impl ExecutionEventSubscriber for CliSubscriber {
             *self.task_progress.lock() =
                 Some(TaskProgress::new(multi, e.total));
         }
+
+        // A live bar or the alternate screen would be corrupted by stderr
+        // traces; hold them until teardown (`--trace-file` is the route for
+        // traces during such a run).
+        if matches!(resolved, CliUiMode::Progress | CliUiMode::Tui)
+            && !(self.quiet && resolved == CliUiMode::Progress)
+        {
+            omni_tracing_subscriber::pause_stderr();
+        }
+
+        if e.remote_cache {
+            self.emit("Remote caching enabled".to_string(), EmitLevel::Info);
+        }
+        self.flush_notices();
     }
 
     async fn on_task_output_stream(&self, event: TaskOutputStreamEvent) {
@@ -822,8 +1007,12 @@ impl ExecutionEventSubscriber for CliSubscriber {
     }
 
     async fn on_task_retrying(&self, e: TaskRetryingEvent) {
+        let wait = match e.delay {
+            Some(d) if !d.is_zero() => format!(" in {d:?}"),
+            _ => String::new(),
+        };
         let msg = format!(
-            "Task '{}' is retrying... (attempt {}/{})",
+            "Task '{}' is retrying{wait}... (attempt {}/{})",
             e.task_id, e.attempt, e.max_retries
         );
         self.emit(msg.yellow().dimmed().to_string(), EmitLevel::Warn);
@@ -870,8 +1059,10 @@ impl ExecutionEventSubscriber for CliSubscriber {
         // Now that the terminal is restored, flush any lifecycle lines that
         // were buffered while the TUI was live so they precede the summary.
         self.flush_emit_buffer();
+        self.flush_notices_after_teardown();
 
-        if e.total > 0 {
+        // Under `-q` the summary table is for failures only.
+        if e.total > 0 && (!self.quiet || e.failed > 0) {
             let mut table = Table::new();
             const STYLE: TableStyle = UTF8_FULL.with_rounded_corners();
             table.load_style(STYLE).set_header(vec!["Result", "Count"]);
@@ -915,29 +1106,21 @@ impl ExecutionEventSubscriber for CliSubscriber {
                 ]);
             }
 
-            // Render the table cleanly: in progress mode through the bar's
-            // `println` (so it does not corrupt the spinner), otherwise via a
-            // direct `println!`. We deliberately bypass the line-oriented log
-            // formatter, which would prefix and mangle the box-drawing borders,
-            // but keep the same log-level gate (`log::log_enabled!` reads the
-            // same max level as `log::info!`/`error!`) so `-l off` stays quiet.
+            // Render the table through the bar's `println` in progress mode so
+            // it does not corrupt the spinner, otherwise straight to stderr:
+            // the summary is omni's own status, not a command result, so it
+            // stays off stdout.
             let rendered = table.to_string();
             if self.resolved_mode() == CliUiMode::Progress {
                 self.with_task_progress(|tp| tp.println(&rendered));
             } else {
-                let level = if e.failed > 0 {
-                    log::Level::Error
-                } else {
-                    log::Level::Info
-                };
-                if log::log_enabled!(level) {
-                    println!("{rendered}");
-                }
+                eprintln!("{rendered}");
             }
         }
 
         // Tear down the aggregate bar once the summary has been printed.
         self.with_task_progress(|tp| tp.finish());
+        omni_tracing_subscriber::resume_stderr();
     }
 
     async fn on_batch_completed(&self, _event: BatchCompletedEvent) {
@@ -945,7 +1128,52 @@ impl ExecutionEventSubscriber for CliSubscriber {
     }
 }
 
+impl CliSubscriber {
+    /// Masks the run's known secrets in free text bound for a presenter.
+    fn redact_text(&self, text: &str) -> String {
+        match self.redactor.get() {
+            Some(r) => r.redact(text).into_owned(),
+            None => text.to_string(),
+        }
+    }
+}
+
 impl GeneratorEventSubscriber for CliSubscriber {
+    async fn on_prompt_rejected(
+        &self,
+        e: omni_messages::GeneratorPromptRejectedEvent,
+    ) {
+        let message = self.redact_text(&e.message);
+        self.emit_always(
+            format!("error: {}", escape_control_chars(&message))
+                .red()
+                .to_string(),
+            EmitLevel::Error,
+        );
+    }
+
+    /// A script's own `ctx.log.*` output: `info`/`warn`/`error` are shown (a
+    /// script author asked for them, so `-q` does not hide them); `debug` and
+    /// `trace` go to `tracing` only.
+    fn on_script_log(&self, e: omni_messages::ScriptLogEvent) {
+        use omni_messages::ScriptLogLevel as L;
+        let mut e = e;
+        e.message = self.redact_text(&e.message);
+        e.target = self.redact_text(&e.target);
+        e.mirror_to_tracing();
+        let msg = escape_control_chars(&e.message).into_owned();
+        match e.level {
+            L::Info => self.emit_always(msg, EmitLevel::Info),
+            L::Warn => {
+                self.emit_always(msg.yellow().to_string(), EmitLevel::Warn)
+            }
+            L::Error => {
+                self.emit_always(msg.red().to_string(), EmitLevel::Error)
+            }
+            L::Debug | L::Trace => {}
+        }
+    }
+
     async fn on_generator_start(&self, e: GeneratorStartEvent) {
         self.with_progress(|p| p.generator_start(&e.name));
     }
@@ -954,31 +1182,239 @@ impl GeneratorEventSubscriber for CliSubscriber {
         // Only the top-level generator drives the progress display; actions
         // inside sub-generators are represented by their parent's step.
         if e.depth == 0 {
-            self.with_progress(|p| p.action_in_progress(&e.name, &e.message));
+            let message = self.redact_text(&e.message);
+            self.with_progress(|p| p.action_in_progress(&e.name, &message));
         }
     }
 
     async fn on_action_success(&self, e: GeneratorActionSuccessEvent) {
         if e.depth == 0 {
-            self.with_progress(|p| p.action_success(&e.name, &e.message));
+            let message = self.redact_text(&e.message);
+            self.with_progress(|p| p.action_success(&e.name, &message));
         }
+        // Notices from sub-generators print too, so flush at every depth.
+        self.flush_notices();
     }
 
     async fn on_action_failed(&self, e: GeneratorActionFailedEvent) {
         if e.depth == 0 {
-            self.with_progress(|p| p.action_failed(&e.name, &e.message));
+            let message = self.redact_text(&e.message);
+            self.with_progress(|p| p.action_failed(&e.name, &message));
         }
+        self.flush_notices();
     }
 
     async fn on_action_skipped(&self, e: GeneratorActionSkippedEvent) {
         if e.depth == 0 {
+            let reason = e.reason.as_deref().map(|r| self.redact_text(r));
             self.with_progress(|p| {
-                p.action_skipped(&e.name, e.reason.as_deref())
+                p.action_skipped(&e.name, reason.as_deref())
             });
         }
     }
 
     async fn on_generator_completed(&self, e: GeneratorCompletedEvent) {
         self.with_progress(|p| p.generator_completed(&e.name));
+        self.flush_notices();
+    }
+}
+
+#[cfg(test)]
+mod notice_render_tests {
+    use omni_messages::NoticeEvent;
+    use omni_notice::Notice;
+
+    use super::*;
+
+    omni_codes::prefixes!("clitest");
+
+    /// Sample.
+    #[derive(Notice)]
+    #[notice(code = "clitest.sample", level = warn, message = "line\nbreak {x}")]
+    struct Sample {
+        x: String,
+    }
+
+    fn plain(s: &str) -> String {
+        // Strip ANSI colour so assertions do not depend on the terminal.
+        let mut out = String::new();
+        let mut chars = s.chars().peekable();
+        while let Some(c) = chars.next() {
+            if c == '\u{1b}' {
+                for n in chars.by_ref() {
+                    if n == 'm' {
+                        break;
+                    }
+                }
+            } else {
+                out.push(c);
+            }
+        }
+        out
+    }
+
+    /// Essential sample.
+    #[derive(Notice)]
+    #[notice(code = "clitest.essential", level = warn, essential, message = "static")]
+    struct Essential;
+
+    /// Error sample.
+    #[derive(Notice)]
+    #[notice(code = "clitest.error", level = error, message = "failed {x}")]
+    struct Failed {
+        x: u8,
+    }
+
+    fn groups(sub: &CliSubscriber) -> Vec<(String, usize)> {
+        sub.notice_groups
+            .lock()
+            .iter()
+            .map(|g| (g.event.code().to_string(), g.count))
+            .collect()
+    }
+
+    fn sample(x: &str) -> NoticeEvent {
+        NoticeEvent::from_notice(&Sample { x: x.into() }, "t")
+    }
+
+    #[test]
+    fn identical_notices_collapse_in_first_occurrence_order() {
+        let sub = CliSubscriber::new_stream(std::env::temp_dir());
+        sub.on_notice(sample("a"));
+        sub.on_notice(NoticeEvent::from_notice(&Failed { x: 1 }, "t"));
+        sub.on_notice(sample("a"));
+        sub.on_notice(sample("b"));
+        sub.on_notice(sample("a"));
+
+        assert_eq!(
+            groups(&sub),
+            vec![
+                ("clitest.sample".to_string(), 3),
+                ("clitest.error".to_string(), 1),
+                ("clitest.sample".to_string(), 1),
+            ]
+        );
+    }
+
+    #[test]
+    fn the_count_suffix_follows_the_message_and_a_single_has_none() {
+        let e = sample("a");
+        assert!(
+            plain(&render_notice(&e, 3))
+                .starts_with("warning[clitest.sample]: line\\nbreak a (x3)")
+        );
+        assert!(!plain(&render_notice(&e, 1)).contains("(x"));
+    }
+
+    #[test]
+    fn quiet_hides_warn_but_not_error_or_essential() {
+        let sub =
+            CliSubscriber::new_stream(std::env::temp_dir()).with_quiet(true);
+        sub.on_notice(sample("a"));
+        sub.on_notice(NoticeEvent::from_notice(&Failed { x: 1 }, "t"));
+        sub.on_notice(NoticeEvent::from_notice(&Essential, "t"));
+
+        let codes: Vec<String> =
+            groups(&sub).into_iter().map(|(c, _)| c).collect();
+        assert_eq!(codes, vec!["clitest.error", "clitest.essential"]);
+    }
+
+    #[test]
+    fn a_notice_published_while_the_tui_is_live_is_buffered_not_printed() {
+        let sub = CliSubscriber::new_with(
+            CliUiMode::Tui,
+            std::env::temp_dir(),
+            Arc::new(OnceLock::new()),
+        );
+        let _ = sub.resolved_mode.set(CliUiMode::Tui);
+
+        sub.on_notice(sample("a"));
+        sub.flush_notices();
+
+        // Held for `flush_emit_buffer` after teardown, never written to the
+        // terminal that the alternate screen owns.
+        let buffered = sub.emit_buffer.lock();
+        assert_eq!(buffered.len(), 1);
+        assert!(buffered[0].0.contains("clitest.sample"));
+        assert!(sub.notice_groups.lock().is_empty());
+    }
+
+    #[test]
+    fn multiline_escaping_keeps_line_breaks_but_drops_escapes() {
+        let out = escape_control_chars_multiline("a\x1b[31mb\nc\rd");
+        assert_eq!(out.matches('\n').count(), 1);
+        assert!(!out.contains('\x1b'));
+        assert!(!out.contains('\r'));
+    }
+
+    #[test]
+    fn script_log_is_redacted_with_the_run_redactor() {
+        let sub = CliSubscriber::new_with(
+            CliUiMode::Tui,
+            std::env::temp_dir(),
+            Arc::new(OnceLock::new()),
+        );
+        let _ = sub.resolved_mode.set(CliUiMode::Tui);
+        sub.extend_redactor(
+            &omni_redact::Redactor::builder().value("hunter2").build(),
+        );
+        sub.on_script_log(omni_messages::ScriptLogEvent {
+            level: omni_messages::ScriptLogLevel::Info,
+            target: "t".into(),
+            message: "pw hunter2".into(),
+        });
+        let out = sub.emit_buffer.lock();
+        assert_eq!(out.len(), 1);
+        assert!(!out[0].0.contains("hunter2"));
+    }
+
+    #[test]
+    fn a_secret_learned_from_the_run_is_redacted_before_collapsing() {
+        let sub = CliSubscriber::new_stream(std::env::temp_dir());
+        sub.extend_redactor(
+            &omni_redact::Redactor::builder().value("hunter2").build(),
+        );
+
+        omni_messages::publish::publish_event(&sub, sample("hunter2"));
+        omni_messages::publish::publish_event(&sub, sample("hunter2"));
+
+        let groups = sub.notice_groups.lock();
+        assert_eq!(groups.len(), 1, "same text once redacted");
+        assert_eq!(groups[0].count, 2);
+        assert!(!groups[0].event.message().contains("hunter2"));
+        assert!(
+            !groups[0].event.fields()["x"]
+                .as_str()
+                .unwrap()
+                .contains("hunter2")
+        );
+    }
+
+    #[test]
+    fn not_quiet_keeps_everything() {
+        let sub = CliSubscriber::new_stream(std::env::temp_dir());
+        sub.on_notice(sample("a"));
+        assert_eq!(groups(&sub).len(), 1);
+    }
+
+    #[test]
+    fn essential_is_read_from_the_event_and_matches_the_registry() {
+        let e = NoticeEvent::from_notice(&Essential, "t");
+        assert!(e.essential());
+        assert!(omni_codes::get(e.code()).unwrap().essential());
+    }
+
+    #[test]
+    fn renders_level_code_message_and_code_explain_pointer() {
+        let e = NoticeEvent::from_notice(&Sample { x: "v".into() }, "t");
+        let text = plain(&render_notice(&e, 1));
+        assert!(text.starts_with("warning[clitest.sample]: "));
+        // Control characters in the message cannot forge extra lines.
+        assert!(text.contains("line\\nbreak v"));
+        assert!(
+            text.ends_with(
+                "= run `omni code explain clitest.sample` for details"
+            )
+        );
     }
 }
