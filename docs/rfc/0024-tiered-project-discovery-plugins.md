@@ -741,3 +741,101 @@ pub trait HookDispatcher: Send + Sync {
 
 Adding a capability means adding a new `CapabilityId`, trait, request/response
 types and hook namespace. No existing capability trait or hook name changes.
+
+
+## 13. Implementation plan
+
+### 13.1 New crates
+
+| Crate | Purpose |
+| --- | --- |
+| `omni_plugin` | Contract: manifests, capability ids, request/response types, traits, errors, limits, `PluginState` |
+| `omni_plugin_host` | Discovery orchestrator: hook scheduling, batching, budgets, cancellation, state store, caching glue |
+| `omni_plugin_runtime_wasm` | Wasm adapter (engine selected later) with fuel/epoch/memory limits |
+| `omni_plugin_runtime_js` | JavaScript adapter (engine selected later) with interrupt/heap limits |
+| `omni_plugin_builtins` | Native pilot adapters (Cargo first), compiled into omni |
+
+Keep `omni_plugin` free of runtime dependencies. Runtime crates depend on
+`omni_plugin` only. Builtins depend on `omni_plugin` and ecosystem parsers.
+
+### 13.2 Existing crates to change
+
+| Crate | Change |
+| --- | --- |
+| `omni_configurations` | Add `plugins` to `WorkspaceConfiguration`; add `PluginSourceConfiguration`; add `InferenceConfiguration` and project layer/patch types; add `plugin.omni.*` manifest types |
+| `omni_context` | Marker indexing, virtual root handling, hook scheduling integration, composition, conflict reporting, provenance |
+| `omni_configuration_discovery` | Optionally expose marker sets; keep one walk |
+| `omni_core` | Generalize `ExtensionGraphNode` identity if needed for virtual projects |
+| `omni_task_executor` / `omni_cache` | Include inferred config fingerprint in effective cache identity |
+| `omni_cli_core`, `omni_mcp_core` | Inspection commands/tools and diagnostics/notices wiring |
+| `omni_messages` | Reuse notices/diagnostics; no new channel |
+| `omni_types` | Add logical project key / provenance types if identity changes |
+
+### 13.3 Phases
+
+1. **Contract and composition first (no runtime).**
+   - Land `omni_plugin` types and traits.
+   - Add `plugins` config (disabled by default) and validation.
+   - Add `inference` controls to `ProjectConfiguration`.
+   - Introduce `ProjectLayer` (all fields optional) and composition into final
+     `ProjectConfiguration`, preserving presence.
+   - Implement conflict detection and provenance tracking.
+   - Add virtual project identity (synthetic but stable logical key) and update
+     extension graph + loader.
+   - Tests: zero-plugin parity, extend/replace, absence vs default.
+
+2. **Native pilot.**
+   - Implement `omni_plugin_host` discovery orchestrator with stages, batching,
+     caching and budgets.
+   - Implement Cargo builtin behind `project_discovery` capability.
+   - Wire into `Context::load_discovered_project_configs`.
+   - Benchmarks and regression tests.
+
+3. **Wasm runtime.**
+   - Choose engine, implement adapter, sandbox, limits, cache invalidation.
+   - Conformance fixtures.
+
+4. **JavaScript runtime.**
+   - Choose engine, implement adapter, same conformance suite.
+
+5. **Stabilize.**
+   - Publish benchmarks and compatibility policy.
+   - Add CLI/MCP inspection.
+   - Keep activation explicit.
+
+### 13.4 Integration points in current plumbing
+
+- `omni_context::ProjectDiscovery` remains the single ignore-aware walker. Add
+  plugin marker names to the same walk; do not add per-plugin walkers.
+- `Context::discover_project_paths` builds candidate roots and explicit files.
+  Plugin scheduling happens after explicit inference controls are read.
+- `Context::load_discovered_project_configs` becomes:
+  1. Load explicit files and extension graph as today.
+  2. For roots without `replace`, run enabled plugin hooks in stage order.
+  3. Compose inferred layers with explicit layers.
+  4. Resolve task extensions after composition.
+- `ProjectConfigLoader::load_project_configs` stays for explicit files; inferred
+  projects are synthesized and merged in `Context`.
+- Cache identity: combine explicit file fingerprints, plugin artifact/module
+  fingerprints, options, and normalized inferred config.
+
+### 13.5 Risky changes requiring care
+
+- Virtual project identity touches `ExtensionGraphNode`, cache keys and
+  inspection. Keep a synthetic `file`/`dir` only as identity/display; never
+  treat it as a real path for file reads.
+- Presence-aware deserialization is a schema/loader change; tests must cover
+  absence vs default values.
+- Plugin output must be validated before entering graph state; malformed output
+  is fatal.
+- Do not reuse stale inferred output after a failed or changed run.
+
+### 13.6 Definition of done for v1
+
+- No enabled plugins: byte-for-byte equivalent discovery behavior and tests.
+- Cargo builtin discovers a no-omni-file workspace with correct names, tasks
+  and local dependency edges.
+- Extend/replace and allowlists work; conflicts are deterministic.
+- Wasm and JavaScript conformance fixtures match native output.
+- Benchmarks meet proposed budgets or revised documented budgets.
+- CLI and MCP expose effective provenance and cache status.
