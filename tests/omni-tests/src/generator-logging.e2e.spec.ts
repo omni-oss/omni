@@ -80,50 +80,76 @@ describe(
             expect(result).toHaveStderrContaining("GEN_LOG_INFO_MARKER");
         });
 
-        it("redacts a secret input a script logs", async () => {
-            const ws = makeWorkspace({
-                workspace: {
-                    projects: ["**"],
-                    generators: [{ source: "local", path: "generators/**" }],
-                },
-                projects: {
-                    "generators/logger/generator.omni.yaml": {
-                        name: "logger",
-                        description: "logs a secret input",
-                        inputs: [
-                            {
-                                type: "string",
-                                name: "pw",
-                                message: "pw",
-                                secret: true,
-                            },
-                        ],
-                        actions: [
-                            {
-                                type: "run-javascript",
-                                script: "gen.mjs",
-                                data: { pw: "{{ inputs.pw }}" },
-                            },
+        it.each([false, true])(
+            "redacts secret log messages and targets (failure=%s)",
+            async (fail) => {
+                const ws = makeWorkspace({
+                    workspace: {
+                        projects: ["**"],
+                        generators: [
+                            { source: "local", path: "generators/**" },
                         ],
                     },
-                },
-                files: {
-                    ".omni/sources/generator/.keep": "",
-                    "generators/logger/gen.mjs": script(
-                        `ctx.log.info("pw is " + ctx.data.pw);`,
-                    ),
-                },
-            });
+                    projects: {
+                        "generators/logger/generator.omni.yaml": {
+                            name: "logger",
+                            description: "logs a secret input",
+                            inputs: [
+                                {
+                                    type: "string",
+                                    name: "pw",
+                                    message: "pw",
+                                    secret: true,
+                                },
+                            ],
+                            actions: [
+                                {
+                                    type: "run-javascript",
+                                    script: "gen.mjs",
+                                    data: { pw: "{{ inputs.pw }}" },
+                                },
+                            ],
+                        },
+                    },
+                    files: {
+                        ".omni/sources/generator/.keep": "",
+                        "generators/logger/gen.mjs": script(
+                            `ctx.log.child(ctx.data.pw).info("pw is " + ctx.data.pw);
+                         ${fail ? 'throw new Error("intentional failure");' : ""}`,
+                        ),
+                    },
+                });
 
-            const result = await runOmni(
-                [...RUN_ARGS, "-v", "pw=hunter2-secret"],
-                { cwd: ws.cwd },
-            );
+                const result = await runOmni(
+                    [
+                        "--trace",
+                        "debug",
+                        "--trace-file",
+                        ws.path("trace.jsonl"),
+                        "--trace-file-level",
+                        "debug",
+                        ...RUN_ARGS,
+                        "-v",
+                        "pw=hunter2-secret",
+                    ],
+                    { cwd: ws.cwd },
+                );
 
-            expect(result).toHaveSucceeded();
-            expect(result).toHaveStderrContaining("pw is ");
-            expect(result.err).not.toContain("hunter2-secret");
-        });
+                if (fail) {
+                    expect(result).toHaveFailed();
+                    expect(result).toHaveStderrContaining(
+                        "script log discarded after failure",
+                    );
+                } else {
+                    expect(result).toHaveSucceeded();
+                    expect(result).toHaveStderrContaining("pw is ");
+                    expect(result).toHaveStderrContaining("script_target");
+                }
+                expect(result.err).not.toContain("hunter2-secret");
+                expect(result.out).not.toContain("hunter2-secret");
+                expect(ws.read("trace.jsonl")).not.toContain("hunter2-secret");
+            },
+        );
 
         it("maps log levels: info/warn/error show by default, debug/trace only under --trace", async () => {
             const ws = makeWorkspace(

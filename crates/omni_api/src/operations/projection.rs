@@ -497,6 +497,12 @@ where
     let ledger_path = ledger_path(ctx);
     let (mut ledger, ledger_blocked) =
         load_ledger(&sys, &ledger_path, notices).await;
+    if ledger_blocked {
+        eyre::bail!(
+            "the projection ledger at {} could not be read; refusing to unlink links that cannot be identified",
+            ledger_path.display()
+        );
+    }
     let report = omni_projections::unlink(
         &sys,
         &workspace_root,
@@ -505,9 +511,7 @@ where
         req.resolved_backup_handling(),
     )
     .await?;
-    if !ledger_blocked {
-        omni_projections::save(&sys, &ledger_path, &ledger).await?;
-    }
+    omni_projections::save(&sys, &ledger_path, &ledger).await?;
 
     Ok(ProjectionUnlinkResponse {
         removed: report
@@ -559,11 +563,16 @@ where
         });
     }
 
+    if ledger_blocked {
+        eyre::bail!(
+            "the projection ledger at {} could not be read; refusing to prune links that cannot be identified",
+            ledger_path.display()
+        );
+    }
+
     let report =
         omni_projections::prune(&sys, &workspace_root, &mut ledger).await?;
-    if !ledger_blocked {
-        omni_projections::save(&sys, &ledger_path, &ledger).await?;
-    }
+    omni_projections::save(&sys, &ledger_path, &ledger).await?;
 
     Ok(ProjectionPruneResponse {
         dry_run: false,

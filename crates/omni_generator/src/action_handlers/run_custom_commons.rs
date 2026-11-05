@@ -37,6 +37,7 @@ pub async fn target_path<S: GeneratorEventSubscriber>(
             ctx.generator_name,
             session,
             ctx.input_provider,
+            ctx.subscriber,
         )
         .await?;
 

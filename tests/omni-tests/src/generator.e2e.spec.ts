@@ -1201,6 +1201,55 @@ describe(
         tags: ["generator"],
     },
     () => {
+        it("explains invalid file targets before re-prompting even under --quiet", async () => {
+            const ws = makeWorkspace({
+                workspace: {
+                    projects: ["**"],
+                    generators: [{ source: "local", path: "generators/**" }],
+                },
+                projects: {
+                    "generators/edit/generator.omni.yaml": {
+                        name: "edit",
+                        description: "prompts for a file target",
+                        actions: [
+                            {
+                                type: "modify-content",
+                                target: "dest",
+                                entries: [
+                                    { pattern: "before", content: "after" },
+                                ],
+                            },
+                        ],
+                    },
+                },
+                files: {
+                    "existing.txt": "before",
+                    ".omni/sources/generator/.keep": "",
+                },
+            });
+            const pty = spawnOmniPty(
+                [
+                    "--quiet",
+                    "generator",
+                    "run",
+                    "-n",
+                    "edit",
+                    "-o",
+                    "out",
+                    "--save-session=false",
+                ],
+                { cwd: ws.cwd },
+            );
+            await pty.waitFor("Directory for target dest:");
+            pty.type("@unknown/file");
+            pty.press("enter");
+            await pty.waitFor("Invalid path: @unknown/file");
+            pty.type("@workspace/existing.txt");
+            pty.press("enter");
+            expect((await pty.waitForExit()).exitCode).toBe(0);
+            expect(ws.read("existing.txt")).toBe("after");
+        });
+
         it("prompts for output target, generator name, inputs, then save", async () => {
             const ws = makeWorkspace(scaffoldGeneratorSpec());
 
@@ -1864,7 +1913,7 @@ describe(
             expect(result).toHaveSucceeded();
             expect(ws.read("out/nested.txt")).toContain("from child");
         });
-    
+
         it("redacts `secret` and `redact.inputs` values in debug logs, and `--redact none` shows them", async () => {
             const ws = makeWorkspace({
                 workspace: {

@@ -2,7 +2,7 @@ use omni_generator_configurations::{
     BooleanBuilderGenBaseExt, Generator, OmniPath, OverwriteConfiguration,
     Root, StringBuilderGenBaseExt,
 };
-use omni_messages::GeneratorEventSubscriber;
+use omni_messages::{GeneratorEventSubscriber, GeneratorPromptRejectedEvent};
 use std::{
     borrow::Cow,
     path::{self, Path, PathBuf},
@@ -193,8 +193,8 @@ pub async fn overwrite(
     Ok(None)
 }
 
-#[allow(clippy::result_large_err)]
-pub async fn resolve_target_dir<'a>(
+#[allow(clippy::result_large_err, clippy::too_many_arguments)]
+pub async fn resolve_target_dir<'a, S: GeneratorEventSubscriber>(
     target_name: &str,
     target_overrides: &'a UnorderedMap<String, OmniPath>,
     generator_targets: &'a UnorderedMap<String, OmniPath>,
@@ -202,6 +202,7 @@ pub async fn resolve_target_dir<'a>(
     generator: &'a str,
     session: &'a GenSession,
     provider: &'a dyn InputProvider<Generator>,
+    subscriber: &'a S,
 ) -> Result<Cow<'a, OmniPath>, Error> {
     let target = target_overrides
         .get(target_name)
@@ -235,12 +236,11 @@ pub async fn resolve_target_dir<'a>(
         // it (mirrors `prompt_target_file`); the loop exists precisely so the
         // user can correct the value.
         if let Err(err) = validate_target(output_dir, path) {
-            // Interactive prompt: the rejection must be visible even when
-            // no tracing layer is enabled.
-            let _ = std::io::Write::write_fmt(
-                &mut std::io::stderr(),
-                format_args!("error: invalid target dir: {err}\n"),
-            );
+            subscriber
+                .on_prompt_rejected(GeneratorPromptRejectedEvent {
+                    message: format!("invalid target dir: {err}"),
+                })
+                .await;
             continue;
         }
 
@@ -311,7 +311,11 @@ pub async fn prompt_target_file<S: GeneratorEventSubscriber>(
         let path = if let Ok(path) = path_str.as_ref().parse::<OmniPath>() {
             path
         } else {
-            tracing::warn!("Invalid path: {}", path_str);
+            ctx.subscriber
+                .on_prompt_rejected(GeneratorPromptRejectedEvent {
+                    message: format!("Invalid path: {path_str}"),
+                })
+                .await;
             continue;
         };
 
@@ -390,6 +394,7 @@ pub async fn resolve_output_path<
                 ctx.generator_name,
                 session,
                 provider,
+                ctx.subscriber,
             )
             .await?,
         )

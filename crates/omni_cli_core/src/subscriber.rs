@@ -1139,6 +1139,19 @@ impl CliSubscriber {
 }
 
 impl GeneratorEventSubscriber for CliSubscriber {
+    async fn on_prompt_rejected(
+        &self,
+        e: omni_messages::GeneratorPromptRejectedEvent,
+    ) {
+        let message = self.redact_text(&e.message);
+        self.emit_always(
+            format!("error: {}", escape_control_chars(&message))
+                .red()
+                .to_string(),
+            EmitLevel::Error,
+        );
+    }
+
     /// A script's own `ctx.log.*` output: `info`/`warn`/`error` are shown (a
     /// script author asked for them, so `-q` does not hide them); `debug` and
     /// `trace` go to `tracing` only.
@@ -1146,6 +1159,7 @@ impl GeneratorEventSubscriber for CliSubscriber {
         use omni_messages::ScriptLogLevel as L;
         let mut e = e;
         e.message = self.redact_text(&e.message);
+        e.target = self.redact_text(&e.target);
         e.mirror_to_tracing();
         let msg = escape_control_chars(&e.message).into_owned();
         match e.level {

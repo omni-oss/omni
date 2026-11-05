@@ -39,8 +39,9 @@ pub use execution::{
     TaskRetryingEvent, TaskSkipReason, TaskSkippedEvent, TaskStartedEvent,
 };
 pub use generator::{
-    GeneratorCompletedEvent, GeneratorEventSubscriber, GeneratorStartEvent,
-    ScriptLogEvent, ScriptLogLevel,
+    GeneratorCompletedEvent, GeneratorEventSubscriber,
+    GeneratorPromptRejectedEvent, GeneratorStartEvent, ScriptLogEvent,
+    ScriptLogLevel,
 };
 pub use noop::NoopSubscriber;
 pub use notice::{NoticeEvent, NoticeLevel, NoticeSubscriber, SharedRedactor};
