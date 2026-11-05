@@ -87,9 +87,9 @@ pub struct LedgerUnreadable {
     pub reason: String,
 }
 
-/// Load the ledger from `ledger_path`. A missing, corrupt, or unparseable
-/// ledger is treated as empty (config stays authoritative) and never triggers a
-/// destructive teardown. The caller owns where the ledger lives.
+/// Loads the ledger from `ledger_path`, returning an empty ledger on any read
+/// or parse error. Use [`load_guarded`] when deciding whether to save, since
+/// this function discards the reason for an empty result.
 pub async fn load<S: FsReadAsync + Sync>(
     sys: &S,
     ledger_path: &Path,
@@ -97,8 +97,9 @@ pub async fn load<S: FsReadAsync + Sync>(
     load_checked(sys, ledger_path).await.0
 }
 
-/// Like [`load`], also reporting a ledger that exists but is unreadable so the
-/// caller can tell the user.
+/// Like [`load`], also returning a notice for parse errors and read errors
+/// other than a missing file. Use [`load_guarded`] to distinguish a read
+/// failure from a parse failure before saving.
 pub async fn load_checked<S: FsReadAsync + Sync>(
     sys: &S,
     ledger_path: &Path,

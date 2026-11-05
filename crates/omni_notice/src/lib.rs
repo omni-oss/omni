@@ -32,7 +32,8 @@ pub trait Notice: Code + fmt::Display + Send + Sync + 'static {
         self.info().essential()
     }
 
-    /// Typed fields as JSON, keyed by the struct's field names.
+    /// Fields as JSON, keyed by the struct's field names. Fields marked
+    /// `#[notice(skip)]` are omitted; serialization failures become `null`.
     fn fields(&self) -> BTreeMap<String, serde_json::Value>;
 }
 
