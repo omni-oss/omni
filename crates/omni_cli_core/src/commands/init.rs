@@ -81,10 +81,9 @@ pub async fn run(command: &InitCommand) -> eyre::Result<()> {
     let generator = if let Some(generator) = primary_generator {
         generator
     } else {
-        eprintln!(
-            "error: No primary generator is found, generators used as initializer must have one generator config in the root of the source folder",
+        eyre::bail!(
+            "No primary generator is found, generators used as initializer must have one generator config in the root of the source folder"
         );
-        return Ok(());
     };
 
     let all_generators =

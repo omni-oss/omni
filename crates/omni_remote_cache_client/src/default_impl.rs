@@ -39,6 +39,17 @@ impl Default for DefaultRemoteCacheClient {
 
 struct LogRequestMiddleware;
 
+/// Headers for trace output with credentials masked.
+fn loggable_headers(headers: &http::HeaderMap) -> http::HeaderMap {
+    let mut out = headers.clone();
+    for name in ["x-api-key", "x-omni-tenant", "authorization"] {
+        if let Some(v) = out.get_mut(name) {
+            *v = http::HeaderValue::from_static("<redacted>");
+        }
+    }
+    out
+}
+
 #[async_trait]
 impl Middleware for LogRequestMiddleware {
     #[tracing::instrument(level = tracing::Level::DEBUG, skip_all)]
@@ -53,7 +64,7 @@ impl Middleware for LogRequestMiddleware {
             req.version(),
             req.method(),
             req.url(),
-            req.headers(),
+            loggable_headers(req.headers()),
         );
 
         let res = next.run(req, extensions).await.inspect_err(|e| {

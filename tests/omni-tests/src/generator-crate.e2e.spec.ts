@@ -82,6 +82,8 @@ describe(
                     { cwd: ws.cwd },
                 );
 
+                expect(result).toHaveSucceeded();
+
                 const cargo = ws.read("crates/sample/Cargo.toml");
                 const project = ws.read("crates/sample/project.omni.yaml");
 

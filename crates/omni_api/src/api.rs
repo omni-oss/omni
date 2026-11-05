@@ -601,18 +601,20 @@ where
     {
         let mut ctx = self.ctx.lock().await;
         ctx.load().await?;
-        let mut notices = Vec::new();
-        let result = crate::operations::tool::handle_tool_run(
+        let subscriber = &self.subscriber;
+        crate::operations::tool::handle_tool_run(
             ctx.as_loaded_context(),
             name,
             args,
             working_dir,
             redact,
-            &mut notices,
+            &mut |n| {
+                if omni_messages::NoticeSubscriber::wants_notices(subscriber) {
+                    omni_messages::publish::publish_event(subscriber, n);
+                }
+            },
         )
-        .await;
-        omni_messages::publish::publish_batch(&self.subscriber, notices);
-        result
+        .await
     }
 }
 

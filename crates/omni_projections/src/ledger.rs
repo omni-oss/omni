@@ -103,18 +103,33 @@ pub async fn load_checked<S: FsReadAsync + Sync>(
     sys: &S,
     ledger_path: &Path,
 ) -> (Ledger, Option<LedgerUnreadable>) {
+    let (ledger, bad, _) = load_guarded(sys, ledger_path).await;
+    (ledger, bad)
+}
+
+/// Like [`load_checked`], also reporting whether the file exists but could not
+/// be read (for example permission denied). Callers must not save over a
+/// ledger in that case, because the recorded links would be lost. Only a
+/// missing file counts as an absent ledger.
+pub async fn load_guarded<S: FsReadAsync + Sync>(
+    sys: &S,
+    ledger_path: &Path,
+) -> (Ledger, Option<LedgerUnreadable>, bool) {
+    let unreadable = |reason: String| LedgerUnreadable {
+        path: ledger_path.display().to_string(),
+        reason,
+    };
     match sys.fs_read_async(ledger_path).await {
         Ok(bytes) => match serde_json::from_slice(&bytes) {
-            Ok(l) => (l, None),
-            Err(e) => (
-                Ledger::default(),
-                Some(LedgerUnreadable {
-                    path: ledger_path.display().to_string(),
-                    reason: e.to_string(),
-                }),
-            ),
+            Ok(l) => (l, None, false),
+            Err(e) => {
+                (Ledger::default(), Some(unreadable(e.to_string())), false)
+            }
         },
-        Err(_) => (Ledger::default(), None),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            (Ledger::default(), None, false)
+        }
+        Err(e) => (Ledger::default(), Some(unreadable(e.to_string())), true),
     }
 }
 
@@ -499,6 +514,23 @@ fn hex(bytes: &[u8]) -> String {
 mod tests {
     use super::*;
     use system_traits::impls::RealSys;
+
+    #[tokio::test]
+    async fn a_missing_ledger_is_absent_but_a_read_error_blocks_saving() {
+        let dir = tempfile::tempdir().unwrap();
+        let (_, bad, blocked) =
+            load_guarded(&RealSys, &dir.path().join("none.json")).await;
+        assert!(bad.is_none() && !blocked);
+
+        // A directory in place of the file fails with a non-NotFound error.
+        let (_, bad, blocked) = load_guarded(&RealSys, dir.path()).await;
+        assert!(bad.is_some() && blocked);
+
+        let corrupt = dir.path().join("bad.json");
+        std::fs::write(&corrupt, "{").unwrap();
+        let (_, bad, blocked) = load_guarded(&RealSys, &corrupt).await;
+        assert!(bad.is_some() && !blocked);
+    }
 
     #[test]
     fn ledger_serde_round_trips() {

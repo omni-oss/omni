@@ -194,7 +194,8 @@ where
     let sources = &sources;
 
     let ledger_path = ledger_path(ctx);
-    let mut ledger = load_ledger(&sys, &ledger_path, notices).await;
+    let (mut ledger, ledger_blocked) =
+        load_ledger(&sys, &ledger_path, notices).await;
     let prior_ledger = ledger.clone();
 
     let mut response = ProjectionSyncResponse {
@@ -418,7 +419,9 @@ where
         response.warnings.extend(report.warnings);
     }
 
-    omni_projections::save(&sys, &ledger_path, &ledger).await?;
+    if !ledger_blocked {
+        omni_projections::save(&sys, &ledger_path, &ledger).await?;
+    }
 
     // Refresh the projection reference set on a full sync so `install`'s union
     // GC keeps every source this sync materialized. A targeted run sees only a
@@ -443,7 +446,7 @@ where
     let sys = ctx.sys().clone();
     let workspace_root = ctx.root_dir().to_path_buf();
 
-    let ledger = load_ledger(&sys, &ledger_path(ctx), notices).await;
+    let (ledger, _) = load_ledger(&sys, &ledger_path(ctx), notices).await;
     let report =
         omni_projections::status(&sys, &workspace_root, &ledger).await?;
 
@@ -486,7 +489,8 @@ where
     let workspace_root = ctx.root_dir().to_path_buf();
 
     let ledger_path = ledger_path(ctx);
-    let mut ledger = load_ledger(&sys, &ledger_path, notices).await;
+    let (mut ledger, ledger_blocked) =
+        load_ledger(&sys, &ledger_path, notices).await;
     let report = omni_projections::unlink(
         &sys,
         &workspace_root,
@@ -495,7 +499,9 @@ where
         req.resolved_backup_handling(),
     )
     .await?;
-    omni_projections::save(&sys, &ledger_path, &ledger).await?;
+    if !ledger_blocked {
+        omni_projections::save(&sys, &ledger_path, &ledger).await?;
+    }
 
     Ok(ProjectionUnlinkResponse {
         removed: report
@@ -526,7 +532,8 @@ where
     let workspace_root = ctx.root_dir().to_path_buf();
 
     let ledger_path = ledger_path(ctx);
-    let mut ledger = load_ledger(&sys, &ledger_path, notices).await;
+    let (mut ledger, ledger_blocked) =
+        load_ledger(&sys, &ledger_path, notices).await;
 
     if req.dry_run {
         // A prune preview classifies broken links without removing them.
@@ -548,7 +555,9 @@ where
 
     let report =
         omni_projections::prune(&sys, &workspace_root, &mut ledger).await?;
-    omni_projections::save(&sys, &ledger_path, &ledger).await?;
+    if !ledger_blocked {
+        omni_projections::save(&sys, &ledger_path, &ledger).await?;
+    }
 
     Ok(ProjectionPruneResponse {
         dry_run: false,
@@ -1074,15 +1083,18 @@ mod tests {
     }
 }
 
-/// Loads the ledger, queuing a notice when it exists but is unreadable.
+/// Loads the ledger, queuing a notice when it exists but is unreadable. The
+/// flag is `true` when the file could not be read at all, in which case the
+/// caller must not save over it.
 async fn load_ledger<S: system_traits::FsReadAsync + Sync>(
     sys: &S,
     path: &std::path::Path,
     notices: &mut Vec<omni_messages::NoticeEvent>,
-) -> omni_projections::Ledger {
-    let (ledger, bad) = omni_projections::load_checked(sys, path).await;
+) -> (omni_projections::Ledger, bool) {
+    let (ledger, bad, read_failed) =
+        omni_projections::load_guarded(sys, path).await;
     if let Some(n) = bad {
         notices.push(omni_messages::notice_event!(n));
     }
-    ledger
+    (ledger, read_failed)
 }

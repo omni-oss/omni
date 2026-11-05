@@ -100,7 +100,13 @@ pub async fn run(
     let sub = resolve_subscriber(command.run.ui, ctx.scratch_dir(), quiet);
     let executor = TaskExecutor::new(config, &ctx, &sub);
 
-    let results = executor.run().await?;
+    let results = match executor.run().await {
+        Ok(results) => results,
+        Err(err) => {
+            sub.wait().await;
+            return Err(err.into());
+        }
+    };
 
     sub.wait().await;
 

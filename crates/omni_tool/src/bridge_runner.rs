@@ -49,6 +49,11 @@ pub struct LazyToolRunner<S> {
     pool: RunnerPool<(DelegatingJsRuntimeOption, String)>,
     /// Notices raised while launching tools, for the caller to publish.
     notices: std::sync::Mutex<Vec<omni_messages::NoticeEvent>>,
+    /// When set, notices are sent here as they are raised instead of queued, so
+    /// a caller can show them before the tool starts running.
+    notice_tx: std::sync::Mutex<
+        Option<tokio::sync::mpsc::UnboundedSender<omni_messages::NoticeEvent>>,
+    >,
 }
 
 impl<S> LazyToolRunner<S> {
@@ -65,6 +70,25 @@ impl<S> LazyToolRunner<S> {
             version,
             pool: RunnerPool::new(),
             notices: Default::default(),
+            notice_tx: Default::default(),
+        }
+    }
+
+    /// Streams notices to the returned receiver as they are raised, rather than
+    /// queueing them for [`Self::take_notices`].
+    pub fn stream_notices(
+        &self,
+    ) -> tokio::sync::mpsc::UnboundedReceiver<omni_messages::NoticeEvent> {
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        *self.notice_tx.lock().unwrap() = Some(tx);
+        rx
+    }
+
+    fn raise(&self, notice: omni_messages::NoticeEvent) {
+        if let Some(tx) = &*self.notice_tx.lock().unwrap() {
+            let _ = tx.send(notice);
+        } else {
+            self.notices.lock().unwrap().push(notice);
         }
     }
 
@@ -137,14 +161,12 @@ where
                 } else {
                     "you selected"
                 };
-                self.notices.lock().unwrap().push(
-                    omni_messages::notice_event!(
-                        bridge_rpc_runner::RuntimeExperimental {
-                            how: how.to_string(),
-                            runtime: runtime_name(resolved).to_string(),
-                        }
-                    ),
-                );
+                self.raise(omni_messages::notice_event!(
+                    bridge_rpc_runner::RuntimeExperimental {
+                        how: how.to_string(),
+                        runtime: runtime_name(resolved).to_string(),
+                    }
+                ));
             }
             DelegatingJsRuntimeOption::Deno
             | DelegatingJsRuntimeOption::Auto => {}
@@ -161,15 +183,15 @@ where
                     .map_err(|e| ErrorInner::CapabilityEnforcement {
                         message: e.to_string(),
                     })?;
-            self.notices.lock().unwrap().extend(diagnostics);
+            for d in diagnostics {
+                self.raise(d);
+            }
             (spawn, shim)
         } else {
             if policy.levels.iter().any(|level| !level.is_empty()) {
-                self.notices.lock().unwrap().push(
-                    omni_messages::notice_event!(
-                        bridge_rpc_runner::CapabilitiesIgnored
-                    ),
-                );
+                self.raise(omni_messages::notice_event!(
+                    bridge_rpc_runner::CapabilitiesIgnored
+                ));
             }
             (build_unconfined_plan(resolved), ShimPolicy::new())
         };

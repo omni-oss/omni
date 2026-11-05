@@ -473,7 +473,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
         &'a self,
         cache_infos: &[crate::NewCacheInfo<'a>],
     ) -> Result<Vec<CachedTaskExecutionHash<'a>>, Self::Error> {
-        tracing::trace!(?cache_infos, "begin_cache_many");
+        tracing::trace!(count = cache_infos.len(), "begin_cache_many");
 
         let task_infos = cache_infos.iter().map(|i| i.task).collect::<Vec<_>>();
         let cache_info_map = cache_infos

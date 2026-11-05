@@ -75,8 +75,11 @@ impl<T: EnvCacheSys> EnvLoader<T> {
         let mut env_vars = maps::map!();
 
         if args.inherit_env_vars {
-            let existing_env_vars = self.sys.env_vars();
-            tracing::trace!(?existing_env_vars, "inherited_env_vars");
+            let existing_env_vars = self.sys.env_vars().collect::<Vec<_>>();
+            tracing::trace!(
+                count = existing_env_vars.len(),
+                "inherited_env_vars"
+            );
             env_vars.extend(existing_env_vars);
         } else {
             tracing::trace!("inherit_env_vars_disabled");

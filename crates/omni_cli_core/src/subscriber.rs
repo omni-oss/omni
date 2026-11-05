@@ -332,6 +332,15 @@ fn write_stdout(bytes: &[u8]) {
     let _ = out.flush();
 }
 
+/// Escapes control characters in each line, keeping the line breaks.
+fn escape_control_chars_multiline(input: &str) -> String {
+    input
+        .split('\n')
+        .map(|l| escape_control_chars(l).into_owned())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// Renders a notice as `warning[code]: message`, followed by a pointer to
 /// `omni code explain`. Level names follow rustc: `error`, `warning`, `note`.
 fn render_notice(e: &NoticeEvent, count: usize) -> String {
@@ -350,7 +359,7 @@ fn render_notice(e: &NoticeEvent, count: usize) -> String {
     }
     if let Some(body) = e.body() {
         out.push('\n');
-        out.push_str(body.trim_end());
+        out.push_str(&escape_control_chars_multiline(body.trim_end()));
     }
     if let Some(hints) = e.fields().get("hints").and_then(|h| h.as_array()) {
         for h in hints.iter().filter_map(|h| h.as_str()) {
@@ -1125,6 +1134,10 @@ impl GeneratorEventSubscriber for CliSubscriber {
     /// `trace` go to `tracing` only.
     fn on_script_log(&self, e: omni_messages::ScriptLogEvent) {
         use omni_messages::ScriptLogLevel as L;
+        let mut e = e;
+        if let Some(r) = self.redactor.get() {
+            e.message = r.redact(e.message.as_str()).into_owned();
+        }
         e.mirror_to_tracing();
         let msg = escape_control_chars(&e.message).into_owned();
         match e.level {
@@ -1298,6 +1311,35 @@ mod notice_render_tests {
         assert_eq!(buffered.len(), 1);
         assert!(buffered[0].0.contains("clitest.sample"));
         assert!(sub.notice_groups.lock().is_empty());
+    }
+
+    #[test]
+    fn multiline_escaping_keeps_line_breaks_but_drops_escapes() {
+        let out = escape_control_chars_multiline("a\x1b[31mb\nc\rd");
+        assert_eq!(out.matches('\n').count(), 1);
+        assert!(!out.contains('\x1b'));
+        assert!(!out.contains('\r'));
+    }
+
+    #[test]
+    fn script_log_is_redacted_with_the_run_redactor() {
+        let sub = CliSubscriber::new_with(
+            CliUiMode::Tui,
+            std::env::temp_dir(),
+            Arc::new(OnceLock::new()),
+        );
+        let _ = sub.resolved_mode.set(CliUiMode::Tui);
+        sub.extend_redactor(
+            &omni_redact::Redactor::builder().value("hunter2").build(),
+        );
+        sub.on_script_log(omni_messages::ScriptLogEvent {
+            level: omni_messages::ScriptLogLevel::Info,
+            target: "t".into(),
+            message: "pw hunter2".into(),
+        });
+        let out = sub.emit_buffer.lock();
+        assert_eq!(out.len(), 1);
+        assert!(!out[0].0.contains("hunter2"));
     }
 
     #[test]
