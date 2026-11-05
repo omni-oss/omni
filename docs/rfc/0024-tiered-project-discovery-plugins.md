@@ -1,4 +1,4 @@
-# RFC 0024: Tiered plugins for inferred projects
+# RFC 0024: Tiered, hook-based project discovery plugins
 
 - **Status:** Draft <!-- Draft | Accepted | Implemented | Superseded -->
 - **Owner:** TBD
@@ -79,8 +79,8 @@ distribution system.
   or running package lifecycle scripts during discovery.
 - External native dynamic libraries, arbitrary hooks into omni internals,
   task executors, or a general-purpose plugin marketplace.
-- Letting discovery write files, spawn processes, access the network, read
-  secrets, or alter workspace security policy.
+- Letting discovery write files, spawn processes, access the network, or alter
+  workspace security policy.
 - Generator/tool injection in the initial protocol, or claiming that arbitrary
   native code can be safely preempted in-process.
 
@@ -187,7 +187,52 @@ existing source mechanism. No registry is required for v1.
 
 ## 6. Discovery and the host contract
 
-### 6.1 Pipeline
+### 6.1 Hook-based lifecycle
+
+Plugins are **stateless but not sessionless**: they do not retain their own
+memory between calls, and they never own mutable state. Instead, omni owns a
+per-plugin, per-discovery **session state** that plugins populate and receive
+back in later hooks. This lets plugins be interrupted, retried, cached and
+scheduled freely while still accumulating context across a discovery pass.
+
+The contract is a set of **stage hooks**. The host decides when and how to invoke
+them, in the most efficient order and batching, while preserving the required
+stage ordering and data dependencies. Plugins never call back into omni
+arbitrarily; they only respond to host-invoked hooks.
+
+Proposed stages (each is a hook; plugins implement only those they need):
+
+1. **`on_workspace`** — receive workspace options and static discovery scopes.
+   May return a small, serializable session state seed. No filesystem access
+   beyond declared inputs.
+2. **`filter_candidates`** — receive candidate roots and a bounded file index;
+   may decline roots or request additional declared inputs. Runs before any
+   heavy parsing.
+3. **`infer_roots`** — batched per plugin over multiple roots; returns project
+   fragments, local dependency references, and an updated session state. This is
+   the only hook that may parse declared input files.
+4. **`resolve_dependencies`** — runs after all plugins' `infer_roots` complete;
+   receives the accumulated session state plus the full set of inferred roots,
+   allowing cross-root and cross-plugin resolution without guessing final omni
+   names.
+5. **`finalize`** — last chance to emit notices or adjust fragments; no new
+   roots may be added.
+
+The host may:
+
+- batch many roots into one `infer_roots` call instead of one call per
+  directory;
+- run independent plugins concurrently;
+- defer or skip `resolve_dependencies` when no plugin requests it;
+- cache and reuse session state fragments keyed by inputs;
+- interrupt and retry a hook without leaking plugin memory, because the plugin
+  holds no state of its own.
+
+Plugins cannot assume invocation order beyond the stage order, and cannot assume
+they are the only plugin. They must tolerate re-invocation and must not depend
+on wall-clock or randomness.
+
+### 6.2 Pipeline
 
 1. Load workspace config and validate explicit activation. With no enabled
    plugins, retain the existing discovery path without runtime initialization.
@@ -200,8 +245,9 @@ existing source mechanism. No registry is required for v1.
 4. Read explicit-file inference controls before scheduling plugin work. Roots
    marked `replace` need no inferred contribution. Batch remaining candidate
    roots by plugin; do not invoke an interpreter per directory.
-5. Obtain cached or freshly inferred fragments and dependency references.
-   Merge contributions deterministically, then apply explicit layers (§7).
+5. Invoke hooks in stage order, obtaining cached or freshly inferred fragments
+   and dependency references. Merge contributions deterministically, then apply
+   explicit layers (§7).
 6. Resolve project/task extensions in their established phases, finalize names,
    resolve inferred local dependency references to final project identities,
    and run ordinary configuration/graph validation. Produce one project model
@@ -216,7 +262,7 @@ Workspace-level manifests may be declared read-only inference inputs without
 making their directories projects. Return no project for aggregate-only
 manifests unless the ecosystem adapter can justify a runnable root project.
 
-### 6.2 Data boundary
+### 6.3 Data boundary
 
 Define a versioned, serializable contract in a small shared crate. Native plugins
 use the same logical request/response as external ones without requiring an
@@ -224,10 +270,11 @@ unnecessary serialization round trip.
 
 Requests contain candidate root ids, a bounded file index, options and a
 read-only host file service. Responses contain project fragments keyed by root,
-local dependency references, provenance and structured non-fatal notices.
-Represent local dependencies by stable workspace-relative roots where possible,
-not guessed final omni names: explicit configuration may rename a project.
-Non-local package dependencies must not become spurious omni project edges.
+local dependency references, provenance, structured non-fatal notices, and an
+updated session state. Represent local dependencies by stable workspace-relative
+roots where possible, not guessed final omni names: explicit configuration may
+rename a project. Non-local package dependencies must not become spurious omni
+project edges.
 
 Host-managed configuration fields (`file`, `dir`, inference controls and
 activation/security policy) cannot be emitted by plugins. Plugin output cannot
@@ -241,6 +288,12 @@ reads, and applies byte/read limits before allocation. Reads must match declared
 input scopes. Additional inputs discovered from a manifest are allowed only
 within those scopes and are tracked. No raw host filesystem handle, environment,
 wall clock, randomness, network or subprocess service is exposed.
+
+Session state is owned by omni: it is serialized, size-bounded, versioned, and
+included in cache identity. Plugins receive it and return a replacement; they
+never mutate a shared handle. State must not contain file contents beyond what
+is already tracked as declared input fingerprints, and must not be used to
+bypass input tracking.
 
 Virtual projects need a stable logical configuration identity distinct from a
 physical filename. Preserve root and plugin/artifact provenance rather than
@@ -369,6 +422,8 @@ and enabled work has measurable limits rather than unbounded startup cost.
 - No background inference for commands that do not need projects. Long-lived
   MCP state must invalidate on input, option and activation changes, including
   disabling a plugin or editing a local bundle.
+- Session state is cached as part of the inference result; a hook that only
+  needs cached state must not re-execute.
 
 ### 8.2 Tier-specific enforcement
 
@@ -445,10 +500,12 @@ untrusted data, not executable configuration.
 
 1. **Contract and composition first:** typed layers, inference controls,
    virtual identities, conflict handling, provenance, final-name dependency
-   resolution and zero-plugin regression tests. No runtime dependency needed.
-2. **Native pilot:** opt-in Cargo adapter behind the same protocol, host-owned
-   candidate scan and input tracking. Specify ecosystem inference rules in
-   separate adapter documentation; do not promise every Cargo feature here.
+   resolution, hook stage definitions, session-state serialization and
+   zero-plugin regression tests. No runtime dependency needed.
+2. **Native pilot:** opt-in Cargo adapter behind the same protocol and hook
+   stages, host-owned candidate scan and input tracking. Specify ecosystem
+   inference rules in separate adapter documentation; do not promise every Cargo
+   feature here.
 3. **Wasm:** versioned SDK/fixtures, pinned source loading, sandbox, resource
    enforcement and cache invalidation. No external runtime ships without its
    cancellation and containment tests.
@@ -466,6 +523,9 @@ Required tests include:
 
 - Native, Wasm and JavaScript contract fixtures produce identical normalized
   output, provenance and validation outcomes for equivalent implementations.
+- Hook ordering and batching do not change normalized results.
+- Session state round-trips and cache invalidation work across hook
+  re-invocation.
 - No enabled plugins preserves existing discovery, extension, cache-exclusion
   and ignore behavior; disabled sources are never fetched or instantiated.
 - Inferred-only, extend, replace, missing-name, base-template and explicit
@@ -503,6 +563,10 @@ Required tests include:
 - **Hard native deadlines:** require process isolation, with IPC/startup cost.
   Recommend reviewed cooperative native code initially; revisit worker-process
   isolation if benchmarks or the trust model require a hard resource boundary.
+- **One-shot fragment return instead of hooks:** simpler API, but forces every
+  plugin to do all work in one call and prevents the host from batching,
+  deferring cross-root resolution, or reusing partial state. Recommend the
+  hook model with omni-owned session state.
 
 Before acceptance, settle the initial built-in set, benchmark-calibrated limits,
 runtime engines and whether default extend is preferable to explicit opt-in
