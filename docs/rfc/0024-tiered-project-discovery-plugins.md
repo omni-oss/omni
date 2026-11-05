@@ -147,6 +147,7 @@ plugins:
     source: git
     uri: https://github.com/example/omni-frontend.git
     rev: <immutable-commit>
+    subdir: plugins/frontend # optional literal directory; default is repo root
 ```
 
 - `plugins` defaults to `[]`; each entry's `enabled` defaults to `false`.
@@ -156,8 +157,10 @@ plugins:
   declare canonical `name` and metadata `version`, following RFC 0014's
   consumer-id/author-name distinction.
 - `builtin` resolves a compiled registry entry. External `local`/`git` entries
-  resolve a root `plugin.omni.*` manifest using existing source materialization
-  and immutable lock identity (RFC 0013), not a separate downloader.
+  resolve one `plugin.omni.*` manifest at the selected artifact directory using
+  existing source materialization and immutable lock identity (RFC 0013), not
+  a separate downloader. Local `path` is one literal directory; Git `subdir`
+  defaults to the checkout root. Neither accepts discovery globs.
 - Loading an enabled plugin with no mutually supported protocol version or an
   unsupported runtime is an error. There is no silent fallback to another tier.
 - A built-in's implementation identity includes the omni build. An external
@@ -187,8 +190,9 @@ Marker and input declarations are static data readable without starting the
 runtime. JavaScript entries are self-contained bundles (or an explicitly listed,
 hashed local module graph); no npm resolution, network imports, install scripts
 or ambient Node installation. Source and entry paths cannot escape the
-materialized source. Git source availability and offline behavior follow the
-existing source mechanism. No registry is required for v1.
+selected artifact directory, not merely the surrounding repository. Git source
+availability, lazy materialization, pinning and offline behavior follow §15's
+shared-source integration. No registry is required for v1.
 
 Capability names are canonical protocol identifiers; `project_discovery` is the
 initial namespace. Each capability has an API requirement independent of the
@@ -842,6 +846,7 @@ namespace. Existing capability traits and hook names do not change.
 
 | Crate | Purpose |
 | --- | --- |
+| `omni_source_configurations` | Shared generic source/profile definitions extracted from `omni_configurations`, with compatibility re-exports there |
 | `omni_plugin_configurations` | Activation/source declarations, manifests, capability/version/hook declarations, options and limit configuration; data only |
 | `omni_plugin` | Runtime-neutral contract: typed handlers/registration, requests/results, state views/updates, host-service interfaces and errors |
 | `omni_plugin_host` | Scheduling, batching, negotiated capabilities, transactional state/notices, budgets, cancellation and inference-cache orchestration |
@@ -849,14 +854,16 @@ namespace. Existing capability traits and hook names do not change.
 | `omni_plugin_runtime_wasm` | Later: Wasm adapter with fuel/epoch/memory limits |
 | `omni_plugin_runtime_js` | Later: JavaScript adapter with interrupt/heap limits |
 
-Scaffold the configuration, contract and host foundations first, then the native
+Extract shared source types, scaffold the configuration/contract/host foundations, then the native
 pilot. Create runtime crates when implementing their adapters, not as empty
 placeholders. No runtime engine dependency belongs in the contract.
 
 Dependency direction (`A -> B` means A depends on B):
 
 ```text
-omni_configurations -> omni_plugin_configurations
+omni_source_configurations -> existing low-level config/path/URL types
+omni_plugin_configurations -> omni_source_configurations
+omni_configurations -> omni_source_configurations + omni_plugin_configurations
 omni_plugin -> omni_plugin_configurations + omni_configurations
 omni_plugin_host -> omni_plugin + existing source/cache services
 omni_plugin_builtins -> omni_plugin + ecosystem parsers
@@ -872,6 +879,11 @@ fields such as `extends`. `omni_plugin` uses those types in hook results;
 activation types have exactly one owner: `omni_plugin_configurations`. Keep
 that crate independent of the contract and project configurations, preventing a
 dependency cycle. Use existing low-level types for paths/globs where needed.
+Extract generic `SourceConfig`, its variants and `SourceConfigProfile` into
+`omni_source_configurations` first; preserve existing import paths through
+re-exports. Subsystem-specific profiles and validators stay with their owners.
+Plugin configuration owns its external-source profile and builtin wrapper;
+adding `builtin` for plugins does not add it to every subsystem's source enum.
 
 The host accepts a registry supplied by the CLI/MCP composition root; it does
 not import concrete builtins or engine adapters. No-plugin invocations need not
@@ -891,10 +903,12 @@ to descriptors; capability negotiation precedes hook scheduling.
 | `omni_messages` | Reuse notices/diagnostics; no new channel |
 | `omni_types` | Add logical project key / provenance types if identity changes |
 | `omni_remote_source_contributors` | Integrate enabled external descriptors with existing source materialization, identity and offline behavior |
+| `omni_api` | Register the plugin install contributor, subsystem selection/reporting and bootstrap source services before project loading |
 
 ### 13.3 Phases
 
 1. **Contract and composition first (no runtime).**
+   - Extract shared source types with re-exports and wire/schema parity tests.
    - Land `omni_plugin_configurations`, then `omni_plugin` types and typed
      capability registration, with required/optional negotiation tests.
    - Add `plugins` config (disabled by default) and validation.
@@ -915,6 +929,8 @@ to descriptors; capability negotiation precedes hook scheduling.
    - Test shuffled batch scheduling, cancellation/retries, no lost state, no
      duplicate notices and invalidation of cross-root resolution snapshots.
    - Implement Cargo builtin behind `project_discovery` capability.
+   - Add plugin source contribution/descriptor resolution without executing
+     hooks during source installation; see §15 for integration tests.
    - Wire into `Context::load_discovered_project_configs`.
    - Benchmarks and regression tests.
 
@@ -1117,3 +1133,134 @@ silently using different semantics.
   refusal paths. Test the unversioned legacy workspace baseline explicitly.
 - Deprecation/removal releases and adapter coverage are published before a
   breaking host release; no runtime tier bypasses the compatibility policy.
+
+## 15. Remote-source integration
+
+### 15.1 Reuse the shared source lifecycle
+
+Plugins use the same `RemoteSourceManager`, content store, pin lockfile and
+union-reference GC as generators, tools, projections and packs. Do not introduce
+a plugin downloader, parallel lockfile or package installer. A source shared by
+a plugin and a pack is materialized once for the same repository/revision.
+
+Normal project discovery may lazily materialize a missing **enabled** Git
+plugin through the shared manager. Existing locked commits are reused, including
+for branch/tag declarations; only explicit update advances a locked mutable ref.
+An initial unlocked ref resolves/pins through the normal source mechanism.
+Offline loading requires the selected pin and content to be available locally;
+otherwise fail with the source/id and an actionable prefetch/install hint.
+
+Host source materialization may use the network. This grants no network service
+to discovery hooks: installation/bootstrap and plugin execution are separate
+lifecycles. Disabled entries cause no source read, fetch, artifact loading or
+runtime startup, apart from validating the workspace declaration itself.
+
+### 15.2 Contributor, install selection and references
+
+Add `PluginRemoteContributor` in
+`crates/omni_remote_source_contributors/src/plugin.rs`, implementing the existing
+`RemoteSourceContributor<TSys>` contract with stable subsystem id `plugin`.
+Construct it from already-loaded activation configuration; it must not require
+an inferred project graph to find its own source declarations.
+
+Extend `omni_api::operations::remote_source::SubsystemSelection` with plugins and
+thread selection through CLI/MCP request schemas and install reports. Empty
+selection continues to mean all subsystems, now including enabled plugins.
+Explicit generator/tool/projection-only selection does not fetch plugins.
+
+For the selected plugin subsystem:
+
+1. Validate activation ids and source declarations; retain enabled entries only.
+2. Materialize enabled Git sources through the shared manager, passing explicit
+   update intent through the existing invalidation/re-resolution mechanism.
+3. Resolve/validate static manifests, module closure and selected artifact paths
+   without executing plugin code. Enabled local sources use the same descriptor
+   validation but do not produce remote GC references; builtins need no fetch.
+4. Return every resolved Git reference for the manager-owned `refs/plugin.json`
+   reference set. Reconcile only after successful source processing; failures
+   must not replace a complete reference set with a partial one or run GC as if
+   the failed install had succeeded.
+
+Always run the contributor when the plugin subsystem is selected, including
+when there are zero enabled plugins. Successful reconciliation must write the
+empty set to release old references. Do not skip it merely because the list is
+empty. Unselected subsystem reference sets remain intact, so a selected plugin
+install cannot discard another subsystem's GC roots.
+
+Lazy resolution must also retain references for its materialized sources. It
+must not replace the complete plugin reference set with only the roots/plugins
+needed for a particular command. Use the manager's reference coordination to
+preserve the full enabled source set or safely merge newly materialized refs
+until a complete reconciliation. Source GC must not reclaim an artifact while
+a live plugin session is using it; coordinate active use and reclamation through
+the source layer, not plugin-owned mutable state.
+
+Disabling a plugin removes it from execution immediately; its old remote ref
+is released on the next successful plugin-subsystem reconciliation. Shared
+content remains while another plugin/subsystem or active invocation retains it.
+Stale retained content is not activation or permission to execute.
+
+Source install/update never calls hooks, runs package-manager installs, compiles
+source code, runs build scripts or invokes migration code. Authors distribute
+ready-to-load Wasm/JavaScript artifacts. Protocol negotiation/static descriptor
+checks can run without executing them; dynamic export validation occurs in the
+restricted loader before the first hook. An unusable artifact fails clearly.
+
+### 15.3 Source types and artifact layout
+
+Generic source/profile types currently live in
+`omni_configurations/src/source.rs`. Move those definitions to
+`omni_source_configurations`, re-exporting them from the old location. This
+lets `omni_plugin_configurations` reuse local/git semantics without depending
+back on `omni_configurations`. Keep wire shapes, registry stubs and existing
+source consumers unchanged; validators remain subsystem-owned.
+
+A plugin external-source profile adds activation metadata and a Git-only
+optional `subdir`. Local paths must be one literal directory (validate that
+constraint even if the shared local source representation permits lists).
+Builtin locators are plugin-specific and do not flow into remote contributors.
+
+Git `subdir` is a literal repository-relative directory, defaulting to the root;
+reject absolute paths, traversal and symlink escapes. That directory contains
+exactly one supported `plugin.omni.*` manifest, not a recursive search. Module
+entries/imports stay inside that artifact directory. Workspace input services
+remain separate and never expose the rest of the source checkout to hooks.
+
+Two activation ids may select distinct subdirectories or options from one
+checkout. Deduplicate materialization by the existing source identity, not by
+activation id. Artifact identity includes the resolved commit, normalized
+subdirectory and verified manifest/module closure digests; session/inference
+identity additionally includes activation id, options and negotiated contracts.
+Local sources use content fingerprints instead of Git pins and invalidate on
+local edits. A declaration's package version alone is never sufficient.
+
+### 15.4 Bootstrap plumbing and tests
+
+The present `omni_api::operations::remote_source::open_source_store` helper
+accepts a `Context`. Do not make plugin-enabled context/project loading call
+back upward into `omni_api`, creating a dependency/bootstrap cycle. Extract a
+lower-level source-store opener accepting workspace paths/config and system
+services, or inject an already-open manager/descriptor resolver into context
+loading. Retain an API convenience wrapper for existing callers. Resolve plugin
+descriptors after workspace configuration is known but before project inference.
+
+CLI and MCP compose the same source services, activation filter and runtime
+registry. `omni_plugin_host` consumes resolved descriptors/source abstractions,
+not CLI commands. Existing source contributors may depend on plugin configuration
+data, never on executing handlers just to enumerate sources.
+
+Required integration tests:
+
+- Disabled Git/local entries are not read/fetched/loaded; enabled installation
+  validates descriptors without any hook or build-script execution.
+- A repository shared with a pack/tool or multiple plugin subdirectories
+  materializes once while maintaining each subsystem's reference set.
+- Locked mutable refs stay pinned on ordinary discovery/install; explicit update
+  advances pins and invalidates descriptor/session/inference caches.
+- Offline cache hits work; missing pins/content report actionable errors.
+- Selected-subsystem install, empty enabled lists, failed reconciliation and
+  active-session GC preserve/release the correct references.
+- Literal subdirectory containment, duplicate manifests, missing artifacts and
+  module escape attempts fail before hooks run.
+- Shared source extraction preserves existing serde/schema/validation behavior
+  and import paths for generators, tools, projections and packs.
