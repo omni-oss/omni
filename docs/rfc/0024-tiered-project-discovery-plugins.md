@@ -158,8 +158,8 @@ plugins:
 - `builtin` resolves a compiled registry entry. External `local`/`git` entries
   resolve a root `plugin.omni.*` manifest using existing source materialization
   and immutable lock identity (RFC 0013), not a separate downloader.
-- Loading an enabled plugin with an unknown API version or unsupported runtime
-  is an error. There is no silent fallback to a different tier.
+- Loading an enabled plugin with no mutually supported protocol version or an
+  unsupported runtime is an error. There is no silent fallback to another tier.
 - A built-in's implementation identity includes the omni build. An external
   plugin's identity includes the verified artifact and bundled module digests;
   a version string alone is never a cache or trust identity.
@@ -169,13 +169,14 @@ An external manifest might be:
 ```yaml
 name: "@example/company"
 version: 0.1.0
-api_version: 1
+protocol: ">=0.1.0, <0.2.0"
 runtime: wasm # alternatively javascript
 entry: ./dist/plugin.wasm
 capabilities:
   - name: project_discovery
-    api_version: 1
+    api: ">=0.1.0, <0.2.0"
     required: true
+    requires_features: []
     hooks: [on_workspace, filter_candidates, infer_roots, resolve_dependencies]
 discovery:
   markers: [company.project.json]
@@ -190,12 +191,15 @@ materialized source. Git source availability and offline behavior follow the
 existing source mechanism. No registry is required for v1.
 
 Capability names are canonical protocol identifiers; `project_discovery` is the
-initial namespace. Each capability has its own API version, independently of
-the plugin envelope's `api_version`. `required` defaults to `true`. An unknown
-or incompatible required capability fails activation; an explicitly optional
-one is skipped with a notice and an inspection entry. Unknown hooks within a
-supported capability are errors, not silently ignored. Hook declarations are
-validated against the handler's supported-hook set before scheduling.
+initial namespace. Each capability has an API requirement independent of the
+plugin envelope's protocol requirement. Both use explicit semver ranges;
+experimental examples deliberately constrain the minor version. `required`
+defaults to `true`. An unknown/incompatible required capability or missing
+required feature fails activation; an explicitly optional capability can instead
+be skipped with a notice and inspection entry. Unknown hooks within a negotiated
+capability version are errors, not silently ignored. Hook declarations are
+validated against the handler's supported-hook set before scheduling. See §14
+for negotiation, stabilization and migration guarantees.
 
 ## 6. Discovery and the host contract
 
@@ -576,8 +580,9 @@ untrusted data, not executable configuration.
    cancellation and containment tests.
 4. **JavaScript:** the same conformance suite and SDK data model, implemented
    with a runtime selected by startup/memory/interruptibility benchmarks.
-5. **Stabilize:** publish baseline measurements and protocol compatibility
-   policy; retain explicit activation for every tier after stabilization.
+5. **Stabilize:** publish baseline measurements and freeze protocol/capability
+   1.0 no later than omni 1.0, with §14's compatibility/migration tests and
+   tooling. Retain explicit activation for every tier after stabilization.
 
 Do not select a Wasm or JavaScript engine solely in this proposal. Evaluate
 binary size, cold start, target-platform support, deterministic imports, license
@@ -640,9 +645,9 @@ Required tests include:
   deferring cross-root resolution, or reusing partial state. Recommend the
   hook model with omni-owned session state.
 
-Before acceptance, settle the initial built-in set, benchmark-calibrated limits,
-runtime engines and whether default extend is preferable to explicit opt-in
-extension. None of those decisions should weaken activation, explicit authority,
+Before acceptance, settle the initial built-in set, benchmark-calibrated limits
+and runtime engines. Extend remains the chosen default, with explicit full
+replacement. None of those decisions should weaken activation, explicit authority,
 deterministic output or the ban on unbounded external execution.
 
 ## 12. Rust trait sketches (proposal)
@@ -657,8 +662,9 @@ below; these sketches describe ownership and dispatch, not a complete SDK.
 ### 12.1 Identity and capability registration
 
 `omni_plugin_configurations` owns manifest/configuration types. A capability
-declaration contains its canonical name, API version, required/optional flag
-and supported hooks. These are data, not executable handlers.
+declaration contains its canonical name, API version range, required/optional
+flag, required features and supported hooks. The manifest also declares its
+supported protocol range. These are data, not executable handlers.
 
 The consumer activation id belongs to the host binding, not the author handler:
 the same artifact may be enabled with different ids/options. Native plugins
@@ -680,8 +686,8 @@ impl CapabilityRegistry {
 }
 ```
 
-The registration method fixes namespace `project_discovery` and capability
-version; it cannot register a discovery handler under an unrelated name. Future
+The registration method fixes namespace `project_discovery` and declares handler
+versions/features; it cannot register a discovery handler under an unrelated name. Future
 capabilities add typed registration entries. Duplicate registrations, unknown
 hooks, manifest/handler disagreement and hook implementation mismatches fail
 validation. SDK registration helpers/derive generate the supported-hook set from
@@ -920,7 +926,8 @@ to descriptors; capability negotiation precedes hook scheduling.
    - Choose engine, implement adapter, same conformance suite.
 
 5. **Stabilize.**
-   - Publish benchmarks and compatibility policy.
+    - Publish benchmarks; freeze the stable contract by omni 1.0.
+    - Add version negotiation, compatibility fixtures and migration planning.
    - Add CLI/MCP inspection.
    - Keep activation explicit.
 
@@ -969,3 +976,144 @@ to descriptors; capability negotiation precedes hook scheduling.
 - Wasm and JavaScript conformance fixtures match native output.
 - Benchmarks meet proposed budgets or revised documented budgets.
 - CLI and MCP expose effective provenance and cache status.
+
+## 14. Versioning, compatibility and migrations
+
+### 14.1 Stability boundary and version domains
+
+omni is pre-v1: experimental protocol, capability and SDK releases may break
+between 0.x minors. Document those breaks and recovery steps; compatibility
+adapters are not mandatory during experimentation. An experimental contract must
+not masquerade as stable `1.0`. Freeze protocol and the initial capability at
+1.0 **no later than omni 1.0**. Stable contracts released earlier immediately
+receive the same guarantees; omni being pre-v1 does not undo their stability.
+
+Keep these version domains distinct:
+
+| Domain | Meaning / compatibility rule |
+| --- | --- |
+| omni release | Host product version; gates post-v1 breaking contract introductions/removals |
+| Plugin package version | Author release metadata, not a protocol promise or artifact identity |
+| Envelope protocol | Semver request/response framing, negotiation, host calls and error semantics |
+| Capability API | Independent semver for hooks, stages, payloads and observable behavior |
+| Rust authoring SDK | Semver source API for traits, registration, types and export helpers |
+| Configuration schema | Explicit schema version for persistent workspace/plugin documents when required for unambiguous migration |
+| Session/cache representation | Internal versioned, rebuildable data; invalidate rather than requiring migration |
+
+After stabilization, backward-compatible additions use minor versions, fixes use
+patch versions, and breaking changes require a major version. Compatibility is
+not merely successful deserialization: hook order, batch invariance, state
+ownership, merge rules, permissions, defaults and existing inferred behavior
+are part of the capability's contract. New hooks/features are opt-in. A new
+minor must not silently change an existing plugin's interpretation or enable
+new authority. A security fix may reject previously unsafe behavior; document
+the exception and remediation rather than silently granting broader access.
+
+### 14.2 Negotiation
+
+Resolve protocol/capability requirements from the static manifest before hook
+execution. The loader must be able to read the small negotiation envelope
+without first interpreting a newer capability's payload format.
+
+For each domain, select the highest mutually supported concrete version that
+satisfies the plugin's explicit range and required features. A host advertises
+only versions it implements natively or through tested compatibility adapters;
+it cannot claim support solely because the version number falls in a range.
+Capabilities must also be compatible with the selected envelope protocol.
+Return the negotiated versions/features in the invocation context and expose
+them in CLI/MCP inspection. Bind them to the session and include them in cache
+identity. Do not renegotiate halfway through a discovery session.
+
+A required capability without a supported intersection fails with the plugin
+identity, requested range/features, host support and an upgrade/migration hint.
+Optional capabilities may be skipped as in §5. No silent downgrade that drops
+required behavior. Native registry validation and external module exports must
+agree with manifest claims. Within a negotiated version, retain strict checks
+for unknown hooks and invalid payload fields; newer features are negotiated,
+not smuggled through permissive parsing.
+
+### 14.3 External protocol versus Rust SDK
+
+Stable Wasm/JavaScript interoperability is a wire/host-call contract, independent
+of omni's private Rust structures and runtime engine choice. A supported old
+module must remain usable without recompiling it merely because omni upgraded
+an internal crate or engine.
+
+The Rust authoring SDK separately follows semver once stable: compatible SDK
+updates preserve supported source use; a breaking source API needs an SDK major.
+This is **not** a Rust binary ABI promise or a promise that old source compiles
+unchanged against every future SDK major. Native builtins compile and migrate
+with omni. An older SDK may keep targeting an older supported protocol while a
+new SDK exposes a redesigned source API. Publish SDK/protocol/host compatibility
+tables and codemods where mechanical source migration is possible.
+
+### 14.4 Support and deprecation window
+
+After omni v1, introduce a breaking stable protocol/capability major only in an
+omni major release. Keep its preceding contract major supported throughout that
+transition host major. Remove it only in a later omni major, after deprecation
+and publication of a migration path. Patch/minor host upgrades must not turn
+deprecation into a load failure.
+
+For example: omni 2.x introduces discovery API 2 while retaining API 1 through
+the complete 2.x line. omni 3.0 may remove API 1 after that transition; it must
+not remove it in 2.1. A contract whose replacement has not been introduced stays
+supported even if omni's product major advances. Publish the matrix and planned
+removal release, rather than asking users to infer it from package versions.
+
+Compatibility adapters must preserve old observable semantics, not merely
+rename fields and apply new defaults. When behavior cannot be preserved, do not
+advertise support. A fundamentally incompatible redesign may require manual
+migration, but still follows the documented major/deprecation policy except
+for explicitly documented security necessities.
+
+### 14.5 Migration mechanism
+
+Provide a built-in **plan / preview / apply** migration workflow, with structured
+CLI/MCP results. Exact command spelling is deferred. Planning is read-only and
+reports source/target schemas, affected files, diffs, compatibility choices,
+unsupported transformations and manual steps. Ordinary discovery and read-only
+commands never rewrite configuration.
+
+Explicit apply requires the files to still match the plan's fingerprints. It
+validates transformed documents, makes backups and uses atomic per-file writes.
+For multi-file changes, maintain a recovery journal and report partial progress
+if interrupted; do not claim that separate file renames form a filesystem-wide
+atomic transaction. Plans are deterministic; repeated application is idempotent.
+Compose tested adjacent-version migrations where possible rather than requiring
+users to install each intervening omni release.
+
+Persistent workspace/plugin manifest schemas get explicit version markers where
+interpretation would otherwise be ambiguous. The initial unversioned workspace
+format is a defined legacy baseline, not a guess based on whichever fields
+happen to appear. SDK source codemods are separate previewable operations; they
+must not pretend to convert behavior they cannot understand.
+
+Never silently rewrite pinned third-party artifacts, git content-store checkouts
+or lock identities. A plugin requiring an artifact upgrade needs an explicit
+source/pin update and normal verification. Run no arbitrary plugin-provided
+migration code with host privileges; host-owned declarative transforms/codemods
+and documented manual guides are the default mechanism.
+
+Session state and inference caches are rebuildable. Invalidate and recompute
+when their schema, artifact or negotiated contract changes; do not burden plugin
+authors with migrating ephemeral discovery state. If durable plugin-owned data
+is introduced later, it needs a separate persistence/migration contract.
+
+When automatic conversion is unsafe or impossible, emit an actionable diagnostic
+with the unsupported boundary, supported upgrade path, relevant guide and any
+safe partial automation. Do not perform guessed conversions or leave a project
+silently using different semantics.
+
+### 14.6 Release gates
+
+- Stable old-artifact fixtures run against every host update for all supported
+  protocol/capability majors, including state, hooks, merge behavior and errors.
+- Negotiation tests cover ranges, missing features, optional skips, incompatible
+  capability/protocol pairs and manifests that overclaim their exports.
+- SDK source-compatibility checks cover supported use within a stable SDK major.
+- Migration golden tests cover previews, adjacent-version composition,
+  idempotence, stale plans, backups, interrupted multi-file recovery and manual
+  refusal paths. Test the unversioned legacy workspace baseline explicitly.
+- Deprecation/removal releases and adapter coverage are published before a
+  breaking host release; no runtime tier bypasses the compatibility policy.
