@@ -1128,6 +1128,16 @@ impl ExecutionEventSubscriber for CliSubscriber {
     }
 }
 
+impl CliSubscriber {
+    /// Masks the run's known secrets in free text bound for a presenter.
+    fn redact_text(&self, text: &str) -> String {
+        match self.redactor.get() {
+            Some(r) => r.redact(text).into_owned(),
+            None => text.to_string(),
+        }
+    }
+}
+
 impl GeneratorEventSubscriber for CliSubscriber {
     /// A script's own `ctx.log.*` output: `info`/`warn`/`error` are shown (a
     /// script author asked for them, so `-q` does not hide them); `debug` and
@@ -1135,9 +1145,7 @@ impl GeneratorEventSubscriber for CliSubscriber {
     fn on_script_log(&self, e: omni_messages::ScriptLogEvent) {
         use omni_messages::ScriptLogLevel as L;
         let mut e = e;
-        if let Some(r) = self.redactor.get() {
-            e.message = r.redact(e.message.as_str()).into_owned();
-        }
+        e.message = self.redact_text(&e.message);
         e.mirror_to_tracing();
         let msg = escape_control_chars(&e.message).into_owned();
         match e.level {
@@ -1160,13 +1168,15 @@ impl GeneratorEventSubscriber for CliSubscriber {
         // Only the top-level generator drives the progress display; actions
         // inside sub-generators are represented by their parent's step.
         if e.depth == 0 {
-            self.with_progress(|p| p.action_in_progress(&e.name, &e.message));
+            let message = self.redact_text(&e.message);
+            self.with_progress(|p| p.action_in_progress(&e.name, &message));
         }
     }
 
     async fn on_action_success(&self, e: GeneratorActionSuccessEvent) {
         if e.depth == 0 {
-            self.with_progress(|p| p.action_success(&e.name, &e.message));
+            let message = self.redact_text(&e.message);
+            self.with_progress(|p| p.action_success(&e.name, &message));
         }
         // Notices from sub-generators print too, so flush at every depth.
         self.flush_notices();
@@ -1174,15 +1184,17 @@ impl GeneratorEventSubscriber for CliSubscriber {
 
     async fn on_action_failed(&self, e: GeneratorActionFailedEvent) {
         if e.depth == 0 {
-            self.with_progress(|p| p.action_failed(&e.name, &e.message));
+            let message = self.redact_text(&e.message);
+            self.with_progress(|p| p.action_failed(&e.name, &message));
         }
         self.flush_notices();
     }
 
     async fn on_action_skipped(&self, e: GeneratorActionSkippedEvent) {
         if e.depth == 0 {
+            let reason = e.reason.as_deref().map(|r| self.redact_text(r));
             self.with_progress(|p| {
-                p.action_skipped(&e.name, e.reason.as_deref())
+                p.action_skipped(&e.name, reason.as_deref())
             });
         }
     }
