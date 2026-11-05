@@ -78,44 +78,9 @@ pub enum ErrorFormat {
 }
 
 /// CLI presentation settings passed to commands, independent of workspace state.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Args, Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct OutputOptions {
     /// Hide omni's narration, but keep results, failures and essential notices.
-    pub quiet: bool,
-}
-
-impl From<&CliArgs> for OutputOptions {
-    fn from(args: &CliArgs) -> Self {
-        Self { quiet: args.quiet }
-    }
-}
-
-#[cfg(test)]
-mod output_options_tests {
-    use super::{CliArgs, OutputOptions};
-
-    #[test]
-    fn narration_is_enabled_by_default() {
-        assert_eq!(
-            OutputOptions::from(&CliArgs::default()),
-            OutputOptions::default()
-        );
-        assert!(!OutputOptions::default().quiet);
-    }
-
-    #[test]
-    fn quiet_is_copied_from_cli_args() {
-        let args = CliArgs {
-            quiet: true,
-            ..CliArgs::default()
-        };
-        assert!(OutputOptions::from(&args).quiet);
-    }
-}
-
-#[derive(Args, Debug)]
-#[command()]
-pub struct CliArgs {
     #[arg(
         short = 'q',
         long,
@@ -126,6 +91,37 @@ pub struct CliArgs {
         global = true
     )]
     pub quiet: bool,
+}
+
+#[cfg(test)]
+mod output_options_tests {
+    use clap::Parser;
+
+    use super::{Cli, CliArgs, OutputOptions};
+
+    #[test]
+    fn narration_is_enabled_by_default() {
+        assert_eq!(CliArgs::default().output, OutputOptions::default());
+        assert!(!OutputOptions::default().quiet);
+    }
+
+    #[test]
+    fn quiet_is_flattened_and_global() {
+        for args in [
+            vec!["omni", "-q", "env", "all"],
+            vec!["omni", "env", "all", "--quiet"],
+        ] {
+            let cli = Cli::try_parse_from(args).unwrap();
+            assert!(cli.args.output.quiet);
+        }
+    }
+}
+
+#[derive(Args, Debug)]
+#[command()]
+pub struct CliArgs {
+    #[command(flatten)]
+    pub output: OutputOptions,
 
     #[arg(
         long = "trace",
@@ -201,7 +197,7 @@ pub struct CliArgs {
 impl Default for CliArgs {
     fn default() -> Self {
         Self {
-            quiet: false,
+            output: OutputOptions::default(),
             trace: None,
             trace_file: None,
             trace_file_level: EnumValueAdapter::new(Level::Off),

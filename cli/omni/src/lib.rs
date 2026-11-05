@@ -8,9 +8,7 @@ use std::{
 
 use clap::Parser as _;
 use omni_cli_core::{
-    commands::{
-        self, Cli, CliArgs, CliSubcommands, ErrorFormat, OutputOptions,
-    },
+    commands::{self, Cli, CliArgs, CliSubcommands, ErrorFormat},
     context::{self, Context, ContextError, get_root_dir},
 };
 use omni_diagnostic::DiagnosticReport;
@@ -67,7 +65,7 @@ pub async fn run(
 ) -> eyre::Result<()> {
     #[allow(clippy::result_large_err)]
     let create_ctx = || ctx(args, tracing, ws_root_dir);
-    let output = OutputOptions::from(args);
+    let output = args.output;
 
     match sc {
         CliSubcommands::Config(config) => {
