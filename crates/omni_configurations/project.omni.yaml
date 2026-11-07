@@ -22,3 +22,4 @@ dependencies:
   - omni_glob
   - omni_redact
   - omni_diagnostic
+  - omni_codes

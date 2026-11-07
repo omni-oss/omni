@@ -10,6 +10,8 @@ use omni_core::{
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 use thiserror::Error;
 
+omni_codes::prefixes!("task_extension");
+
 use crate::{
     ProjectConfiguration, TaskConfiguration, TaskConfigurationLongForm,
 };
