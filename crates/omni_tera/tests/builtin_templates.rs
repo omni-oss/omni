@@ -40,6 +40,8 @@ fn diagnostic_support_can_be_enabled_or_disabled_in_builtin_templates() {
             &context,
         )
         .unwrap();
+        // Windows checks templates out with CRLF line endings.
+        let project = project.replace("\r\n", "\n");
         assert_eq!(
             project.contains("dependencies:\n  - omni_diagnostic"),
             enabled
