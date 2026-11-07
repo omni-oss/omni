@@ -29,6 +29,8 @@
 
 pub mod allowed;
 pub mod base;
+#[cfg(test)]
+mod diagnostic_tests;
 pub mod error;
 pub mod input;
 mod json_schema;

@@ -11,3 +11,5 @@ dependencies:
   - serde_validate
   - omni_serde_validators
   - omni_redact
+  - omni_diagnostic
+  - omni_codes
