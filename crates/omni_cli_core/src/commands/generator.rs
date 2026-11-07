@@ -182,7 +182,7 @@ async fn run_generator_run(
             }
             (Some(out), Some(_)) => {
                 crate::subscriber::print_notice(
-                    &crate::notices::OutputOverridesProject,
+                    &omni_generator::notices::OutputOverridesProject,
                     output.quiet,
                 );
                 (out, None)
