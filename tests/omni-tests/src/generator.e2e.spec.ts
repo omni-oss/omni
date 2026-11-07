@@ -408,7 +408,8 @@ describe(
                 },
             );
 
-            expect(result).toHaveExitCode(1);
+            expect(result).toHaveExitCode(2);
+            expect(result.stderr).toContain("error[generator.not_invocable]");
             expect(result.stderr).toContain(
                 "generator 'non-user-invocable' is not invocable by the user",
             );
@@ -1810,7 +1811,8 @@ describe(
                 { cwd: ws.cwd },
             );
 
-            expect(result).toHaveExitCode(1);
+            expect(result).toHaveExitCode(2);
+            expect(result.stderr).toContain("error[generator.recursion]");
             expect(result.stderr).toContain("will recurse into itself");
             expect(ws.exists("out")).toBe(false);
         });
@@ -1832,7 +1834,8 @@ describe(
                 { cwd: ws.cwd },
             );
 
-            expect(result).toHaveExitCode(1);
+            expect(result).toHaveExitCode(2);
+            expect(result.stderr).toContain("error[generator.recursion]");
             expect(result.stderr).toContain("will recurse into itself");
         });
     },
@@ -1865,7 +1868,10 @@ describe(
                 { cwd: ws.cwd },
             );
 
-            expect(result).toHaveExitCode(1);
+            expect(result).toHaveExitCode(2);
+            expect(result.stderr).toContain(
+                "error[generator.max_depth_exceeded]",
+            );
             expect(result.stderr).toContain(
                 "exceeded the maximum nesting depth",
             );
