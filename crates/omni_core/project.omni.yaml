@@ -7,3 +7,4 @@ dependencies:
   - omni_config_types
   - omni_command_config
   - omni_diagnostic
+  - omni_codes

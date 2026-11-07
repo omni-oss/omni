@@ -142,3 +142,11 @@ fn new_codes_are_registered_in_the_catalog() {
         );
     }
 }
+
+#[test]
+fn registry_accepts_the_declared_prefixes() {
+    if let Err(errors) = omni_codes::validate() {
+        let msgs: Vec<String> = errors.iter().map(|e| e.to_string()).collect();
+        panic!("invalid code registry:\n{}", msgs.join("\n"));
+    }
+}
