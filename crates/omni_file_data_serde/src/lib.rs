@@ -3,11 +3,12 @@ use std::{
     path::Path,
 };
 
-use eyre::Context;
 use serde::{Deserialize, Serialize};
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 use system_traits::{FsRead, FsReadAsync, FsWrite, FsWriteAsync};
 use thiserror::Error;
+
+omni_codes::prefixes!("file_data");
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Format {
@@ -106,7 +107,11 @@ where
 {
     match format {
         Format::Yaml => {
-            let value = noyalib::from_reader(reader)?;
+            let value = noyalib::from_reader(reader).map_err(|e| {
+                let location =
+                    e.location().map_or((0, 0), |l| (l.line(), l.column()));
+                parse_failed("yaml", None, location)
+            })?;
             let deserializer = noyalib::Deserializer::new(&value);
             Ok(serde_path_to_error::deserialize(deserializer)?)
         }
@@ -132,10 +137,63 @@ where
     TData: for<'de> Deserialize<'de>,
 {
     let utf8_str = std::str::from_utf8(data)?;
-    let deserializer =
-        toml::Deserializer::parse(utf8_str).wrap_err("failed to parse TOML")?;
+    let deserializer = toml::Deserializer::parse(utf8_str).map_err(|e| {
+        parse_failed("toml", None, toml_location(utf8_str, e.span()))
+    })?;
 
-    Ok(serde_path_to_error::deserialize(deserializer)?)
+    Ok(serde_path_to_error::deserialize(deserializer).map_err(|e| {
+        parse_failed(
+            "toml",
+            path_of(&e),
+            toml_location(utf8_str, e.inner().span()),
+        )
+    })?)
+}
+
+fn path_of<E>(error: &serde_path_to_error::Error<E>) -> Option<String> {
+    let path = error.path().to_string();
+    (path != ".").then_some(path)
+}
+
+fn toml_location(
+    input: &str,
+    span: Option<std::ops::Range<usize>>,
+) -> (usize, usize) {
+    let Some(before) = span.and_then(|s| input.get(..s.start)) else {
+        return (0, 0);
+    };
+    let line = before.matches('\n').count() + 1;
+    let column = before
+        .rsplit('\n')
+        .next()
+        .unwrap_or_default()
+        .chars()
+        .count()
+        + 1;
+    (line, column)
+}
+
+/// The summary carries the format, path and location only: the parser's own
+/// message can quote the offending value or line of the file.
+fn parse_failed(
+    format: &'static str,
+    path: Option<String>,
+    (line, column): (usize, usize),
+) -> ErrorInner {
+    let mut message = format!("failed to parse {} file", format.to_uppercase());
+    if let Some(path) = &path {
+        message.push_str(&format!(" at `{path}`"));
+    }
+    if line > 0 {
+        message.push_str(&format!(" (line {line}, column {column})"));
+    }
+    ErrorInner::ParseFailed {
+        format,
+        path,
+        line: (line > 0).then_some(line),
+        column: (column > 0).then_some(column),
+        message,
+    }
 }
 
 #[inline(always)]
@@ -263,8 +321,9 @@ pub fn ext_to_format(ext: &std::ffi::OsStr) -> Result<Format, Error> {
     }
 }
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, omni_diagnostic::Diagnostic)]
 #[error(transparent)]
+#[diagnostic(forward)]
 pub struct Error(ErrorInner);
 
 impl Error {
@@ -281,47 +340,89 @@ impl<T: Into<ErrorInner>> From<T> for Error {
     }
 }
 
-#[derive(Error, Debug, EnumDiscriminants)]
+#[derive(Error, Debug, EnumDiscriminants, omni_diagnostic::Diagnostic)]
 #[strum_discriminants(vis(pub), name(ErrorKind))]
 enum ErrorInner {
+    /// The file extension does not name a supported data format.
     #[error("tried to load an unsupported file extension: {0}")]
-    UnsupportedFileExtension(String),
+    #[diagnostic(
+        code = "file_data.unsupported_extension",
+        hint = "rename the file to use one of the supported extensions: yaml, yml, json, toml or bin"
+    )]
+    UnsupportedFileExtension(#[diagnostic(detail = "extension")] String),
 
     #[error(transparent)]
+    #[diagnostic(skip)]
     Io(#[from] io::Error),
 
-    #[error(transparent)]
-    TomlDeserialize(#[from] serde_path_to_error::Error<toml::de::Error>),
+    /// A YAML, JSON or TOML file is not valid at the reported location.
+    #[error("{message}")]
+    #[diagnostic(
+        code = "file_data.parse_failed",
+        hint = "fix the {format} syntax or the value at the reported location"
+    )]
+    ParseFailed {
+        #[diagnostic(detail)]
+        format: &'static str,
+        #[diagnostic(detail)]
+        path: Option<String>,
+        #[diagnostic(detail)]
+        line: Option<usize>,
+        #[diagnostic(detail)]
+        column: Option<usize>,
+        message: String,
+    },
 
     #[error(transparent)]
+    #[diagnostic(skip)]
     TomlSerialize(#[from] toml::ser::Error),
 
     #[error(transparent)]
-    YmlDeserialize(#[from] serde_path_to_error::Error<noyalib::Error>),
-
-    #[error(transparent)]
+    #[diagnostic(skip)]
     YmlSerialize(#[from] noyalib::Error),
 
     #[error(transparent)]
+    #[diagnostic(skip)]
     BinDeserialize(
         #[from] serde_path_to_error::Error<rmp_serde::decode::Error>,
     ),
 
     #[error(transparent)]
+    #[diagnostic(skip)]
     BinSeserialize(#[from] rmp_serde::encode::Error),
 
     #[error(transparent)]
-    JsonDeserialize(#[from] serde_path_to_error::Error<serde_json::Error>),
-
-    #[error(transparent)]
+    #[diagnostic(skip)]
     JsonSerialize(#[from] serde_json::Error),
 
     #[error(transparent)]
+    #[diagnostic(skip)]
     Utf8(#[from] std::str::Utf8Error),
 
     #[error(transparent)]
+    #[diagnostic(delegate)]
     Unknown(#[from] eyre::Report),
 }
+
+impl From<serde_path_to_error::Error<serde_json::Error>> for ErrorInner {
+    fn from(error: serde_path_to_error::Error<serde_json::Error>) -> Self {
+        let inner = error.inner();
+        parse_failed("json", path_of(&error), (inner.line(), inner.column()))
+    }
+}
+
+impl From<serde_path_to_error::Error<noyalib::Error>> for ErrorInner {
+    fn from(error: serde_path_to_error::Error<noyalib::Error>) -> Self {
+        let location = error
+            .inner()
+            .location()
+            .map_or((0, 0), |l| (l.line(), l.column()));
+        parse_failed("yaml", path_of(&error), location)
+    }
+}
+
+#[cfg(test)]
+mod diagnostic_tests;
 
 #[cfg(test)]
 mod tests {
