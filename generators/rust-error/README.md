@@ -5,40 +5,63 @@ generator adds the `omni_diagnostic` workspace dependency and project dependency
 when invoking `rust-error` on an existing crate, add that Cargo dependency yourself.
 Set `use_diagnostics` to `false` to generate errors without diagnostic integration.
 
-Generated wrappers register a lookup that forwards diagnostics inside `Custom`
-reports, including reports with `eyre::WrapErr` context. Plain custom messages
-remain ordinary errors: they do not get a catch-all diagnostic code.
-
-For a new user-facing failure, prefer a concrete diagnostic type with a meaningful
-code, audience, and actionable hint:
+The generated public error forwards to its inner enum, which derives
+`omni_diagnostic::Diagnostic`:
 
 ```rust
-#[derive(Debug, thiserror::Error, omni_diagnostic::Diagnostic)]
-#[error("unknown project `{name}`")]
-#[diagnostic(code = "project.unknown", audience = user,
-             hint = "Check the project name in your workspace configuration.")]
-pub struct UnknownProject {
-    #[diagnostic(detail)]
-    pub name: String,
+#[derive(Debug, thiserror::Error, new, omni_diagnostic::Diagnostic)]
+#[error(transparent)]
+#[diagnostic(forward)]
+pub struct Error(pub(crate) ErrorInner);
+
+#[derive(Debug, thiserror::Error, EnumDiscriminants, new, omni_diagnostic::Diagnostic)]
+pub(crate) enum ErrorInner {
+    #[error(transparent)]
+    #[diagnostic(delegate)]
+    Custom(#[from] eyre::Report),
 }
 ```
 
-Add a variant to the generated inner enum and a corresponding wrapper lookup arm:
+`Custom` uses `delegate`, so a diagnostic inside the report (including one
+wrapped with `eyre::WrapErr` context) is still found. A plain custom message stays an
+ordinary error and gets no catch-all code.
 
-```rust,ignore
-// ErrorInner:
-#[error(transparent)]
-UnknownProject(#[from] UnknownProject),
+The derive requires every variant to say what it is, so a new variant will not compile
+until you decide:
 
-// register_wrapper! lookup:
-ErrorInner::UnknownProject(inner) => Some(inner),
+| Attribute | Use for |
+| --- | --- |
+| `#[diagnostic(code = "area.name", ...)]` | a failure the user or an agent can act on; gets a stable code, audience, details and hints |
+| `#[diagnostic(delegate)]` | a variant wrapping another error, or an `eyre::Report`, that may carry its own diagnostic; it is looked up in the field (a report's whole cause chain is searched) |
+| `#[diagnostic(skip)]` | a failure with no diagnostic (I/O, serialization, internal plumbing) |
+| `#[diagnostic(forward)]` | a variant wrapping a type that itself implements `Diagnostic` |
+
+Example:
+
+```rust
+pub(crate) enum ErrorInner {
+    /// The project could not be found.
+    #[error("unknown project `{name}`")]
+    #[diagnostic(code = "project.unknown", audience = user,
+                 hint = "Check the project name in your workspace configuration.")]
+    UnknownProject {
+        #[diagnostic(detail)]
+        name: String,
+    },
+
+    #[error(transparent)]
+    #[diagnostic(skip)]
+    Io(#[from] std::io::Error),
+
+    #[error(transparent)]
+    #[diagnostic(delegate)]
+    Custom(#[from] eyre::Report),
+}
 ```
 
-For enums whose variants all implement `Diagnostic`, derive `Diagnostic` on the
-enum and use `#[diagnostic(forward)]` on each single-field forwarding variant.
-This is distinct from `#[error(transparent)]`, which only forwards error behavior.
-Do not derive `Diagnostic` on the generated `Custom(eyre::Report)` variant:
-`eyre::Report` does not implement `Diagnostic`.
+The first doc line of a coded variant becomes its summary in the code catalog. Codes
+must be unique across the workspace; `cargo test -p omni_cli_core --test code_registry`
+checks that and that every registered code is well formed.
 
-Explicit-registry builds must include a `wrapper_registration!` entry in their
-installed registry; `register_wrapper!` only auto-registers with the inventory backend.
+Do not hand-write `impl Diagnostic`. A manual impl is not registered in the code
+catalog and skips the derive's checks.

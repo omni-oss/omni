@@ -440,6 +440,8 @@ pub enum ProjectFilterError {
 | variant or struct | `hints = path::fn` | Escape hatch: `fn(&Self) -> Vec<String>`, listed before the static `hint`s (specific before generic). |
 | variant or struct | `body = path::fn` | Escape hatch for `render_body`. |
 | variant | `forward` | Variant has exactly one field implementing `Diagnostic`; all methods delegate to it. |
+| variant | `skip` | Variant carries no diagnostic (I/O, serialization, internal plumbing). It is a plain error: lookup ignores it and `reportable()` is `false`. |
+| variant | `delegate` | Variant has exactly one field: an error, or an `eyre::Report`, that may carry its own diagnostic. It is looked up in that field (a report's whole cause chain is searched, so context added with `wrap_err` does not hide it); if there is none the variant is a plain error. |
 | type | `no_register` | Skip registration (for diagnostics only ever constructed by hand). |
 
 **Generated code**
@@ -455,11 +457,21 @@ pub enum ProjectFilterError {
   forwards is still found first by `find` (outermost wins) and delegates. Types with generic parameters cannot be
   registered and fail with a clear error (use `no_register` or a concrete
   wrapper).
+- `Diagnostic::reportable()` (default `true`) is `false` for `skip` variants and
+  for `delegate` variants whose inner error has no diagnostic. The registered
+  lookup only matches reportable values, so a public wrapper such as
+  `#[diagnostic(forward)] struct Error(ErrorInner)` over an enum that mixes coded,
+  `skip` and `delegate` variants is found only when the value really
+  carries a diagnostic. For a `skip`/`delegate` variant the other trait methods
+  return neutral values (`code()` is `""`) and must not be used without checking
+  `reportable()`.
 
 **Compile-time rules** (errors point at the attribute span)
 
-- Every variant needs `code` or `forward`; a missing one is an error, so a new
-  variant cannot silently become uncoded.
+- Every variant needs `code`, `forward`, `delegate` or `skip`; a missing one is
+  an error, so a new variant cannot silently become uncoded. `skip` and
+  `delegate` take no other attribute and cannot be combined with each other or
+  with `forward`.
 - Codes must match `^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$`.
 - Codes are unique within the type.
 - Every `{field}` in a `hint` must exist on that variant.

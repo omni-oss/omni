@@ -49,6 +49,15 @@ pub trait Diagnostic: Error + Send + Sync + 'static {
     fn render_body(&self, _out: &mut dyn fmt::Write) -> fmt::Result {
         Ok(())
     }
+
+    /// Whether this value actually carries a diagnostic.
+    ///
+    /// Always `true` unless the type has `#[diagnostic(skip)]` variants or
+    /// `delegate` variants whose inner error has no diagnostic. Lookup ignores
+    /// values that are not reportable, so such values stay plain errors.
+    fn reportable(&self) -> bool {
+        true
+    }
 }
 
 /// Per-variant metadata stored in a [`Registration`].
@@ -81,6 +90,43 @@ pub mod __private {
     pub fn to_value<T: serde::Serialize + ?Sized>(v: &T) -> serde_json::Value {
         serde_json::to_value(v).unwrap_or(serde_json::Value::Null)
     }
+
+    /// Autoref specialization behind `#[diagnostic(delegate)]`: an
+    /// `eyre::Report` field is searched along its whole cause chain, any other
+    /// error field is looked up as a single error. [`ViaReport`] wins when the
+    /// field is a report because it matches one autoref step earlier.
+    pub struct Delegate<'a, T>(pub &'a T);
+
+    pub trait ViaReport<'a> {
+        fn __omni_lookup(&self) -> Option<&'a dyn crate::Diagnostic>;
+    }
+
+    impl<'a> ViaReport<'a> for Delegate<'a, eyre::Report> {
+        fn __omni_lookup(&self) -> Option<&'a dyn crate::Diagnostic> {
+            crate::find(self.0)
+        }
+    }
+
+    pub trait ViaError<'a> {
+        fn __omni_lookup(&self) -> Option<&'a dyn crate::Diagnostic>;
+    }
+
+    impl<'a, T: std::error::Error + 'static> ViaError<'a> for &Delegate<'a, T> {
+        fn __omni_lookup(&self) -> Option<&'a dyn crate::Diagnostic> {
+            crate::find_in_error(self.0)
+        }
+    }
+}
+
+/// Looks for a diagnostic inside a field. Emitted by `#[diagnostic(delegate)]`.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __delegate_lookup {
+    ($field:expr) => {{
+        #[allow(unused_imports)]
+        use $crate::__private::{ViaError as _, ViaReport as _};
+        (&$crate::__private::Delegate($field)).__omni_lookup()
+    }};
 }
 
 /// Registers a derived diagnostic type. Emitted by `#[derive(Diagnostic)]`.

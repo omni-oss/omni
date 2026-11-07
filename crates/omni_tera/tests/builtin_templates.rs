@@ -56,10 +56,10 @@ fn diagnostic_support_can_be_enabled_or_disabled_in_builtin_templates() {
                 "pub struct SampleError(pub(crate) SampleErrorInner)"
             )
         );
-        assert_eq!(
-            error.contains("omni_diagnostic::register_wrapper!(SampleError"),
-            enabled
-        );
-        assert_eq!(error.contains("SampleErrorInner::Custom(report) => omni_diagnostic::find(report)"), enabled);
+        assert_eq!(error.contains("omni_diagnostic::Diagnostic"), enabled);
+        assert_eq!(error.contains("#[diagnostic(forward)]"), enabled);
+        assert_eq!(error.contains("#[diagnostic(delegate)]"), enabled);
+        assert!(!error.contains("register_wrapper"));
+        assert!(!error.contains("impl omni_diagnostic::Diagnostic"));
     }
 }
