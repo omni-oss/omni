@@ -74,12 +74,8 @@ pub async fn sync_files<S: PatchSys>(
         let existing = read_existing(sys, path).await?;
         let existed = existing.is_some();
         let original = existing.unwrap_or_default();
-        let spliced = fence::splice(&original, block).map_err(|source| {
-            IgnoreError::MalformedFence {
-                path: path.clone(),
-                source,
-            }
-        })?;
+        let spliced = fence::splice(&original, block)
+            .map_err(|source| IgnoreError::malformed_fence(path, source))?;
         plans.push(Plan {
             path: path.clone(),
             existed,
@@ -123,10 +119,7 @@ pub async fn check_files<S: PatchSys>(
             Some(original) => {
                 let spliced =
                     fence::splice(&original, block).map_err(|source| {
-                        IgnoreError::MalformedFence {
-                            path: path.clone(),
-                            source,
-                        }
+                        IgnoreError::malformed_fence(path, source)
                     })?;
                 if !spliced.was_present {
                     CheckOutcome::Missing
@@ -159,12 +152,8 @@ pub async fn clean_files<S: PatchSys>(
     for path in files {
         let new_content = match read_existing(sys, path).await? {
             None => None,
-            Some(original) => fence::remove(&original).map_err(|source| {
-                IgnoreError::MalformedFence {
-                    path: path.clone(),
-                    source,
-                }
-            })?,
+            Some(original) => fence::remove(&original)
+                .map_err(|source| IgnoreError::malformed_fence(path, source))?,
         };
         plans.push(Plan {
             path: path.clone(),
