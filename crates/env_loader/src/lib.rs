@@ -10,6 +10,9 @@ mod error;
 mod sys;
 
 #[cfg(test)]
+mod diagnostic_tests;
+
+#[cfg(test)]
 pub mod test_utils;
 
 pub use cache::*;
@@ -75,9 +78,9 @@ where
     }
 
     if !sys.fs_exists(start_dir)? {
-        return Err(EnvLoaderErrorInner::PathDoesNotExist(
-            start_dir.to_string_lossy().to_string(),
-        )
+        return Err(EnvLoaderErrorInner::PathDoesNotExist {
+            path: start_dir.to_string_lossy().to_string(),
+        }
         .into());
     }
 
@@ -177,9 +180,9 @@ where
 
         for file in files.iter().rev() {
             let contents = sys.fs_read_to_string(file).map_err(|_| {
-                EnvLoaderErrorInner::CantReadFile(
-                    file.to_string_lossy().to_string(),
-                )
+                EnvLoaderErrorInner::CantReadFile {
+                    path: file.to_string_lossy().to_string(),
+                }
             })?;
 
             let parsed = env::parse(
@@ -190,7 +193,10 @@ where
                     extra_envs: Some(&env),
                 },
             )
-            .map_err(EnvLoaderErrorInner::CantParseEnv)?;
+            .map_err(|err| EnvLoaderErrorInner::CantParseEnv {
+                path: file.to_string_lossy().to_string(),
+                err,
+            })?;
 
             if let Some(matcher) = &config.matcher
                 && matcher.iter().all(|(k, v)| {

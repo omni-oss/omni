@@ -14,3 +14,8 @@ system_traits = { workspace = true, features = ["memory-sync"] }
 strum = { workspace = true }
 mockall = { workspace = true }
 maps = { workspace = true }
+omni_codes = { workspace = true }
+omni_diagnostic = { workspace = true }
+
+[dev-dependencies]
+eyre = { workspace = true }

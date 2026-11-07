@@ -6,3 +6,5 @@ extends:
 
 dependencies:
   - env
+  - omni_diagnostic
+  - omni_codes
