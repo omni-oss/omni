@@ -14,3 +14,5 @@ dependencies:
   - omni_constants
   - omni_input_schema
   - omni_redact
+  - omni_diagnostic
+  - omni_codes
