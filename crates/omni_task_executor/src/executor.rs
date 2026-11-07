@@ -196,8 +196,11 @@ impl<'a, TSys: TaskExecutorSys, S: ExecutionEventSubscriber>
     }
 }
 
-#[derive(Debug, thiserror::Error)]
+omni_codes::prefixes!("executor");
+
+#[derive(Debug, thiserror::Error, omni_diagnostic::Diagnostic)]
 #[error(transparent)]
+#[diagnostic(forward)]
 pub struct TaskExecutorError(TaskExecutorErrorInner);
 
 impl TaskExecutorError {
@@ -218,11 +221,6 @@ impl TaskExecutorError {
     }
 }
 
-omni_diagnostic::register_wrapper!(TaskExecutorError, |e| {
-    e.meta_filter_error()
-        .map(|m| m as &dyn omni_diagnostic::Diagnostic)
-});
-
 impl<T: Into<TaskExecutorErrorInner>> From<T> for TaskExecutorError {
     fn from(value: T) -> Self {
         let inner = value.into();
@@ -230,43 +228,118 @@ impl<T: Into<TaskExecutorErrorInner>> From<T> for TaskExecutorError {
     }
 }
 
-#[derive(Debug, thiserror::Error, EnumDiscriminants, new)]
+#[derive(
+    Debug, thiserror::Error, EnumDiscriminants, new, omni_diagnostic::Diagnostic,
+)]
 #[strum_discriminants(name(TaskExecutorErrorKind), vis(pub))]
 enum TaskExecutorErrorInner {
     #[error(transparent)]
+    #[diagnostic(skip)]
     ExecutionPipeline(#[from] ExecutionPipelineError),
 
     #[error(transparent)]
+    #[diagnostic(delegate)]
     ExecutionPlanProvider(#[from] ExecutionPlanProviderError),
 
     #[error(transparent)]
+    #[diagnostic(skip)]
     Io(#[from] std::io::Error),
 
     #[error(transparent)]
+    #[diagnostic(delegate)]
     TaskExecutionGraph(#[from] TaskExecutionGraphError),
 
     #[error(transparent)]
+    #[diagnostic(delegate)]
     ProjectGraph(#[from] ProjectGraphError),
 
     #[error(transparent)]
+    #[diagnostic(delegate)]
     Unknown(#[from] eyre::Report),
 
     #[error(transparent)]
+    #[diagnostic(skip)]
     LocalTaskExecutionCacheStore(#[from] LocalTaskExecutionCacheStoreError),
 
     #[error(transparent)]
+    #[diagnostic(skip)]
     MetaFilter(#[from] omni_expressions::Error),
 
+    /// No task matched the call.
+    ///
+    /// The project, directory and meta filters together selected no task to
+    /// run.
     #[error(
         "no task to execute, nothing matches the call: {call} \nproject filters: {project_filters:?}, \ndir filters: {dir_filters:?}, \nmeta filter: {meta_filter:?}"
     )]
+    #[diagnostic(
+        code = "executor.nothing_to_execute",
+        hint = "check the project, directory and meta filters, and that the task is defined in a matching project"
+    )]
     NothingToExecute {
         call: Call,
+        #[diagnostic(detail)]
         project_filters: Vec<String>,
+        #[diagnostic(detail = "dir_filters")]
         dir_filters: Vec<String>,
+        #[diagnostic(detail = "meta_filter")]
         meta_filter: Option<String>,
     },
 
     #[error(transparent)]
+    #[diagnostic(skip)]
     Join(#[from] tokio::task::JoinError),
+}
+
+#[cfg(test)]
+mod diagnostic_tests {
+    use eyre::WrapErr;
+    use omni_diagnostic::{Audience, find};
+    use omni_execution_plan::Call;
+
+    use super::*;
+
+    fn nothing_to_execute() -> TaskExecutorError {
+        TaskExecutorErrorInner::new_nothing_to_execute(
+            Call::Tasks(vec!["build".into()]),
+            vec!["web".into()],
+            vec![],
+            Some("meta.type == 'lib'".into()),
+        )
+        .into()
+    }
+
+    #[test]
+    fn nothing_to_execute_is_a_user_diagnostic() {
+        let r = Err::<(), _>(nothing_to_execute())
+            .wrap_err("running tasks")
+            .unwrap_err();
+        let d = find(&r).expect("diagnostic");
+        assert_eq!(d.code(), "executor.nothing_to_execute");
+        assert_eq!(d.audience(), Audience::User);
+        let details = d.details().unwrap();
+        assert_eq!(details["project_filters"], serde_json::json!(["web"]));
+        assert_eq!(details["meta_filter"], "meta.type == 'lib'");
+        assert!(details.get("call").is_none());
+        assert_eq!(d.hints().len(), 1);
+    }
+
+    #[test]
+    fn plain_executor_errors_stay_uncoded() {
+        let plain: TaskExecutorError = eyre::eyre!("plain").into();
+        assert!(find(&eyre::Report::new(plain)).is_none());
+
+        let io: TaskExecutorError = std::io::Error::other("x").into();
+        assert!(find(&eyre::Report::new(io)).is_none());
+    }
+
+    #[test]
+    fn code_is_registered_in_the_catalog() {
+        assert!(omni_codes::get("executor.nothing_to_execute").is_some());
+        if let Err(errors) = omni_codes::validate() {
+            let msgs: Vec<String> =
+                errors.iter().map(|e| e.to_string()).collect();
+            panic!("invalid code registry:\n{}", msgs.join("\n"));
+        }
+    }
 }
