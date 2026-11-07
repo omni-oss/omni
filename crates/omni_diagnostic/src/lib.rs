@@ -97,9 +97,10 @@ pub mod __private {
     }
 
     /// Autoref specialization behind `#[diagnostic(delegate)]`: an
-    /// `eyre::Report` field is searched along its whole cause chain, any other
-    /// error field is looked up as a single error. [`ViaReport`] wins when the
-    /// field is a report because it matches one autoref step earlier.
+    /// `eyre::Report` field is searched along its whole cause chain, a
+    /// `Box<T>` field is looked up through the box, and any other error field
+    /// is looked up as a single error. [`ViaReport`] and [`ViaBox`] win for
+    /// their field types because they match one autoref step earlier.
     pub struct Delegate<'a, T>(pub &'a T);
 
     pub trait ViaReport<'a> {
@@ -109,6 +110,19 @@ pub mod __private {
     impl<'a> ViaReport<'a> for Delegate<'a, eyre::Report> {
         fn __omni_lookup(&self) -> Option<&'a dyn crate::Diagnostic> {
             crate::find(self.0)
+        }
+    }
+
+    /// A boxed error is looked up through the box: the registered lookups
+    /// downcast to the concrete type, and `Box<T>` is not `T`.
+    pub trait ViaBox<'a> {
+        fn __omni_lookup(&self) -> Option<&'a dyn crate::Diagnostic>;
+    }
+
+    impl<'a, T: std::error::Error + 'static> ViaBox<'a> for Delegate<'a, Box<T>> {
+        fn __omni_lookup(&self) -> Option<&'a dyn crate::Diagnostic> {
+            let inner: &'a T = &**self.0;
+            crate::find_in_error(inner)
         }
     }
 
@@ -129,7 +143,7 @@ pub mod __private {
 macro_rules! __delegate_lookup {
     ($field:expr) => {{
         #[allow(unused_imports)]
-        use $crate::__private::{ViaError as _, ViaReport as _};
+        use $crate::__private::{ViaBox as _, ViaError as _, ViaReport as _};
         (&$crate::__private::Delegate($field)).__omni_lookup()
     }};
 }

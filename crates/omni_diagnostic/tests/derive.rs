@@ -326,6 +326,10 @@ enum PublicInner {
 
     #[error(transparent)]
     #[diagnostic(delegate)]
+    Boxed(Box<InnerErr>),
+
+    #[error(transparent)]
+    #[diagnostic(delegate)]
     Custom(#[from] eyre::Report),
 }
 
@@ -380,4 +384,16 @@ fn mixed_types_register_their_own_codes() {
     ]);
     let info = omni_codes::get("mixed.missing").expect("registered");
     assert_eq!(info.summary, "The thing is missing.");
+}
+
+#[test]
+fn delegate_looks_through_a_boxed_field() {
+    let r = public(PublicInner::Boxed(Box::new(InnerErr)));
+    let d = find(&r).expect("diagnostic inside the box");
+    assert_eq!(d.code(), "sample.inner");
+    assert!(d.reportable());
+    assert_eq!(
+        DiagnosticReport::from_report(&r).unwrap().code,
+        "sample.inner"
+    );
 }
