@@ -94,8 +94,9 @@ pub async fn setup_remote_caching_config_async<TClient: RemoteCacheClient>(
     Ok(())
 }
 
-#[derive(Debug, thiserror::Error, new)]
+#[derive(Debug, thiserror::Error, new, omni_diagnostic::Diagnostic)]
 #[error("failed to setup remote caching: {0}")]
+#[diagnostic(forward)]
 pub struct SetupRemoteCachingConfigError(SetupRemoteCachingConfigErrorInner);
 
 impl SetupRemoteCachingConfigError {
@@ -114,33 +115,53 @@ impl<T: Into<SetupRemoteCachingConfigErrorInner>> From<T>
     }
 }
 
-#[derive(Debug, thiserror::Error, EnumDiscriminants, EnumIs, new)]
+#[derive(
+    Debug,
+    thiserror::Error,
+    EnumDiscriminants,
+    EnumIs,
+    new,
+    omni_diagnostic::Diagnostic,
+)]
 #[strum_discriminants(vis(pub), name(SetupRemoteCachingConfigErrorKind))]
-enum SetupRemoteCachingConfigErrorInner {
+pub(crate) enum SetupRemoteCachingConfigErrorInner {
     #[error(transparent)]
+    #[diagnostic(skip)]
     Io(#[from] std::io::Error),
 
     #[error(transparent)]
+    #[diagnostic(delegate)]
     RemoteCacheClient(#[from] RemoteCacheClientError),
 
     #[error(transparent)]
+    #[diagnostic(delegate)]
     Encode(#[from] omni_file_data_serde::Error),
 
     #[error(transparent)]
+    #[diagnostic(skip)]
     RmpSerdeEncode(#[from] rmp_serde::encode::Error),
 
     #[error(transparent)]
+    #[diagnostic(delegate)]
     SecretKey(#[from] crate::secret_key::SecretKeyError),
 
     #[error(transparent)]
+    #[diagnostic(delegate)]
     Custom(#[from] eyre::Report),
 
+    /// The remote cache server rejected the access details.
     #[error("invalid access")]
+    #[diagnostic(
+        code = "remote_cache.invalid_access",
+        hint = "check the API key, tenant, organization, workspace and environment codes, then run remote caching setup again"
+    )]
     InvalidAccess(#[source] eyre::Report),
 
     #[error(transparent)]
+    #[diagnostic(delegate)]
     Crypto(#[from] crypto::CryptoError),
 
     #[error(transparent)]
+    #[diagnostic(skip)]
     Env(#[from] std::env::VarError),
 }
