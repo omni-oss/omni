@@ -1,8 +1,11 @@
 use derive_new::new;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
-#[derive(Debug, thiserror::Error, new)]
+omni_codes::prefixes!("meta_source");
+
+#[derive(Debug, thiserror::Error, new, omni_diagnostic::Diagnostic)]
 #[error(transparent)]
+#[diagnostic(forward)]
 pub struct Error(pub(crate) ErrorInner);
 
 impl Error {
@@ -47,22 +50,50 @@ impl<T: Into<ErrorInner>> From<T> for Error {
     }
 }
 
-#[derive(Debug, thiserror::Error, EnumDiscriminants, new)]
+#[derive(
+    Debug, thiserror::Error, EnumDiscriminants, new, omni_diagnostic::Diagnostic,
+)]
 #[strum_discriminants(vis(pub), name(ErrorKind))]
 pub(crate) enum ErrorInner {
     #[error(transparent)]
+    #[diagnostic(delegate)]
     Custom(#[from] eyre::Report),
 
+    /// Meta sources refer back to one of their own ancestors.
     #[error("cycle detected in meta source graph: {0}")]
-    CycleDetected(String),
+    #[diagnostic(
+        code = "meta_source.cycle_detected",
+        hint = "remove the meta source that refers back to one of its ancestors"
+    )]
+    CycleDetected(#[diagnostic(detail = "chain")] String),
 
+    /// Meta sources nest deeper than the allowed maximum.
     #[error(
         "meta source nesting exceeded the maximum depth of {max} at '{qualified_id}'"
     )]
-    DepthExceeded { max: usize, qualified_id: String },
+    #[diagnostic(
+        code = "meta_source.depth_exceeded",
+        hint = "flatten the nested meta sources so that none nests more than {max} levels deep"
+    )]
+    DepthExceeded {
+        #[diagnostic(detail)]
+        max: usize,
+        #[diagnostic(detail)]
+        qualified_id: String,
+    },
 
+    /// Two members of the same bundle, or two projection sources, share an id.
     #[error("{}", duplicate_member_message(bundle.as_deref(), id))]
-    DuplicateMemberId { bundle: Option<String>, id: String },
+    #[diagnostic(
+        code = "meta_source.duplicate_member_id",
+        hint = "rename one of the sources with id `{id}` so that ids are unique"
+    )]
+    DuplicateMemberId {
+        #[diagnostic(detail)]
+        bundle: Option<String>,
+        #[diagnostic(detail)]
+        id: String,
+    },
 }
 
 fn duplicate_member_message(bundle: Option<&str>, id: &str) -> String {
