@@ -48,7 +48,7 @@ pub(crate) enum EnvLoaderErrorInner {
     },
 
     /// An env file cannot be parsed.
-    #[error("can't parse env: {err:?}")]
+    #[error("can't parse env file '{path}'{location}", location = location_suffix(err))]
     #[diagnostic(
         code = "env_file.parse_failed",
         details = parse_failed_details,
@@ -63,6 +63,15 @@ pub(crate) enum EnvLoaderErrorInner {
     #[error(transparent)]
     #[diagnostic(skip)]
     Expansion(#[from] ExpansionError),
+}
+
+/// Where the syntax error is. The offending text is deliberately left out: it
+/// is a line of the env file and may hold a secret value.
+fn location_suffix(err: &EnvParseError) -> String {
+    match err.location() {
+        Some((line, column)) => format!(" (line {line}, column {column})"),
+        None => String::new(),
+    }
 }
 
 fn parse_failed_details(e: &EnvLoaderErrorInner) -> serde_json::Value {

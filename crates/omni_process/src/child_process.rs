@@ -373,7 +373,7 @@ pub(crate) enum ChildProcessErrorInner {
     NoCommandProvided,
 
     /// The program name is empty but arguments were given.
-    #[error("empty program with args: program=\'{program}\' args={args:?}")]
+    #[error("empty program name with {count} argument(s)", count = args.len())]
     #[diagnostic(
         code = "process.empty_program",
         details = empty_program_details,

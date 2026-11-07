@@ -30,6 +30,14 @@ fn empty_program_reports_only_the_argument_count() {
     assert_eq!(d.details().unwrap()["args"], 1);
     assert!(!d.details().unwrap().to_string().contains("s3cret"));
     assert!(!d.hints().join(" ").contains("s3cret"));
+    // The summary is the Display text; it must not echo the arguments either.
+    let chain = r
+        .chain()
+        .map(|e| e.to_string())
+        .collect::<Vec<_>>()
+        .join(" | ");
+    assert!(!chain.contains("s3cret"), "{chain}");
+    assert!(!format!("{r:?}").contains("s3cret"));
 }
 
 #[tokio::test]

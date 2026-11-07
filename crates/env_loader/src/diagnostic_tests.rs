@@ -49,6 +49,15 @@ fn parse_failure_reports_path_and_location_without_contents() {
     assert!(details["column"].is_number());
     assert!(!details.to_string().contains("hunter2"));
     assert!(!d.hints().join(" ").contains("hunter2"));
+    // The summary is the Display text; it must not echo the file's contents.
+    let chain = r
+        .chain()
+        .map(|e| e.to_string())
+        .collect::<Vec<_>>()
+        .join(" | ");
+    assert!(!chain.contains("hunter2"), "{chain}");
+    assert!(!format!("{r:?}").contains("hunter2"));
+    assert!(chain.contains("/work/app/.env"), "{chain}");
 }
 
 #[test]
