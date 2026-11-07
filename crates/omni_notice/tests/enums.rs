@@ -119,6 +119,8 @@ fn generated_identifiers_do_not_collide() {
     );
 }
 
+/// Checks declaration-order metadata and independent inventory entries through
+/// the default backend or one explicitly installed enum registration.
 #[test]
 fn one_registration_contains_separate_inventory_entries() {
     let registration = &CacheNotice::__CODE_REGISTRATION;

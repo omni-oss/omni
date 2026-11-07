@@ -43,6 +43,7 @@ struct Attrs {
     docs: Option<Expr>,
 }
 
+/// Parses notice metadata from a struct or variant, rejecting unknown keys.
 fn parse_attrs(attrs: &[Attribute]) -> syn::Result<Attrs> {
     let mut a = Attrs::default();
     for attr in attrs.iter().filter(|a| a.path().is_ident("notice")) {
@@ -73,6 +74,8 @@ struct Case {
     fields: TokenStream2,
 }
 
+/// Validates one struct or enum variant and builds its metadata, field map
+/// and display expressions with aliased field bindings.
 fn build_case(
     name: &Ident,
     path: TokenStream2,
@@ -246,6 +249,9 @@ fn build_case(
     })
 }
 
+/// Normalizes the input into notice cases and emits the trait implementations
+/// and one registration containing all codes. Rejects unsupported type forms,
+/// enum-level metadata and duplicate variant codes.
 fn expand(input: DeriveInput) -> syn::Result<TokenStream2> {
     let name = &input.ident;
     if !input.generics.params.is_empty() {
