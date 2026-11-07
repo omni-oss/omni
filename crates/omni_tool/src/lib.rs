@@ -5,6 +5,8 @@
 pub mod error;
 
 mod bridge_runner;
+#[cfg(test)]
+mod diagnostic_tests;
 mod discover;
 mod pipeline;
 mod run;
