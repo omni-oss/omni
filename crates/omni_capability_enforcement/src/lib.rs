@@ -142,6 +142,9 @@ pub use spawn::{OsSandboxSpec, SpawnPolicy};
 // @anchor:uses
 
 #[cfg(test)]
+mod diagnostic_tests;
+
+#[cfg(test)]
 mod tests {
     use omni_capabilities::{CapabilityRules, PathRoots, Root, project};
 
