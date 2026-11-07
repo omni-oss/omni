@@ -3,6 +3,8 @@
 mod cache_configuration;
 mod capabilities;
 mod constants;
+#[cfg(test)]
+mod diagnostic_tests;
 mod ignore;
 mod meta_configuration;
 mod owned_projection;

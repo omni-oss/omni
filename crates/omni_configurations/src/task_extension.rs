@@ -145,8 +145,9 @@ fn map_graph_error(error: ExtensionGraphError) -> TaskExtensionError {
     }
 }
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, omni_diagnostic::Diagnostic)]
 #[error(transparent)]
+#[diagnostic(forward)]
 pub struct TaskExtensionError(pub(crate) TaskExtensionErrorInner);
 
 impl TaskExtensionError {
@@ -161,16 +162,32 @@ impl<T: Into<TaskExtensionErrorInner>> From<T> for TaskExtensionError {
     }
 }
 
-#[derive(Error, Debug, EnumDiscriminants)]
+#[derive(Error, Debug, EnumDiscriminants, omni_diagnostic::Diagnostic)]
 #[strum_discriminants(vis(pub), name(TaskExtensionErrorKind))]
 pub(crate) enum TaskExtensionErrorInner {
+    /// A task extends a task that its project does not define.
     #[error("task '{task}' extends unknown task '{extendee}'")]
-    UnknownExtendee { task: String, extendee: String },
+    #[diagnostic(
+        code = "task_extension.unknown_extendee",
+        hint = "define task `{extendee}` in this project, or fix the `extends` entry of `{task}`"
+    )]
+    UnknownExtendee {
+        #[diagnostic(detail)]
+        task: String,
+        #[diagnostic(detail)]
+        extendee: String,
+    },
 
+    /// Tasks extend each other in a cycle.
     #[error("cyclic task extension detected: {message}")]
+    #[diagnostic(
+        code = "task_extension.cycle",
+        hint = "remove the circular `extends` chain between these tasks"
+    )]
     Cycle { message: String },
 
     #[error(transparent)]
+    #[diagnostic(delegate)]
     ExtensionGraph(#[from] ExtensionGraphError),
 }
 

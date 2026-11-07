@@ -43,3 +43,7 @@ url = { workspace = true }
 omni_capabilities = { workspace = true }
 enum-map = { workspace = true }
 omni_projection_configurations = { workspace = true }
+omni_diagnostic = { workspace = true }
+
+[dev-dependencies]
+omni_codes = { workspace = true }
