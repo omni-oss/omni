@@ -8,6 +8,9 @@ mod lexer;
 mod tokens;
 mod utils;
 
+#[cfg(test)]
+mod diagnostic_tests;
+
 pub use config::*;
 use derive_new::new;
 pub use error::*;
@@ -15,6 +18,7 @@ use escape::unescape;
 pub use expand::*;
 use lexer::{Lexer, Token};
 use maps::Map;
+use omni_diagnostic::__private::serde_json::{self, json};
 use strum::{EnumDiscriminants, EnumIs, IntoDiscriminant as _};
 
 pub fn parse_default(text: &str) -> Result<Map<String, String>, EnvParseError> {
@@ -210,39 +214,79 @@ pub fn parse(
     Ok(env)
 }
 
-#[derive(Debug, thiserror::Error)]
-#[error("{inner}")]
-pub struct EnvParseError {
-    kind: EnvParseErrorKind,
-    inner: EnvParseErrorInner,
-}
+omni_codes::prefixes!("env_parse");
+
+#[derive(thiserror::Error, omni_diagnostic::Diagnostic)]
+#[error(transparent)]
+#[diagnostic(forward)]
+pub struct EnvParseError(pub(crate) EnvParseErrorInner);
 
 impl EnvParseError {
     pub fn kind(&self) -> EnvParseErrorKind {
-        self.kind
+        self.0.discriminant()
+    }
+
+    pub fn location(&self) -> Option<(usize, usize)> {
+        self.0.first_location()
+    }
+}
+
+impl std::fmt::Debug for EnvParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EnvParseError")
+            .field("kind", &self.kind())
+            .field("inner", &self.0)
+            .finish()
     }
 }
 
 impl<T: Into<EnvParseErrorInner>> From<T> for EnvParseError {
     fn from(inner: T) -> Self {
-        let inner = inner.into();
-        let kind = inner.discriminant();
-
-        Self { kind, inner }
+        Self(inner.into())
     }
 }
 
-#[derive(Debug, thiserror::Error, EnumDiscriminants, new)]
+#[derive(
+    Debug, thiserror::Error, EnumDiscriminants, new, omni_diagnostic::Diagnostic,
+)]
 #[strum_discriminants(vis(pub), name(EnvParseErrorKind), derive(EnumIs))]
 pub enum EnvParseErrorInner {
     #[error(transparent)]
+    #[diagnostic(skip)]
     Io(#[from] std::io::Error),
 
     #[error(transparent)]
+    #[diagnostic(skip)]
     Expansion(#[from] ExpansionError),
 
+    /// The environment file has a syntax error.
     #[error("parser error: {first}", first = errors.first().unwrap())]
+    #[diagnostic(
+        code = "env_parse.syntax_error",
+        details = syntax_details,
+        hint = "check the env file syntax at the reported line and column"
+    )]
     Parse { errors: Vec<ParseError> },
+}
+
+impl EnvParseErrorInner {
+    fn first_location(&self) -> Option<(usize, usize)> {
+        match self {
+            Self::Parse { errors } => {
+                errors.first().map(|e| (e.line(), e.column()))
+            }
+            _ => None,
+        }
+    }
+}
+
+fn syntax_details(e: &EnvParseErrorInner) -> serde_json::Value {
+    match e.first_location() {
+        Some((line, column)) => {
+            json!({ "line": line, "column": column })
+        }
+        None => serde_json::Value::Null,
+    }
 }
 
 #[cfg(test)]

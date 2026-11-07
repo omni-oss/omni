@@ -18,6 +18,9 @@ strum = { workspace = true }
 maps = { workspace = true }
 derive-new = { workspace = true }
 shlex = { workspace = true }
+omni_codes = { workspace = true }
+omni_diagnostic = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }
+eyre = { workspace = true }

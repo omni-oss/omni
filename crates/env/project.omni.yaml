@@ -17,3 +17,5 @@ tasks:
 
 dependencies:
   - maps
+  - omni_diagnostic
+  - omni_codes
