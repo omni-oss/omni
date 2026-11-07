@@ -1,0 +1,18 @@
+error[E0283]: type annotations needed
+ --> tests/ui/enum_implements_error.rs:4:6
+  |
+4 | enum Invalid {
+  |      ^^^^^^^ cannot infer type
+  |
+note: multiple `impl`s satisfying `Invalid: __AmbiguousIfError<_>` found
+ --> tests/ui/enum_implements_error.rs:3:17
+  |
+3 | #[derive(Debug, Notice)]
+  |                 ^^^^^^
+  = note: associated constants cannot be accessed directly on a `trait`, they can only be accessed through a specific `impl`
+  = note: this error originates in the derive macro `Notice` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: use the fully qualified path to an implementation
+  |
+4 - enum Invalid {
+4 + enum <Type as __AmbiguousIfError>::__X {
+  |

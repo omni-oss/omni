@@ -123,6 +123,18 @@ mod tests {
              message = "static")]
     struct Essential;
 
+    #[derive(Notice)]
+    enum CacheNotice {
+        /// Could not cache an entry.
+        #[notice(code = "msgtest.cache_write", level = error,
+                 message = "could not cache {entry}")]
+        Write { entry: String },
+        /// Cache is disabled.
+        #[notice(code = "msgtest.cache_disabled", level = warn, essential,
+                 message = "cache is disabled")]
+        Disabled,
+    }
+
     #[derive(Debug, thiserror::Error, Diagnostic)]
     #[error("boom")]
     #[diagnostic(code = "msgtest.fatal", hint = "try again")]
@@ -182,6 +194,28 @@ mod tests {
         let (sub, events) = collect(None);
         notice!(sub, Essential);
         assert!(events.lock().unwrap()[0].essential());
+    }
+
+    #[test]
+    fn enum_notices_work_with_both_emission_macros() {
+        let (sub, events) = collect(None);
+        notice!(
+            sub,
+            CacheNotice::Write {
+                entry: "task".into()
+            }
+        );
+        diagnostic_notice!(sub, CacheNotice::Disabled, &Fatal);
+        let events = events.lock().unwrap();
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].code(), "msgtest.cache_write");
+        assert_eq!(events[0].level(), NoticeLevel::Error);
+        assert_eq!(events[0].message(), "could not cache task");
+        assert_eq!(events[0].fields()["entry"], "task");
+        assert!(!events[0].fields().contains_key("variant"));
+        assert_eq!(events[1].code(), "msgtest.cache_disabled");
+        assert!(events[1].essential());
+        assert_eq!(events[1].fields()["hints"][0], "try again");
     }
 
     #[test]
