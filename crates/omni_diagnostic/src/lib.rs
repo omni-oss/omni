@@ -52,9 +52,14 @@ pub trait Diagnostic: Error + Send + Sync + 'static {
 
     /// Whether this value actually carries a diagnostic.
     ///
-    /// Always `true` unless the type has `#[diagnostic(skip)]` variants or
-    /// `delegate` variants whose inner error has no diagnostic. Lookup ignores
+    /// Always `true` unless the type has `#[diagnostic(skip)]` variants,
+    /// `delegate` variants whose inner error has no diagnostic, or `forward`
+    /// variants whose inner value is itself not reportable. Lookup ignores
     /// values that are not reportable, so such values stay plain errors.
+    ///
+    /// The other methods return neutral values for a non-reportable value
+    /// (`code()` is `""`). Check this before calling them on a value obtained
+    /// any other way than lookup, including through forwarding wrappers.
     fn reportable(&self) -> bool {
         true
     }

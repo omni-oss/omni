@@ -142,9 +142,12 @@ pub trait Diagnostic: std::error::Error + Send + Sync + 'static {
     fn render_body(&self, _out: &mut dyn fmt::Write) -> fmt::Result { Ok(()) }
 
     /// Whether this value actually carries a diagnostic. Always `true` unless
-    /// the type has `skip` variants, or `delegate` variants whose inner error
-    /// has none (see the derive attributes). Lookup ignores values that are
-    /// not reportable, so they stay plain errors.
+    /// the type has `skip` variants, `delegate` variants whose inner error has
+    /// none, or `forward` variants whose inner value is itself not reportable
+    /// (see the derive attributes). Lookup ignores values that are not
+    /// reportable, so they stay plain errors. The other methods return neutral
+    /// values for such a value (`code()` is `""`): check this before calling
+    /// them on a value obtained any other way than lookup.
     fn reportable(&self) -> bool { true }
 }
 
@@ -463,14 +466,18 @@ pub enum ProjectFilterError {
   forwards is still found first by `find` (outermost wins) and delegates. Types with generic parameters cannot be
   registered and fail with a clear error (use `no_register` or a concrete
   wrapper).
-- `Diagnostic::reportable()` (default `true`) is `false` for `skip` variants and
-  for `delegate` variants whose inner error has no diagnostic. The registered
+- `Diagnostic::reportable()` (default `true`) is `false` for `skip` variants, for
+  `delegate` variants whose inner error has no diagnostic, and for `forward`
+  variants (or structs) whose inner value is itself not reportable: a forwarding
+  wrapper inherits the reportability of what it forwards to. The registered
   lookup only matches reportable values, so a public wrapper such as
   `#[diagnostic(forward)] struct Error(ErrorInner)` over an enum that mixes coded,
   `skip` and `delegate` variants is found only when the value really
-  carries a diagnostic. For a `skip`/`delegate` variant the other trait methods
-  return neutral values (`code()` is `""`) and must not be used without checking
-  `reportable()`.
+  carries a diagnostic. For a non-reportable value the other trait methods
+  return neutral values (`code()` is `""`), so a caller that holds a value
+  directly (for example `Error::custom(..)` called by code that did not go
+  through `find`) must check `reportable()` before relying on them, including
+  through forwarding wrappers.
 
 **Compile-time rules** (errors point at the attribute span)
 
