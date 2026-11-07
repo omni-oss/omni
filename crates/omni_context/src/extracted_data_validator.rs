@@ -120,6 +120,55 @@ impl ExtractedDataValidator {
     }
 }
 
+fn aggregate_details(
+    errors: &ExtractedDataValidationErrors,
+) -> serde_json::Value {
+    use omni_diagnostic::Diagnostic as _;
+
+    serde_json::json!({
+        "errors": errors
+            .errors
+            .iter()
+            .map(|e| serde_json::json!({
+                "code": e.code(),
+                "message": e.to_string(),
+                "details": e.details(),
+            }))
+            .collect::<Vec<_>>(),
+    })
+}
+
+fn aggregate_hints(errors: &ExtractedDataValidationErrors) -> Vec<String> {
+    use omni_diagnostic::Diagnostic as _;
+
+    let mut hints: Vec<String> = Vec::new();
+    for hint in errors.errors.iter().flat_map(|e| e.hints()) {
+        if !hints.contains(&hint) {
+            hints.push(hint);
+        }
+    }
+    hints
+}
+
+fn aggregate_body(
+    errors: &ExtractedDataValidationErrors,
+    out: &mut dyn std::fmt::Write,
+) -> std::fmt::Result {
+    use omni_diagnostic::Diagnostic as _;
+
+    for e in &errors.errors {
+        let message = e.to_string();
+        let mut lines = message.lines();
+        if let Some(first) = lines.next() {
+            writeln!(out, "  - [{}] {first}", e.code())?;
+        }
+        for line in lines {
+            writeln!(out, "    {line}")?;
+        }
+    }
+    Ok(())
+}
+
 fn digits(n: usize) -> usize {
     (n as f64).log10().ceil() as usize
 }
@@ -148,10 +197,20 @@ fn format_multi_errors(errors: &[ExtractedDataValidationError]) -> String {
     lines.join("\n")
 }
 
-#[derive(Debug, thiserror::Error)]
+/// Workspace validation failed.
+///
+/// One or more projects or tasks are invalid. `details.errors` lists every
+/// failure with its own code, message and details.
+#[derive(Debug, thiserror::Error, omni_diagnostic::Diagnostic)]
 #[error(
     "validation errors: \n{errors}",
     errors = format_multi_errors(errors)
+)]
+#[diagnostic(
+    code = "workspace.validation_failed",
+    details = aggregate_details,
+    hints = aggregate_hints,
+    body = aggregate_body
 )]
 pub struct ExtractedDataValidationErrors {
     pub errors: Vec<ExtractedDataValidationError>,
@@ -163,8 +222,9 @@ impl From<Vec<ExtractedDataValidationError>> for ExtractedDataValidationErrors {
     }
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, omni_diagnostic::Diagnostic)]
 #[error(transparent)]
+#[diagnostic(forward)]
 pub struct ExtractedDataValidationError(
     pub(crate) ExtractedDataValidationErrorInner,
 );
@@ -185,28 +245,49 @@ impl<T: Into<ExtractedDataValidationErrorInner>> From<T>
     }
 }
 
-#[derive(Debug, thiserror::Error, EnumDiscriminants, EnumIs)]
+#[derive(
+    Debug,
+    thiserror::Error,
+    EnumDiscriminants,
+    EnumIs,
+    omni_diagnostic::Diagnostic,
+)]
 #[strum_discriminants(
     name(ExtractedDataValidationErrorKind),
     vis(pub),
     derive(strum::IntoStaticStr, strum::Display, strum::EnumIs)
 )]
 pub(crate) enum ExtractedDataValidationErrorInner {
+    /// Two projects share the same name.
     #[error(
         "duplicate project name: {project_name}\n\nprojects with same name:\n{project_paths:?}",
         project_paths = project_paths.iter().map(|p| format!("  -> {}", p.display())).collect::<Vec<_>>().join("\n")
     )]
+    #[diagnostic(
+        code = "workspace.duplicate_project_name",
+        hint = "rename one of the projects called `{project_name}` so project names are unique"
+    )]
     DuplicateProjectName {
+        #[diagnostic(detail = "project")]
         project_name: String,
+        #[diagnostic(detail = "paths")]
         project_paths: Vec<PathBuf>,
     },
 
+    /// A task depends on a task that its own project does not define.
     #[error(
         "task '{project_name}#{task_name}' depends on unknown task '{dependency}' in project '{project_name}'"
     )]
+    #[diagnostic(
+        code = "workspace.dangling_task_dependency",
+        hint = "define a task named `{dependency}` in project `{project_name}` or remove the dependency"
+    )]
     DanglingTaskDependency {
+        #[diagnostic(detail = "project")]
         project_name: String,
+        #[diagnostic(detail = "task")]
         task_name: String,
+        #[diagnostic(detail)]
         dependency: String,
     },
 }

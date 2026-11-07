@@ -720,8 +720,11 @@ fn resolve_task_extensions_for_projects(
     Ok(())
 }
 
-#[derive(Debug, thiserror::Error)]
+omni_codes::prefixes!("workspace");
+
+#[derive(Debug, thiserror::Error, omni_diagnostic::Diagnostic)]
 #[error(transparent)]
+#[diagnostic(forward)]
 pub struct ContextError(pub(crate) ContextErrorInner);
 
 impl ContextError {
@@ -737,7 +740,13 @@ impl<T: Into<ContextErrorInner>> From<T> for ContextError {
     }
 }
 
-#[derive(Debug, thiserror::Error, EnumDiscriminants, EnumIs)]
+#[derive(
+    Debug,
+    thiserror::Error,
+    EnumDiscriminants,
+    EnumIs,
+    omni_diagnostic::Diagnostic,
+)]
 #[strum_discriminants(
     name(ContextErrorKind),
     vis(pub),
@@ -745,44 +754,80 @@ impl<T: Into<ContextErrorInner>> From<T> for ContextError {
 )]
 pub(crate) enum ContextErrorInner {
     #[error("{0}")]
+    #[diagnostic(skip)]
     CacheDirectory(String),
 
+    /// The worktree configuration file could not be loaded.
     #[error("failed to load worktree configuration: '{0}'")]
-    WorktreeConfiguration(PathBuf, #[source] LoadConfigError),
+    #[diagnostic(
+        code = "workspace.worktree_config_load_failed",
+        hint = "fix the syntax or schema errors in {0:?}, or remove the file"
+    )]
+    WorktreeConfiguration(
+        #[diagnostic(detail = "path")] PathBuf,
+        #[source] LoadConfigError,
+    ),
+
     #[error(transparent)]
+    #[diagnostic(skip)]
     Io(#[from] std::io::Error),
 
+    /// No workspace configuration was found.
+    ///
+    /// Omni looks for a `workspace.omni.*` file in the current directory and
+    /// each of its ancestors.
     #[error("failed to find workspace configuration")]
+    #[diagnostic(
+        code = "workspace.not_found",
+        hint = "run omni inside a workspace, or create a `workspace.omni.yaml` at the workspace root"
+    )]
     FailedToFindWorkspaceConfiguration,
 
+    /// The workspace configuration file could not be loaded.
     #[error("failed to load workspace configuration: '{0}'")]
-    FailedToLoadWorkspaceConfiguration(PathBuf, #[source] LoadConfigError),
+    #[diagnostic(
+        code = "workspace.config_load_failed",
+        hint = "fix the syntax or schema errors in {0:?}"
+    )]
+    FailedToLoadWorkspaceConfiguration(
+        #[diagnostic(detail = "path")] PathBuf,
+        #[source] LoadConfigError,
+    ),
 
     #[error(transparent)]
+    #[diagnostic(delegate)]
     ProjectLoader(#[from] ProjectConfigLoaderError),
 
     #[error(transparent)]
+    #[diagnostic(delegate)]
     ProjectDataExtractor(#[from] ProjectDataExtractorError),
 
     #[error(transparent)]
+    #[diagnostic(skip)]
     ProjectDiscovery(#[from] ProjectDiscoveryError),
 
     #[error(transparent)]
+    #[diagnostic(skip)]
     Glob(#[from] globset::Error),
 
     #[error(transparent)]
+    #[diagnostic(skip)]
     EnvLoader(#[from] EnvLoaderError),
 
     #[error(transparent)]
+    #[diagnostic(delegate)]
     ExtensionGraph(#[from] ExtensionGraphError),
 
     #[error(transparent)]
+    #[diagnostic(delegate)]
     TaskExtension(#[from] TaskExtensionError),
 
     #[error(transparent)]
+    #[diagnostic(delegate)]
     ValidationError(#[from] ExtractedDataValidationErrors),
 
     #[error(transparent)]
+    #[diagnostic(skip)]
     OmniSetup(#[from] omni_setup::GetRemoteCachingConfigError),
 }
 

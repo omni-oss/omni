@@ -27,6 +27,8 @@ omni_configurations = { workspace = true }
 omni_scm = { workspace = true }
 omni_constants = { workspace = true }
 omni_core = { workspace = true }
+omni_diagnostic = { workspace = true }
+omni_codes = { workspace = true }
 env = { workspace = true }
 env_loader = { workspace = true }
 maps = { workspace = true }
