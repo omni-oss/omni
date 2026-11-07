@@ -2,6 +2,8 @@
 
 mod child;
 mod child_process;
+#[cfg(test)]
+mod diagnostic_tests;
 mod task_child_process;
 mod utils;
 

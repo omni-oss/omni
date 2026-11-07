@@ -4,6 +4,7 @@ use bytes::{BufMut as _, Bytes, BytesMut};
 use derive_new::new;
 use futures::future::try_join_all;
 use maps::Map;
+use omni_diagnostic::__private::serde_json::{self, json};
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 use system_traits::auto_impl;
 use tokio::io::{
@@ -282,8 +283,9 @@ fn vars_os(vars: &Map<String, String>) -> HashMap<OsString, OsString> {
         .collect::<HashMap<_, _>>()
 }
 
-#[derive(Debug, thiserror::Error, new)]
+#[derive(Debug, thiserror::Error, new, omni_diagnostic::Diagnostic)]
 #[error(transparent)]
+#[diagnostic(forward)]
 pub struct ChildProcessError(pub(crate) ChildProcessErrorInner);
 
 impl ChildProcessError {
@@ -320,43 +322,73 @@ impl ChildProcessError {
     }
 }
 
-#[derive(Debug, thiserror::Error, EnumDiscriminants)]
+#[derive(
+    Debug, thiserror::Error, EnumDiscriminants, omni_diagnostic::Diagnostic,
+)]
 #[strum_discriminants(name(ChildProcessErrorKind), vis(pub), repr(u8))]
 #[allow(clippy::enum_variant_names)]
 pub(crate) enum ChildProcessErrorInner {
     #[error(transparent)]
+    #[diagnostic(skip)]
     Io(#[from] std::io::Error),
 
     #[error("can't run command: {0}")]
+    #[diagnostic(delegate)]
     CantRunCommand(#[from] ChildError),
 
     // #[error("can't get env vars")]
     // CantGetEnvVars,
     #[error("cant't take stdin")]
+    #[diagnostic(skip)]
     CantTakeStdin,
 
     #[error("cant't take stdout")]
+    #[diagnostic(skip)]
     CantTakeStdout,
 
     #[error("cant't take stderr")]
+    #[diagnostic(skip)]
     CantTakeStderr,
 
     // #[error("cant't take stderr")]
     // CantTakeStderr,
     #[error(transparent)]
+    #[diagnostic(delegate)]
     Custom(#[from] eyre::Report),
 
     #[error(transparent)]
+    #[diagnostic(skip)]
     Join(#[from] tokio::task::JoinError),
 
     #[error(transparent)]
+    #[diagnostic(skip)]
     Mpsc(#[from] tokio::sync::mpsc::error::SendError<Bytes>),
 
+    /// No command was given to run.
     #[error("no command is provided")]
+    #[diagnostic(
+        code = "process.no_command",
+        hint = "provide the program to run"
+    )]
     NoCommandProvided,
 
+    /// The program name is empty but arguments were given.
     #[error("empty program with args: program=\'{program}\' args={args:?}")]
+    #[diagnostic(
+        code = "process.empty_program",
+        details = empty_program_details,
+        hint = "give the command a program name; its arguments were not run"
+    )]
     EmptyProgramWithArgs { program: String, args: Vec<String> },
+}
+
+fn empty_program_details(e: &ChildProcessErrorInner) -> serde_json::Value {
+    match e {
+        ChildProcessErrorInner::EmptyProgramWithArgs { args, .. } => {
+            json!({ "args": args.len() })
+        }
+        _ => serde_json::Value::Null,
+    }
 }
 
 #[cfg(test)]
