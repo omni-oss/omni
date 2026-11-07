@@ -140,6 +140,12 @@ pub trait Diagnostic: std::error::Error + Send + Sync + 'static {
     /// Extra text rendered between the summary and the hints (CLI only).
     /// Default: nothing. MetaFilterError uses this for its grouped body.
     fn render_body(&self, _out: &mut dyn fmt::Write) -> fmt::Result { Ok(()) }
+
+    /// Whether this value actually carries a diagnostic. Always `true` unless
+    /// the type has `skip` variants, or `delegate` variants whose inner error
+    /// has none (see the derive attributes). Lookup ignores values that are
+    /// not reportable, so they stay plain errors.
+    fn reportable(&self) -> bool { true }
 }
 
 pub enum Audience {
