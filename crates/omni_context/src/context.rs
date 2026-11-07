@@ -811,7 +811,7 @@ pub(crate) enum ContextErrorInner {
     Glob(#[from] globset::Error),
 
     #[error(transparent)]
-    #[diagnostic(skip)]
+    #[diagnostic(delegate)]
     EnvLoader(#[from] EnvLoaderError),
 
     #[error(transparent)]
@@ -827,7 +827,7 @@ pub(crate) enum ContextErrorInner {
     ValidationError(#[from] ExtractedDataValidationErrors),
 
     #[error(transparent)]
-    #[diagnostic(skip)]
+    #[diagnostic(delegate)]
     OmniSetup(#[from] omni_setup::GetRemoteCachingConfigError),
 }
 

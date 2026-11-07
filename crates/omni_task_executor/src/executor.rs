@@ -262,7 +262,7 @@ enum TaskExecutorErrorInner {
     LocalTaskExecutionCacheStore(#[from] LocalTaskExecutionCacheStoreError),
 
     #[error(transparent)]
-    #[diagnostic(skip)]
+    #[diagnostic(delegate)]
     MetaFilter(#[from] omni_expressions::Error),
 
     /// No task matched the call.

@@ -379,7 +379,7 @@ pub(crate) enum ProjectDataExtractorErrorInner {
     ExtensionGraph(#[from] ExtensionGraphError),
 
     #[error(transparent)]
-    #[diagnostic(skip)]
+    #[diagnostic(delegate)]
     EnvLoader(#[from] EnvLoaderError),
 
     #[error(transparent)]

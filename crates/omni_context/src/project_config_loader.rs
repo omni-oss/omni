@@ -192,7 +192,7 @@ impl<T: Into<ProjectConfigLoaderErrorInner>> From<T>
 #[strum_discriminants(vis(pub), name(ProjectConfigLoaderErrorKind))]
 pub(crate) enum ProjectConfigLoaderErrorInner {
     #[error(transparent)]
-    #[diagnostic(skip)]
+    #[diagnostic(delegate)]
     LoadConfig(#[from] LoadConfigError),
 
     #[error("no parent dir found for path: {0}")]

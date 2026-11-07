@@ -58,8 +58,14 @@ fn validation_failures_are_aggregated_structurally() {
     assert_eq!(d.hints().len(), 2);
 
     let text = DiagnosticReport::from_report(&r).unwrap().to_text();
-    assert!(text.contains("[workspace.duplicate_project_name]"), "{text}");
-    assert!(text.contains("[workspace.dangling_task_dependency]"), "{text}");
+    assert!(
+        text.contains("[workspace.duplicate_project_name]"),
+        "{text}"
+    );
+    assert!(
+        text.contains("[workspace.dangling_task_dependency]"),
+        "{text}"
+    );
 }
 
 #[test]
@@ -144,5 +150,97 @@ fn registry_accepts_the_declared_prefix() {
     if let Err(errors) = omni_codes::validate() {
         let msgs: Vec<String> = errors.iter().map(|e| e.to_string()).collect();
         panic!("invalid code registry:\n{}", msgs.join("\n"));
+    }
+}
+
+mod end_to_end {
+    use omni_tracing_subscriber::TracingConfig;
+    use system_traits::{FsCreateDirAll as _, FsWrite as _};
+
+    use crate::{
+        context::Context,
+        test_fixture::{cross_path, real_sys, tmp},
+    };
+
+    use omni_diagnostic::{Audience, find};
+
+    fn context(
+        root: &std::path::Path,
+    ) -> Result<Context<system_traits::impls::RealSys>, crate::ContextError>
+    {
+        Context::new(
+            real_sys(),
+            "testing",
+            root,
+            false,
+            "workspace.omni.yaml",
+            None,
+            &TracingConfig::disabled(),
+        )
+    }
+
+    #[tokio::test]
+    async fn malformed_project_config_surfaces_the_config_diagnostic() {
+        let sys = real_sys();
+        let tmp = tmp();
+        let root = tmp.path();
+        sys.fs_create_dir_all(root.join(cross_path("apps/bad")))
+            .unwrap();
+        sys.fs_write(
+            root.join("workspace.omni.yaml"),
+            "projects:\n  - apps/**\n",
+        )
+        .unwrap();
+        sys.fs_write(
+            root.join(cross_path("apps/bad/project.omni.yaml")),
+            "name: [unclosed\nsecret_token: hunter2\n",
+        )
+        .unwrap();
+
+        let err = context(root)
+            .unwrap()
+            .into_loaded()
+            .await
+            .expect_err("a malformed project config must not load");
+        let r = eyre::Report::new(err);
+        let d = find(&r).expect("diagnostic through the context error");
+        assert_eq!(d.code(), "config.load_failed");
+        assert_eq!(d.audience(), Audience::User);
+        let details = d.details().unwrap();
+        assert!(
+            details["path"]
+                .as_str()
+                .unwrap()
+                .ends_with("project.omni.yaml")
+        );
+        assert!(!details.to_string().contains("hunter2"));
+        let chain = r
+            .chain()
+            .map(|e| e.to_string())
+            .collect::<Vec<_>>()
+            .join(" | ");
+        assert!(!chain.contains("hunter2"), "{chain}");
+    }
+
+    #[test]
+    fn malformed_workspace_config_surfaces_the_workspace_diagnostic() {
+        let sys = real_sys();
+        let tmp = tmp();
+        let root = tmp.path();
+        sys.fs_write(root.join("workspace.omni.yaml"), "projects: [unclosed\n")
+            .unwrap();
+
+        let err = context(root)
+            .err()
+            .expect("a malformed workspace config must not load");
+        let r = eyre::Report::new(err);
+        let d = find(&r).expect("diagnostic");
+        assert_eq!(d.code(), "workspace.config_load_failed");
+        assert!(
+            d.details().unwrap()["path"]
+                .as_str()
+                .unwrap()
+                .ends_with("workspace.omni.yaml")
+        );
     }
 }
