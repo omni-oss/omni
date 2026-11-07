@@ -13,8 +13,9 @@ use tracing::Level;
 
 use crate::{Project, TaskExecutionGraph, TaskExecutionGraphResult};
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, omni_diagnostic::Diagnostic)]
 #[error(transparent)]
+#[diagnostic(forward)]
 pub struct ProjectGraphError(pub(crate) ProjectGraphErrorInner);
 
 impl ProjectGraphError {
@@ -56,22 +57,53 @@ impl<T: Into<ProjectGraphErrorInner>> From<T> for ProjectGraphError {
     }
 }
 
-#[derive(Debug, thiserror::Error, EnumDiscriminants)]
+#[derive(
+    Debug, thiserror::Error, EnumDiscriminants, omni_diagnostic::Diagnostic,
+)]
 #[strum_discriminants(name(ProjectGraphErrorKind), vis(pub))]
 pub(crate) enum ProjectGraphErrorInner {
+    /// Two projects in the graph share the same name.
     #[error("project with name '{0}' already exists")]
-    ProjectAlreadyExists(String),
+    #[diagnostic(
+        code = "project.already_exists",
+        hint = "rename one of the projects named `{0}` so project names are unique"
+    )]
+    ProjectAlreadyExists(#[diagnostic(detail = "project")] String),
 
+    /// A project name referenced by the graph is not in the graph.
     #[error("project '{0}' is not found")]
-    ProjectNotFound(String),
+    #[diagnostic(
+        code = "project.not_found",
+        hint = "check the project name against the `name` in its project configuration file"
+    )]
+    ProjectNotFound(#[diagnostic(detail = "project")] String),
 
+    /// A project dependency would close a cycle in the project graph.
     #[error("adding dependency from '{from}' to '{to}' will create a cycle")]
-    CyclicDependency { from: String, to: String },
+    #[diagnostic(
+        code = "project.cyclic_dependency",
+        hint = "remove the dependency from `{from}` to `{to}`, or break the cycle elsewhere in the chain"
+    )]
+    CyclicDependency {
+        #[diagnostic(detail)]
+        from: String,
+        #[diagnostic(detail)]
+        to: String,
+    },
 
+    /// The project dependency graph contains a cycle.
     #[error("cycle detected")]
-    CycleDetected { project: String },
+    #[diagnostic(
+        code = "project.cycle_detected",
+        hint = "remove a project dependency on the cycle through `{project}`"
+    )]
+    CycleDetected {
+        #[diagnostic(detail)]
+        project: String,
+    },
 
     #[error(transparent)]
+    #[diagnostic(delegate)]
     Unknown(#[from] eyre::Report),
 }
 

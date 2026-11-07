@@ -975,8 +975,9 @@ impl TaskExecutionGraph {
     }
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, omni_diagnostic::Diagnostic)]
 #[error(transparent)]
+#[diagnostic(forward)]
 pub struct TaskExecutionGraphError(TaskExecutionGraphErrorInner);
 
 impl TaskExecutionGraphError {
@@ -1049,44 +1050,85 @@ impl TaskExecutionGraphError {
     }
 }
 
-#[derive(Debug, thiserror::Error, EnumDiscriminants)]
+#[derive(
+    Debug, thiserror::Error, EnumDiscriminants, omni_diagnostic::Diagnostic,
+)]
 #[strum_discriminants(name(TaskExecutionGraphErrorKind), vis(pub))]
 pub(crate) enum TaskExecutionGraphErrorInner {
     #[error(transparent)]
+    #[diagnostic(delegate)]
     ProjectGraph(#[from] ProjectGraphError),
 
+    /// A task named by a selector or dependency does not exist in its project.
     #[error("task '{task}' in project '{project}' not found")]
-    TaskNotFound { project: String, task: String },
+    #[diagnostic(
+        code = "task.not_found",
+        hint = "check the task name, or define task `{task}` in project `{project}`"
+    )]
+    TaskNotFound {
+        #[diagnostic(detail)]
+        project: String,
+        #[diagnostic(detail)]
+        task: String,
+    },
 
     #[error("task with key '{key:?}' not found")]
+    #[diagnostic(skip)]
     TaskNotFoundByKey { key: TaskKey },
 
+    /// Tasks depend on each other in a cycle.
     #[error(
         "cycle detected from '{from_project}#{from_task}' to '{to_project}#{to_task}'"
     )]
+    #[diagnostic(
+        code = "task.cycle_detected",
+        hint = "remove the dependency from `{from_task}` to `{to_task}`, or break the cycle elsewhere in the chain"
+    )]
     CycleDetected {
+        #[diagnostic(detail = "from_project")]
         from_project: String,
+        #[diagnostic(detail = "from_task")]
         from_task: String,
+        #[diagnostic(detail = "to_project")]
         to_project: String,
+        #[diagnostic(detail = "to_task")]
         to_task: String,
     },
 
+    /// A task depends on a persistent task, which cannot be a dependency.
     #[error(
         "can't depend on persistent task '{from_project}#{from_task}' from '{to_project}#{to_task}'"
     )]
+    #[diagnostic(
+        code = "task.persistent_dependency",
+        hint = "remove the dependency on persistent task `{to_task}` from `{from_task}`"
+    )]
     CantDependOnPersistentTask {
+        #[diagnostic(detail = "from_project")]
         from_project: String,
+        #[diagnostic(detail = "from_task")]
         from_task: String,
+        #[diagnostic(detail = "to_project")]
         to_project: String,
+        #[diagnostic(detail = "to_task")]
         to_task: String,
     },
 
+    /// Tasks that run together form a dependency chain among themselves.
     #[error(
         "co-scheduled sibling tasks cannot also form a dependency chain among themselves: {tasks:?}"
     )]
-    SiblingDependencyCycle { tasks: Vec<String> },
+    #[diagnostic(
+        code = "task.sibling_cycle",
+        hint = "remove the dependency chain among these sibling tasks so they can run together"
+    )]
+    SiblingDependencyCycle {
+        #[diagnostic(detail)]
+        tasks: Vec<String>,
+    },
 
     #[error(transparent)]
+    #[diagnostic(delegate)]
     Unknown(#[from] eyre::Report),
 }
 

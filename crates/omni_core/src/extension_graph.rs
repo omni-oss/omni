@@ -334,8 +334,9 @@ impl PathTraversalKey {
     }
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, omni_diagnostic::Diagnostic)]
 #[error(transparent)]
+#[diagnostic(forward)]
 pub struct ExtensionGraphError(pub(crate) ExtensionGraphErrorInner);
 
 impl<T: Into<ExtensionGraphErrorInner>> From<T> for ExtensionGraphError {
@@ -353,19 +354,29 @@ impl ExtensionGraphError {
 
 pub type ExtensionGraphResult<T> = Result<T, ExtensionGraphError>;
 
-#[derive(Debug, thiserror::Error, EnumDiscriminants)]
+#[derive(
+    Debug, thiserror::Error, EnumDiscriminants, omni_diagnostic::Diagnostic,
+)]
 #[strum_discriminants(name(ExtensionGraphErrorKind), vis(pub))]
 pub(crate) enum ExtensionGraphErrorInner {
+    /// Configurations extend each other in a cycle.
     #[error("cyclic dependency detected: {message}")]
+    #[diagnostic(
+        code = "project.extends_cycle",
+        hint = "remove the circular `extends` chain between the project configurations"
+    )]
     CyclicDependency { message: String },
 
     #[error("node already exists: {message}")]
+    #[diagnostic(skip)]
     NodeAlreadyExists { message: String },
 
     #[error("node not found: {message}")]
+    #[diagnostic(skip)]
     NodeNotFound { message: String },
 
     #[error(transparent)]
+    #[diagnostic(delegate)]
     Unknown(#[from] eyre::Error),
 }
 
