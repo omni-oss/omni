@@ -420,8 +420,9 @@ fn command_call_config(command: &str, args: &[String]) -> CommandConfig {
     )
 }
 
-#[derive(thiserror::Error, Debug)]
+#[derive(thiserror::Error, Debug, omni_diagnostic::Diagnostic)]
 #[error(transparent)]
+#[diagnostic(forward)]
 pub struct ExecutionPlanProviderError(
     pub(crate) ExecutionPlanProviderErrorInner,
 );
@@ -443,11 +444,6 @@ impl ExecutionPlanProviderError {
     }
 }
 
-omni_diagnostic::register_wrapper!(ExecutionPlanProviderError, |e| {
-    e.meta_filter_error()
-        .map(|m| m as &dyn omni_diagnostic::Diagnostic)
-});
-
 impl<T: Into<ExecutionPlanProviderErrorInner>> From<T>
     for ExecutionPlanProviderError
 {
@@ -457,25 +453,40 @@ impl<T: Into<ExecutionPlanProviderErrorInner>> From<T>
     }
 }
 
-#[derive(thiserror::Error, Debug, EnumDiscriminants)]
+#[derive(
+    thiserror::Error, Debug, EnumDiscriminants, omni_diagnostic::Diagnostic,
+)]
 #[strum_discriminants(vis(pub), name(ExecutionPlanProviderErrorKind))]
 pub(crate) enum ExecutionPlanProviderErrorInner {
     #[error(transparent)]
+    #[diagnostic(delegate)]
     Glob(#[from] globset::Error),
 
     #[error(transparent)]
+    #[diagnostic(delegate)]
     Context(eyre::Report),
 
     #[error(transparent)]
+    #[diagnostic(delegate)]
     TaskExecutionGraph(#[from] TaskExecutionGraphError),
 
+    /// No project matches the project filter.
     #[error("no project found for filter: {filter}")]
-    NoProjectFoundForFilter { filter: String },
+    #[diagnostic(
+        code = "plan.no_project_found_for_filter",
+        hint = "check the project filter `{filter}` against the `name` in each project configuration"
+    )]
+    NoProjectFoundForFilter {
+        #[diagnostic(detail)]
+        filter: String,
+    },
 
     #[error(transparent)]
+    #[diagnostic(delegate)]
     FilterError(#[from] FilterError),
 
     #[error(transparent)]
+    #[diagnostic(delegate)]
     MetaFilter(MetaFilterError),
 }
 
