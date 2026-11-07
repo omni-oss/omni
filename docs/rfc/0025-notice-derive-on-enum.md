@@ -1,6 +1,6 @@
 # RFC 0025: Derive Notice on enums
 
-- **Status:** Draft <!-- Draft | Accepted | Implemented | Superseded -->
+- **Status:** Implemented <!-- Draft | Accepted | Implemented | Superseded -->
 - **Owner:** TBD
 - **Date:** 2026-11-08
 - **Base branch:** `main`
@@ -18,7 +18,7 @@ Keep the existing struct API and runtime traits unchanged. Generate one
 `CodeRegistration` for the enum, containing one `CodeInfo` per variant, just
 as diagnostic enums contribute their own codes today.
 
-This RFC is the documentation-only first step. Implementation and tests will
+This RFC was the documentation-only first step. Implementation and tests
 follow on `feat/notice-derive-on-enum` in the same feature PR.
 
 ## 2. Motivation and scope
@@ -242,3 +242,15 @@ Run the targeted Cargo test suites for `omni_derive_support`, `omni_notice`,
 `omni_codes` and `omni_messages`, plus `omni_diagnostic` when affected; run
 the explicit-registry tests separately with that feature enabled. No runtime
 performance change is expected beyond a match on the enum discriminant.
+
+## 8. Implementation outcome
+
+The choices above were confirmed: no tuple variants or enum-level defaults,
+empty enums are supported, and the shared refactor is limited to the
+registration-expression helper. `omni_diagnostic_derive` remains unchanged.
+
+The implementation uses the same case emission for structs and enum variants,
+with aliased field bindings and metadata statics in an anonymous const scope.
+Runtime, UI and documentation tests cover the public API, both registry
+backends and both notice emission macros. Existing struct UI snapshots remain
+unchanged.

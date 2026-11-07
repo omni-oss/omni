@@ -6,6 +6,33 @@
 //!
 //! `Notice` is sealed (through [`omni_codes::Code`]): it can only be
 //! implemented with `#[derive(Notice)]`.
+//!
+//! Derive on a unit/named-field struct, or on an enum whose unit/named-field
+//! variants each have their own metadata and doc summary:
+//!
+//! ```
+//! use omni_notice::{Notice, NoticeLevel};
+//!
+//! #[derive(Notice)]
+//! enum CacheNotice {
+//!     /// A cache entry could not be written.
+//!     #[notice(code = "cache.write_skipped", level = error,
+//!              message = "could not cache '{entry}'")]
+//!     WriteSkipped { entry: String },
+//!     /// Cache verification is disabled.
+//!     #[notice(code = "cache.verification_disabled", level = warn, essential,
+//!              message = "cache verification is disabled")]
+//!     VerificationDisabled,
+//! }
+//!
+//! let notice = CacheNotice::WriteSkipped { entry: "task".into() };
+//! assert_eq!(notice.code(), "cache.write_skipped");
+//! assert_eq!(notice.level(), NoticeLevel::Error);
+//! assert!(CacheNotice::VerificationDisabled.essential());
+//! ```
+//!
+//! Every variant is a separate code inventory entry. Metadata is explicit on
+//! each variant; enum-level defaults and tuple variants are not supported.
 
 extern crate self as omni_notice;
 
@@ -32,7 +59,8 @@ pub trait Notice: Code + fmt::Display + Send + Sync + 'static {
         self.info().essential()
     }
 
-    /// Typed fields as JSON, keyed by the struct's field names.
+    /// Typed fields as JSON, keyed by the struct's or active variant's field
+    /// names. Fields marked `#[notice(skip)]` are omitted; no enum tag is added.
     fn fields(&self) -> BTreeMap<String, serde_json::Value>;
 }
 
