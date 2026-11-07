@@ -3,8 +3,11 @@ use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
 use crate::CapabilityDomain;
 
-#[derive(Debug, thiserror::Error, new)]
+omni_codes::prefixes!("capability_policy");
+
+#[derive(Debug, thiserror::Error, new, omni_diagnostic::Diagnostic)]
 #[error(transparent)]
+#[diagnostic(forward)]
 pub struct Error(pub(crate) ErrorInner);
 
 impl Error {
@@ -57,29 +60,53 @@ impl<T: Into<ErrorInner>> From<T> for Error {
     }
 }
 
-#[derive(Debug, thiserror::Error, EnumDiscriminants, new)]
+#[derive(
+    Debug, thiserror::Error, EnumDiscriminants, new, omni_diagnostic::Diagnostic,
+)]
 #[strum_discriminants(vis(pub), name(ErrorKind))]
 pub(crate) enum ErrorInner {
     #[error(transparent)]
+    #[diagnostic(delegate)]
     Custom(#[from] eyre::Report),
 
+    /// A rule uses a domain the profile does not support.
     #[error(
         "capability #{index} uses domain `{domain}`, which the `{profile}` \
          profile does not support"
     )]
+    #[diagnostic(
+        code = "capability_policy.unsupported_domain",
+        hint = "remove capability #{index} or use a profile that supports `{domain}`"
+    )]
     UnsupportedDomain {
+        #[diagnostic(detail)]
         profile: String,
+        #[diagnostic(detail)]
         domain: CapabilityDomain,
+        #[diagnostic(detail)]
         index: usize,
     },
 
+    /// A capability pattern could not be parsed.
     #[error("invalid capability pattern `{pattern}`: {reason}")]
+    #[diagnostic(
+        code = "capability_policy.invalid_pattern",
+        hint = "correct the capability pattern so it parses"
+    )]
     InvalidPattern { pattern: String, reason: String },
 
+    /// A `deny` rule would be silently dropped when it cannot be enforced.
     #[error(
         "capability #{index} is a `deny` rule with `on_unenforceable: allow`; a \
          deny may not be silently dropped when it cannot be enforced (use \
          `warn` or `deny`)"
     )]
-    DenyCannotSilenceUnenforceable { index: usize },
+    #[diagnostic(
+        code = "capability_policy.deny_cannot_silence_unenforceable",
+        hint = "set `on_unenforceable` to `warn` or `deny` on capability #{index}"
+    )]
+    DenyCannotSilenceUnenforceable {
+        #[diagnostic(detail)]
+        index: usize,
+    },
 }

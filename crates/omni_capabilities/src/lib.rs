@@ -54,6 +54,9 @@ pub mod model;
 pub mod policy_config;
 pub mod profile;
 
+#[cfg(test)]
+mod diagnostic_tests;
+
 // @anchor:mods
 
 pub use error::{Error, ErrorKind};
