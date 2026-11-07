@@ -127,11 +127,16 @@ fn plain_failures_stay_uncoded() {
     let glob = globset::Glob::new("[").unwrap_err();
     let r = wrapped(FilterError::from(FilterErrorInner::Glob(glob)));
     assert!(find(&r).is_none());
+}
 
+#[test]
+fn affected_filter_without_a_repository_surfaces_the_scm_diagnostic() {
     let r = wrapped(FilterError::from(FilterErrorInner::Scm(
         omni_scm::error::Error::no_repository_found(),
     )));
-    assert!(find(&r).is_none());
+    let d = find(&r).expect("diagnostic through the filter error");
+    assert_eq!(d.code(), "scm.no_repository_found");
+    assert_eq!(d.audience(), omni_diagnostic::Audience::User);
 }
 
 #[test]
