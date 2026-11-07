@@ -196,6 +196,48 @@ fn wrapper_exposes_a_diagnostic_hidden_by_transparent() {
     );
 }
 
+// Matches the Custom-report lookup emitted by generators/rust-error.
+#[derive(Debug, thiserror::Error)]
+#[error(transparent)]
+struct GeneratedWrapper(GeneratedInner);
+
+#[derive(Debug, thiserror::Error)]
+enum GeneratedInner {
+    #[error(transparent)]
+    Custom(#[from] eyre::Report),
+}
+
+omni_diagnostic::register_wrapper!(GeneratedWrapper, |error| {
+    match &error.0 {
+        GeneratedInner::Custom(report) => omni_diagnostic::find(report),
+    }
+});
+
+#[test]
+fn generated_wrapper_forwards_custom_report_diagnostics() {
+    use eyre::WrapErr;
+
+    let inner = Err::<(), _>(unknown())
+        .wrap_err("loading project")
+        .unwrap_err();
+    let report: eyre::Report =
+        GeneratedWrapper(GeneratedInner::Custom(inner)).into();
+    let diagnostic = find(&report).expect("diagnostic inside custom report");
+    assert_eq!(diagnostic.code(), "sample.unknown_project");
+    assert_eq!(diagnostic.audience(), Audience::User);
+    assert_eq!(diagnostic.details().unwrap()["name"], "web");
+    assert_eq!(diagnostic.hints().len(), 2);
+}
+
+#[test]
+fn generated_wrapper_leaves_plain_custom_errors_uncoded() {
+    let report: eyre::Report = GeneratedWrapper(GeneratedInner::Custom(
+        eyre::eyre!("plain custom message"),
+    ))
+    .into();
+    assert!(find(&report).is_none());
+}
+
 fn hints(_: &ShadowCb) -> Vec<String> {
     vec!["from callback".into()]
 }

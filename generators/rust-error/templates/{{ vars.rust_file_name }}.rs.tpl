@@ -5,6 +5,17 @@ use strum::{EnumDiscriminants, IntoDiscriminant as _};
 #[error(transparent)]
 pub struct {{ data.rust_error_name }}(pub(crate) {{ data.rust_error_name }}Inner);
 
+{% if inputs.use_diagnostics %}
+// Transparent errors skip their inner error in source(). Register this wrapper
+// so diagnostics inside custom reports remain discoverable by CLI and MCP.
+// For a new typed diagnostic variant, add an arm returning Some(inner).
+omni_diagnostic::register_wrapper!({{ data.rust_error_name }}, |error| {
+    match &error.0 {
+        {{ data.rust_error_name }}Inner::Custom(report) => omni_diagnostic::find(report),
+    }
+});
+{% endif %}
+
 impl {{ data.rust_error_name }} {
     pub fn custom(message: impl Into<String>) -> Self {
         Self({{ data.rust_error_name }}Inner::Custom(eyre::Report::msg(message.into())))
