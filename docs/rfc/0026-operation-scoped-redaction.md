@@ -205,6 +205,20 @@ to show that result later.
 - Preserve raw execution values for computations and generated artifacts.
   Store sanitized projections for task summaries, generator action results,
   CLI rendering and MCP envelopes.
+- Generator transactions need per-action provenance: today
+  `run_in_transaction` infers the shared transaction's action list only after
+  nested generators return. Keep raw transaction paths/data for execution,
+  but record each pending action's sanitized display projection under its
+  owning generator's effective scope before that scope ends. Carry that
+  projection alongside the action through transaction merge/checkpoint/
+  rollback, dropping it when the corresponding action is discarded. Final
+  action inference must retain this prepared text (including paths), not
+  reconstruct it from raw transaction data using only the root redactor.
+  If inference needs to run later, sanitize all display-bearing source
+  fields while the owner is alive and infer from that prepared metadata.
+  `GeneratorRunResult.actions` and `GeneratorRunResponse.actions` consume
+  these safe projections; neither retains child redactors or raw display
+  fallbacks.
 - Preserve diagnostic code, audience, structured details and hints. Build
   and sanitize `DiagnosticReport` while the scope is alive. For plain errors,
   sanitize every displayed chain/context string, not just the top message.
@@ -256,6 +270,7 @@ by custom subscribers/tracing layers, so safety is not formatter-dependent.
 | --- | --- |
 | Concurrent tasks and independent tool/generator calls sharing one sink | Each hides its own secret; a literal matching only the other's secret remains unchanged, regardless of registration/emission order |
 | Nested generator and explicit nested tool scope | Child hides parent and child secrets; parent and sibling do not acquire child-only secrets; child failure remains safe when aggregated later |
+| Nested generator transaction actions | A child-only secret in an action path is absent from `GeneratorRunResponse.actions` after child completion, in dry-run and committed runs; real execution paths stay unchanged, and checkpoint/rollback keeps projections aligned with retained actions |
 | Subscriber reuse | Completed/failed/cancelled A does not affect B; presenter never retains A's redactor |
 | Preparation | Supplied values, defaults and rejected prompted values are protected before execution begins, including early validation/expansion failures |
 | Success/failure exits | Dry-run command, lifecycle/action/script events, notices, structured diagnostics and plain error chains are safe on both paths; tool success JSON stays unchanged |
