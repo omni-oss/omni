@@ -98,9 +98,10 @@ pub mod __private {
 
     /// Autoref specialization behind `#[diagnostic(delegate)]`: an
     /// `eyre::Report` field is searched along its whole cause chain, a
-    /// `Box<T>` field is looked up through the box, and any other error field
-    /// is looked up as a single error. [`ViaReport`] and [`ViaBox`] win for
-    /// their field types because they match one autoref step earlier.
+    /// `Box<T>` (or `Box<dyn Error>`) field is looked up through the box, and
+    /// any other error field is looked up as a single error. [`ViaReport`] and
+    /// [`ViaBox`] win for their field types because they match one autoref
+    /// step earlier.
     pub struct Delegate<'a, T>(pub &'a T);
 
     pub trait ViaReport<'a> {
@@ -125,6 +126,25 @@ pub mod __private {
             crate::find_in_error(inner)
         }
     }
+
+    // The type-erased boxes: `dyn Error` is unsized, so the impl above does
+    // not cover them. They cannot overlap with it, which needs a sized `T`.
+    macro_rules! via_erased_box {
+        ($($ty:ty),+ $(,)?) => {$(
+            impl<'a> ViaBox<'a> for Delegate<'a, Box<$ty>> {
+                fn __omni_lookup(&self) -> Option<&'a dyn crate::Diagnostic> {
+                    let inner: &'a (dyn std::error::Error + 'static) = &**self.0;
+                    crate::find_in_error(inner)
+                }
+            }
+        )+};
+    }
+
+    via_erased_box!(
+        dyn std::error::Error,
+        dyn std::error::Error + Send,
+        dyn std::error::Error + Send + Sync,
+    );
 
     pub trait ViaError<'a> {
         fn __omni_lookup(&self) -> Option<&'a dyn crate::Diagnostic>;

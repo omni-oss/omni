@@ -330,6 +330,10 @@ enum PublicInner {
 
     #[error(transparent)]
     #[diagnostic(delegate)]
+    Erased(Box<dyn std::error::Error + Send + Sync>),
+
+    #[error(transparent)]
+    #[diagnostic(delegate)]
     Custom(#[from] eyre::Report),
 }
 
@@ -396,4 +400,15 @@ fn delegate_looks_through_a_boxed_field() {
         DiagnosticReport::from_report(&r).unwrap().code,
         "sample.inner"
     );
+}
+
+#[test]
+fn delegate_looks_through_a_type_erased_boxed_field() {
+    let r = public(PublicInner::Erased(Box::new(InnerErr)));
+    let d = find(&r).expect("diagnostic inside the erased box");
+    assert_eq!(d.code(), "sample.inner");
+    assert!(d.reportable());
+
+    let plain = public(PublicInner::Erased("boom".into()));
+    assert!(find(&plain).is_none());
 }
