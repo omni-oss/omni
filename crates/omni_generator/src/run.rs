@@ -186,6 +186,11 @@ pub async fn run<'a, S: GeneratorEventSubscriber>(
 /// transaction is committed. A normal run commits the transaction once all
 /// actions have succeeded (making generation atomic), while a dry run simply
 /// drops the buffered actions without committing.
+///
+/// Returned action paths are display-only labels, sanitized using secrets
+/// collected from all invocations in the run. Errors from execution, action
+/// inference, and commit are sanitized with the same collection. Validation,
+/// recursion detection, and lock acquisition errors are propagated earlier.
 #[allow(clippy::result_large_err)]
 async fn run_in_transaction<'a, S: GeneratorEventSubscriber>(
     generator: &GeneratorConfiguration,
@@ -369,6 +374,10 @@ fn build_input_redactor<S: GeneratorEventSubscriber>(
     }
 }
 
+/// Collects inputs and executes one generator invocation, including nested
+/// actions. `depth` may equal `max_depth` but exceeding it returns an error.
+/// After input collection, the invocation adds its redactor to `run_secrets`
+/// and uses it for events. Collection and action errors propagate to the caller.
 #[allow(clippy::result_large_err, clippy::too_many_arguments)]
 pub(crate) async fn run_internal<'a, S: GeneratorEventSubscriber>(
     r#gen: &GeneratorConfiguration,

@@ -1,8 +1,9 @@
 use crate::notice::NoticeSubscriber;
 pub use crate::notice::{NoticeEvent, NoticeLevel};
 
-/// Publishes one event through `sub`: [`NoticeSubscriber::publish_notice`]
-/// mirrors it to `tracing` and delivers it. This does not check
+/// Publishes one event through `sub`. The default
+/// [`NoticeSubscriber::publish_notice`] mirrors it to `tracing` and delivers
+/// it; subscribers may override that behavior. This does not check
 /// `wants_notices`.
 ///
 /// Redaction belongs to the operation that produced the event, so pass an

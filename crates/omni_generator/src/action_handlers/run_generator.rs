@@ -15,6 +15,10 @@ use crate::{
     run_internal,
 };
 
+/// Runs a nested generator with forwarded and configured inputs, then merges
+/// its session into the parent on success. The child inherits the parent's
+/// redactor and capability restrictions. Lookup, input resolution, and child
+/// execution errors propagate to the caller.
 #[allow(clippy::result_large_err)]
 pub async fn run_generator<'a, S: GeneratorEventSubscriber>(
     config: &RunGeneratorActionConfiguration,

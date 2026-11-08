@@ -99,6 +99,10 @@ where
 /// execution; validation is identical whether the caller is the CLI or MCP.
 /// `working_dir` selects the base the tool's relative `ctx.sys` paths resolve
 /// against; when `None` the workspace root is used.
+/// Notices are sent through `subscriber` with selected input values redacted;
+/// the successful JSON value is returned unchanged. Discovery, validation,
+/// working directory resolution, and execution can return errors. Validation
+/// and execution errors are redacted using the supplied input values.
 pub async fn handle_tool_run<TSys, S>(
     ctx: &LoadedContext<TSys>,
     name: &str,

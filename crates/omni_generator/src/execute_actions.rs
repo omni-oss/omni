@@ -79,6 +79,9 @@ pub struct ExecuteActionsArgs<'a, S: GeneratorEventSubscriber = NoopSubscriber>
     pub run_secrets: &'a crate::RunSecrets,
 }
 
+/// Executes actions in order, publishing skipped, progress, success, and
+/// failure events. Stops at the first error, including errors resolving action
+/// templates or executing a handler, and returns it to the caller.
 #[allow(clippy::result_large_err)]
 pub async fn execute_actions<'a, S: GeneratorEventSubscriber>(
     args: &ExecuteActionsArgs<'a, S>,

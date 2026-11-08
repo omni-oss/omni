@@ -74,8 +74,9 @@ impl<'a, S: ?Sized> RedactingSubscriber<'a, S> {
         Self::new(sink, Redactor::builder().build())
     }
 
-    /// A redacting subscriber for an operation nested in this one. It hides everything
-    /// this one hides plus `local`, and is unaffected by later children.
+    /// A redacting subscriber for an operation nested in this one. It hides
+    /// this operation's values and `local`, using this operation's placeholder.
+    /// Creating a child does not change its parent or siblings.
     pub fn child(&self, local: &Redactor) -> Self {
         let redactor = if local.is_empty() {
             self.redactor.clone()

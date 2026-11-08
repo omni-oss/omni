@@ -14,6 +14,10 @@ use crate::{
     action_handlers::HandlerContext, error::Error, utils::expand_json_value,
 };
 
+/// Runs a generator's JavaScript action with its effective capability policy.
+/// On success, publishes returned diagnostics and script logs through the
+/// invocation's subscriber. Template expansion and script runner errors
+/// propagate to the caller.
 #[allow(clippy::result_large_err)]
 pub async fn run_javascript<'a, S: GeneratorEventSubscriber>(
     config: &RunJavaScriptActionConfiguration,
@@ -127,8 +131,8 @@ pub async fn run_javascript<'a, S: GeneratorEventSubscriber>(
     Ok(())
 }
 
-/// Dispatches through the invocation's redacting subscriber, which sanitizes before any
-/// subscriber (including ones that only mirror to tracing) sees the log.
+/// Dispatches a script log to the supplied subscriber. The invocation passes
+/// a redacting subscriber so its sink receives sanitized text.
 fn dispatch_script_log<S: GeneratorEventSubscriber>(
     subscriber: &S,
     log: bridge_rpc_services::log::ScriptLogRecord,

@@ -102,10 +102,11 @@ impl Diagnostic for RedactedDiagnostic {
     }
 }
 
-/// Redacts every text a user can see in `report` with `redact`: the
-/// diagnostic's message, body, hints, causes and structured details, and each
-/// context layer. Returns `report` itself when nothing changes, so downcasts
-/// of an untouched error keep working.
+/// Applies `redact` to the diagnostic's message, body, hints, causes, context
+/// layers, and string values in structured details. Detail keys are unchanged.
+/// For a plain error, applies it to each displayed chain message. Returns
+/// `report` itself when nothing changes, preserving downcasts; otherwise the
+/// returned report retains diagnostic structure but not the original error type.
 pub fn redact_report(
     report: eyre::Report,
     redact: &dyn Fn(&str) -> String,

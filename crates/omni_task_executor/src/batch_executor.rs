@@ -154,9 +154,9 @@ where
         env.union(&args)
     }
 
-    /// The redacting for one task invocation: everything the task emits is
-    /// sanitized with its own secrets, and the shared subscriber never learns
-    /// them (RFC 0026).
+    /// Creates the redacting subscriber for one task invocation. Selected
+    /// event text is sanitized with the task's secrets; raw task output streams
+    /// pass through unchanged (RFC 0026).
     fn task_redacting(
         &self,
         task_ctx: &TaskContext<'_>,
@@ -924,6 +924,10 @@ where
     results
 }
 
+/// Executes a task and retries failed executions up to `max_retries` times,
+/// waiting `retry_duration` between attempts when provided. Process errors
+/// become result messages redacted by `subscriber`; raw output streams pass
+/// through unchanged.
 #[allow(clippy::too_many_arguments)]
 async fn run_process<'a, S: ExecutionEventSubscriber>(
     subscriber: RedactingSubscriber<'a, S>,
