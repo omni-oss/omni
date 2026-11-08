@@ -427,8 +427,6 @@ pub struct CliSubscriber {
     /// Notices waiting to be printed, collapsed by `(code, message)` in
     /// first-occurrence order.
     notice_groups: Arc<Mutex<Vec<NoticeGroup>>>,
-    /// Secrets of the run, grown as tasks are planned (RFC 0022).
-    redactor: Arc<omni_messages::SharedRedactor>,
     /// Print each notice as it arrives (commands with no run to flush at).
     immediate_notices: bool,
 }
@@ -468,7 +466,6 @@ impl CliSubscriber {
             emit_buffer: Arc::new(Mutex::new(Vec::new())),
             quiet: false,
             notice_groups: Arc::new(Mutex::new(Vec::new())),
-            redactor: Default::default(),
             immediate_notices: false,
         }
     }
@@ -709,14 +706,6 @@ impl CliSubscriber {
 }
 
 impl NoticeSubscriber for CliSubscriber {
-    fn redactor(&self) -> Option<Arc<omni_redact::Redactor>> {
-        self.redactor.get()
-    }
-
-    fn extend_redactor(&self, redactor: &omni_redact::Redactor) {
-        self.redactor.extend(redactor);
-    }
-
     fn on_notice(&self, e: NoticeEvent) {
         // `-q` hides warn and info notices, never `error` or `essential`
         // ones. The level and `essential` come from the event, not a lookup.
@@ -1128,24 +1117,13 @@ impl ExecutionEventSubscriber for CliSubscriber {
     }
 }
 
-impl CliSubscriber {
-    /// Masks the run's known secrets in free text bound for a presenter.
-    fn redact_text(&self, text: &str) -> String {
-        match self.redactor.get() {
-            Some(r) => r.redact(text).into_owned(),
-            None => text.to_string(),
-        }
-    }
-}
-
 impl GeneratorEventSubscriber for CliSubscriber {
     async fn on_prompt_rejected(
         &self,
         e: omni_messages::GeneratorPromptRejectedEvent,
     ) {
-        let message = self.redact_text(&e.message);
         self.emit_always(
-            format!("error: {}", escape_control_chars(&message))
+            format!("error: {}", escape_control_chars(&e.message))
                 .red()
                 .to_string(),
             EmitLevel::Error,
@@ -1157,9 +1135,6 @@ impl GeneratorEventSubscriber for CliSubscriber {
     /// `trace` go to `tracing` only.
     fn on_script_log(&self, e: omni_messages::ScriptLogEvent) {
         use omni_messages::ScriptLogLevel as L;
-        let mut e = e;
-        e.message = self.redact_text(&e.message);
-        e.target = self.redact_text(&e.target);
         e.mirror_to_tracing();
         let msg = escape_control_chars(&e.message).into_owned();
         match e.level {
@@ -1182,15 +1157,13 @@ impl GeneratorEventSubscriber for CliSubscriber {
         // Only the top-level generator drives the progress display; actions
         // inside sub-generators are represented by their parent's step.
         if e.depth == 0 {
-            let message = self.redact_text(&e.message);
-            self.with_progress(|p| p.action_in_progress(&e.name, &message));
+            self.with_progress(|p| p.action_in_progress(&e.name, &e.message));
         }
     }
 
     async fn on_action_success(&self, e: GeneratorActionSuccessEvent) {
         if e.depth == 0 {
-            let message = self.redact_text(&e.message);
-            self.with_progress(|p| p.action_success(&e.name, &message));
+            self.with_progress(|p| p.action_success(&e.name, &e.message));
         }
         // Notices from sub-generators print too, so flush at every depth.
         self.flush_notices();
@@ -1198,17 +1171,15 @@ impl GeneratorEventSubscriber for CliSubscriber {
 
     async fn on_action_failed(&self, e: GeneratorActionFailedEvent) {
         if e.depth == 0 {
-            let message = self.redact_text(&e.message);
-            self.with_progress(|p| p.action_failed(&e.name, &message));
+            self.with_progress(|p| p.action_failed(&e.name, &e.message));
         }
         self.flush_notices();
     }
 
     async fn on_action_skipped(&self, e: GeneratorActionSkippedEvent) {
         if e.depth == 0 {
-            let reason = e.reason.as_deref().map(|r| self.redact_text(r));
             self.with_progress(|p| {
-                p.action_skipped(&e.name, reason.as_deref())
+                p.action_skipped(&e.name, e.reason.as_deref())
             });
         }
     }
@@ -1348,17 +1319,18 @@ mod notice_render_tests {
     }
 
     #[test]
-    fn script_log_is_redacted_with_the_run_redactor() {
+    fn script_log_is_redacted_by_the_operation_before_it_is_shown() {
         let sub = CliSubscriber::new_with(
             CliUiMode::Tui,
             std::env::temp_dir(),
             Arc::new(OnceLock::new()),
         );
         let _ = sub.resolved_mode.set(CliUiMode::Tui);
-        sub.extend_redactor(
-            &omni_redact::Redactor::builder().value("hunter2").build(),
+        let op = omni_messages::OperationPublisher::new(
+            &sub,
+            omni_redact::Redactor::builder().value("hunter2").build(),
         );
-        sub.on_script_log(omni_messages::ScriptLogEvent {
+        op.on_script_log(omni_messages::ScriptLogEvent {
             level: omni_messages::ScriptLogLevel::Info,
             target: "t".into(),
             message: "pw hunter2".into(),
@@ -1369,14 +1341,15 @@ mod notice_render_tests {
     }
 
     #[test]
-    fn a_secret_learned_from_the_run_is_redacted_before_collapsing() {
+    fn a_secret_of_the_operation_is_redacted_before_collapsing() {
         let sub = CliSubscriber::new_stream(std::env::temp_dir());
-        sub.extend_redactor(
-            &omni_redact::Redactor::builder().value("hunter2").build(),
+        let op = omni_messages::OperationPublisher::new(
+            &sub,
+            omni_redact::Redactor::builder().value("hunter2").build(),
         );
 
-        omni_messages::publish::publish_event(&sub, sample("hunter2"));
-        omni_messages::publish::publish_event(&sub, sample("hunter2"));
+        omni_messages::publish::publish_event(&op, sample("hunter2"));
+        omni_messages::publish::publish_event(&op, sample("hunter2"));
 
         let groups = sub.notice_groups.lock();
         assert_eq!(groups.len(), 1, "same text once redacted");

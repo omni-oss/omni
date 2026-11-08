@@ -45,7 +45,7 @@ pub use generator::{
     ScriptLogLevel,
 };
 pub use noop::NoopSubscriber;
-pub use notice::{NoticeEvent, NoticeLevel, NoticeSubscriber, SharedRedactor};
+pub use notice::{NoticeEvent, NoticeLevel, NoticeSubscriber};
 pub use omni::OmniEventSubscriber;
 pub use omni_notice::Notice;
 pub use scope::OperationPublisher;

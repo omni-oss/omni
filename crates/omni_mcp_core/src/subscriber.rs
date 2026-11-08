@@ -43,7 +43,6 @@ pub struct McpSubscriber {
     notices: Mutex<NoticeCollector>,
     /// Dry-run commands per task (task_id → redacted command line).
     commands: Mutex<HashMap<String, String>>,
-    redactor: omni_messages::SharedRedactor,
 }
 
 impl McpSubscriber {
@@ -54,14 +53,7 @@ impl McpSubscriber {
             logs: Arc::new(Mutex::new(HashMap::new())),
             notices: Mutex::new(NoticeCollector::new()),
             commands: Mutex::new(HashMap::new()),
-            redactor: Default::default(),
         }
-    }
-
-    /// Redacts every notice before it is collected (RFC 0022).
-    pub fn with_redactor(self, redactor: omni_redact::Redactor) -> Self {
-        self.redactor.extend(&redactor);
-        self
     }
 
     /// Takes the notices collected so far, appending the truncation entry
@@ -106,14 +98,6 @@ impl McpSubscriber {
 }
 
 impl NoticeSubscriber for McpSubscriber {
-    fn redactor(&self) -> Option<std::sync::Arc<omni_redact::Redactor>> {
-        self.redactor.get()
-    }
-
-    fn extend_redactor(&self, redactor: &omni_redact::Redactor) {
-        self.redactor.extend(redactor);
-    }
-
     fn on_notice(&self, event: NoticeEvent) {
         self.notices.lock().unwrap().push(event);
     }
@@ -269,11 +253,12 @@ mod tests {
         }
 
         let sub = McpSubscriber::new(LogsDisplay::Never);
-        sub.extend_redactor(
-            &omni_redact::Redactor::builder().value("hunter2").build(),
+        let op = omni_messages::OperationPublisher::new(
+            &sub,
+            omni_redact::Redactor::builder().value("hunter2").build(),
         );
         omni_messages::publish::publish_event(
-            &sub,
+            &op,
             omni_messages::NoticeEvent::from_notice(
                 &Sample {
                     v: "hunter2".into(),
