@@ -219,6 +219,30 @@ to show that result later.
   `GeneratorRunResult.actions` and `GeneratorRunResponse.actions` consume
   these safe projections; neither retains child redactors or raw display
   fallbacks.
+  Returned action paths are **display-only labels**, not filesystem
+  references: a sanitized label can name a nonexistent or different file and
+  must not be passed to filesystem APIs for inspection. Prepare normalized,
+  workspace-relative labels before sanitization; presenters must not clean,
+  resolve or relativize the sanitized text as a path. Raw paths remain only
+  in the execution transaction. Do not add a raw-path field or lookup API to
+  bypass this protection.
+
+  Preserve reporting identity separately from these labels. Within a run,
+  the transaction assigns an opaque report key to each equivalence class
+  used by the existing CLI summary: action category plus normalized path,
+  or ordered `(from, to)` pair for rename/copy. Allocate keys from a run-local
+  counter, not a hash/encoding of a path or secret; they have no meaning
+  across runs and are not file-access handles. Repeated equivalent actions
+  reuse a key, while distinct paths receive distinct keys even when their
+  safe labels collide. Keep the raw equivalence map only inside the
+  execution transaction, and carry the key with each safe projection through
+  merge/checkpoint/rollback. Never reuse a discarded key for another identity
+  within the run. Drop the map with the transaction. The Rust result/response
+  carries this internal reporting metadata without serializing keys into MCP.
+  `report_generator_output` uses ordered maps keyed by report key rather than
+  sets of safe paths; it renders their prepared labels and counts their
+  entries. Two distinct files may therefore appear as two identical safe
+  labels with a count of two. No presenter needs raw paths to deduplicate.
 - Preserve diagnostic code, audience, structured details and hints. Build
   and sanitize `DiagnosticReport` while the scope is alive. For plain errors,
   sanitize every displayed chain/context string, not just the top message.
@@ -271,6 +295,7 @@ by custom subscribers/tracing layers, so safety is not formatter-dependent.
 | Concurrent tasks and independent tool/generator calls sharing one sink | Each hides its own secret; a literal matching only the other's secret remains unchanged, regardless of registration/emission order |
 | Nested generator and explicit nested tool scope | Child hides parent and child secrets; parent and sibling do not acquire child-only secrets; child failure remains safe when aggregated later |
 | Nested generator transaction actions | A child-only secret in an action path is absent from `GeneratorRunResponse.actions` after child completion, in dry-run and committed runs; real execution paths stay unchanged, and checkpoint/rollback keeps projections aligned with retained actions |
+| Action label collisions and identity | Two distinct paths with identical safe labels remain two reports/counts; repeated equivalent actions deduplicate; rename/copy pairs preserve identity; discarded keys are not reassigned on rollback; returned labels are never resolved as filesystem paths and reporting keys are absent from MCP JSON |
 | Subscriber reuse | Completed/failed/cancelled A does not affect B; presenter never retains A's redactor |
 | Preparation | Supplied values, defaults and rejected prompted values are protected before execution begins, including early validation/expansion failures |
 | Success/failure exits | Dry-run command, lifecycle/action/script events, notices, structured diagnostics and plain error chains are safe on both paths; tool success JSON stays unchanged |
@@ -287,11 +312,21 @@ they are sanitized.
 
 ## 6. Compatibility and rollout
 
-No config, CLI flag, placeholder, diagnostic code or MCP envelope changes.
+No config, CLI flag, placeholder, diagnostic code or MCP envelope shape changes.
 The intended visible difference is removal of incidental cross-operation
 masking and earlier protection of preparation output. Diagnostic structure,
 notice ordering/filtering and existing byte-stream/tool-result contracts
 remain intact.
+
+Generator action paths deliberately change semantics from usable filesystem
+paths to display-only labels. This is a client compatibility change despite
+preserving the wire shape: API/MCP consumers must stop using returned action
+paths to open generated files, even when a particular label has no redaction.
+Document this in the API/MCP contract and release notes when implementation
+lands. The Rust action result representation also gains internal report keys
+and prepared labels; migrate CLI and API callers together. Exact execution
+paths are not exposed as a compatibility fallback. Supporting private file
+inspection through another interface would require a separate design.
 
 1. Agree on this draft and the explicit tool-result/cross-operation limits.
 2. Add immutable publisher, event sanitizers and prepared result/error
