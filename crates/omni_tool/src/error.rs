@@ -143,8 +143,10 @@ pub(crate) enum ErrorInner {
     },
 
     /// A pipeline step's `if` condition did not evaluate to a boolean.
+    // The condition and its result are deliberately not in the message: a
+    // rendered condition may contain a secret.
     #[error(
-        "the `if` condition for pipeline step '{step}' ({expr}) evaluated to '{result}', expected 'true' or 'false'"
+        "the `if` condition for pipeline step '{step}' did not evaluate to 'true' or 'false'"
     )]
     #[diagnostic(
         code = "tool.invalid_if_condition",

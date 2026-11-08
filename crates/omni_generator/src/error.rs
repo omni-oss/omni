@@ -73,9 +73,9 @@ pub(crate) enum ErrorInner {
     Resolve(#[from] omni_command_config::ResolveError),
 
     /// An expression did not evaluate to a boolean.
-    #[error(
-        "expression '{expr}' in '{expr_name}' did not evaluate to a boolean, result: {result}"
-    )]
+    // The expression and its result are deliberately not in the message: a
+    // rendered condition may contain a secret input.
+    #[error("expression in '{expr_name}' did not evaluate to a boolean")]
     #[diagnostic(
         code = "generator.invalid_boolean_result",
         hint = "make the expression in `{expr_name}` evaluate to `true` or `false`"
@@ -200,7 +200,12 @@ pub(crate) enum ErrorInner {
     ChildProcess(#[from] omni_process::ChildProcessError),
 
     /// A generator command exited with a non-zero status.
-    #[error("command '{command}' failed with exit code {exit_code}")]
+    // Only the program is named: the rest of the command line may hold
+    // rendered secrets.
+    #[error(
+        "command '{program}' failed with exit code {exit_code}",
+        program = program_of(command)
+    )]
     #[diagnostic(
         code = "generator.command_failed",
         hint = "check the output above for why the command failed, then fix it or the generator's command"
@@ -290,4 +295,9 @@ pub(crate) enum ErrorInner {
         #[source]
         source: omni_capabilities::Error,
     },
+}
+
+/// The program of a command line, without its arguments.
+fn program_of(command: &str) -> &str {
+    command.split_whitespace().next().unwrap_or("")
 }

@@ -48,9 +48,8 @@ pub enum ErrorInner {
     ValueBag(#[from] value_bag::Error),
 
     /// A value does not pass the validators of its input.
-    #[error(
-        "value '{value}' is invalid for input {input_name}: {error_message}"
-    )]
+    // The value is deliberately not in the message: it may be a secret.
+    #[error("value is invalid for input {input_name}: {error_message}")]
     #[diagnostic(
         code = "input.invalid_value",
         hint = "provide a value for input `{input_name}` that passes its validators"
@@ -63,9 +62,9 @@ pub enum ErrorInner {
     },
 
     /// A boolean expression did not evaluate to `true` or `false`.
-    #[error(
-        "invalid boolean expression result: \"{result}\" for expression: \"{expression}\", expected true or false"
-    )]
+    // The expression and its result are deliberately not in the message: a
+    // validator over a secret input renders the secret into the result.
+    #[error("invalid boolean expression result: expected true or false")]
     #[diagnostic(
         code = "input.invalid_boolean_result",
         hint = "make the expression evaluate to `true` or `false`"

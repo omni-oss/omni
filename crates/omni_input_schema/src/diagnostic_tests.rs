@@ -11,6 +11,19 @@ fn report(inner: ErrorInner) -> eyre::Report {
         .unwrap_err()
 }
 
+/// Everything a user or an agent can see for this error: each message in the
+/// chain plus the rendered CLI text and the JSON envelope.
+fn rendered(r: &eyre::Report) -> String {
+    let chain = r
+        .chain()
+        .map(|e| e.to_string())
+        .collect::<Vec<_>>()
+        .join(" | ");
+    let report = omni_diagnostic::DiagnosticReport::from_report(r)
+        .expect("diagnostic report");
+    format!("{chain}\n{}\n{}", report.to_text(), report.to_json())
+}
+
 #[test]
 fn duplicate_name_is_found_through_wrap_err() {
     let d_report = report(ErrorInner::DuplicateInputName("token".into()));
@@ -93,4 +106,26 @@ fn codes_are_registered_in_the_catalog() {
     ] {
         assert!(omni_codes::get(code).is_some(), "{code} is not registered");
     }
+}
+
+#[test]
+fn summaries_never_echo_input_values_or_rendered_expressions() {
+    let invalid = report(ErrorInner::InvalidValue {
+        input_name: "token".into(),
+        value: ValueBag::from_str("hunter2").to_owned(),
+        error_message: "must be at least 12 characters".into(),
+    });
+    let all = rendered(&invalid);
+    assert!(!all.contains("hunter2"), "{all}");
+    assert!(all.contains("token"), "{all}");
+    assert!(all.contains("must be at least 12 characters"), "{all}");
+
+    let boolean = report(ErrorInner::InvalidBooleanExpressionResult {
+        result: "hunter2".into(),
+        expression: "{{ value }}".into(),
+    });
+    let all = rendered(&boolean);
+    assert!(!all.contains("hunter2"), "{all}");
+    assert!(!all.contains("{{ value }}"), "{all}");
+    assert!(all.contains("input.invalid_boolean_result"), "{all}");
 }

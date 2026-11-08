@@ -11,6 +11,19 @@ fn report(inner: ErrorInner) -> eyre::Report {
         .unwrap_err()
 }
 
+/// Everything a user or an agent can see for this error: each message in the
+/// chain plus the rendered CLI text and the JSON envelope.
+fn rendered(r: &eyre::Report) -> String {
+    let chain = r
+        .chain()
+        .map(|e| e.to_string())
+        .collect::<Vec<_>>()
+        .join(" | ");
+    let report = omni_diagnostic::DiagnosticReport::from_report(r)
+        .expect("diagnostic report");
+    format!("{chain}\n{}\n{}", report.to_text(), report.to_json())
+}
+
 #[test]
 fn tool_not_found_is_a_user_diagnostic() {
     let r = report(ErrorInner::ToolNotFound {
@@ -160,4 +173,18 @@ fn config_load_failure_names_the_file_and_preserves_the_cause() {
             .chain()
             .any(|e| e.downcast_ref::<omni_file_data_serde::Error>().is_some())
     );
+}
+
+#[test]
+fn if_condition_summary_never_echoes_the_condition_or_its_result() {
+    let r = report(ErrorInner::InvalidIfCondition {
+        step: "deploy".into(),
+        expr: "{{ inputs.token }}".into(),
+        result: "hunter2".into(),
+    });
+    let all = rendered(&r);
+    assert!(!all.contains("hunter2"), "{all}");
+    assert!(!all.contains("inputs.token"), "{all}");
+    assert!(all.contains("deploy"), "{all}");
+    assert!(all.contains("tool.invalid_if_condition"), "{all}");
 }

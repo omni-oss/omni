@@ -16,6 +16,19 @@ fn report(inner: ErrorInner) -> eyre::Report {
         .unwrap_err()
 }
 
+/// Everything a user or an agent can see for this error: each message in the
+/// chain plus the rendered CLI text and the JSON envelope.
+fn rendered(r: &eyre::Report) -> String {
+    let chain = r
+        .chain()
+        .map(|e| e.to_string())
+        .collect::<Vec<_>>()
+        .join(" | ");
+    let report = omni_diagnostic::DiagnosticReport::from_report(r)
+        .expect("diagnostic report");
+    format!("{chain}\n{}\n{}", report.to_text(), report.to_json())
+}
+
 #[test]
 fn generator_not_found_is_a_user_diagnostic() {
     let r = report(ErrorInner::GeneratorNotFound { name: "app".into() });
@@ -56,6 +69,11 @@ fn invalid_boolean_result_never_reports_the_expression_or_result() {
     let text = d.hints().join(" ");
     assert!(!text.contains("hunter2"));
     assert!(!text.contains("secret_token"));
+    // The summary is the Display text and also reaches MCP error data.
+    let all = rendered(&r);
+    assert!(!all.contains("hunter2"), "{all}");
+    assert!(!all.contains("secret_token"), "{all}");
+    assert!(all.contains("enabled"), "{all}");
 }
 
 #[test]
@@ -68,6 +86,13 @@ fn command_failure_reports_the_exit_code_but_not_the_command() {
     assert_eq!(d.code(), "generator.command_failed");
     assert_eq!(d.details().unwrap(), serde_json::json!({ "exit_code": 2 }));
     assert!(!d.hints().join(" ").contains("hunter2"));
+    let all = rendered(&r);
+    assert!(!all.contains("hunter2"), "{all}");
+    assert!(!all.contains("--token"), "{all}");
+    assert!(
+        all.contains("deploy"),
+        "the program should still be named: {all}"
+    );
 }
 
 #[test]
