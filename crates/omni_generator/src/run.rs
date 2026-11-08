@@ -129,18 +129,18 @@ impl RunSecrets {
     }
 
     /// Sanitizes an error leaving the run, keeping its diagnostic structure.
-    fn prepare(&self, error: Error) -> Error {
+    fn redact_error(&self, error: Error) -> Error {
         let redactor = self.redactor();
         if redactor.is_empty() {
             return error;
         }
         let report =
-            omni_diagnostic::prepare_report(eyre::Report::new(error), &|s| {
+            omni_diagnostic::redact_report(eyre::Report::new(error), &|s| {
                 redactor.redact(s).into_owned()
             });
         match report.downcast::<Error>() {
             Ok(unchanged) => unchanged,
-            Err(prepared) => ErrorInner::Custom(prepared).into(),
+            Err(redacted) => ErrorInner::Custom(redacted).into(),
         }
     }
 }
@@ -248,7 +248,7 @@ async fn run_in_transaction<'a, S: GeneratorEventSubscriber>(
 
     // Everything leaving the run is sanitized while its invocations' secrets
     // are still known, so no later consumer needs them.
-    let session = result.map_err(|e| run_secrets.prepare(e))?;
+    let session = result.map_err(|e| run_secrets.redact_error(e))?;
 
     let actions = {
         struct InferActionsVisitor {
@@ -274,7 +274,7 @@ async fn run_in_transaction<'a, S: GeneratorEventSubscriber>(
         };
         tx.visit_pending_actions(&mut visitor)
             .await
-            .map_err(|e| run_secrets.prepare(e.into()))?;
+            .map_err(|e| run_secrets.redact_error(e.into()))?;
         let redactor = run_secrets.redactor();
         visitor
             .actions
@@ -286,7 +286,7 @@ async fn run_in_transaction<'a, S: GeneratorEventSubscriber>(
     if !config.dry_run {
         tx.commit()
             .await
-            .map_err(|e| run_secrets.prepare(e.into()))?;
+            .map_err(|e| run_secrets.redact_error(e.into()))?;
     }
 
     config
@@ -964,14 +964,14 @@ mod nesting_tests {
         let secrets = RunSecrets::default();
         secrets.add(&omni_redact::Redactor::builder().value("hunter2").build());
 
-        let hidden = secrets.prepare(Error::custom("bad value hunter2"));
+        let hidden = secrets.redact_error(Error::custom("bad value hunter2"));
         let report = eyre::Report::new(hidden);
         assert!(!format!("{report:#}").contains("hunter2"));
         assert!(format!("{report:#}").contains("<redacted>"));
 
         // An error with nothing to hide is returned unchanged, so its kind
         // can still be matched.
-        let plain = secrets.prepare(
+        let plain = secrets.redact_error(
             ErrorInner::new_generator_not_found("g".to_string()).into(),
         );
         assert!(matches!(

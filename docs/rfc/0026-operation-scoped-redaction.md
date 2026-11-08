@@ -250,10 +250,10 @@ to show that result later.
 - Preserve diagnostic code, audience, structured details and hints. Build
   and sanitize `DiagnosticReport` while the scope is alive. For plain errors,
   sanitize every displayed chain/context string, not just the top message.
-  Carry a prepared error projection across the API boundary; do not erase a
+  Carry a redacted error across the API boundary; do not erase a
   diagnostic into a string or let a fallback formatter expose its raw source.
 - Internal error sources may remain typed for control flow, but user-facing
-  and tracing error exits must use the prepared projection. That projection
+  and tracing error exits must use the redacted error. That copy
   contains neither raw sources nor a redactor. Audit all early `?` exits.
 - Keep the existing tool success-value contract: the tool's own JSON result
   (`ToolRunResult.result`) remains untouched, as RFC 0023 specifies. It is
@@ -305,7 +305,7 @@ by custom subscribers/tracing layers, so safety is not formatter-dependent.
 | Preparation | Supplied values, defaults and rejected prompted values are protected before execution begins, including early validation/expansion failures |
 | Success/failure exits | Dry-run command, lifecycle/action/script events, notices, structured diagnostics and plain error chains are safe on both paths; tool success JSON stays unchanged |
 | All surfaces | CLI stream/progress/TUI buffers, MCP success metadata/error envelopes, channel/custom subscriber, trace stderr/file and independent custom tracing layer see safe projections |
-| Lifetime | Weak-reference/drop instrumentation proves no redactor is retained by sinks, queued events, prepared results/errors or completed/cancelled workers |
+| Lifetime | Weak-reference/drop instrumentation proves no redactor is retained by sinks, queued events, redacted results and errors or completed/cancelled workers |
 | Publication contract | Notice mirror emitted once; lazy/demand/batch semantics preserved; no second redaction even when a secret overlaps the placeholder |
 
 Retain RFC 0022 policy/mode, short-value, nested-leaf and cache-key tests, and
@@ -334,12 +334,12 @@ paths are not exposed as a compatibility fallback. Supporting private file
 inspection through another interface would require a separate design.
 
 1. Agree on this draft and the explicit tool-result/cross-operation limits.
-2. Add immutable publisher, event sanitizers and prepared result/error
+2. Add immutable publisher, event sanitizers and redacted result and error
    projections, with publication and isolation tests.
 3. Migrate task preparation/execution, generator collection/nesting and tool
    validation/execution to the same scope contract. Audit early returns and
    direct tracing calls along with normal callbacks.
-4. Switch CLI/MCP to prepared data only; remove all shared redactor APIs and
+4. Switch CLI/MCP to redacted data only; remove all shared redactor APIs and
    redundant presenter redaction in the same migration. Do not leave a
    mixed path where a shared sink still unions descendant values.
 5. Run the test matrix and workspace checks, document limits, then mark this
@@ -363,7 +363,7 @@ do not remove the old protection until its producer boundary is in place.
 - **Attach redactors to events/errors:** handles delayed formatting but
   prolongs secret retention into output buffers and presenter lifetimes.
 
-Review should confirm the explicit publisher migration and prepared-error
+Review should confirm the explicit publisher migration and redacted-error
 boundary, and whether preserving raw tool success results remains the right
 contract. The proposed decision is to preserve it, document the limitation,
 and avoid expanding this scope/lifetime fix into a tool-data API change.
@@ -382,7 +382,7 @@ Implemented as designed:
 - Tasks (one scope per task invocation, reused by retries), generators (one
   scope per invocation, nested scopes inherit the parent's effective
   redactor) and tools (one scope per call) all publish through it (4.1).
-- `omni_diagnostic::prepare_report` and `PreparedDiagnostic` (4.5): task
+- `omni_diagnostic::redact_report` and `RedactedDiagnostic` (4.5): task
   resolution failures, generator run failures and tool failures are
   sanitized as they leave their scope and keep their code, audience, details,
   hints and context chain. An error with nothing to hide is returned as is.

@@ -49,7 +49,7 @@ pub enum TaskResultContext<'a> {
     Error {
         task_context: &'a TaskContext<'a>,
         /// The failure as shown to users, already sanitized for the task's
-        /// operation. It outlives the task's redactor, so it is prepared
+        /// operation. It outlives the task's redactor, so it is redacted
         /// before the operation ends (RFC 0026).
         message: String,
         tries: u8,

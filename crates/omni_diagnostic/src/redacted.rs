@@ -1,11 +1,11 @@
-//! Errors prepared for display after their operation's secrets are known
-//! (RFC 0026).
+//! Errors that have already been redacted (RFC 0026).
 //!
-//! An operation owns an immutable redactor only while it runs. An error that
-//! leaves it must not need that redactor later, so [`prepare_report`] builds a
-//! sanitized stand-in first. The stand-in keeps the diagnostic's code,
-//! audience, structured details, hints and context chain, and contains no
-//! raw source error and no redactor.
+//! An operation owns its redactor only while it runs, but its errors can be
+//! shown long after. [`redact_report`] therefore redacts an error while the
+//! secrets are still known and returns a copy that holds only the redacted
+//! text. The copy keeps the diagnostic's code, audience, structured details,
+//! hints and context chain, and holds neither the original source error nor a
+//! redactor.
 
 use std::{error::Error, fmt};
 
@@ -13,9 +13,9 @@ use serde_json::Value;
 
 use crate::{Audience, Diagnostic, DiagnosticReport};
 
-/// A diagnostic whose every text field was sanitized when it was built.
+/// A diagnostic whose text fields were all redacted when it was built.
 #[derive(Debug)]
-pub struct PreparedDiagnostic {
+pub struct RedactedDiagnostic {
     code: &'static str,
     audience: Audience,
     message: String,
@@ -25,7 +25,7 @@ pub struct PreparedDiagnostic {
     causes: Option<Box<TextCause>>,
 }
 
-/// One already-sanitized cause in a prepared diagnostic's source chain.
+/// One redacted cause in a [`RedactedDiagnostic`]'s source chain.
 #[derive(Debug)]
 struct TextCause {
     message: String,
@@ -44,8 +44,8 @@ impl Error for TextCause {
     }
 }
 
-impl PreparedDiagnostic {
-    /// Captures a sanitized report, rebuilding its cause chain from text.
+impl RedactedDiagnostic {
+    /// Captures an already-redacted report, rebuilding its cause chain from text.
     fn new(report: &DiagnosticReport) -> Self {
         let causes = report.causes.iter().rev().fold(None, |next, m| {
             Some(Box::new(TextCause {
@@ -65,19 +65,19 @@ impl PreparedDiagnostic {
     }
 }
 
-impl fmt::Display for PreparedDiagnostic {
+impl fmt::Display for RedactedDiagnostic {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.message)
     }
 }
 
-impl Error for PreparedDiagnostic {
+impl Error for RedactedDiagnostic {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         self.causes.as_deref().map(|c| c as &(dyn Error + 'static))
     }
 }
 
-impl Diagnostic for PreparedDiagnostic {
+impl Diagnostic for RedactedDiagnostic {
     fn code(&self) -> &'static str {
         self.code
     }
@@ -102,11 +102,11 @@ impl Diagnostic for PreparedDiagnostic {
     }
 }
 
-/// Sanitizes every text a user can see in `report` with `redact`: the
+/// Redacts every text a user can see in `report` with `redact`: the
 /// diagnostic's message, body, hints, causes and structured details, and each
 /// context layer. Returns `report` itself when nothing changes, so downcasts
 /// of an untouched error keep working.
-pub fn prepare_report(
+pub fn redact_report(
     report: eyre::Report,
     redact: &dyn Fn(&str) -> String,
 ) -> eyre::Report {
@@ -115,7 +115,7 @@ pub fn prepare_report(
         if safe == d {
             return report;
         }
-        let mut out = eyre::Report::new(PreparedDiagnostic::new(&safe));
+        let mut out = eyre::Report::new(RedactedDiagnostic::new(&safe));
         for ctx in safe.context.into_iter().rev() {
             out = out.wrap_err(ctx);
         }
@@ -141,7 +141,7 @@ mod tests {
 
     #[derive(Debug, thiserror::Error, crate::Diagnostic)]
     #[error("cannot use {0}")]
-    #[diagnostic(code = "prepared.sample", hint = "check {0}")]
+    #[diagnostic(code = "redacted.sample", hint = "check {0}")]
     struct Sample(String);
 
     fn hide(s: &str) -> String {
@@ -152,11 +152,11 @@ mod tests {
     fn a_diagnostic_keeps_its_structure_and_loses_the_secret() {
         let report = eyre::Report::new(Sample("hunter2".into()))
             .wrap_err("running hunter2 task");
-        let safe = prepare_report(report, &hide);
+        let safe = redact_report(report, &hide);
 
         let d =
             DiagnosticReport::from_report(&safe).expect("still a diagnostic");
-        assert_eq!(d.code, "prepared.sample");
+        assert_eq!(d.code, "redacted.sample");
         assert_eq!(d.audience, Audience::User);
         assert_eq!(d.message, "cannot use <redacted>");
         assert_eq!(d.hints, vec!["check <redacted>".to_string()]);
@@ -170,7 +170,7 @@ mod tests {
         let report = eyre::eyre!("root hunter2")
             .wrap_err("middle")
             .wrap_err("top hunter2");
-        let safe = prepare_report(report, &hide);
+        let safe = redact_report(report, &hide);
         let layers: Vec<_> = safe.chain().map(|e| e.to_string()).collect();
         assert_eq!(layers, ["top <redacted>", "middle", "root <redacted>"]);
     }
@@ -178,9 +178,9 @@ mod tests {
     #[test]
     fn an_untouched_error_is_returned_as_is() {
         let report = eyre::Report::new(Sample("fine".into()));
-        let safe = prepare_report(report, &hide);
+        let safe = redact_report(report, &hide);
         assert!(safe.downcast_ref::<Sample>().is_some());
-        let plain = prepare_report(eyre::eyre!("fine"), &hide);
+        let plain = redact_report(eyre::eyre!("fine"), &hide);
         assert_eq!(plain.to_string(), "fine");
     }
 }

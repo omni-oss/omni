@@ -561,12 +561,12 @@ where
                 task_ctx.node.task_exec_config(),
                 task_ctx,
             )
-            .map_err(|e| prepare_error(e, &publisher))?;
+            .map_err(|e| redact_error(e, &publisher))?;
             let override_retry_command = resolve_task_command(
                 task_ctx.node.task_retry_exec_config(),
                 task_ctx,
             )
-            .map_err(|e| prepare_error(e, &publisher))?;
+            .map_err(|e| redact_error(e, &publisher))?;
 
             if self.dry_run {
                 // Resolve a second time with environment values hidden: the
@@ -578,7 +578,7 @@ where
                     task_ctx,
                     &publisher,
                 )
-                .map_err(|e| prepare_error(e, &publisher))?;
+                .map_err(|e| redact_error(e, &publisher))?;
 
                 // Mirror the normal execution path's lifecycle events so
                 // subscribers (and the CLI) report the task exactly as they
@@ -814,17 +814,17 @@ fn resolve_task_command_for_display<'a>(
 /// Sanitizes a failure with the task's own secrets as it leaves the task's
 /// scope. The error keeps its diagnostic structure; one with nothing to hide
 /// is returned unchanged.
-fn prepare_error<S: ExecutionEventSubscriber>(
+fn redact_error<S: ExecutionEventSubscriber>(
     error: BatchExecutorError,
     publisher: &OperationPublisher<'_, S>,
 ) -> BatchExecutorError {
     let report =
-        omni_diagnostic::prepare_report(eyre::Report::new(error), &|s| {
+        omni_diagnostic::redact_report(eyre::Report::new(error), &|s| {
             publisher.redact(s).into_owned()
         });
     match report.downcast::<BatchExecutorError>() {
         Ok(unchanged) => unchanged,
-        Err(prepared) => BatchExecutorErrorInner::Prepared(prepared).into(),
+        Err(redacted) => BatchExecutorErrorInner::Redacted(redacted).into(),
     }
 }
 
@@ -1181,10 +1181,10 @@ pub(crate) enum BatchExecutorErrorInner {
     #[diagnostic(delegate)]
     Resolve(#[from] omni_command_config::ResolveError),
 
-    /// A failure already sanitized for its task (RFC 0026).
+    /// A failure already redacted with its task's secrets (RFC 0026).
     #[error(transparent)]
     #[diagnostic(delegate)]
-    Prepared(eyre::Report),
+    Redacted(eyre::Report),
 }
 
 #[cfg(test)]
@@ -1432,7 +1432,7 @@ mod tests {
                 std::io::Error::other("cannot read alpha and bravo"),
             ))
         };
-        let hidden = super::prepare_error(failure(), &task);
+        let hidden = super::redact_error(failure(), &task);
         assert_eq!(hidden.to_string(), "cannot read <redacted> and bravo");
 
         // Nothing to hide: returned unchanged, so its kind still matches.
@@ -1440,7 +1440,7 @@ mod tests {
             &sink,
             omni_redact::Redactor::builder().value("zulu").build(),
         );
-        let same = super::prepare_error(failure(), &other);
+        let same = super::redact_error(failure(), &other);
         assert_eq!(same.kind(), super::BatchExecutorErrorKind::Io);
     }
 }

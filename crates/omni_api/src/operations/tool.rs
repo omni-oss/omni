@@ -269,10 +269,10 @@ where
 
     match result {
         Ok(value) => Ok(value),
-        // Prepared while the tool's inputs are still known: the whole cause
+        // Redacted while the tool's inputs are still known: the whole cause
         // chain is sanitized, and a diagnostic keeps its code, details and
         // hints.
-        Err(err) => Err(omni_diagnostic::prepare_report(err.into(), &|s| {
+        Err(err) => Err(omni_diagnostic::redact_report(err.into(), &|s| {
             redactor.redact(s).into_owned()
         })),
     }
