@@ -242,8 +242,9 @@ impl<'a, TSys: ContextSys> ProjectHasher<'a, TSys> {
     }
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, omni_diagnostic::Diagnostic)]
 #[error(transparent)]
+#[diagnostic(forward)]
 pub struct ProjectHasherError(pub(crate) ProjectHasherErrorInner);
 
 impl ProjectHasherError {
@@ -260,7 +261,13 @@ impl<T: Into<ProjectHasherErrorInner>> From<T> for ProjectHasherError {
     }
 }
 
-#[derive(Debug, thiserror::Error, EnumDiscriminants, EnumIs)]
+#[derive(
+    Debug,
+    thiserror::Error,
+    EnumDiscriminants,
+    EnumIs,
+    omni_diagnostic::Diagnostic,
+)]
 #[strum_discriminants(
     name(ProjectHasherErrorKind),
     vis(pub),
@@ -268,23 +275,34 @@ impl<T: Into<ProjectHasherErrorInner>> From<T> for ProjectHasherError {
 )]
 pub(crate) enum ProjectHasherErrorInner {
     #[error(transparent)]
+    #[diagnostic(skip)]
     Collector(#[from] omni_collector::Error),
 
     #[error("Project `{0}` not found")]
-    NotFound(String),
+    /// A project that was asked to be hashed does not exist.
+    #[diagnostic(
+        code = "workspace.project_not_found",
+        hint = "check the project name against `omni projects`"
+    )]
+    NotFound(#[diagnostic(detail = "project")] String),
 
     #[error(transparent)]
+    #[diagnostic(delegate)]
     ExecutionPlanProvider(eyre::Report),
 
     #[error("Cache info not found for project `{0}` and task `{1}`")]
+    #[diagnostic(skip)]
     CacheInfoNotFound(String, String),
 
     #[error("Task env vars not found for project `{0}` and task `{1}`")]
+    #[diagnostic(skip)]
     TaskEnvVarsNotFound(String, String),
 
     #[error(transparent)]
+    #[diagnostic(delegate)]
     LoadedContext(#[from] Box<LoadedContextError>),
 
     #[error(transparent)]
+    #[diagnostic(skip)]
     Glob(#[from] globset::Error),
 }

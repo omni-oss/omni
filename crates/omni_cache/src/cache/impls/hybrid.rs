@@ -1472,8 +1472,9 @@ async fn load_stats<P: AsRef<Path> + Clone>(
     })
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, omni_diagnostic::Diagnostic)]
 #[error(transparent)]
+#[diagnostic(forward)]
 pub struct LocalTaskExecutionCacheStoreError(
     pub(crate) LocalTaskExecutionCacheStoreErrorInner,
 );
@@ -1493,7 +1494,9 @@ impl<T: Into<LocalTaskExecutionCacheStoreErrorInner>> From<T>
     }
 }
 
-#[derive(Debug, thiserror::Error, EnumDiscriminants)]
+#[derive(
+    Debug, thiserror::Error, EnumDiscriminants, omni_diagnostic::Diagnostic,
+)]
 #[strum_discriminants(
     name(LocalTaskExecutionCacheStoreErrorKind),
     vis(pub),
@@ -1501,47 +1504,61 @@ impl<T: Into<LocalTaskExecutionCacheStoreErrorInner>> From<T>
 )]
 pub(crate) enum LocalTaskExecutionCacheStoreErrorInner {
     #[error(transparent)]
+    #[diagnostic(skip)]
     Io(#[from] std::io::Error),
 
     #[error(transparent)]
+    #[diagnostic(skip)]
     DirHasher(#[from] RealDirHasherError),
 
     #[error(transparent)]
+    #[diagnostic(skip)]
     Globset(#[from] globset::Error),
 
     #[error(transparent)]
+    #[diagnostic(skip)]
     Ignore(#[from] dir_walker::impls::IgnoreError),
 
     #[error(transparent)]
+    #[diagnostic(skip)]
     IgnoreBuild(#[from] dir_walker::impls::IgnoreRealDirWalkerError),
 
     #[error(transparent)]
+    #[diagnostic(skip)]
     RmpSerdeEncode(#[from] rmp_serde::encode::Error),
 
     #[error(transparent)]
+    #[diagnostic(skip)]
     RmpSerdeDecode(#[from] rmp_serde::decode::Error),
 
     #[error(transparent)]
+    #[diagnostic(skip)]
     Bs58(#[from] bs58::decode::Error),
 
     #[error(transparent)]
+    #[diagnostic(skip)]
     Collect(#[from] omni_collector::error::Error),
 
     #[error(transparent)]
+    #[diagnostic(skip)]
     LastUsedDb(#[from] LocalLastUsedDbError),
 
     #[error(transparent)]
+    #[diagnostic(delegate)]
     ExecutionPlan(#[from] omni_execution_plan::ExecutionPlanProviderError),
 
     #[error(transparent)]
+    #[diagnostic(delegate)]
     TaskContextProvider(#[from] omni_task_context::TaskContextProviderError),
 
     #[error(transparent)]
+    #[diagnostic(skip)]
     RemoteCacheServiceClient(#[from] RemoteCacheClientError),
 
     #[error(
         "a loaded workspace context is required to apply `--stale-only`, `--dir` or `--meta` filters while pruning the cache"
     )]
+    #[diagnostic(skip)]
     MissingContext,
 }
 
@@ -2922,5 +2939,42 @@ mod tests {
             project.tasks[0].last_used_timestamp.is_some(),
             "a last-used timestamp should have been recorded"
         );
+    }
+}
+
+#[cfg(test)]
+mod diagnostic_tests {
+    use omni_core::ProjectGraphError;
+    use omni_diagnostic::find;
+    use omni_task_context::TaskContextProviderError;
+
+    use super::*;
+
+    #[test]
+    fn task_context_diagnostics_reach_the_local_store_error() {
+        let coded = eyre::Report::new(ProjectGraphError::not_found("web"));
+        let err = LocalTaskExecutionCacheStoreError::from(
+            LocalTaskExecutionCacheStoreErrorInner::TaskContextProvider(
+                TaskContextProviderError::from(coded),
+            ),
+        );
+        let r = eyre::Report::new(err);
+        assert_eq!(find(&r).unwrap().code(), "project.not_found");
+    }
+
+    #[test]
+    fn plumbing_failures_stay_uncoded() {
+        let io = eyre::Report::new(LocalTaskExecutionCacheStoreError::from(
+            LocalTaskExecutionCacheStoreErrorInner::Io(std::io::Error::other(
+                "x",
+            )),
+        ));
+        assert!(find(&io).is_none());
+
+        let missing =
+            eyre::Report::new(LocalTaskExecutionCacheStoreError::from(
+                LocalTaskExecutionCacheStoreErrorInner::MissingContext,
+            ));
+        assert!(find(&missing).is_none());
     }
 }

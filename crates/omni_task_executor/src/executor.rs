@@ -234,7 +234,7 @@ impl<T: Into<TaskExecutorErrorInner>> From<T> for TaskExecutorError {
 #[strum_discriminants(name(TaskExecutorErrorKind), vis(pub))]
 enum TaskExecutorErrorInner {
     #[error(transparent)]
-    #[diagnostic(skip)]
+    #[diagnostic(delegate)]
     ExecutionPipeline(#[from] ExecutionPipelineError),
 
     #[error(transparent)]
@@ -258,7 +258,7 @@ enum TaskExecutorErrorInner {
     Unknown(#[from] eyre::Report),
 
     #[error(transparent)]
-    #[diagnostic(skip)]
+    #[diagnostic(delegate)]
     LocalTaskExecutionCacheStore(#[from] LocalTaskExecutionCacheStoreError),
 
     #[error(transparent)]
@@ -322,6 +322,85 @@ mod diagnostic_tests {
         assert_eq!(details["meta_filter"], "meta.type == 'lib'");
         assert!(details.get("call").is_none());
         assert_eq!(d.hints().len(), 1);
+    }
+
+    #[test]
+    fn invalid_shell_syntax_surfaces_through_batch_pipeline_and_executor() {
+        use crate::{
+            batch_executor::BatchExecutorError,
+            pipeline::ExecutionPipelineError,
+        };
+
+        let batch = BatchExecutorError::from(
+            omni_command_config::ResolveError::InvalidShellSyntax,
+        );
+        let err: TaskExecutorError = ExecutionPipelineError::from(batch).into();
+        let r = Err::<(), _>(err).wrap_err("running tasks").unwrap_err();
+        let d = find(&r).expect("diagnostic through all three wrappers");
+        assert_eq!(d.code(), "command.invalid_shell_syntax");
+        assert_eq!(d.audience(), Audience::User);
+        assert!(!d.hints().is_empty());
+        assert_eq!(
+            omni_diagnostic::DiagnosticReport::from_report(&r)
+                .unwrap()
+                .exit_code(),
+            2
+        );
+    }
+
+    #[test]
+    fn batch_failures_with_a_diagnostic_in_their_cause_are_found() {
+        use crate::{
+            batch_executor::{BatchExecutorError, BatchExecutorErrorInner},
+            pipeline::ExecutionPipelineError,
+        };
+
+        let coded: eyre::Report =
+            omni_command_config::ResolveError::EmptyArgv.into();
+        let batch = BatchExecutorError::from(
+            BatchExecutorErrorInner::new_cant_get_task_contexts(coded),
+        );
+        let err: TaskExecutorError = ExecutionPipelineError::from(batch).into();
+        assert_eq!(
+            find(&eyre::Report::new(err)).unwrap().code(),
+            "command.empty_argv"
+        );
+
+        let plain = BatchExecutorError::from(
+            BatchExecutorErrorInner::new_cant_get_task_contexts(eyre::eyre!(
+                "boom"
+            )),
+        );
+        let err: TaskExecutorError = ExecutionPipelineError::from(plain).into();
+        assert!(find(&eyre::Report::new(err)).is_none());
+    }
+
+    #[test]
+    fn cache_store_and_cache_manager_diagnostics_are_found() {
+        use crate::cache_manager::{CacheManagerError, CacheManagerErrorInner};
+        use omni_cache::impls::LocalTaskExecutionCacheStoreError;
+        use omni_core::ProjectGraphError;
+        use omni_task_context::TaskContextProviderError;
+
+        let coded = || eyre::Report::new(ProjectGraphError::not_found("web"));
+
+        let store = LocalTaskExecutionCacheStoreError::from(
+            TaskContextProviderError::from(coded()),
+        );
+        let err: TaskExecutorError = store.into();
+        assert_eq!(
+            find(&eyre::Report::new(err)).unwrap().code(),
+            "project.not_found"
+        );
+
+        let manager =
+            CacheManagerError::from(CacheManagerErrorInner::GetCacheFailed {
+                source: coded(),
+            });
+        assert_eq!(
+            find(&eyre::Report::new(manager)).unwrap().code(),
+            "project.not_found"
+        );
     }
 
     #[test]

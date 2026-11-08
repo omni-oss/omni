@@ -248,3 +248,75 @@ mod end_to_end {
         );
     }
 }
+
+mod wrapper_chains {
+    use eyre::WrapErr;
+    use omni_core::ProjectGraphError;
+    use omni_diagnostic::{Audience, find};
+
+    use crate::{
+        loaded_context::{LoadedContextError, LoadedContextErrorInner},
+        project_hasher::{ProjectHasherError, ProjectHasherErrorInner},
+        project_query::{ProjectQueryError, ProjectQueryErrorInner},
+    };
+
+    fn loaded(inner: LoadedContextErrorInner) -> eyre::Report {
+        Err::<(), _>(LoadedContextError::from(inner))
+            .wrap_err("loading")
+            .unwrap_err()
+    }
+
+    #[test]
+    fn loaded_context_delegates_graph_errors() {
+        let r = loaded(LoadedContextErrorInner::ProjectGraph(
+            ProjectGraphError::not_found("web"),
+        ));
+        let d = find(&r).expect("diagnostic through the loaded context");
+        assert_eq!(d.code(), "project.not_found");
+        assert_eq!(d.audience(), Audience::User);
+
+        let io =
+            loaded(LoadedContextErrorInner::Io(std::io::Error::other("x")));
+        assert!(find(&io).is_none());
+    }
+
+    #[test]
+    fn project_query_delegates_graph_errors() {
+        let r = Err::<(), _>(ProjectQueryError::from(
+            ProjectQueryErrorInner::ProjectGraph(ProjectGraphError::not_found(
+                "web",
+            )),
+        ))
+        .wrap_err("querying")
+        .unwrap_err();
+        assert_eq!(find(&r).unwrap().code(), "project.not_found");
+    }
+
+    #[test]
+    fn project_hasher_reports_unknown_projects_and_reaches_through_the_box() {
+        let r = Err::<(), _>(ProjectHasherError::from(
+            ProjectHasherErrorInner::NotFound("web".into()),
+        ))
+        .wrap_err("hashing")
+        .unwrap_err();
+        let d = find(&r).expect("diagnostic");
+        assert_eq!(d.code(), "workspace.project_not_found");
+        assert_eq!(d.details().unwrap()["project"], "web");
+
+        let boxed = Box::new(LoadedContextError::from(
+            LoadedContextErrorInner::ProjectGraph(
+                ProjectGraphError::not_found("api"),
+            ),
+        ));
+        let r = eyre::Report::new(ProjectHasherError::from(
+            ProjectHasherErrorInner::LoadedContext(boxed),
+        ));
+        assert_eq!(find(&r).unwrap().code(), "project.not_found");
+
+        let internal = eyre::Report::new(ProjectHasherError::from(
+            ProjectHasherErrorInner::CacheInfoNotFound("a".into(), "b".into()),
+        ));
+        assert!(find(&internal).is_none());
+        assert!(omni_codes::get("workspace.project_not_found").is_some());
+    }
+}

@@ -305,8 +305,9 @@ impl<TSys: ContextSys> LoadedContext<TSys> {
     }
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, omni_diagnostic::Diagnostic)]
 #[error(transparent)]
+#[diagnostic(forward)]
 pub struct LoadedContextError(pub(crate) LoadedContextErrorInner);
 
 impl LoadedContextError {
@@ -322,7 +323,13 @@ impl<T: Into<LoadedContextErrorInner>> From<T> for LoadedContextError {
     }
 }
 
-#[derive(Debug, thiserror::Error, EnumDiscriminants, EnumIs)]
+#[derive(
+    Debug,
+    thiserror::Error,
+    EnumDiscriminants,
+    EnumIs,
+    omni_diagnostic::Diagnostic,
+)]
 #[strum_discriminants(
     name(LoadedContextErrorKind),
     vis(pub),
@@ -330,24 +337,31 @@ impl<T: Into<LoadedContextErrorInner>> From<T> for LoadedContextError {
 )]
 pub(crate) enum LoadedContextErrorInner {
     #[error(transparent)]
+    #[diagnostic(skip)]
     Io(#[from] std::io::Error),
 
     #[error(transparent)]
+    #[diagnostic(skip)]
     Glob(#[from] globset::Error),
 
     #[error(transparent)]
+    #[diagnostic(delegate)]
     ProjectGraph(#[from] ProjectGraphError),
 
     #[error(transparent)]
+    #[diagnostic(delegate)]
     EnvLoader(#[from] EnvLoaderError),
 
     #[error(transparent)]
+    #[diagnostic(skip)]
     WorkspaceHasher(#[from] WorkspaceHasherError),
 
     #[error(transparent)]
+    #[diagnostic(delegate)]
     ProjectHasher(#[from] ProjectHasherError),
 
     #[error(transparent)]
+    #[diagnostic(skip)]
     Expansion(#[from] ExpansionError),
 }
 

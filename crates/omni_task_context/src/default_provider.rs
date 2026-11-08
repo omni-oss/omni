@@ -120,8 +120,9 @@ fn create_template_context<'a>(
     context
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, omni_diagnostic::Diagnostic)]
 #[error(transparent)]
+#[diagnostic(forward)]
 pub struct TaskContextProviderError(pub(crate) TaskContextProviderErrorInner);
 
 impl TaskContextProviderError {
@@ -140,15 +141,58 @@ impl<T: Into<TaskContextProviderErrorInner>> From<T>
     }
 }
 
-#[derive(Debug, thiserror::Error, EnumDiscriminants)]
+#[derive(
+    Debug, thiserror::Error, EnumDiscriminants, omni_diagnostic::Diagnostic,
+)]
 #[strum_discriminants(name(TaskContextProviderErrorKind), vis(pub))]
 pub(crate) enum TaskContextProviderErrorInner {
     #[error("no env vars for task: {full_task_name}")]
+    #[diagnostic(skip)]
     NoEnvVarsForTask { full_task_name: String },
 
     #[error(transparent)]
+    #[diagnostic(delegate)]
     ContextError(eyre::Report),
 
     #[error(transparent)]
+    #[diagnostic(delegate)]
     Custom(#[from] eyre::Report),
+}
+
+#[cfg(test)]
+mod diagnostic_tests {
+    use omni_core::ProjectGraphError;
+    use omni_diagnostic::find;
+
+    use super::*;
+
+    #[test]
+    fn context_and_custom_reports_delegate_to_their_diagnostic() {
+        for inner in [
+            TaskContextProviderErrorInner::ContextError(eyre::Report::new(
+                ProjectGraphError::not_found("web"),
+            )),
+            TaskContextProviderErrorInner::Custom(eyre::Report::new(
+                ProjectGraphError::not_found("web"),
+            )),
+        ] {
+            let r = eyre::Report::new(TaskContextProviderError::from(inner));
+            assert_eq!(find(&r).unwrap().code(), "project.not_found");
+        }
+    }
+
+    #[test]
+    fn plain_failures_stay_uncoded() {
+        let missing = eyre::Report::new(TaskContextProviderError::from(
+            TaskContextProviderErrorInner::NoEnvVarsForTask {
+                full_task_name: "app#build".into(),
+            },
+        ));
+        assert!(find(&missing).is_none());
+
+        let plain = eyre::Report::new(TaskContextProviderError::from(
+            TaskContextProviderErrorInner::Custom(eyre::eyre!("boom")),
+        ));
+        assert!(find(&plain).is_none());
+    }
 }

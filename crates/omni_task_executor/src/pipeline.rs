@@ -103,8 +103,9 @@ impl<'a, TSys: TaskExecutorSys, S: ExecutionEventSubscriber>
     }
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, omni_diagnostic::Diagnostic)]
 #[error(transparent)]
+#[diagnostic(forward)]
 pub struct ExecutionPipelineError(ExecutionPipelineErrorInner);
 
 impl ExecutionPipelineError {
@@ -121,9 +122,12 @@ impl<T: Into<ExecutionPipelineErrorInner>> From<T> for ExecutionPipelineError {
     }
 }
 
-#[derive(Debug, thiserror::Error, EnumDiscriminants)]
+#[derive(
+    Debug, thiserror::Error, EnumDiscriminants, omni_diagnostic::Diagnostic,
+)]
 #[strum_discriminants(name(ExecutionPipelineErrorKind), vis(pub))]
 enum ExecutionPipelineErrorInner {
     #[error(transparent)]
+    #[diagnostic(delegate)]
     BatchExecutor(#[from] BatchExecutorError),
 }
