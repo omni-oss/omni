@@ -21,3 +21,5 @@ dependencies:
   - omni_command_config
   - omni_glob
   - omni_redact
+  - omni_diagnostic
+  - omni_codes

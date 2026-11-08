@@ -3,6 +3,9 @@
 mod checkout;
 mod enums;
 pub mod error;
+
+#[cfg(test)]
+mod diagnostic_tests;
 pub mod git;
 mod helpers;
 mod scm;

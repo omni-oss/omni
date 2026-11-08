@@ -1,0 +1,5 @@
+error: `delegate` requires exactly one field
+ --> tests/ui/delegate_multiple_fields.rs:6:18
+  |
+6 |     #[diagnostic(delegate)]
+  |                  ^^^^^^^^

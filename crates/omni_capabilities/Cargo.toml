@@ -22,5 +22,5 @@ merge = { workspace = true }
 globset = { workspace = true }
 path-clean = { workspace = true }
 omni_types = { workspace = true }
-
-[dev-dependencies]
+omni_diagnostic = { workspace = true }
+omni_codes = { workspace = true }

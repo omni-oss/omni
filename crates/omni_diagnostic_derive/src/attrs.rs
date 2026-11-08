@@ -27,6 +27,8 @@ pub struct Attrs {
     pub details: Option<Path>,
     pub body: Option<Path>,
     pub forward: Option<Span>,
+    pub skip: Option<Span>,
+    pub delegate: Option<Span>,
     pub no_register: Option<Span>,
     pub stable: bool,
     pub related: Vec<LitStr>,
@@ -87,6 +89,10 @@ pub fn parse_attrs(attrs: &[Attribute]) -> syn::Result<Attrs> {
                 }
                 Some("forward") => {
                     set_once(&mut a.forward, m.path.span(), &m)
+                }
+                Some("skip") => set_once(&mut a.skip, m.path.span(), &m),
+                Some("delegate") => {
+                    set_once(&mut a.delegate, m.path.span(), &m)
                 }
                 Some("related") => {
                     a.related.push(m.value()?.parse()?);

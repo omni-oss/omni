@@ -92,7 +92,9 @@ describe(
                 expect(cargo).not.toContain("enable-tracing");
                 expect(cargo).not.toContain("[features]");
                 expect(project).not.toMatch(/-\s*trace\b/);
-                expect(project).not.toContain("dependencies:");
+                // `use_diagnostics` defaults to true, so the one project
+                // dependency is `omni_diagnostic`; never `trace`/`log`.
+                expect(project).toMatch(/dependencies:\s+-\s+omni_diagnostic\b/);
 
                 if (useTracing) {
                     expect(cargo).toMatch(

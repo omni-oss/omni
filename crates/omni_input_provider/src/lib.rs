@@ -11,6 +11,9 @@ pub mod error;
 pub mod provider;
 pub mod utils;
 
+#[cfg(test)]
+mod diagnostic_tests;
+
 #[cfg(any(test, feature = "test-utils"))]
 pub mod scripted;
 

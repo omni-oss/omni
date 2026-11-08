@@ -196,8 +196,11 @@ impl<'a, TSys: TaskExecutorSys, S: ExecutionEventSubscriber>
     }
 }
 
-#[derive(Debug, thiserror::Error)]
+omni_codes::prefixes!("executor");
+
+#[derive(Debug, thiserror::Error, omni_diagnostic::Diagnostic)]
 #[error(transparent)]
+#[diagnostic(forward)]
 pub struct TaskExecutorError(TaskExecutorErrorInner);
 
 impl TaskExecutorError {
@@ -218,11 +221,6 @@ impl TaskExecutorError {
     }
 }
 
-omni_diagnostic::register_wrapper!(TaskExecutorError, |e| {
-    e.meta_filter_error()
-        .map(|m| m as &dyn omni_diagnostic::Diagnostic)
-});
-
 impl<T: Into<TaskExecutorErrorInner>> From<T> for TaskExecutorError {
     fn from(value: T) -> Self {
         let inner = value.into();
@@ -230,43 +228,197 @@ impl<T: Into<TaskExecutorErrorInner>> From<T> for TaskExecutorError {
     }
 }
 
-#[derive(Debug, thiserror::Error, EnumDiscriminants, new)]
+#[derive(
+    Debug, thiserror::Error, EnumDiscriminants, new, omni_diagnostic::Diagnostic,
+)]
 #[strum_discriminants(name(TaskExecutorErrorKind), vis(pub))]
 enum TaskExecutorErrorInner {
     #[error(transparent)]
+    #[diagnostic(delegate)]
     ExecutionPipeline(#[from] ExecutionPipelineError),
 
     #[error(transparent)]
+    #[diagnostic(delegate)]
     ExecutionPlanProvider(#[from] ExecutionPlanProviderError),
 
     #[error(transparent)]
+    #[diagnostic(skip)]
     Io(#[from] std::io::Error),
 
     #[error(transparent)]
+    #[diagnostic(delegate)]
     TaskExecutionGraph(#[from] TaskExecutionGraphError),
 
     #[error(transparent)]
+    #[diagnostic(delegate)]
     ProjectGraph(#[from] ProjectGraphError),
 
     #[error(transparent)]
+    #[diagnostic(delegate)]
     Unknown(#[from] eyre::Report),
 
     #[error(transparent)]
+    #[diagnostic(delegate)]
     LocalTaskExecutionCacheStore(#[from] LocalTaskExecutionCacheStoreError),
 
     #[error(transparent)]
+    #[diagnostic(delegate)]
     MetaFilter(#[from] omni_expressions::Error),
 
+    /// No task matched the call.
+    ///
+    /// The project, directory and meta filters together selected no task to
+    /// run.
     #[error(
         "no task to execute, nothing matches the call: {call} \nproject filters: {project_filters:?}, \ndir filters: {dir_filters:?}, \nmeta filter: {meta_filter:?}"
     )]
+    #[diagnostic(
+        code = "executor.nothing_to_execute",
+        hint = "check the project, directory and meta filters, and that the task is defined in a matching project"
+    )]
     NothingToExecute {
         call: Call,
+        #[diagnostic(detail)]
         project_filters: Vec<String>,
+        #[diagnostic(detail = "dir_filters")]
         dir_filters: Vec<String>,
+        #[diagnostic(detail = "meta_filter")]
         meta_filter: Option<String>,
     },
 
     #[error(transparent)]
+    #[diagnostic(skip)]
     Join(#[from] tokio::task::JoinError),
+}
+
+#[cfg(test)]
+mod diagnostic_tests {
+    use eyre::WrapErr;
+    use omni_diagnostic::{Audience, find};
+    use omni_execution_plan::Call;
+
+    use super::*;
+
+    fn nothing_to_execute() -> TaskExecutorError {
+        TaskExecutorErrorInner::new_nothing_to_execute(
+            Call::Tasks(vec!["build".into()]),
+            vec!["web".into()],
+            vec![],
+            Some("meta.type == 'lib'".into()),
+        )
+        .into()
+    }
+
+    #[test]
+    fn nothing_to_execute_is_a_user_diagnostic() {
+        let r = Err::<(), _>(nothing_to_execute())
+            .wrap_err("running tasks")
+            .unwrap_err();
+        let d = find(&r).expect("diagnostic");
+        assert_eq!(d.code(), "executor.nothing_to_execute");
+        assert_eq!(d.audience(), Audience::User);
+        let details = d.details().unwrap();
+        assert_eq!(details["project_filters"], serde_json::json!(["web"]));
+        assert_eq!(details["meta_filter"], "meta.type == 'lib'");
+        assert!(details.get("call").is_none());
+        assert_eq!(d.hints().len(), 1);
+    }
+
+    #[test]
+    fn invalid_shell_syntax_surfaces_through_batch_pipeline_and_executor() {
+        use crate::{
+            batch_executor::BatchExecutorError,
+            pipeline::ExecutionPipelineError,
+        };
+
+        let batch = BatchExecutorError::from(
+            omni_command_config::ResolveError::InvalidShellSyntax,
+        );
+        let err: TaskExecutorError = ExecutionPipelineError::from(batch).into();
+        let r = Err::<(), _>(err).wrap_err("running tasks").unwrap_err();
+        let d = find(&r).expect("diagnostic through all three wrappers");
+        assert_eq!(d.code(), "command.invalid_shell_syntax");
+        assert_eq!(d.audience(), Audience::User);
+        assert!(!d.hints().is_empty());
+        assert_eq!(
+            omni_diagnostic::DiagnosticReport::from_report(&r)
+                .unwrap()
+                .exit_code(),
+            2
+        );
+    }
+
+    #[test]
+    fn batch_failures_with_a_diagnostic_in_their_cause_are_found() {
+        use crate::{
+            batch_executor::{BatchExecutorError, BatchExecutorErrorInner},
+            pipeline::ExecutionPipelineError,
+        };
+
+        let coded: eyre::Report =
+            omni_command_config::ResolveError::EmptyArgv.into();
+        let batch = BatchExecutorError::from(
+            BatchExecutorErrorInner::new_cant_get_task_contexts(coded),
+        );
+        let err: TaskExecutorError = ExecutionPipelineError::from(batch).into();
+        assert_eq!(
+            find(&eyre::Report::new(err)).unwrap().code(),
+            "command.empty_argv"
+        );
+
+        let plain = BatchExecutorError::from(
+            BatchExecutorErrorInner::new_cant_get_task_contexts(eyre::eyre!(
+                "boom"
+            )),
+        );
+        let err: TaskExecutorError = ExecutionPipelineError::from(plain).into();
+        assert!(find(&eyre::Report::new(err)).is_none());
+    }
+
+    #[test]
+    fn cache_store_and_cache_manager_diagnostics_are_found() {
+        use crate::cache_manager::{CacheManagerError, CacheManagerErrorInner};
+        use omni_cache::impls::LocalTaskExecutionCacheStoreError;
+        use omni_core::ProjectGraphError;
+        use omni_task_context::TaskContextProviderError;
+
+        let coded = || eyre::Report::new(ProjectGraphError::not_found("web"));
+
+        let store = LocalTaskExecutionCacheStoreError::from(
+            TaskContextProviderError::from(coded()),
+        );
+        let err: TaskExecutorError = store.into();
+        assert_eq!(
+            find(&eyre::Report::new(err)).unwrap().code(),
+            "project.not_found"
+        );
+
+        let manager =
+            CacheManagerError::from(CacheManagerErrorInner::GetCacheFailed {
+                source: coded(),
+            });
+        assert_eq!(
+            find(&eyre::Report::new(manager)).unwrap().code(),
+            "project.not_found"
+        );
+    }
+
+    #[test]
+    fn plain_executor_errors_stay_uncoded() {
+        let plain: TaskExecutorError = eyre::eyre!("plain").into();
+        assert!(find(&eyre::Report::new(plain)).is_none());
+
+        let io: TaskExecutorError = std::io::Error::other("x").into();
+        assert!(find(&eyre::Report::new(io)).is_none());
+    }
+
+    #[test]
+    fn code_is_registered_in_the_catalog() {
+        assert!(omni_codes::get("executor.nothing_to_execute").is_some());
+        if let Err(errors) = omni_codes::validate() {
+            let msgs: Vec<String> =
+                errors.iter().map(|e| e.to_string()).collect();
+            panic!("invalid code registry:\n{}", msgs.join("\n"));
+        }
+    }
 }

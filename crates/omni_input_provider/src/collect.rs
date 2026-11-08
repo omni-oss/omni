@@ -7,7 +7,7 @@ use sets::UnorderedSet;
 use value_bag::{OwnedValueBag, ValueBag};
 
 use crate::{
-    error::{Error, ErrorInner, ErrorKind},
+    error::Error,
     provider::InputProvider,
     utils::{validate_boolean_expression_result, validate_value},
 };
@@ -318,7 +318,7 @@ async fn process_pre_filled_value<
     );
     match result {
         Ok(()) => Ok(value),
-        Err(e) if e.kind() == ErrorKind::InvalidValue => {
+        Err(e) if e.invalid_value_message().is_some() => {
             get_raw_input_value(input, ctx, provider, config, MAX_RETRIES).await
         }
         Err(e) => Err(e),
@@ -467,7 +467,11 @@ fn check_no_duplicate_names<E: InputProfile, I: Borrow<Input<E>>>(
     for input in inputs {
         let name = input.borrow().base().name.as_str();
         if seen.contains(name) {
-            Err(ErrorInner::DuplicateInputName(name.to_string()))?;
+            Err(omni_input_schema::Error::from(
+                omni_input_schema::error::ErrorInner::DuplicateInputName(
+                    name.to_string(),
+                ),
+            ))?;
         }
         seen.insert(name);
     }

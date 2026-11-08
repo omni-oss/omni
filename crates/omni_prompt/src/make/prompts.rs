@@ -5,8 +5,7 @@ use omni_generator_configurations::Generator;
 use omni_input_provider::{
     AllowedValue, BooleanInput, FloatArrayInput, FloatInput, IntegerArrayInput,
     IntegerInput, StringArrayInput, StringInput, ValidateConfiguration,
-    error::{Error, ErrorInner},
-    utils::validate_value,
+    error::Error, utils::validate_value,
 };
 use requestty::Question;
 use serde::Serialize;
@@ -474,7 +473,7 @@ fn validate_for_requestty<T: std::fmt::Debug + Serialize + 'static>(
         validation_value_name,
     );
     if let Err(err) = result {
-        if let ErrorInner::InvalidValue { error_message, .. } = &err.0 {
+        if let Some(error_message) = err.invalid_value_message() {
             tracing::debug!(?err, "validation_failed");
             Err(error_message.to_string())
         } else {

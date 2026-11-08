@@ -40,8 +40,9 @@ impl<'a> ProjectQuery<'a> {
     }
 }
 
-#[derive(thiserror::Error, Debug, new)]
+#[derive(thiserror::Error, Debug, new, omni_diagnostic::Diagnostic)]
 #[error(transparent)]
+#[diagnostic(forward)]
 pub struct ProjectQueryError(pub(crate) ProjectQueryErrorInner);
 
 impl ProjectQueryError {
@@ -59,12 +60,16 @@ impl<T: Into<ProjectQueryErrorInner>> From<T> for ProjectQueryError {
     }
 }
 
-#[derive(thiserror::Error, EnumDiscriminants, Debug)]
+#[derive(
+    thiserror::Error, EnumDiscriminants, Debug, omni_diagnostic::Diagnostic,
+)]
 #[strum_discriminants(vis(pub), name(ProjectQueryErrorKind))]
 pub(crate) enum ProjectQueryErrorInner {
     #[error(transparent)]
+    #[diagnostic(skip)]
     Globset(#[from] globset::Error),
     #[error(transparent)]
+    #[diagnostic(delegate)]
     ProjectGraph(#[from] ProjectGraphError),
 }
 

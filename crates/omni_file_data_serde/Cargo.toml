@@ -17,6 +17,8 @@ toml = { workspace = true }
 serde_json = { workspace = true }
 rmp-serde = { workspace = true }
 system_traits = { workspace = true, features = ["memory-sync", "memory-async"] }
+omni_diagnostic = { workspace = true }
+omni_codes = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true }

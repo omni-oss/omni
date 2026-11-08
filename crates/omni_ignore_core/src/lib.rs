@@ -3,6 +3,8 @@
 //! concrete pattern sources live in `omni_ignore_contributors`.
 
 mod contributor;
+#[cfg(test)]
+mod diagnostic_tests;
 mod error;
 mod fence;
 mod patch;

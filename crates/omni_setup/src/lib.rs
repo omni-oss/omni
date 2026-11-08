@@ -1,6 +1,11 @@
 #![feature(decl_macro)]
 #![feature(try_blocks)]
 
+omni_codes::prefixes!("remote_cache");
+
+#[cfg(test)]
+mod diagnostic_tests;
+
 mod crypto;
 mod derive_key;
 mod fallback_store;

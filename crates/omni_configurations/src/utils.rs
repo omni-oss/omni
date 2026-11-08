@@ -26,7 +26,6 @@ pub mod fs {
         path::{Path, PathBuf},
     };
 
-    use derive_new::new;
     use omni_file_data_serde::ext_to_format;
     use serde::de::DeserializeOwned;
     use strum::{
@@ -34,6 +33,8 @@ pub mod fs {
     };
     use system_traits::{FsRead, FsReadAsync};
     use thiserror::Error;
+
+    omni_codes::prefixes!("config");
 
     #[allow(clippy::result_large_err)]
     pub async fn load_config_async<
@@ -52,20 +53,14 @@ pub mod fs {
     {
         let path: &'a Path = path.into();
         let ext = ext_to_format(path.extension().unwrap_or_default())
-            .map_err(|e| (path.to_path_buf(), e))?;
-        let content = sys.fs_read_async(path).await.map_err(|e| {
-            (
-                PathBuf::from(path),
-                if e.kind() == std::io::ErrorKind::NotFound {
-                    LoadConfigErrorInner::new_file_not_found(path.to_path_buf())
-                } else {
-                    LoadConfigErrorInner::Io(e)
-                },
-            )
-        })?;
+            .map_err(|e| file_data_failed(path, e))?;
+        let content = sys
+            .fs_read_async(path)
+            .await
+            .map_err(|e| read_failed(path, e))?;
 
-        Ok(omni_file_data_serde::from_slice(&content, ext)
-            .map_err(|e| (path.to_path_buf(), e))?)
+        omni_file_data_serde::from_slice(&content, ext)
+            .map_err(|e| file_data_failed(path, e))
     }
 
     #[allow(clippy::result_large_err)]
@@ -79,61 +74,123 @@ pub mod fs {
     {
         let path: &'a Path = path.into();
         let ext = ext_to_format(path.extension().unwrap_or_default())
-            .map_err(|e| (path.to_path_buf(), e))?;
-        let content = sys.fs_read(path).map_err(|e| {
-            (
-                PathBuf::from(path),
-                if e.kind() == std::io::ErrorKind::NotFound {
-                    LoadConfigErrorInner::new_file_not_found(path.to_path_buf())
-                } else {
-                    LoadConfigErrorInner::Io(e)
-                },
-            )
-        })?;
+            .map_err(|e| file_data_failed(path, e))?;
+        let content = sys.fs_read(path).map_err(|e| read_failed(path, e))?;
 
-        Ok(omni_file_data_serde::from_slice(&content, ext)
-            .map_err(|e| (path.to_path_buf(), e))?)
+        omni_file_data_serde::from_slice(&content, ext)
+            .map_err(|e| file_data_failed(path, e))
     }
 
-    #[derive(Error, Debug, new)]
-    #[error("({kind}) error when loading config from {path}", kind = self.kind())]
+    pub(crate) fn read_failed(
+        path: &Path,
+        error: io::Error,
+    ) -> LoadConfigError {
+        if error.kind() == io::ErrorKind::NotFound {
+            LoadConfigErrorInner::FileNotFound {
+                path: path.to_path_buf(),
+            }
+        } else {
+            LoadConfigErrorInner::Io {
+                path: path.to_path_buf(),
+                error,
+            }
+        }
+        .into()
+    }
+
+    pub(crate) fn file_data_failed(
+        path: &Path,
+        error: omni_file_data_serde::Error,
+    ) -> LoadConfigError {
+        LoadConfigErrorInner::file_data(path, error).into()
+    }
+
+    #[derive(Error, Debug, omni_diagnostic::Diagnostic)]
+    #[error(
+        "({kind}) error when loading config from {path}",
+        kind = self.kind(),
+        path = self.path().display()
+    )]
+    #[diagnostic(delegate)]
     pub struct LoadConfigError {
         #[source]
         error: LoadConfigErrorInner,
-
-        path: PathBuf,
     }
 
     impl LoadConfigError {
         pub fn kind(&self) -> LoadConfigErrorKind {
             self.error.discriminant()
         }
-    }
 
-    impl<T: Into<LoadConfigErrorInner>> From<(PathBuf, T)> for LoadConfigError {
-        fn from(value: (PathBuf, T)) -> Self {
-            let inner = value.1.into();
-            Self {
-                path: value.0,
-                error: inner,
-            }
+        pub fn path(&self) -> &Path {
+            self.error.path()
         }
     }
 
-    #[derive(Error, Debug, EnumDiscriminants, new)]
+    impl From<LoadConfigErrorInner> for LoadConfigError {
+        fn from(error: LoadConfigErrorInner) -> Self {
+            Self { error }
+        }
+    }
+
+    #[derive(Error, Debug, EnumDiscriminants, omni_diagnostic::Diagnostic)]
     #[strum_discriminants(
         vis(pub),
         name(LoadConfigErrorKind),
         derive(EnumString, Display)
     )]
     enum LoadConfigErrorInner {
-        #[error(transparent)]
-        Io(#[from] io::Error),
+        /// The configuration file could not be read.
+        #[error("{error}")]
+        #[diagnostic(code = "config.unreadable", audience = environment, hint = "check permissions and filesystem access for {path:?}")]
+        Io {
+            #[diagnostic(detail)]
+            path: PathBuf,
+            #[source]
+            error: io::Error,
+        },
 
+        /// The config file does not exist.
         #[error("file not found: {path}", path = path.display())]
-        FileNotFound { path: PathBuf },
+        #[diagnostic(
+            code = "config.file_not_found",
+            hint = "create the config file at {path:?}"
+        )]
+        FileNotFound {
+            #[diagnostic(detail)]
+            path: PathBuf,
+        },
 
-        #[error(transparent)]
-        FileDataSerde(#[from] omni_file_data_serde::Error),
+        /// The config file exists but could not be loaded as configuration.
+        #[error("{error}")]
+        #[diagnostic(
+            code = "config.load_failed",
+            hint = "fix the config file at {path:?}"
+        )]
+        FileDataSerde {
+            #[diagnostic(detail)]
+            path: PathBuf,
+            #[diagnostic(detail)]
+            kind: String,
+            error: omni_file_data_serde::Error,
+        },
+    }
+
+    impl LoadConfigErrorInner {
+        fn file_data(path: &Path, error: omni_file_data_serde::Error) -> Self {
+            Self::FileDataSerde {
+                path: path.to_path_buf(),
+                kind: format!("{:?}", error.kind()),
+                error,
+            }
+        }
+
+        fn path(&self) -> &Path {
+            match self {
+                Self::Io { path, .. }
+                | Self::FileNotFound { path }
+                | Self::FileDataSerde { path, .. } => path.as_path(),
+            }
+        }
     }
 }

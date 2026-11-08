@@ -1,6 +1,8 @@
 #![allow(clippy::redundant_field_names)]
 
 mod call;
+#[cfg(test)]
+mod diagnostic_tests;
 mod execution_plan_provider;
 mod filter;
 mod meta_filter_error;

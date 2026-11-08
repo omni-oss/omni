@@ -5,16 +5,57 @@ use maps::Map;
 use crate::CommandConfig;
 
 /// Errors produced while resolving a [`CommandConfig`] into a concrete argv.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, omni_diagnostic::Diagnostic)]
 pub enum ResolveError {
+    /// A configured shell command has invalid quoting or syntax.
     #[error("invalid shell command syntax")]
+    #[diagnostic(
+        code = "command.invalid_shell_syntax",
+        hint = "check quoting and escaping in the configured command"
+    )]
     InvalidShellSyntax,
 
     #[error(transparent)]
+    #[diagnostic(skip)]
     Tera(#[from] omni_tera::Error),
 
+    /// A configured command resolves to no executable.
     #[error("command resolved to an empty argv")]
+    #[diagnostic(
+        code = "command.empty_argv",
+        hint = "provide a nonempty command with an executable name after expansion"
+    )]
     EmptyArgv,
+}
+
+omni_codes::prefixes!("command");
+
+#[cfg(test)]
+mod diagnostic_tests {
+    use eyre::WrapErr;
+    use omni_diagnostic::{Audience, find};
+
+    #[test]
+    fn resolution_failures_are_registered_and_survive_context() {
+        for (error, code) in [
+            (
+                super::ResolveError::InvalidShellSyntax,
+                "command.invalid_shell_syntax",
+            ),
+            (super::ResolveError::EmptyArgv, "command.empty_argv"),
+        ] {
+            let report = Err::<(), _>(error)
+                .wrap_err("resolving command")
+                .unwrap_err();
+            let diagnostic = find(&report).expect("command diagnostic");
+            assert_eq!(diagnostic.code(), code);
+            assert_eq!(diagnostic.audience(), Audience::User);
+            assert_eq!(diagnostic.details(), None);
+            assert!(!diagnostic.hints().is_empty());
+            assert!(omni_codes::get(code).is_some());
+        }
+        omni_codes::validate().unwrap();
+    }
 }
 
 /// A [`CommandConfig`] resolved into a program and its arguments.

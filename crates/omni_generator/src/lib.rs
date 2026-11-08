@@ -1,11 +1,14 @@
 #![allow(clippy::redundant_field_names)]
 
 mod action_handlers;
+#[cfg(test)]
+mod diagnostic_tests;
 mod discover;
 pub mod error;
 mod execute_actions;
 mod gen_session;
 mod import_scan;
+pub mod notices;
 mod run;
 mod scoping;
 mod script_runner;

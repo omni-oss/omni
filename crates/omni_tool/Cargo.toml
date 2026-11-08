@@ -40,6 +40,8 @@ omni_capability_enforcement = { workspace = true }
 omni_capability_sys = { workspace = true }
 omni_messages = { workspace = true }
 omni_tera = { workspace = true }
+omni_diagnostic = { workspace = true }
+omni_codes = { workspace = true }
 
 [dev-dependencies]
 test-log = { workspace = true }

@@ -101,8 +101,9 @@ pub fn decrypt<RInput: Read, RKey: Read>(
     Ok(plaintext.to_vec())
 }
 
-#[derive(Debug, thiserror::Error, new)]
+#[derive(Debug, thiserror::Error, new, omni_diagnostic::Diagnostic)]
 #[error(transparent)]
+#[diagnostic(forward)]
 pub struct CryptoError(pub(crate) CryptoErrorInner);
 
 impl CryptoError {
@@ -119,25 +120,38 @@ impl<T: Into<CryptoErrorInner>> From<T> for CryptoError {
     }
 }
 
-#[derive(Debug, thiserror::Error, EnumDiscriminants, EnumIs, new)]
+#[derive(
+    Debug,
+    thiserror::Error,
+    EnumDiscriminants,
+    EnumIs,
+    new,
+    omni_diagnostic::Diagnostic,
+)]
 #[strum_discriminants(vis(pub), name(CryptoErrorKind))]
 pub(crate) enum CryptoErrorInner {
     #[error(transparent)]
+    #[diagnostic(skip)]
     Io(#[from] std::io::Error),
 
     #[error(transparent)]
+    #[diagnostic(delegate)]
     Custom(#[from] eyre::Report),
 
     #[error("invalid key length: {0}")]
+    #[diagnostic(skip)]
     InvalidKeyLength(usize, #[source] eyre::Report),
 
     #[error("failed to seal")]
+    #[diagnostic(skip)]
     FailedToSeal(#[source] eyre::Report),
 
     #[error("failed to open")]
+    #[diagnostic(skip)]
     FailedToOpen(#[source] eyre::Report),
 
     #[error("failed to open")]
+    #[diagnostic(skip)]
     FailedToFillBytes(#[source] eyre::Report),
 }
 

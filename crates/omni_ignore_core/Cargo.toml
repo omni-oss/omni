@@ -21,6 +21,8 @@ async-trait = { workspace = true }
 regex = { workspace = true }
 thiserror = { workspace = true }
 eyre = { workspace = true }
+omni_diagnostic = { workspace = true }
+omni_codes = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true }

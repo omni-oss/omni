@@ -22,6 +22,8 @@ strum = { workspace = true }
 derive-new = { workspace = true }
 omni_tera = { workspace = true }
 omni_redact = { workspace = true }
+omni_diagnostic = { workspace = true }
+omni_codes = { workspace = true }
 env = { workspace = true }
 shlex = { workspace = true }
 maps = { workspace = true }
@@ -33,4 +35,5 @@ merge = { workspace = true, optional = true }
 schemars = { workspace = true, optional = true }
 
 [dev-dependencies]
+eyre = { workspace = true }
 test-log = { workspace = true }

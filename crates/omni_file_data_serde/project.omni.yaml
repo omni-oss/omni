@@ -7,3 +7,5 @@ extends:
 dependencies:
   - omni_remote_cache_client
   - system_traits
+  - omni_diagnostic
+  - omni_codes

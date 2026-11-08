@@ -59,6 +59,11 @@ inputs:
     message: Add crate level error type
     default: true
 
+  - type: boolean
+    name: use_diagnostics
+    message: Add structured diagnostic support
+    default: true
+
   - if: "{{ inputs.add_error_type }}"
     type: string
     name: error_name

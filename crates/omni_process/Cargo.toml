@@ -23,3 +23,5 @@ futures = { workspace = true }
 maps = { workspace = true }
 nix = { workspace = true, features = ["process", "term"] }
 bon = { workspace = true }
+omni_codes = { workspace = true }
+omni_diagnostic = { workspace = true }

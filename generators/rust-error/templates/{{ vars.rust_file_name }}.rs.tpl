@@ -1,8 +1,11 @@
 use derive_new::new;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
-#[derive(Debug, thiserror::Error, new)]
+#[derive(Debug, thiserror::Error, new{% if inputs.use_diagnostics %}, omni_diagnostic::Diagnostic{% endif %})]
 #[error(transparent)]
+{%- if inputs.use_diagnostics %}
+#[diagnostic(forward)]
+{%- endif %}
 pub struct {{ data.rust_error_name }}(pub(crate) {{ data.rust_error_name }}Inner);
 
 impl {{ data.rust_error_name }} {
@@ -26,9 +29,12 @@ impl<T: Into<{{ data.rust_error_name }}Inner>> From<T> for {{ data.rust_error_na
     }
 }
 
-#[derive(Debug, thiserror::Error, EnumDiscriminants, new)]
+#[derive(Debug, thiserror::Error, EnumDiscriminants, new{% if inputs.use_diagnostics %}, omni_diagnostic::Diagnostic{% endif %})]
 #[strum_discriminants(vis(pub), name({{ data.rust_error_name }}Kind))]
 pub(crate) enum {{ data.rust_error_name }}Inner {
     #[error(transparent)]
+    {%- if inputs.use_diagnostics %}
+    #[diagnostic(delegate)]
+    {%- endif %}
     Custom(#[from] eyre::Report),
 }

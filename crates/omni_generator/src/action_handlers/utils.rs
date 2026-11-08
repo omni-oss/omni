@@ -61,8 +61,9 @@ fn resolve_output_path_inner(
     })
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, omni_diagnostic::Diagnostic)]
 #[error(transparent)]
+#[diagnostic(forward)]
 pub struct ResolveOutputPathError(ResolveOutputPathErrorInner);
 
 impl ResolveOutputPathError {
@@ -80,22 +81,40 @@ impl<T: Into<ResolveOutputPathErrorInner>> From<T> for ResolveOutputPathError {
     }
 }
 
-#[derive(Debug, thiserror::Error, EnumDiscriminants)]
+#[derive(
+    Debug, thiserror::Error, EnumDiscriminants, omni_diagnostic::Diagnostic,
+)]
 #[strum_discriminants(vis(pub), name(ResolveOutputPathErrorKind))]
 #[error(transparent)]
 pub(crate) enum ResolveOutputPathErrorInner {
+    /// A generator target is an absolute path, but it must be relative to the output directory.
     #[error("target should be relative, absoulate target is passed: {target}")]
-    TargetIsAbsolute { target: PathBuf },
+    #[diagnostic(
+        code = "generator.target_absolute",
+        hint = "use a target path relative to the output directory instead of {target:?}"
+    )]
+    TargetIsAbsolute {
+        #[diagnostic(detail)]
+        target: PathBuf,
+    },
 
+    /// A generator target resolves to a location outside the output directory.
     #[error(
         "target should be resolved to be inside output dir, target is outside: {target}, output dir: {output_dir}"
     )]
+    #[diagnostic(
+        code = "generator.target_outside_output",
+        hint = "use a target path inside the output directory {output_dir:?}"
+    )]
     TargetIsOutsideOutputDir {
+        #[diagnostic(detail)]
         target: PathBuf,
+        #[diagnostic(detail)]
         output_dir: PathBuf,
     },
 
     #[error(transparent)]
+    #[diagnostic(skip)]
     GenericIo(#[from] std::io::Error),
 }
 

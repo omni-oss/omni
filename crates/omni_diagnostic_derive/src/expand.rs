@@ -23,6 +23,11 @@ struct Variant {
     pat: TokenStream,
     audience: AudienceAttr,
     forward: Option<Ident>,
+    /// `skip`: the variant carries no diagnostic.
+    skip: bool,
+    /// `delegate`: look the diagnostic up in the field (an error or an
+    /// `eyre::Report`).
+    delegate: Option<Ident>,
     code: Option<LitStr>,
     hints: Vec<LitStr>,
     hints_fn: Option<syn::Path>,
@@ -162,20 +167,57 @@ pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
         quote!(match self { #(#arms)* })
     };
 
-    let code_body = arms(&|v| match (&v.forward, &v.code) {
-        (Some(b), _) => quote!(::omni_diagnostic::Diagnostic::code(#b)),
-        (None, Some(c)) => quote!(#c),
-        (None, None) => unreachable!(),
+    let code_body = arms(&|v| {
+        if v.skip {
+            quote!("")
+        } else if let Some(d) = delegate_lookup(v) {
+            quote!(#d.map(|__d| __d.code()).unwrap_or(""))
+        } else {
+            match (&v.forward, &v.code) {
+                (Some(b), _) => {
+                    quote!(::omni_diagnostic::Diagnostic::code(#b))
+                }
+                (None, Some(c)) => quote!(#c),
+                (None, None) => unreachable!(),
+            }
+        }
     });
-    let audience_body = arms(&|v| match &v.forward {
-        Some(b) => quote!(::omni_diagnostic::Diagnostic::audience(#b)),
-        None => {
-            let a = format_ident!("{}", v.audience.variant());
-            quote!(::omni_diagnostic::Audience::#a)
+    let audience_body = arms(&|v| {
+        if v.skip {
+            quote!(::omni_diagnostic::Audience::Internal)
+        } else if let Some(d) = delegate_lookup(v) {
+            quote!(#d
+                .map(|__d| __d.audience())
+                .unwrap_or(::omni_diagnostic::Audience::Internal))
+        } else {
+            match &v.forward {
+                Some(b) => {
+                    quote!(::omni_diagnostic::Diagnostic::audience(#b))
+                }
+                None => {
+                    let a = format_ident!("{}", v.audience.variant());
+                    quote!(::omni_diagnostic::Audience::#a)
+                }
+            }
+        }
+    });
+    let reportable_body = arms(&|v| {
+        if v.skip {
+            quote!(false)
+        } else if let Some(d) = delegate_lookup(v) {
+            quote!(#d.is_some())
+        } else if let Some(b) = &v.forward {
+            quote!(::omni_diagnostic::Diagnostic::reportable(#b))
+        } else {
+            quote!(true)
         }
     });
     let details_body = arms(&|v| {
-        if let Some(b) = &v.forward {
+        if v.skip {
+            quote!(::core::option::Option::None)
+        } else if let Some(d) = delegate_lookup(v) {
+            quote!(#d.and_then(|__d| __d.details()))
+        } else if let Some(b) = &v.forward {
             quote!(::omni_diagnostic::Diagnostic::details(#b))
         } else if v.details_fn.is_some() {
             let id = format_ident!("__details_{}", v.idx);
@@ -199,7 +241,11 @@ pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
         }
     });
     let hints_body = arms(&|v| {
-        if let Some(b) = &v.forward {
+        if v.skip {
+            quote!(::std::vec::Vec::new())
+        } else if let Some(d) = delegate_lookup(v) {
+            quote!(#d.map(|__d| __d.hints()).unwrap_or_default())
+        } else if let Some(b) = &v.forward {
             quote!(::omni_diagnostic::Diagnostic::hints(#b))
         } else {
             let hs = v
@@ -219,7 +265,14 @@ pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
         }
     });
     let body_body = arms(&|v| {
-        if let Some(b) = &v.forward {
+        if v.skip {
+            quote!(::core::result::Result::Ok(()))
+        } else if let Some(d) = delegate_lookup(v) {
+            quote!(match #d {
+                ::core::option::Option::Some(__d) => __d.render_body(__out),
+                ::core::option::Option::None => ::core::result::Result::Ok(()),
+            })
+        } else if let Some(b) = &v.forward {
             quote!(::omni_diagnostic::Diagnostic::render_body(#b, __out))
         } else if v.body_fn.is_some() {
             let id = format_ident!("__body_{}", v.idx);
@@ -229,7 +282,9 @@ pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
         }
     });
 
-    let has_forward = variants.iter().any(|v| v.forward.is_some());
+    // A type is "dynamic" when some variant has no code of its own, so
+    // `Code::info` cannot be answered statically for the whole type.
+    let has_forward = variants.iter().any(|v| v.code.is_none());
     let registration = if no_register.is_none() {
         let codes = variants.iter().filter_map(|v| {
             let c = v.code.as_ref()?;
@@ -261,6 +316,7 @@ pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
                     e: &'a (dyn ::std::error::Error + 'static),
                 ) -> ::core::option::Option<&'a dyn ::omni_diagnostic::Diagnostic> {
                     e.downcast_ref::<Self>()
+                        .filter(|x| ::omni_diagnostic::Diagnostic::reportable(*x))
                         .map(|x| x as &dyn ::omni_diagnostic::Diagnostic)
                 }
             }
@@ -301,6 +357,9 @@ pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
                 #callbacks
                 #body_body
             }
+
+            #[allow(unused_variables)]
+            fn reportable(&self) -> bool { #reportable_body }
         }
 
         #registration
@@ -324,6 +383,15 @@ fn reject_on_enum(a: &Attrs, errs: &mut Errs) {
     if let Some(s) = a.forward {
         push(errs, syn::Error::new(s, msg));
     }
+    for s in [a.skip, a.delegate].into_iter().flatten() {
+        push(errs, syn::Error::new(s, msg));
+    }
+}
+
+/// The expression yielding `Option<&dyn Diagnostic>` for a delegating variant.
+fn delegate_lookup(v: &Variant) -> Option<TokenStream> {
+    let bind = v.delegate.as_ref()?;
+    Some(quote!(::omni_diagnostic::__delegate_lookup!(#bind)))
 }
 
 fn build_variant(
@@ -374,6 +442,18 @@ fn build_variant(
         .or(default_audience)
         .unwrap_or(AudienceAttr::User);
 
+    if attrs.skip.is_some() || attrs.delegate.is_some() {
+        return non_owning_variant(
+            pat,
+            &binds,
+            audience,
+            &attrs,
+            detail_span,
+            docs,
+            errs,
+        );
+    }
+
     if let Some(fspan) = attrs.forward {
         let mut conflict = |span: Option<Span>| {
             if let Some(s) = span {
@@ -402,6 +482,8 @@ fn build_variant(
             pat,
             audience,
             forward: Some(binds[0].clone()),
+            skip: false,
+            delegate: None,
             code: None,
             hints: Vec::new(),
             hints_fn: None,
@@ -460,6 +542,8 @@ fn build_variant(
         pat,
         audience,
         forward: None,
+        skip: false,
+        delegate: None,
         code,
         hints,
         hints_fn: attrs.hints_fn,
@@ -468,6 +552,85 @@ fn build_variant(
         body_fn: attrs.body,
         stable: attrs.stable,
         related: attrs.related,
+        docs,
+    }))
+}
+
+/// `skip` and `delegate`: variants with no code of their own. They take no
+/// other attribute.
+fn non_owning_variant(
+    pat: TokenStream,
+    binds: &[Ident],
+    audience: AudienceAttr,
+    attrs: &Attrs,
+    detail_span: Option<Span>,
+    docs: (String, String),
+    errs: &mut Errs,
+) -> syn::Result<Option<Variant>> {
+    let chosen: Vec<Span> = [attrs.skip, attrs.delegate, attrs.forward]
+        .into_iter()
+        .flatten()
+        .collect();
+    if chosen.len() > 1 {
+        push(
+            errs,
+            syn::Error::new(
+                chosen[1],
+                "use only one of `skip`, `delegate` and `forward`",
+            ),
+        );
+        return Ok(None);
+    }
+    let mut conflict = |span: Option<Span>| {
+        if let Some(s) = span {
+            push(
+                errs,
+                syn::Error::new(
+                    s,
+                    "`skip` and `delegate` take no other attributes",
+                ),
+            );
+        }
+    };
+    conflict(attrs.audience.map(|(_, s)| s));
+    conflict(attrs.code.as_ref().map(|c| c.span()));
+    conflict(attrs.hints.first().map(|h| h.span()));
+    conflict(attrs.hints_fn.as_ref().map(|p| p.span()));
+    conflict(attrs.details.as_ref().map(|p| p.span()));
+    conflict(attrs.body.as_ref().map(|p| p.span()));
+    conflict(detail_span);
+
+    let delegate = match attrs.delegate {
+        Some(span) => {
+            if binds.len() != 1 {
+                push(
+                    errs,
+                    syn::Error::new(
+                        span,
+                        "`delegate` requires exactly one field",
+                    ),
+                );
+                return Ok(None);
+            }
+            Some(binds[0].clone())
+        }
+        None => None,
+    };
+    Ok(Some(Variant {
+        idx: 0,
+        pat,
+        audience,
+        forward: None,
+        skip: attrs.skip.is_some(),
+        delegate,
+        code: None,
+        hints: Vec::new(),
+        hints_fn: None,
+        details_fn: None,
+        detail_fields: Vec::new(),
+        body_fn: None,
+        stable: false,
+        related: Vec::new(),
         docs,
     }))
 }

@@ -1,6 +1,10 @@
 #![allow(clippy::redundant_field_names)]
 
+omni_codes::prefixes!("project", "task");
+
 mod core_types;
+#[cfg(test)]
+mod diagnostic_tests;
 mod extension_graph;
 mod project_graph;
 mod task_execution_graph;
