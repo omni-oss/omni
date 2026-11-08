@@ -513,7 +513,9 @@ where
                         SkipReason::DependeeTaskFailure,
                     ),
                 );
-                self.subscriber
+                // The skipped task's own scope hides its secrets in the
+                // dependency name it is shown.
+                self.task_redacting(task_ctx)
                     .on_task_skipped(TaskSkippedEvent {
                         task_id: task_ctx.node.full_task_name().to_string(),
                         project: task_ctx.node.project_name().to_string(),

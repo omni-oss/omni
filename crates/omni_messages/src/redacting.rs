@@ -176,7 +176,12 @@ impl<S: ExecutionEventSubscriber + ?Sized> ExecutionEventSubscriber
         self.sink.on_task_failed(e).await
     }
 
-    async fn on_task_skipped(&self, e: TaskSkippedEvent) {
+    async fn on_task_skipped(&self, mut e: TaskSkippedEvent) {
+        // `dependency` is shown to users; `task_id` is routing identity and
+        // stays as it is.
+        if self.enabled() {
+            self.clean_opt(&mut e.dependency);
+        }
         self.sink.on_task_skipped(e).await
     }
 
@@ -309,6 +314,12 @@ mod tests {
         async fn on_task_failed(&self, e: TaskFailedEvent) {
             self.seen.lock().unwrap().push(e.error);
         }
+        async fn on_task_skipped(&self, e: TaskSkippedEvent) {
+            self.seen
+                .lock()
+                .unwrap()
+                .push(e.dependency.unwrap_or_default());
+        }
     }
 
     impl GeneratorEventSubscriber for Sink {
@@ -433,6 +444,14 @@ mod tests {
             tries: 1,
         })
         .await;
+        op.on_task_skipped(TaskSkippedEvent {
+            task_id: "p#t".into(),
+            project: "p".into(),
+            task: "t".into(),
+            reason: crate::TaskSkipReason::DependeeTaskFailure,
+            dependency: Some("p#hunter2".into()),
+        })
+        .await;
         op.on_prompt_rejected(GeneratorPromptRejectedEvent {
             message: "bad value hunter2".into(),
         })
@@ -450,7 +469,7 @@ mod tests {
         });
 
         let seen = sink.seen();
-        assert_eq!(seen.len(), 5);
+        assert_eq!(seen.len(), 6);
         for line in seen {
             assert!(!line.contains("hunter2"), "leaked: {line}");
             assert!(line.contains("<redacted>"), "{line}");
