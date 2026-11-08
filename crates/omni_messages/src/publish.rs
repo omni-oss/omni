@@ -10,8 +10,7 @@ pub fn publish_event<S: NoticeSubscriber + ?Sized>(
     if let Some(r) = sub.redactor() {
         event.redact(&r);
     }
-    mirror_to_tracing(&event);
-    sub.on_notice(event);
+    sub.publish_notice(event);
 }
 
 /// Publishes a batch built without a subscriber (for example by a planner).

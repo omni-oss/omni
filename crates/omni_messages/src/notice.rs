@@ -152,6 +152,19 @@ pub trait NoticeSubscriber: Send + Sync {
     /// ignores it.
     fn extend_redactor(&self, _redactor: &omni_redact::Redactor) {}
 
+    /// The producer entry point used by [`notice!`](crate::publish::notice):
+    /// mirrors the event to `tracing`, then delivers it with
+    /// [`on_notice`](Self::on_notice).
+    ///
+    /// The event must already be safe to show. An
+    /// [`OperationPublisher`](crate::OperationPublisher) sanitizes it for its
+    /// operation before calling the sink's `publish_notice`, so the mirror
+    /// and the presenter only ever see sanitized data (RFC 0026).
+    fn publish_notice(&self, event: NoticeEvent) {
+        crate::publish::mirror_to_tracing(&event);
+        self.on_notice(event);
+    }
+
     fn on_notice(&self, _event: NoticeEvent) {}
 
     /// Specialized version of [`on_notice`] for batched notice events.
@@ -177,6 +190,9 @@ impl<S: NoticeSubscriber> NoticeSubscriber for &S {
     }
     fn extend_redactor(&self, redactor: &omni_redact::Redactor) {
         S::extend_redactor(*self, redactor)
+    }
+    fn publish_notice(&self, event: NoticeEvent) {
+        S::publish_notice(*self, event)
     }
     fn on_notice(&self, event: NoticeEvent) {
         S::on_notice(*self, event)
