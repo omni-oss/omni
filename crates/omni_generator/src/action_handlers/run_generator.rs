@@ -135,6 +135,7 @@ pub async fn run_generator<'a, S: GeneratorEventSubscriber>(
         // The child inherits our accumulated stance (workspace ⟺ ancestors ⟺
         // this generator), already most-severe, and may only tighten it.
         ctx.capabilities_strictness,
+        ctx.run_secrets,
     ))
     .await?;
 

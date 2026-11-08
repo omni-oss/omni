@@ -75,6 +75,8 @@ pub struct ExecuteActionsArgs<'a, S: GeneratorEventSubscriber = NoopSubscriber>
     /// Hides secret and policy-selected input values in logs.
     pub redactor: &'a omni_redact::Redactor,
     pub redact_policy: Option<&'a omni_configurations::RedactPolicy>,
+    /// Collects this run's secrets for sanitizing its result.
+    pub run_secrets: &'a crate::RunSecrets,
 }
 
 #[allow(clippy::result_large_err)]
@@ -145,6 +147,7 @@ pub async fn execute_actions<'a, S: GeneratorEventSubscriber>(
             max_depth: args.max_depth,
             redactor: args.redactor,
             redact_policy: args.redact_policy,
+            run_secrets: args.run_secrets,
         };
 
         let in_progress_message =

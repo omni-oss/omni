@@ -59,6 +59,9 @@ pub struct HandlerContext<'a, S: GeneratorEventSubscriber = NoopSubscriber> {
     /// Hides secret and policy-selected input values in logs.
     pub redactor: &'a omni_redact::Redactor,
     pub redact_policy: Option<&'a omni_configurations::RedactPolicy>,
+    /// Collects the run's secrets, so nested generators contribute to what
+    /// the root run returns.
+    pub run_secrets: &'a crate::RunSecrets,
     pub gen_session: &'a GenSession,
     pub use_input_defaults: bool,
     pub js_script_runner: &'a dyn JsScriptRunner,
