@@ -12,9 +12,10 @@ use omni_context::LoadedContext;
 use omni_core::TaskExecutionNode;
 use omni_hasher::impls::DefaultHash;
 use omni_messages::{
-    CacheHitEvent, ExecutionEventSubscriber, TaskCompletedEvent,
-    TaskFailedEvent, TaskOutputStream, TaskOutputStreamEvent,
-    TaskRetryingEvent, TaskSkipReason, TaskSkippedEvent, TaskStartedEvent,
+    CacheHitEvent, ExecutionEventSubscriber, RedactingSubscriber,
+    TaskCompletedEvent, TaskFailedEvent, TaskOutputStream,
+    TaskOutputStreamEvent, TaskRetryingEvent, TaskSkipReason, TaskSkippedEvent,
+    TaskStartedEvent,
 };
 use omni_process::{
     ChildProcessError, TaskChildProcess, TaskChildProcessResult,
@@ -150,10 +151,17 @@ where
             None => Redactor::builder().build(),
         };
 
-        // Notices published from here on are redacted with the run's secrets.
-        let redactor = env.union(&args);
-        self.subscriber.extend_redactor(&redactor);
-        redactor
+        env.union(&args)
+    }
+
+    /// Creates the redacting subscriber for one task invocation. Selected
+    /// event text is sanitized with the task's secrets; raw task output streams
+    /// pass through unchanged (RFC 0026).
+    fn task_redacting(
+        &self,
+        task_ctx: &TaskContext<'_>,
+    ) -> RedactingSubscriber<'s, S> {
+        RedactingSubscriber::new(self.subscriber, self.build_redactor(task_ctx))
     }
 
     fn should_skip_batch_on_error(
@@ -505,7 +513,9 @@ where
                         SkipReason::DependeeTaskFailure,
                     ),
                 );
-                self.subscriber
+                // The skipped task's own scope hides its secrets in the
+                // dependency name it is shown.
+                self.task_redacting(task_ctx)
                     .on_task_skipped(TaskSkippedEvent {
                         task_id: task_ctx.node.full_task_name().to_string(),
                         project: task_ctx.node.project_name().to_string(),
@@ -545,32 +555,38 @@ where
             // and any resolution errors surface during planning. The retry
             // command is resolved here too so an invalid retry config fails
             // the dry run exactly as it would during a normal run.
+            //
+            // The task's own scope exists before anything is rendered, so a
+            // failure that echoes its args or env is sanitized as it leaves.
+            let redacting = self.task_redacting(task_ctx);
             let override_command = resolve_task_command(
                 task_ctx.node.task_exec_config(),
                 task_ctx,
-            )?;
+            )
+            .map_err(|e| redact_error(e, &redacting))?;
             let override_retry_command = resolve_task_command(
                 task_ctx.node.task_retry_exec_config(),
                 task_ctx,
-            )?;
+            )
+            .map_err(|e| redact_error(e, &redacting))?;
 
             if self.dry_run {
                 // Resolve a second time with environment values hidden: the
                 // expanded form may contain secrets (e.g. `$TOKEN` or
                 // `{{ env.TOKEN }}`), which must not be written to CLI logs.
                 // Tera still renders so `{{ args.* }}` stays visible.
-                let redactor = self.build_redactor(task_ctx);
                 let display_command = resolve_task_command_for_display(
                     task_ctx.node.task_exec_config(),
                     task_ctx,
-                    &redactor,
-                )?;
+                    &redacting,
+                )
+                .map_err(|e| redact_error(e, &redacting))?;
 
                 // Mirror the normal execution path's lifecycle events so
                 // subscribers (and the CLI) report the task exactly as they
                 // would after a real run.
                 let task_id = task_ctx.node.full_task_name().to_string();
-                self.subscriber
+                redacting
                     .on_task_started(TaskStartedEvent {
                         task_id: task_id.clone(),
                         project: task_ctx.node.project_name().to_string(),
@@ -594,7 +610,7 @@ where
                     0,
                 ));
 
-                self.subscriber
+                redacting
                     .on_task_completed(TaskCompletedEvent {
                         task_id,
                         project: task_ctx.node.project_name().to_string(),
@@ -606,11 +622,8 @@ where
                     })
                     .await;
             } else {
-                // Not shown here, but a notice raised later in the run must
-                // still be redacted with this task's secrets.
-                let _ = self.build_redactor(task_ctx);
                 futs.push(run_process(
-                    self.subscriber,
+                    redacting,
                     self.wants_task_output_stream,
                     self.wants_task_input_stream,
                     task_ctx,
@@ -684,11 +697,11 @@ where
                 ),
                 TaskResultContext::Error {
                     task_context,
-                    error,
+                    message,
                     tries,
                 } => TaskExecutionResult::new_errored(
                     task_context.node.clone(),
-                    error.to_string(),
+                    message.clone(),
                     *tries,
                 ),
             };
@@ -780,7 +793,7 @@ fn resolve_task_command<'a>(
 fn resolve_task_command_for_display<'a>(
     spec: Option<&CommandConfig>,
     task_ctx: &TaskContext<'a>,
-    redactor: &Redactor,
+    redacting: &RedactingSubscriber<'_, impl ExecutionEventSubscriber>,
 ) -> Result<Option<Command>, BatchExecutorError> {
     match spec {
         Some(spec) => {
@@ -791,12 +804,29 @@ fn resolve_task_command_for_display<'a>(
                 spec,
                 Some(&task_ctx.template_context),
                 None,
-                |rendered| redactor.redact(rendered),
+                |rendered| redacting.redact(rendered),
             )?;
 
             Ok(Some(command))
         }
         None => Ok(None),
+    }
+}
+
+/// Sanitizes a failure with the task's own secrets as it leaves the task's
+/// scope. The error keeps its diagnostic structure; one with nothing to hide
+/// is returned unchanged.
+fn redact_error<S: ExecutionEventSubscriber>(
+    error: BatchExecutorError,
+    redacting: &RedactingSubscriber<'_, S>,
+) -> BatchExecutorError {
+    let report =
+        omni_diagnostic::redact_report(eyre::Report::new(error), &|s| {
+            redacting.redact(s).into_owned()
+        });
+    match report.downcast::<BatchExecutorError>() {
+        Ok(unchanged) => unchanged,
+        Err(redacted) => BatchExecutorErrorInner::Redacted(redacted).into(),
     }
 }
 
@@ -894,9 +924,13 @@ where
     results
 }
 
+/// Executes a task and retries failed executions up to `max_retries` times,
+/// waiting `retry_duration` between attempts when provided. Process errors
+/// become result messages redacted by `subscriber`; raw output streams pass
+/// through unchanged.
 #[allow(clippy::too_many_arguments)]
 async fn run_process<'a, S: ExecutionEventSubscriber>(
-    subscriber: &'a S,
+    subscriber: RedactingSubscriber<'a, S>,
     wants_task_output_stream: bool,
     wants_task_input_stream: bool,
     task_ctx: &'a TaskContext<'a>,
@@ -932,7 +966,9 @@ async fn run_process<'a, S: ExecutionEventSubscriber>(
         } else {
             return TaskResultContext::new_error(
                 task_ctx,
-                ChildProcessError::no_command(),
+                subscriber
+                    .redact(ChildProcessError::no_command().to_string())
+                    .into_owned(),
                 tries,
             );
         };
@@ -946,7 +982,11 @@ async fn run_process<'a, S: ExecutionEventSubscriber>(
             match TaskChildProcess::new(task_ctx.node.clone(), prog, args) {
                 Ok(o) => o,
                 Err(e) => {
-                    return TaskResultContext::new_error(task_ctx, e, tries);
+                    return TaskResultContext::new_error(
+                        task_ctx,
+                        subscriber.redact(e.to_string()).into_owned(),
+                        tries,
+                    );
                 }
             };
 
@@ -1070,7 +1110,11 @@ async fn run_process<'a, S: ExecutionEventSubscriber>(
                     tries,
                 })
                 .await;
-            TaskResultContext::new_error(task_ctx, e, tries)
+            TaskResultContext::new_error(
+                task_ctx,
+                subscriber.redact(e.to_string()).into_owned(),
+                tries,
+            )
         }
     }
 }
@@ -1142,6 +1186,11 @@ pub(crate) enum BatchExecutorErrorInner {
     #[error(transparent)]
     #[diagnostic(delegate)]
     Resolve(#[from] omni_command_config::ResolveError),
+
+    /// A failure already redacted with its task's secrets (RFC 0026).
+    #[error(transparent)]
+    #[diagnostic(delegate)]
+    Redacted(eyre::Report),
 }
 
 #[cfg(test)]
@@ -1374,5 +1423,30 @@ mod tests {
         // deterministic.
         assert_eq!(forward_out, (0..n).collect::<Vec<_>>());
         assert_eq!(forward_out, reverse_out);
+    }
+
+    #[test]
+    fn a_task_failure_is_sanitized_with_that_tasks_secrets_only() {
+        let sink = omni_messages::NoopSubscriber;
+        let task = omni_messages::RedactingSubscriber::new(
+            &sink,
+            omni_redact::Redactor::builder().value("alpha").build(),
+        );
+
+        let failure = || {
+            super::BatchExecutorError::from(super::BatchExecutorErrorInner::Io(
+                std::io::Error::other("cannot read alpha and bravo"),
+            ))
+        };
+        let hidden = super::redact_error(failure(), &task);
+        assert_eq!(hidden.to_string(), "cannot read <redacted> and bravo");
+
+        // Nothing to hide: returned unchanged, so its kind still matches.
+        let other = omni_messages::RedactingSubscriber::new(
+            &sink,
+            omni_redact::Redactor::builder().value("zulu").build(),
+        );
+        let same = super::redact_error(failure(), &other);
+        assert_eq!(same.kind(), super::BatchExecutorErrorKind::Io);
     }
 }

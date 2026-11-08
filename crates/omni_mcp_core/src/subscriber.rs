@@ -43,7 +43,6 @@ pub struct McpSubscriber {
     notices: Mutex<NoticeCollector>,
     /// Dry-run commands per task (task_id → redacted command line).
     commands: Mutex<HashMap<String, String>>,
-    redactor: omni_messages::SharedRedactor,
 }
 
 impl McpSubscriber {
@@ -54,14 +53,7 @@ impl McpSubscriber {
             logs: Arc::new(Mutex::new(HashMap::new())),
             notices: Mutex::new(NoticeCollector::new()),
             commands: Mutex::new(HashMap::new()),
-            redactor: Default::default(),
         }
-    }
-
-    /// Redacts every notice before it is collected (RFC 0022).
-    pub fn with_redactor(self, redactor: omni_redact::Redactor) -> Self {
-        self.redactor.extend(&redactor);
-        self
     }
 
     /// Takes the notices collected so far, appending the truncation entry
@@ -106,14 +98,6 @@ impl McpSubscriber {
 }
 
 impl NoticeSubscriber for McpSubscriber {
-    fn redactor(&self) -> Option<std::sync::Arc<omni_redact::Redactor>> {
-        self.redactor.get()
-    }
-
-    fn extend_redactor(&self, redactor: &omni_redact::Redactor) {
-        self.redactor.extend(redactor);
-    }
-
     fn on_notice(&self, event: NoticeEvent) {
         self.notices.lock().unwrap().push(event);
     }
@@ -255,6 +239,32 @@ mod tests {
         logs.get(task_id).map(String::as_str)
     }
 
+    #[tokio::test]
+    async fn one_subscriber_serves_operations_without_sharing_their_secrets() {
+        let sub = McpSubscriber::new(LogsDisplay::Never);
+        let start = |id: &str, command: &str| TaskStartedEvent {
+            task_id: id.into(),
+            project: "p".into(),
+            task: "t".into(),
+            command: Some(command.into()),
+        };
+
+        let a = omni_messages::RedactingSubscriber::new(
+            &sub,
+            omni_redact::Redactor::builder().value("alpha").build(),
+        );
+        let b = omni_messages::RedactingSubscriber::new(
+            &sub,
+            omni_redact::Redactor::builder().value("bravo").build(),
+        );
+        a.on_task_started(start("p#a", "run alpha bravo")).await;
+        b.on_task_started(start("p#b", "run alpha bravo")).await;
+
+        let commands = sub.take_commands();
+        assert_eq!(commands["p#a"], "run <redacted> bravo");
+        assert_eq!(commands["p#b"], "run alpha <redacted>");
+    }
+
     #[test]
     fn notices_are_redacted_before_they_are_collected() {
         use omni_notice::Notice;
@@ -269,11 +279,12 @@ mod tests {
         }
 
         let sub = McpSubscriber::new(LogsDisplay::Never);
-        sub.extend_redactor(
-            &omni_redact::Redactor::builder().value("hunter2").build(),
+        let op = omni_messages::RedactingSubscriber::new(
+            &sub,
+            omni_redact::Redactor::builder().value("hunter2").build(),
         );
         omni_messages::publish::publish_event(
-            &sub,
+            &op,
             omni_messages::NoticeEvent::from_notice(
                 &Sample {
                     v: "hunter2".into(),

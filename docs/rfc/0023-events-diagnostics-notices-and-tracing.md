@@ -6,6 +6,7 @@
 - **Base branch:** `main`
 - **Affected crates/files:** `omni_messages` (`notice.rs`, `publish.rs`: `NoticeEvent` built from a `Notice`, `notice!` and `diagnostic_notice!`; `channel.rs`, `tracing_impl.rs`; events extended); new `omni_codes` (canonical code registry, `lookup`), `omni_notice` and `omni_notice_derive` (`Notice` trait and derive), `omni_derive_support` (shared derive logic); `omni_diagnostic` and `omni_diagnostic_derive` (register into `omni_codes`; the `Diagnostic` trait itself is unchanged); `omni_tracing_subscriber` (`LogFilter` and stdout layer removed); `crates/trace` removed and its ~177 call sites and ~40 `enable-tracing` features migrated to `tracing`; `omni_cli_core` (`subscriber.rs` (`CliSubscriber`) acts as the CLI presenter, `commands/*`, global flags); `cli/omni` (`lib.rs` tracing setup); `omni_mcp_core` (`subscriber.rs`, `model/*`, `tools/*`, `server.rs`); notice call sites in `omni_task_executor`, `omni_generator`, `bridge_rpc_runner`, `omni_execution_plan`; every crate that calls `log::*`; `clippy.toml`; `generators/crate` (`generator.omni.yaml`, `templates/Cargo.toml.tpl`, `templates/project.omni.yaml.tpl`, `templates/src/main.rs.tpl`); `services/omni_bridge_test_service`; `tests/omni-tests`
 - **Follows:** RFC 0021 (structured diagnostics), whose 4.5 it resolves without changing it; RFC 0022 (redaction); PR #45 (notices); issue omni-oss/omni#47
+- **Amended by:** RFC 0026, which replaces the subscriber-owned redactor described in 4.3 and 4.5 with operation-scoped publishers
 
 ## 1. Summary
 

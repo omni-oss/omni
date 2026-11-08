@@ -1,17 +1,19 @@
 use crate::notice::NoticeSubscriber;
 pub use crate::notice::{NoticeEvent, NoticeLevel};
 
-/// Applies the subscriber's redactor, if present, then mirrors to `tracing`
-/// when enabled and dispatches one event. This does not check `wants_notices`.
+/// Publishes one event through `sub`. The default
+/// [`NoticeSubscriber::publish_notice`] mirrors it to `tracing` and delivers
+/// it; subscribers may override that behavior. This does not check
+/// `wants_notices`.
+///
+/// Redaction belongs to the operation that produced the event, so pass an
+/// [`RedactingSubscriber`](crate::RedactingSubscriber) when the event may carry
+/// operation secrets. A bare subscriber delivers the event unchanged.
 pub fn publish_event<S: NoticeSubscriber + ?Sized>(
     sub: &S,
-    mut event: NoticeEvent,
+    event: NoticeEvent,
 ) {
-    if let Some(r) = sub.redactor() {
-        event.redact(&r);
-    }
-    mirror_to_tracing(&event);
-    sub.on_notice(event);
+    sub.publish_notice(event);
 }
 
 /// Publishes a batch built without a subscriber (for example by a planner).
@@ -142,13 +144,9 @@ mod tests {
 
     struct Collect {
         events: Arc<Mutex<Vec<NoticeEvent>>>,
-        redactor: Option<omni_redact::Redactor>,
     }
 
     impl NoticeSubscriber for Collect {
-        fn redactor(&self) -> Option<Arc<omni_redact::Redactor>> {
-            self.redactor.clone().map(Arc::new)
-        }
         fn on_notice(&self, e: NoticeEvent) {
             self.events.lock().unwrap().push(e);
         }
@@ -156,14 +154,11 @@ mod tests {
     impl ExecutionEventSubscriber for Collect {}
     impl GeneratorEventSubscriber for Collect {}
 
-    fn collect(
-        redactor: Option<omni_redact::Redactor>,
-    ) -> (Collect, Arc<Mutex<Vec<NoticeEvent>>>) {
+    fn collect() -> (Collect, Arc<Mutex<Vec<NoticeEvent>>>) {
         let events = Arc::new(Mutex::new(Vec::new()));
         (
             Collect {
                 events: events.clone(),
-                redactor,
             },
             events,
         )
@@ -171,7 +166,7 @@ mod tests {
 
     #[test]
     fn notice_dispatches_with_code_level_and_fields() {
-        let (sub, events) = collect(None);
+        let (sub, events) = collect();
         notice!(
             sub,
             Sample {
@@ -191,14 +186,14 @@ mod tests {
 
     #[test]
     fn essential_flag_comes_from_the_notice() {
-        let (sub, events) = collect(None);
+        let (sub, events) = collect();
         notice!(sub, Essential);
         assert!(events.lock().unwrap()[0].essential());
     }
 
     #[test]
     fn enum_notices_work_with_both_emission_macros() {
-        let (sub, events) = collect(None);
+        let (sub, events) = collect();
         notice!(
             sub,
             CacheNotice::Write {
@@ -233,7 +228,7 @@ mod tests {
 
     #[test]
     fn diagnostic_notice_adds_details_and_hints_only() {
-        let (sub, events) = collect(None);
+        let (sub, events) = collect();
         diagnostic_notice!(sub, Essential, &Fatal);
         let e = events.lock().unwrap();
         assert_eq!(e[0].code(), "msgtest.essential");
@@ -245,8 +240,11 @@ mod tests {
 
     #[test]
     fn secrets_are_redacted_in_message_and_fields() {
-        let r = omni_redact::Redactor::builder().value("hunter2").build();
-        let (sub, events) = collect(Some(r));
+        let (inner, events) = collect();
+        let sub = crate::RedactingSubscriber::new(
+            &inner,
+            omni_redact::Redactor::builder().value("hunter2").build(),
+        );
         notice!(
             sub,
             Sample {
@@ -287,8 +285,11 @@ mod tests {
 
     #[test]
     fn a_secret_never_reaches_a_custom_tracing_sink() {
-        let r = omni_redact::Redactor::builder().value("hunter2").build();
-        let (sub, events) = collect(Some(r));
+        let (inner, events) = collect();
+        let sub = crate::RedactingSubscriber::new(
+            &inner,
+            omni_redact::Redactor::builder().value("hunter2").build(),
+        );
         let sink = Capture::default();
         let subscriber = tracing_subscriber::fmt()
             .with_writer(sink.clone())
@@ -327,7 +328,7 @@ mod tests {
 
     #[test]
     fn batch_is_published_and_skipped_when_unwanted() {
-        let (sub, events) = collect(None);
+        let (sub, events) = collect();
         publish_batch(
             &sub,
             [notice_event!(Essential), notice_event!(Essential)],

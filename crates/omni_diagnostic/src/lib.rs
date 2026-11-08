@@ -8,6 +8,7 @@
 extern crate self as omni_diagnostic;
 
 pub mod catalog;
+mod redacted;
 mod registry;
 pub mod render;
 pub mod testing;
@@ -15,6 +16,7 @@ pub mod testing;
 use std::{error::Error, fmt};
 
 pub use omni_diagnostic_derive::Diagnostic;
+pub use redacted::{RedactedDiagnostic, redact_report};
 #[cfg(feature = "explicit-registry")]
 pub use registry::install;
 pub use registry::{Registration, registrations};
@@ -76,6 +78,10 @@ pub struct CodeInfo {
 pub fn find_in_error<'a>(
     error: &'a (dyn Error + 'static),
 ) -> Option<&'a dyn Diagnostic> {
+    // A redacted diagnostic has a dynamic code, so it is not registered.
+    if let Some(redacted) = error.downcast_ref::<RedactedDiagnostic>() {
+        return Some(redacted);
+    }
     registrations().find_map(|r| (r.lookup)(error))
 }
 

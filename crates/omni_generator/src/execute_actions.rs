@@ -65,7 +65,9 @@ pub struct ExecuteActionsArgs<'a, S: GeneratorEventSubscriber = NoopSubscriber>
     pub input_provider: &'a dyn omni_input_provider::InputProvider<
         omni_generator_configurations::Generator,
     >,
-    pub subscriber: &'a S,
+    /// Publishes this generator invocation's output, sanitized with its own
+    /// secrets (RFC 0026).
+    pub subscriber: &'a omni_messages::RedactingSubscriber<'a, S>,
     /// Current `run-generator` nesting depth of the generator being executed.
     pub depth: usize,
     /// Maximum allowed nesting depth, propagated to nested runs.
@@ -73,8 +75,13 @@ pub struct ExecuteActionsArgs<'a, S: GeneratorEventSubscriber = NoopSubscriber>
     /// Hides secret and policy-selected input values in logs.
     pub redactor: &'a omni_redact::Redactor,
     pub redact_policy: Option<&'a omni_configurations::RedactPolicy>,
+    /// Collects this run's secrets for sanitizing its result.
+    pub run_secrets: &'a crate::RunSecrets,
 }
 
+/// Executes actions in order, publishing skipped, progress, success, and
+/// failure events. Stops at the first error, including errors resolving action
+/// templates or executing a handler, and returns it to the caller.
 #[allow(clippy::result_large_err)]
 pub async fn execute_actions<'a, S: GeneratorEventSubscriber>(
     args: &ExecuteActionsArgs<'a, S>,
@@ -143,6 +150,7 @@ pub async fn execute_actions<'a, S: GeneratorEventSubscriber>(
             max_depth: args.max_depth,
             redactor: args.redactor,
             redact_policy: args.redact_policy,
+            run_secrets: args.run_secrets,
         };
 
         let in_progress_message =

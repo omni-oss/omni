@@ -601,18 +601,13 @@ where
     {
         let mut ctx = self.ctx.lock().await;
         ctx.load().await?;
-        let subscriber = &self.subscriber;
         crate::operations::tool::handle_tool_run(
             ctx.as_loaded_context(),
             name,
             args,
             working_dir,
             redact,
-            &mut |n| {
-                if omni_messages::NoticeSubscriber::wants_notices(subscriber) {
-                    omni_messages::publish::publish_event(subscriber, n);
-                }
-            },
+            &self.subscriber,
         )
         .await
     }

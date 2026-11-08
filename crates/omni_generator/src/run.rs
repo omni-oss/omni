@@ -96,6 +96,55 @@ pub struct RunConfig<'a, S: GeneratorEventSubscriber = NoopSubscriber> {
     pub inherited_redactor: Option<&'a Redactor>,
 }
 
+/// The secrets of every generator invocation in one run, so what the run
+/// returns (action labels, a failure) can be sanitized after the invocations
+/// that owned them have finished. It belongs to the run's root operation and
+/// is dropped with it; nothing else holds it (RFC 0026).
+#[derive(Default)]
+pub struct RunSecrets(std::sync::Mutex<Option<Redactor>>);
+
+impl std::fmt::Debug for RunSecrets {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RunSecrets").finish_non_exhaustive()
+    }
+}
+
+impl RunSecrets {
+    /// Adds one generator invocation's secrets to the run's collection.
+    pub(crate) fn add(&self, redactor: &Redactor) {
+        let mut g = self.0.lock().unwrap();
+        *g = Some(match g.take() {
+            Some(all) => all.union(redactor),
+            None => redactor.clone(),
+        });
+    }
+
+    /// Everything the run has collected so far.
+    fn redactor(&self) -> Redactor {
+        self.0
+            .lock()
+            .unwrap()
+            .clone()
+            .unwrap_or_else(|| Redactor::builder().build())
+    }
+
+    /// Sanitizes an error leaving the run, keeping its diagnostic structure.
+    fn redact_error(&self, error: Error) -> Error {
+        let redactor = self.redactor();
+        if redactor.is_empty() {
+            return error;
+        }
+        let report =
+            omni_diagnostic::redact_report(eyre::Report::new(error), &|s| {
+                redactor.redact(s).into_owned()
+            });
+        match report.downcast::<Error>() {
+            Ok(unchanged) => unchanged,
+            Err(redacted) => ErrorInner::Custom(redacted).into(),
+        }
+    }
+}
+
 pub struct GeneratorRunResult {
     pub session: GenSession,
     pub actions: Vec<Action>,
@@ -137,6 +186,11 @@ pub async fn run<'a, S: GeneratorEventSubscriber>(
 /// transaction is committed. A normal run commits the transaction once all
 /// actions have succeeded (making generation atomic), while a dry run simply
 /// drops the buffered actions without committing.
+///
+/// Returned action paths are display-only labels, sanitized using secrets
+/// collected from all invocations in the run. Errors from execution, action
+/// inference, and commit are sanitized with the same collection. Validation,
+/// recursion detection, and lock acquisition errors are propagated earlier.
 #[allow(clippy::result_large_err)]
 async fn run_in_transaction<'a, S: GeneratorEventSubscriber>(
     generator: &GeneratorConfiguration,
@@ -181,6 +235,7 @@ async fn run_in_transaction<'a, S: GeneratorEventSubscriber>(
         })
         .await;
 
+    let run_secrets = RunSecrets::default();
     let result = run_internal(
         generator,
         config,
@@ -189,13 +244,16 @@ async fn run_in_transaction<'a, S: GeneratorEventSubscriber>(
         0,
         std::slice::from_ref(config.workspace_capabilities),
         config.workspace_strictness,
+        &run_secrets,
     )
     .await;
 
     // Tear down the JS process (if one was started) regardless of outcome.
     runner.shutdown().await;
 
-    let session = result?;
+    // Everything leaving the run is sanitized while its invocations' secrets
+    // are still known, so no later consumer needs them.
+    let session = result.map_err(|e| run_secrets.redact_error(e))?;
 
     let actions = {
         struct InferActionsVisitor {
@@ -219,12 +277,21 @@ async fn run_in_transaction<'a, S: GeneratorEventSubscriber>(
         let mut visitor = InferActionsVisitor {
             actions: Vec::new(),
         };
-        tx.visit_pending_actions(&mut visitor).await?;
-        visitor.actions
+        tx.visit_pending_actions(&mut visitor)
+            .await
+            .map_err(|e| run_secrets.redact_error(e.into()))?;
+        let redactor = run_secrets.redactor();
+        visitor
+            .actions
+            .into_iter()
+            .map(|a| a.redacted(&redactor))
+            .collect::<Vec<_>>()
     };
 
     if !config.dry_run {
-        tx.commit().await?;
+        tx.commit()
+            .await
+            .map_err(|e| run_secrets.redact_error(e.into()))?;
     }
 
     config
@@ -307,7 +374,11 @@ fn build_input_redactor<S: GeneratorEventSubscriber>(
     }
 }
 
-#[allow(clippy::result_large_err)]
+/// Collects inputs and executes one generator invocation, including nested
+/// actions. `depth` may equal `max_depth` but exceeding it returns an error.
+/// After input collection, the invocation adds its redactor to `run_secrets`
+/// and uses it for events. Collection and action errors propagate to the caller.
+#[allow(clippy::result_large_err, clippy::too_many_arguments)]
 pub(crate) async fn run_internal<'a, S: GeneratorEventSubscriber>(
     r#gen: &GeneratorConfiguration,
     config: &RunConfig<'a, S>,
@@ -316,6 +387,7 @@ pub(crate) async fn run_internal<'a, S: GeneratorEventSubscriber>(
     depth: usize,
     inherited_capabilities: &[CapabilityRules<Generator>],
     inherited_strictness: CapabilitiesStrictness,
+    run_secrets: &RunSecrets,
 ) -> Result<GenSession, Error> {
     if depth > config.max_depth {
         return Err(ErrorInner::new_max_generator_depth_exceeded(
@@ -361,11 +433,13 @@ pub(crate) async fn run_internal<'a, S: GeneratorEventSubscriber>(
     tracing::trace!(count = values.len(), "input_values");
 
     let redactor = build_input_redactor(r#gen, &values, config);
-    // Script logs and lifecycle messages reach presenters through the
-    // subscriber, so it must know this generator's secrets.
-    omni_messages::NoticeSubscriber::extend_redactor(
+    // Everything this invocation emits goes through its own redacting, which
+    // sanitizes with these secrets (plus an enclosing generator's) before the
+    // shared subscriber sees it. The subscriber itself never learns them.
+    run_secrets.add(&redactor);
+    let redacting = omni_messages::RedactingSubscriber::new(
         config.subscriber,
-        &redactor,
+        redactor.clone(),
     );
 
     let mut context_values = config.context_values.clone();
@@ -426,12 +500,13 @@ pub(crate) async fn run_internal<'a, S: GeneratorEventSubscriber>(
         enable_experimental: config.enable_experimental,
         js_script_runner: runner,
         input_provider: config.input_provider,
-        subscriber: config.subscriber,
+        subscriber: &redacting,
         use_input_defaults: config.use_input_defaults,
         depth,
         max_depth: config.max_depth,
         redactor: &redactor,
         redact_policy: config.redact_policy,
+        run_secrets,
     };
 
     execute_actions(&args, &session, sys).await?;
@@ -510,6 +585,36 @@ pub enum Action {
 }
 
 impl Action {
+    /// A copy whose paths hide `redactor`'s values.
+    ///
+    /// The paths in a run's result are display-only labels: a path that
+    /// contained a secret no longer names the real file. Execution always
+    /// used the real path.
+    pub fn redacted(self, redactor: &Redactor) -> Self {
+        let hide = |p: PathBuf| match redactor.redact(p.to_string_lossy()) {
+            std::borrow::Cow::Borrowed(_) => p,
+            std::borrow::Cow::Owned(s) => PathBuf::from(s),
+        };
+        match self {
+            Self::CreateFile { path } => Self::CreateFile { path: hide(path) },
+            Self::ModifyFile { path } => Self::ModifyFile { path: hide(path) },
+            Self::RemoveFile { path } => Self::RemoveFile { path: hide(path) },
+            Self::CreateDir { path } => Self::CreateDir { path: hide(path) },
+            Self::RemoveDir { path } => Self::RemoveDir { path: hide(path) },
+            Self::RemoveDirAll { path } => {
+                Self::RemoveDirAll { path: hide(path) }
+            }
+            Self::Rename { from, to } => Self::Rename {
+                from: hide(from),
+                to: hide(to),
+            },
+            Self::Copy { from, to } => Self::Copy {
+                from: hide(from),
+                to: hide(to),
+            },
+        }
+    }
+
     pub async fn infer_from<'a, TSys: GeneratorSys>(
         action: &'a sys_impl::Action,
         sys: &'a TSys,
@@ -680,6 +785,7 @@ mod nesting_tests {
             0,
             std::slice::from_ref(workspace_caps),
             CapabilitiesStrictness::default(),
+            &RunSecrets::default(),
         )
         .await
         .expect("nested run should succeed");
@@ -702,6 +808,250 @@ mod nesting_tests {
                 (name, (serde_json::to_string(stack).unwrap(), stack.len()))
             })
             .collect()
+    }
+
+    /// Records the in-progress message of every action, at every depth.
+    #[derive(Default)]
+    struct Messages(std::sync::Mutex<Vec<String>>);
+
+    impl omni_messages::NoticeSubscriber for Messages {}
+    impl omni_messages::GeneratorEventSubscriber for Messages {
+        async fn on_action_in_progress(
+            &self,
+            e: omni_messages::generator::events::GeneratorActionInProgressEvent,
+        ) {
+            self.0.lock().unwrap().push(e.message);
+        }
+    }
+
+    fn with_message(
+        mut action: ActionConfiguration,
+        message: &str,
+    ) -> ActionConfiguration {
+        if let ActionConfiguration::RunJavaScript { action } = &mut action {
+            action.base.in_progress_message = Some(message.to_string());
+        }
+        action
+    }
+
+    fn secret_generator(
+        name: &str,
+        input: &str,
+        actions: Vec<ActionConfiguration>,
+    ) -> GeneratorConfiguration {
+        let mut g = generator(name, CapabilityRules::default(), actions);
+        g.inputs = vec![
+            omni_input_provider::builder::password::<Generator>()
+                .name(input)
+                .build(),
+        ];
+        g
+    }
+
+    /// Runs `entry` with `values`, publishing to the shared `sink`.
+    async fn run_into(
+        entry: &GeneratorConfiguration,
+        generators: &[Cow<'_, GeneratorConfiguration>],
+        values: &[(&str, &str)],
+        sink: &Messages,
+    ) -> RunSecrets {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let ws = tmp.path().to_path_buf();
+        let empty_targets = UnorderedMap::default();
+        let empty_ctx = UnorderedMap::default();
+        let env = Map::default();
+        let provider =
+            ScriptedInputProvider::new(std::iter::empty::<(&str, &str)>());
+        let input_values: UnorderedMap<String, OwnedValueBag> = values
+            .iter()
+            .map(|(k, v)| {
+                let v = v.to_string();
+                (k.to_string(), ValueBag::capture_serde1(&v).to_owned())
+            })
+            .collect();
+        let workspace_caps = CapabilityRules::<Generator>::default();
+
+        let config = RunConfig::builder()
+            .output_dir(&ws)
+            .workspace_dir(&ws)
+            .current_dir(&ws)
+            .target_overrides(&empty_targets)
+            .input_values(&input_values)
+            .context_values(&empty_ctx)
+            .env(&env)
+            .available_generators(generators)
+            .workspace_capabilities(&workspace_caps)
+            .input_provider(&provider)
+            .subscriber(sink)
+            .build();
+
+        let mock = MockJsScriptRunner::default();
+        let sys = TransactionSys::new(RealSys);
+        let run_secrets = RunSecrets::default();
+        run_internal(
+            entry,
+            &config,
+            &sys,
+            &mock,
+            0,
+            std::slice::from_ref(&workspace_caps),
+            CapabilitiesStrictness::default(),
+            &run_secrets,
+        )
+        .await
+        .expect("run should succeed");
+        run_secrets
+    }
+
+    #[tokio::test]
+    async fn generator_secrets_do_not_outlive_or_cross_operations() {
+        let probe = "m {{ inputs.token }} alpha-secret bravo-secret";
+        let a = secret_generator(
+            "a",
+            "token",
+            vec![with_message(run_js("a.mjs"), probe)],
+        );
+        let b = secret_generator(
+            "b",
+            "token",
+            vec![with_message(run_js("b.mjs"), probe)],
+        );
+        let generators = vec![Cow::Owned(a.clone()), Cow::Owned(b.clone())];
+        // One subscriber, reused and shared by concurrent operations.
+        let sink = Messages::default();
+
+        tokio::join!(
+            run_into(&a, &generators, &[("token", "alpha-secret")], &sink),
+            run_into(&b, &generators, &[("token", "bravo-secret")], &sink),
+        );
+        // Reuse after both finished.
+        run_into(&a, &generators, &[("token", "alpha-secret")], &sink).await;
+
+        let seen = sink.0.lock().unwrap().clone();
+        assert_eq!(seen.len(), 3);
+        let only_a = "m <redacted> <redacted> bravo-secret".to_string();
+        let only_b = "m <redacted> alpha-secret <redacted>".to_string();
+        assert_eq!(
+            seen.iter().filter(|m| **m == only_a).count(),
+            2,
+            "{seen:?}"
+        );
+        assert_eq!(
+            seen.iter().filter(|m| **m == only_b).count(),
+            1,
+            "{seen:?}"
+        );
+    }
+
+    #[test]
+    fn action_labels_hide_secrets_but_keep_everything_else() {
+        let r = omni_redact::Redactor::builder().value("hunter2").build();
+        let a = Action::Rename {
+            from: PathBuf::from("/w/hunter2/a.txt"),
+            to: PathBuf::from("/w/b.txt"),
+        }
+        .redacted(&r);
+        match a {
+            Action::Rename { from, to } => {
+                assert_eq!(from, PathBuf::from("/w/<redacted>/a.txt"));
+                assert_eq!(to, PathBuf::from("/w/b.txt"));
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+        let untouched = Action::CreateFile {
+            path: PathBuf::from("/w/c.txt"),
+        }
+        .redacted(&r);
+        assert!(matches!(
+            untouched,
+            Action::CreateFile { path } if path == Path::new("/w/c.txt")
+        ));
+    }
+
+    #[test]
+    fn a_failure_leaving_the_run_is_sanitized_and_keeps_its_structure() {
+        let secrets = RunSecrets::default();
+        secrets.add(&omni_redact::Redactor::builder().value("hunter2").build());
+
+        let hidden = secrets.redact_error(Error::custom("bad value hunter2"));
+        let report = eyre::Report::new(hidden);
+        assert!(!format!("{report:#}").contains("hunter2"));
+        assert!(format!("{report:#}").contains("<redacted>"));
+
+        // An error with nothing to hide is returned unchanged, so its kind
+        // can still be matched.
+        let plain = secrets.redact_error(
+            ErrorInner::new_generator_not_found("g".to_string()).into(),
+        );
+        assert!(matches!(
+            plain.kind(),
+            crate::error::ErrorKind::GeneratorNotFound
+        ));
+    }
+
+    #[tokio::test]
+    async fn nested_generator_inherits_but_never_leaks_child_secrets_upward() {
+        let mut child = secret_generator(
+            "child",
+            "ctoken",
+            vec![with_message(
+                run_js("c.mjs"),
+                "c {{ inputs.ctoken }} parent-secret",
+            )],
+        );
+        child.user_invocable = true;
+        let mut call = run_gen("child");
+        if let ActionConfiguration::RunGenerator { action } = &mut call {
+            action.input_values.values.insert(
+                "ctoken".to_string(),
+                omni_generator_configurations::InputValue::String(
+                    "child-secret".into(),
+                ),
+            );
+        }
+        let parent = secret_generator(
+            "parent",
+            "ptoken",
+            vec![
+                call,
+                with_message(
+                    run_js("p.mjs"),
+                    "p {{ inputs.ptoken }} child-secret",
+                ),
+            ],
+        );
+        let generators =
+            vec![Cow::Owned(parent.clone()), Cow::Owned(child.clone())];
+        let sink = Messages::default();
+
+        let run_secrets = run_into(
+            &parent,
+            &generators,
+            &[("ptoken", "parent-secret")],
+            &sink,
+        )
+        .await;
+
+        // What the run returns is sanitized with every invocation's secrets,
+        // and only for as long as the run lives.
+        let shown = run_secrets
+            .redactor()
+            .redact("parent-secret child-secret other")
+            .into_owned();
+        assert_eq!(shown, "<redacted> <redacted> other");
+
+        let seen = sink.0.lock().unwrap().clone();
+        // The "run-generator" action message itself, then the child's script
+        // (which hides its own and the parent's secret), then the parent's
+        // script (which must not have learned the child's).
+        assert!(
+            seen.contains(&"c <redacted> <redacted>".to_string()),
+            "{seen:?}"
+        );
+        assert!(
+            seen.contains(&"p <redacted> child-secret".to_string()),
+            "{seen:?}"
+        );
     }
 
     /// Under the shrink-only (attenuation) model a nested `run-generator`
@@ -945,6 +1295,7 @@ mod nesting_tests {
             0,
             std::slice::from_ref(&workspace_caps),
             workspace_strictness,
+            &RunSecrets::default(),
         )
         .await
         .expect("run should succeed");

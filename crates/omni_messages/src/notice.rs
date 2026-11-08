@@ -142,15 +142,18 @@ pub trait NoticeSubscriber: Send + Sync {
         true
     }
 
-    /// Redactor applied once per notice before dispatch (RFC 0022).
-    fn redactor(&self) -> Option<std::sync::Arc<omni_redact::Redactor>> {
-        None
+    /// The producer entry point used by [`notice!`](crate::publish::notice):
+    /// mirrors the event to `tracing`, then delivers it with
+    /// [`on_notice`](Self::on_notice).
+    ///
+    /// The event must already be safe to show. An
+    /// [`RedactingSubscriber`](crate::RedactingSubscriber) sanitizes it for its
+    /// operation before calling the sink's `publish_notice`, so the mirror
+    /// and the presenter only ever see sanitized data (RFC 0026).
+    fn publish_notice(&self, event: NoticeEvent) {
+        crate::publish::mirror_to_tracing(&event);
+        self.on_notice(event);
     }
-
-    /// Adds a run's secrets to the redactor (the executor calls this with each
-    /// task's redactor). Subscribers that redact keep the union; the default
-    /// ignores it.
-    fn extend_redactor(&self, _redactor: &omni_redact::Redactor) {}
 
     fn on_notice(&self, _event: NoticeEvent) {}
 
@@ -172,11 +175,8 @@ impl<S: NoticeSubscriber> NoticeSubscriber for &S {
     fn wants_notices(&self) -> bool {
         S::wants_notices(*self)
     }
-    fn redactor(&self) -> Option<std::sync::Arc<omni_redact::Redactor>> {
-        S::redactor(*self)
-    }
-    fn extend_redactor(&self, redactor: &omni_redact::Redactor) {
-        S::extend_redactor(*self, redactor)
+    fn publish_notice(&self, event: NoticeEvent) {
+        S::publish_notice(*self, event)
     }
     fn on_notice(&self, event: NoticeEvent) {
         S::on_notice(*self, event)
@@ -186,57 +186,5 @@ impl<S: NoticeSubscriber> NoticeSubscriber for &S {
         events: impl IntoIterator<Item = NoticeEvent>,
     ) {
         S::on_notices_batched(*self, events)
-    }
-}
-
-/// A redactor that grows as a run learns more secrets. Embed it in a
-/// subscriber and forward [`NoticeSubscriber::redactor`] and
-/// [`NoticeSubscriber::extend_redactor`] to it.
-#[derive(Debug)]
-pub struct SharedRedactor(
-    std::sync::Mutex<std::sync::Arc<omni_redact::Redactor>>,
-);
-
-impl Default for SharedRedactor {
-    fn default() -> Self {
-        Self(std::sync::Mutex::new(std::sync::Arc::new(
-            omni_redact::Redactor::builder().build(),
-        )))
-    }
-}
-
-impl SharedRedactor {
-    /// Returns the current redactor, or `None` if it has no secrets.
-    pub fn get(&self) -> Option<std::sync::Arc<omni_redact::Redactor>> {
-        let r = self.0.lock().unwrap().clone();
-        (!r.is_empty()).then_some(r)
-    }
-
-    /// Adds another redactor's secrets to the shared redactor.
-    pub fn extend(&self, other: &omni_redact::Redactor) {
-        if other.is_empty() {
-            return;
-        }
-        let mut g = self.0.lock().unwrap();
-        *g = std::sync::Arc::new(g.union(other));
-    }
-}
-
-#[cfg(test)]
-mod shared_redactor_tests {
-    use super::*;
-
-    #[test]
-    fn grows_as_secrets_are_learned_and_is_off_until_then() {
-        let shared = SharedRedactor::default();
-        assert!(shared.get().is_none());
-
-        shared.extend(&omni_redact::Redactor::builder().value("one").build());
-        shared.extend(&omni_redact::Redactor::builder().value("two").build());
-
-        let r = shared.get().expect("secrets were added");
-        let out = r.redact("one and two and three");
-        assert!(!out.contains("one") && !out.contains("two"));
-        assert!(out.contains("three"));
     }
 }

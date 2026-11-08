@@ -80,6 +80,11 @@ pub struct Fixture {
         omni_generator_configurations::Generator,
     >,
     redactor: omni_redact::Redactor,
+    run_secrets: crate::RunSecrets,
+    redacting: omni_messages::RedactingSubscriber<
+        'static,
+        omni_messages::NoopSubscriber,
+    >,
     workspace_capabilities: omni_capabilities::CapabilityRules<
         omni_generator_configurations::Generator,
     >,
@@ -120,6 +125,10 @@ impl Fixture {
             generators: vec![],
             capabilities: Default::default(),
             redactor: omni_redact::Redactor::builder().build(),
+            run_secrets: crate::RunSecrets::default(),
+            redacting: omni_messages::RedactingSubscriber::root(
+                &omni_messages::NoopSubscriber,
+            ),
             workspace_capabilities: Default::default(),
             inherited_capabilities: Vec::new(),
         }
@@ -188,7 +197,8 @@ impl Fixture {
             gen_session: &self.gen_session,
             js_script_runner: self.js_script_runner.as_ref(),
             input_provider: &self.input_provider,
-            subscriber: &omni_messages::NoopSubscriber,
+            subscriber: &self.redacting,
+            run_secrets: &self.run_secrets,
             use_input_defaults: false,
             depth: 0,
             max_depth: crate::DEFAULT_MAX_GENERATOR_DEPTH,

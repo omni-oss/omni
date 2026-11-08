@@ -99,15 +99,20 @@ where
 /// execution; validation is identical whether the caller is the CLI or MCP.
 /// `working_dir` selects the base the tool's relative `ctx.sys` paths resolve
 /// against; when `None` the workspace root is used.
-pub async fn handle_tool_run<TSys>(
+/// Notices are sent through `subscriber` with selected input values redacted;
+/// the successful JSON value is returned unchanged. Discovery, validation,
+/// working directory resolution, and execution can return errors. Validation
+/// and execution errors are redacted using the supplied input values.
+pub async fn handle_tool_run<TSys, S>(
     ctx: &LoadedContext<TSys>,
     name: &str,
     args: serde_json::Value,
     working_dir: Option<ToolWorkingDir>,
     redact: &omni_configurations::RedactOverrides,
-    on_notice: &mut (dyn FnMut(omni_messages::NoticeEvent) + Send),
+    subscriber: &S,
 ) -> eyre::Result<serde_json::Value>
 where
+    S: omni_messages::NoticeSubscriber,
     TSys: ContextSys
         + ToolSys
         + omni_remote_source::sys::RemoteSourceSys
@@ -139,7 +144,12 @@ where
         redact.apply(omni_configurations::RedactPolicy::resolve(&[&ctx
             .workspace_configuration()
             .redact]));
+    // The tool call is its own operation: its notices and failures are
+    // sanitized with these inputs' secrets, and the shared subscriber never
+    // holds them (RFC 0026).
     let redactor = tool_input_redactor(&tool.inputs, &values, &policy);
+    let redacting =
+        omni_messages::RedactingSubscriber::new(subscriber, redactor.clone());
 
     let report = validate(
         &tool.inputs,
@@ -154,7 +164,15 @@ where
             )),
             ..Default::default()
         },
-    )?;
+    )
+    // A validator can echo a supplied value in its own error (for example a
+    // path rule), so this failure is redacted like every other one leaving
+    // the tool's scope.
+    .map_err(|err| {
+        omni_diagnostic::redact_report(err.into(), &|s| {
+            redactor.redact(s).into_owned()
+        })
+    })?;
 
     if !report.is_valid() {
         let details = report
@@ -232,10 +250,11 @@ where
             .capabilities(),
     };
 
-    // Notices carry no tool input values, but redact them with the same
-    // policy as errors so a declared secret can never reach a presenter. They
-    // are forwarded while the tool runs, so a warning such as the sandbox
-    // downgrade is visible before a long-running tool finishes.
+    // Notices carry no tool input values, but the operation sanitizes them
+    // with the same secrets as errors so a declared secret can never reach a
+    // presenter or the trace mirror. They are forwarded while the tool runs,
+    // so a warning such as the sandbox downgrade is visible before a
+    // long-running tool finishes.
     let mut rx = runner.stream_notices();
     let result = {
         let mut run = std::pin::pin!(run_named(
@@ -248,31 +267,36 @@ where
         loop {
             tokio::select! {
                 biased;
-                Some(mut n) = rx.recv() => {
-                    n.redact(&redactor);
-                    on_notice(n);
+                Some(n) = rx.recv() => {
+                    publish_tool_notice(&redacting, n);
                 }
                 r = &mut run => break r,
             }
         }
     };
     runner.shutdown().await;
-    while let Ok(mut n) = rx.try_recv() {
-        n.redact(&redactor);
-        on_notice(n);
+    while let Ok(n) = rx.try_recv() {
+        publish_tool_notice(&redacting, n);
     }
 
     match result {
         Ok(value) => Ok(value),
-        Err(err) => {
-            let message = err.to_string();
-            let redacted = redactor.redact(message.as_str());
-            if matches!(redacted, std::borrow::Cow::Borrowed(_)) {
-                Err(err.into())
-            } else {
-                Err(eyre::eyre!("{redacted}"))
-            }
-        }
+        // Redacted while the tool's inputs are still known: the whole cause
+        // chain is sanitized, and a diagnostic keeps its code, details and
+        // hints.
+        Err(err) => Err(omni_diagnostic::redact_report(err.into(), &|s| {
+            redactor.redact(s).into_owned()
+        })),
+    }
+}
+
+/// Delivers a tool's notice through its operation, if the sink wants notices.
+fn publish_tool_notice<S: omni_messages::NoticeSubscriber>(
+    redacting: &omni_messages::RedactingSubscriber<'_, S>,
+    notice: omni_messages::NoticeEvent,
+) {
+    if omni_messages::NoticeSubscriber::wants_notices(redacting) {
+        omni_messages::publish::publish_event(redacting, notice);
     }
 }
 

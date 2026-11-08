@@ -6,6 +6,7 @@
 - **Base branch:** `main`
 - **Affected crates/files:** new `omni_redact` crate (the `Redactor`; depends only on `omni_constants`); `omni_constants` (new `REDACTED_PLACEHOLDER`); `omni_glob` (new `name` submodule: `NameGlobSet`); `omni_command_config` (`display.rs`, `resolve.rs`; `redact_values` becomes a wrapper); `omni_task_executor` (`batch_executor.rs`, dry-run display); `omni_configurations` (`task_configuration.rs`, `project_configuration.rs`, `workspace_configuration.rs`: new `redact` block) and the generated JSON schemas; `omni_task_context` (carry the resolved policy into the context); `omni_input_schema` (`secret` inputs feed the redactor); `omni_api` / `omni_mcp_core` (tool and generator runs); `cli/omni` and `omni_cli_core` (`-a/--arg` handling, tracing/log setup); `omni_diagnostic` (RFC 0021 renderers, once landed); `tests/omni-tests` (dry-run e2e)
 - **Follows:** PR #40 (dry-run command display); issue omni-oss/omni#41; RFC 0021 (structured diagnostics)
+- **Amended by:** RFC 0026 (redactors are owned by an operation, not by a subscriber)
 
 ## 1. Summary
 

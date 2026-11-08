@@ -15,6 +15,10 @@ use crate::{
     run_internal,
 };
 
+/// Runs a nested generator with forwarded and configured inputs, then merges
+/// its session into the parent on success. The child inherits the parent's
+/// redactor and capability restrictions. Lookup, input resolution, and child
+/// execution errors propagate to the caller.
 #[allow(clippy::result_large_err)]
 pub async fn run_generator<'a, S: GeneratorEventSubscriber>(
     config: &RunGeneratorActionConfiguration,
@@ -52,7 +56,14 @@ pub async fn run_generator<'a, S: GeneratorEventSubscriber>(
         Cow::Owned(map)
     };
 
-    tracing::trace!("resolved target overrides: {target_overrides:#?}");
+    // Targets can embed input values, so hide them before they reach any
+    // tracing layer.
+    if tracing::enabled!(tracing::Level::TRACE) {
+        tracing::trace!(
+            "resolved target overrides: {}",
+            ctx.subscriber.redact(format!("{target_overrides:#?}"))
+        );
+    }
 
     let override_output_dir = config.output_dir.as_ref().map(|d| {
         let base = enum_map::enum_map! {
@@ -107,7 +118,7 @@ pub async fn run_generator<'a, S: GeneratorEventSubscriber>(
         .workspace_capabilities(ctx.workspace_capabilities)
         .enable_experimental(ctx.enable_experimental)
         .input_provider(ctx.input_provider)
-        .subscriber(ctx.subscriber)
+        .subscriber(ctx.subscriber.sink())
         .max_depth(ctx.max_depth)
         .maybe_redact_policy(ctx.redact_policy)
         .inherited_redactor(ctx.redactor)
@@ -135,6 +146,7 @@ pub async fn run_generator<'a, S: GeneratorEventSubscriber>(
         // The child inherits our accumulated stance (workspace ⟺ ancestors ⟺
         // this generator), already most-severe, and may only tighten it.
         ctx.capabilities_strictness,
+        ctx.run_secrets,
     ))
     .await?;
 

@@ -22,6 +22,7 @@ pub mod execution;
 pub mod generator;
 pub mod notice;
 pub mod publish;
+pub mod redacting;
 
 mod channel;
 mod noop;
@@ -44,9 +45,10 @@ pub use generator::{
     ScriptLogLevel,
 };
 pub use noop::NoopSubscriber;
-pub use notice::{NoticeEvent, NoticeLevel, NoticeSubscriber, SharedRedactor};
+pub use notice::{NoticeEvent, NoticeLevel, NoticeSubscriber};
 pub use omni::OmniEventSubscriber;
 pub use omni_notice::Notice;
+pub use redacting::RedactingSubscriber;
 
 #[cfg(feature = "tracing")]
 pub use tracing_impl::TracingSubscriber;

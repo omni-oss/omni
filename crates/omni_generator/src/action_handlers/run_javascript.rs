@@ -14,6 +14,10 @@ use crate::{
     action_handlers::HandlerContext, error::Error, utils::expand_json_value,
 };
 
+/// Runs a generator's JavaScript action with its effective capability policy.
+/// On success, publishes returned diagnostics and script logs through the
+/// invocation's subscriber. Template expansion and script runner errors
+/// propagate to the caller.
 #[allow(clippy::result_large_err)]
 pub async fn run_javascript<'a, S: GeneratorEventSubscriber>(
     config: &RunJavaScriptActionConfiguration,
@@ -121,17 +125,16 @@ pub async fn run_javascript<'a, S: GeneratorEventSubscriber>(
     publish_batch(&ctx.subscriber, diagnostics);
 
     for log in std::mem::take(&mut result.logs) {
-        dispatch_script_log(ctx.subscriber, ctx.redactor, log);
+        dispatch_script_log(ctx.subscriber, log);
     }
 
     Ok(())
 }
 
-/// Redacts before dispatch so even subscribers that only mirror to tracing
-/// never receive the generator's raw secret values.
+/// Dispatches a script log to the supplied subscriber. The invocation passes
+/// a redacting subscriber so its sink receives sanitized text.
 fn dispatch_script_log<S: GeneratorEventSubscriber>(
     subscriber: &S,
-    redactor: &omni_redact::Redactor,
     log: bridge_rpc_services::log::ScriptLogRecord,
 ) {
     subscriber.on_script_log(omni_messages::ScriptLogEvent {
@@ -142,8 +145,8 @@ fn dispatch_script_log<S: GeneratorEventSubscriber>(
             ScriptLogLevel::Debug => omni_messages::ScriptLogLevel::Debug,
             ScriptLogLevel::Trace => omni_messages::ScriptLogLevel::Trace,
         },
-        target: redactor.redact(log.target).into_owned(),
-        message: redactor.redact(log.message).into_owned(),
+        target: log.target,
+        message: log.message,
     });
 }
 
@@ -181,20 +184,22 @@ mod tests {
             }
         }
 
-        let subscriber = Capture::default();
-        let redactor = omni_redact::Redactor::builder()
-            .value("secret-token")
-            .build();
+        let sink = Capture::default();
+        let subscriber = omni_messages::RedactingSubscriber::new(
+            &sink,
+            omni_redact::Redactor::builder()
+                .value("secret-token")
+                .build(),
+        );
         dispatch_script_log(
             &subscriber,
-            &redactor,
             bridge_rpc_services::log::ScriptLogRecord {
                 level: bridge_rpc_services::log::ScriptLogLevel::Trace,
                 target: "child.secret-token".into(),
                 message: "token=secret-token".into(),
             },
         );
-        let logs = subscriber.0.lock().unwrap();
+        let logs = sink.0.lock().unwrap();
         assert_eq!(logs.len(), 1);
         assert!(!logs[0].target.contains("secret-token"));
         assert!(!logs[0].message.contains("secret-token"));
