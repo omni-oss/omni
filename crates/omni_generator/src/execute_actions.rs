@@ -65,7 +65,9 @@ pub struct ExecuteActionsArgs<'a, S: GeneratorEventSubscriber = NoopSubscriber>
     pub input_provider: &'a dyn omni_input_provider::InputProvider<
         omni_generator_configurations::Generator,
     >,
-    pub subscriber: &'a S,
+    /// Publishes this generator invocation's output, sanitized with its own
+    /// secrets (RFC 0026).
+    pub subscriber: &'a omni_messages::OperationPublisher<'a, S>,
     /// Current `run-generator` nesting depth of the generator being executed.
     pub depth: usize,
     /// Maximum allowed nesting depth, propagated to nested runs.

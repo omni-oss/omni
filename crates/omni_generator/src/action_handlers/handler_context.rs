@@ -6,7 +6,9 @@ use omni_generator_configurations::{
     CapabilitiesStrictness, Generator, GeneratorConfiguration, OmniPath,
     OverwriteConfiguration,
 };
-use omni_messages::{GeneratorEventSubscriber, NoopSubscriber};
+use omni_messages::{
+    GeneratorEventSubscriber, NoopSubscriber, OperationPublisher,
+};
 use value_bag::OwnedValueBag;
 
 use crate::{JsScriptRunner, gen_session::GenSession};
@@ -63,7 +65,10 @@ pub struct HandlerContext<'a, S: GeneratorEventSubscriber = NoopSubscriber> {
     pub input_provider: &'a dyn omni_input_provider::InputProvider<
         omni_generator_configurations::Generator,
     >,
-    pub subscriber: &'a S,
+    /// Publishes this generator invocation's output. It sanitizes everything
+    /// with the invocation's own secrets (RFC 0026), so handlers emit through
+    /// it and never through the shared subscriber.
+    pub subscriber: &'a OperationPublisher<'a, S>,
     /// Current `run-generator` nesting depth of this generator.
     pub depth: usize,
     /// Maximum allowed nesting depth, propagated to nested runs.

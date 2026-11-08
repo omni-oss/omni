@@ -361,11 +361,12 @@ pub(crate) async fn run_internal<'a, S: GeneratorEventSubscriber>(
     tracing::trace!(count = values.len(), "input_values");
 
     let redactor = build_input_redactor(r#gen, &values, config);
-    // Script logs and lifecycle messages reach presenters through the
-    // subscriber, so it must know this generator's secrets.
-    omni_messages::NoticeSubscriber::extend_redactor(
+    // Everything this invocation emits goes through its own publisher, which
+    // sanitizes with these secrets (plus an enclosing generator's) before the
+    // shared subscriber sees it. The subscriber itself never learns them.
+    let publisher = omni_messages::OperationPublisher::new(
         config.subscriber,
-        &redactor,
+        redactor.clone(),
     );
 
     let mut context_values = config.context_values.clone();
@@ -426,7 +427,7 @@ pub(crate) async fn run_internal<'a, S: GeneratorEventSubscriber>(
         enable_experimental: config.enable_experimental,
         js_script_runner: runner,
         input_provider: config.input_provider,
-        subscriber: config.subscriber,
+        subscriber: &publisher,
         use_input_defaults: config.use_input_defaults,
         depth,
         max_depth: config.max_depth,
@@ -702,6 +703,188 @@ mod nesting_tests {
                 (name, (serde_json::to_string(stack).unwrap(), stack.len()))
             })
             .collect()
+    }
+
+    /// Records the in-progress message of every action, at every depth.
+    #[derive(Default)]
+    struct Messages(std::sync::Mutex<Vec<String>>);
+
+    impl omni_messages::NoticeSubscriber for Messages {}
+    impl omni_messages::GeneratorEventSubscriber for Messages {
+        async fn on_action_in_progress(
+            &self,
+            e: omni_messages::generator::events::GeneratorActionInProgressEvent,
+        ) {
+            self.0.lock().unwrap().push(e.message);
+        }
+    }
+
+    fn with_message(
+        mut action: ActionConfiguration,
+        message: &str,
+    ) -> ActionConfiguration {
+        if let ActionConfiguration::RunJavaScript { action } = &mut action {
+            action.base.in_progress_message = Some(message.to_string());
+        }
+        action
+    }
+
+    fn secret_generator(
+        name: &str,
+        input: &str,
+        actions: Vec<ActionConfiguration>,
+    ) -> GeneratorConfiguration {
+        let mut g = generator(name, CapabilityRules::default(), actions);
+        g.inputs = vec![
+            omni_input_provider::builder::password::<Generator>()
+                .name(input)
+                .build(),
+        ];
+        g
+    }
+
+    /// Runs `entry` with `values`, publishing to the shared `sink`.
+    async fn run_into<'a>(
+        entry: &GeneratorConfiguration,
+        generators: &[Cow<'_, GeneratorConfiguration>],
+        values: &[(&str, &str)],
+        sink: &'a Messages,
+    ) {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let ws = tmp.path().to_path_buf();
+        let empty_targets = UnorderedMap::default();
+        let empty_ctx = UnorderedMap::default();
+        let env = Map::default();
+        let provider =
+            ScriptedInputProvider::new(std::iter::empty::<(&str, &str)>());
+        let input_values: UnorderedMap<String, OwnedValueBag> = values
+            .iter()
+            .map(|(k, v)| {
+                let v = v.to_string();
+                (k.to_string(), ValueBag::capture_serde1(&v).to_owned())
+            })
+            .collect();
+        let workspace_caps = CapabilityRules::<Generator>::default();
+
+        let config = RunConfig::builder()
+            .output_dir(&ws)
+            .workspace_dir(&ws)
+            .current_dir(&ws)
+            .target_overrides(&empty_targets)
+            .input_values(&input_values)
+            .context_values(&empty_ctx)
+            .env(&env)
+            .available_generators(generators)
+            .workspace_capabilities(&workspace_caps)
+            .input_provider(&provider)
+            .subscriber(sink)
+            .build();
+
+        let mock = MockJsScriptRunner::default();
+        let sys = TransactionSys::new(RealSys);
+        run_internal(
+            entry,
+            &config,
+            &sys,
+            &mock,
+            0,
+            std::slice::from_ref(&workspace_caps),
+            CapabilitiesStrictness::default(),
+        )
+        .await
+        .expect("run should succeed");
+    }
+
+    #[tokio::test]
+    async fn generator_secrets_do_not_outlive_or_cross_operations() {
+        let probe = "m {{ inputs.token }} alpha-secret bravo-secret";
+        let a = secret_generator(
+            "a",
+            "token",
+            vec![with_message(run_js("a.mjs"), probe)],
+        );
+        let b = secret_generator(
+            "b",
+            "token",
+            vec![with_message(run_js("b.mjs"), probe)],
+        );
+        let generators = vec![Cow::Owned(a.clone()), Cow::Owned(b.clone())];
+        // One subscriber, reused and shared by concurrent operations.
+        let sink = Messages::default();
+
+        tokio::join!(
+            run_into(&a, &generators, &[("token", "alpha-secret")], &sink),
+            run_into(&b, &generators, &[("token", "bravo-secret")], &sink),
+        );
+        // Reuse after both finished.
+        run_into(&a, &generators, &[("token", "alpha-secret")], &sink).await;
+
+        let seen = sink.0.lock().unwrap().clone();
+        assert_eq!(seen.len(), 3);
+        let only_a = "m <redacted> <redacted> bravo-secret".to_string();
+        let only_b = "m <redacted> alpha-secret <redacted>".to_string();
+        assert_eq!(
+            seen.iter().filter(|m| **m == only_a).count(),
+            2,
+            "{seen:?}"
+        );
+        assert_eq!(
+            seen.iter().filter(|m| **m == only_b).count(),
+            1,
+            "{seen:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn nested_generator_inherits_but_never_leaks_child_secrets_upward() {
+        let mut child = secret_generator(
+            "child",
+            "ctoken",
+            vec![with_message(
+                run_js("c.mjs"),
+                "c {{ inputs.ctoken }} parent-secret",
+            )],
+        );
+        child.user_invocable = true;
+        let mut call = run_gen("child");
+        if let ActionConfiguration::RunGenerator { action } = &mut call {
+            action.input_values.values.insert(
+                "ctoken".to_string(),
+                omni_generator_configurations::InputValue::String(
+                    "child-secret".into(),
+                ),
+            );
+        }
+        let parent = secret_generator(
+            "parent",
+            "ptoken",
+            vec![
+                call,
+                with_message(
+                    run_js("p.mjs"),
+                    "p {{ inputs.ptoken }} child-secret",
+                ),
+            ],
+        );
+        let generators =
+            vec![Cow::Owned(parent.clone()), Cow::Owned(child.clone())];
+        let sink = Messages::default();
+
+        run_into(&parent, &generators, &[("ptoken", "parent-secret")], &sink)
+            .await;
+
+        let seen = sink.0.lock().unwrap().clone();
+        // The "run-generator" action message itself, then the child's script
+        // (which hides its own and the parent's secret), then the parent's
+        // script (which must not have learned the child's).
+        assert!(
+            seen.contains(&"c <redacted> <redacted>".to_string()),
+            "{seen:?}"
+        );
+        assert!(
+            seen.contains(&"p <redacted> child-secret".to_string()),
+            "{seen:?}"
+        );
     }
 
     /// Under the shrink-only (attenuation) model a nested `run-generator`
