@@ -222,7 +222,11 @@ to show that result later.
   Returned action paths are **display-only labels**, not filesystem
   references: a sanitized label can name a nonexistent or different file and
   must not be passed to filesystem APIs for inspection. Prepare normalized,
-  workspace-relative labels before sanitization; presenters must not clean,
+  workspace-relative labels before sanitization where possible. If
+  relativization is impossible (for example, workspace `C:` and output `D:`
+  on Windows, or incompatible UNC roots), prepare a normalized absolute
+  display label and sanitize it under the owning scope instead. Both forms
+  remain display-only; presenters must not clean,
   resolve or relativize the sanitized text as a path. Raw paths remain only
   in the execution transaction. Do not add a raw-path field or lookup API to
   bypass this protection.
@@ -296,6 +300,7 @@ by custom subscribers/tracing layers, so safety is not formatter-dependent.
 | Nested generator and explicit nested tool scope | Child hides parent and child secrets; parent and sibling do not acquire child-only secrets; child failure remains safe when aggregated later |
 | Nested generator transaction actions | A child-only secret in an action path is absent from `GeneratorRunResponse.actions` after child completion, in dry-run and committed runs; real execution paths stay unchanged, and checkpoint/rollback keeps projections aligned with retained actions |
 | Action label collisions and identity | Two distinct paths with identical safe labels remain two reports/counts; repeated equivalent actions deduplicate; rename/copy pairs preserve identity; discarded keys are not reassigned on rollback; returned labels are never resolved as filesystem paths and reporting keys are absent from MCP JSON |
+| Non-relativizable action paths | Windows cross-drive and incompatible UNC-root output paths use owner-sanitized absolute display labels in CLI/MCP, including a child-only secret in the path; execution paths stay unchanged and presenters neither resolve nor re-sanitize labels |
 | Subscriber reuse | Completed/failed/cancelled A does not affect B; presenter never retains A's redactor |
 | Preparation | Supplied values, defaults and rejected prompted values are protected before execution begins, including early validation/expansion failures |
 | Success/failure exits | Dry-run command, lifecycle/action/script events, notices, structured diagnostics and plain error chains are safe on both paths; tool success JSON stays unchanged |
