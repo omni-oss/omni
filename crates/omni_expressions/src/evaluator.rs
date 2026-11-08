@@ -4,6 +4,8 @@ use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
 use crate::Context;
 
+omni_codes::prefixes!("expression");
+
 #[derive(Debug)]
 pub struct Evaluator {
     program: CelProgram,
@@ -12,7 +14,8 @@ pub struct Evaluator {
 
 pub fn parse(expression: impl AsRef<str>) -> Result<Evaluator, Error> {
     let source = expression.as_ref();
-    let program = CelProgram::compile(source)?;
+    let program =
+        CelProgram::compile(source).map_err(ErrorInner::ParseError)?;
 
     Ok(Evaluator {
         program,
@@ -30,10 +33,9 @@ impl Evaluator {
     ) -> Result<bool, Error> {
         let result =
             self.program.execute(&context.inner).map_err(|e| match e {
-                cel::ExecutionError::UndeclaredReference(name)
-                    if is_invoked(&self.source, &name) =>
-                {
-                    ErrorInner::UnknownFunction {
+                cel::ExecutionError::UndeclaredReference(name) => {
+                    ErrorInner::UndeclaredReference {
+                        is_call: is_invoked(&self.source, &name),
                         name: name.to_string(),
                     }
                 }
@@ -90,6 +92,15 @@ fn strip_string_literals(source: &str) -> String {
     out
 }
 
+/// The summary names the position only: cel's own message quotes the
+/// expression text, which can hold secrets.
+fn parse_location(errors: &cel::ParseErrors) -> String {
+    match errors.errors.first() {
+        Some(e) => format!(" at line {}, column {}", e.pos.0, e.pos.1),
+        None => String::new(),
+    }
+}
+
 /// Structured classification of an evaluation error, so callers never need to
 /// match on `cel` types or message text.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -101,8 +112,9 @@ pub enum ErrorClass {
     Other,
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, omni_diagnostic::Diagnostic)]
 #[error(transparent)]
+#[diagnostic(forward)]
 pub struct Error(pub(crate) ErrorInner);
 
 impl Error {
@@ -113,10 +125,10 @@ impl Error {
     pub fn class(&self) -> ErrorClass {
         use cel::ExecutionError as E;
         match &self.0 {
-            ErrorInner::UnknownFunction { name } => {
+            ErrorInner::UndeclaredReference { name, is_call } => {
                 ErrorClass::MissingReference {
                     name: name.clone(),
-                    is_call: true,
+                    is_call: *is_call,
                 }
             }
             ErrorInner::NonBool { got } => {
@@ -152,34 +164,63 @@ impl<T: Into<ErrorInner>> From<T> for Error {
     }
 }
 
-#[derive(Debug, thiserror::Error, EnumDiscriminants, new)]
+#[derive(
+    Debug, thiserror::Error, EnumDiscriminants, new, omni_diagnostic::Diagnostic,
+)]
 #[strum_discriminants(name(ErrorKind), vis(pub))]
 #[error("cel expression error: {inner}")]
+#[allow(clippy::redundant_field_names)]
 pub enum ErrorInner {
-    #[error(transparent)]
-    ParseError(#[from] cel::ParseErrors),
+    /// The expression does not parse or compile.
+    #[error("invalid expression{}", parse_location(.0))]
+    #[diagnostic(
+        code = "expression.invalid",
+        hint = "check the expression syntax: quotes, brackets, operators and keywords"
+    )]
+    ParseError(cel::ParseErrors),
 
     #[error(transparent)]
+    #[diagnostic(skip)]
     ExecutionError(#[from] cel::ExecutionError),
 
     #[error(transparent)]
+    #[diagnostic(delegate)]
     Unknown(#[from] eyre::Report),
 
+    /// The expression refers to a name or function that is not defined.
     #[error("Undeclared reference to '{name}'")]
-    UnknownFunction {
+    #[diagnostic(
+        code = "expression.undeclared_reference",
+        hint = "check the spelling of `{name}`; it must be a defined variable or function"
+    )]
+    UndeclaredReference {
         #[new(into)]
+        #[diagnostic(detail)]
         name: String,
+        is_call: bool,
     },
 
+    /// The expression evaluated to a value that is not a boolean.
     #[error("filter must evaluate to a bool, got {got}")]
+    #[diagnostic(
+        code = "expression.not_boolean",
+        hint = "make the expression evaluate to `true` or `false`"
+    )]
     NonBool {
         #[new(into)]
+        #[diagnostic(detail)]
         got: String,
     },
 
+    /// The expression names a variable that is not in its context.
     #[error("variable not found: {name}")]
+    #[diagnostic(
+        code = "expression.variable_not_found",
+        hint = "define `{name}` in the expression context"
+    )]
     VariableNotFound {
         #[new(into)]
+        #[diagnostic(detail)]
         name: String,
     },
 }

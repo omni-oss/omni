@@ -9,6 +9,7 @@ repository.workspace = true
 vendored-openssl = ["omni_execution_plan/vendored-openssl"]
 
 [dependencies]
+omni_diagnostic = { workspace = true }
 async-trait = { workspace = true }
 eyre = { workspace = true }
 thiserror = { workspace = true }

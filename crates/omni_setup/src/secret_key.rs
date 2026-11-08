@@ -57,8 +57,9 @@ pub fn get_secret_key(
     Ok(new_secret_key)
 }
 
-#[derive(Debug, thiserror::Error, new)]
+#[derive(Debug, thiserror::Error, new, omni_diagnostic::Diagnostic)]
 #[error("error when trying to get secret key: {0}")]
+#[diagnostic(forward)]
 pub struct SecretKeyError(pub(crate) SecretKeyErrorInner);
 
 impl SecretKeyError {
@@ -75,13 +76,22 @@ impl<T: Into<SecretKeyErrorInner>> From<T> for SecretKeyError {
     }
 }
 
-#[derive(Debug, thiserror::Error, EnumDiscriminants, EnumIs, new)]
+#[derive(
+    Debug,
+    thiserror::Error,
+    EnumDiscriminants,
+    EnumIs,
+    new,
+    omni_diagnostic::Diagnostic,
+)]
 #[strum_discriminants(vis(pub), name(SecretKeyErrorKind))]
 pub(crate) enum SecretKeyErrorInner {
     #[error(transparent)]
+    #[diagnostic(skip)]
     Keyring(#[from] keyring_core::Error),
 
     #[error(transparent)]
+    #[diagnostic(skip)]
     MachineId(eyre::Report),
 }
 

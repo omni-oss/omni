@@ -64,7 +64,14 @@ pub async fn setup_remote_caching_config_async<TClient: RemoteCacheClient>(
 
     let parent = remote_config_path.parent().expect("should have parent");
 
-    sys.fs_create_dir_all_async(parent).await?;
+    sys.fs_create_dir_all_async(parent)
+        .await
+        .map_err(|source| {
+            SetupRemoteCachingConfigErrorInner::ConfigWriteFailed {
+                path: remote_config_path.to_path_buf(),
+                source,
+            }
+        })?;
 
     if encrypt {
         let (service, user) = get_service_and_user(None, Some(user))?;
@@ -81,21 +88,35 @@ pub async fn setup_remote_caching_config_async<TClient: RemoteCacheClient>(
             rmp_serde::to_vec(&remote_config)?.as_slice(),
             &derived_key[..],
         )?;
-        sys.fs_write_async(remote_config_path, &encrypted).await?;
+        sys.fs_write_async(remote_config_path, &encrypted)
+            .await
+            .map_err(|source| {
+                SetupRemoteCachingConfigErrorInner::ConfigWriteFailed {
+                    path: remote_config_path.to_path_buf(),
+                    source,
+                }
+            })?;
     } else {
         omni_file_data_serde::write_async(
             remote_config_path,
             &remote_config,
             sys,
         )
-        .await?;
+        .await
+        .map_err(|source| {
+            SetupRemoteCachingConfigErrorInner::ConfigEncodeFailed {
+                path: remote_config_path.to_path_buf(),
+                source,
+            }
+        })?;
     }
 
     Ok(())
 }
 
-#[derive(Debug, thiserror::Error, new)]
+#[derive(Debug, thiserror::Error, new, omni_diagnostic::Diagnostic)]
 #[error("failed to setup remote caching: {0}")]
+#[diagnostic(forward)]
 pub struct SetupRemoteCachingConfigError(SetupRemoteCachingConfigErrorInner);
 
 impl SetupRemoteCachingConfigError {
@@ -114,33 +135,111 @@ impl<T: Into<SetupRemoteCachingConfigErrorInner>> From<T>
     }
 }
 
-#[derive(Debug, thiserror::Error, EnumDiscriminants, EnumIs, new)]
+#[derive(
+    Debug,
+    thiserror::Error,
+    EnumDiscriminants,
+    EnumIs,
+    new,
+    omni_diagnostic::Diagnostic,
+)]
 #[strum_discriminants(vis(pub), name(SetupRemoteCachingConfigErrorKind))]
-enum SetupRemoteCachingConfigErrorInner {
+pub(crate) enum SetupRemoteCachingConfigErrorInner {
+    /// The remote caching configuration could not be saved.
+    #[error("failed to write remote caching configuration at '{path}': {source}", path = path.display())]
+    #[diagnostic(code = "remote_cache.config_write_failed", audience = environment, hint = "check disk space and write access to {path:?}, then retry remote caching setup")]
+    ConfigWriteFailed {
+        #[diagnostic(detail)]
+        path: std::path::PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    /// The plaintext remote caching configuration could not be saved.
+    #[error("failed to save remote caching configuration at '{path}': {source}", path = path.display())]
+    #[diagnostic(code = "remote_cache.config_save_failed", audience = environment, hint = "check the configuration file format and write access to {path:?}, then retry remote caching setup")]
+    ConfigEncodeFailed {
+        #[diagnostic(detail)]
+        path: std::path::PathBuf,
+        #[source]
+        source: omni_file_data_serde::Error,
+    },
+
     #[error(transparent)]
+    #[diagnostic(skip)]
     Io(#[from] std::io::Error),
 
     #[error(transparent)]
+    #[diagnostic(delegate)]
     RemoteCacheClient(#[from] RemoteCacheClientError),
 
     #[error(transparent)]
+    #[diagnostic(delegate)]
     Encode(#[from] omni_file_data_serde::Error),
 
     #[error(transparent)]
+    #[diagnostic(skip)]
     RmpSerdeEncode(#[from] rmp_serde::encode::Error),
 
     #[error(transparent)]
+    #[diagnostic(delegate)]
     SecretKey(#[from] crate::secret_key::SecretKeyError),
 
     #[error(transparent)]
+    #[diagnostic(delegate)]
     Custom(#[from] eyre::Report),
 
+    /// The remote cache server rejected the access details.
     #[error("invalid access")]
+    #[diagnostic(
+        code = "remote_cache.invalid_access",
+        hint = "check the API key, tenant, organization, workspace and environment codes, then run remote caching setup again"
+    )]
     InvalidAccess(#[source] eyre::Report),
 
     #[error(transparent)]
+    #[diagnostic(delegate)]
     Crypto(#[from] crypto::CryptoError),
 
     #[error(transparent)]
+    #[diagnostic(skip)]
     Env(#[from] std::env::VarError),
+}
+
+#[cfg(test)]
+mod diagnostic_tests {
+    use super::*;
+    use eyre::WrapErr;
+    use omni_diagnostic::{Audience, find};
+
+    #[test]
+    fn config_write_failure_has_path_and_retains_os_cause() {
+        let error: SetupRemoteCachingConfigError =
+            SetupRemoteCachingConfigErrorInner::ConfigWriteFailed {
+                path: "remote-cache.enc".into(),
+                source: std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    "permission denied",
+                ),
+            }
+            .into();
+        let report = Err::<(), _>(error)
+            .wrap_err("setting up remote caching")
+            .unwrap_err();
+        let diagnostic = find(&report).expect("write failure diagnostic");
+        assert_eq!(diagnostic.code(), "remote_cache.config_write_failed");
+        assert_eq!(diagnostic.audience(), Audience::Environment);
+        assert_eq!(diagnostic.details().unwrap()["path"], "remote-cache.enc");
+        // The wrapper does not chain its inner error, so the OS cause has to be
+        // in the message itself for the user to see why the write failed.
+        let chain = report
+            .chain()
+            .map(|e| e.to_string())
+            .collect::<Vec<_>>()
+            .join(" | ");
+        assert!(chain.contains("remote-cache.enc"), "{chain}");
+        assert!(chain.contains("permission denied"), "{chain}");
+        assert!(omni_codes::get("remote_cache.config_write_failed").is_some());
+        assert!(omni_codes::get("remote_cache.config_save_failed").is_some());
+    }
 }

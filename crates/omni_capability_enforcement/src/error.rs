@@ -9,8 +9,11 @@
 use omni_capabilities::CapabilityDomain;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
-#[derive(Debug, thiserror::Error)]
+omni_codes::prefixes!("enforcement");
+
+#[derive(Debug, thiserror::Error, omni_diagnostic::Diagnostic)]
 #[error(transparent)]
+#[diagnostic(forward)]
 pub struct EnforcementError(pub(crate) EnforcementErrorInner);
 
 impl EnforcementError {
@@ -82,42 +85,79 @@ impl<T: Into<EnforcementErrorInner>> From<T> for EnforcementError {
     }
 }
 
-#[derive(Debug, thiserror::Error, EnumDiscriminants)]
+#[derive(
+    Debug, thiserror::Error, EnumDiscriminants, omni_diagnostic::Diagnostic,
+)]
 #[strum_discriminants(vis(pub), name(EnforcementErrorKind))]
 pub(crate) enum EnforcementErrorInner {
+    /// The policy requires a domain that no selected backend can enforce here.
     #[error(
         "policy requires enforcing `{domain}`, but none of the selected \
          enforcement backends ({backends}) can enforce it on this platform"
     )]
+    #[diagnostic(
+        code = "enforcement.uncovered_domain",
+        audience = environment,
+        hint = "use a backend that can enforce `{domain}` on this platform, or remove the `{domain}` rules"
+    )]
     UncoveredDomain {
+        #[diagnostic(detail)]
         domain: CapabilityDomain,
+        #[diagnostic(detail)]
         backends: String,
     },
 
+    /// The policy cannot be fully enforced and unenforceable policy is `deny`.
     #[error(
         "policy cannot be fully enforced and the unenforceable policy is \
          `deny`:\n{summary}"
     )]
+    #[diagnostic(
+        code = "enforcement.unenforceable",
+        audience = environment,
+        hint = "narrow the policy to what the selected backends can enforce, or select backends that can enforce it"
+    )]
     Unenforceable { summary: String },
 
+    /// The policy requires an un-bypassable floor that this runtime lacks.
     #[error(
         "policy requires an un-bypassable enforcement floor, but one or more \
          governed domains have none for this runtime/platform:\n{summary}"
     )]
+    #[diagnostic(
+        code = "enforcement.no_floor",
+        audience = environment,
+        hint = "run on a runtime or platform that provides an OS or runtime-flag floor for these domains"
+    )]
     NoFloor { summary: String },
 
+    /// A coarse superset grant has no in-process narrowing layer.
     #[error(
         "a coarse superset launch flag was emitted for one or more domains that \
          no in-process shim or broker narrows, so the broad grant would be the \
          sole enforcement:\n{summary}"
     )]
+    #[diagnostic(
+        code = "enforcement.superset_unnarrowed",
+        audience = environment,
+        hint = "use a backend that narrows these domains per operation on this platform"
+    )]
     SupersetUnnarrowed { summary: String },
 
+    /// The backend stack holds more than one pre-spawn runtime-flag backend.
     #[error(
         "the enforcement stack contains more than one pre-spawn runtime-flag \
          backend ({backends}), but only one runtime is spawned; a capability \
          gap could otherwise be resolved against a runtime that never applies \
          to the target"
     )]
-    ConflictingRuntimes { backends: String },
+    #[diagnostic(
+        code = "enforcement.conflicting_runtimes",
+        audience = internal,
+        hint = "report this omni bug with the conflicting backend names in details"
+    )]
+    ConflictingRuntimes {
+        #[diagnostic(detail)]
+        backends: String,
+    },
 }

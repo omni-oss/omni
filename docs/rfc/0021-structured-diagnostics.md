@@ -140,6 +140,15 @@ pub trait Diagnostic: std::error::Error + Send + Sync + 'static {
     /// Extra text rendered between the summary and the hints (CLI only).
     /// Default: nothing. MetaFilterError uses this for its grouped body.
     fn render_body(&self, _out: &mut dyn fmt::Write) -> fmt::Result { Ok(()) }
+
+    /// Whether this value actually carries a diagnostic. Always `true` unless
+    /// the type has `skip` variants, `delegate` variants whose inner error has
+    /// none, or `forward` variants whose inner value is itself not reportable
+    /// (see the derive attributes). Lookup ignores values that are not
+    /// reportable, so they stay plain errors. The other methods return neutral
+    /// values for such a value (`code()` is `""`): check this before calling
+    /// them on a value obtained any other way than lookup.
+    fn reportable(&self) -> bool { true }
 }
 
 pub enum Audience {
@@ -440,6 +449,8 @@ pub enum ProjectFilterError {
 | variant or struct | `hints = path::fn` | Escape hatch: `fn(&Self) -> Vec<String>`, listed before the static `hint`s (specific before generic). |
 | variant or struct | `body = path::fn` | Escape hatch for `render_body`. |
 | variant | `forward` | Variant has exactly one field implementing `Diagnostic`; all methods delegate to it. |
+| variant | `skip` | Variant carries no diagnostic (I/O, serialization, internal plumbing). It is a plain error: lookup ignores it and `reportable()` is `false`. |
+| variant | `delegate` | Variant has exactly one field: an error, or an `eyre::Report`, that may carry its own diagnostic. It is looked up in that field (a report's whole cause chain is searched, so context added with `wrap_err` does not hide it); if there is none the variant is a plain error. |
 | type | `no_register` | Skip registration (for diagnostics only ever constructed by hand). |
 
 **Generated code**
@@ -455,11 +466,25 @@ pub enum ProjectFilterError {
   forwards is still found first by `find` (outermost wins) and delegates. Types with generic parameters cannot be
   registered and fail with a clear error (use `no_register` or a concrete
   wrapper).
+- `Diagnostic::reportable()` (default `true`) is `false` for `skip` variants, for
+  `delegate` variants whose inner error has no diagnostic, and for `forward`
+  variants (or structs) whose inner value is itself not reportable: a forwarding
+  wrapper inherits the reportability of what it forwards to. The registered
+  lookup only matches reportable values, so a public wrapper such as
+  `#[diagnostic(forward)] struct Error(ErrorInner)` over an enum that mixes coded,
+  `skip` and `delegate` variants is found only when the value really
+  carries a diagnostic. For a non-reportable value the other trait methods
+  return neutral values (`code()` is `""`), so a caller that holds a value
+  directly (for example `Error::custom(..)` called by code that did not go
+  through `find`) must check `reportable()` before relying on them, including
+  through forwarding wrappers.
 
 **Compile-time rules** (errors point at the attribute span)
 
-- Every variant needs `code` or `forward`; a missing one is an error, so a new
-  variant cannot silently become uncoded.
+- Every variant needs `code`, `forward`, `delegate` or `skip`; a missing one is
+  an error, so a new variant cannot silently become uncoded. `skip` and
+  `delegate` take no other attribute and cannot be combined with each other or
+  with `forward`.
 - Codes must match `^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$`.
 - Codes are unique within the type.
 - Every `{field}` in a `hint` must exist on that variant.

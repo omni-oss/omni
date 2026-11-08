@@ -1,0 +1,322 @@
+use std::path::PathBuf;
+
+use eyre::WrapErr;
+use omni_diagnostic::{Audience, DiagnosticReport, find};
+
+use crate::{
+    context::{ContextError, ContextErrorInner},
+    extracted_data_validator::{
+        ExtractedDataValidationError, ExtractedDataValidationErrorInner,
+    },
+    project_config_loader::{
+        ProjectConfigLoaderError, ProjectConfigLoaderErrorInner,
+    },
+    project_data_extractor::{
+        ProjectDataExtractorError, ProjectDataExtractorErrorInner,
+    },
+};
+
+fn duplicate(name: &str) -> ExtractedDataValidationError {
+    ExtractedDataValidationErrorInner::DuplicateProjectName {
+        project_name: name.into(),
+        project_paths: vec![PathBuf::from("a"), PathBuf::from("b")],
+    }
+    .into()
+}
+
+fn dangling(task: &str) -> ExtractedDataValidationError {
+    ExtractedDataValidationErrorInner::DanglingTaskDependency {
+        project_name: "app".into(),
+        task_name: task.into(),
+        dependency: "helper".into(),
+    }
+    .into()
+}
+
+fn report(inner: ContextErrorInner) -> eyre::Report {
+    Err::<(), _>(ContextError::from(inner))
+        .wrap_err("loading workspace")
+        .unwrap_err()
+}
+
+#[test]
+fn validation_failures_are_aggregated_structurally() {
+    let r = report(ContextErrorInner::ValidationError(
+        vec![duplicate("web"), dangling("build")].into(),
+    ));
+    let d = find(&r).expect("diagnostic");
+    assert_eq!(d.code(), "workspace.validation_failed");
+    assert_eq!(d.audience(), Audience::User);
+    let details = d.details().unwrap();
+    let errors = details["errors"].as_array().unwrap();
+    assert_eq!(errors.len(), 2);
+    assert_eq!(errors[0]["code"], "workspace.duplicate_project_name");
+    assert_eq!(errors[0]["details"]["project"], "web");
+    assert_eq!(errors[0]["details"]["paths"], serde_json::json!(["a", "b"]));
+    assert_eq!(errors[1]["code"], "workspace.dangling_task_dependency");
+    assert_eq!(errors[1]["details"]["dependency"], "helper");
+    assert_eq!(d.hints().len(), 2);
+
+    let text = DiagnosticReport::from_report(&r).unwrap().to_text();
+    assert!(
+        text.contains("[workspace.duplicate_project_name]"),
+        "{text}"
+    );
+    assert!(
+        text.contains("[workspace.dangling_task_dependency]"),
+        "{text}"
+    );
+}
+
+#[test]
+fn workspace_not_found_is_a_user_diagnostic() {
+    let r = report(ContextErrorInner::FailedToFindWorkspaceConfiguration);
+    let d = find(&r).expect("diagnostic");
+    assert_eq!(d.code(), "workspace.not_found");
+    assert_eq!(d.audience(), Audience::User);
+    assert_eq!(d.hints().len(), 1);
+}
+
+#[test]
+fn project_loader_errors_are_found_through_the_context_error() {
+    let loader: ProjectConfigLoaderError =
+        ProjectConfigLoaderErrorInner::ExtendedProjectConfigOutsideWorkspace {
+            extender_path: PathBuf::from("apps/app/project.omni.yaml"),
+            extendee_path: PathBuf::from("../shared/base.omni.yaml"),
+        }
+        .into();
+    let r = report(ContextErrorInner::ProjectLoader(loader));
+    let d = find(&r).expect("diagnostic");
+    assert_eq!(d.code(), "workspace.extends_outside_workspace");
+    assert_eq!(
+        d.details().unwrap()["extender"],
+        "apps/app/project.omni.yaml"
+    );
+    assert!(d.hints()[0].contains("apps/app/project.omni.yaml"));
+}
+
+#[test]
+fn invalid_redact_is_found_through_the_context_error() {
+    let inner: ProjectDataExtractorError =
+        ProjectDataExtractorErrorInner::InvalidRedact {
+            location: "project `app`".into(),
+            message: "bad pattern".into(),
+        }
+        .into();
+    let r = report(ContextErrorInner::ProjectDataExtractor(inner));
+    let d = find(&r).expect("diagnostic");
+    assert_eq!(d.code(), "workspace.invalid_redact");
+    assert_eq!(d.details().unwrap()["reason"], "bad pattern");
+}
+
+#[test]
+fn plain_failures_stay_uncoded() {
+    let cache = report(ContextErrorInner::CacheDirectory("boom".into()));
+    let diagnostic =
+        find(&cache).expect("invalid cache configuration diagnostic");
+    assert_eq!(diagnostic.code(), "workspace.invalid_cache_directory");
+    assert_eq!(diagnostic.audience(), Audience::User);
+
+    let io = report(ContextErrorInner::Io(std::io::Error::other("x")));
+    assert!(find(&io).is_none());
+
+    let plain: ProjectDataExtractorError =
+        ProjectDataExtractorErrorInner::Unknown(eyre::eyre!("plain")).into();
+    assert!(
+        find(&report(ContextErrorInner::ProjectDataExtractor(plain))).is_none()
+    );
+}
+
+#[test]
+fn codes_are_registered_in_the_catalog() {
+    for code in [
+        "workspace.not_found",
+        "workspace.invalid_cache_directory",
+        "workspace.config_load_failed",
+        "workspace.worktree_config_load_failed",
+        "workspace.validation_failed",
+        "workspace.duplicate_project_name",
+        "workspace.dangling_task_dependency",
+        "workspace.extends_not_found",
+        "workspace.extends_outside_workspace",
+        "workspace.project_config_not_found",
+        "workspace.invalid_redact",
+    ] {
+        assert!(
+            omni_codes::get(code).is_some(),
+            "`{code}` is not registered"
+        );
+    }
+}
+
+#[test]
+fn registry_accepts_the_declared_prefix() {
+    if let Err(errors) = omni_codes::validate() {
+        let msgs: Vec<String> = errors.iter().map(|e| e.to_string()).collect();
+        panic!("invalid code registry:\n{}", msgs.join("\n"));
+    }
+}
+
+mod end_to_end {
+    use omni_tracing_subscriber::TracingConfig;
+    use system_traits::{FsCreateDirAll as _, FsWrite as _};
+
+    use crate::{
+        context::Context,
+        test_fixture::{cross_path, real_sys, tmp},
+    };
+
+    use omni_diagnostic::{Audience, find};
+
+    fn context(
+        root: &std::path::Path,
+    ) -> Result<Context<system_traits::impls::RealSys>, crate::ContextError>
+    {
+        Context::new(
+            real_sys(),
+            "testing",
+            root,
+            false,
+            "workspace.omni.yaml",
+            None,
+            &TracingConfig::disabled(),
+        )
+    }
+
+    #[tokio::test]
+    async fn malformed_project_config_surfaces_the_config_diagnostic() {
+        let sys = real_sys();
+        let tmp = tmp();
+        let root = tmp.path();
+        sys.fs_create_dir_all(root.join(cross_path("apps/bad")))
+            .unwrap();
+        sys.fs_write(
+            root.join("workspace.omni.yaml"),
+            "projects:\n  - apps/**\n",
+        )
+        .unwrap();
+        sys.fs_write(
+            root.join(cross_path("apps/bad/project.omni.yaml")),
+            "name: [unclosed\nsecret_token: hunter2\n",
+        )
+        .unwrap();
+
+        let err = context(root)
+            .unwrap()
+            .into_loaded()
+            .await
+            .expect_err("a malformed project config must not load");
+        let r = eyre::Report::new(err);
+        let d = find(&r).expect("diagnostic through the context error");
+        assert_eq!(d.code(), "config.load_failed");
+        assert_eq!(d.audience(), Audience::User);
+        let details = d.details().unwrap();
+        assert!(
+            details["path"]
+                .as_str()
+                .unwrap()
+                .ends_with("project.omni.yaml")
+        );
+        assert!(!details.to_string().contains("hunter2"));
+        let chain = r
+            .chain()
+            .map(|e| e.to_string())
+            .collect::<Vec<_>>()
+            .join(" | ");
+        assert!(!chain.contains("hunter2"), "{chain}");
+    }
+
+    #[test]
+    fn malformed_workspace_config_surfaces_the_workspace_diagnostic() {
+        let sys = real_sys();
+        let tmp = tmp();
+        let root = tmp.path();
+        sys.fs_write(root.join("workspace.omni.yaml"), "projects: [unclosed\n")
+            .unwrap();
+
+        let err = context(root)
+            .err()
+            .expect("a malformed workspace config must not load");
+        let r = eyre::Report::new(err);
+        let d = find(&r).expect("diagnostic");
+        assert_eq!(d.code(), "workspace.config_load_failed");
+        assert!(
+            d.details().unwrap()["path"]
+                .as_str()
+                .unwrap()
+                .ends_with("workspace.omni.yaml")
+        );
+    }
+}
+
+mod wrapper_chains {
+    use eyre::WrapErr;
+    use omni_core::ProjectGraphError;
+    use omni_diagnostic::{Audience, find};
+
+    use crate::{
+        loaded_context::{LoadedContextError, LoadedContextErrorInner},
+        project_hasher::{ProjectHasherError, ProjectHasherErrorInner},
+        project_query::{ProjectQueryError, ProjectQueryErrorInner},
+    };
+
+    fn loaded(inner: LoadedContextErrorInner) -> eyre::Report {
+        Err::<(), _>(LoadedContextError::from(inner))
+            .wrap_err("loading")
+            .unwrap_err()
+    }
+
+    #[test]
+    fn loaded_context_delegates_graph_errors() {
+        let r = loaded(LoadedContextErrorInner::ProjectGraph(
+            ProjectGraphError::not_found("web"),
+        ));
+        let d = find(&r).expect("diagnostic through the loaded context");
+        assert_eq!(d.code(), "project.not_found");
+        assert_eq!(d.audience(), Audience::User);
+
+        let io =
+            loaded(LoadedContextErrorInner::Io(std::io::Error::other("x")));
+        assert!(find(&io).is_none());
+    }
+
+    #[test]
+    fn project_query_delegates_graph_errors() {
+        let r = Err::<(), _>(ProjectQueryError::from(
+            ProjectQueryErrorInner::ProjectGraph(ProjectGraphError::not_found(
+                "web",
+            )),
+        ))
+        .wrap_err("querying")
+        .unwrap_err();
+        assert_eq!(find(&r).unwrap().code(), "project.not_found");
+    }
+
+    #[test]
+    fn project_hasher_reports_unknown_projects_and_reaches_through_the_box() {
+        let r = Err::<(), _>(ProjectHasherError::from(
+            ProjectHasherErrorInner::NotFound("web".into()),
+        ))
+        .wrap_err("hashing")
+        .unwrap_err();
+        let d = find(&r).expect("diagnostic");
+        assert_eq!(d.code(), "workspace.project_not_found");
+        assert_eq!(d.details().unwrap()["project"], "web");
+
+        let boxed = Box::new(LoadedContextError::from(
+            LoadedContextErrorInner::ProjectGraph(
+                ProjectGraphError::not_found("api"),
+            ),
+        ));
+        let r = eyre::Report::new(ProjectHasherError::from(
+            ProjectHasherErrorInner::LoadedContext(boxed),
+        ));
+        assert_eq!(find(&r).unwrap().code(), "project.not_found");
+
+        let internal = eyre::Report::new(ProjectHasherError::from(
+            ProjectHasherErrorInner::CacheInfoNotFound("a".into(), "b".into()),
+        ));
+        assert!(find(&internal).is_none());
+        assert!(omni_codes::get("workspace.project_not_found").is_some());
+    }
+}

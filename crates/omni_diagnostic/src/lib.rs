@@ -49,6 +49,20 @@ pub trait Diagnostic: Error + Send + Sync + 'static {
     fn render_body(&self, _out: &mut dyn fmt::Write) -> fmt::Result {
         Ok(())
     }
+
+    /// Whether this value actually carries a diagnostic.
+    ///
+    /// Always `true` unless the type has `#[diagnostic(skip)]` variants,
+    /// `delegate` variants whose inner error has no diagnostic, or `forward`
+    /// variants whose inner value is itself not reportable. Lookup ignores
+    /// values that are not reportable, so such values stay plain errors.
+    ///
+    /// The other methods return neutral values for a non-reportable value
+    /// (`code()` is `""`). Check this before calling them on a value obtained
+    /// any other way than lookup, including through forwarding wrappers.
+    fn reportable(&self) -> bool {
+        true
+    }
 }
 
 /// Per-variant metadata stored in a [`Registration`].
@@ -81,6 +95,77 @@ pub mod __private {
     pub fn to_value<T: serde::Serialize + ?Sized>(v: &T) -> serde_json::Value {
         serde_json::to_value(v).unwrap_or(serde_json::Value::Null)
     }
+
+    /// Autoref specialization behind `#[diagnostic(delegate)]`: an
+    /// `eyre::Report` field is searched along its whole cause chain, a
+    /// `Box<T>` (or `Box<dyn Error>`) field is looked up through the box, and
+    /// any other error field is looked up as a single error. [`ViaReport`] and
+    /// [`ViaBox`] win for their field types because they match one autoref
+    /// step earlier.
+    pub struct Delegate<'a, T>(pub &'a T);
+
+    pub trait ViaReport<'a> {
+        fn __omni_lookup(&self) -> Option<&'a dyn crate::Diagnostic>;
+    }
+
+    impl<'a> ViaReport<'a> for Delegate<'a, eyre::Report> {
+        fn __omni_lookup(&self) -> Option<&'a dyn crate::Diagnostic> {
+            crate::find(self.0)
+        }
+    }
+
+    /// A boxed error is looked up through the box: the registered lookups
+    /// downcast to the concrete type, and `Box<T>` is not `T`.
+    pub trait ViaBox<'a> {
+        fn __omni_lookup(&self) -> Option<&'a dyn crate::Diagnostic>;
+    }
+
+    impl<'a, T: std::error::Error + 'static> ViaBox<'a> for Delegate<'a, Box<T>> {
+        fn __omni_lookup(&self) -> Option<&'a dyn crate::Diagnostic> {
+            let inner: &'a T = &**self.0;
+            crate::find_in_error(inner)
+        }
+    }
+
+    // The type-erased boxes: `dyn Error` is unsized, so the impl above does
+    // not cover them. They cannot overlap with it, which needs a sized `T`.
+    macro_rules! via_erased_box {
+        ($($ty:ty),+ $(,)?) => {$(
+            impl<'a> ViaBox<'a> for Delegate<'a, Box<$ty>> {
+                fn __omni_lookup(&self) -> Option<&'a dyn crate::Diagnostic> {
+                    let inner: &'a (dyn std::error::Error + 'static) = &**self.0;
+                    crate::find_in_error(inner)
+                }
+            }
+        )+};
+    }
+
+    via_erased_box!(
+        dyn std::error::Error,
+        dyn std::error::Error + Send,
+        dyn std::error::Error + Send + Sync,
+    );
+
+    pub trait ViaError<'a> {
+        fn __omni_lookup(&self) -> Option<&'a dyn crate::Diagnostic>;
+    }
+
+    impl<'a, T: std::error::Error + 'static> ViaError<'a> for &Delegate<'a, T> {
+        fn __omni_lookup(&self) -> Option<&'a dyn crate::Diagnostic> {
+            crate::find_in_error(self.0)
+        }
+    }
+}
+
+/// Looks for a diagnostic inside a field. Emitted by `#[diagnostic(delegate)]`.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __delegate_lookup {
+    ($field:expr) => {{
+        #[allow(unused_imports)]
+        use $crate::__private::{ViaBox as _, ViaError as _, ViaReport as _};
+        (&$crate::__private::Delegate($field)).__omni_lookup()
+    }};
 }
 
 /// Registers a derived diagnostic type. Emitted by `#[derive(Diagnostic)]`.

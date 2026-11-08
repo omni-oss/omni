@@ -1075,8 +1075,9 @@ async fn run_process<'a, S: ExecutionEventSubscriber>(
     }
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, omni_diagnostic::Diagnostic)]
 #[error(transparent)]
+#[diagnostic(forward)]
 pub struct BatchExecutorError(pub(crate) BatchExecutorErrorInner);
 
 impl BatchExecutorError {
@@ -1093,10 +1094,17 @@ impl<T: Into<BatchExecutorErrorInner>> From<T> for BatchExecutorError {
     }
 }
 
-#[derive(Debug, thiserror::Error, EnumDiscriminants, derive_new::new)]
+#[derive(
+    Debug,
+    thiserror::Error,
+    EnumDiscriminants,
+    derive_new::new,
+    omni_diagnostic::Diagnostic,
+)]
 #[strum_discriminants(name(BatchExecutorErrorKind), vis(pub))]
 pub(crate) enum BatchExecutorErrorInner {
     #[error("can't get task contexts")]
+    #[diagnostic(delegate)]
     CantGetTaskContexts {
         #[new(into)]
         #[source]
@@ -1104,6 +1112,7 @@ pub(crate) enum BatchExecutorErrorInner {
     },
 
     #[error("can't get cached results")]
+    #[diagnostic(delegate)]
     CantGetCachedResults {
         #[new(into)]
         #[source]
@@ -1111,6 +1120,7 @@ pub(crate) enum BatchExecutorErrorInner {
     },
 
     #[error("can't cache results")]
+    #[diagnostic(delegate)]
     CantCacheResults {
         #[new(into)]
         #[source]
@@ -1118,15 +1128,19 @@ pub(crate) enum BatchExecutorErrorInner {
     },
 
     #[error("can't get task hash: {task_full_name}")]
+    #[diagnostic(skip)]
     CantGetTaskHash { task_full_name: String },
 
     #[error(transparent)]
+    #[diagnostic(skip)]
     Io(#[from] std::io::Error),
 
     #[error(transparent)]
+    #[diagnostic(skip)]
     Tera(#[from] omni_tera::Error),
 
     #[error(transparent)]
+    #[diagnostic(delegate)]
     Resolve(#[from] omni_command_config::ResolveError),
 }
 

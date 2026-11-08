@@ -24,6 +24,9 @@ path = "src/lib.rs"
 eyre = { workspace = true }
 thiserror = { workspace = true }
 strum = { workspace = true }
+{%- if inputs.use_diagnostics %}
+omni_diagnostic = { workspace = true }
+{%- endif %}
 {%- if inputs.use_tracing %}
 tracing = { workspace = true }
 {%- endif %}

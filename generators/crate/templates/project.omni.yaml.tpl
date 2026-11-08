@@ -9,3 +9,7 @@ extends:
   - "@workspace/omni/presets/rust-lib.omni.yaml"
 {%- endif %}
 
+{%- if inputs.use_diagnostics %}
+dependencies:
+  - omni_diagnostic
+{%- endif %}

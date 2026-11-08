@@ -130,7 +130,7 @@ pub struct MetaFilterGroup {
     pub hint: Option<String>,
 }
 
-omni_codes::prefixes!("meta");
+omni_codes::prefixes!("plan", "meta");
 
 /// Tasks were excluded because their meta filter failed.
 ///

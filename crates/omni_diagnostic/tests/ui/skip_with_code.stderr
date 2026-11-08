@@ -1,0 +1,5 @@
+error: `skip` and `delegate` take no other attributes
+ --> tests/ui/skip_with_code.rs:6:31
+  |
+6 |     #[diagnostic(skip, code = "x.a")]
+  |                               ^^^^^

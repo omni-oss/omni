@@ -344,8 +344,9 @@ pub struct ProjectDataExtractions {
     pub redact_policies: UnorderedMap<String, RedactPolicy>,
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, omni_diagnostic::Diagnostic)]
 #[error(transparent)]
+#[diagnostic(forward)]
 pub struct ProjectDataExtractorError(pub(crate) ProjectDataExtractorErrorInner);
 
 impl ProjectDataExtractorError {
@@ -364,24 +365,43 @@ impl<T: Into<ProjectDataExtractorErrorInner>> From<T>
     }
 }
 
-#[derive(Debug, thiserror::Error, EnumDiscriminants)]
+#[derive(
+    Debug, thiserror::Error, EnumDiscriminants, omni_diagnostic::Diagnostic,
+)]
 #[strum_discriminants(vis(pub), name(ProjectDataExtractorErrorKind))]
 pub(crate) enum ProjectDataExtractorErrorInner {
     #[error(transparent)]
+    #[diagnostic(delegate)]
     Unknown(#[from] eyre::Report),
 
     #[error(transparent)]
+    #[diagnostic(delegate)]
     ExtensionGraph(#[from] ExtensionGraphError),
 
     #[error(transparent)]
+    #[diagnostic(delegate)]
     EnvLoader(#[from] EnvLoaderError),
 
     #[error(transparent)]
+    #[diagnostic(skip)]
     CommandExpansion(#[from] ExpansionError),
 
     #[error(transparent)]
+    #[diagnostic(skip)]
     OmniPath(#[from] OmniPathError),
 
+    /// A `redact` configuration is invalid.
+    ///
+    /// The `redact` block of a workspace, project or task failed validation.
     #[error("invalid `redact` configuration in {location}: {message}")]
-    InvalidRedact { location: String, message: String },
+    #[diagnostic(
+        code = "workspace.invalid_redact",
+        hint = "fix the `redact` configuration in {location}"
+    )]
+    InvalidRedact {
+        #[diagnostic(detail)]
+        location: String,
+        #[diagnostic(detail = "reason")]
+        message: String,
+    },
 }

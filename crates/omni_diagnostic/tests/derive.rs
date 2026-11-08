@@ -196,6 +196,44 @@ fn wrapper_exposes_a_diagnostic_hidden_by_transparent() {
     );
 }
 
+// Mirrors the output of generators/rust-error with `use_diagnostics` on.
+#[derive(Debug, thiserror::Error, Diagnostic)]
+#[error(transparent)]
+#[diagnostic(forward)]
+struct GeneratedWrapper(GeneratedInner);
+
+#[derive(Debug, thiserror::Error, Diagnostic)]
+enum GeneratedInner {
+    #[error(transparent)]
+    #[diagnostic(delegate)]
+    Custom(#[from] eyre::Report),
+}
+
+#[test]
+fn generated_wrapper_forwards_custom_report_diagnostics() {
+    use eyre::WrapErr;
+
+    let inner = Err::<(), _>(unknown())
+        .wrap_err("loading project")
+        .unwrap_err();
+    let report: eyre::Report =
+        GeneratedWrapper(GeneratedInner::Custom(inner)).into();
+    let diagnostic = find(&report).expect("diagnostic inside custom report");
+    assert_eq!(diagnostic.code(), "sample.unknown_project");
+    assert_eq!(diagnostic.audience(), Audience::User);
+    assert_eq!(diagnostic.details().unwrap()["name"], "web");
+    assert_eq!(diagnostic.hints().len(), 2);
+}
+
+#[test]
+fn generated_wrapper_leaves_plain_custom_errors_uncoded() {
+    let report: eyre::Report = GeneratedWrapper(GeneratedInner::Custom(
+        eyre::eyre!("plain custom message"),
+    ))
+    .into();
+    assert!(find(&report).is_none());
+}
+
 fn hints(_: &ShadowCb) -> Vec<String> {
     vec!["from callback".into()]
 }
@@ -259,4 +297,118 @@ mod codes_registry {
         assert!(i.stable);
         assert_eq!(i.audience(), Some(omni_codes::Audience::Environment));
     }
+}
+
+/// A public wrapper over an enum that mixes owned codes with variants that
+/// carry no diagnostic of their own.
+#[derive(Debug, thiserror::Error, Diagnostic)]
+#[error(transparent)]
+#[diagnostic(forward)]
+struct Public(PublicInner);
+
+#[derive(Debug, thiserror::Error, Diagnostic)]
+enum PublicInner {
+    /// The thing is missing.
+    #[error("missing `{name}`")]
+    #[diagnostic(code = "mixed.missing", hint = "create `{name}`")]
+    Missing {
+        #[diagnostic(detail)]
+        name: String,
+    },
+
+    #[error(transparent)]
+    #[diagnostic(skip)]
+    Io(#[from] std::io::Error),
+
+    #[error(transparent)]
+    #[diagnostic(delegate)]
+    Wrapped(InnerErr),
+
+    #[error(transparent)]
+    #[diagnostic(delegate)]
+    Boxed(Box<InnerErr>),
+
+    #[error(transparent)]
+    #[diagnostic(delegate)]
+    Erased(Box<dyn std::error::Error + Send + Sync>),
+
+    #[error(transparent)]
+    #[diagnostic(delegate)]
+    Custom(#[from] eyre::Report),
+}
+
+fn public(inner: PublicInner) -> eyre::Report {
+    Public(inner).into()
+}
+
+#[test]
+fn owned_variant_is_found_through_a_transparent_wrapper() {
+    let r = public(PublicInner::Missing { name: "a".into() });
+    let d = find(&r).expect("diagnostic");
+    assert_eq!(d.code(), "mixed.missing");
+    assert_eq!(d.details().unwrap()["name"], "a");
+    assert_eq!(d.hints(), vec!["create `a`"]);
+    assert!(d.reportable());
+}
+
+#[test]
+fn skipped_variant_is_a_plain_error() {
+    let r = public(PublicInner::Io(std::io::Error::other("x")));
+    assert!(find(&r).is_none());
+    assert!(DiagnosticReport::from_report(&r).is_none());
+}
+
+#[test]
+fn delegate_finds_the_inner_diagnostic() {
+    let r = public(PublicInner::Wrapped(InnerErr));
+    let d = find(&r).expect("diagnostic");
+    assert_eq!(d.code(), "sample.inner");
+    assert_eq!(d.audience(), Audience::Internal);
+}
+
+#[test]
+fn delegate_sees_through_wrap_err_and_ignores_plain_reports() {
+    use eyre::WrapErr;
+    let coded = Err::<(), _>(unknown()).wrap_err("loading").unwrap_err();
+    let r = public(PublicInner::Custom(coded));
+    let d = find(&r).expect("diagnostic");
+    assert_eq!(d.code(), "sample.unknown_project");
+    assert_eq!(d.details().unwrap()["name"], "web");
+
+    let plain = public(PublicInner::Custom(eyre::eyre!("boom")));
+    assert!(find(&plain).is_none());
+}
+
+#[test]
+fn mixed_types_register_their_own_codes() {
+    omni_diagnostic::testing::assert_registry_valid();
+    omni_diagnostic::testing::assert_types_registered(&[
+        "Public",
+        "PublicInner",
+    ]);
+    let info = omni_codes::get("mixed.missing").expect("registered");
+    assert_eq!(info.summary, "The thing is missing.");
+}
+
+#[test]
+fn delegate_looks_through_a_boxed_field() {
+    let r = public(PublicInner::Boxed(Box::new(InnerErr)));
+    let d = find(&r).expect("diagnostic inside the box");
+    assert_eq!(d.code(), "sample.inner");
+    assert!(d.reportable());
+    assert_eq!(
+        DiagnosticReport::from_report(&r).unwrap().code,
+        "sample.inner"
+    );
+}
+
+#[test]
+fn delegate_looks_through_a_type_erased_boxed_field() {
+    let r = public(PublicInner::Erased(Box::new(InnerErr)));
+    let d = find(&r).expect("diagnostic inside the erased box");
+    assert_eq!(d.code(), "sample.inner");
+    assert!(d.reportable());
+
+    let plain = public(PublicInner::Erased("boom".into()));
+    assert!(find(&plain).is_none());
 }

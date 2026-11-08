@@ -1,0 +1,83 @@
+error: missing `code = ".."` in `#[notice]`
+ --> tests/ui/enum_rules.rs:7:5
+  |
+7 |     Missing,
+  |     ^^^^^^^
+
+error: missing `level = info | warn | error` in `#[notice]`
+  --> tests/ui/enum_rules.rs:14:5
+   |
+14 |     Missing,
+   |     ^^^^^^^
+
+error: missing `message = ".."` in `#[notice]`
+  --> tests/ui/enum_rules.rs:21:5
+   |
+21 |     Missing,
+   |     ^^^^^^^
+
+error: a notice needs a doc comment: its first line is the summary shown by `omni code explain`
+  --> tests/ui/enum_rules.rs:28:5
+   |
+28 |     Missing,
+   |     ^^^^^^^
+
+error: code must be lowercase `snake_case` segments separated by dots, at least two (for example `cache.write_skipped`)
+  --> tests/ui/enum_rules.rs:34:21
+   |
+34 |     #[notice(code = "INVALID", level = warn, message = "invalid")]
+   |                     ^^^^^^^^^
+
+error: expected `info`, `warn` or `error`
+  --> tests/ui/enum_rules.rs:41:52
+   |
+41 |     #[notice(code = "enum_test.bad_level", level = debug, message = "invalid")]
+   |                                                    ^^^^^
+
+error: duplicate notice code within this type
+  --> tests/ui/enum_rules.rs:51:21
+   |
+51 |     #[notice(code = "enum_test.same", level = warn, message = "second")]
+   |                     ^^^^^^^^^^^^^^^^
+
+error: `notice` attributes belong on each variant, not on the enum
+  --> tests/ui/enum_rules.rs:56:1
+   |
+56 | #[notice(level = warn)]
+   | ^^^^^^^^^^^^^^^^^^^^^^^
+
+error: notice fields must be named so they have `snake_case` keys
+  --> tests/ui/enum_rules.rs:63:10
+   |
+63 |     Tuple(String),
+   |          ^^^^^^^^
+
+error: only `skip` is allowed on a field
+  --> tests/ui/enum_rules.rs:71:18
+   |
+71 |         #[notice(stable)]
+   |                  ^^^^^^
+
+error: an `essential` notice must be static: no fields and no placeholders in `message`
+  --> tests/ui/enum_rules.rs:81:5
+   |
+81 |     Named {
+   |     ^^^^^
+
+error: an `essential` notice must be static: no fields and no placeholders in `message`
+  --> tests/ui/enum_rules.rs:92:5
+   |
+92 |     Unit,
+   |     ^^^^
+
+error: generic notice types cannot be registered
+  --> tests/ui/enum_rules.rs:96:13
+   |
+96 | enum Generic<T> {
+   |             ^^^
+
+error: `Notice` cannot be derived for unions
+   --> tests/ui/enum_rules.rs:101:1
+    |
+101 | union Union {
+    | ^^^^^

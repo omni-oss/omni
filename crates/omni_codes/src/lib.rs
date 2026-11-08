@@ -216,7 +216,8 @@ impl CodeInfo {
 ///
 /// Has an associated const, so it is not object-safe.
 pub trait Code: __private::Sealed {
-    /// One entry for a notice, one per variant for a diagnostic enum.
+    /// One entry for a derived struct, one per code-bearing variant for a
+    /// derived notice or diagnostic enum.
     const CODES: &'static [CodeInfo];
 
     fn info(&self) -> &'static CodeInfo;

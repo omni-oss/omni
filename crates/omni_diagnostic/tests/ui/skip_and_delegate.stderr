@@ -1,0 +1,5 @@
+error: use only one of `skip`, `delegate` and `forward`
+ --> tests/ui/skip_and_delegate.rs:6:24
+  |
+6 |     #[diagnostic(skip, delegate)]
+  |                        ^^^^^^^^

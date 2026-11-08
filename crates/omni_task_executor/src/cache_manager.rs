@@ -230,8 +230,9 @@ where
     }
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, omni_diagnostic::Diagnostic)]
 #[error(transparent)]
+#[diagnostic(forward)]
 pub struct CacheManagerError(pub(crate) CacheManagerErrorInner);
 
 impl CacheManagerError {
@@ -248,21 +249,26 @@ impl<T: Into<CacheManagerErrorInner>> From<T> for CacheManagerError {
     }
 }
 
-#[derive(Debug, thiserror::Error, EnumDiscriminants)]
+#[derive(
+    Debug, thiserror::Error, EnumDiscriminants, omni_diagnostic::Diagnostic,
+)]
 #[strum_discriminants(name(CacheManagerErrorKind), vis(pub))]
 pub(crate) enum CacheManagerErrorInner {
     #[error("failed to get cached results")]
+    #[diagnostic(delegate)]
     GetCacheFailed {
         #[source]
         source: eyre::Report,
     },
 
     #[error("failed to cache results")]
+    #[diagnostic(delegate)]
     CacheFailed {
         #[source]
         source: eyre::Report,
     },
 
     #[error(transparent)]
+    #[diagnostic(skip)]
     Collector(#[from] omni_collector::error::Error),
 }

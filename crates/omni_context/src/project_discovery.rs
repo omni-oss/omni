@@ -71,8 +71,9 @@ pub enum DiscoveredPath {
     },
 }
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, omni_diagnostic::Diagnostic)]
 #[error(transparent)]
+#[diagnostic(delegate)]
 pub struct ProjectDiscoveryError(
     #[from] pub(crate) omni_configuration_discovery::error::Error,
 );

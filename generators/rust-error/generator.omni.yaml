@@ -9,6 +9,11 @@ inputs:
     message: Error Name
     default: Error
 
+  - type: boolean
+    name: use_diagnostics
+    message: Forward structured diagnostics (requires omni_diagnostic)
+    default: true
+
 targets:
   root: .
 

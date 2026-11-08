@@ -167,8 +167,9 @@ impl<'a, TSys: ContextSys> ProjectConfigLoader<'a, TSys> {
     }
 }
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, omni_diagnostic::Diagnostic)]
 #[error(transparent)]
+#[diagnostic(forward)]
 pub struct ProjectConfigLoaderError(pub(crate) ProjectConfigLoaderErrorInner);
 
 impl ProjectConfigLoaderError {
@@ -187,27 +188,51 @@ impl<T: Into<ProjectConfigLoaderErrorInner>> From<T>
     }
 }
 
-#[derive(Error, Debug, EnumDiscriminants, new)]
+#[derive(Error, Debug, EnumDiscriminants, new, omni_diagnostic::Diagnostic)]
 #[strum_discriminants(vis(pub), name(ProjectConfigLoaderErrorKind))]
 pub(crate) enum ProjectConfigLoaderErrorInner {
     #[error(transparent)]
+    #[diagnostic(delegate)]
     LoadConfig(#[from] LoadConfigError),
 
     #[error("no parent dir found for path: {0}")]
+    #[diagnostic(skip)]
     NoParentDirFoundForPath(PathBuf),
 
+    /// A project extends a configuration file that does not exist.
     #[error("project configuration file does not exist: {extendee}, loaded by {extender}", extender = extender_path.display(), extendee = extendee_path.display())]
+    #[diagnostic(
+        code = "workspace.extends_not_found",
+        hint = "fix the `extends` entry in {extender_path:?} so it points at an existing project configuration"
+    )]
     ExtendedProjectConfigDoesNotExist {
+        #[diagnostic(detail = "extender")]
         extender_path: PathBuf,
+        #[diagnostic(detail = "extendee")]
         extendee_path: PathBuf,
     },
 
+    /// A project extends a configuration file outside the workspace root.
     #[error("project configuration file is outside the workspace root: {extendee}, extended by {extender}", extender = extender_path.display(), extendee = extendee_path.display())]
+    #[diagnostic(
+        code = "workspace.extends_outside_workspace",
+        hint = "`extends` in {extender_path:?} may only reference files inside the workspace root; move or copy the file into the workspace"
+    )]
     ExtendedProjectConfigOutsideWorkspace {
+        #[diagnostic(detail = "extender")]
         extender_path: PathBuf,
+        #[diagnostic(detail = "extendee")]
         extendee_path: PathBuf,
     },
 
+    /// A discovered project configuration file does not exist.
     #[error("project configuration file does not exist: {path}", path = path.display())]
-    ProjectConfigDoesNotExist { path: PathBuf },
+    #[diagnostic(
+        code = "workspace.project_config_not_found",
+        hint = "check that {path:?} exists and that the workspace `projects` globs match it"
+    )]
+    ProjectConfigDoesNotExist {
+        #[diagnostic(detail)]
+        path: PathBuf,
+    },
 }

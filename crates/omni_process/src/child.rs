@@ -44,15 +44,16 @@ impl Child {
         span.record("command", &command);
         span.record("args", format_args!("{args:?}"));
 
+        let program = command.clone();
         let child = create_inner(command, args, cwd.into(), env.into())?;
 
         match child {
-            Command::Pty(child) => Self::spawn_pty(child),
-            Command::Normal(child) => Self::spawn_normal(child),
+            Command::Pty(child) => Self::spawn_pty(child, &program),
+            Command::Normal(child) => Self::spawn_normal(child, &program),
         }
     }
 
-    fn spawn_pty(cmd: PtyCommand) -> Result<Self, ChildError> {
+    fn spawn_pty(cmd: PtyCommand, program: &str) -> Result<Self, ChildError> {
         tracing::trace!("spawning pty");
 
         let mut writer = cmd
@@ -64,10 +65,12 @@ impl Child {
             ChildErrorInner::CantTakeOutputReader(e.to_string())
         })?;
 
-        let child = cmd
-            .slave
-            .spawn_command(cmd.cmd)
-            .map_err(|e| ChildErrorInner::CantSpawnCommand(e.to_string()))?;
+        let child = cmd.slave.spawn_command(cmd.cmd).map_err(|e| {
+            ChildErrorInner::CantSpawnCommand {
+                program: program.to_owned(),
+                message: e.to_string(),
+            }
+        })?;
 
         #[cfg(unix)]
         {
@@ -192,7 +195,10 @@ impl Child {
         ))
     }
 
-    fn spawn_normal(mut cmd: StdCommand) -> Result<Self, ChildError> {
+    fn spawn_normal(
+        mut cmd: StdCommand,
+        program: &str,
+    ) -> Result<Self, ChildError> {
         tracing::trace!("spawning normal");
         let builder = cmd
             .cmd
@@ -217,9 +223,13 @@ impl Child {
             }
         }
 
-        let mut child = builder
-            .spawn()
-            .map_err(|e| ChildErrorInner::CantSpawnCommand(e.to_string()))?;
+        let mut child =
+            builder
+                .spawn()
+                .map_err(|e| ChildErrorInner::CantSpawnCommand {
+                    program: program.to_owned(),
+                    message: e.to_string(),
+                })?;
 
         let stdout = child.stdout.take().ok_or_else(|| {
             ChildErrorInner::CantTakeOutputReader("no stdout".to_string())
@@ -310,8 +320,11 @@ impl Child {
     }
 }
 
-#[derive(Debug, thiserror::Error)]
+omni_codes::prefixes!("process");
+
+#[derive(Debug, thiserror::Error, omni_diagnostic::Diagnostic)]
 #[error(transparent)]
+#[diagnostic(forward)]
 pub struct ChildError(pub(crate) ChildErrorInner);
 
 impl ChildError {
@@ -328,33 +341,52 @@ impl<T: Into<ChildErrorInner>> From<T> for ChildError {
     }
 }
 
-#[derive(Debug, thiserror::Error, EnumDiscriminants)]
+#[derive(
+    Debug, thiserror::Error, EnumDiscriminants, omni_diagnostic::Diagnostic,
+)]
 #[strum_discriminants(name(ChildErrorKind), vis(pub), repr(u8))]
 #[allow(clippy::enum_variant_names)]
 pub(crate) enum ChildErrorInner {
-    #[error("can't spawn command: {0}")]
-    CantSpawnCommand(String),
+    /// The command could not be started.
+    #[error("can't spawn command: {message}")]
+    #[diagnostic(
+        code = "process.spawn_failed",
+        audience = environment,
+        hint = "check that `{program}` is installed and on PATH"
+    )]
+    CantSpawnCommand {
+        #[diagnostic(detail)]
+        program: String,
+        message: String,
+    },
 
     #[error("can't open pty")]
     #[allow(dead_code)]
+    #[diagnostic(skip)]
     CantOpenPty,
 
     #[error("can't take output reader: {0}")]
+    #[diagnostic(skip)]
     CantTakeOutputReader(String),
 
     #[error("can't take error reader: {0}")]
+    #[diagnostic(skip)]
     CantTakeErrorReader(String),
 
     #[error("can't take input writer: {0}")]
+    #[diagnostic(skip)]
     CantTakeInputWriter(String),
 
     #[error(transparent)]
+    #[diagnostic(skip)]
     Io(#[from] io::Error),
 
     #[error(transparent)]
+    #[diagnostic(skip)]
     Join(#[from] tokio::task::JoinError),
 
     #[error(transparent)]
+    #[diagnostic(skip)]
     Send(#[from] tokio::sync::mpsc::error::SendError<Vec<u8>>),
 }
 

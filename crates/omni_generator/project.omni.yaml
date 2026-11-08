@@ -34,4 +34,5 @@ dependencies:
   - omni_redact
   - omni_notice
   - omni_codes
+  - omni_diagnostic
   - env

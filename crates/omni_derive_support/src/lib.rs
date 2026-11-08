@@ -146,9 +146,41 @@ pub fn code_info(codes: &TokenStream, c: &CodeInfoTokens) -> TokenStream {
     }
 }
 
+/// Emits a registration expression for a derived type's code slice.
+/// Prefix ownership is registered separately by the containing crate.
+pub fn code_registration(
+    codes: &TokenStream,
+    entries: &TokenStream,
+) -> TokenStream {
+    quote! {
+        #codes::CodeRegistration {
+            crate_name: ::core::env!("CARGO_PKG_NAME"),
+            codes: #entries,
+            prefixes: &[],
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn registration_uses_callers_path_and_slice() {
+        let actual = code_registration(
+            &quote!(::notice::__private::codes),
+            &quote!(<Example as Code>::CODES),
+        );
+        let expected = quote! {
+            ::notice::__private::codes::CodeRegistration {
+                crate_name: ::core::env!("CARGO_PKG_NAME"),
+                codes: <Example as Code>::CODES,
+                prefixes: &[],
+            }
+        };
+        assert_eq!(actual.to_string(), expected.to_string());
+        syn::parse2::<syn::Expr>(actual).unwrap();
+    }
 
     #[test]
     fn placeholder_detection() {

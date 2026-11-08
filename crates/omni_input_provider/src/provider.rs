@@ -4,7 +4,7 @@ use omni_input_schema::{
     IntegerInput, StringArrayInput, StringInput,
 };
 
-use crate::error::{Error, ErrorInner};
+use crate::error::Error;
 
 /// Each method corresponds to one `Input<E>` variant.
 ///
@@ -74,9 +74,11 @@ pub trait InputProvider<E: InputProfile + Send + Sync + 'static>:
         input: &omni_input_schema::ObjectInput<E>,
         _ctx: &omni_tera::Context,
     ) -> Result<serde_json::Value, Error> {
-        Err(ErrorInner::new_unsupported_input_kind(
-            input.base.name.clone(),
-            omni_input_schema::InputKind::Object,
+        Err(omni_input_schema::Error::from(
+            omni_input_schema::error::ErrorInner::UnsupportedInputKind {
+                input_name: input.base.name.clone(),
+                kind: omni_input_schema::InputKind::Object,
+            },
         )
         .into())
     }

@@ -17,6 +17,8 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 omni_capabilities = { workspace = true }
 omni_types = { workspace = true }
+omni_diagnostic = { workspace = true }
+omni_codes = { workspace = true }
 
 # Tier-3 OS sandbox (Landlock) is Linux-only; other targets get the no-op seam.
 [target.'cfg(target_os = "linux")'.dependencies]
@@ -37,6 +39,7 @@ windows-sys = { version = "0.61", features = [
 ] }
 
 [dev-dependencies]
+eyre = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
 

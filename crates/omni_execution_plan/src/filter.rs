@@ -370,8 +370,9 @@ where
     }
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, omni_diagnostic::Diagnostic)]
 #[error(transparent)]
+#[diagnostic(forward)]
 pub struct FilterError(pub(crate) FilterErrorInner);
 
 impl FilterError {
@@ -387,11 +388,6 @@ impl FilterError {
         self.0.discriminant()
     }
 }
-
-omni_diagnostic::register_wrapper!(FilterError, |e| {
-    e.meta_filter_error()
-        .map(|m| m as &dyn omni_diagnostic::Diagnostic)
-});
 
 impl<T: Into<FilterErrorInner>> From<T> for FilterError {
     fn from(value: T) -> Self {
@@ -445,19 +441,25 @@ pub trait TaskFilterExt: TaskFilter {
 
 impl<T: TaskFilter> TaskFilterExt for T {}
 
-#[derive(Debug, thiserror::Error, EnumDiscriminants)]
+#[derive(
+    Debug, thiserror::Error, EnumDiscriminants, omni_diagnostic::Diagnostic,
+)]
 #[strum_discriminants(name(FilterErrorKind), vis(pub))]
 pub(crate) enum FilterErrorInner {
     #[error(transparent)]
+    #[diagnostic(delegate)]
     Glob(#[from] globset::Error),
 
     #[error(transparent)]
+    #[diagnostic(delegate)]
     Expression(#[from] omni_expressions::Error),
 
     #[error(transparent)]
+    #[diagnostic(delegate)]
     Scm(#[from] omni_scm::error::Error),
 
     #[error(transparent)]
+    #[diagnostic(delegate)]
     MetaFilter(MetaFilterError),
 }
 

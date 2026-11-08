@@ -9,6 +9,8 @@ dependencies:
   - omni_constants
   - omni_discovery
   - omni_tera
+  - omni_diagnostic
+  - omni_codes
   - omni_messages
   - system_traits
   - bridge_rpc_runner

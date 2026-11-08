@@ -14,6 +14,8 @@ tracing = { workspace = true }
 serde = { workspace = true }
 omni_configurations = { workspace = true }
 omni_remote_cache_client = { workspace = true }
+omni_diagnostic = { workspace = true }
+omni_codes = { workspace = true }
 derive-new = { workspace = true }
 keyring-core = { workspace = true }
 machine-uid = { workspace = true }

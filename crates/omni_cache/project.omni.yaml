@@ -5,6 +5,7 @@ extends:
   - "@workspace/omni/presets/rust-lib.omni.yaml"
 
 dependencies:
+  - omni_diagnostic
   - omni_hasher
   - omni_types
   - omni_glob

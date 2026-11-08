@@ -5,6 +5,8 @@ mod cache_resolution;
 mod config;
 pub mod constants;
 mod context;
+#[cfg(test)]
+mod diagnostic_tests;
 mod env_loader;
 mod extracted_data_validator;
 mod loaded_context;
