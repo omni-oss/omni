@@ -99,15 +99,16 @@ where
 /// execution; validation is identical whether the caller is the CLI or MCP.
 /// `working_dir` selects the base the tool's relative `ctx.sys` paths resolve
 /// against; when `None` the workspace root is used.
-pub async fn handle_tool_run<TSys>(
+pub async fn handle_tool_run<TSys, S>(
     ctx: &LoadedContext<TSys>,
     name: &str,
     args: serde_json::Value,
     working_dir: Option<ToolWorkingDir>,
     redact: &omni_configurations::RedactOverrides,
-    on_notice: &mut (dyn FnMut(omni_messages::NoticeEvent) + Send),
+    subscriber: &S,
 ) -> eyre::Result<serde_json::Value>
 where
+    S: omni_messages::NoticeSubscriber,
     TSys: ContextSys
         + ToolSys
         + omni_remote_source::sys::RemoteSourceSys
@@ -139,7 +140,12 @@ where
         redact.apply(omni_configurations::RedactPolicy::resolve(&[&ctx
             .workspace_configuration()
             .redact]));
+    // The tool call is its own operation: its notices and failures are
+    // sanitized with these inputs' secrets, and the shared subscriber never
+    // holds them (RFC 0026).
     let redactor = tool_input_redactor(&tool.inputs, &values, &policy);
+    let publisher =
+        omni_messages::OperationPublisher::new(subscriber, redactor.clone());
 
     let report = validate(
         &tool.inputs,
@@ -232,10 +238,11 @@ where
             .capabilities(),
     };
 
-    // Notices carry no tool input values, but redact them with the same
-    // policy as errors so a declared secret can never reach a presenter. They
-    // are forwarded while the tool runs, so a warning such as the sandbox
-    // downgrade is visible before a long-running tool finishes.
+    // Notices carry no tool input values, but the operation sanitizes them
+    // with the same secrets as errors so a declared secret can never reach a
+    // presenter or the trace mirror. They are forwarded while the tool runs,
+    // so a warning such as the sandbox downgrade is visible before a
+    // long-running tool finishes.
     let mut rx = runner.stream_notices();
     let result = {
         let mut run = std::pin::pin!(run_named(
@@ -248,18 +255,16 @@ where
         loop {
             tokio::select! {
                 biased;
-                Some(mut n) = rx.recv() => {
-                    n.redact(&redactor);
-                    on_notice(n);
+                Some(n) = rx.recv() => {
+                    publish_tool_notice(&publisher, n);
                 }
                 r = &mut run => break r,
             }
         }
     };
     runner.shutdown().await;
-    while let Ok(mut n) = rx.try_recv() {
-        n.redact(&redactor);
-        on_notice(n);
+    while let Ok(n) = rx.try_recv() {
+        publish_tool_notice(&publisher, n);
     }
 
     match result {
@@ -273,6 +278,15 @@ where
                 Err(eyre::eyre!("{redacted}"))
             }
         }
+    }
+}
+
+fn publish_tool_notice<S: omni_messages::NoticeSubscriber>(
+    publisher: &omni_messages::OperationPublisher<'_, S>,
+    notice: omni_messages::NoticeEvent,
+) {
+    if omni_messages::NoticeSubscriber::wants_notices(publisher) {
+        omni_messages::publish::publish_event(publisher, notice);
     }
 }
 
