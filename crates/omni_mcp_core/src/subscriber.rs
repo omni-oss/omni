@@ -239,6 +239,32 @@ mod tests {
         logs.get(task_id).map(String::as_str)
     }
 
+    #[tokio::test]
+    async fn one_subscriber_serves_operations_without_sharing_their_secrets() {
+        let sub = McpSubscriber::new(LogsDisplay::Never);
+        let start = |id: &str, command: &str| TaskStartedEvent {
+            task_id: id.into(),
+            project: "p".into(),
+            task: "t".into(),
+            command: Some(command.into()),
+        };
+
+        let a = omni_messages::OperationPublisher::new(
+            &sub,
+            omni_redact::Redactor::builder().value("alpha").build(),
+        );
+        let b = omni_messages::OperationPublisher::new(
+            &sub,
+            omni_redact::Redactor::builder().value("bravo").build(),
+        );
+        a.on_task_started(start("p#a", "run alpha bravo")).await;
+        b.on_task_started(start("p#b", "run alpha bravo")).await;
+
+        let commands = sub.take_commands();
+        assert_eq!(commands["p#a"], "run <redacted> bravo");
+        assert_eq!(commands["p#b"], "run alpha <redacted>");
+    }
+
     #[test]
     fn notices_are_redacted_before_they_are_collected() {
         use omni_notice::Notice;

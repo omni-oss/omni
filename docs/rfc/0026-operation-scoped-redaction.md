@@ -1,6 +1,6 @@
 # RFC 0026: Operation-scoped redaction
 
-- **Status:** Accepted <!-- Draft | Accepted | Implemented | Superseded -->
+- **Status:** Implemented, with the deviations in section 8 <!-- Draft | Accepted | Implemented | Superseded -->
 - **Owner:** TBD
 - **Date:** 2026-11-08
 - **Base branch:** `main`
@@ -367,3 +367,58 @@ Review should confirm the explicit publisher migration and prepared-error
 boundary, and whether preserving raw tool success results remains the right
 contract. The proposed decision is to preserve it, document the limitation,
 and avoid expanding this scope/lifetime fix into a tool-data API change.
+
+## 8. Implementation status and deviations
+
+Implemented as designed:
+
+- `omni_messages::OperationPublisher` (4.2): immutable per-operation redactor,
+  `child` inheritance over one sink, sanitizing for notices, task and
+  generator events and script logs before the `tracing` mirror and the sink.
+  `NoticeSubscriber::publish_notice` is the producer entry point so the mirror
+  only sees sanitized data. `SharedRedactor`, `redactor()`,
+  `extend_redactor` and `McpSubscriber::with_redactor` are removed, and the
+  CLI and MCP presenters no longer redact (4.2, 4.3).
+- Tasks (one scope per task invocation, reused by retries), generators (one
+  scope per invocation, nested scopes inherit the parent's effective
+  redactor) and tools (one scope per call) all publish through it (4.1).
+- `omni_diagnostic::prepare_report` and `PreparedDiagnostic` (4.5): task
+  resolution failures, generator run failures and tool failures are
+  sanitized as they leave their scope and keep their code, audience, details,
+  hints and context chain. An error with nothing to hide is returned as is.
+- Tests: isolation under concurrent operations, reuse, nested inheritance,
+  success and failure paths, the tracing mirror, overlap with the
+  placeholder, and the redactor being released (`omni_messages`,
+  `omni_generator`, `omni_task_executor`, `omni_diagnostic`,
+  `omni_cli_core`, `omni_mcp_core`).
+
+Deviations, with the reason:
+
+- **A run's returned labels and failure use one union per run (4.5).** The
+  design records each pending action's label under its owning generator's
+  scope. That needs the owner threaded through the transaction overlay, which
+  handlers reach only as a generic `sys`. Instead a `RunSecrets` collection,
+  owned by the root run and dropped with it, gathers every generator
+  invocation's secrets, and the run uses it to sanitize the action path
+  labels and the failure it returns. Nothing leaks, and no other operation is
+  affected, but inside one run a child-only secret can mask text in the
+  parent's returned labels. Per-owner provenance is a follow-up.
+- **No opaque report keys, no workspace-relative labels (4.5).** Returned
+  action paths are the same paths with secrets replaced, so they are
+  display-only and are not valid for filesystem access when a secret was
+  present. Two distinct paths that sanitize to the same text collapse in the
+  CLI summary count. The keys, the cross-drive label rule and the
+  collision test stay in the design as the intended follow-up.
+- **Input collection keeps its own redaction (4.4).** Validation and prompt
+  messages continue to use the existing secret and `redact.inputs` handling
+  in `omni_input_schema`/`omni_input_provider`; the generator's scope starts
+  once its inputs are collected. Tool scope starts from the supplied values
+  before validation, as designed.
+- **`OperationPublisher::sink` is public** so a nested generator run can be
+  configured over the same subscriber. Producer code publishes through the
+  publisher; the sink is for scope construction only.
+- **Not tested:** cancellation of an in-flight operation and the
+  `GeneratorRunResponse.actions` path through MCP are covered by the unit tests
+  above but have no dedicated end-to-end test.
+- **Unchanged limits:** raw task byte streams, the tool's own success JSON and
+  third-party telemetry are not sanitized, as in sections 3 and 4.5.

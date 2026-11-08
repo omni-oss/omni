@@ -52,7 +52,14 @@ pub async fn run_generator<'a, S: GeneratorEventSubscriber>(
         Cow::Owned(map)
     };
 
-    tracing::trace!("resolved target overrides: {target_overrides:#?}");
+    // Targets can embed input values, so hide them before they reach any
+    // tracing layer.
+    if tracing::enabled!(tracing::Level::TRACE) {
+        tracing::trace!(
+            "resolved target overrides: {}",
+            ctx.subscriber.redact(format!("{target_overrides:#?}"))
+        );
+    }
 
     let override_output_dir = config.output_dir.as_ref().map(|d| {
         let base = enum_map::enum_map! {

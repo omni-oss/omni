@@ -367,7 +367,7 @@ fn build_input_redactor<S: GeneratorEventSubscriber>(
     }
 }
 
-#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err, clippy::too_many_arguments)]
 pub(crate) async fn run_internal<'a, S: GeneratorEventSubscriber>(
     r#gen: &GeneratorConfiguration,
     config: &RunConfig<'a, S>,
@@ -838,11 +838,11 @@ mod nesting_tests {
     }
 
     /// Runs `entry` with `values`, publishing to the shared `sink`.
-    async fn run_into<'a>(
+    async fn run_into(
         entry: &GeneratorConfiguration,
         generators: &[Cow<'_, GeneratorConfiguration>],
         values: &[(&str, &str)],
-        sink: &'a Messages,
+        sink: &Messages,
     ) -> RunSecrets {
         let tmp = tempfile::tempdir().expect("tempdir");
         let ws = tmp.path().to_path_buf();
@@ -953,7 +953,7 @@ mod nesting_tests {
         .redacted(&r);
         assert!(matches!(
             untouched,
-            Action::CreateFile { path } if path == PathBuf::from("/w/c.txt")
+            Action::CreateFile { path } if path == Path::new("/w/c.txt")
         ));
     }
 
