@@ -99,7 +99,7 @@ shared subscriber. Spawned work must explicitly receive its owning scope.
 
 ### 4.2 Redacting subscriber and sink responsibilities
 
-Add an `RedactingSubscriber` in `omni_messages`, borrowing the destination
+Add a `RedactingSubscriber` in `omni_messages`, borrowing the destination
 subscriber and owning an `Arc<Redactor>`. The following is an API sketch, not
 a requirement to introduce dynamic subscriber dispatch:
 
