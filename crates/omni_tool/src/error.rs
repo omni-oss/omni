@@ -64,9 +64,14 @@ pub(crate) enum ErrorInner {
         path: PathBuf,
     },
 
+    /// A tool configuration could not be loaded.
     #[error("failed to load config from '{path}'")]
-    #[diagnostic(skip)]
+    #[diagnostic(
+        code = "tool.config_load_failed",
+        hint = "check the format and readability of the tool configuration at {path:?}"
+    )]
     LoadConfig {
+        #[diagnostic(detail)]
         path: PathBuf,
         #[source]
         inner: omni_file_data_serde::Error,
@@ -119,8 +124,9 @@ pub(crate) enum ErrorInner {
         backend: String,
     },
 
+    /// The selected runtime and platform cannot enforce the tool's capability policy.
     #[error("cannot enforce the capability policy for this tool: {message}")]
-    #[diagnostic(skip)]
+    #[diagnostic(code = "tool.capability_enforcement_failed", audience = environment, hint = "use a runtime and platform that support the required capability restrictions; do not disable required protections")]
     CapabilityEnforcement { message: String },
 
     /// Pipeline tools nest deeper than the allowed maximum.

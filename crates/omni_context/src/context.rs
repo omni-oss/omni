@@ -753,8 +753,12 @@ impl<T: Into<ContextErrorInner>> From<T> for ContextError {
     derive(strum::IntoStaticStr, strum::Display, strum::EnumIs)
 )]
 pub(crate) enum ContextErrorInner {
+    /// The cache directory configuration is invalid or unsafe.
     #[error("{0}")]
-    #[diagnostic(skip)]
+    #[diagnostic(
+        code = "workspace.invalid_cache_directory",
+        hint = "use one worktree configuration file and a dedicated nonempty literal cache path that neither equals nor contains a workspace"
+    )]
     CacheDirectory(String),
 
     /// The worktree configuration file could not be loaded.
@@ -803,7 +807,7 @@ pub(crate) enum ContextErrorInner {
     ProjectDataExtractor(#[from] ProjectDataExtractorError),
 
     #[error(transparent)]
-    #[diagnostic(skip)]
+    #[diagnostic(delegate)]
     ProjectDiscovery(#[from] ProjectDiscoveryError),
 
     #[error(transparent)]

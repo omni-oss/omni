@@ -66,7 +66,9 @@ fn io_and_expansion_failures_stay_uncoded() {
     assert!(find(&io).is_none());
 
     let cwd = report(EnvLoaderErrorInner::CantLoadCurrentDir);
-    assert!(find(&cwd).is_none());
+    let diagnostic = find(&cwd).expect("current directory diagnostic");
+    assert_eq!(diagnostic.code(), "env_file.current_directory_unavailable");
+    assert_eq!(diagnostic.audience(), Audience::Environment);
 }
 
 #[test]
@@ -75,6 +77,7 @@ fn codes_are_registered_in_the_catalog() {
         "env_file.not_found",
         "env_file.read_failed",
         "env_file.parse_failed",
+        "env_file.current_directory_unavailable",
     ] {
         assert!(
             omni_codes::get(code).is_some(),

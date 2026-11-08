@@ -121,10 +121,35 @@ fn unsupported_extension_is_a_load_failure() {
 
 #[test]
 fn config_codes_are_registered_in_the_catalog() {
-    for code in ["config.file_not_found", "config.load_failed"] {
+    for code in [
+        "config.file_not_found",
+        "config.load_failed",
+        "config.unreadable",
+    ] {
         assert!(
             omni_codes::get(code).is_some(),
             "`{code}` is not registered"
         );
     }
+}
+
+#[test]
+fn unreadable_config_preserves_its_path_and_io_cause() {
+    let error = crate::utils::fs::read_failed(
+        Path::new("private.yaml"),
+        std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "permission denied",
+        ),
+    );
+    let report = wrapped_load(error);
+    let diagnostic = find(&report).expect("read failure diagnostic");
+    assert_eq!(diagnostic.code(), "config.unreadable");
+    assert_eq!(diagnostic.audience(), Audience::Environment);
+    assert_eq!(diagnostic.details().unwrap()["path"], "private.yaml");
+    assert!(
+        report
+            .chain()
+            .any(|e| e.downcast_ref::<std::io::Error>().is_some())
+    );
 }

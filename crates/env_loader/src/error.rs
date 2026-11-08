@@ -20,8 +20,9 @@ impl EnvLoaderError {
 )]
 #[strum_discriminants(name(EnvLoaderErrorKind), vis(pub))]
 pub(crate) enum EnvLoaderErrorInner {
+    /// The current directory is no longer accessible.
     #[error("can't load current dir")]
-    #[diagnostic(skip)]
+    #[diagnostic(code = "env_file.current_directory_unavailable", audience = environment, hint = "change to an existing accessible directory and retry")]
     CantLoadCurrentDir,
 
     /// An env file path does not exist.

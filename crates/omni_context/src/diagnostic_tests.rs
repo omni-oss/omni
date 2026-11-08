@@ -112,7 +112,10 @@ fn invalid_redact_is_found_through_the_context_error() {
 #[test]
 fn plain_failures_stay_uncoded() {
     let cache = report(ContextErrorInner::CacheDirectory("boom".into()));
-    assert!(find(&cache).is_none());
+    let diagnostic =
+        find(&cache).expect("invalid cache configuration diagnostic");
+    assert_eq!(diagnostic.code(), "workspace.invalid_cache_directory");
+    assert_eq!(diagnostic.audience(), Audience::User);
 
     let io = report(ContextErrorInner::Io(std::io::Error::other("x")));
     assert!(find(&io).is_none());
@@ -128,6 +131,7 @@ fn plain_failures_stay_uncoded() {
 fn codes_are_registered_in_the_catalog() {
     for code in [
         "workspace.not_found",
+        "workspace.invalid_cache_directory",
         "workspace.config_load_failed",
         "workspace.worktree_config_load_failed",
         "workspace.validation_failed",

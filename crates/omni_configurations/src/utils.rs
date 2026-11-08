@@ -140,9 +140,15 @@ pub mod fs {
         derive(EnumString, Display)
     )]
     enum LoadConfigErrorInner {
+        /// The configuration file could not be read.
         #[error("{error}")]
-        #[diagnostic(skip)]
-        Io { path: PathBuf, error: io::Error },
+        #[diagnostic(code = "config.unreadable", audience = environment, hint = "check permissions and filesystem access for {path:?}")]
+        Io {
+            #[diagnostic(detail)]
+            path: PathBuf,
+            #[source]
+            error: io::Error,
+        },
 
         /// The config file does not exist.
         #[error("file not found: {path}", path = path.display())]

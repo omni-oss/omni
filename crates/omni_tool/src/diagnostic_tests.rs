@@ -115,7 +115,10 @@ fn plain_failures_stay_uncoded() {
     let enforcement = report(ErrorInner::CapabilityEnforcement {
         message: "no sandbox".into(),
     });
-    assert!(find(&enforcement).is_none());
+    let diagnostic = find(&enforcement).expect("enforcement diagnostic");
+    assert_eq!(diagnostic.code(), "tool.capability_enforcement_failed");
+    assert_eq!(diagnostic.audience(), Audience::Environment);
+    assert_eq!(diagnostic.details(), None);
 }
 
 #[test]
@@ -129,10 +132,32 @@ fn codes_are_registered_in_the_catalog() {
         "tool.max_depth_exceeded",
         "tool.invalid_if_condition",
         "tool.template_failed",
+        "tool.config_load_failed",
+        "tool.capability_enforcement_failed",
     ] {
         assert!(
             omni_codes::get(code).is_some(),
             "`{code}` is not registered"
         );
     }
+}
+
+#[test]
+fn config_load_failure_names_the_file_and_preserves_the_cause() {
+    let inner = omni_file_data_serde::ext_to_format(std::ffi::OsStr::new(
+        "unsupported",
+    ))
+    .unwrap_err();
+    let report = report(ErrorInner::LoadConfig {
+        path: "tool.unsupported".into(),
+        inner,
+    });
+    let diagnostic = find(&report).expect("tool config diagnostic");
+    assert_eq!(diagnostic.code(), "tool.config_load_failed");
+    assert_eq!(diagnostic.details().unwrap()["path"], "tool.unsupported");
+    assert!(
+        report
+            .chain()
+            .any(|e| e.downcast_ref::<omni_file_data_serde::Error>().is_some())
+    );
 }
