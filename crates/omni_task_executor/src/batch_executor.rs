@@ -553,26 +553,32 @@ where
             // and any resolution errors surface during planning. The retry
             // command is resolved here too so an invalid retry config fails
             // the dry run exactly as it would during a normal run.
+            //
+            // The task's own scope exists before anything is rendered, so a
+            // failure that echoes its args or env is sanitized as it leaves.
+            let publisher = self.task_publisher(task_ctx);
             let override_command = resolve_task_command(
                 task_ctx.node.task_exec_config(),
                 task_ctx,
-            )?;
+            )
+            .map_err(|e| prepare_error(e, &publisher))?;
             let override_retry_command = resolve_task_command(
                 task_ctx.node.task_retry_exec_config(),
                 task_ctx,
-            )?;
+            )
+            .map_err(|e| prepare_error(e, &publisher))?;
 
             if self.dry_run {
                 // Resolve a second time with environment values hidden: the
                 // expanded form may contain secrets (e.g. `$TOKEN` or
                 // `{{ env.TOKEN }}`), which must not be written to CLI logs.
                 // Tera still renders so `{{ args.* }}` stays visible.
-                let publisher = self.task_publisher(task_ctx);
                 let display_command = resolve_task_command_for_display(
                     task_ctx.node.task_exec_config(),
                     task_ctx,
                     &publisher,
-                )?;
+                )
+                .map_err(|e| prepare_error(e, &publisher))?;
 
                 // Mirror the normal execution path's lifecycle events so
                 // subscribers (and the CLI) report the task exactly as they
@@ -615,7 +621,7 @@ where
                     .await;
             } else {
                 futs.push(run_process(
-                    self.task_publisher(task_ctx),
+                    publisher,
                     self.wants_task_output_stream,
                     self.wants_task_input_stream,
                     task_ctx,
@@ -802,6 +808,23 @@ fn resolve_task_command_for_display<'a>(
             Ok(Some(command))
         }
         None => Ok(None),
+    }
+}
+
+/// Sanitizes a failure with the task's own secrets as it leaves the task's
+/// scope. The error keeps its diagnostic structure; one with nothing to hide
+/// is returned unchanged.
+fn prepare_error<S: ExecutionEventSubscriber>(
+    error: BatchExecutorError,
+    publisher: &OperationPublisher<'_, S>,
+) -> BatchExecutorError {
+    let report =
+        omni_diagnostic::prepare_report(eyre::Report::new(error), &|s| {
+            publisher.redact(s).into_owned()
+        });
+    match report.downcast::<BatchExecutorError>() {
+        Ok(unchanged) => unchanged,
+        Err(prepared) => BatchExecutorErrorInner::Prepared(prepared).into(),
     }
 }
 
@@ -1157,6 +1180,11 @@ pub(crate) enum BatchExecutorErrorInner {
     #[error(transparent)]
     #[diagnostic(delegate)]
     Resolve(#[from] omni_command_config::ResolveError),
+
+    /// A failure already sanitized for its task (RFC 0026).
+    #[error(transparent)]
+    #[diagnostic(delegate)]
+    Prepared(eyre::Report),
 }
 
 #[cfg(test)]
@@ -1389,5 +1417,30 @@ mod tests {
         // deterministic.
         assert_eq!(forward_out, (0..n).collect::<Vec<_>>());
         assert_eq!(forward_out, reverse_out);
+    }
+
+    #[test]
+    fn a_task_failure_is_sanitized_with_that_tasks_secrets_only() {
+        let sink = omni_messages::NoopSubscriber;
+        let task = omni_messages::OperationPublisher::new(
+            &sink,
+            omni_redact::Redactor::builder().value("alpha").build(),
+        );
+
+        let failure = || {
+            super::BatchExecutorError::from(super::BatchExecutorErrorInner::Io(
+                std::io::Error::other("cannot read alpha and bravo"),
+            ))
+        };
+        let hidden = super::prepare_error(failure(), &task);
+        assert_eq!(hidden.to_string(), "cannot read <redacted> and bravo");
+
+        // Nothing to hide: returned unchanged, so its kind still matches.
+        let other = omni_messages::OperationPublisher::new(
+            &sink,
+            omni_redact::Redactor::builder().value("zulu").build(),
+        );
+        let same = super::prepare_error(failure(), &other);
+        assert_eq!(same.kind(), super::BatchExecutorErrorKind::Io);
     }
 }

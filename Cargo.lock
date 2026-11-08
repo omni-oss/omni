@@ -6577,6 +6577,7 @@ dependencies = [
  "omni_constants",
  "omni_context",
  "omni_core",
+ "omni_diagnostic",
  "omni_execution_plan",
  "omni_file_data_serde",
  "omni_generator",

@@ -269,15 +269,12 @@ where
 
     match result {
         Ok(value) => Ok(value),
-        Err(err) => {
-            let message = err.to_string();
-            let redacted = redactor.redact(message.as_str());
-            if matches!(redacted, std::borrow::Cow::Borrowed(_)) {
-                Err(err.into())
-            } else {
-                Err(eyre::eyre!("{redacted}"))
-            }
-        }
+        // Prepared while the tool's inputs are still known: the whole cause
+        // chain is sanitized, and a diagnostic keeps its code, details and
+        // hints.
+        Err(err) => Err(omni_diagnostic::prepare_report(err.into(), &|s| {
+            redactor.redact(s).into_owned()
+        })),
     }
 }
 
