@@ -160,7 +160,15 @@ where
             )),
             ..Default::default()
         },
-    )?;
+    )
+    // A validator can echo a supplied value in its own error (for example a
+    // path rule), so this failure is redacted like every other one leaving
+    // the tool's scope.
+    .map_err(|err| {
+        omni_diagnostic::redact_report(err.into(), &|s| {
+            redactor.redact(s).into_owned()
+        })
+    })?;
 
     if !report.is_valid() {
         let details = report
