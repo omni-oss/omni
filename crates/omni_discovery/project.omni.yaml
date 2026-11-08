@@ -3,5 +3,7 @@ name: omni_discovery
 extends:
   - "@workspace/omni/presets/rust-lib.omni.yaml"
 dependencies:
+  - omni_diagnostic
+  - omni_codes
   - dir_walker
   - omni_glob
