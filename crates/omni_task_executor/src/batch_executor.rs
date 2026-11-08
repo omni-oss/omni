@@ -12,9 +12,10 @@ use omni_context::LoadedContext;
 use omni_core::TaskExecutionNode;
 use omni_hasher::impls::DefaultHash;
 use omni_messages::{
-    CacheHitEvent, ExecutionEventSubscriber, TaskCompletedEvent,
-    TaskFailedEvent, TaskOutputStream, TaskOutputStreamEvent,
-    TaskRetryingEvent, TaskSkipReason, TaskSkippedEvent, TaskStartedEvent,
+    CacheHitEvent, ExecutionEventSubscriber, OperationPublisher,
+    TaskCompletedEvent, TaskFailedEvent, TaskOutputStream,
+    TaskOutputStreamEvent, TaskRetryingEvent, TaskSkipReason, TaskSkippedEvent,
+    TaskStartedEvent,
 };
 use omni_process::{
     ChildProcessError, TaskChildProcess, TaskChildProcessResult,
@@ -150,10 +151,17 @@ where
             None => Redactor::builder().build(),
         };
 
-        // Notices published from here on are redacted with the run's secrets.
-        let redactor = env.union(&args);
-        self.subscriber.extend_redactor(&redactor);
-        redactor
+        env.union(&args)
+    }
+
+    /// The publisher for one task invocation: everything the task emits is
+    /// sanitized with its own secrets, and the shared subscriber never learns
+    /// them (RFC 0026).
+    fn task_publisher(
+        &self,
+        task_ctx: &TaskContext<'_>,
+    ) -> OperationPublisher<'s, S> {
+        OperationPublisher::new(self.subscriber, self.build_redactor(task_ctx))
     }
 
     fn should_skip_batch_on_error(
@@ -559,18 +567,18 @@ where
                 // expanded form may contain secrets (e.g. `$TOKEN` or
                 // `{{ env.TOKEN }}`), which must not be written to CLI logs.
                 // Tera still renders so `{{ args.* }}` stays visible.
-                let redactor = self.build_redactor(task_ctx);
+                let publisher = self.task_publisher(task_ctx);
                 let display_command = resolve_task_command_for_display(
                     task_ctx.node.task_exec_config(),
                     task_ctx,
-                    &redactor,
+                    &publisher,
                 )?;
 
                 // Mirror the normal execution path's lifecycle events so
                 // subscribers (and the CLI) report the task exactly as they
                 // would after a real run.
                 let task_id = task_ctx.node.full_task_name().to_string();
-                self.subscriber
+                publisher
                     .on_task_started(TaskStartedEvent {
                         task_id: task_id.clone(),
                         project: task_ctx.node.project_name().to_string(),
@@ -594,7 +602,7 @@ where
                     0,
                 ));
 
-                self.subscriber
+                publisher
                     .on_task_completed(TaskCompletedEvent {
                         task_id,
                         project: task_ctx.node.project_name().to_string(),
@@ -606,11 +614,8 @@ where
                     })
                     .await;
             } else {
-                // Not shown here, but a notice raised later in the run must
-                // still be redacted with this task's secrets.
-                let _ = self.build_redactor(task_ctx);
                 futs.push(run_process(
-                    self.subscriber,
+                    self.task_publisher(task_ctx),
                     self.wants_task_output_stream,
                     self.wants_task_input_stream,
                     task_ctx,
@@ -684,11 +689,11 @@ where
                 ),
                 TaskResultContext::Error {
                     task_context,
-                    error,
+                    message,
                     tries,
                 } => TaskExecutionResult::new_errored(
                     task_context.node.clone(),
-                    error.to_string(),
+                    message.clone(),
                     *tries,
                 ),
             };
@@ -780,7 +785,7 @@ fn resolve_task_command<'a>(
 fn resolve_task_command_for_display<'a>(
     spec: Option<&CommandConfig>,
     task_ctx: &TaskContext<'a>,
-    redactor: &Redactor,
+    publisher: &OperationPublisher<'_, impl ExecutionEventSubscriber>,
 ) -> Result<Option<Command>, BatchExecutorError> {
     match spec {
         Some(spec) => {
@@ -791,7 +796,7 @@ fn resolve_task_command_for_display<'a>(
                 spec,
                 Some(&task_ctx.template_context),
                 None,
-                |rendered| redactor.redact(rendered),
+                |rendered| publisher.redact(rendered),
             )?;
 
             Ok(Some(command))
@@ -896,7 +901,7 @@ where
 
 #[allow(clippy::too_many_arguments)]
 async fn run_process<'a, S: ExecutionEventSubscriber>(
-    subscriber: &'a S,
+    subscriber: OperationPublisher<'a, S>,
     wants_task_output_stream: bool,
     wants_task_input_stream: bool,
     task_ctx: &'a TaskContext<'a>,
@@ -932,7 +937,9 @@ async fn run_process<'a, S: ExecutionEventSubscriber>(
         } else {
             return TaskResultContext::new_error(
                 task_ctx,
-                ChildProcessError::no_command(),
+                subscriber
+                    .redact(ChildProcessError::no_command().to_string())
+                    .into_owned(),
                 tries,
             );
         };
@@ -946,7 +953,11 @@ async fn run_process<'a, S: ExecutionEventSubscriber>(
             match TaskChildProcess::new(task_ctx.node.clone(), prog, args) {
                 Ok(o) => o,
                 Err(e) => {
-                    return TaskResultContext::new_error(task_ctx, e, tries);
+                    return TaskResultContext::new_error(
+                        task_ctx,
+                        subscriber.redact(e.to_string()).into_owned(),
+                        tries,
+                    );
                 }
             };
 
@@ -1070,7 +1081,11 @@ async fn run_process<'a, S: ExecutionEventSubscriber>(
                     tries,
                 })
                 .await;
-            TaskResultContext::new_error(task_ctx, e, tries)
+            TaskResultContext::new_error(
+                task_ctx,
+                subscriber.redact(e.to_string()).into_owned(),
+                tries,
+            )
         }
     }
 }

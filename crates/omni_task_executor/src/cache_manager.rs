@@ -8,7 +8,7 @@ use omni_cache::{
     TaskExecutionCacheStore, TaskExecutionInfoExt as _,
 };
 use omni_collector::{CollectConfig, Collector, CollectorSys, ProjectTaskInfo};
-use omni_process::{ChildProcessError, TaskChildProcessResult};
+use omni_process::TaskChildProcessResult;
 use omni_task_context::TaskContext;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
@@ -48,7 +48,10 @@ pub enum TaskResultContext<'a> {
     },
     Error {
         task_context: &'a TaskContext<'a>,
-        error: ChildProcessError,
+        /// The failure as shown to users, already sanitized for the task's
+        /// operation. It outlives the task's redactor, so it is prepared
+        /// before the operation ends (RFC 0026).
+        message: String,
         tries: u8,
     },
 }
