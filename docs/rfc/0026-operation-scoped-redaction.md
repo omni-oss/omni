@@ -1,6 +1,6 @@
 # RFC 0026: Operation-scoped redaction
 
-- **Status:** Draft <!-- Draft | Accepted | Implemented | Superseded -->
+- **Status:** Accepted <!-- Draft | Accepted | Implemented | Superseded -->
 - **Owner:** TBD
 - **Date:** 2026-11-08
 - **Base branch:** `main`
