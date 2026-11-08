@@ -4,13 +4,13 @@
 - **Owner:** TBD
 - **Date:** 2026-11-08
 - **Base branch:** `main`
-- **Affected crates/files:** `omni_messages` (operation publisher, subscriber traits, event sanitization, notice publishing and tracing); `omni_redact`; `omni_task_executor`; `omni_generator`; `omni_api` (tool and generator operations); `omni_input_provider` / `omni_input_schema` (collection and validation); `omni_diagnostic` (safe error projections); `omni_cli_core` and `omni_mcp_core` (presenters and result/error exits); integration tests
+- **Affected crates/files:** `omni_messages` (`RedactingSubscriber`, subscriber traits, event sanitization, notice publishing and tracing); `omni_redact`; `omni_task_executor`; `omni_generator`; `omni_api` (tool and generator operations); `omni_input_provider` / `omni_input_schema` (collection and validation); `omni_diagnostic` (safe error projections); `omni_cli_core` and `omni_mcp_core` (presenters and result/error exits); integration tests
 - **Follows:** [issue #58](https://github.com/omni-oss/omni/issues/58), RFC 0022 (redaction), RFC 0023 (events, notices and tracing), implemented in PR #55
 
 ## 1. Summary
 
 Replace subscriber-owned, growing secret sets with an **operation-scoped
-publisher** holding an immutable `Arc<Redactor>`. Producers sanitize output
+redacting subscriber** (`RedactingSubscriber`) holding an immutable `Arc<Redactor>`. Producers sanitize output
 before it reaches a subscriber, channel, tracing mirror, or surface adapter.
 Presenters retain only sanitized output, never operation redactors.
 
@@ -65,7 +65,7 @@ values, and late registration cannot protect output already dispatched.
   generated file contents, or secret transformations. RFC 0022's limitations
   remain; this is not a new promise to sanitize all bytes a program produces.
 - A global tracing layer or task-local secret registry. Arbitrary direct
-  tracing fields are not made safe by installing an operation publisher.
+  tracing fields are not made safe by installing a redacting subscriber.
 - Guaranteed memory zeroization. Dropping a redactor bounds ownership, not
   allocator residency, copies in execution inputs, or process crash dumps.
 
@@ -97,21 +97,21 @@ Creating two children from the same parent yields two independent snapshots.
 There is no implicit scope inheritance through ambient thread state or a
 shared subscriber. Spawned work must explicitly receive its owning scope.
 
-### 4.2 Publisher and subscriber responsibilities
+### 4.2 Redacting subscriber and sink responsibilities
 
-Add an `OperationPublisher` in `omni_messages`, borrowing the destination
+Add an `RedactingSubscriber` in `omni_messages`, borrowing the destination
 subscriber and owning an `Arc<Redactor>`. The following is an API sketch, not
 a requirement to introduce dynamic subscriber dispatch:
 
 ```rust,ignore
-pub struct OperationPublisher<'a, S> {
+pub struct RedactingSubscriber<'a, S> {
     sink: &'a S,
     redactor: Arc<Redactor>,
 }
 
-impl<'a, S> OperationPublisher<'a, S> {
+impl<'a, S> RedactingSubscriber<'a, S> {
     pub fn new(sink: &'a S, redactor: Arc<Redactor>) -> Self;
-    pub fn child(&self, local: &Redactor) -> OperationPublisher<'a, S>;
+    pub fn child(&self, local: &Redactor) -> RedactingSubscriber<'a, S>;
     // Typed publishing methods sanitize, then forward to `sink`.
 }
 ```
@@ -120,10 +120,10 @@ impl<'a, S> OperationPublisher<'a, S> {
 type. This matters for recursive generator calls and existing generic,
 async subscriber traits. It must not reveal the raw sink to producer code.
 
-The publisher exposes the existing demand checks and typed emission methods
+The redacting subscriber exposes the existing demand checks and typed emission methods
 needed by the execution and generator producers. Subscriber traits remain
 the sink interface. Producer configurations and handler contexts receive a
-publisher rather than an unrestricted subscriber for output publication.
+redacting subscriber rather than an unrestricted subscriber for output publication.
 
 Each governed message follows exactly one path:
 
@@ -141,7 +141,7 @@ assumed to be idempotent: a configured secret can overlap the placeholder.
 
 Delete `extend_redactor` and `SharedRedactor` after migrating callers. Remove
 subscriber redactor access and presenter redaction of already-prepared
-events. `McpSubscriber::with_redactor` callers instead create a root publisher.
+events. `McpSubscriber::with_redactor` callers instead create a root redacting subscriber.
 This is an intentional Rust API migration, not a no-op compatibility shim
 that would silently stop protecting older callers.
 
@@ -334,7 +334,7 @@ paths are not exposed as a compatibility fallback. Supporting private file
 inspection through another interface would require a separate design.
 
 1. Agree on this draft and the explicit tool-result/cross-operation limits.
-2. Add immutable publisher, event sanitizers and redacted result and error
+2. Add the immutable redacting subscriber, event sanitizers and redacted result and error
    projections, with publication and isolation tests.
 3. Migrate task preparation/execution, generator collection/nesting and tool
    validation/execution to the same scope contract. Audit early returns and
@@ -363,7 +363,7 @@ do not remove the old protection until its producer boundary is in place.
 - **Attach redactors to events/errors:** handles delayed formatting but
   prolongs secret retention into output buffers and presenter lifetimes.
 
-Review should confirm the explicit publisher migration and redacted-error
+Review should confirm the explicit redacting-subscriber migration and redacted-error
 boundary, and whether preserving raw tool success results remains the right
 contract. The proposed decision is to preserve it, document the limitation,
 and avoid expanding this scope/lifetime fix into a tool-data API change.
@@ -372,7 +372,7 @@ and avoid expanding this scope/lifetime fix into a tool-data API change.
 
 Implemented as designed:
 
-- `omni_messages::OperationPublisher` (4.2): immutable per-operation redactor,
+- `omni_messages::RedactingSubscriber` (4.2): immutable per-operation redactor,
   `child` inheritance over one sink, sanitizing for notices, task and
   generator events and script logs before the `tracing` mirror and the sink.
   `NoticeSubscriber::publish_notice` is the producer entry point so the mirror
@@ -414,9 +414,9 @@ Deviations, with the reason:
   in `omni_input_schema`/`omni_input_provider`; the generator's scope starts
   once its inputs are collected. Tool scope starts from the supplied values
   before validation, as designed.
-- **`OperationPublisher::sink` is public** so a nested generator run can be
-  configured over the same subscriber. Producer code publishes through the
-  publisher; the sink is for scope construction only.
+- **`RedactingSubscriber::sink` is public** so a nested generator run can be
+  configured over the same subscriber. Producer code emits through the
+  redacting subscriber; the sink is for scope construction only.
 - **Not tested:** cancellation of an in-flight operation and the
   `GeneratorRunResponse.actions` path through MCP are covered by the unit tests
   above but have no dedicated end-to-end test.

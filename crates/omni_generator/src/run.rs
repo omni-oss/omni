@@ -424,11 +424,11 @@ pub(crate) async fn run_internal<'a, S: GeneratorEventSubscriber>(
     tracing::trace!(count = values.len(), "input_values");
 
     let redactor = build_input_redactor(r#gen, &values, config);
-    // Everything this invocation emits goes through its own publisher, which
+    // Everything this invocation emits goes through its own redacting, which
     // sanitizes with these secrets (plus an enclosing generator's) before the
     // shared subscriber sees it. The subscriber itself never learns them.
     run_secrets.add(&redactor);
-    let publisher = omni_messages::OperationPublisher::new(
+    let redacting = omni_messages::RedactingSubscriber::new(
         config.subscriber,
         redactor.clone(),
     );
@@ -491,7 +491,7 @@ pub(crate) async fn run_internal<'a, S: GeneratorEventSubscriber>(
         enable_experimental: config.enable_experimental,
         js_script_runner: runner,
         input_provider: config.input_provider,
-        subscriber: &publisher,
+        subscriber: &redacting,
         use_input_defaults: config.use_input_defaults,
         depth,
         max_depth: config.max_depth,

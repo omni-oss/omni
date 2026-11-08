@@ -6,7 +6,7 @@ pub use crate::notice::{NoticeEvent, NoticeLevel};
 /// `wants_notices`.
 ///
 /// Redaction belongs to the operation that produced the event, so pass an
-/// [`OperationPublisher`](crate::OperationPublisher) when the event may carry
+/// [`RedactingSubscriber`](crate::RedactingSubscriber) when the event may carry
 /// operation secrets. A bare subscriber delivers the event unchanged.
 pub fn publish_event<S: NoticeSubscriber + ?Sized>(
     sub: &S,
@@ -240,7 +240,7 @@ mod tests {
     #[test]
     fn secrets_are_redacted_in_message_and_fields() {
         let (inner, events) = collect();
-        let sub = crate::OperationPublisher::new(
+        let sub = crate::RedactingSubscriber::new(
             &inner,
             omni_redact::Redactor::builder().value("hunter2").build(),
         );
@@ -285,7 +285,7 @@ mod tests {
     #[test]
     fn a_secret_never_reaches_a_custom_tracing_sink() {
         let (inner, events) = collect();
-        let sub = crate::OperationPublisher::new(
+        let sub = crate::RedactingSubscriber::new(
             &inner,
             omni_redact::Redactor::builder().value("hunter2").build(),
         );

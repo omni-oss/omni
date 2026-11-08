@@ -1,6 +1,6 @@
 //! Operation-scoped publishing (RFC 0026).
 //!
-//! An [`OperationPublisher`] borrows a subscriber (the *sink*) and owns an
+//! An [`RedactingSubscriber`] borrows a subscriber (the *sink*) and owns an
 //! immutable [`Redactor`] for one operation: a task, a generator invocation,
 //! or a tool call. Everything a producer emits through it is sanitized with
 //! that redactor *before* it reaches the sink, the `tracing` mirror, or any
@@ -8,7 +8,7 @@
 //! secrets, and reusing or sharing one sink across operations cannot carry
 //! secrets from one to another.
 //!
-//! A [`child`](OperationPublisher::child) publisher inherits a snapshot of its
+//! A [`child`](RedactingSubscriber::child) subscriber inherits a snapshot of its
 //! parent and adds its own values. It never changes its parent or its
 //! siblings. Both keep publishing to the same sink; the type does not nest.
 
@@ -37,12 +37,12 @@ use crate::{
 
 /// Publishes one operation's output to a shared sink, sanitized with the
 /// operation's own immutable redactor.
-pub struct OperationPublisher<'a, S: ?Sized> {
+pub struct RedactingSubscriber<'a, S: ?Sized> {
     sink: &'a S,
     redactor: Arc<Redactor>,
 }
 
-impl<S: ?Sized> Clone for OperationPublisher<'_, S> {
+impl<S: ?Sized> Clone for RedactingSubscriber<'_, S> {
     fn clone(&self) -> Self {
         Self {
             sink: self.sink,
@@ -51,15 +51,16 @@ impl<S: ?Sized> Clone for OperationPublisher<'_, S> {
     }
 }
 
-impl<S: ?Sized> std::fmt::Debug for OperationPublisher<'_, S> {
+impl<S: ?Sized> std::fmt::Debug for RedactingSubscriber<'_, S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // Never print the redactor: it holds the operation's secrets.
-        f.debug_struct("OperationPublisher").finish_non_exhaustive()
+        f.debug_struct("RedactingSubscriber")
+            .finish_non_exhaustive()
     }
 }
 
-impl<'a, S: ?Sized> OperationPublisher<'a, S> {
-    /// A publisher for an operation that owns `redactor`.
+impl<'a, S: ?Sized> RedactingSubscriber<'a, S> {
+    /// A redacting subscriber for an operation that owns `redactor`.
     pub fn new(sink: &'a S, redactor: impl Into<Arc<Redactor>>) -> Self {
         Self {
             sink,
@@ -67,13 +68,13 @@ impl<'a, S: ?Sized> OperationPublisher<'a, S> {
         }
     }
 
-    /// A publisher with no secrets of its own, for a run root that has no
+    /// A redacting subscriber with no secrets of its own, for a run root that has no
     /// values shared by everything under it.
     pub fn root(sink: &'a S) -> Self {
         Self::new(sink, Redactor::builder().build())
     }
 
-    /// A publisher for an operation nested in this one. It hides everything
+    /// A redacting subscriber for an operation nested in this one. It hides everything
     /// this one hides plus `local`, and is unaffected by later children.
     pub fn child(&self, local: &Redactor) -> Self {
         let redactor = if local.is_empty() {
@@ -120,7 +121,7 @@ impl<'a, S: ?Sized> OperationPublisher<'a, S> {
 }
 
 impl<S: NoticeSubscriber + ?Sized> NoticeSubscriber
-    for OperationPublisher<'_, S>
+    for RedactingSubscriber<'_, S>
 {
     fn wants_notices(&self) -> bool {
         self.sink.wants_notices()
@@ -138,7 +139,7 @@ impl<S: NoticeSubscriber + ?Sized> NoticeSubscriber
 }
 
 impl<S: ExecutionEventSubscriber + ?Sized> ExecutionEventSubscriber
-    for OperationPublisher<'_, S>
+    for RedactingSubscriber<'_, S>
 {
     fn wants_task_output_stream(&self) -> bool {
         self.sink.wants_task_output_stream()
@@ -201,7 +202,7 @@ impl<S: ExecutionEventSubscriber + ?Sized> ExecutionEventSubscriber
 }
 
 impl<S: GeneratorEventSubscriber + ?Sized> GeneratorEventSubscriber
-    for OperationPublisher<'_, S>
+    for RedactingSubscriber<'_, S>
 {
     async fn on_prompt_rejected(&self, mut e: GeneratorPromptRejectedEvent) {
         if self.enabled() {
@@ -336,8 +337,8 @@ mod tests {
     #[test]
     fn concurrent_operations_do_not_mask_each_others_secrets() {
         let sink = Sink::default();
-        let a = OperationPublisher::new(&sink, secret("alpha"));
-        let b = OperationPublisher::new(&sink, secret("bravo"));
+        let a = RedactingSubscriber::new(&sink, secret("alpha"));
+        let b = RedactingSubscriber::new(&sink, secret("bravo"));
 
         // Interleaved, and each operation emits the other's literal too.
         notice!(a, leak("alpha bravo"));
@@ -354,7 +355,7 @@ mod tests {
     #[test]
     fn a_child_inherits_the_parent_and_neither_leaks_upward_or_sideways() {
         let sink = Sink::default();
-        let parent = OperationPublisher::new(&sink, secret("parent-secret"));
+        let parent = RedactingSubscriber::new(&sink, secret("parent-secret"));
         let one = parent.child(&secret("child-one"));
         let two = parent.child(&secret("child-two"));
 
@@ -376,10 +377,10 @@ mod tests {
     fn a_reused_sink_keeps_nothing_from_a_finished_operation() {
         let sink = Sink::default();
         {
-            let first = OperationPublisher::new(&sink, secret("old-secret"));
+            let first = RedactingSubscriber::new(&sink, secret("old-secret"));
             notice!(first, leak("old-secret"));
         }
-        let second = OperationPublisher::new(&sink, secret("new-secret"));
+        let second = RedactingSubscriber::new(&sink, secret("new-secret"));
         notice!(second, leak("old-secret new-secret"));
 
         let seen = sink.seen();
@@ -389,14 +390,14 @@ mod tests {
     #[test]
     fn the_sink_is_never_handed_a_redactor() {
         // The sink type has no redactor access by construction; the operation's
-        // redactor is dropped with the publisher.
+        // redactor is dropped with the subscriber.
         let sink = Sink::default();
         let redactor = Arc::new(secret("hunter2"));
         let weak = Arc::downgrade(&redactor);
-        let publisher = OperationPublisher::new(&sink, redactor);
-        let child = publisher.child(&secret("other"));
+        let redacting = RedactingSubscriber::new(&sink, redactor);
+        let child = redacting.child(&secret("other"));
         notice!(child, leak("hunter2"));
-        drop(publisher);
+        drop(redacting);
         drop(child);
         assert!(weak.upgrade().is_none(), "scopes must release the redactor");
     }
@@ -404,7 +405,7 @@ mod tests {
     #[test]
     fn batches_are_sanitized_by_the_operation() {
         let sink = Sink::default();
-        let op = OperationPublisher::new(&sink, secret("hunter2"));
+        let op = RedactingSubscriber::new(&sink, secret("hunter2"));
         publish_batch(
             &op,
             [crate::NoticeEvent::from_notice(&leak("hunter2"), "t")],
@@ -415,7 +416,7 @@ mod tests {
     #[tokio::test]
     async fn success_and_failure_paths_are_sanitized() {
         let sink = Sink::default();
-        let op = OperationPublisher::new(&sink, secret("hunter2"));
+        let op = RedactingSubscriber::new(&sink, secret("hunter2"));
 
         op.on_task_started(TaskStartedEvent {
             task_id: "p#t".into(),
@@ -479,7 +480,7 @@ mod tests {
         }
 
         let sink = Sink::default();
-        let op = OperationPublisher::new(&sink, secret("hunter2"));
+        let op = RedactingSubscriber::new(&sink, secret("hunter2"));
         let capture = Capture::default();
         let subscriber = tracing_subscriber::fmt()
             .with_writer(capture.clone())
@@ -511,7 +512,7 @@ mod tests {
         // A second pass over already-sanitized text would re-match the
         // placeholder text, so one publish must sanitize exactly once.
         let sink = Sink::default();
-        let op = OperationPublisher::new(&sink, secret("redacted"));
+        let op = RedactingSubscriber::new(&sink, secret("redacted"));
         notice!(op, leak("redacted"));
         assert!(
             sink.seen()[0].starts_with("got <redacted> "),
@@ -524,7 +525,7 @@ mod tests {
     #[test]
     fn debug_output_does_not_contain_secrets() {
         let sink = Sink::default();
-        let op = OperationPublisher::new(&sink, secret("hunter2"));
+        let op = RedactingSubscriber::new(&sink, secret("hunter2"));
         assert!(!format!("{op:?}").contains("hunter2"));
     }
 }

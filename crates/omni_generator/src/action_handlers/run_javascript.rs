@@ -127,7 +127,7 @@ pub async fn run_javascript<'a, S: GeneratorEventSubscriber>(
     Ok(())
 }
 
-/// Dispatches through the invocation's publisher, which sanitizes before any
+/// Dispatches through the invocation's redacting subscriber, which sanitizes before any
 /// subscriber (including ones that only mirror to tracing) sees the log.
 fn dispatch_script_log<S: GeneratorEventSubscriber>(
     subscriber: &S,
@@ -181,7 +181,7 @@ mod tests {
         }
 
         let sink = Capture::default();
-        let subscriber = omni_messages::OperationPublisher::new(
+        let subscriber = omni_messages::RedactingSubscriber::new(
             &sink,
             omni_redact::Redactor::builder()
                 .value("secret-token")

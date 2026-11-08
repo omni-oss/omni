@@ -1,6 +1,6 @@
 //! Per-request notice collection for MCP.
 //!
-//! Each notice is processed in a fixed order: redacted (by the operation's publisher,
+//! Each notice is processed in a fixed order: redacted (by the operation's redacting subscriber,
 //! before it reaches the collector), deduplicated, then bounded.
 
 use std::collections::{BTreeMap, HashSet};

@@ -249,11 +249,11 @@ mod tests {
             command: Some(command.into()),
         };
 
-        let a = omni_messages::OperationPublisher::new(
+        let a = omni_messages::RedactingSubscriber::new(
             &sub,
             omni_redact::Redactor::builder().value("alpha").build(),
         );
-        let b = omni_messages::OperationPublisher::new(
+        let b = omni_messages::RedactingSubscriber::new(
             &sub,
             omni_redact::Redactor::builder().value("bravo").build(),
         );
@@ -279,7 +279,7 @@ mod tests {
         }
 
         let sub = McpSubscriber::new(LogsDisplay::Never);
-        let op = omni_messages::OperationPublisher::new(
+        let op = omni_messages::RedactingSubscriber::new(
             &sub,
             omni_redact::Redactor::builder().value("hunter2").build(),
         );

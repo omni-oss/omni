@@ -12,7 +12,7 @@ use omni_context::LoadedContext;
 use omni_core::TaskExecutionNode;
 use omni_hasher::impls::DefaultHash;
 use omni_messages::{
-    CacheHitEvent, ExecutionEventSubscriber, OperationPublisher,
+    CacheHitEvent, ExecutionEventSubscriber, RedactingSubscriber,
     TaskCompletedEvent, TaskFailedEvent, TaskOutputStream,
     TaskOutputStreamEvent, TaskRetryingEvent, TaskSkipReason, TaskSkippedEvent,
     TaskStartedEvent,
@@ -154,14 +154,14 @@ where
         env.union(&args)
     }
 
-    /// The publisher for one task invocation: everything the task emits is
+    /// The redacting for one task invocation: everything the task emits is
     /// sanitized with its own secrets, and the shared subscriber never learns
     /// them (RFC 0026).
-    fn task_publisher(
+    fn task_redacting(
         &self,
         task_ctx: &TaskContext<'_>,
-    ) -> OperationPublisher<'s, S> {
-        OperationPublisher::new(self.subscriber, self.build_redactor(task_ctx))
+    ) -> RedactingSubscriber<'s, S> {
+        RedactingSubscriber::new(self.subscriber, self.build_redactor(task_ctx))
     }
 
     fn should_skip_batch_on_error(
@@ -556,17 +556,17 @@ where
             //
             // The task's own scope exists before anything is rendered, so a
             // failure that echoes its args or env is sanitized as it leaves.
-            let publisher = self.task_publisher(task_ctx);
+            let redacting = self.task_redacting(task_ctx);
             let override_command = resolve_task_command(
                 task_ctx.node.task_exec_config(),
                 task_ctx,
             )
-            .map_err(|e| redact_error(e, &publisher))?;
+            .map_err(|e| redact_error(e, &redacting))?;
             let override_retry_command = resolve_task_command(
                 task_ctx.node.task_retry_exec_config(),
                 task_ctx,
             )
-            .map_err(|e| redact_error(e, &publisher))?;
+            .map_err(|e| redact_error(e, &redacting))?;
 
             if self.dry_run {
                 // Resolve a second time with environment values hidden: the
@@ -576,15 +576,15 @@ where
                 let display_command = resolve_task_command_for_display(
                     task_ctx.node.task_exec_config(),
                     task_ctx,
-                    &publisher,
+                    &redacting,
                 )
-                .map_err(|e| redact_error(e, &publisher))?;
+                .map_err(|e| redact_error(e, &redacting))?;
 
                 // Mirror the normal execution path's lifecycle events so
                 // subscribers (and the CLI) report the task exactly as they
                 // would after a real run.
                 let task_id = task_ctx.node.full_task_name().to_string();
-                publisher
+                redacting
                     .on_task_started(TaskStartedEvent {
                         task_id: task_id.clone(),
                         project: task_ctx.node.project_name().to_string(),
@@ -608,7 +608,7 @@ where
                     0,
                 ));
 
-                publisher
+                redacting
                     .on_task_completed(TaskCompletedEvent {
                         task_id,
                         project: task_ctx.node.project_name().to_string(),
@@ -621,7 +621,7 @@ where
                     .await;
             } else {
                 futs.push(run_process(
-                    publisher,
+                    redacting,
                     self.wants_task_output_stream,
                     self.wants_task_input_stream,
                     task_ctx,
@@ -791,7 +791,7 @@ fn resolve_task_command<'a>(
 fn resolve_task_command_for_display<'a>(
     spec: Option<&CommandConfig>,
     task_ctx: &TaskContext<'a>,
-    publisher: &OperationPublisher<'_, impl ExecutionEventSubscriber>,
+    redacting: &RedactingSubscriber<'_, impl ExecutionEventSubscriber>,
 ) -> Result<Option<Command>, BatchExecutorError> {
     match spec {
         Some(spec) => {
@@ -802,7 +802,7 @@ fn resolve_task_command_for_display<'a>(
                 spec,
                 Some(&task_ctx.template_context),
                 None,
-                |rendered| publisher.redact(rendered),
+                |rendered| redacting.redact(rendered),
             )?;
 
             Ok(Some(command))
@@ -816,11 +816,11 @@ fn resolve_task_command_for_display<'a>(
 /// is returned unchanged.
 fn redact_error<S: ExecutionEventSubscriber>(
     error: BatchExecutorError,
-    publisher: &OperationPublisher<'_, S>,
+    redacting: &RedactingSubscriber<'_, S>,
 ) -> BatchExecutorError {
     let report =
         omni_diagnostic::redact_report(eyre::Report::new(error), &|s| {
-            publisher.redact(s).into_owned()
+            redacting.redact(s).into_owned()
         });
     match report.downcast::<BatchExecutorError>() {
         Ok(unchanged) => unchanged,
@@ -924,7 +924,7 @@ where
 
 #[allow(clippy::too_many_arguments)]
 async fn run_process<'a, S: ExecutionEventSubscriber>(
-    subscriber: OperationPublisher<'a, S>,
+    subscriber: RedactingSubscriber<'a, S>,
     wants_task_output_stream: bool,
     wants_task_input_stream: bool,
     task_ctx: &'a TaskContext<'a>,
@@ -1422,7 +1422,7 @@ mod tests {
     #[test]
     fn a_task_failure_is_sanitized_with_that_tasks_secrets_only() {
         let sink = omni_messages::NoopSubscriber;
-        let task = omni_messages::OperationPublisher::new(
+        let task = omni_messages::RedactingSubscriber::new(
             &sink,
             omni_redact::Redactor::builder().value("alpha").build(),
         );
@@ -1436,7 +1436,7 @@ mod tests {
         assert_eq!(hidden.to_string(), "cannot read <redacted> and bravo");
 
         // Nothing to hide: returned unchanged, so its kind still matches.
-        let other = omni_messages::OperationPublisher::new(
+        let other = omni_messages::RedactingSubscriber::new(
             &sink,
             omni_redact::Redactor::builder().value("zulu").build(),
         );

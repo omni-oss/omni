@@ -81,7 +81,7 @@ pub struct Fixture {
     >,
     redactor: omni_redact::Redactor,
     run_secrets: crate::RunSecrets,
-    publisher: omni_messages::OperationPublisher<
+    redacting: omni_messages::RedactingSubscriber<
         'static,
         omni_messages::NoopSubscriber,
     >,
@@ -126,7 +126,7 @@ impl Fixture {
             capabilities: Default::default(),
             redactor: omni_redact::Redactor::builder().build(),
             run_secrets: crate::RunSecrets::default(),
-            publisher: omni_messages::OperationPublisher::root(
+            redacting: omni_messages::RedactingSubscriber::root(
                 &omni_messages::NoopSubscriber,
             ),
             workspace_capabilities: Default::default(),
@@ -197,7 +197,7 @@ impl Fixture {
             gen_session: &self.gen_session,
             js_script_runner: self.js_script_runner.as_ref(),
             input_provider: &self.input_provider,
-            subscriber: &self.publisher,
+            subscriber: &self.redacting,
             run_secrets: &self.run_secrets,
             use_input_defaults: false,
             depth: 0,

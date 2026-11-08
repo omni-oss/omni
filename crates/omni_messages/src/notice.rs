@@ -147,7 +147,7 @@ pub trait NoticeSubscriber: Send + Sync {
     /// [`on_notice`](Self::on_notice).
     ///
     /// The event must already be safe to show. An
-    /// [`OperationPublisher`](crate::OperationPublisher) sanitizes it for its
+    /// [`RedactingSubscriber`](crate::RedactingSubscriber) sanitizes it for its
     /// operation before calling the sink's `publish_notice`, so the mirror
     /// and the presenter only ever see sanitized data (RFC 0026).
     fn publish_notice(&self, event: NoticeEvent) {

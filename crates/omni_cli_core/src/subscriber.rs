@@ -1326,7 +1326,7 @@ mod notice_render_tests {
             Arc::new(OnceLock::new()),
         );
         let _ = sub.resolved_mode.set(CliUiMode::Tui);
-        let op = omni_messages::OperationPublisher::new(
+        let op = omni_messages::RedactingSubscriber::new(
             &sub,
             omni_redact::Redactor::builder().value("hunter2").build(),
         );
@@ -1343,7 +1343,7 @@ mod notice_render_tests {
     #[test]
     fn a_secret_of_the_operation_is_redacted_before_collapsing() {
         let sub = CliSubscriber::new_stream(std::env::temp_dir());
-        let op = omni_messages::OperationPublisher::new(
+        let op = omni_messages::RedactingSubscriber::new(
             &sub,
             omni_redact::Redactor::builder().value("hunter2").build(),
         );

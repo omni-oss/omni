@@ -144,8 +144,8 @@ where
     // sanitized with these inputs' secrets, and the shared subscriber never
     // holds them (RFC 0026).
     let redactor = tool_input_redactor(&tool.inputs, &values, &policy);
-    let publisher =
-        omni_messages::OperationPublisher::new(subscriber, redactor.clone());
+    let redacting =
+        omni_messages::RedactingSubscriber::new(subscriber, redactor.clone());
 
     let report = validate(
         &tool.inputs,
@@ -256,7 +256,7 @@ where
             tokio::select! {
                 biased;
                 Some(n) = rx.recv() => {
-                    publish_tool_notice(&publisher, n);
+                    publish_tool_notice(&redacting, n);
                 }
                 r = &mut run => break r,
             }
@@ -264,7 +264,7 @@ where
     };
     runner.shutdown().await;
     while let Ok(n) = rx.try_recv() {
-        publish_tool_notice(&publisher, n);
+        publish_tool_notice(&redacting, n);
     }
 
     match result {
@@ -280,11 +280,11 @@ where
 
 /// Delivers a tool's notice through its operation, if the sink wants notices.
 fn publish_tool_notice<S: omni_messages::NoticeSubscriber>(
-    publisher: &omni_messages::OperationPublisher<'_, S>,
+    redacting: &omni_messages::RedactingSubscriber<'_, S>,
     notice: omni_messages::NoticeEvent,
 ) {
-    if omni_messages::NoticeSubscriber::wants_notices(publisher) {
-        omni_messages::publish::publish_event(publisher, notice);
+    if omni_messages::NoticeSubscriber::wants_notices(redacting) {
+        omni_messages::publish::publish_event(redacting, notice);
     }
 }
 

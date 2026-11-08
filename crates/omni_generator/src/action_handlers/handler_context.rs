@@ -7,7 +7,7 @@ use omni_generator_configurations::{
     OverwriteConfiguration,
 };
 use omni_messages::{
-    GeneratorEventSubscriber, NoopSubscriber, OperationPublisher,
+    GeneratorEventSubscriber, NoopSubscriber, RedactingSubscriber,
 };
 use value_bag::OwnedValueBag;
 
@@ -71,7 +71,7 @@ pub struct HandlerContext<'a, S: GeneratorEventSubscriber = NoopSubscriber> {
     /// Publishes this generator invocation's output. It sanitizes everything
     /// with the invocation's own secrets (RFC 0026), so handlers emit through
     /// it and never through the shared subscriber.
-    pub subscriber: &'a OperationPublisher<'a, S>,
+    pub subscriber: &'a RedactingSubscriber<'a, S>,
     /// Current `run-generator` nesting depth of this generator.
     pub depth: usize,
     /// Maximum allowed nesting depth, propagated to nested runs.
