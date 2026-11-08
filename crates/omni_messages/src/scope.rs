@@ -99,18 +99,21 @@ impl<'a, S: ?Sized> OperationPublisher<'a, S> {
         self.sink
     }
 
+    /// Replaces this operation's secrets in `text` in place.
     fn clean(&self, text: &mut String) {
         if let Cow::Owned(redacted) = self.redactor.redact(text.as_str()) {
             *text = redacted;
         }
     }
 
+    /// Like [`clean`](Self::clean), for text that may be absent.
     fn clean_opt(&self, text: &mut Option<String>) {
         if let Some(t) = text {
             self.clean(t);
         }
     }
 
+    /// Whether there is anything to hide, so empty scopes skip all work.
     fn enabled(&self) -> bool {
         !self.redactor.is_empty()
     }

@@ -25,6 +25,7 @@ pub struct PreparedDiagnostic {
     causes: Option<Box<TextCause>>,
 }
 
+/// One already-sanitized cause in a prepared diagnostic's source chain.
 #[derive(Debug)]
 struct TextCause {
     message: String,
@@ -44,6 +45,7 @@ impl Error for TextCause {
 }
 
 impl PreparedDiagnostic {
+    /// Captures a sanitized report, rebuilding its cause chain from text.
     fn new(report: &DiagnosticReport) -> Self {
         let causes = report.causes.iter().rev().fold(None, |next, m| {
             Some(Box::new(TextCause {

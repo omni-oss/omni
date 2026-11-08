@@ -110,6 +110,7 @@ impl std::fmt::Debug for RunSecrets {
 }
 
 impl RunSecrets {
+    /// Adds one generator invocation's secrets to the run's collection.
     pub(crate) fn add(&self, redactor: &Redactor) {
         let mut g = self.0.lock().unwrap();
         *g = Some(match g.take() {
@@ -118,6 +119,7 @@ impl RunSecrets {
         });
     }
 
+    /// Everything the run has collected so far.
     fn redactor(&self) -> Redactor {
         self.0
             .lock()

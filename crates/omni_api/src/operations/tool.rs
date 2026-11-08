@@ -278,6 +278,7 @@ where
     }
 }
 
+/// Delivers a tool's notice through its operation, if the sink wants notices.
 fn publish_tool_notice<S: omni_messages::NoticeSubscriber>(
     publisher: &omni_messages::OperationPublisher<'_, S>,
     notice: omni_messages::NoticeEvent,
