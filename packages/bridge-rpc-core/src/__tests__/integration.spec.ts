@@ -222,7 +222,7 @@ describe("Rpc to Rpc Integration", () => {
             // client must observe an error rather than hang forever waiting
             // on a response start frame.
             await expect(pendingResponse.wait()).rejects.toThrow(
-                "Did not receive response",
+                "service blew up",
             );
         } finally {
             // The service error was reported to the client and is therefore
