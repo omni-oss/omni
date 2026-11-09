@@ -13,8 +13,12 @@ process.env.PANDA_CONFIG_PATH ??= fileURLToPath(
     new URL("./panda.config.ts", import.meta.url),
 );
 
+const solidConfig = createSolidConfig();
+
 export default defineConfig({
-    extends: [createConfig(), createJsxConfig(), createSolidConfig()],
+    extends: [createConfig(), createJsxConfig(), solidConfig],
+    // oxlint does not inherit `settings` from extended configs.
+    settings: solidConfig.settings,
     jsPlugins: ["@pandacss/eslint-plugin/oxlint"],
     ignorePatterns,
 });
