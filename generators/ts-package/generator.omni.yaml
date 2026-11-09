@@ -114,7 +114,8 @@ actions:
         - "templates/src/__tests__/integration.spec.ts.tpl"
         - "templates/src/add.spec.ts.tpl"
 
-  - if: "{{ inputs.package_type == 'lib' or inputs.package_type == 'script' }}"
+  # The sample unit/integration tests import `add`, so emit it whenever they are generated.
+  - if: "{{ inputs.package_type == 'lib' or inputs.package_type == 'script' or inputs.unit_test | default(value=false) or inputs.integration_test | default(value=false) }}"
     type: add-many
     base_path: templates
     files:
