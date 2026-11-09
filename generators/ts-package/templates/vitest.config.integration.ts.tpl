@@ -1,5 +1,5 @@
 import { mergeConfig, type UserWorkspaceConfig } from "vitest/config";
-import baseConfig from "./vite.config";
+import baseConfig from "./vite.config.ts";
 import integrationTestConfig from "@omni-oss/vitest-config/integration";
 
 export default mergeConfig(mergeConfig(baseConfig, integrationTestConfig), {

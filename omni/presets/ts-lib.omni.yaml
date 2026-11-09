@@ -9,6 +9,7 @@ tasks:
     exec: bun publish --tolerate-republish
     dependencies:
       - build
+      - test
       - ^publish
 
 meta:

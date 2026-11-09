@@ -68,7 +68,7 @@ export class ResponseStateMachine {
         if (this._id !== null && !this._id.equals(eventId)) {
             throw new ResponseStateMachineError(
                 "InvalidId",
-                `Invalid id: expected ${this._id}, actual ${eventId}`,
+                `Invalid id: expected ${String(this._id)}, actual ${String(eventId)}`,
             );
         }
 

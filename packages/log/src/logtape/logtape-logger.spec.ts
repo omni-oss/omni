@@ -8,7 +8,7 @@ import { LogTapeLogger, LogTapeLoggerFactory } from "./logtape-logger";
 // factory test uses this; LogTapeLogger tests construct the wrapper directly
 // with a hand-rolled mock and never reach this module.
 vi.mock("@logtape/logtape", () => ({
-    getLogger: vi.fn(),
+    getLogger: vi.fn<typeof import("@logtape/logtape").getLogger>(),
 }));
 
 import { getLogger } from "@logtape/logtape";
@@ -36,15 +36,15 @@ function createMockLtLogger(): MockLtLogger {
         // Default to null — most tests don't care about the parent chain.
         // Tests that exercise the `parent` getter override this explicitly.
         parent: null,
-        trace: vi.fn(),
-        debug: vi.fn(),
-        info: vi.fn(),
-        warning: vi.fn(),
-        error: vi.fn(),
-        fatal: vi.fn(),
-        getChild: vi.fn(),
-        isEnabledFor: vi.fn(),
-        with: vi.fn(),
+        trace: vi.fn<LogTapeLoggerImpl["trace"]>(),
+        debug: vi.fn<LogTapeLoggerImpl["debug"]>(),
+        info: vi.fn<LogTapeLoggerImpl["info"]>(),
+        warning: vi.fn<LogTapeLoggerImpl["warning"]>(),
+        error: vi.fn<LogTapeLoggerImpl["error"]>(),
+        fatal: vi.fn<LogTapeLoggerImpl["fatal"]>(),
+        getChild: vi.fn<LogTapeLoggerImpl["getChild"]>(),
+        isEnabledFor: vi.fn<LogTapeLoggerImpl["isEnabledFor"]>(),
+        with: vi.fn<LogTapeLoggerImpl["with"]>(),
     };
 }
 
@@ -512,7 +512,7 @@ describe("LogTapeLogger.logLazy", () => {
     it("forwards the compute function reference without invoking it", () => {
         for (const level of LOG_LEVELS) {
             const { logger, mock } = makeLogger();
-            const compute = vi.fn(() => ({ a: 1 }));
+            const compute = vi.fn<() => { a: number }>(() => ({ a: 1 }));
 
             logger.logLazy(level, `msg-${level}`, compute);
 

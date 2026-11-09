@@ -48,7 +48,9 @@ describe("PendingResponse", () => {
 
         await pendingResponse.response.wait();
 
-        await expect(pendingResponse.response.wait()).rejects.toThrow();
+        await expect(pendingResponse.response.wait()).rejects.toThrow(
+            "Response already started",
+        );
     });
 });
 
@@ -107,7 +109,9 @@ describe("Respnse", () => {
 
         await readAll(response.readBody());
 
-        await expect(readAll(response.readBody())).rejects.toThrowError();
+        await expect(readAll(response.readBody())).rejects.toThrowError(
+            "Body has already been read",
+        );
     });
 
     it("should throw error when received error frame", async () => {
@@ -134,7 +138,7 @@ describe("Respnse", () => {
             message: "test",
         });
 
-        await expect(readAll(response.readBody())).rejects.toThrowError();
+        await expect(readAll(response.readBody())).rejects.toThrowError("test");
     });
 
     describe("[Symbol.asyncDispose]", () => {

@@ -13,6 +13,9 @@ tasks:
           append:
             - "./vite.config.ts"
             - "./vitest.config.unit.ts"
+      output:
+        files:
+          - ".vitest/**/*"
 
   test:integration:
     exec: bun run vitest --config ./vitest.config.integration.ts run
@@ -22,6 +25,9 @@ tasks:
           append:
             - "./vite.config.ts"
             - "./vitest.config.integration.ts"
+      output:
+        files:
+          - ".vitest/**/*"
 
   build:
     exec: bun x vite build

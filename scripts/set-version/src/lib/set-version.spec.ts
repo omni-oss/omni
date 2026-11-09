@@ -103,7 +103,7 @@ describe("setVersionAtDir", () => {
         async (profile) => {
             const system = await VirtualSystem.create();
             await system.fs.createDirectory("/test");
-            system.proc.setCurrentDir("/test");
+            await system.proc.setCurrentDir("/test");
 
             const fileName = profile.files[0];
             await system.fs.writeStringToFile(
@@ -134,7 +134,7 @@ describe("setVersionAtDir", () => {
     it("should support globs", async () => {
         const system = await VirtualSystem.create();
         await system.fs.createDirectory("/test");
-        system.proc.setCurrentDir("/test");
+        await system.proc.setCurrentDir("/test");
 
         const profile = {
             type: "path",
@@ -172,7 +172,7 @@ describe("setVersionAtDir", () => {
     it("should support regex", async () => {
         const system = await VirtualSystem.create();
         await system.fs.createDirectory("/test");
-        system.proc.setCurrentDir("/test");
+        await system.proc.setCurrentDir("/test");
 
         const profile = {
             type: "regex",
@@ -209,7 +209,7 @@ describe("setVersionAtDir", () => {
     it("should not write changes to disk if dryRun is true", async () => {
         const system = await VirtualSystem.create();
         await system.fs.createDirectory("/test");
-        system.proc.setCurrentDir("/test");
+        await system.proc.setCurrentDir("/test");
 
         const profile = {
             type: "path",
@@ -247,7 +247,7 @@ describe("setVersionAtDir", () => {
     it("should return the reason why a file was not updated when there is the file is already up to date", async () => {
         const system = await VirtualSystem.create();
         await system.fs.createDirectory("/test");
-        system.proc.setCurrentDir("/test");
+        await system.proc.setCurrentDir("/test");
 
         const profile = {
             type: "regex",
@@ -290,7 +290,7 @@ describe("setVersionAtDir", () => {
     it("should return the reason why a file was not updated when the regex pattern did not match", async () => {
         const system = await VirtualSystem.create();
         await system.fs.createDirectory("/test");
-        system.proc.setCurrentDir("/test");
+        await system.proc.setCurrentDir("/test");
 
         const profile = {
             type: "regex",
@@ -333,7 +333,7 @@ describe("setVersionAtDir", () => {
     it("should return the reason why a file was not updated when there is no value at the path", async () => {
         const system = await VirtualSystem.create();
         await system.fs.createDirectory("/test");
-        system.proc.setCurrentDir("/test");
+        await system.proc.setCurrentDir("/test");
 
         const profile = {
             type: "path",

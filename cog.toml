@@ -575,11 +575,6 @@ path = "scripts/create-jobs"
 include = ["scripts/create-jobs/**"]
 public_api = true
 
-[monorepo.packages."@omni-oss/biome-config"]
-path = "packages/biome-config"
-include = ["packages/biome-config/**"]
-public_api = false
-
 [monorepo.packages."@omni-oss/tsconfig"]
 path = "packages/tsconfig"
 include = ["packages/tsconfig/**"]
@@ -688,7 +683,6 @@ include = [
     "README.md",
     "workspace.omni.yaml",
     "vitest.workspace.ts",
-    "biome.json",
 ]
 public_api = false
 pre_bump_hooks = [

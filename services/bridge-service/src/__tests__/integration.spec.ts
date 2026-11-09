@@ -131,7 +131,7 @@ function withRpcs(action: (ctx: ActionContext) => Promise<void>) {
         const { rpc1, rpc2, start, stop, logger } = createRpcs();
         try {
             await Log.withRoot(
-                { get: (_) => logger as unknown as Logger },
+                { get: () => logger as unknown as Logger },
                 ["bridge-service"],
                 async () => {
                     await start();
@@ -172,7 +172,7 @@ function mockLogger() {
         log: vi.fn<LogFunction>(),
         child: vi.fn<ChildFunction>(),
         parent: null as unknown as Logger | null,
-        enabled: vi.fn<EnabledFunction>((_) => true),
+        enabled: vi.fn<EnabledFunction>(() => true),
         with: vi.fn<WithFunction>().mockReturnThis(),
     };
 }

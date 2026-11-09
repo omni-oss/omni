@@ -11,7 +11,7 @@ export class SessionManagerError extends Error {
         public kind: "SessionIdInUse",
         public id: Id,
     ) {
-        super(`Session ID in use: ${id}`);
+        super(`Session ID in use: ${String(id)}`);
         this.name = "SessionManagerError";
     }
 }

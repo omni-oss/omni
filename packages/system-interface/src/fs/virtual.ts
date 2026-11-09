@@ -155,7 +155,7 @@ function promisifyMemFs(mem: { fs: IFs; vol: Volume }) {
         rm: promisify(mem.fs.rm),
         rename: promisify(mem.fs.rename),
         cp: promisify(mem.fs.cp),
-        stat: promisify(mem.fs.stat),
+        stat: promisify(mem.fs.stat.bind(mem.fs)),
         appendFile: promisify(mem.fs.appendFile),
     };
 }

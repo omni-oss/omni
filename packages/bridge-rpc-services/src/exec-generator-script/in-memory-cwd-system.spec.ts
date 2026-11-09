@@ -8,6 +8,7 @@ import type {
     Process,
     System,
 } from "@omni-oss/system-interface";
+import { ObjectEnv } from "@omni-oss/system-interface";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import { InMemoryCwdSystem } from "./in-memory-cwd-system";
@@ -32,31 +33,51 @@ const STAT_MARKER = { __marker: "stat" } as unknown as FileStat;
  */
 function makeInnerSystem() {
     const fs = {
-        readFileAsString: vi.fn().mockResolvedValue("contents"),
-        readFileAsBytes: vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3])),
-        writeStringToFile: vi.fn().mockResolvedValue(undefined),
-        writeBytesToFile: vi.fn().mockResolvedValue(undefined),
-        pathExists: vi.fn().mockResolvedValue(true),
-        createDirectory: vi.fn().mockResolvedValue(undefined),
-        readDirectory: vi.fn().mockResolvedValue(["a", "b"]),
-        remove: vi.fn().mockResolvedValue(undefined),
-        rename: vi.fn().mockResolvedValue(undefined),
-        stat: vi.fn().mockResolvedValue(STAT_MARKER),
-        isFile: vi.fn().mockResolvedValue(true),
-        isDirectory: vi.fn().mockResolvedValue(false),
-        isSymbolicLink: vi.fn().mockResolvedValue(false),
-        copy: vi.fn().mockResolvedValue(undefined),
-        appendStringToFile: vi.fn().mockResolvedValue(undefined),
+        readFileAsString: vi
+            .fn<FileSystem["readFileAsString"]>()
+            .mockResolvedValue("contents"),
+        readFileAsBytes: vi
+            .fn<FileSystem["readFileAsBytes"]>()
+            .mockResolvedValue(new Uint8Array([1, 2, 3])),
+        writeStringToFile: vi
+            .fn<FileSystem["writeStringToFile"]>()
+            .mockResolvedValue(undefined),
+        writeBytesToFile: vi
+            .fn<FileSystem["writeBytesToFile"]>()
+            .mockResolvedValue(undefined),
+        pathExists: vi.fn<FileSystem["pathExists"]>().mockResolvedValue(true),
+        createDirectory: vi
+            .fn<FileSystem["createDirectory"]>()
+            .mockResolvedValue(undefined),
+        readDirectory: vi
+            .fn<FileSystem["readDirectory"]>()
+            .mockResolvedValue(["a", "b"]),
+        remove: vi.fn<FileSystem["remove"]>().mockResolvedValue(undefined),
+        rename: vi.fn<FileSystem["rename"]>().mockResolvedValue(undefined),
+        stat: vi.fn<FileSystem["stat"]>().mockResolvedValue(STAT_MARKER),
+        isFile: vi.fn<FileSystem["isFile"]>().mockResolvedValue(true),
+        isDirectory: vi
+            .fn<FileSystem["isDirectory"]>()
+            .mockResolvedValue(false),
+        isSymbolicLink: vi
+            .fn<FileSystem["isSymbolicLink"]>()
+            .mockResolvedValue(false),
+        copy: vi.fn<FileSystem["copy"]>().mockResolvedValue(undefined),
+        appendStringToFile: vi
+            .fn<FileSystem["appendStringToFile"]>()
+            .mockResolvedValue(undefined),
     } satisfies Record<keyof FileSystem, ReturnType<typeof vi.fn>>;
 
     const ARGS = ["node", "script.js"] as const;
-    const ENV = { PATH: "/usr/bin", HOME: "/home/me" };
+    const ENV = new ObjectEnv({ PATH: "/usr/bin", HOME: "/home/me" });
 
     const proc = {
-        currentDir: vi.fn().mockReturnValue(HOST_CWD),
-        setCurrentDir: vi.fn().mockResolvedValue(undefined),
-        args: vi.fn().mockReturnValue(ARGS),
-        env: vi.fn().mockReturnValue(ENV),
+        currentDir: vi.fn<Process["currentDir"]>().mockReturnValue(HOST_CWD),
+        setCurrentDir: vi
+            .fn<Process["setCurrentDir"]>()
+            .mockResolvedValue(undefined),
+        args: vi.fn<Process["args"]>().mockReturnValue(ARGS),
+        env: vi.fn<Process["env"]>().mockReturnValue(ENV),
     } satisfies Record<keyof Process, ReturnType<typeof vi.fn>>;
 
     const system = {

@@ -118,7 +118,7 @@ export const Frame = {
             case FrameType.CLOSE:
                 return { type, data: null };
             default:
-                throw new Error(`Unknown frame type: ${type}`);
+                throw new Error(`Unknown frame type: ${String(type)}`);
         }
     },
 

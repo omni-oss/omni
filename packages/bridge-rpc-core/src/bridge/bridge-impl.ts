@@ -186,7 +186,7 @@ export class BridgeRpc {
                 await this.handleFrame(parsed.data);
             } catch (error) {
                 this.logger.error(
-                    `unexpected error while handling frame: ${error}`,
+                    `unexpected error while handling frame: ${String(error)}`,
                 );
             }
         } else {
@@ -279,12 +279,12 @@ export class BridgeRpc {
                             );
                         } catch (e) {
                             this.logger.warn(
-                                `failed to start request session for id ${event.event.data.id}: ${e}`,
+                                `failed to start request session for id ${String(event.event.data.id)}: ${String(e)}`,
                             );
                             await this.sendResponseErrorFrame(
                                 event.event.data.id,
                                 ResponseErrorCode.UNEXPECTED_FRAME,
-                                `cannot start session: ${e}`,
+                                `cannot start session: ${String(e)}`,
                             );
                             break;
                         }
@@ -296,12 +296,12 @@ export class BridgeRpc {
 
                     if (!sessionMutex) {
                         this.logger.warn(
-                            `no request session found for id: ${event.event.data.id}`,
+                            `no request session found for id: ${String(event.event.data.id)}`,
                         );
                         await this.sendResponseErrorFrame(
                             event.event.data.id,
                             ResponseErrorCode.UNEXPECTED_FRAME,
-                            `no request session for id: ${event.event.data.id}`,
+                            `no request session for id: ${String(event.event.data.id)}`,
                         );
                         break;
                     }
@@ -319,25 +319,24 @@ export class BridgeRpc {
                         }));
                     } catch (e) {
                         this.logger.warn(
-                            `request state machine error for id ${event.event.data.id}: ${e}`,
+                            `request state machine error for id ${String(event.event.data.id)}: ${String(e)}`,
                         );
                         await this.sendResponseErrorFrame(
                             event.event.data.id,
                             ResponseErrorCode.UNEXPECTED_FRAME,
-                            `protocol error: ${e}`,
+                            `protocol error: ${String(e)}`,
                         );
                         await this.closeRequestSession(event.event.data.id);
                         break;
                     }
 
-                    // biome-ignore lint/style/noNonNullAssertion: should be appropriate to assert given the checks above and the state machine contract
                     const { output, context } = result!;
 
                     switch (output.type) {
                         case "Start":
                             if (!sessionResult) {
                                 this.logger.error(
-                                    `no request frame receiver or error receiver found for request session with id: ${event.event.data.id}`,
+                                    `no request frame receiver or error receiver found for request session with id: ${String(event.event.data.id)}`,
                                 );
                                 break;
                             }
@@ -390,7 +389,7 @@ export class BridgeRpc {
 
                     if (!responseSession) {
                         this.logger.warn(
-                            `no response session found for id: ${event.event.data.id}, ignoring`,
+                            `no response session found for id: ${String(event.event.data.id)}, ignoring`,
                         );
                         break;
                     }
@@ -410,14 +409,13 @@ export class BridgeRpc {
                         );
                     } catch (e) {
                         this.logger.warn(
-                            `response state machine error for id ${event.event.data.id}: ${e}`,
+                            `response state machine error for id ${String(event.event.data.id)}: ${String(e)}`,
                         );
                         await this.closeResponseSession(event.event.data.id);
                         break;
                     }
 
                     const { output: responseOutput, context: responseContext } =
-                        // biome-ignore lint/style/noNonNullAssertion: should be appropriate to assert given the checks above and the state machine contract
                         responseResult!;
 
                     switch (responseOutput.type) {
@@ -569,7 +567,9 @@ export class BridgeRpc {
                 // error frame. Once it has been reported to the client the
                 // error is considered handled, so it is only logged here and
                 // not propagated any further.
-                this.logger.error(`service error for request ${id}: ${error}`);
+                this.logger.error(
+                    `service error for request ${String(id)}: ${String(error)}`,
+                );
                 await this.sendResponseErrorFrame(
                     id,
                     ResponseErrorCode.INTERNAL,
@@ -593,7 +593,9 @@ export class BridgeRpc {
                 chunk,
             });
         } catch (e) {
-            this.logger.warn(`failed to forward request body chunk: ${e}`);
+            this.logger.warn(
+                `failed to forward request body chunk: ${String(e)}`,
+            );
         }
     }
 
@@ -607,7 +609,7 @@ export class BridgeRpc {
                 trailers,
             });
         } catch (e) {
-            this.logger.warn(`failed to forward request end: ${e}`);
+            this.logger.warn(`failed to forward request end: ${String(e)}`);
         }
     }
 
@@ -619,7 +621,7 @@ export class BridgeRpc {
         try {
             context.requestErrorSender.send(error);
         } catch (e) {
-            this.logger.warn(`failed to send request error: ${e}`);
+            this.logger.warn(`failed to send request error: ${String(e)}`);
         }
     }
 
@@ -636,7 +638,7 @@ export class BridgeRpc {
                 headers,
             });
         } catch (e) {
-            this.logger.warn(`failed to send response start: ${e}`);
+            this.logger.warn(`failed to send response start: ${String(e)}`);
         }
     }
 
@@ -650,7 +652,9 @@ export class BridgeRpc {
                 chunk,
             });
         } catch (e) {
-            this.logger.warn(`failed to forward response body chunk: ${e}`);
+            this.logger.warn(
+                `failed to forward response body chunk: ${String(e)}`,
+            );
         }
     }
 
@@ -664,7 +668,7 @@ export class BridgeRpc {
                 trailers,
             });
         } catch (e) {
-            this.logger.warn(`failed to forward response end: ${e}`);
+            this.logger.warn(`failed to forward response end: ${String(e)}`);
         }
     }
 
@@ -676,7 +680,7 @@ export class BridgeRpc {
         try {
             context.responseErrorSender.send(error);
         } catch (e) {
-            this.logger.warn(`failed to send response error: ${e}`);
+            this.logger.warn(`failed to send response error: ${String(e)}`);
         }
     }
 
@@ -710,7 +714,9 @@ export class BridgeRpc {
                 this.logger.warn(`failed to send response error frame: ${e}`);
             });
         } catch (e) {
-            this.logger.warn(`failed to send response error frame: ${e}`);
+            this.logger.warn(
+                `failed to send response error frame: ${String(e)}`,
+            );
         }
     }
 

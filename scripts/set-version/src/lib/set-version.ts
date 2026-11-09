@@ -149,7 +149,6 @@ export function applyVersion(
             );
         }
         default:
-            // biome-ignore lint/suspicious/noExplicitAny: escape typesafety for this
             throw new UnsupportedProfileTypeError((profile as any).type);
     }
 }
@@ -162,7 +161,6 @@ function applyVersionPathGenericStrategy(
 ) {
     const parsed = deserialize(file.path, file.content, format);
 
-    // biome-ignore lint/suspicious/noExplicitAny: escape typesafety for this
     const newValue = setValueIn(parsed, profile.path as any, version);
     const serialized = serialize(file.path, newValue, format);
 
@@ -177,7 +175,6 @@ function applyVersionPathXmlStrategy(
 ) {
     const parsed = deserialize(file.path, file.content, format);
 
-    // biome-ignore lint/suspicious/noExplicitAny: escape typesafety for this
     const path = convertPathToXmlPath(profile.path as any, parsed) as any;
     const newValue = setValueIn(parsed, path, version);
     const serialized = serialize(file.path, newValue, format);
@@ -185,7 +182,6 @@ function applyVersionPathXmlStrategy(
     return serialized;
 }
 
-// biome-ignore lint/suspicious/noExplicitAny:  escape typesafety for this
 function convertPathToXmlPath(paths: (number | string)[], object: any[]) {
     const xmlPath: (string | number)[] = [];
     let currentObject = object;

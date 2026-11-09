@@ -1,4 +1,3 @@
-// biome-ignore lint/suspicious/noTsIgnore: test fixture
 // @ts-ignore
 
 export default function (ctx) {

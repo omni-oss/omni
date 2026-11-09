@@ -221,7 +221,9 @@ describe("Rpc to Rpc Integration", () => {
             // The remote service failed before producing a response, so the
             // client must observe an error rather than hang forever waiting
             // on a response start frame.
-            await expect(pendingResponse.wait()).rejects.toThrow();
+            await expect(pendingResponse.wait()).rejects.toThrow(
+                "Did not receive response",
+            );
         } finally {
             // The service error was reported to the client and is therefore
             // considered handled, so stopping the RPCs must not surface it.
@@ -304,14 +306,10 @@ describe("Error recovery", () => {
         await transport.waitForSentFrames(1);
         const sentFrame = transport.sentFrames[0];
         expect(sentFrame).toBeDefined();
-        if (sentFrame?.type === FrameType.RESPONSE_ERROR) {
-            expect(sentFrame.data.id.equals(unknownId)).toBe(true);
-            expect(
-                sentFrame.data.code.equals(ResponseErrorCode.UNEXPECTED_FRAME),
-            ).toBe(true);
-        } else {
-            expect(sentFrame?.type).toBe(FrameType.RESPONSE_ERROR);
-        }
+        expect(sentFrame).toMatchObject({
+            type: FrameType.RESPONSE_ERROR,
+            data: { id: unknownId, code: ResponseErrorCode.UNEXPECTED_FRAME },
+        });
 
         // The RPC must still be running (inject a close to stop it cleanly).
         await transport.injectFrame(Frame.close());
@@ -339,14 +337,10 @@ describe("Error recovery", () => {
         await transport.waitForSentFrames(1);
         const sentFrame = transport.sentFrames[0];
         expect(sentFrame).toBeDefined();
-        if (sentFrame?.type === FrameType.RESPONSE_ERROR) {
-            expect(sentFrame.data.id.equals(id)).toBe(true);
-            expect(
-                sentFrame.data.code.equals(ResponseErrorCode.UNEXPECTED_FRAME),
-            ).toBe(true);
-        } else {
-            expect(sentFrame?.type).toBe(FrameType.RESPONSE_ERROR);
-        }
+        expect(sentFrame).toMatchObject({
+            type: FrameType.RESPONSE_ERROR,
+            data: { id, code: ResponseErrorCode.UNEXPECTED_FRAME },
+        });
 
         // RPC must still be running.
         await transport.injectFrame(Frame.close());
@@ -556,7 +550,6 @@ describe("Production-readiness scenarios", () => {
         );
         const expected = new Uint8Array(NUM_CHUNKS * CHUNK_SIZE);
         for (let i = 0; i < NUM_CHUNKS; i++) {
-            // biome-ignore lint/style/noNonNullAssertion: test code, we know these are all defined.
             expected.set(chunks[i]!, i * CHUNK_SIZE);
         }
 

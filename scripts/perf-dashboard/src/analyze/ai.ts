@@ -111,7 +111,6 @@ export function resolveAiConfig(
 
     const { mode, warnings } = resolveMode(overrides.mode, env);
     return {
-        // biome-ignore lint/style/noNonNullAssertion: guarded by `missing` above.
         config: { baseUrl: baseUrl!, model: model!, apiKey: apiKey!, mode },
         warnings,
     };

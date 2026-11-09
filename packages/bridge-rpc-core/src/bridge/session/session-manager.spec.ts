@@ -42,13 +42,9 @@ describe("SessionManager", () => {
             SessionManagerError,
         );
 
-        try {
-            sm.startRequestSession(id, ctx());
-        } catch (e) {
-            const err = e as SessionManagerError;
-            expect(err.kind).toBe("SessionIdInUse");
-            expect(err.id).toBe(id);
-        }
+        expect(() => sm.startRequestSession(id, ctx())).toThrow(
+            expect.objectContaining({ kind: "SessionIdInUse", id }),
+        );
     });
 
     it("should respect concurrency limits via mutex", async () => {

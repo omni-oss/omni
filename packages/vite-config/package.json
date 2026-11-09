@@ -13,7 +13,8 @@
     },
     "devDependencies": {
         "@omni-oss/tsconfig": "catalog:",
-        "unplugin-dts": "catalog:"
+        "unplugin-dts": "catalog:",
+        "vitest": "catalog:"
     },
     "peerDependencies": {
         "rolldown": "catalog:",

@@ -30,7 +30,19 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 // per-script invocation, error wrapping) can be exercised in isolation while
 // still proving the context is threaded into each script.
 const { createContextMock } = vi.hoisted(() => ({
-    createContextMock: vi.fn(),
+    createContextMock: vi.fn<
+        (options: {
+            clientHandle: ClientHandle;
+            dryRun: boolean;
+            data: unknown;
+            logger?: Logger;
+        }) => Promise<{
+            sys: typeof SYS_MARKER;
+            log: Logger | undefined;
+            isDryRun: boolean;
+            data: unknown;
+        }>
+    >(),
 }));
 
 vi.mock("./script-context", () => ({
@@ -570,7 +582,7 @@ describe("ExecGeneratorScript", () => {
 
             await expect(
                 withLog(() => service.run(harness.context)),
-            ).rejects.toThrow();
+            ).rejects.toThrow(SyntaxError);
         });
     });
 });

@@ -1,5 +1,6 @@
 {
     "name": "{{ vars.full_package_name }}",
+    "type": "module",
     "description": "{{ inputs.package_description }}",
     "version": "{{ inputs.package_version }}",
     {% if inputs.package_type == 'script' %}
@@ -39,8 +40,8 @@
         "@omni-oss/vitest-config": "workspace:^",
         "vite": "catalog:",
         "vitest": "catalog:",
-        {% if inputs.package_type == 'script' %}
         "@types/node": "catalog:",
+        {% if inputs.package_type == 'script' %}
             {% if inputs.shebang_executor == 'bun' %}
         "@types/bun": "catalog:",
             {% elif inputs.shebang_executor == 'deno' %}

@@ -9,7 +9,7 @@
 //      each tag in <Dynamic component="h1"> gives it a real function component.
 //   2. Overrides — swap in styled/interactive Solid components for specific
 //      tags (shown here for h1, a, code, pre).
-import { dynamic } from "@solidjs/web";
+import { dynamic, type JSX } from "@solidjs/web";
 import { Show, type Component } from "solid-js";
 
 import type { MDXComponents } from "../../lib/mdx-provider";
@@ -60,17 +60,30 @@ const defaults = Object.fromEntries(
 
 // --- Overrides: the "customize how it renders" surface ---
 
-const Heading1: Component<Record<string, unknown>> = (props) => (
-    <h1 class="mdx-h1" {...props} />
+const Heading1: Component<
+    Record<string, unknown> & { children?: JSX.Element }
+> = (props) => (
+    <h1 class="mdx-h1" {...props}>
+        {props.children}
+    </h1>
 );
 
-const Anchor: Component<{ href?: string } & Record<string, unknown>> = (
-    props,
-) => {
+const Anchor: Component<
+    { href?: string; children?: JSX.Element } & Record<string, unknown>
+> = (props) => {
     const external = () => /^(https?:|mailto:)/.test(props.href ?? "");
     return (
-        <Show when={external()} fallback={<a class="mdx-link" {...props} />}>
-            <a class="mdx-link" target="_blank" rel="noreferrer" {...props} />
+        <Show
+            when={external()}
+            fallback={
+                <a class="mdx-link" {...props}>
+                    {props.children}
+                </a>
+            }
+        >
+            <a class="mdx-link" target="_blank" rel="noreferrer" {...props}>
+                {props.children}
+            </a>
         </Show>
     );
     // NOTE: for real SPA navigation, swap the internal branch for TanStack's

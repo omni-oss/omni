@@ -35,7 +35,6 @@ export async function loadNodeFs(): Promise<NodeFsPromises> {
     }
 }
 
-// biome-ignore lint/suspicious/noExplicitAny: generic
 export function promisify<TArgs extends any[], TError, TResult>(
     fn: (...args: [...TArgs, (error: TError, res?: TResult) => void]) => void,
 ) {
@@ -49,7 +48,6 @@ export function promisify<TArgs extends any[], TError, TResult>(
     };
 }
 
-// biome-ignore lint/suspicious/noExplicitAny: generic
 export function promisifyNoErr<TArgs extends any[], TResult>(
     fn: (...args: [...TArgs, (res: TResult) => void]) => void,
 ) {

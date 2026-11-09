@@ -13,6 +13,7 @@
     },
     "devDependencies": {
         "@omni-oss/tsconfig": "catalog:",
+        "eslint-plugin-solid": "catalog:",
         "oxlint": "catalog:"
     }
 }

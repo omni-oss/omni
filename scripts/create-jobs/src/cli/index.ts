@@ -7,7 +7,7 @@ import { createJobs, TaskResultArraySchema } from "..";
 
 const command = new Command();
 
-command
+await command
     .argument("<input>", "The input file to read from.")
     .option("-o, --output <output>", "The output file to write to.")
     .option("-r, --root <root>", "Override the workspace root.")

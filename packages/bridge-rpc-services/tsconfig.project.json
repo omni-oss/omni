@@ -3,5 +3,5 @@
         "outDir": "./dist",
         "types": ["node", "bun", "deno"]
     },
-    "exclude": ["src/**/__fixtures/**"]
+    "exclude": ["src/**/__fixtures/**", "src/**/__fixtures__/**"]
 }

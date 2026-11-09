@@ -23,7 +23,7 @@ export class PendingRequest {
         private readonly pendingResponseFactory: PendingResponseFactory,
     ) {}
 
-    public async start(headers?: Headers | undefined) {
+    public async start(headers?: Headers) {
         if (this._isStarted) {
             throw new Error("Request already started");
         }
@@ -75,7 +75,7 @@ export class ActiveRequest {
         return this;
     }
 
-    public async end(trailers?: Trailers | undefined) {
+    public async end(trailers?: Trailers) {
         await this.ensureNotEnded();
         await this.ensureNotError();
         await this.frameSender.send(Frame.requestEnd(this.id, trailers));

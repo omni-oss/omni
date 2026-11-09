@@ -1,5 +1,3 @@
-/** biome-ignore-all lint/suspicious/noTsIgnore: test fixture */
-/** biome-ignore-all lint/suspicious/noAssignInExpressions: test fixture */
 // @ts-ignore
 
 // Generator fixture — an async default export. Records its invocation only

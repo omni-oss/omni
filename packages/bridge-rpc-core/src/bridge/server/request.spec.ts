@@ -60,7 +60,9 @@ describe("Response", () => {
 
         await readAll(request.readBody());
 
-        await expect(readAll(request.readBody())).rejects.toThrowError();
+        await expect(readAll(request.readBody())).rejects.toThrowError(
+            "Body has already been read",
+        );
     });
 
     it("should throw error when received error frame", async () => {
@@ -79,7 +81,7 @@ describe("Response", () => {
             message: "test",
         });
 
-        await expect(readAll(request.readBody())).rejects.toThrowError();
+        await expect(readAll(request.readBody())).rejects.toThrowError("test");
     });
 
     describe("[Symbol.asyncDispose]", () => {

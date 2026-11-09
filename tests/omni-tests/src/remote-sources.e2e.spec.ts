@@ -6,7 +6,7 @@
  * `crates/omni_cli_core/src/commands/remote_source.rs`.
  */
 
-import { readdirSync } from "node:fs";
+import { readdirSync, type Dirent } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -23,7 +23,7 @@ const CLONE_TIMEOUT_MS = 60_000;
 
 /** Count `store/git/<slug>/<commit>` directories across every slug. */
 function countCommitDirs(storeGit: string): number {
-    let slugs: ReturnType<typeof readdirSync>;
+    let slugs: Dirent<string>[];
     try {
         slugs = readdirSync(storeGit, { withFileTypes: true });
     } catch {

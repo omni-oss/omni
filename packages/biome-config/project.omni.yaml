@@ -1,5 +1,0 @@
-# yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/json-schemas/refs/heads/main/project.json
-name: "@omni-oss/biome-config"
-
-tasks:
-  publish: bun publish --tolerate-republish

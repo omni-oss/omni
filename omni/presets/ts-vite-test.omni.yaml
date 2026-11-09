@@ -1,5 +1,5 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/json-schemas/refs/heads/main/project.json
-name: ts-vite-lib
+name: ts-vite-test
 
 extends:
   - "./ts-lib.omni.yaml"
@@ -9,12 +9,17 @@ tasks:
   test:e2e:
     enabled: false
     exec: bun x vitest --config ./vitest.config.e2e.ts run
+    dependencies:
+      - ^build
     cache:
       key:
         files:
           append:
             - "./vite.config.ts"
             - "./vitest.config.e2e.ts"
+      output:
+        files:
+          - ".vitest/**/*"
 
   test:service:
     enabled: false
@@ -25,6 +30,9 @@ tasks:
           append:
             - "./vite.config.ts"
             - "./vitest.config.service.ts"
+      output:
+        files:
+          - ".vitest/**/*"
 
   test:unit:
     enabled: false

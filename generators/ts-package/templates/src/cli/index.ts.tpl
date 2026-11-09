@@ -1,16 +1,18 @@
-{%- if inputs.shebang_executor == "node" %}
+{% if inputs.shebang_executor == "node" -%}
 #!/usr/bin/env node
-{%- elif inputs.shebang_executor == "bun" %}
+{% elif inputs.shebang_executor == "bun" -%}
 #!/usr/bin/env bun
-{%- elif inputs.shebang_executor == "deno" %}
+{% elif inputs.shebang_executor == "deno" -%}
 #!/usr/bin/env deno
 {% endif %}
 
 import { Command } from "@commander-js/extra-typings";
-import { description, name, version } from "../../package.json";
+import packageJson from "../../package.json" with { type: "json" };
 import { add } from "../add";
 
 const program = new Command();
+
+const { description, name, version } = packageJson;
 
 program.name(name).version(version).description(description);
 

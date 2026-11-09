@@ -19,8 +19,8 @@ describe("BridgeRpc", () => {
     // Helper to create a Mock Transport
     function createMockTransport() {
         const mockTransport = {
-            send: vi.fn(),
-            onReceive: vi.fn(),
+            send: vi.fn<Transport["send"]>(),
+            onReceive: vi.fn<Transport["onReceive"]>(),
         } satisfies Transport;
 
         const onReceiveHandlers = [] as ((
@@ -44,18 +44,20 @@ describe("BridgeRpc", () => {
 
     // Helper to create a Mock Service
     const createMockService = () => ({
-        run: vi.fn().mockImplementation(async (ctx: ServiceContext) => {
-            const { request, response } = ctx;
-            const requestBytes = await readAll(request.readBody());
+        run: vi
+            .fn<(ctx: ServiceContext) => Promise<void>>()
+            .mockImplementation(async (ctx) => {
+                const { request, response } = ctx;
+                const requestBytes = await readAll(request.readBody());
 
-            const activeResponse = await response.start(
-                ResponseStatusCode.SUCCESS,
-            );
-            await activeResponse.writeBodyChunk(requestBytes);
-            await activeResponse.end();
+                const activeResponse = await response.start(
+                    ResponseStatusCode.SUCCESS,
+                );
+                await activeResponse.writeBodyChunk(requestBytes);
+                await activeResponse.end();
 
-            return undefined;
-        }),
+                return undefined;
+            }),
     });
 
     const sleep = (ms: number) =>
@@ -70,7 +72,6 @@ describe("BridgeRpc", () => {
         await expect(rpc.stop()).resolves.toBeUndefined();
 
         expect(transport.send).toHaveBeenCalled();
-        // biome-ignore lint/style/noNonNullAssertion: should have value
         const lastCallBytes = transport.send.mock.calls[0]![0];
         const decodedFrame = decodeFrame(lastCallBytes);
 
@@ -147,21 +148,23 @@ describe("BridgeRpc", () => {
 
         // Logic inside the mock service to handle the incoming request
         const service = {
-            run: vi.fn().mockImplementation(async (ctx: ServiceContext) => {
-                const { request, response } = ctx;
-                // Read the request body
-                const body = await readAll(request.readBody());
+            run: vi
+                .fn<(ctx: ServiceContext) => Promise<void>>()
+                .mockImplementation(async (ctx) => {
+                    const { request, response } = ctx;
+                    // Read the request body
+                    const body = await readAll(request.readBody());
 
-                // Send back response
-                const respWriter = await response.start(
-                    ResponseStatusCode.SUCCESS,
-                );
+                    // Send back response
+                    const respWriter = await response.start(
+                        ResponseStatusCode.SUCCESS,
+                    );
 
-                await respWriter.writeBodyChunk(body);
-                await respWriter.end();
+                    await respWriter.writeBodyChunk(body);
+                    await respWriter.end();
 
-                expect(request.path).toBe(TEST_PATH);
-            }),
+                    expect(request.path).toBe(TEST_PATH);
+                }),
         };
 
         const rpc = new BridgeRpc(transport, service);

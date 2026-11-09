@@ -131,9 +131,11 @@ export async function buildReport(opts: SourceReportOptions): Promise<Report> {
         sourceId: opts.source.descriptor.id,
     });
     if (opts.ai) {
-        await annotateReportWithAi(report, opts.ai, {
-            ...(opts.onWarn ? { onWarn: opts.onWarn } : {}),
-        });
+        await annotateReportWithAi(
+            report,
+            opts.ai,
+            opts.onWarn ? { onWarn: opts.onWarn } : {},
+        );
     }
     return report;
 }

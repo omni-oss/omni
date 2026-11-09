@@ -55,7 +55,6 @@ describe("resolveScenario", () => {
         const suite = getPreset("shapes");
         const chain = suite.scenarios.find((s) => s.name === "shape-chain");
         expect(chain).toBeDefined();
-        // biome-ignore lint/style/noNonNullAssertion: for testing
         const resolved = resolveScenario(suite, chain!);
         // From defaults:
         expect(resolved.config.projects).toBe(120);
@@ -67,7 +66,6 @@ describe("resolveScenario", () => {
     it("carries per-scenario run overrides (daemon on/off)", () => {
         const suite = getPreset("daemon");
         const off = suite.scenarios.find((s) => s.name === "daemon-off");
-        // biome-ignore lint/style/noNonNullAssertion: for testing
         expect(resolveScenario(suite, off!).run.daemon).toBe(false);
     });
 
@@ -79,11 +77,9 @@ describe("resolveScenario", () => {
                 { name: "b", config: {} },
             ],
         });
-        // biome-ignore lint/style/noNonNullAssertion: for testing
         expect(resolveScenario(suite, suite.scenarios[0]!).displayName).toBe(
             "Scenario A",
         );
-        // biome-ignore lint/style/noNonNullAssertion: for testing
         expect(resolveScenario(suite, suite.scenarios[1]!).displayName).toBe(
             "b",
         );
@@ -101,7 +97,6 @@ describe("parseSuite", () => {
         });
         expect(suite.scenarios).toHaveLength(2);
         expect(
-            // biome-ignore lint/style/noNonNullAssertion: for testing
             resolveScenario(suite, suite.scenarios[0]!).config.projects,
         ).toBe(5);
     });
@@ -111,6 +106,6 @@ describe("parseSuite", () => {
             parseSuite({
                 scenarios: [{ name: "bad/name", config: {} }],
             }),
-        ).toThrow();
+        ).toThrow(Error);
     });
 });

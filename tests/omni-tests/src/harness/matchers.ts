@@ -142,6 +142,8 @@ interface OmniMatchers<R = unknown> {
 }
 
 declare module "vitest" {
-    // biome-ignore lint/suspicious/noExplicitAny: matches Vitest's own signature
-    interface Matchers<T = any> extends OmniMatchers<T> {}
+    interface Matchers<
+        R extends void | Promise<void> = void | Promise<void>,
+        T = unknown,
+    > extends OmniMatchers<R> {}
 }

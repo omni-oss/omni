@@ -31,7 +31,7 @@ function crateGeneratorFiles(): Record<string, string> {
     return out;
 }
 
-function generate(crateType: "lib" | "bin", useTracing: boolean) {
+function generate() {
     const ws = makeWorkspace({
         workspace: {
             projects: ["**"],
@@ -57,7 +57,7 @@ describe(
         ] as const)(
             "a %s crate (use_tracing=%s) has no `trace`, `log` or `enable-tracing`",
             async (crateType, useTracing) => {
-                const ws = generate(crateType, useTracing);
+                const ws = generate();
 
                 const result = await runOmni(
                     [
@@ -94,20 +94,19 @@ describe(
                 expect(project).not.toMatch(/-\s*trace\b/);
                 // `use_diagnostics` defaults to true, so the one project
                 // dependency is `omni_diagnostic`; never `trace`/`log`.
-                expect(project).toMatch(/dependencies:\s+-\s+omni_diagnostic\b/);
+                expect(project).toMatch(
+                    /dependencies:\s+-\s+omni_diagnostic\b/,
+                );
 
-                if (useTracing) {
-                    expect(cargo).toMatch(
-                        /^tracing = \{ workspace = true \}$/m,
-                    );
-                } else {
-                    expect(cargo).not.toMatch(/^tracing\s*=/m);
-                }
+                expect(/^tracing = \{ workspace = true \}$/m.test(cargo)).toBe(
+                    useTracing,
+                );
+                expect(/^tracing\s*=/m.test(cargo)).toBe(useTracing);
             },
         );
 
         it("a bin crate's sample main may print, so it passes the output lint", async () => {
-            const ws = generate("bin", true);
+            const ws = generate();
 
             await runOmni(
                 [
