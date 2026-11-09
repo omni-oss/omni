@@ -15,5 +15,14 @@
         "@omni-oss/tsconfig": "catalog:",
         "eslint-plugin-solid": "catalog:",
         "oxlint": "catalog:"
+    },
+    "peerDependencies": {
+        "eslint-plugin-solid": "catalog:",
+        "oxlint": "catalog:"
+    },
+    "peerDependenciesMeta": {
+        "eslint-plugin-solid": {
+            "optional": true
+        }
     }
 }

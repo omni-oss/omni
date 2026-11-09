@@ -305,6 +305,13 @@
         "eslint-plugin-solid": "catalog:",
         "oxlint": "catalog:",
       },
+      "peerDependencies": {
+        "eslint-plugin-solid": "catalog:",
+        "oxlint": "catalog:",
+      },
+      "optionalPeers": [
+        "eslint-plugin-solid",
+      ],
     },
     "packages/runtime-utils": {
       "name": "@omni-oss/runtime-utils",
