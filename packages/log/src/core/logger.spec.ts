@@ -1,3 +1,5 @@
+/* eslint-disable no-unused-expressions -- tagged-template log calls are statements by design */
+
 import { describe, expect, it, vi } from "vitest";
 
 import { LOG_LEVELS, type LogLevel } from "./level";

@@ -1,3 +1,5 @@
+/* eslint-disable no-unused-expressions -- tagged-template log calls are statements by design */
+
 import type { Logger as LogTapeLoggerImpl } from "@logtape/logtape";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 

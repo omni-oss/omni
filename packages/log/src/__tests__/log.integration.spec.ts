@@ -1,3 +1,5 @@
+/* eslint-disable no-unused-expressions -- tagged-template log calls are statements by design */
+
 import { resetSync } from "@logtape/logtape";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
