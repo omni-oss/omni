@@ -89,8 +89,8 @@ Example `task_run` arguments:
 
 ```json
 {
-  "working_dir": "/home/user/repos/app/packages/frontend",
-  "tasks": ["build"]
+    "working_dir": "/home/user/repos/app/packages/frontend",
+    "tasks": ["build"]
 }
 ```
 

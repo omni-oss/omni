@@ -474,7 +474,9 @@ describe("+project @config (print-config selection)", () => {
         );
 
         expect(result).toHaveSucceeded();
-        expect(result).toHaveStderrContaining("no loaded project configuration");
+        expect(result).toHaveStderrContaining(
+            "no loaded project configuration",
+        );
         expect(result.stdout).not.toContain("{");
     });
 

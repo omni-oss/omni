@@ -302,7 +302,9 @@ describe("+run @e2e @exitcode (cycles & gating)", () => {
             cwd: ws.cwd,
         });
         expect(gated).toHaveSucceeded();
-        expect(gated).toHaveStderrContaining("Skipping disabled task 'app#gated'");
+        expect(gated).toHaveStderrContaining(
+            "Skipping disabled task 'app#gated'",
+        );
         expect(gated.stdout).not.toContain("SHOULD-NOT-RUN");
 
         const live = await runOmni(

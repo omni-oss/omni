@@ -151,20 +151,20 @@ Key facts the design relies on (verified in source and with the repro above):
 
 Every loaded config has two independent attributes:
 
-| Attribute | Source |
-|-----------|--------|
-| `base` | `ProjectConfiguration::base` |
+| Attribute    | Source                                        |
+| ------------ | --------------------------------------------- |
+| `base`       | `ProjectConfiguration::base`                  |
 | `discovered` | `config.file` is one of the discovery results |
 
 A config is **runnable** iff `discovered && !base`. This is the rule
 `ProjectDataExtractor` already uses. The four combinations:
 
-| `base` | `discovered` | Example | Runnable |
-|--------|--------------|---------|----------|
-| false | true | `child/project.omni.yaml` | yes |
-| true | true | `libs/shared/project.omni.yaml` with `base: true` | no |
-| true | false | `base.omni.yaml` | no |
-| false | false | `templates/tpl.omni.yaml` | no |
+| `base` | `discovered` | Example                                           | Runnable |
+| ------ | ------------ | ------------------------------------------------- | -------- |
+| false  | true         | `child/project.omni.yaml`                         | yes      |
+| true   | true         | `libs/shared/project.omni.yaml` with `base: true` | no       |
+| true   | false        | `base.omni.yaml`                                  | no       |
+| false  | false        | `templates/tpl.omni.yaml`                         | no       |
 
 Both attributes are exposed as they are, with no combined `kind`, so no
 information is lost (decision 11).
@@ -257,31 +257,32 @@ flowchart TD
     C --> D[presentation: -f / -r / annotation]
 ```
 
-1. **Visibility** flags only *add* categories, so they combine with OR:
+1. **Visibility** flags only _add_ categories, so they combine with OR:
 
-   ```text
-   visible(entry) =
-          all
-       || runnable(entry)
-       || (include_base     && entry.base)
-       || (include_extended && !entry.discovered)
-   ```
+    ```text
+    visible(entry) =
+           all
+        || runnable(entry)
+        || (include_base     && entry.base)
+        || (include_extended && !entry.discovered)
+    ```
 
-   - `--all` is defined as "every loaded config", not as a shorthand for the
-     current list of `--include-*` flags. If a new hidden category is ever added,
-     `--all` covers it automatically and its meaning stays the same.
-   - `--all` combined with `--include-*` is allowed and simply redundant: no
-     clap conflict, no warning. Scripts can add `--all` without first removing
-     other flags.
-   - There are deliberately no `--exclude-*` visibility flags. Allowing visibility
-     flags to both add and remove would make the result depend on flag order.
-     Anything that removes entries belongs to the filter stage.
+    - `--all` is defined as "every loaded config", not as a shorthand for the
+      current list of `--include-*` flags. If a new hidden category is ever added,
+      `--all` covers it automatically and its meaning stays the same.
+    - `--all` combined with `--include-*` is allowed and simply redundant: no
+      clap conflict, no warning. Scripts can add `--all` without first removing
+      other flags.
+    - There are deliberately no `--exclude-*` visibility flags. Allowing visibility
+      flags to both add and remove would make the result depend on flag order.
+      Anything that removes entries belongs to the filter stage.
+
 2. **Filters** (none in this RFC; future examples `--with-task build`,
    `--tag web`) narrow the visible set and combine with AND, both with each other
    and with visibility. So `--all --with-task build` means "every loaded config
    that has a `build` task".
 3. **Presentation** (`-f`, `-r`) is independent of both. Annotation is switched on
-   by *any* visibility flag (`--include-base`, `--include-extended`, `--all`), so
+   by _any_ visibility flag (`--include-base`, `--include-extended`, `--all`), so
    the output shape depends on the flags, never on the data (decision 6).
 
 A base config outside the globs (`base.omni.yaml`) appears under
@@ -293,10 +294,10 @@ A base config outside the globs (`base.omni.yaml`) appears under
 omni project list [-r] [-f json|yaml|toml] [--include-base] [--include-extended] [--all]
 ```
 
-| Flags | text | json / yaml | toml |
-|-------|------|-------------|------|
-| none | `name` per line (unchanged) | array of names (unchanged) | `projects = [..]` (unchanged) |
-| any visibility flag | `name  tags  path`, columns aligned | array of `{name, path, base, discovered}` | `[[projects]]` tables |
+| Flags               | text                                | json / yaml                               | toml                          |
+| ------------------- | ----------------------------------- | ----------------------------------------- | ----------------------------- |
+| none                | `name` per line (unchanged)         | array of names (unchanged)                | `projects = [..]` (unchanged) |
+| any visibility flag | `name  tags  path`, columns aligned | array of `{name, path, base, discovered}` | `[[projects]]` tables         |
 
 In text mode, `tags` is a readable rendering of the two booleans: `project` when
 runnable; otherwise a comma-separated list built from `base` (if `base`) and
@@ -465,20 +466,21 @@ symlink inside the workspace that points outside it is not detected.
   §5.1 table.
 - **Unit (`omni_api`):** `handle_project_list` filter and sort for each flag
   combination, including:
-  - a base config outside the globs appearing under each of the three flags
-  - `--all` combined with `--include-*` giving the same result as `--all` alone
+    - a base config outside the globs appearing under each of the three flags
+    - `--all` combined with `--include-*` giving the same result as `--all` alone
 
-  The existing `project_list_contains_alpha` integration test is updated to the
-  new signature. `handle_project_config` tests cover:
-  - runnable preferred over a same-named template, with no warning
-  - two runnable projects with the requested name → `duplicate project name`
-    error listing both paths, and no config printed
-  - a duplicate elsewhere in the workspace not affecting an unrelated name
-  - a warning when two templates share a name and no runnable project matches
-  - `--path` selecting each of two same-named templates, and a template hidden
-    behind a same-named runnable project
-  - `--path` to an existing file that is not a loaded config → error
-  - `--path` with `..` / `.` segments matching after normalization
+    The existing `project_list_contains_alpha` integration test is updated to the
+    new signature. `handle_project_config` tests cover:
+    - runnable preferred over a same-named template, with no warning
+    - two runnable projects with the requested name → `duplicate project name`
+      error listing both paths, and no config printed
+    - a duplicate elsewhere in the workspace not affecting an unrelated name
+    - a warning when two templates share a name and no runnable project matches
+    - `--path` selecting each of two same-named templates, and a template hidden
+      behind a same-named runnable project
+    - `--path` to an existing file that is not a loaded config → error
+    - `--path` with `..` / `.` segments matching after normalization
+
 - **Regression guard:** a test asserting that the names from
   `project_list(ProjectListRequest::default())` equal the project names in
   `LoadedContext` for the same fixture. This pins "same rule as the task
@@ -487,20 +489,21 @@ symlink inside the workspace that points outside it is not detected.
   added; see §6.5.3).
 - **e2e (`tests/omni-tests`):** in `project.e2e.spec.ts`, using `extendsSpec()`
   (which already has a base `base.omni.yaml` plus `child`):
-  - the default list is `["child"]`
-  - `base` appears under each of `--include-base`, `--include-extended`, and
-    `--all`
-  - each format with a flag set has the object/table shape
-  - output without flags is unchanged for `projectsWorkspace()`
+    - the default list is `["child"]`
+    - `base` appears under each of `--include-base`, `--include-extended`, and
+      `--all`
+    - each format with a flag set has the object/table shape
+    - output without flags is unchanged for `projectsWorkspace()`
 
-  In `mcp.e2e.spec.ts`: no-arg call is filtered, params are honored, and
-  `entries` is present. `project_config` resolves a workspace-relative `path`
-  taken from a `project_list` entry, and rejects calls with both or neither of
-  `name` / `path`.
+    In `mcp.e2e.spec.ts`: no-arg call is filtered, params are honored, and
+    `entries` is present. `project_config` resolves a workspace-relative `path`
+    taken from a `project_list` entry, and rejects calls with both or neither of
+    `name` / `path`.
 
-  In `project.e2e.spec.ts` for `print-config`: `--path` resolves relative to the
-  current directory when run from a subdirectory; passing both `<NAME>` and
-  `--path` (or neither) exits with code 2.
+    In `project.e2e.spec.ts` for `print-config`: `--path` resolves relative to the
+    current directory when run from a subdirectory; passing both `<NAME>` and
+    `--path` (or neither) exits with code 2.
+
 - **Nothing hard to test.** Path normalization is the only platform-sensitive
   part and is covered by asserting `/` separators.
 
@@ -537,7 +540,7 @@ symlink inside the workspace that points outside it is not detected.
 2. **Ordering change.** Output becomes sorted by `(name, path)`. Order was never
    guaranteed and the tests already compare sets, so the risk is low. Sorting
    makes the output deterministic, which also helps diffs in CI.
-3. **Duplicate-load bug — fixed.** If a *discovered* `project.omni.yaml` was
+3. **Duplicate-load bug — fixed.** If a _discovered_ `project.omni.yaml` was
    `extends`-ed by another discovered project whose path sorts after it, the
    loader loaded it twice and the extension graph failed with `Node already
    exists`. This broke both `omni project list` and `omni run`. Cause:
@@ -582,59 +585,59 @@ symlink inside the workspace that points outside it is not detected.
 
 ### 6.6 Pros and cons
 
-| Option | Pros | Cons | Verdict |
-|--------|------|------|---------|
-| A. Shared predicate + `discovered` tagging in `Context`, filter in `omni_api` (recommended) | Same rule as the task pipeline; cheap (no env/extraction); `print-config` stays unfiltered; small diff | New small type; `OmniApi::project_list` signature changes | ✅ |
-| B. List from `LoadedContext` (`into_loaded`) | Filter is automatic; validates duplicates/deps too | Loads env files and extracts every project just to print names; a broken env file breaks `project list`; can't show base/extended without going back to the raw configs anyway | |
-| C. Filter only `base` in `handle_project_list` | Smallest diff | Still lists extends-only non-base configs such as `tpl`; duplicates the rule instead of sharing it | |
-| D. Keep listing everything, only annotate | No behavior change | Doesn't solve the scripting/MCP problem in §2 | |
+| Option                                                                                      | Pros                                                                                                   | Cons                                                                                                                                                                           | Verdict |
+| ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------- |
+| A. Shared predicate + `discovered` tagging in `Context`, filter in `omni_api` (recommended) | Same rule as the task pipeline; cheap (no env/extraction); `print-config` stays unfiltered; small diff | New small type; `OmniApi::project_list` signature changes                                                                                                                      | ✅      |
+| B. List from `LoadedContext` (`into_loaded`)                                                | Filter is automatic; validates duplicates/deps too                                                     | Loads env files and extracts every project just to print names; a broken env file breaks `project list`; can't show base/extended without going back to the raw configs anyway |         |
+| C. Filter only `base` in `handle_project_list`                                              | Smallest diff                                                                                          | Still lists extends-only non-base configs such as `tpl`; duplicates the rule instead of sharing it                                                                             |         |
+| D. Keep listing everything, only annotate                                                   | No behavior change                                                                                     | Doesn't solve the scripting/MCP problem in §2                                                                                                                                  |         |
 
 Flag naming:
 
-| Option | Pros | Cons | Verdict |
-|--------|------|------|---------|
-| `--include-base` / `--include-extended` | Says what it does: adds categories to the result set; matches the MCP `include_*` params | Slightly longer | ✅ |
-| `--show-base` / `--show-extended` | Short | "Show" suggests display detail rather than set membership | |
+| Option                                  | Pros                                                                                     | Cons                                                      | Verdict |
+| --------------------------------------- | ---------------------------------------------------------------------------------------- | --------------------------------------------------------- | ------- |
+| `--include-base` / `--include-extended` | Says what it does: adds categories to the result set; matches the MCP `include_*` params | Slightly longer                                           | ✅      |
+| `--show-base` / `--show-extended`       | Short                                                                                    | "Show" suggests display detail rather than set membership |         |
 
 `--all` semantics:
 
-| Option | Pros | Cons | Verdict |
-|--------|------|------|---------|
-| "Every loaded config" | Meaning never changes; covers future categories automatically | Output can grow when a new category is introduced | ✅ |
-| Shorthand for today's `--include-*` flags | Output fixed forever | Silently stops meaning "all" once a category is added | |
-| Mutually exclusive with `--include-*` | Prevents redundant input | Rejects harmless input; makes it harder to build commands in scripts | |
+| Option                                    | Pros                                                          | Cons                                                                 | Verdict |
+| ----------------------------------------- | ------------------------------------------------------------- | -------------------------------------------------------------------- | ------- |
+| "Every loaded config"                     | Meaning never changes; covers future categories automatically | Output can grow when a new category is introduced                    | ✅      |
+| Shorthand for today's `--include-*` flags | Output fixed forever                                          | Silently stops meaning "all" once a category is added                |         |
+| Mutually exclusive with `--include-*`     | Prevents redundant input                                      | Rejects harmless input; makes it harder to build commands in scripts |         |
 
 Entry attributes:
 
-| Option | Pros | Cons | Verdict |
-|--------|------|------|---------|
-| `base` + `discovered` booleans | Lossless; maps directly onto the classification rule | Slightly less readable in JSON than one enum | ✅ |
-| Single `kind` enum with precedence | One readable field | Loses that a base template is also extends-only | |
+| Option                             | Pros                                                 | Cons                                            | Verdict |
+| ---------------------------------- | ---------------------------------------------------- | ----------------------------------------------- | ------- |
+| `base` + `discovered` booleans     | Lossless; maps directly onto the classification rule | Slightly less readable in JSON than one enum    | ✅      |
+| Single `kind` enum with precedence | One readable field                                   | Loses that a base template is also extends-only |         |
 
 `print-config` path selection:
 
-| Option | Pros | Cons | Verdict |
-|--------|------|------|---------|
-| Explicit `--path <PATH>`, with exactly one of name/path required | Unambiguous; no name can be misread | One more flag | ✅ |
-| Positional arg treated as a path when it contains `/` or ends in `.omni.<ext>` | No new flag | Misreads names such as `@scope/pkg`; the behavior is hard to explain | |
-| `path:` prefix on the positional arg | No new flag | Unusual syntax; clashes with names that start with `path:` | |
+| Option                                                                         | Pros                                | Cons                                                                 | Verdict |
+| ------------------------------------------------------------------------------ | ----------------------------------- | -------------------------------------------------------------------- | ------- |
+| Explicit `--path <PATH>`, with exactly one of name/path required               | Unambiguous; no name can be misread | One more flag                                                        | ✅      |
+| Positional arg treated as a path when it contains `/` or ends in `.omni.<ext>` | No new flag                         | Misreads names such as `@scope/pkg`; the behavior is hard to explain |         |
+| `path:` prefix on the positional arg                                           | No new flag                         | Unusual syntax; clashes with names that start with `path:`           |         |
 
 CLI `--path` base directory:
 
-| Option | Pros | Cons | Verdict |
-|--------|------|------|---------|
-| Current directory | Shell-native; tab completion works | From a subdirectory, `project list` paths need adjusting | ✅ |
-| Workspace root | `project list` paths always paste unchanged | Breaks tab completion and the expectations of every other path argument | |
+| Option            | Pros                                        | Cons                                                                    | Verdict |
+| ----------------- | ------------------------------------------- | ----------------------------------------------------------------------- | ------- |
+| Current directory | Shell-native; tab completion works          | From a subdirectory, `project list` paths need adjusting                | ✅      |
+| Workspace root    | `project list` paths always paste unchanged | Breaks tab completion and the expectations of every other path argument |         |
 
 ### 6.7 Prior art and how omni improves on it
 
-| Tool | Their approach | What to adopt | What to change for omni |
-|------|----------------|---------------|-------------------------|
-| Lerna `lerna list` | Hides `private` packages by default; `--all` shows them; `--long` adds version/path; `--json` | Hide non-actionable entries by default; an `--all` escape hatch | Separate category flags as well as `--all`, since omni has two independent reasons to hide a config; annotations turn on automatically with any visibility flag instead of needing `--long` |
-| Nx `nx show projects` | Lists only real projects; narrows by `--type`, `--with-target`, pattern; `--json` | Default set = what the task runner can target; narrowing filters combined with AND | Nx has no template concept; omni separates visibility (adds) from filters (narrows) explicitly |
-| Turborepo `turbo ls` | Lists workspace packages; `--output json` gives name and path | Including `path` in structured output | Also include `base` / `discovered`, since omni has non-package configs in the loaded set |
-| Cargo `cargo metadata` | Separates `workspace_members` from all `packages` (deps included) | The idea that "loaded" ≠ "member" | Same split here (`discovered && !base` = member), exposed through flags instead of always returning both lists |
-| pnpm `pnpm ls -r` | Lists workspace packages and their deps | Not much: a dependency tree is a different concern | Not applicable beyond confirming "members by default" |
+| Tool                   | Their approach                                                                                | What to adopt                                                                      | What to change for omni                                                                                                                                                                     |
+| ---------------------- | --------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Lerna `lerna list`     | Hides `private` packages by default; `--all` shows them; `--long` adds version/path; `--json` | Hide non-actionable entries by default; an `--all` escape hatch                    | Separate category flags as well as `--all`, since omni has two independent reasons to hide a config; annotations turn on automatically with any visibility flag instead of needing `--long` |
+| Nx `nx show projects`  | Lists only real projects; narrows by `--type`, `--with-target`, pattern; `--json`             | Default set = what the task runner can target; narrowing filters combined with AND | Nx has no template concept; omni separates visibility (adds) from filters (narrows) explicitly                                                                                              |
+| Turborepo `turbo ls`   | Lists workspace packages; `--output json` gives name and path                                 | Including `path` in structured output                                              | Also include `base` / `discovered`, since omni has non-package configs in the loaded set                                                                                                    |
+| Cargo `cargo metadata` | Separates `workspace_members` from all `packages` (deps included)                             | The idea that "loaded" ≠ "member"                                                  | Same split here (`discovered && !base` = member), exposed through flags instead of always returning both lists                                                                              |
+| pnpm `pnpm ls -r`      | Lists workspace packages and their deps                                                       | Not much: a dependency tree is a different concern                                 | Not applicable beyond confirming "members by default"                                                                                                                                       |
 
 What omni does differently from all of these: the default listing uses the
 **same predicate as the executor**, so "listed" and "runnable" can't diverge.
@@ -646,27 +649,27 @@ None.
 
 ## 8. Decision log
 
-| # | Decision | Rationale |
-|---|----------|-----------|
-| 1 | By default, list only `discovered && !base` configs | Matches `ProjectDataExtractor`, so listed names are exactly the names `run`/MCP accept |
-| 2 | Keep `print-config` unfiltered | It is a debugging tool for inheritance; templates must remain inspectable |
-| 3 | `--include-extended` means "configs reached only via `extends` and not discovered" | Requested semantics; the alternative ("show each project's extends chain") is a different feature |
-| 4 | Visibility flags are additive ("either flag"); a base config outside the globs appears under either flag | Each flag answers a separate question ("show templates", "show non-discovered files") without requiring both |
-| 5 | Name the flags `--include-base` / `--include-extended` (MCP: `include_base` / `include_extended`) | They change set membership, not display; names match across CLI and MCP |
-| 6 | Annotate only when a visibility flag is passed; output shape depends on flags, not data | Keeps default output byte-compatible for scripts; output shape is predictable |
-| 7 | MCP keeps `projects: Vec<String>` and always adds `entries` | Fixed, additive output schema for MCP clients |
-| 8 | Sort output by `(name, path)` | Order was never guaranteed; deterministic output helps diffs and tests |
-| 9 | Share the runnable rule and the loading pipeline between listing and execution | Prevents the drift that caused this issue |
-| 10 | Fix the duplicate-load bug separately, first | Unrelated root cause; `discovered` tagging assumes one config per file. Done: `ProjectConfigLoader` skips already-loaded files at pop time |
-| 11 | Entries carry `base` and `discovered` booleans, not a `kind` enum | Lossless; the text output derives readable tags from them |
-| 12 | `project list` does not run `ExtractedDataValidator` | The validator needs full extraction (env files, cache info), so `project list` would fail on unrelated env errors; listing is most useful as a diagnostic precisely when a workspace is broken; `omni run` already reports these errors |
-| 13 | Add `--all`, defined as "every loaded config"; redundant with `--include-*` and allowed alongside them | Stable meaning as categories are added; harmless combinations should not error |
-| 14 | Flags fall into visibility (OR, add only), filters (AND, narrow only), and presentation; no `--exclude-*` visibility flags | Keeps results independent of flag order and leaves room for future filters |
-| 15 | On a name collision, `print-config` prefers the runnable project; with no runnable match it picks the first by path and warns if there are several | Duplicate validation does not cover templates vs. projects; users mean the real project |
-| 16 | `print-config` errors when two or more runnable projects share the requested name; the check covers only that name and uses the existing error path | Matches what `omni run` already rejects instead of silently picking one; checking only the requested name keeps it cheap and keeps unrelated duplicates from blocking debugging |
-| 17 | `print-config` gains `--path <PATH>`; exactly one of `<NAME>` / `--path` is required | Lets users reach every loaded config, including same-named templates and templates hidden behind a runnable project; an explicit flag avoids misreading names that contain `/` |
-| 18 | CLI resolves a relative `--path` against the current directory; MCP resolves `path` against the workspace root | Each matches its caller's frame of reference: shell users and tab completion on the CLI, `project_list` entry paths for MCP clients |
-| 19 | A `--path` must match a loaded config (discovered or extended) after lexical normalization; anything else is an error | Only loaded configs have a merged form to print; lexical matching is the same rule the loader uses for `extends` |
-| 20 | `extends` targets outside the workspace root are rejected (§5.8) | They were silently accepted; rejecting them keeps workspaces self-contained and guarantees every listed path is workspace-relative |
-| 21 | `project_config` returns `ProjectConfigResponse { config, warnings }`; the CLI prints warnings to stderr, and MCP `ProjectConfigResult` gains `warnings` | Follows the existing `warnings: Vec<String>` response pattern (projection); keeps stdout clean for the printed config |
-| 22 | Site reference pages are regenerated with `gen:refdocs` rather than edited by hand | They are generated from `omni declspec dump` |
+| #   | Decision                                                                                                                                                 | Rationale                                                                                                                                                                                                                               |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | By default, list only `discovered && !base` configs                                                                                                      | Matches `ProjectDataExtractor`, so listed names are exactly the names `run`/MCP accept                                                                                                                                                  |
+| 2   | Keep `print-config` unfiltered                                                                                                                           | It is a debugging tool for inheritance; templates must remain inspectable                                                                                                                                                               |
+| 3   | `--include-extended` means "configs reached only via `extends` and not discovered"                                                                       | Requested semantics; the alternative ("show each project's extends chain") is a different feature                                                                                                                                       |
+| 4   | Visibility flags are additive ("either flag"); a base config outside the globs appears under either flag                                                 | Each flag answers a separate question ("show templates", "show non-discovered files") without requiring both                                                                                                                            |
+| 5   | Name the flags `--include-base` / `--include-extended` (MCP: `include_base` / `include_extended`)                                                        | They change set membership, not display; names match across CLI and MCP                                                                                                                                                                 |
+| 6   | Annotate only when a visibility flag is passed; output shape depends on flags, not data                                                                  | Keeps default output byte-compatible for scripts; output shape is predictable                                                                                                                                                           |
+| 7   | MCP keeps `projects: Vec<String>` and always adds `entries`                                                                                              | Fixed, additive output schema for MCP clients                                                                                                                                                                                           |
+| 8   | Sort output by `(name, path)`                                                                                                                            | Order was never guaranteed; deterministic output helps diffs and tests                                                                                                                                                                  |
+| 9   | Share the runnable rule and the loading pipeline between listing and execution                                                                           | Prevents the drift that caused this issue                                                                                                                                                                                               |
+| 10  | Fix the duplicate-load bug separately, first                                                                                                             | Unrelated root cause; `discovered` tagging assumes one config per file. Done: `ProjectConfigLoader` skips already-loaded files at pop time                                                                                              |
+| 11  | Entries carry `base` and `discovered` booleans, not a `kind` enum                                                                                        | Lossless; the text output derives readable tags from them                                                                                                                                                                               |
+| 12  | `project list` does not run `ExtractedDataValidator`                                                                                                     | The validator needs full extraction (env files, cache info), so `project list` would fail on unrelated env errors; listing is most useful as a diagnostic precisely when a workspace is broken; `omni run` already reports these errors |
+| 13  | Add `--all`, defined as "every loaded config"; redundant with `--include-*` and allowed alongside them                                                   | Stable meaning as categories are added; harmless combinations should not error                                                                                                                                                          |
+| 14  | Flags fall into visibility (OR, add only), filters (AND, narrow only), and presentation; no `--exclude-*` visibility flags                               | Keeps results independent of flag order and leaves room for future filters                                                                                                                                                              |
+| 15  | On a name collision, `print-config` prefers the runnable project; with no runnable match it picks the first by path and warns if there are several       | Duplicate validation does not cover templates vs. projects; users mean the real project                                                                                                                                                 |
+| 16  | `print-config` errors when two or more runnable projects share the requested name; the check covers only that name and uses the existing error path      | Matches what `omni run` already rejects instead of silently picking one; checking only the requested name keeps it cheap and keeps unrelated duplicates from blocking debugging                                                         |
+| 17  | `print-config` gains `--path <PATH>`; exactly one of `<NAME>` / `--path` is required                                                                     | Lets users reach every loaded config, including same-named templates and templates hidden behind a runnable project; an explicit flag avoids misreading names that contain `/`                                                          |
+| 18  | CLI resolves a relative `--path` against the current directory; MCP resolves `path` against the workspace root                                           | Each matches its caller's frame of reference: shell users and tab completion on the CLI, `project_list` entry paths for MCP clients                                                                                                     |
+| 19  | A `--path` must match a loaded config (discovered or extended) after lexical normalization; anything else is an error                                    | Only loaded configs have a merged form to print; lexical matching is the same rule the loader uses for `extends`                                                                                                                        |
+| 20  | `extends` targets outside the workspace root are rejected (§5.8)                                                                                         | They were silently accepted; rejecting them keeps workspaces self-contained and guarantees every listed path is workspace-relative                                                                                                      |
+| 21  | `project_config` returns `ProjectConfigResponse { config, warnings }`; the CLI prints warnings to stderr, and MCP `ProjectConfigResult` gains `warnings` | Follows the existing `warnings: Vec<String>` response pattern (projection); keeps stdout clean for the printed config                                                                                                                   |
+| 22  | Site reference pages are regenerated with `gen:refdocs` rather than edited by hand                                                                       | They are generated from `omni declspec dump`                                                                                                                                                                                            |

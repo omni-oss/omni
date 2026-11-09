@@ -58,7 +58,8 @@ export const workerTarget: Target = {
                 // already gone
             }
         };
-        const cleanup = () => fs.rmSync(state, { recursive: true, force: true });
+        const cleanup = () =>
+            fs.rmSync(state, { recursive: true, force: true });
 
         // Vitest never tells a shared target to stop, so reap on exit.
         process.once("exit", () => {

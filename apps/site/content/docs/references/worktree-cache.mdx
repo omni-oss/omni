@@ -23,7 +23,7 @@ Create **one** `worktree.omni.yaml`, `.yml`, `.json`, or `.toml` file next to
 ```yaml
 # In the primary workspace: inherited by linked workspaces.
 cache:
-  dir: ../shared-cache/app
+    dir: ../shared-cache/app
 ```
 
 Relative paths resolve against the workspace **declaring the value**, not the
@@ -32,7 +32,7 @@ To intentionally use an isolated cache, set this in the linked workspace:
 
 ```yaml
 cache:
-  dir: .omni/cache
+    dir: .omni/cache
 ```
 
 An empty configuration, omitted field, or `null` value (`cache: null` or

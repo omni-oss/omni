@@ -4,15 +4,15 @@ description: "Which channel to use when code has something to say"
 ---
 
 omni has one owner for each concern. Pick the channel by what the information
-*is*, not by which crate you happen to have imported.
+_is_, not by which crate you happen to have imported.
 
-| Concern | Question it answers | Owner | Audience |
-| ------- | ------------------- | ----- | -------- |
-| Events | What happened? | Typed events in `omni_messages` | Presenters |
-| Diagnostics | Why did the operation stop? | `omni_diagnostic`. Fatal errors only | The user or agent |
-| Notices | What should the user know, though the operation completed? | `omni_messages` + `omni_notice` | The user or agent |
-| Output | Where and how is it shown? | A presenter per surface | The user or agent |
-| Tracing | Why did omni behave that way internally? | `tracing` | omni developers |
+| Concern     | Question it answers                                        | Owner                                | Audience          |
+| ----------- | ---------------------------------------------------------- | ------------------------------------ | ----------------- |
+| Events      | What happened?                                             | Typed events in `omni_messages`      | Presenters        |
+| Diagnostics | Why did the operation stop?                                | `omni_diagnostic`. Fatal errors only | The user or agent |
+| Notices     | What should the user know, though the operation completed? | `omni_messages` + `omni_notice`      | The user or agent |
+| Output      | Where and how is it shown?                                 | A presenter per surface              | The user or agent |
+| Tracing     | Why did omni behave that way internally?                   | `tracing`                            | omni developers   |
 
 ## Where does it go?
 
@@ -42,7 +42,7 @@ flowchart TD
 - **Presenters hold no business logic.** They render what they are given.
 - **Diagnostics are fatal; notices are not.** A diagnostic is never downgraded
   to a notice. If an option makes a condition tolerable, the run continues and a
-  *different* notice, with its own code, describes it
+  _different_ notice, with its own code, describes it
   (`meta.filter_failed` vs `meta.filter_excluded`).
 - **`tracing` is never user output.** Use `tracing::{trace,debug,info,warn,error}!`
   and `#[tracing::instrument]` directly. The old `trace` wrapper crate and the
@@ -53,7 +53,7 @@ flowchart TD
 ## Writing a notice
 
 A notice earns its place only if omitting it on one surface would mislead the
-user, it is conditional on something about *this run*, no event or result
+user, it is conditional on something about _this run_, no event or result
 already carries it, and it is worth naming with a code.
 
 ```rust

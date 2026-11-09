@@ -344,10 +344,9 @@ describe("+run-filters @e2e (dry run)", () => {
             });
         const hash = async (redact: Record<string, unknown> | undefined) => {
             const ws = make(redact);
-            const result = await runOmni(
-                ["-q", "hash", "project", "app"],
-                { cwd: ws.cwd },
-            );
+            const result = await runOmni(["-q", "hash", "project", "app"], {
+                cwd: ws.cwd,
+            });
             expect(result).toHaveSucceeded();
             return result.stdout.trim();
         };

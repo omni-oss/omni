@@ -61,12 +61,9 @@ describe("+context @config (root & project discovery)", () => {
             },
         });
 
-        const inGlob = await runOmni(
-            ["-q", "hash", "project", "in-glob"],
-            {
-                cwd: ws.cwd,
-            },
-        );
+        const inGlob = await runOmni(["-q", "hash", "project", "in-glob"], {
+            cwd: ws.cwd,
+        });
         const outOfGlob = await runOmni(
             ["-q", "hash", "project", "out-of-glob"],
             {
@@ -83,12 +80,9 @@ describe("+context @config (root & project discovery)", () => {
         const ws = makeWorkspace(multiFormatProjectsSpec());
 
         for (const name of ["yaml-app", "yml-app", "json-app", "toml-app"]) {
-            const result = await runOmni(
-                ["-q", "hash", "project", name],
-                {
-                    cwd: ws.cwd,
-                },
-            );
+            const result = await runOmni(["-q", "hash", "project", name], {
+                cwd: ws.cwd,
+            });
             expect(result).toHaveSucceeded();
         }
     });
@@ -145,14 +139,7 @@ describe("+context @config (base & extends)", () => {
 
         // `from-base` is only defined on the base; the child gets it via extends.
         const result = await runOmni(
-            [
-                "-q",
-                "run",
-                "from-base",
-                "-p",
-                "child",
-                "--output-logs=all",
-            ],
+            ["-q", "run", "from-base", "-p", "child", "--output-logs=all"],
             {
                 cwd: ws.cwd,
             },
@@ -246,12 +233,9 @@ describe("+context @config (base & extends)", () => {
                 cwd: ws.cwd,
             },
         );
-        const long = await runOmni(
-            ["-q", "run", "long", "--output-logs=all"],
-            {
-                cwd: ws.cwd,
-            },
-        );
+        const long = await runOmni(["-q", "run", "long", "--output-logs=all"], {
+            cwd: ws.cwd,
+        });
 
         expect(short).toOutputContaining("short form ran");
         expect(long).toOutputContaining("long form ran");

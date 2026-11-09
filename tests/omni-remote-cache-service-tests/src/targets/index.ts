@@ -9,9 +9,10 @@ const targets: Record<string, Target> = {
 
 /** Targets to run, from `REMOTE_CACHE_TEST_TARGETS` (comma separated; all by default). */
 export function resolveTargets(): Target[] {
-    const names = process.env.REMOTE_CACHE_TEST_TARGETS?.split(",")
-        .map((n) => n.trim())
-        .filter(Boolean) ?? Object.keys(targets);
+    const names =
+        process.env.REMOTE_CACHE_TEST_TARGETS?.split(",")
+            .map((n) => n.trim())
+            .filter(Boolean) ?? Object.keys(targets);
     return names.map((name) => {
         const target = targets[name];
         if (!target) {

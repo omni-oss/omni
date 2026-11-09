@@ -6,11 +6,11 @@ description: "What omni prints, where, and how to quiet it or look closer"
 omni keeps four kinds of output apart, so what you see does not depend on a log
 level.
 
-| Stream | What it carries |
-| ------ | --------------- |
-| stdout | Results of the command you ran, and task output passed through |
-| stderr | omni's own status: progress, summary, notices, the final error |
-| trace file or `--trace` | Developer traces. Never part of normal output |
+| Stream                  | What it carries                                                |
+| ----------------------- | -------------------------------------------------------------- |
+| stdout                  | Results of the command you ran, and task output passed through |
+| stderr                  | omni's own status: progress, summary, notices, the final error |
+| trace file or `--trace` | Developer traces. Never part of normal output                  |
 
 Omni itself writes nothing but the command's result to stdout, at any setting,
 so piping a JSON-producing command (for example `omni code list --format json`)
@@ -19,7 +19,7 @@ output can also appear on stdout. The same holds for `omni mcp`, where stdout ca
 
 ## Notices
 
-A **notice** is a message about *this run* that you may want to know even though
+A **notice** is a message about _this run_ that you may want to know even though
 the operation completed. It never changes the exit status.
 
 ```text
@@ -56,16 +56,16 @@ catalog as a table.
 `-q` hides omni's own narration. It never hides what you asked for, what failed,
 what needs an answer, or a safety signal.
 
-| Text | Under `-q` |
-| ---- | ---------- |
-| Command results, dry-run command lines | Shown |
-| Task output, including cached replay | Shown (see `--output-logs`) |
-| Final error, failed-task output | Shown |
-| Prompts | Shown |
-| `error` notices and **essential** notices | Shown |
-| `warning` and `note` notices | Hidden |
-| Lifecycle lines, spinner and progress bar | Hidden |
-| Summary table | Only if a task failed |
+| Text                                      | Under `-q`                  |
+| ----------------------------------------- | --------------------------- |
+| Command results, dry-run command lines    | Shown                       |
+| Task output, including cached replay      | Shown (see `--output-logs`) |
+| Final error, failed-task output           | Shown                       |
+| Prompts                                   | Shown                       |
+| `error` notices and **essential** notices | Shown                       |
+| `warning` and `note` notices              | Hidden                      |
+| Lifecycle lines, spinner and progress bar | Hidden                      |
+| Summary table                             | Only if a task failed       |
 
 `-q` only changes what is printed. Exit status, MCP and traces are unaffected.
 With `--ui auto` it never resolves to a progress bar.

@@ -107,16 +107,7 @@ describe("+env @env (merging & flags)", () => {
         });
 
         const result = await runOmni(
-            [
-                "-q",
-                "-e",
-                ".env.{ENV}",
-                "--env",
-                "staging",
-                "env",
-                "get",
-                "STG",
-            ],
+            ["-q", "-e", ".env.{ENV}", "--env", "staging", "env", "get", "STG"],
             { cwd: ws.cwd },
         );
 
@@ -159,13 +150,10 @@ describe("+env @env (precedence & combined flags)", () => {
         // `crates/env_loader/src/lib.rs`), so the file wins.
         const ws = envWorkspace({ SHARED: "fromfile" });
 
-        const result = await runOmni(
-            ["-q", "-i", "env", "get", "SHARED"],
-            {
-                cwd: ws.cwd,
-                env: { SHARED: "fromparent" },
-            },
-        );
+        const result = await runOmni(["-q", "-i", "env", "get", "SHARED"], {
+            cwd: ws.cwd,
+            env: { SHARED: "fromparent" },
+        });
 
         expect(result).toHaveSucceeded();
         expect(result.stdout).toBe("fromfile");
@@ -212,12 +200,9 @@ describe("+env @env (precedence & combined flags)", () => {
             },
         });
 
-        const result = await runOmni(
-            ["-q", "-r", "mark.txt", "env", "all"],
-            {
-                cwd: ws.path("sub"),
-            },
-        );
+        const result = await runOmni(["-q", "-r", "mark.txt", "env", "all"], {
+            cwd: ws.path("sub"),
+        });
 
         expect(result).toHaveSucceeded();
         expect(result.out).toContain("SUBVAR=subval");
