@@ -12,7 +12,10 @@ export default mergeConfig(
             ],
             typecheck: {
                 enabled: true,
-                include: ["./src/**/*.{test,spec}.{ts,mts,cts,tsx}"],
+                include: [
+                    "./src/**/*.{test,spec}.{ts,mts,cts,tsx}",
+                    "./src/**/*.{test,spec}-d.{ts,mts,cts,tsx}",
+                ],
                 exclude: ["**/node_modules/**"],
             },
         },

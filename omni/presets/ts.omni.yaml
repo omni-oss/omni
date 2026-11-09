@@ -61,7 +61,7 @@ tasks:
             - "@workspace/packages/tsconfig/*.json"
 
   check:types:
-    exec: sh -c 'bun x tsc --noEmit -p tsconfig.json && if [ -f tsconfig.node.json ]; then bun x tsc -p tsconfig.node.json; fi'
+    exec: sh -c 'bun x tsc --noEmit -p tsconfig.json && if [ -f tsconfig.node.json ]; then bun x tsc --noEmit -p tsconfig.node.json; fi'
     dependencies:
       - ^build
     cache:

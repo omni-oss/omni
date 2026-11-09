@@ -44,11 +44,11 @@ async function removeTempDir(tempDir: string): Promise<void> {
             return;
         } catch (err) {
             if (attempts === maxAttempts) {
+                console.warn(
+                    `Failed to remove dir ${tempDir} after ${attempts} attempts:`,
+                    err,
+                );
                 if (err instanceof Error && !err.message.includes("EBUSY")) {
-                    console.warn(
-                        `Failed to remove dir ${tempDir} after ${attempts} attempts:`,
-                        err,
-                    );
                     throw err;
                 }
                 return;
