@@ -68,8 +68,10 @@ tasks:
 
   check:types:
     exec: sh -c 'bun x tsc --noEmit -p tsconfig.json && if [ -f tsconfig.node.json ]; then bun x tsc --noEmit -p tsconfig.node.json; fi'
+    # No `^build`, same reason as `check:lint`: `dist` must not appear while the
+    # (concurrently running) workspace-wide lint resolves packages from `src`.
     dependencies:
-      - ^build
+      - "@omni-oss/workspace-gen#build"
     cache:
       key:
         files:
