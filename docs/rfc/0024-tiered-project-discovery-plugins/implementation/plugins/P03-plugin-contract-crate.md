@@ -24,8 +24,9 @@ and typed capability registration with negotiation. No engine dependency.
 3. Request/result types for `on_workspace`, `filter_candidates`, `infer_roots`,
    `resolve_dependencies`, `observe`, including tagged `accepted`/`declined` inference
    results and the resolution-only declaration.
-4. `ProjectContribution` using the restricted contribution types from P04 (agree the
-   boundary early; P04 owns the restriction validators).
+4. `ProjectContribution` shape (generic over/placeholder for the contribution payload).
+   **Task P03.2** wires in the restricted contribution types once P04.2 lands; P04.2
+   owns the restriction validators. P03 itself does not depend on P04.
 5. `StateValue`/`StateUpdate` (`keep`/`replace`/`clear`; omission = keep), `Notice`,
    `Cursor`, claim types (package identity, workspace membership, package dependency),
    query request/response with paging.

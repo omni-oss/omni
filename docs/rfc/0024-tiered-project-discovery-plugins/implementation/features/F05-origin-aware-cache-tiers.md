@@ -37,9 +37,12 @@ reshaping.
 1. Represent enablement as `(value, source)` with an ordered source enum; keep it out of
    cache keys.
 2. Fill B04's `disabled{deciding_source}` and `demoted` causes.
-3. Add the **explicit-contradiction error**: a cache-enabled task whose executable
-   dependency is explicitly disabled by an authored source fails planning, naming both
-   tasks and file provenance. Evaluate only on executable edges of the planned graph; the
+3. Add the **explicit-contradiction error**, only when **both sides are explicit**: the
+   dependent's effective `cache.enabled: true` is decided by an authored source **and**
+   its executable dependency's `false` is decided by an authored source. Fail planning,
+   naming both tasks and file provenance. If either side comes from a plugin tier,
+   activation `defaults` or the host fallback, do **not** error: the dependent runs
+   uncached (B04 demotion). Evaluate only on executable edges of the planned graph; the
    validation/inspection path may list all contradictions.
 4. Host-fallback hook: an "inferred task" marker (unused until plugins) defaulting to
    `false`; handwritten tasks keep default `true`.
@@ -55,6 +58,9 @@ reshaping.
 ## Acceptance
 
 - C01 tier-matrix cases that don't need plugins (task vs project explicit, fallback).
-- Explicit contradiction produces the error with provenance; implicit one demotes only.
+- Explicit contradiction (both sides authored) produces the error with provenance.
+- Mixed-origin cases demote instead of erroring: dependent enabled by fallback/plugin
+  tier with an explicitly disabled dependency, and explicitly enabled dependent with a
+  dependency disabled by fallback/plugin tier.
 - Status shape unchanged from B04.
 - No cache key change (golden hashes identical).

@@ -31,8 +31,9 @@ with tracked lockfile-assisted inference; never lockfile-only project creation.
    (not name matching), same-name externals, deduped targets, partial-workspace handling
    (retain claim, no invalid edge, bounded notice), peers per spec.
 6. **Tasks:** one task per valid script (manager-runner command, literal script name via
-   R03), custom and lifecycle scripts included, no automatic task edges, no execution of
-   lifecycle scripts. Manifest edits must invalidate task reuse even with
+   R03), custom and lifecycle scripts included, no automatic task edges. Discovery never
+   executes scripts; task execution keeps the manager's normal lifecycle behavior.
+   Manifest edits must invalidate task reuse even with
    `cache.key.defaults: false` (manifest included as input contribution).
 7. **No `cache.enabled` emitted**; adapter input/output policy per spec.
 
@@ -41,4 +42,6 @@ with tracked lockfile-assisted inference; never lockfile-only project creation.
 - All spec fixtures for npm/Yarn/pnpm/Bun, ambiguity and failure paths.
 - Script names resembling flags/`$VAR`/Tera/delimiters execute unmodified.
 - Parse, permission and resource failures remain fatal; no manager is ever spawned.
+- Partial-workspace and impact-selection fixtures from §4.3 pass via the shared P08.5
+  selection (excluded `lib`, chains through excluded roots, shared workspace manifest).
 - Native output equals the contract fixtures exactly (reuse for Wasm parity).

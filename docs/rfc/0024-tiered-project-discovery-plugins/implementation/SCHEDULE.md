@@ -73,7 +73,7 @@ for a large team before any shared hotspot is touched.
 Do not edit between the markers; run `python3 schedule.py`.
 
 <!-- BEGIN GENERATED -->
-Tasks: 95 · waves: 16 · widest wave: 16 · critical path ≈ 100 working days
+Tasks: 97 · waves: 16 · widest wave: 16 · critical path ≈ 100 working days
 
 **Critical path:** B02 → R04.1 → R04.2 → R04.3 → R07.3 → P05 → P06.2 → P06.5 → P06.6 → P08.1 → P08.2 → P08.4 → P10.7 → P13.7 → P15 → P16
 
@@ -107,7 +107,7 @@ A task may start once every dependency is merged. All tasks in a wave are depend
 | Task | Title | Size | Deps | Domains |
 | ---- | ----- | ---- | ---- | ------- |
 | B04 | Uncached-dependency demotion + typed status | M | B01 | executor |
-| F03.2 ⚠ | Scoped reference schema | M | F03.1, R06 | config-types, planner |
+| F03.2 ⚠ | Scoped reference schema, parser/formatter | M | F03.1, R06 | config-types, planner |
 | F08.2 ⚠ | Process-held lease primitive | M | F08.1 | source |
 | F08.4 ⚠ | Atomic reference API (complete vs additive) | M | F08.1 | source |
 | F10.1 | Captured input view design doc | M | R02 | docs |
@@ -151,8 +151,7 @@ A task may start once every dependency is merged. All tasks in a wave are depend
 
 | Task | Title | Size | Deps | Domains |
 | ---- | ----- | ---- | ---- | ------- |
-| F10.3 | Revalidation (content identity | M | F10.2 | capability |
-| P06.1 | Activation graph and binding validation | M | P03 | plugin-host |
+| F10.3 | Revalidation (content identity, negative reads) | M | F10.2 | capability |
 | P09.1 | Plugin contributor and subsystem selection | M | F08.5, P02 | source, cli |
 | P10.1 ⚠ | JS adapter scaffold + registration | S | P03 | plugin-builtins |
 | P11.1 ⚠ | Cargo package/aggregate classification | M | P03, P01.4 | plugin-builtins |
@@ -177,7 +176,7 @@ A task may start once every dependency is merged. All tasks in a wave are depend
 | P10.6 ⚠ | JS script tasks | M | P10.1, R03.3 | plugin-builtins |
 | P11.4 ⚠ | Cargo build/check/test tasks | M | P11.1, R03.3 | plugin-builtins |
 | R04.4 | Migration fixtures and changelog | S | R04.3 | docs |
-| R05 ⚠ | Field-wise task composition | M | R04.3 | config-types |
+| R05 ⚠ | Field-wise task composition, atomic alias transitions | M | R04.3 | config-types |
 | R07.3 ⚠ | Virtual classification in discovery/loader | M | R07.1, R04.3 | loader, discovery |
 
 ⚠ `config-types` shared by R05, F07, P04.1, P04.2: serialize or give to one worker.
@@ -193,6 +192,7 @@ A task may start once every dependency is merged. All tasks in a wave are depend
 | F03.3 ⚠ | Root-reference lowering after composition | M | F03.2, R05 | loader |
 | F05.2 ⚠ | Explicit-contradiction error and deciding_source | M | F05.1, B04 | executor |
 | F06.3 ⚠ | Plumb digest through all collector constructors | L | F06.2, R05, B01, F05.1 | extractor, collector, cache-store, executor |
+| P03.2 | Wire restricted contribution types into ProjectContribution | S | P03, P04.2 | plugin-contract |
 | P04.4 ⚠ | Activation defaults | M | F05.1, P04.2 | extractor, config-types |
 | P05 ⚠ | Marker indexing and root classification | L | R07.3, F01, P02 | discovery, loader |
 | P09.3 | Captured-byte artifact loading | M | F10.3, F08.3, P09.2 | source |
@@ -209,7 +209,10 @@ A task may start once every dependency is merged. All tasks in a wave are depend
 | ---- | ----- | ---- | ---- | ------- |
 | F09 | Eligibility/provenance inspection output | M | B04, F05.2 | cli |
 | P04.3 | Activation apply with scoped patches | L | P04.1, R05, F03.3, R07.2 | loader |
-| P06.2 | Stage engine | L | P03, P05 | plugin-host |
+| P06.1 ⚠ | Activation graph and binding validation | M | P03, F05.2 | plugin-host |
+| P06.2 ⚠ | Stage engine, snapshots, partitions, atomic commit | L | P03.2, P05, F05.2 | plugin-host |
+
+⚠ `plugin-host` shared by P06.1, P06.2: serialize or give to one worker.
 
 ### Wave 7
 
@@ -219,7 +222,7 @@ A task may start once every dependency is merged. All tasks in a wave are depend
 | P06.3 ⚠ | Dispositions and transition table | M | P06.2 | plugin-host |
 | P06.4 ⚠ | Dependency-ordered inference | M | P06.1, P06.2 | plugin-host |
 | P06.5 ⚠ | Claim and query service | L | P06.2, P01.1 | plugin-host |
-| P06.7 ⚠ | Budgets | L | P06.2, P01.5 | plugin-host |
+| P06.7 ⚠ | Budgets, cancellation, overflow splitting | L | P06.2, P01.5 | plugin-host |
 
 ⚠ `plugin-host` shared by P06.3, P06.4, P06.5, P06.7: serialize or give to one worker.
 
@@ -231,7 +234,7 @@ A task may start once every dependency is merged. All tasks in a wave are depend
 | P07 ⚠ | Inference cache | L | R08.3, P06.3, F10.3 | cache-store, plugin-host |
 | P10.4 ⚠ | JS naming and identity/membership claims | M | P10.1, P06.5 | plugin-builtins |
 | P11.2 ⚠ | Cargo claims | M | P11.1, P06.5 | plugin-builtins |
-| P13.3 | Discovery adapter (async host imports | L | P13.1, P13.2, P06.7 | plugin-wasm |
+| P13.3 | Discovery adapter (async host imports, pooling) | L | P13.1, P13.2, P06.7 | plugin-wasm |
 
 ⚠ `plugin-host` shared by P06.6, P07: serialize or give to one worker.
 
@@ -261,6 +264,7 @@ A task may start once every dependency is merged. All tasks in a wave are depend
 | ---- | ----- | ---- | ---- | ------- |
 | P08.2 | Bootstrap capture and final revalidation | M | F10.3, P08.1 | loader |
 | P08.3 | Inferred-task identity and cache fallback wiring | M | F06.3, P08.1 | extractor |
+| P08.5 | Impact-relation selection over retained claims (cycle-safe, transitive, excluded-root fallback) | L | P08.1, P06.5 | planner |
 
 ### Wave 11
 
@@ -272,9 +276,9 @@ A task may start once every dependency is merged. All tasks in a wave are depend
 
 | Task | Title | Size | Deps | Domains |
 | ---- | ----- | ---- | ---- | ------- |
-| P10.7 ⚠ | JS end-to-end conformance | M | P10.3, P10.5, P10.6, P08.4 | plugin-builtins |
-| P11.5 ⚠ | Cargo end-to-end conformance | M | P11.3, P11.4, P08.4 | plugin-builtins |
-| P12 | Plugin inspection | M | P08.4, F09 | cli |
+| P10.7 ⚠ | JS end-to-end conformance | M | P10.3, P10.5, P10.6, P08.4, P08.5 | plugin-builtins |
+| P11.5 ⚠ | Cargo end-to-end conformance | M | P11.3, P11.4, P08.4, P08.5 | plugin-builtins |
+| P12 | Plugin inspection, notices, CLI/MCP | M | P08.4, F09 | cli |
 
 ⚠ `plugin-builtins` shared by P10.7, P11.5: serialize or give to one worker.
 
@@ -288,12 +292,12 @@ A task may start once every dependency is merged. All tasks in a wave are depend
 
 | Task | Title | Size | Deps | Domains |
 | ---- | ----- | ---- | ---- | ------- |
-| P15 | Conformance suite | L | P10.7, P11.5, P13.7, P14.2 | ci |
+| P15 | Conformance suite, benchmarks, budget calibration | L | P10.7, P11.5, P13.7, P14.2 | ci |
 
 ### Wave 15
 
 | Task | Title | Size | Deps | Domains |
 | ---- | ----- | ---- | ---- | ------- |
-| P16 | Stabilization | L | P15 | docs, ci |
+| P16 | Stabilization, compatibility, migrations | L | P15 | docs, ci |
 
 <!-- END GENERATED -->

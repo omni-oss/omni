@@ -19,7 +19,13 @@ data = yaml.safe_load((HERE / "tasks.yaml").read_text())
 tasks, domains = data["tasks"], data["domains"]
 errors = []
 
+ALLOWED = {"title", "parent", "kind", "size", "deps", "touches", "owner"}
 for tid, t in tasks.items():
+    extra = set(t) - ALLOWED
+    if extra:
+        errors.append(f"{tid}: unexpected keys {sorted(extra)} (unquoted comma in a title?)")
+    if "title" in t and not isinstance(t["title"], str):
+        errors.append(f"{tid}: title must be a string")
     for d in t["deps"]:
         if d not in tasks:
             errors.append(f"{tid}: unknown dep {d}")
@@ -37,6 +43,7 @@ def visit(tid):
     if tid in visiting:
         errors.append(f"cycle through {tid}")
         wave[tid] = 0
+        finish[tid] = 0
         return
     visiting.add(tid)
     deps = [d for d in tasks[tid]["deps"] if d in tasks]

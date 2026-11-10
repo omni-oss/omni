@@ -16,7 +16,7 @@ cache-eligibility fixes (B01, B04, F05) come before everything here.
 | --------------------------------------------------- | ------------------------------------------------------------ | -------------------------------- | ---- |
 | [P01](P01-contract-and-adapter-specs.md)            | Close the specification gaps (contract, fixtures, adapters)  | none (can start now, in parallel) | L    |
 | [P02](P02-plugin-configuration-crate.md)            | `omni_plugin_configurations` and `plugins` workspace config  | R01                              | M    |
-| [P03](P03-plugin-contract-crate.md)                 | `omni_plugin` runtime-neutral contract crate                 | P01, P02, R02                    | L    |
+| [P03](P03-plugin-contract-crate.md)                 | `omni_plugin` runtime-neutral contract crate                 | P01, P02, R02 (P03.2 later adds P04.2) | L |
 | [P04](P04-project-inference-controls-and-apply.md)  | Project `inference` controls, `apply`, `defaults`, restricted contributions | R04, R05, F03, F05, F07, P02 | XL |
 | [P05](P05-marker-indexing-and-discovery.md)         | Marker indexing, candidate grouping, virtual-root loading    | R07, F01, P02                    | L    |
 
@@ -24,7 +24,7 @@ cache-eligibility fixes (B01, B04, F05) come before everything here.
 
 | ID                                                  | Title                                                        | Groundwork gate                  | Size |
 | --------------------------------------------------- | ------------------------------------------------------------ | -------------------------------- | ---- |
-| [P06](P06-plugin-host.md)                           | `omni_plugin_host`: scheduling, claims, transactions, budgets | P03, P05                        | XL   |
+| [P06](P06-plugin-host.md)                           | `omni_plugin_host`: scheduling, claims, transactions, budgets | P03.2, P05, F05.2 (cache fixes)  | XL   |
 | [P07](P07-inference-cache.md)                       | Inference cache (records, indexes, publication)              | R08, P06                         | L    |
 | [P08](P08-pass-integration-and-semantic-identity.md) | Full-pass integration into `Context` and execution identity | F06, F10, P04, P06, P07          | L    |
 | [P09](P09-plugin-sources-and-artifacts.md)          | Plugin source contributor, manifests, captured artifacts     | F08, F02, P02                    | L    |

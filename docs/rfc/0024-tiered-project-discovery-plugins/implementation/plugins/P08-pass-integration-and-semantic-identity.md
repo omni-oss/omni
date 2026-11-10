@@ -42,3 +42,23 @@ task-cache identity for inferred tasks.
 - End-to-end with a mock plugin: discover → plan → run → warm rerun reuses inference and
   task cache correctly.
 - Zero-plugin discovery equals baseline.
+
+## Task P08.5: impact-relation selection (shared)
+
+Task `P08.5` (deps P08.1, P06.5) implements the cycle-tolerant **impact relation** used
+only for affected/dependent selection, never scheduling or cycle validation
+([§4.3](../../004.01-native-ecosystem-adapters.md)):
+
+- Transitive, cycle-safe fixed point over retained `package_dependency` claims
+  (resolution `workspace`, no project edge) plus project edges.
+- Conservative fallback when evidence for excluded roots cannot be established: treat
+  selected projects related to any excluded root as impacted by a change under any
+  excluded or selected project; fail with an actionable diagnostic if even that cannot
+  be computed.
+- Shared workspace manifest/lockfile changes select every selected member.
+- Until it lands, dependent-expanding selection falls back to including projects with
+  any retained workspace relationship to a changed project.
+- Fixtures: direct, transitive dev chain, excluded `lib` between selected projects,
+  excluded chain, explicit-only target, full workspace with nothing excluded.
+
+Both adapters (P10.7, P11.5) depend on it.

@@ -28,10 +28,15 @@ Cargo tasks, without invoking Cargo, rustup or any toolchain.
    `--workspace`/`--all*`, no task edges, no `cache.enabled`. No automatic `fmt`/
    `clippy`. No toolchain probing.
 5. Partial workspaces: excluded confirmed local deps keep claims, no invalid edge.
+6. **Impact selection** is shared work in **P08.5** (cycle-safe, transitive affected
+   selection over retained dependency claims and project edges, conservative
+   excluded-root fallback). This adapter only supplies the claims; P11.5 depends on P08.5.
 
 ## Acceptance
 
 - Differing Cargo/omni names and renames keep package targeting correct.
 - Multiple packages, nested workspaces, default-members fixtures.
 - Dev cycles valid; included-edge cycles error with no arbitrary breaking.
+- §4.3 impact fixtures pass through P08.5: dev-dependency change selects the consumer's
+  tests, transitive dev chains, excluded roots, shared workspace manifest change.
 - Native output matches contract fixtures (also the Wasm parity baseline).
