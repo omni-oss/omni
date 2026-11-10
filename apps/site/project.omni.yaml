@@ -50,7 +50,17 @@ tasks:
     dependencies:
       - gen:refdocs
 
-  prepare: bun x panda codegen
+  prepare:
+    exec: bun x panda codegen
+    cache:
+      output:
+        files:
+          - styled-system/**/*
+
+  check:types:
+    dependencies:
+      append:
+        - prepare
 
   build:
     enabled: true
