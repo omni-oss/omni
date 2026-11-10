@@ -464,6 +464,9 @@ enum Command {
     Normal(StdCommand),
 }
 
+// `Pty` holds boxed/handle fields while `Normal` embeds the platform's
+// `tokio::process::Child`; boxing it would only add an allocation per process.
+#[allow(clippy::large_enum_variant)]
 enum ChildInner {
     Pty {
         child: Box<dyn portable_pty::Child + Send + Sync>,
