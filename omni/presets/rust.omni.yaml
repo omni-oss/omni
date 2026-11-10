@@ -22,7 +22,7 @@ tasks:
         files:
           append: ["./tests/**/*.rs", "./benches/**/*.rs"]
 
-  check:fmt:
+  check:format:
     exec: cargo fmt -p ${PROJECT_NAME} -- --check
     cache:
       key:
@@ -33,7 +33,7 @@ tasks:
     exec: ""
     dependencies:
       - check:lint
-      - check:fmt
+      - check:format
 
   test:
     exec: cargo test -p ${PROJECT_NAME} ${RUST_TEST_ADDITIONAL_ARGS:-}
