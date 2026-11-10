@@ -90,8 +90,10 @@ jobs:
             const fs = require('fs');
             const execSync = require('child_process').execSync;
 
-            // 1. Run the bun command
-            execSync('bun --bun x @omni-oss/create-jobs result.json --output=jobs.json');
+            // 1. Run the workspace's own create-jobs (not the published package, which
+            // may not know about newer job types such as `check` and `build:debug`)
+            execSync('bun install --frozen-lockfile --filter @omni-oss/create-jobs', { stdio: 'inherit' });
+            execSync('bun run scripts/create-jobs/src/cli/index.ts result.json --output=jobs.json', { stdio: 'inherit' });
 
             // 2. Read and parse the generated JSON
             const jobsRaw = fs.readFileSync('jobs.json', 'utf8');
