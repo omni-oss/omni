@@ -1,0 +1,132 @@
+# Task graph for the RFC 0024 implementation plan.
+# One entry = one independently reviewable PR. `deps` are hard prerequisites (merged).
+# `touches` are conflict domains: two tasks sharing a domain should not run concurrently
+# unless the same worker owns both or they are rebased deliberately (see SCHEDULE.md).
+# `kind`: code | spec | doc. Generated views: run `python3 schedule.py`.
+
+domains:
+  executor: crates/omni_task_executor (cache_manager.rs, batch_executor.rs)
+  glob: crates/omni_glob_config, omni_config_types
+  collections: crates/config_utils (list/dict), validators
+  config-types: crates/omni_configurations (project/task/cache config types)
+  loader: crates/omni_context (project_config_loader.rs, context.rs) and omni_core extension_graph
+  extractor: crates/omni_context/project_data_extractor.rs, CacheInfo
+  collector: crates/omni_collector, project_hasher.rs
+  cache-store: crates/omni_cache (hybrid.rs, traits.rs)
+  command: crates/omni_command_config, omni_task_context
+  planner: crates/omni_execution_plan, omni_api task ops
+  cli: crates/omni_cli_core, omni_mcp_core
+  source: crates/omni_remote_source, omni_remote_source_contributors
+  discovery: crates/omni_context/project_discovery.rs, omni_configuration_discovery
+  capability: crates/omni_capabilities, omni_capability_sys
+  plugin-config: crates/omni_plugin_configurations (new)
+  plugin-contract: crates/omni_plugin (new)
+  plugin-host: crates/omni_plugin_host (new)
+  plugin-builtins: crates/omni_plugin_builtins (new)
+  plugin-wasm: crates/omni_plugin_runtime_wasm (new)
+  docs: docs/ only
+  ci: CI workflows, cargo features
+
+tasks:
+  # ---------- Bug fixes ----------
+  B01:   {title: Cache lookup/replay honors cache.enabled, parent: B01, kind: code, size: S, deps: [], touches: [executor]}
+  B02:   {title: Glob include/exclude side presence, parent: B02, kind: code, size: M, deps: [], touches: [glob]}
+  B03:   {title: Strict collection envelope validation, parent: B03, kind: code, size: M, deps: [], touches: [collections]}
+  B04:   {title: Uncached-dependency demotion + typed status, parent: B04, kind: code, size: M, deps: [B01], touches: [executor]}
+
+  # ---------- Refactoring ----------
+  R01:   {title: Extract omni_source_configurations, parent: R01, kind: code, size: S, deps: [], touches: [config-types]}
+  R02:   {title: WorkspacePath / ProjectRootId types, parent: R02, kind: code, size: S, deps: [], touches: []}
+  R03.1: {title: Command-operand audit note, parent: R03, kind: doc, size: S, deps: [], touches: [docs]}
+  R03.2: {title: Literal/expression operand type design, parent: R03, kind: code, size: M, deps: [R03.1], touches: [command]}
+  R03.3: {title: Plumb operands through validation/resolve/display/hash, parent: R03, kind: code, size: M, deps: [R03.2], touches: [command, collector]}
+  R03.4: {title: Mixed-path (C16) prototype and tests, parent: R03, kind: code, size: S, deps: [R03.2], touches: [command]}
+  R04.1: {title: Layer types with presence, parent: R04, kind: code, size: L, deps: [B02, B03], touches: [config-types]}
+  R04.2: {title: Layer loader (replace eager load), parent: R04, kind: code, size: L, deps: [R04.1], touches: [loader]}
+  R04.3: {title: Replay and finalize (defaults after composition), parent: R04, kind: code, size: L, deps: [R04.2], touches: [loader, extractor]}
+  R04.4: {title: Migration fixtures and changelog, parent: R04, kind: code, size: S, deps: [R04.3], touches: [docs]}
+  R05:   {title: Field-wise task composition, atomic alias transitions, parent: R05, kind: code, size: M, deps: [R04.3], touches: [config-types]}
+  R06:   {title: Explicit exact/pattern inputs in planner and API, parent: R06, kind: code, size: M, deps: [], touches: [planner, cache-store, collector]}
+  R07.1: {title: Logical project key + guards against file use, parent: R07, kind: code, size: M, deps: [R02], touches: [loader]}
+  R07.2: {title: Ordered raw layer traversal from extension graph, parent: R07, kind: code, size: M, deps: [R04.2], touches: [loader]}
+  R07.3: {title: Virtual classification in discovery/loader, parent: R07, kind: code, size: M, deps: [R07.1, R04.3], touches: [loader, discovery]}
+  R08.1: {title: Cache storage audit note, parent: R08, kind: doc, size: S, deps: [], touches: [docs]}
+  R08.2: {title: Neutral local storage API + test consumer, parent: R08, kind: code, size: M, deps: [R08.1], touches: [cache-store]}
+  R08.3: {title: Migrate task cache onto neutral storage, parent: R08, kind: code, size: M, deps: [R08.2], touches: [cache-store]}
+
+  # ---------- Features ----------
+  F01:   {title: Duplicate explicit project file diagnostic, parent: F01, kind: code, size: S, deps: [], touches: [discovery]}
+  F02:   {title: Projection guardrails for plugin.omni.*, parent: F02, kind: code, size: XS, deps: [], touches: []}
+  F03.1: {title: Identity-keyed map and parser audit, parent: F03, kind: doc, size: S, deps: [], touches: [docs]}
+  F03.2: {title: Scoped reference schema, parser/formatter, parent: F03, kind: code, size: M, deps: [F03.1, R06], touches: [config-types, planner]}
+  F03.3: {title: Root-reference lowering after composition, parent: F03, kind: code, size: M, deps: [F03.2, R05], touches: [loader]}
+  F04:   {title: Exact positional selectors + --task-pattern, parent: F04, kind: code, size: M, deps: [R06, F03.2], touches: [cli, planner]}
+  F05.1: {title: Origin-tagged cache enablement through CacheInfo, parent: F05, kind: code, size: M, deps: [R04.3], touches: [extractor]}
+  F05.2: {title: Explicit-contradiction error and deciding_source, parent: F05, kind: code, size: M, deps: [F05.1, B04], touches: [executor]}
+  F06.1: {title: Effective-field audit note, parent: F06, kind: doc, size: M, deps: [], touches: [docs]}
+  F06.2: {title: Canonical digest function + golden vectors, parent: F06, kind: code, size: M, deps: [F06.1, R03.2], touches: [collector]}
+  F06.3: {title: Plumb digest through all collector constructors, parent: F06, kind: code, size: L, deps: [F06.2, R05, B01, F05.1], touches: [extractor, collector, cache-store, executor]}
+  F07:   {title: Conflict detection and provenance, parent: F07, kind: code, size: L, deps: [R04.3, R07.2], touches: [loader, config-types]}
+  F08.1: {title: Lease/GC/reference protocol doc, parent: F08, kind: doc, size: S, deps: [], touches: [docs]}
+  F08.2: {title: Process-held lease primitive, parent: F08, kind: code, size: M, deps: [F08.1], touches: [source]}
+  F08.3: {title: GC honors leases, parent: F08, kind: code, size: S, deps: [F08.2], touches: [source]}
+  F08.4: {title: Atomic reference API (complete vs additive), parent: F08, kind: code, size: M, deps: [F08.1], touches: [source]}
+  F08.5: {title: Migrate existing contributors to reference API, parent: F08, kind: code, size: M, deps: [F08.4], touches: [source]}
+  F09:   {title: Eligibility/provenance inspection output, parent: F09, kind: code, size: M, deps: [B04, F05.2], touches: [cli]}
+  F10.1: {title: Captured input view design doc, parent: F10, kind: doc, size: M, deps: [R02], touches: [docs]}
+  F10.2: {title: Tracked contained reads/exists/list with limits, parent: F10, kind: code, size: M, deps: [F10.1], touches: [capability]}
+  F10.3: {title: Revalidation (content identity, negative reads), parent: F10, kind: code, size: M, deps: [F10.2], touches: [capability]}
+
+  # ---------- Plugin phases ----------
+  P01.1: {title: Complete hook/claim/query schemas, parent: P01, kind: spec, size: L, deps: [], touches: [docs]}
+  P01.2: {title: Executable H-case fixtures + validator harness, parent: P01, kind: spec, size: M, deps: [P01.1], touches: [docs]}
+  P01.3: {title: JavaScript adapter spec + fixtures, parent: P01, kind: spec, size: L, deps: [P01.1], touches: [docs]}
+  P01.4: {title: Cargo adapter spec + fixtures, parent: P01, kind: spec, size: L, deps: [P01.1], touches: [docs]}
+  P01.5: {title: Budget/counter design (candidates), parent: P01, kind: spec, size: M, deps: [], touches: [docs]}
+  P02:   {title: omni_plugin_configurations + plugins config, parent: P02, kind: code, size: M, deps: [R01], touches: [plugin-config, config-types]}
+  P03:   {title: omni_plugin contract crate, parent: P03, kind: code, size: L, deps: [P01.1, P02, R02], touches: [plugin-contract]}
+  P04.1: {title: Project inference controls, parent: P04, kind: code, size: M, deps: [R04.3, P02], touches: [config-types]}
+  P04.2: {title: Restricted additive plugin contribution types, parent: P04, kind: code, size: M, deps: [R04.3, R03.2, B03], touches: [config-types]}
+  P04.3: {title: Activation apply with scoped patches, parent: P04, kind: code, size: L, deps: [P04.1, R05, F03.3, R07.2], touches: [loader]}
+  P04.4: {title: Activation defaults, parent: P04, kind: code, size: M, deps: [F05.1, P04.2], touches: [extractor, config-types]}
+  P04.5: {title: Activation composition under conflict rules, parent: P04, kind: code, size: M, deps: [P04.3, P04.4, F07], touches: [loader]}
+  P05:   {title: Marker indexing and root classification, parent: P05, kind: code, size: L, deps: [R07.3, F01, P02], touches: [discovery, loader]}
+  P06.1: {title: Activation graph and binding validation, parent: P06, kind: code, size: M, deps: [P03], touches: [plugin-host]}
+  P06.2: {title: Stage engine, snapshots, partitions, atomic commit, parent: P06, kind: code, size: L, deps: [P03, P05], touches: [plugin-host]}
+  P06.3: {title: Dispositions and transition table, parent: P06, kind: code, size: M, deps: [P06.2], touches: [plugin-host]}
+  P06.4: {title: Dependency-ordered inference, parent: P06, kind: code, size: M, deps: [P06.1, P06.2], touches: [plugin-host]}
+  P06.5: {title: Claim and query service, parent: P06, kind: code, size: L, deps: [P06.2, P01.1], touches: [plugin-host]}
+  P06.6: {title: Resolution-only participation and observe, parent: P06, kind: code, size: M, deps: [P06.3, P06.5], touches: [plugin-host]}
+  P06.7: {title: Budgets, cancellation, overflow splitting, parent: P06, kind: code, size: L, deps: [P06.2, P01.5], touches: [plugin-host]}
+  P07:   {title: Inference cache, parent: P07, kind: code, size: L, deps: [R08.3, P06.3, F10.3], touches: [cache-store, plugin-host]}
+  P08.1: {title: Pipeline wiring into Context, parent: P08, kind: code, size: L, deps: [P04.5, P06.6, P05], touches: [loader]}
+  P08.2: {title: Bootstrap capture and final revalidation, parent: P08, kind: code, size: M, deps: [F10.3, P08.1], touches: [loader]}
+  P08.3: {title: Inferred-task identity and cache fallback wiring, parent: P08, kind: code, size: M, deps: [F06.3, P08.1], touches: [extractor]}
+  P08.4: {title: Publication gating and rejected-pass invisibility, parent: P08, kind: code, size: M, deps: [P07, P08.2], touches: [loader, plugin-host]}
+  P09.1: {title: Plugin contributor and subsystem selection, parent: P09, kind: code, size: M, deps: [F08.5, P02], touches: [source, cli]}
+  P09.2: {title: Static manifest validation and descriptors, parent: P09, kind: code, size: M, deps: [P09.1], touches: [plugin-config, source]}
+  P09.3: {title: Captured-byte artifact loading, parent: P09, kind: code, size: M, deps: [F10.3, F08.3, P09.2], touches: [source]}
+  P10.1: {title: JS adapter scaffold + registration, parent: P10, kind: code, size: S, deps: [P03], touches: [plugin-builtins]}
+  P10.2: {title: JS ownership/boundary fixtures, parent: P10, kind: spec, size: M, deps: [P01.3], touches: [docs]}
+  P10.3: {title: JS manager selection, parent: P10, kind: code, size: M, deps: [P10.1, P10.2], touches: [plugin-builtins]}
+  P10.4: {title: JS naming and identity/membership claims, parent: P10, kind: code, size: M, deps: [P10.1, P06.5], touches: [plugin-builtins]}
+  P10.5: {title: JS project edges and dependency claims, parent: P10, kind: code, size: L, deps: [P10.4], touches: [plugin-builtins]}
+  P10.6: {title: JS script tasks, parent: P10, kind: code, size: M, deps: [P10.1, R03.3], touches: [plugin-builtins]}
+  P10.7: {title: JS end-to-end conformance, parent: P10, kind: code, size: M, deps: [P10.3, P10.5, P10.6, P08.4], touches: [plugin-builtins]}
+  P11.1: {title: Cargo package/aggregate classification, parent: P11, kind: code, size: M, deps: [P03, P01.4], touches: [plugin-builtins]}
+  P11.2: {title: Cargo claims, parent: P11, kind: code, size: M, deps: [P11.1, P06.5], touches: [plugin-builtins]}
+  P11.3: {title: Cargo project edges, parent: P11, kind: code, size: M, deps: [P11.2], touches: [plugin-builtins]}
+  P11.4: {title: Cargo build/check/test tasks, parent: P11, kind: code, size: M, deps: [P11.1, R03.3], touches: [plugin-builtins]}
+  P11.5: {title: Cargo end-to-end conformance, parent: P11, kind: code, size: M, deps: [P11.3, P11.4, P08.4], touches: [plugin-builtins]}
+  P12:   {title: Plugin inspection, notices, CLI/MCP, parent: P12, kind: code, size: M, deps: [P08.4, F09], touches: [cli]}
+  P13.1: {title: WIT package, parent: P13, kind: code, size: M, deps: [P03, P01.1], touches: [plugin-wasm]}
+  P13.2: {title: Reusable Wasm engine core, parent: P13, kind: code, size: L, deps: [], touches: [plugin-wasm]}
+  P13.3: {title: Discovery adapter (async host imports, pooling), parent: P13, kind: code, size: L, deps: [P13.1, P13.2, P06.7], touches: [plugin-wasm]}
+  P13.4: {title: Limits and containment tests, parent: P13, kind: code, size: M, deps: [P13.3], touches: [plugin-wasm]}
+  P13.5: {title: Import-set conformance and pinned toolchain, parent: P13, kind: code, size: M, deps: [P13.3], touches: [plugin-wasm, ci]}
+  P13.6: {title: Artifact loading from captured bytes, parent: P13, kind: code, size: M, deps: [P13.3, P09.3], touches: [plugin-wasm]}
+  P13.7: {title: Native/Wasm parity fixtures, parent: P13, kind: code, size: M, deps: [P13.4, P13.5, P13.6, P10.7, P11.5], touches: [plugin-wasm]}
+  P14.1: {title: Unsupported-feature diagnostic, parent: P14, kind: code, size: S, deps: [P02], touches: [plugin-config]}
+  P14.2: {title: Feature gating and CI matrix, parent: P14, kind: code, size: M, deps: [P14.1, P13.3], touches: [ci]}
+  P15:   {title: Conformance suite, benchmarks, budget calibration, parent: P15, kind: code, size: L, deps: [P10.7, P11.5, P13.7, P14.2], touches: [ci]}
+  P16:   {title: Stabilization, compatibility, migrations, parent: P16, kind: code, size: L, deps: [P15], touches: [docs, ci]}
