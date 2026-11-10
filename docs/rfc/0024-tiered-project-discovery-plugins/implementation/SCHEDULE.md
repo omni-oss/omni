@@ -7,7 +7,8 @@ subagent, can pick up whatever is unblocked.
 
 - **Source of truth:** `tasks.yaml`. Edit it, then run `python3 schedule.py` to
   validate (unknown deps, cycles) and regenerate the wave tables below.
-  `python3 schedule.py --check` is CI-safe.
+  `python3 schedule.py --check` is CI-safe. Both commands require PyYAML installed for
+  `python3` (`pip install pyyaml`).
 - **Task ids:** `B01`, `R04.2`, `P06.5`... The part before the dot is the parent
   package file (`parent` in the yaml); the slice description is in the yaml `title` and
   the parent file's Slices/Work section.

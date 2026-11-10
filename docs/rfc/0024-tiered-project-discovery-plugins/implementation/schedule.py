@@ -15,7 +15,22 @@ HERE = Path(__file__).parent
 SIZE = {"XS": 0.5, "S": 1.5, "M": 4, "L": 8, "XL": 15}
 BEGIN, END = "<!-- BEGIN GENERATED -->", "<!-- END GENERATED -->"
 
-data = yaml.safe_load((HERE / "tasks.yaml").read_text())
+
+
+class UniqueKeyLoader(yaml.SafeLoader):
+    """Safe YAML loader that rejects duplicate mapping keys (e.g. repeated task ids)."""
+
+    def construct_mapping(self, node, deep=False):
+        seen = set()
+        for key_node, _ in node.value:
+            key = self.construct_object(key_node, deep=deep)
+            if key in seen:
+                raise SystemExit(f"tasks.yaml: duplicate key {key!r} (line {key_node.start_mark.line + 1})")
+            seen.add(key)
+        return super().construct_mapping(node, deep)
+
+
+data = yaml.load((HERE / "tasks.yaml").read_text(), Loader=UniqueKeyLoader)
 tasks, domains = data["tasks"], data["domains"]
 errors = []
 
@@ -51,6 +66,7 @@ visiting = set()
 
 
 def visit(tid):
+    """Depth-first walk computing each task's wave and finish time; records cycles."""
     if tid in wave:
         return
     if tid in visiting:
@@ -119,7 +135,10 @@ gen = "\n".join(out)
 sched = HERE / "SCHEDULE.md"
 text = sched.read_text()
 block = f"{BEGIN}\n{gen}\n{END}"
-new = re.sub(re.escape(BEGIN) + r".*?" + re.escape(END), lambda m: block, text, flags=re.S)
+new, replacements = re.subn(re.escape(BEGIN) + r".*?" + re.escape(END), lambda m: block, text, flags=re.S)
+if replacements == 0:
+    print("SCHEDULE.md is missing the generated-block markers")
+    sys.exit(1)
 if "--check" in sys.argv:
     if new != text:
         print("SCHEDULE.md is stale; run python3 schedule.py")
