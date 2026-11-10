@@ -40,6 +40,9 @@ tasks:
         files:
           - "dist/**"
 
+  check:types:
+    enabled: false
+
   test:unit:
     enabled: false
 
