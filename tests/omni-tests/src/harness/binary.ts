@@ -164,5 +164,7 @@ export function ensureOmniBinary(): string {
     execaSync("cargo", args, { cwd: root, stdio: "inherit" });
 
     cachedBin = undefined;
-    return resolveOmniBin({ profile });
+    // The native build only writes to `target/<profile>/`, so skip any
+    // (possibly stale) target-specific binaries.
+    return resolveOmniBin({ profile, targets: [] });
 }
