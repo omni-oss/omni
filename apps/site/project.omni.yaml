@@ -52,10 +52,10 @@ tasks:
 
   prepare:
     exec: bun x panda codegen
+    # Codegen is fast and its output must always exist on disk. Caching it would
+    # restore files without replacing stale ones (and via hard links), so always run it.
     cache:
-      output:
-        files:
-          - styled-system/**/*
+      enabled: false
 
   check:types:
     dependencies:
