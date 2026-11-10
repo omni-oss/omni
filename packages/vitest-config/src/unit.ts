@@ -16,7 +16,10 @@ export default mergeConfig(
                     "./src/**/*.{test,spec}.{ts,mts,cts,tsx}",
                     "./src/**/*.{test,spec}-d.{ts,mts,cts,tsx}",
                 ],
-                exclude: ["**/node_modules/**"],
+                exclude: [
+                    "**/node_modules/**",
+                    "./src/**/__tests__/**/*.{test,spec}.{ts,mts,cts,tsx}",
+                ],
             },
         },
     }),
