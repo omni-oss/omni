@@ -26,12 +26,25 @@ for tid, t in tasks.items():
         errors.append(f"{tid}: unexpected keys {sorted(extra)} (unquoted comma in a title?)")
     if "title" in t and not isinstance(t["title"], str):
         errors.append(f"{tid}: title must be a string")
+    for req in ("title", "parent", "kind", "size", "deps", "touches"):
+        if req not in t:
+            errors.append(f"{tid}: missing key {req}")
+    if t.get("size") not in SIZE:
+        errors.append(f"{tid}: unknown size {t.get('size')!r}")
+    if tid in (t.get("deps") or []):
+        errors.append(f"{tid}: depends on itself")
+    if any(r not in t for r in ("deps", "touches")):
+        continue
     for d in t["deps"]:
         if d not in tasks:
             errors.append(f"{tid}: unknown dep {d}")
     for dom in t["touches"]:
         if dom not in domains:
             errors.append(f"{tid}: unknown domain {dom}")
+
+if errors:
+    print("\n".join(errors))
+    sys.exit(1)
 
 wave, finish, order = {}, {}, []
 visiting = set()
