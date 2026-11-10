@@ -435,7 +435,11 @@ describe("createJobs", () => {
     });
 
     it("should route check tasks by language and build:debug tasks to rust debug builds", () => {
-        const mk = (task_name: string, project_name: string, language: string) => ({
+        const mk = (
+            task_name: string,
+            project_name: string,
+            language: string,
+        ) => ({
             status: "success",
             task: {
                 task_name,
@@ -453,7 +457,9 @@ describe("createJobs", () => {
 
         const jobs = createJobs(results);
 
-        expect(jobs.check.rust.map((j) => j.project_name)).toEqual(["rust-pkg"]);
+        expect(jobs.check.rust.map((j) => j.project_name)).toEqual([
+            "rust-pkg",
+        ]);
         expect(jobs.check.typescript.map((j) => j.project_name)).toEqual([
             "ts-pkg",
         ]);
