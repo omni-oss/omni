@@ -47,11 +47,11 @@ Findings from the current tree (`main` @ `6441fa7b`):
   stable exit codes beyond success/failure, and no machine-readable output.
 - **MCP:** `omni_mcp_core/src/server.rs` maps failures to
   `ErrorData::internal_error(e.to_string(), None)`. Two problems follow:
-  1. `e.to_string()` drops the `eyre` cause chain (only the outermost message
-     survives; the CLI's `{:#}` would have kept it). An agent sees
-     `failed to plan tasks` and not why.
-  2. Everything is `internal_error` (-32603), so an agent cannot tell "fix
-     your arguments and retry" from "the server is broken".
+    1. `e.to_string()` drops the `eyre` cause chain (only the outermost message
+       survives; the CLI's `{:#}` would have kept it). An agent sees
+       `failed to plan tasks` and not why.
+    2. Everything is `internal_error` (-32603), so an agent cannot tell "fix
+       your arguments and retry" from "the server is broken".
 - **Special cases are hard-coded.** `call0` in `server.rs` contains one
   `downcast_ref::<TaskExecutorError>().and_then(|e| e.meta_filter_error())`
   branch. It is the only `downcast_ref` for domain errors in the workspace,
@@ -212,10 +212,10 @@ The cost is a few downcasts per error on the failure path only.
 **Backends.** `register!` is the only thing the derive emits, so the storage
 behind it can change without touching user code:
 
-| Backend         | Mechanism                                        | Targets                          |
-| --------------- | ------------------------------------------------ | -------------------------------- |
-| `inventory`     | Constructor section, runs before `main`          | Linux, macOS, Windows (omni's current targets) |
-| Explicit list   | `static REGISTRY: &[&Registration]` in the `omni` binary crate, hand-maintained, checked by a test | Any, including `wasm32` |
+| Backend       | Mechanism                                                                                          | Targets                                        |
+| ------------- | -------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| `inventory`   | Constructor section, runs before `main`                                                            | Linux, macOS, Windows (omni's current targets) |
+| Explicit list | `static REGISTRY: &[&Registration]` in the `omni` binary crate, hand-maintained, checked by a test | Any, including `wasm32`                        |
 
 `inventory` is the default. The explicit list is the supported fallback, kept
 behind a cargo feature (`omni_diagnostic/explicit-registry`) so a future target
@@ -243,6 +243,7 @@ built binary and asserts that `meta_filter.evaluation` is present. This checks
 type is registered, because an omitted type that is also missing from the
 expected lists passes. Each migration PR that adds a diagnostic crate adds its
 type to `assert_types_registered` and its code to this check.
+
 - CI of the implementation PR builds and tests the `inventory` backend on
   Linux x86_64, `cross` aarch64, macOS (x86_64 and aarch64) and Windows MSVC.
   wasm was not verified (the target was not installed for the prototype) and
@@ -301,10 +302,10 @@ and `2` for incorrect usage. BSD `sysexits.h` (`64`-`78`) is not part of POSIX,
 is rarely used by modern tools, and clap already uses `2`, so this RFC does not
 adopt it.
 
-| Code | Meaning                                                        |
-| ---- | -------------------------------------------------------------- |
-| `0`  | Success                                                        |
-| `1`  | Failure (environment, internal, or un-migrated errors)         |
+| Code | Meaning                                                                         |
+| ---- | ------------------------------------------------------------------------------- |
+| `0`  | Success                                                                         |
+| `1`  | Failure (environment, internal, or un-migrated errors)                          |
 | `2`  | `Audience::User` (bad arguments/config/expression), same as clap's usage errors |
 
 `Audience::Environment` and `Audience::Internal` are distinguished by the
@@ -350,13 +351,13 @@ JSON (`data` in MCP, stderr in `--error-format json`). The envelope is fixed;
 
 ```json
 {
-  "kind": "meta_filter.evaluation",
-  "audience": "user",
-  "message": "meta filter failed to evaluate for 500 task(s)",
-  "context": ["planning tasks for `test`"],
-  "causes": ["unable to read `omni.yaml`: permission denied"],
-  "details": { "filter": "knd == \"e2e\"", "total": 500, "groups": [ "..." ] },
-  "hints": ["`knd` is not defined for this task. Did you mean `kind`?"]
+    "kind": "meta_filter.evaluation",
+    "audience": "user",
+    "message": "meta filter failed to evaluate for 500 task(s)",
+    "context": ["planning tasks for `test`"],
+    "causes": ["unable to read `omni.yaml`: permission denied"],
+    "details": { "filter": "knd == \"e2e\"", "total": 500, "groups": ["..."] },
+    "hints": ["`knd` is not defined for this task. Did you mean `kind`?"]
 }
 ```
 
@@ -439,19 +440,19 @@ pub enum ProjectFilterError {
 
 **Attributes**
 
-| Where | Attribute | Effect |
-| --- | --- | --- |
-| type or variant | `audience = user\|environment\|internal` | Variant overrides type default. Type default is `user`. |
-| variant or struct | `code = "a.b"` | **Required** (see rules). Never derived from the name. |
-| variant or struct | `hint = "fmt"` | Repeatable. Same `{0}` / `{field}` / `{field:?}` interpolation as `thiserror`. |
-| field | `detail` / `detail = "key"` | Collected into the `details` JSON object (field must be `Serialize`). Key defaults to the field name. |
-| variant or struct | `details = path::fn` | Escape hatch: `fn(&Self) -> serde_json::Value`. Mutually exclusive with field `detail`. |
-| variant or struct | `hints = path::fn` | Escape hatch: `fn(&Self) -> Vec<String>`, listed before the static `hint`s (specific before generic). |
-| variant or struct | `body = path::fn` | Escape hatch for `render_body`. |
-| variant | `forward` | Variant has exactly one field implementing `Diagnostic`; all methods delegate to it. |
-| variant | `skip` | Variant carries no diagnostic (I/O, serialization, internal plumbing). It is a plain error: lookup ignores it and `reportable()` is `false`. |
-| variant | `delegate` | Variant has exactly one field: an error, or an `eyre::Report`, that may carry its own diagnostic. It is looked up in that field (a report's whole cause chain is searched, so context added with `wrap_err` does not hide it); if there is none the variant is a plain error. |
-| type | `no_register` | Skip registration (for diagnostics only ever constructed by hand). |
+| Where             | Attribute                                | Effect                                                                                                                                                                                                                                                                        |
+| ----------------- | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| type or variant   | `audience = user\|environment\|internal` | Variant overrides type default. Type default is `user`.                                                                                                                                                                                                                       |
+| variant or struct | `code = "a.b"`                           | **Required** (see rules). Never derived from the name.                                                                                                                                                                                                                        |
+| variant or struct | `hint = "fmt"`                           | Repeatable. Same `{0}` / `{field}` / `{field:?}` interpolation as `thiserror`.                                                                                                                                                                                                |
+| field             | `detail` / `detail = "key"`              | Collected into the `details` JSON object (field must be `Serialize`). Key defaults to the field name.                                                                                                                                                                         |
+| variant or struct | `details = path::fn`                     | Escape hatch: `fn(&Self) -> serde_json::Value`. Mutually exclusive with field `detail`.                                                                                                                                                                                       |
+| variant or struct | `hints = path::fn`                       | Escape hatch: `fn(&Self) -> Vec<String>`, listed before the static `hint`s (specific before generic).                                                                                                                                                                         |
+| variant or struct | `body = path::fn`                        | Escape hatch for `render_body`.                                                                                                                                                                                                                                               |
+| variant           | `forward`                                | Variant has exactly one field implementing `Diagnostic`; all methods delegate to it.                                                                                                                                                                                          |
+| variant           | `skip`                                   | Variant carries no diagnostic (I/O, serialization, internal plumbing). It is a plain error: lookup ignores it and `reportable()` is `false`.                                                                                                                                  |
+| variant           | `delegate`                               | Variant has exactly one field: an error, or an `eyre::Report`, that may carry its own diagnostic. It is looked up in that field (a report's whole cause chain is searched, so context added with `wrap_err` does not hide it); if there is none the variant is a plain error. |
+| type              | `no_register`                            | Skip registration (for diagnostics only ever constructed by hand).                                                                                                                                                                                                            |
 
 **Generated code**
 
@@ -592,21 +593,21 @@ Each step is independently shippable.
    `TaskExecutorError::meta_filter_error` in favour of the trait. The
    `meta_filter_error()` accessors stay as the wrapper lookup (4.2), but the
    `downcast_ref` branch in `server.rs` goes.
-   - **`Display` becomes the one-line summary.** Today `Display` renders the
-     full multi-line RFC 0020 body. The migration splits it: `Display`
-     (still owned by `thiserror`, via `#[error("meta filter failed to evaluate
-     for {total} task(s)")]`) is the summary, and the grouped body moves
-     verbatim into the function named by `#[diagnostic(body = ...)]`, so the
-     CLI layout is unchanged. `details = ...` returns what `to_json` returns
-     today.
-   - **No compatibility fields:** `filter`, `total`, `other` and `groups`
-     (`other` is the count of failures whose causes were not retained) are
-     only under `details`; snapshot tests cover each.
-   - **Keep `render_warning`.** The `--meta-on-error exclude` path
-     (`execution_plan_provider.rs`) is a notice, which is out of scope (4.5),
-     so `render_warning` stays until the warnings RFC replaces it.
-   - Existing RFC 0020 tests must pass unchanged apart from the `[code]`
-     suffix and `kind` value.
+    - **`Display` becomes the one-line summary.** Today `Display` renders the
+      full multi-line RFC 0020 body. The migration splits it: `Display`
+      (still owned by `thiserror`, via `#[error("meta filter failed to evaluate
+      for {total} task(s)")]`) is the summary, and the grouped body moves
+      verbatim into the function named by `#[diagnostic(body = ...)]`, so the
+      CLI layout is unchanged. `details = ...` returns what `to_json` returns
+      today.
+    - **No compatibility fields:** `filter`, `total`, `other` and `groups`
+      (`other` is the count of failures whose causes were not retained) are
+      only under `details`; snapshot tests cover each.
+    - **Keep `render_warning`.** The `--meta-on-error exclude` path
+      (`execution_plan_provider.rs`) is a notice, which is out of scope (4.5),
+      so `render_warning` stays until the warnings RFC replaces it.
+    - Existing RFC 0020 tests must pass unchanged apart from the `[code]`
+      suffix and `kind` value.
 4. **CLI boundary.** `main` renders diagnostics, adds `--error-format` and exit
    codes, documents them.
 5. **Next migrations (separate PRs, one subsystem each).** Candidates in

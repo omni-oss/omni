@@ -12,7 +12,7 @@ function netPolicy(...allow: string[]): CapabilityPolicy {
 
 describe("createEnforcedPreconnect", () => {
     test("authorizes the eager connection against the net policy", () => {
-        const raw = vi.fn(() => "preconnected");
+        const raw = vi.fn<(...args: unknown[]) => string>(() => "preconnected");
         const preconnect = createEnforcedPreconnect(
             raw,
             netPolicy("cdn.example:443"),
@@ -30,7 +30,7 @@ describe("createEnforcedPreconnect", () => {
     });
 
     test("passes an un-parseable argument through to the raw implementation", () => {
-        const raw = vi.fn(() => "ok");
+        const raw = vi.fn<(...args: unknown[]) => string>(() => "ok");
         const preconnect = createEnforcedPreconnect(
             raw,
             netPolicy("cdn.example:443"),

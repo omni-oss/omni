@@ -133,7 +133,7 @@ describe("adaptConsole", () => {
         const source = makeFakeSource();
         const adapter = adaptConsole(source);
 
-        const fn: ConsoleMethod = vi.fn();
+        const fn: ConsoleMethod = vi.fn<ConsoleMethod>();
         adapter.info = fn;
 
         expect(source.info).toBe(fn);
@@ -264,7 +264,7 @@ describe("initLogInterceptor", () => {
     it("invokes listeners passed via options for each entry, before passthrough", () => {
         const target = makeFakeConsole();
         const seen: LogEntry[] = [];
-        const listener = vi.fn((entry: LogEntry) => {
+        const listener = vi.fn<(entry: LogEntry) => void>((entry) => {
             // At the moment the listener fires, the original method should not
             // have been called yet for this entry.
             expect(target.calls).toHaveLength(seen.length);
@@ -329,13 +329,13 @@ describe("initLogInterceptor", () => {
         const target = makeFakeConsole();
         const seen: string[] = [];
         const listeners = [
-            (entry: LogEntry) => seen.push(`a:${entry.args[0]}`),
+            (entry: LogEntry) => seen.push(`a:${String(entry.args[0])}`),
         ];
 
         initLogInterceptor({ target, passthrough: false, listeners });
 
         target.info("1");
-        listeners.push((entry) => seen.push(`b:${entry.args[0]}`));
+        listeners.push((entry) => seen.push(`b:${String(entry.args[0])}`));
         target.info("2");
 
         expect(seen).toEqual(["a:1", "a:2", "b:2"]);
@@ -343,8 +343,8 @@ describe("initLogInterceptor", () => {
 
     it("isolates listener exceptions so logging keeps working", () => {
         const target = makeFakeConsole();
-        const good = vi.fn();
-        const bad = vi.fn(() => {
+        const good = vi.fn<(entry: LogEntry) => void>();
+        const bad = vi.fn<(entry: LogEntry) => void>(() => {
             throw new Error("listener boom");
         });
 
@@ -609,7 +609,9 @@ describe("createLogInterceptor", () => {
 
     it("invokes scope listeners with each entry inside that scope", async () => {
         const seen: LogEntry[] = [];
-        const listener = vi.fn((entry: LogEntry) => seen.push(entry));
+        const listener = vi.fn<(entry: LogEntry) => number>((entry) =>
+            seen.push(entry),
+        );
 
         const { logs } = await interceptor.interceptLogs(
             () => {
@@ -755,7 +757,7 @@ describe("createLogInterceptor", () => {
     });
 
     it("isolates listener exceptions so the patched console keeps working", async () => {
-        const good = vi.fn();
+        const good = vi.fn<(entry: LogEntry) => void>();
         interceptor.addListener(() => {
             throw new Error("global listener boom");
         });

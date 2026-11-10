@@ -57,7 +57,7 @@ describe("Stream", () => {
     it("should be able to receive data", async () => {
         const { lengthPrefix, data } = createData();
         const streams = createStreams([lengthPrefix, data]);
-        const fn = vi.fn();
+        const fn = vi.fn<(data: Uint8Array) => void>();
         const transport = new StreamTransport(streams);
         transport.onReceive(fn);
 

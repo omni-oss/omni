@@ -364,7 +364,7 @@ describe(
                     system.fs.readFileAsString(
                         join(testDir, "_definitely-missing-abc123.txt"),
                     ),
-                ).rejects.toThrow();
+                ).rejects.toThrow(Error);
             });
 
             it("rejects when reading a non-existent file as bytes", async () => {
@@ -372,7 +372,7 @@ describe(
                     system.fs.readFileAsBytes(
                         join(testDir, "_definitely-missing-bytes-abc123.bin"),
                     ),
-                ).rejects.toThrow();
+                ).rejects.toThrow(Error);
             });
 
             it("rejects when stat-ing a non-existent path", async () => {
@@ -380,7 +380,7 @@ describe(
                     system.fs.stat(
                         join(testDir, "_definitely-missing-stat-abc123"),
                     ),
-                ).rejects.toThrow();
+                ).rejects.toThrow(Error);
             });
         });
     },

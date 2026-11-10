@@ -434,8 +434,6 @@ describe("+global @cli (file traces at a requested level)", () => {
 });
 
 describe("+global @cli (explicit flags override env-var forms)", () => {
-    const MISSING_WARN = "environmental variable does not exists";
-
     it("`--env <env>` overrides OMNI_ENV", async () => {
         const ws = makeWorkspace({
             workspace: { projects: ["**"] },

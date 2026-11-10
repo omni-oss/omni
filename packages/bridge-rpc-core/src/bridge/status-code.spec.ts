@@ -44,15 +44,15 @@ describe("ResponseStatusCode", () => {
         });
 
         it("should reject negative values", () => {
-            expect(() => ResponseStatusCode.from(-1)).toThrow();
+            expect(() => ResponseStatusCode.from(-1)).toThrow(/too_small/);
         });
 
         it("should reject values greater than or equal to 65536", () => {
-            expect(() => ResponseStatusCode.from(65_536)).toThrow();
+            expect(() => ResponseStatusCode.from(65_536)).toThrow(/too_big/);
         });
 
         it("should reject non-integer values", () => {
-            expect(() => ResponseStatusCode.from(1.5)).toThrow();
+            expect(() => ResponseStatusCode.from(1.5)).toThrow(/invalid_type/);
         });
 
         it("should accept the maximum allowed value (65535)", () => {

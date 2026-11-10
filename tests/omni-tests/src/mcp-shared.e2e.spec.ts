@@ -121,7 +121,7 @@ describe(
                             path,
                         ],
                     }),
-                ).rejects.toThrow();
+                ).rejects.toThrow(Error);
             },
         );
 
@@ -153,11 +153,8 @@ describe(
                 });
                 for (const [key, value] of Object.entries(
                     original.inputSchema.properties ?? {},
-                )) {
-                    if (key !== "working_dir")
-                        expect(tool.inputSchema.properties?.[key]).toEqual(
-                            value,
-                        );
+                ).filter(([key]) => key !== "working_dir")) {
+                    expect(tool.inputSchema.properties?.[key]).toEqual(value);
                 }
                 for (const key of original.inputSchema.required ?? [])
                     expect(tool.inputSchema.required).toContain(key);

@@ -4,7 +4,9 @@ import { CapabilityPolicy } from "./capability-policy";
 import { createEnforcedFetch, NetworkPolicyError } from "./enforced-net";
 
 function fakeFetch() {
-    return vi.fn(async () => new Response("ok"));
+    return vi.fn<
+        (...args: Parameters<typeof fetch>) => ReturnType<typeof fetch>
+    >(async () => new Response("ok"));
 }
 
 /** A single-level net residual in the layered `--enforce` wire format. */
@@ -75,7 +77,9 @@ describe("createEnforcedFetch — redirect re-authorization", () => {
     /** A base fetch that 302-redirects to `location` on its first call, then 200s. */
     function redirectingFetch(location: string) {
         let call = 0;
-        return vi.fn(async () => {
+        return vi.fn<
+            (...args: Parameters<typeof fetch>) => ReturnType<typeof fetch>
+        >(async () => {
             if (call++ === 0) {
                 return new Response(null, {
                     status: 302,

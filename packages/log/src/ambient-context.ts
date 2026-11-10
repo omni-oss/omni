@@ -100,7 +100,6 @@ let warnedAboutFallback = false;
 function warnFallbackOnce(): void {
     if (warnedAboutFallback) return;
     warnedAboutFallback = true;
-    // eslint-disable-next-line no-console
     console.warn(
         "[@omni-oss/log] AsyncLocalStorage is not available in this runtime; " +
             "AmbientContext is using a stack-based fallback that does not " +

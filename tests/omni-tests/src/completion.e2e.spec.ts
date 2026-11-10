@@ -37,11 +37,7 @@ describe("+completion @output (script generation)", () => {
             const result = await runOmni(["completion", "-s", shell]);
 
             expect(result).toHaveSucceeded();
-            if (marker instanceof RegExp) {
-                expect(result).toMatchOutput(marker);
-            } else {
-                expect(result).toOutputContaining(marker);
-            }
+            expect(result.out).toMatch(marker);
         });
     }
 

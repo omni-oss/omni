@@ -2,6 +2,7 @@ import {
     ClientHandle,
     Id,
     ResponseStatusCode,
+    type ServiceContext,
 } from "@omni-oss/bridge-rpc-core";
 import {
     type Frame,
@@ -43,7 +44,9 @@ describe("Router", () => {
     it("should be able to run service", async () => {
         const router = new Router();
         const service = {
-            run: vi.fn().mockImplementation(() => Promise.resolve()),
+            run: vi
+                .fn<(ctx: ServiceContext) => Promise<void>>()
+                .mockImplementation(() => Promise.resolve()),
         };
 
         router.addService("/test", service);
@@ -58,9 +61,11 @@ describe("Router", () => {
 
     it("should be able to run handler", async () => {
         const router = new Router();
-        const handler = vi.fn().mockImplementation(async () => {
-            return Promise.resolve();
-        });
+        const handler = vi
+            .fn<(ctx: ServiceContext) => Promise<void>>()
+            .mockImplementation(async () => {
+                return Promise.resolve();
+            });
 
         router.addHandler("/test", handler);
 

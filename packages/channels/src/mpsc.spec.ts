@@ -66,7 +66,7 @@ describe("Mpsc", () => {
 
         const result = await rx.next();
         expect(result.done).toBe(true);
-        expect(() => tx.send(1)).toThrow();
+        expect(() => tx.send(1)).toThrow("Mpsc is closed");
     });
 
     it("should return done: true when sender is closed", async () => {
@@ -105,9 +105,15 @@ describe("Mpsc", () => {
 
     describe("bounded (backpressure)", () => {
         it("rejects an invalid capacity", () => {
-            expect(() => new Mpsc<number, number>(0)).toThrow();
-            expect(() => new Mpsc<number, number>(-1)).toThrow();
-            expect(() => new Mpsc<number, number>(1.5)).toThrow();
+            expect(() => new Mpsc<number, number>(0)).toThrow(
+                "capacity must be a positive integer",
+            );
+            expect(() => new Mpsc<number, number>(-1)).toThrow(
+                "capacity must be a positive integer",
+            );
+            expect(() => new Mpsc<number, number>(1.5)).toThrow(
+                "capacity must be a positive integer",
+            );
         });
 
         it("resolves sends immediately while there is spare capacity", async () => {
@@ -183,7 +189,7 @@ describe("Mpsc", () => {
 
             tx.close();
 
-            await expect(pending).rejects.toThrow();
+            await expect(pending).rejects.toThrow("Mpsc is closed");
         });
 
         it("trySend returns false when the buffer is full", async () => {

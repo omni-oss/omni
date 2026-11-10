@@ -161,7 +161,9 @@ describe("+cache @cache (cache dir)", () => {
         for (let i = 0; i < 2; i++) {
             const cached = await runOmni(args, { cwd: ws.cwd });
             expect(cached).toHaveSucceeded();
-            expect(cached).toHaveStderrContaining("Cache hit for task 'app#build'");
+            expect(cached).toHaveStderrContaining(
+                "Cache hit for task 'app#build'",
+            );
         }
     });
 });
@@ -193,7 +195,9 @@ describe("+cache @cache @e2e (run cache hit / log replay)", () => {
 
         const replayed = await runOmni(["run", "build"], { cwd: ws.cwd });
         expect(replayed).toHaveSucceeded();
-        expect(replayed).toHaveStderrContaining("Cache hit for task 'app#build'");
+        expect(replayed).toHaveStderrContaining(
+            "Cache hit for task 'app#build'",
+        );
         expect(replayed).toHaveStderrContaining("(skipping logs)");
         // With the default `failed` policy, a successful cache hit is not replayed.
         expect(replayed.stdout).not.toContain("build app");
@@ -211,7 +215,9 @@ describe("+cache @cache @e2e (run cache hit / log replay)", () => {
             },
         );
         expect(replayed).toHaveSucceeded();
-        expect(replayed).toHaveStderrContaining("Cache hit for task 'app#build'");
+        expect(replayed).toHaveStderrContaining(
+            "Cache hit for task 'app#build'",
+        );
         expect(replayed).toHaveStderrContaining("(skipping logs)");
         // With logs skipped, the cached task's stdout is not replayed.
         expect(replayed.stdout).not.toContain("build app");
@@ -984,7 +990,6 @@ describe("+cache @cache @output @e2e (output artifact caching)", () => {
         "for (const rel of process.argv.slice(2)) {",
         "  const abs = path.join(process.cwd(), rel);",
         "  fs.mkdirSync(path.dirname(abs), { recursive: true });",
-        // biome-ignore lint/suspicious/noTemplateCurlyInString: expected to be a raw string template literal
         "  fs.writeFileSync(abs, `artifact ${Date.now()}-${Math.random()}`);",
         "}",
         'console.log("built artifact");',

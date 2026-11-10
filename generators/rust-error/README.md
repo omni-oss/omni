@@ -29,12 +29,12 @@ ordinary error and gets no catch-all code.
 The derive requires every variant to say what it is, so a new variant will not compile
 until you decide:
 
-| Attribute | Use for |
-| --- | --- |
-| `#[diagnostic(code = "area.name", ...)]` | a failure the user or an agent can act on; gets a stable code, audience, details and hints |
-| `#[diagnostic(delegate)]` | a variant wrapping another error, or an `eyre::Report`, that may carry its own diagnostic; it is looked up in the field (a report's whole cause chain is searched) |
-| `#[diagnostic(skip)]` | a failure with no diagnostic (I/O, serialization, internal plumbing) |
-| `#[diagnostic(forward)]` | a variant wrapping a type that itself implements `Diagnostic` |
+| Attribute                                | Use for                                                                                                                                                            |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `#[diagnostic(code = "area.name", ...)]` | a failure the user or an agent can act on; gets a stable code, audience, details and hints                                                                         |
+| `#[diagnostic(delegate)]`                | a variant wrapping another error, or an `eyre::Report`, that may carry its own diagnostic; it is looked up in the field (a report's whole cause chain is searched) |
+| `#[diagnostic(skip)]`                    | a failure with no diagnostic (I/O, serialization, internal plumbing)                                                                                               |
+| `#[diagnostic(forward)]`                 | a variant wrapping a type that itself implements `Diagnostic`                                                                                                      |
 
 Example:
 

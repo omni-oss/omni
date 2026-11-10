@@ -11,8 +11,7 @@
  */
 export type MpscSendResult<C extends number | undefined> = C extends number
     ? Promise<void>
-    : // biome-ignore lint/suspicious/noConfusingVoidType: unbounded send returns void by design
-      void;
+    : void;
 
 export class Mpsc<T, out C extends number | undefined = undefined> {
     public readonly sender: MpscSender<T, C>;
@@ -95,7 +94,6 @@ function isUnbounded<T>(state: MpscState<T>): boolean {
  */
 function promotePendingSend<T>(state: MpscState<T>): void {
     if (state.sendWaiters.length > 0 && state.queue.length < state.capacity) {
-        // biome-ignore lint/style/noNonNullAssertion: length checked above
         const pending = state.sendWaiters.shift()!;
         state.queue.push(pending.value);
         pending.resolve();
@@ -111,7 +109,6 @@ function closeState<T>(state: MpscState<T>): void {
 
     // Reject every sender still waiting for capacity; their values are dropped.
     while (state.sendWaiters.length > 0) {
-        // biome-ignore lint/style/noNonNullAssertion: length checked above
         const pending = state.sendWaiters.shift()!;
         pending.reject(new MpscClosedError());
     }
@@ -121,7 +118,6 @@ function closeState<T>(state: MpscState<T>): void {
     // the queue before the closed flag; receivers only register as waiters
     // when the queue is empty.
     while (state.waiters.length > 0) {
-        // biome-ignore lint/style/noNonNullAssertion: length checked above
         const resolve = state.waiters.shift()!;
         resolve({ done: true, value: undefined });
     }
@@ -137,7 +133,6 @@ export class MpscReceiver<T> implements AsyncIterable<T> {
     public next(): Promise<IteratorResult<T>> {
         // if there are values in the queue, return the first one
         if (this.state.queue.length > 0) {
-            // biome-ignore lint/style/noNonNullAssertion: length checked above
             const value = this.state.queue.shift()!;
             // A slot just freed up — let a backpressured sender proceed.
             promotePendingSend(this.state);
@@ -166,6 +161,7 @@ export class MpscReceiver<T> implements AsyncIterable<T> {
 
     /**
      * Enables usage in `for await (const val of rx)`
+     * @yields Each value received until the channel closes.
      */
     async *[Symbol.asyncIterator]() {
         while (true) {
@@ -215,7 +211,6 @@ export class MpscSender<T, out C extends number | undefined = undefined> {
 
         // Hand the value straight to a waiting receiver.
         if (this.state.waiters.length > 0) {
-            // biome-ignore lint/style/noNonNullAssertion: length checked above
             const resolve = this.state.waiters.shift()!;
             resolve({ done: false, value });
             return unbounded ? undefined : Promise.resolve();
@@ -245,7 +240,6 @@ export class MpscSender<T, out C extends number | undefined = undefined> {
         }
 
         if (this.state.waiters.length > 0) {
-            // biome-ignore lint/style/noNonNullAssertion: length checked above
             const resolve = this.state.waiters.shift()!;
             resolve({ done: false, value });
             return true;

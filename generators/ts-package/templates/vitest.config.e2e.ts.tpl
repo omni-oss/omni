@@ -1,6 +1,6 @@
 import e2eTestConfig from "@omni-oss/vitest-config/e2e";
 import { mergeConfig, type UserWorkspaceConfig } from "vitest/config";
-import baseConfig from "./vite.config";
+import baseConfig from "./vite.config.ts";
 
 export default mergeConfig(mergeConfig(baseConfig, e2eTestConfig), {
     test: {

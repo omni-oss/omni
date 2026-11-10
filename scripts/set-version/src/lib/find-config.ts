@@ -51,7 +51,6 @@ export async function findConfigAtDir<TRequired extends boolean>(
     if (required) {
         throw new NoConfigFoundError(startDir);
     } else {
-        // biome-ignore lint/suspicious/noExplicitAny: escape hatch
         return undefined as any;
     }
 }

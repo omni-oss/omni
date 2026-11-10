@@ -1,3 +1,5 @@
+/* eslint-disable no-unused-expressions -- tagged-template log calls are statements by design */
+
 import { describe, expect, it, vi } from "vitest";
 
 import { LOG_LEVELS, type LogLevel } from "./level";
@@ -29,12 +31,12 @@ class TestLogger extends AbstractLogger {
 
     logTemplate = vi.fn<LogTemplate>();
 
-    enabled = vi.fn((_: LogLevel) => {
+    enabled = vi.fn<Logger["enabled"]>(() => {
         // For testing purposes, all levels are enabled by default.
         return true;
     });
 
-    child = vi.fn((_categories: CategoryParam) => {
+    child = vi.fn<Logger["child"]>((_categories: CategoryParam): Logger => {
         // For testing purposes, return the same logger instance for any child.
         return new TestLogger(this);
     });
@@ -43,10 +45,12 @@ class TestLogger extends AbstractLogger {
         return this._parent;
     }
 
-    with = vi.fn((_properties: Record<string, unknown>) => {
-        // For testing purposes, return the same logger instance for any with().
-        return new TestLogger(this);
-    });
+    with = vi.fn<Logger["with"]>(
+        (_properties: Record<string, unknown>): Logger => {
+            // For testing purposes, return the same logger instance for any with().
+            return new TestLogger(this);
+        },
+    );
 }
 
 describe("AbstractLogger.log", () => {
@@ -202,7 +206,7 @@ describe("AbstractLogger.log", () => {
     it("the leveled function returned by log(level) routes (message, computeFn) to logLazy", () => {
         const logger = new TestLogger();
         const leveled = logger.log("debug");
-        const compute = vi.fn(() => ({ a: 1 }));
+        const compute = vi.fn<() => { a: number }>(() => ({ a: 1 }));
 
         leveled("compute me", compute);
 
@@ -418,7 +422,9 @@ describe("AbstractLogger leveled methods", () => {
         for (const level of LOG_LEVELS) {
             const logger = new TestLogger();
             const method = LEVEL_TO_METHOD[level];
-            const compute = vi.fn(() => ({ user: "alice", lvl: level }));
+            const compute = vi.fn<() => { user: string; lvl: LogLevel }>(
+                () => ({ user: "alice", lvl: level }),
+            );
 
             logger[method](`hello ${level}`, compute);
 
@@ -512,7 +518,7 @@ describe("AbstractLogger leveled methods", () => {
 describe("AbstractLogger dispatch decisions", () => {
     it("treats a plain string with a sync function third arg as logLazy via log()", () => {
         const logger = new TestLogger();
-        const compute = vi.fn(() => ({ a: 1 }));
+        const compute = vi.fn<() => { a: number }>(() => ({ a: 1 }));
 
         logger.log("info", "msg", compute);
 

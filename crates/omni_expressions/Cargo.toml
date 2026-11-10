@@ -15,7 +15,7 @@ name = "omni_expressions_benchmarks"
 harness = false
 
 [features]
-default = ["serde" ]
+default = ["serde"]
 serde = ["dep:serde"]
 
 [dependencies]

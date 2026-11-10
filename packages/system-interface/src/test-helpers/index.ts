@@ -6,8 +6,9 @@ import { test as vitestTest } from "vitest";
 
 export const test = vitestTest.extend<{ tempDirPath: string; tempDir: string }>(
     {
-        // biome-ignore lint/correctness/noEmptyPattern: This is a Vitest extension
         tempDirPath: [
+            // Vitest reads fixture dependencies from the destructured parameter.
+            // eslint-disable-next-line no-empty-pattern
             async ({}, run) => {
                 const uuid = crypto.randomUUID();
                 const tempdir = path.join(os.tmpdir(), `vitest-test-${uuid}`);
@@ -23,36 +24,7 @@ export const test = vitestTest.extend<{ tempDirPath: string; tempDir: string }>(
                 try {
                     await run(tempDir);
                 } finally {
-                    let attempts = 0;
-                    let maxAttempts = 5;
-                    while (true) {
-                        try {
-                            attempts += 1;
-                            await fsPromises.rm(tempDir, {
-                                recursive: true,
-                                force: true,
-                            });
-                            break;
-                        } catch (err) {
-                            if (attempts >= maxAttempts) {
-                                if (
-                                    err instanceof Error &&
-                                    !err.message.includes("EBUSY")
-                                ) {
-                                    console.warn(
-                                        `Failed to remove dir ${tempDir} after ${attempts} attempts:`,
-                                        err,
-                                    );
-                                    throw err;
-                                }
-                                break;
-                            } else {
-                                await new Promise((resolve) =>
-                                    setTimeout(resolve, 100),
-                                );
-                            }
-                        }
-                    }
+                    await removeTempDir(tempDir);
                 }
             },
             {
@@ -63,3 +35,25 @@ export const test = vitestTest.extend<{ tempDirPath: string; tempDir: string }>(
 );
 
 export const it = test;
+
+async function removeTempDir(tempDir: string): Promise<void> {
+    const maxAttempts = 5;
+    for (let attempts = 1; attempts <= maxAttempts; attempts += 1) {
+        try {
+            await fsPromises.rm(tempDir, { recursive: true, force: true });
+            return;
+        } catch (err) {
+            if (attempts === maxAttempts) {
+                console.warn(
+                    `Failed to remove dir ${tempDir} after ${attempts} attempts:`,
+                    err,
+                );
+                if (err instanceof Error && !err.message.includes("EBUSY")) {
+                    throw err;
+                }
+                return;
+            }
+            await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+    }
+}

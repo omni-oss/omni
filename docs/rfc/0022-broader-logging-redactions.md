@@ -115,20 +115,20 @@ and persistence, and matches the `--redact*` CLI flags.
 
 ```yaml
 redact:
-  args: [token, db.password]   # tasks: free-form `args`
-  inputs: [api_key, password]  # tools and generators: schema-declared inputs
-  env:
-    all: true                  # opt-out: redact everything...
-    except: [NODE_ENV, CI]     # ...except these
+    args: [token, db.password] # tasks: free-form `args`
+    inputs: [api_key, password] # tools and generators: schema-declared inputs
+    env:
+        all: true # opt-out: redact everything...
+        except: [NODE_ENV, CI] # ...except these
 ```
 
 The three keys mirror the config keys and template contexts they govern:
 
-| Key | Governs | Vocabulary |
-| --- | --- | --- |
-| `args` | A task's free-form `args` map, including `-a/--arg` values | `args:`, `{{ args.* }}`, `-a/--arg` |
+| Key      | Governs                                                                                                     | Vocabulary                                |
+| -------- | ----------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| `args`   | A task's free-form `args` map, including `-a/--arg` values                                                  | `args:`, `{{ args.* }}`, `-a/--arg`       |
 | `inputs` | Schema-declared inputs of tools and generators, however the value arrives (prompt, `-v/--value`, JSON, MCP) | `inputs:`, `{{ inputs.* }}`, `-v/--value` |
-| `env` | Environment values | `env:`, `{{ env.* }}` |
+| `env`    | Environment values                                                                                          | `env:`, `{{ env.* }}`                     |
 
 The lists do not apply to each other. A name that must be hidden everywhere
 is listed under each key. Each key means exactly what it says, at the cost of
@@ -137,16 +137,16 @@ repeating names.
 Each category (`args`, `inputs`, `env`) is a **policy**, written in one of
 two forms:
 
-| Form | Meaning |
-| --- | --- |
-| `[a, b]` | Shorthand for `{ all: false, only: [a, b] }` |
-| `{ all: false, only: [..] }` | Opt-in: show everything except names in `only` |
+| Form                          | Meaning                                             |
+| ----------------------------- | --------------------------------------------------- |
+| `[a, b]`                      | Shorthand for `{ all: false, only: [a, b] }`        |
+| `{ all: false, only: [..] }`  | Opt-in: show everything except names in `only`      |
 | `{ all: true, except: [..] }` | Opt-out: redact everything except names in `except` |
 
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `all` | bool | Whether names not listed are redacted. Inherited when unset |
-| `only` | list of names/globs | Always redacted. Valid with either value of `all` |
+| Field    | Type                | Meaning                                                                                      |
+| -------- | ------------------- | -------------------------------------------------------------------------------------------- |
+| `all`    | bool                | Whether names not listed are redacted. Inherited when unset                                  |
+| `only`   | list of names/globs | Always redacted. Valid with either value of `all`                                            |
 | `except` | list of names/globs | Shown, unless also matched by `only` anywhere in the chain. Only meaningful with `all: true` |
 
 The shorthand only ever adds names to `only`; it does not set `all`. Opting
@@ -186,11 +186,11 @@ explicitly is hidden unconditionally.
 
 #### Where it can be declared
 
-| Level | File | `args` | `inputs` | `env` |
-| --- | --- | --- | --- | --- |
-| Workspace | `workspace.omni.yaml` | Every task | Every tool and generator | Every run |
-| Project | project config | Every task in the project | not available | Tasks in the project |
-| Task | task long form | That task | not available | That task |
+| Level     | File                  | `args`                    | `inputs`                 | `env`                |
+| --------- | --------------------- | ------------------------- | ------------------------ | -------------------- |
+| Workspace | `workspace.omni.yaml` | Every task                | Every tool and generator | Every run            |
+| Project   | project config        | Every task in the project | not available            | Tasks in the project |
+| Task      | task long form        | That task                 | not available            | That task            |
 
 `inputs` is workspace-level only: tools and generators are not owned by a
 project or task, so there is nowhere narrower to declare it. `redact.args` at
@@ -334,12 +334,12 @@ output is just the list of values handed to the builder.
 
 The redactor is applied at these points:
 
-| Surface | Change |
-| --- | --- |
-| Dry-run command display | Use `Redactor` (replaces the env-only list) |
-| `log`/`tracing` output | Redact rendered commands and arg/env values in executor, tool and generator logs |
-| Diagnostics (RFC 0021) | Run `DiagnosticReport` text and JSON through the redactor at render time |
-| MCP responses | Same renderer path as diagnostics |
+| Surface                 | Change                                                                           |
+| ----------------------- | -------------------------------------------------------------------------------- |
+| Dry-run command display | Use `Redactor` (replaces the env-only list)                                      |
+| `log`/`tracing` output  | Redact rendered commands and arg/env values in executor, tool and generator logs |
+| Diagnostics (RFC 0021)  | Run `DiagnosticReport` text and JSON through the redactor at render time         |
+| MCP responses           | Same renderer path as diagnostics                                                |
 
 `--redact <declared|all|none>` (and a `redact.mode` workspace key):
 
@@ -370,14 +370,14 @@ loosen a policy for a call.
 
 Task `args` and `env` are not the only user-supplied values omni echoes.
 
-| Subsystem | Source of sensitive values | Plan |
-| --- | --- | --- |
-| Task runner | `args`, `env` | `redact` block (4.2) |
-| Tools (`omni tool run`, MCP tool calls) | Inputs with `secret: true`; names in `redact.inputs`; process env | Both sources feed the redactor; workspace `redact.env` applies to the tool's env |
-| Generators (CLI and MCP) | Inputs with `secret: true` (password widget); names in `redact.inputs` | Already never persisted; values now also feed the redactor for logs, diagnostics and action output |
-| Workspace / project env files | `env.files`, `env.vars` | Covered by `redact.env` at workspace/project level |
-| Remote cache | Credentials from env/config | Credential fields are always redacted, not configurable |
-| Remote sources | Tokens in git URLs (`https://user:token@...`) | URL userinfo is always redacted in logs and errors, not configurable |
+| Subsystem                               | Source of sensitive values                                             | Plan                                                                                               |
+| --------------------------------------- | ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| Task runner                             | `args`, `env`                                                          | `redact` block (4.2)                                                                               |
+| Tools (`omni tool run`, MCP tool calls) | Inputs with `secret: true`; names in `redact.inputs`; process env      | Both sources feed the redactor; workspace `redact.env` applies to the tool's env                   |
+| Generators (CLI and MCP)                | Inputs with `secret: true` (password widget); names in `redact.inputs` | Already never persisted; values now also feed the redactor for logs, diagnostics and action output |
+| Workspace / project env files           | `env.files`, `env.vars`                                                | Covered by `redact.env` at workspace/project level                                                 |
+| Remote cache                            | Credentials from env/config                                            | Credential fields are always redacted, not configurable                                            |
+| Remote sources                          | Tokens in git URLs (`https://user:token@...`)                          | URL userinfo is always redacted in logs and errors, not configurable                               |
 
 Principles:
 
@@ -627,16 +627,16 @@ in this tree:
   `--redact-input`, `--redact` (`tool run`) are available. MCP never exposes
   them.
 - Not done, with the reason:
-  - **Generic `tracing` / `log` adapters** (the optional features in 4.3): no
-    call site outside those above echoes a sensitive value today, so a global
-    log filter would add cost without closing a known leak. It can be added
-    behind the existing `Redactor` API.
-  - **Remote cache credentials**: the remote cache configuration in this tree
-    holds no secret fields (credentials come from the process environment and
-    are never formatted), so there is nothing to redact yet.
-  - **Workspace `redact.env` applied to a tool's env**: tool runs do not
-    format env values, so this has no visible effect yet.
-  - **Documentation page** (step 6).
+    - **Generic `tracing` / `log` adapters** (the optional features in 4.3): no
+      call site outside those above echoes a sensitive value today, so a global
+      log filter would add cost without closing a known leak. It can be added
+      behind the existing `Redactor` API.
+    - **Remote cache credentials**: the remote cache configuration in this tree
+      holds no secret fields (credentials come from the process environment and
+      are never formatted), so there is nothing to redact yet.
+    - **Workspace `redact.env` applied to a tool's env**: tool runs do not
+      format env values, so this has no visible effect yet.
+    - **Documentation page** (step 6).
 
 ## 8. Open questions
 

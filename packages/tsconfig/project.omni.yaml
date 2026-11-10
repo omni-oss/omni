@@ -10,6 +10,7 @@ cache:
       append:
         - base.json
         - types.json
+        - node.json
         - with-paths.json
 
 tasks:

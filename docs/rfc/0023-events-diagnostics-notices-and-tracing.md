@@ -18,13 +18,13 @@ than on what they asked for. MCP clients see only errors.
 
 This RFC gives each concern one owner and keeps them separate:
 
-| Concern | Question it answers | Owner | Audience |
-| --- | --- | --- | --- |
-| **Events** | What happened? | Typed events in `omni_messages` | Presenters |
-| **Diagnostics** | Why did the operation stop? | `omni_diagnostic` (RFC 0021). Fatal errors only | The user or agent |
-| **Notices** | What should the user know, though the operation completed? | `omni_messages::notice`. Its own small model | The user or agent |
-| **Output** | Where and how is it shown? | A presenter per surface | The user or agent |
-| **Tracing** | Why did omni behave that way internally? | `tracing` | omni developers, bug reports |
+| Concern         | Question it answers                                        | Owner                                           | Audience                     |
+| --------------- | ---------------------------------------------------------- | ----------------------------------------------- | ---------------------------- |
+| **Events**      | What happened?                                             | Typed events in `omni_messages`                 | Presenters                   |
+| **Diagnostics** | Why did the operation stop?                                | `omni_diagnostic` (RFC 0021). Fatal errors only | The user or agent            |
+| **Notices**     | What should the user know, though the operation completed? | `omni_messages::notice`. Its own small model    | The user or agent            |
+| **Output**      | Where and how is it shown?                                 | A presenter per surface                         | The user or agent            |
+| **Tracing**     | Why did omni behave that way internally?                   | `tracing`                                       | omni developers, bug reports |
 
 - **Diagnostics are fatal errors and nothing else.** No severity, no info, no
   warnings. A diagnostic is returned, stops the operation, and is never
@@ -45,12 +45,12 @@ This RFC gives each concern one owner and keeps them separate:
 
 ### 2.1 What each channel does today
 
-| Channel | Volume | Actual use |
-| --- | --- | --- |
-| `log::*` | 193 calls (66 debug, 51 trace, 29 info, 24 warn, 24 error) | User output in the CLI, warnings from libraries, swallowed errors, developer detail |
-| `tracing::*` | ~59 `instrument`, 3 event macros | Spans for developers |
-| Notices | 11 sites | A few security warnings, plus run narration |
-| Diagnostics | RFC 0021 errors | Fatal errors with codes, on CLI and MCP |
+| Channel      | Volume                                                     | Actual use                                                                          |
+| ------------ | ---------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `log::*`     | 193 calls (66 debug, 51 trace, 29 info, 24 warn, 24 error) | User output in the CLI, warnings from libraries, swallowed errors, developer detail |
+| `tracing::*` | ~59 `instrument`, 3 event macros                           | Spans for developers                                                                |
+| Notices      | 11 sites                                                   | A few security warnings, plus run narration                                         |
+| Diagnostics  | RFC 0021 errors                                            | Fatal errors with codes, on CLI and MCP                                             |
 
 The tracing subscriber (`omni_tracing_subscriber`) writes to stdout at `info`
 by default and uses `LogFilter`, which passes an event only if it came from
@@ -129,13 +129,13 @@ flowchart TD
     G -- "a fact, not a problem" --> NI[/"Notice: Info"/]
 ```
 
-| Kind of information | Channel | CLI | MCP |
-| --- | --- | --- | --- |
-| Command result | Return value | stdout | Tool result |
-| Fatal problem | Returned error; a Diagnostic when user-actionable | stderr, exit code from audience | JSON-RPC error with envelope |
-| Non-fatal problem, risk, or fact | Notice | stderr, `error`/`warning`/`note` | `notices` array on the result, or `data.notices` on failure |
-| Progress, run state | Event | stderr, rendered by presenter | Summarised into the result |
-| Developer detail | `tracing` | Off by default, `--trace` to stderr, trace file | Never |
+| Kind of information              | Channel                                           | CLI                                             | MCP                                                         |
+| -------------------------------- | ------------------------------------------------- | ----------------------------------------------- | ----------------------------------------------------------- |
+| Command result                   | Return value                                      | stdout                                          | Tool result                                                 |
+| Fatal problem                    | Returned error; a Diagnostic when user-actionable | stderr, exit code from audience                 | JSON-RPC error with envelope                                |
+| Non-fatal problem, risk, or fact | Notice                                            | stderr, `error`/`warning`/`note`                | `notices` array on the result, or `data.notices` on failure |
+| Progress, run state              | Event                                             | stderr, rendered by presenter                   | Summarised into the result                                  |
+| Developer detail                 | `tracing`                                         | Off by default, `--trace` to stderr, trace file | Never                                                       |
 
 Rules:
 
@@ -144,12 +144,12 @@ Rules:
   out to a user are a return value, an event, a returned error, or a notice.
 - **Presenters contain no business logic.** They render values they are given.
 - **Diagnostics are fatal; notices are not.** The two never mix:
-  - A diagnostic is never reported through the notice channel as itself, and
-    a fatal error is never downgraded. No flag or call site can turn a
-    returned error into a notice.
-  - If a user option makes a condition tolerable (`--meta-on-error exclude`),
-    the run proceeds and a notice describes what happened. The notice has its
-    own level and code and is not the fatal diagnostic.
+    - A diagnostic is never reported through the notice channel as itself, and
+      a fatal error is never downgraded. No flag or call site can turn a
+      returned error into a notice.
+    - If a user option makes a condition tolerable (`--meta-on-error exclude`),
+      the run proceeds and a notice describes what happened. The notice has its
+      own level and code and is not the fatal diagnostic.
 - Notices reported before a later, unrelated fatal error are delivered
   alongside it (4.5), because they remain true about the run.
 - Anything that does not need a message to the user is an event field or
@@ -175,7 +175,7 @@ progress channel. Events are data, not strings.
 
 #### Contract
 
-> A **notice** is a message about *this run* that the person or agent who
+> A **notice** is a message about _this run_ that the person or agent who
 > started it may want to know even though the operation completed, and that
 > no event or result already carries.
 
@@ -305,7 +305,7 @@ diagnostic_notice!(sub, MetaFilterExcluded { count }, &meta_filter_error);
 
 - `notice!` builds the event only when `wants_notices()` is true, so disabled
   surfaces pay nothing, including the construction of the value.
-  `wants_notices()` reflects whether any consumer needs notices *collected*:
+  `wants_notices()` reflects whether any consumer needs notices _collected_:
   a presenter or the `tracing` mirror. It is not a rendering decision.
   `-q/--quiet` (4.5) only changes what the presenter prints, so
   `wants_notices()` stays `true` in quiet mode and the trace mirror keeps
@@ -536,31 +536,32 @@ is the one command group for the registry; there is no top-level `omni explain`.
 Each surviving site becomes a derived `Notice` type named after its code
 (`redact.disabled` is `RedactDisabled`, and so on).
 
-| Site | Now | After |
-| --- | --- | --- |
-| `executor.rs`: redaction disabled | notice Warn | Notice Warn `redact.disabled`, essential |
-| `executor.rs`: dry run enabled | notice Info | Event field (`ExecutionPlanReadyEvent.dry_run`) |
-| `batch_executor.rs`: `Executing task '<id>': <command>` | notice Info | Event field (`TaskStartedEvent.command`) |
-| `batch_executor.rs`: `Executing task '<id>'` | notice Info | Removed (narration) |
-| `batch_executor.rs`: waiting before retry | notice Warn | Event field (`TaskRetryingEvent.delay`) |
-| `capability_plan.rs`: OS sandbox disabled | notice Warn | Notice Warn `sandbox.os_disabled`, essential |
-| `capability_plan.rs`: policy not fully enforced | notice Warn | Notice Warn `capabilities.not_enforced` |
-| `capability_plan.rs`: no un-bypassable floor | notice Warn | Notice Warn `capabilities.no_floor` |
-| `script_runner.rs`: policy declared but feature off | notice Warn | Notice Warn `capabilities.ignored` |
-| `script_runner.rs`: import-scan note | notice Warn | Notice Warn `capabilities.import_scan`, note in `fields` |
-| `run_javascript.rs`: experimental runtime | notice Warn | Notice Warn `runtime.experimental` |
+| Site                                                    | Now         | After                                                    |
+| ------------------------------------------------------- | ----------- | -------------------------------------------------------- |
+| `executor.rs`: redaction disabled                       | notice Warn | Notice Warn `redact.disabled`, essential                 |
+| `executor.rs`: dry run enabled                          | notice Info | Event field (`ExecutionPlanReadyEvent.dry_run`)          |
+| `batch_executor.rs`: `Executing task '<id>': <command>` | notice Info | Event field (`TaskStartedEvent.command`)                 |
+| `batch_executor.rs`: `Executing task '<id>'`            | notice Info | Removed (narration)                                      |
+| `batch_executor.rs`: waiting before retry               | notice Warn | Event field (`TaskRetryingEvent.delay`)                  |
+| `capability_plan.rs`: OS sandbox disabled               | notice Warn | Notice Warn `sandbox.os_disabled`, essential             |
+| `capability_plan.rs`: policy not fully enforced         | notice Warn | Notice Warn `capabilities.not_enforced`                  |
+| `capability_plan.rs`: no un-bypassable floor            | notice Warn | Notice Warn `capabilities.no_floor`                      |
+| `script_runner.rs`: policy declared but feature off     | notice Warn | Notice Warn `capabilities.ignored`                       |
+| `script_runner.rs`: import-scan note                    | notice Warn | Notice Warn `capabilities.import_scan`, note in `fields` |
+| `run_javascript.rs`: experimental runtime               | notice Warn | Notice Warn `runtime.experimental`                       |
 
 From the `log` triage (4.7):
 
-| Site | Now | After |
-| --- | --- | --- |
-| `execution_plan_provider.rs`: tolerated meta filter errors | `log::warn!` | `diagnostic_notice!` with Error notice `meta.filter_excluded`, carrying the RFC 0020 details. The fatal `meta.filter_failed` is unchanged and `related` |
-| `omni_projections/ledger.rs` | `log::warn!` | Notice Warn `projections.*` |
-| `commands/env.rs`: missing variable | `log::warn!` | Notice Warn `env.var_missing` |
-| `omni_cache`, `omni_hasher`, `omni_setup` recovered errors | `log::error!` | Decided by the rule below, per site |
+| Site                                                       | Now           | After                                                                                                                                                   |
+| ---------------------------------------------------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `execution_plan_provider.rs`: tolerated meta filter errors | `log::warn!`  | `diagnostic_notice!` with Error notice `meta.filter_excluded`, carrying the RFC 0020 details. The fatal `meta.filter_failed` is unchanged and `related` |
+| `omni_projections/ledger.rs`                               | `log::warn!`  | Notice Warn `projections.*`                                                                                                                             |
+| `commands/env.rs`: missing variable                        | `log::warn!`  | Notice Warn `env.var_missing`                                                                                                                           |
+| `omni_cache`, `omni_hasher`, `omni_setup` recovered errors | `log::error!` | Decided by the rule below, per site                                                                                                                     |
 
 **Rule for a recovered error.** It is a notice if the user could notice or act
 on the consequence, and developer-only `tracing` otherwise:
+
 - Notice `Error`: the user loses something they expected and can act on it
   (a cache entry was not written, so the next run is slower, as in
   `cache.write_skipped`; a configured setting was ignored).
@@ -568,8 +569,8 @@ on the consequence, and developer-only `tracing` otherwise:
   recur until the user changes something.
 - `tracing::warn!`/`error!`: an internal fallback with the same result and
   nothing for the user to do (a retried read, a rebuilt in-memory index).
-A site that is uncertain defaults to `tracing`, since a notice is a public
-code that cannot be removed later.
+  A site that is uncertain defaults to `tracing`, since a notice is a public
+  code that cannot be removed later.
 
 ### 4.5 Output: presenters
 
@@ -583,20 +584,20 @@ are unchanged.
 
 #### CLI
 
-| Stream | Content |
-| --- | --- |
-| stdout | Command results and passed-through task output, nothing else |
+| Stream | Content                                                                                                                                |
+| ------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| stdout | Command results and passed-through task output, nothing else                                                                           |
 | stderr | Status lines rendered from events, the `indicatif` bar and generator spinners, notices, the final error, developer traces when enabled |
 
 The alternate-screen TUI is the exception: it owns the whole terminal on
 stdout. What each `--ui` mode draws, and where omni's own lines go:
 
-| `--ui` | Draws | Task output | omni's own lines and notices |
-| --- | --- | --- | --- |
-| `stream` | nothing | live on stdout | written directly to stderr |
-| `progress` | `indicatif` bar on stderr | captured, replayed per `--output-logs` | printed through the bar (`suspend`/`println`) |
-| `tui` | alternate screen on stdout | per-task screens | buffered (`emit_buffer`) and flushed after teardown |
-| `auto` | resolved at plan time | | `tui` for interactive or persistent tasks on a TTY, `progress` on a TTY otherwise, `stream` when not a TTY |
+| `--ui`     | Draws                      | Task output                            | omni's own lines and notices                                                                               |
+| ---------- | -------------------------- | -------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `stream`   | nothing                    | live on stdout                         | written directly to stderr                                                                                 |
+| `progress` | `indicatif` bar on stderr  | captured, replayed per `--output-logs` | printed through the bar (`suspend`/`println`)                                                              |
+| `tui`      | alternate screen on stdout | per-task screens                       | buffered (`emit_buffer`) and flushed after teardown                                                        |
+| `auto`     | resolved at plan time      |                                        | `tui` for interactive or persistent tasks on a TTY, `progress` on a TTY otherwise, `stream` when not a TTY |
 
 Notices follow the same per-mode routing as lifecycle lines. Today
 `on_notice` writes straight to the terminal in `tui` mode while lifecycle
@@ -609,59 +610,61 @@ routes both the same way.
   command layer renders it on stdout.
 - Notices print as
 
-  ```text
-  warning[sandbox.os_disabled]: OS-level sandbox is DISABLED for this run
-    = run `omni code explain sandbox.os_disabled` for details
-  error[cache.write_skipped]: could not write cache entry for 'app#build'
-  note[source.fallback]: resolved 'templates' from the fallback source
-  ```
+    ```text
+    warning[sandbox.os_disabled]: OS-level sandbox is DISABLED for this run
+      = run `omni code explain sandbox.os_disabled` for details
+    error[cache.write_skipped]: could not write cache entry for 'app#build'
+    note[source.fallback]: resolved 'templates' from the fallback source
+    ```
 
-  A returned diagnostic keeps the RFC 0021 layout.
+    A returned diagnostic keeps the RFC 0021 layout.
+
 - **Processing order (CLI).** For each notice: redact (RFC 0022), then
   apply quiet filtering, then collapse repeats, then render.
-  - Redaction happens first, so grouping keys on the redacted message and two
-    notices that differ only in a secret collapse into one.
-  - Repeats are identical `(code, message)` after redaction among notices
-    that are still to be shown. Groups keep first-occurrence order (no
-    sorting) and print once, with the count appended as `(xN)` after a space, for example
-    `warning[cache.write_skipped]: could not write cache entry for 'app#build' (x3)`.
-    A group of one has no suffix.
+    - Redaction happens first, so grouping keys on the redacted message and two
+      notices that differ only in a secret collapse into one.
+    - Repeats are identical `(code, message)` after redaction among notices
+      that are still to be shown. Groups keep first-occurrence order (no
+      sorting) and print once, with the count appended as `(xN)` after a space, for example
+      `warning[cache.write_skipped]: could not write cache entry for 'app#build' (x3)`.
+      A group of one has no suffix.
 - **`-q/--quiet` replaces the log-level flags for user output.** It hides
   omni's own narration, and never what the user asked for, what failed,
   what needs a response, or a safety signal. For any line: if hiding it would
   lose a result, a failure, a decision or a safety signal, `-q` shows it.
   Invariants:
-  1. Rendering only. Events and notices are still emitted and collected; exit
-     status, MCP, the tracing mirror and `--trace` are unaffected.
-  2. It is a presenter setting (a field on `CliSubscriber` passed through
-     `resolve_subscriber`). Subsystems never see it, and MCP has no
-     equivalent.
-  3. It never rewrites another flag. `--output-logs` is untouched, an
-     explicit `--ui` is respected, and only `auto` resolves differently.
-  4. The summary-table gate that today reads `log::log_enabled!` becomes an
-     explicit read of this setting.
+    1. Rendering only. Events and notices are still emitted and collected; exit
+       status, MCP, the tracing mirror and `--trace` are unaffected.
+    2. It is a presenter setting (a field on `CliSubscriber` passed through
+       `resolve_subscriber`). Subsystems never see it, and MCP has no
+       equivalent.
+    3. It never rewrites another flag. `--output-logs` is untouched, an
+       explicit `--ui` is respected, and only `auto` resolves differently.
+    4. The summary-table gate that today reads `log::log_enabled!` becomes an
+       explicit read of this setting.
 
-  | Text | Under `-q` |
-  | --- | --- |
-  | Command results, dry-run command lines | Shown |
-  | Task stdout/stderr, including cached replay | Shown, governed by `--output-logs` |
-  | Final error, failed-task output | Shown |
-  | Prompts | Shown |
-  | Notices that are `essential` or level `error` | Shown |
-  | Notices at level `warn` or `info` | Hidden |
-  | Lifecycle lines (plan header, task started or finished, generator action lines) | Hidden |
-  | Spinner and progress bar | Not drawn |
-  | Summary table | Shown only if a task failed |
-  | Interactive and persistent task UI | Shown |
+    | Text                                                                            | Under `-q`                         |
+    | ------------------------------------------------------------------------------- | ---------------------------------- |
+    | Command results, dry-run command lines                                          | Shown                              |
+    | Task stdout/stderr, including cached replay                                     | Shown, governed by `--output-logs` |
+    | Final error, failed-task output                                                 | Shown                              |
+    | Prompts                                                                         | Shown                              |
+    | Notices that are `essential` or level `error`                                   | Shown                              |
+    | Notices at level `warn` or `info`                                               | Hidden                             |
+    | Lifecycle lines (plan header, task started or finished, generator action lines) | Hidden                             |
+    | Spinner and progress bar                                                        | Not drawn                          |
+    | Summary table                                                                   | Shown only if a task failed        |
+    | Interactive and persistent task UI                                              | Shown                              |
 
-  | `--ui` | Under `-q` |
-  | --- | --- |
-  | `stream` | Task output, failures, and `essential` or `error` notices only |
-  | `progress` (explicit) | Capture and replay kept, so output timing is unchanged, but no bar or spinner is drawn |
-  | `tui` (explicit) | Unchanged |
-  | `auto` | `stream`, or `tui` when interactive tasks exist, never `progress` |
+    | `--ui`                | Under `-q`                                                                             |
+    | --------------------- | -------------------------------------------------------------------------------------- |
+    | `stream`              | Task output, failures, and `essential` or `error` notices only                         |
+    | `progress` (explicit) | Capture and replay kept, so output timing is unchanged, but no bar or spinner is drawn |
+    | `tui` (explicit)      | Unchanged                                                                              |
+    | `auto`                | `stream`, or `tui` when interactive tasks exist, never `progress`                      |
 
-  There is no separate `--no-progress`: `--ui stream` and `-q` cover it.
+    There is no separate `--no-progress`: `--ui stream` and `-q` cover it.
+
 - **Tracing while a TUI or bar is live.** `--trace` writes to stderr, which
   would corrupt the bar or the alternate screen. While either is live,
   stderr traces are buffered and flushed after teardown (or suppressed);
@@ -704,31 +707,37 @@ routes both the same way.
   field), emitted at most once per request, last in the array, and
   exempt from the bound, so an agent is never handed a capped array without
   being told. `dropped` counts unique `(code, message, fields)`
-  notices omitted *after* deduplication, so repeats of an already retained
+  notices omitted _after_ deduplication, so repeats of an already retained
   notice collapse first and do not count. Tracking is bounded too: the
   presenter keeps omitted keys only up to 1,000 per request, as hashes, and
   beyond that `dropped` is reported as a lower bound with `dropped_exact =
   false`. The message is "N further notices were omitted" when exact and "at least N
-further notices were omitted" when not. Tests cover both forms. The key uses the canonical
+  further notices were omitted" when not. Tests cover both forms. The key uses the canonical
   redacted form of `fields`: object keys are sorted recursively at every
   nesting depth, arrays keep their order (it is meaningful), and the result
   is serialised compactly, so two notices with the same
   message but different field values both reach the agent:
 
-  ```json
-  { "level": "info", "code": "notices.truncated",
-    "message": "12 further notices were omitted", "fields": { "dropped": 12, "dropped_exact": true } }
-  ```
+    ```json
+    {
+        "level": "info",
+        "code": "notices.truncated",
+        "message": "12 further notices were omitted",
+        "fields": { "dropped": 12, "dropped_exact": true }
+    }
+    ```
+
 - Every tool result that runs engine code gains
 
-  ```json
-  "notices": [
-    { "level": "warn", "code": "capabilities.ignored",
-      "message": "...", "fields": { } }
-  ]
-  ```
+    ```json
+    "notices": [
+      { "level": "warn", "code": "capabilities.ignored",
+        "message": "...", "fields": { } }
+    ]
+    ```
 
-  omitted when empty. `target` is not sent. Agents match on `code`.
+    omitted when empty. `target` is not sent. Agents match on `code`.
+
 - On failure, the RFC 0021 error payload carries notices collected before the
   failure under `data.notices`.
 - `ToolRunResult.result` is the tool's own return value and stays untouched;
@@ -763,46 +772,47 @@ detail. It is never the way a user is told something.
   `omni_term_ui`) keeps it that way.
 - **The `trace` wrapper crate is retired.** It was meant to compile tracing
   out of a build, and it does not do that:
-  - `default = ["enabled"]` is on for every crate, nothing sets
-    `default-features = false`, and the ~40 `enable-tracing` features only
-    enable what is already on.
-  - Building it with `--no-default-features` fails (`tracing` is an optional
-    dependency but `_trace_impl`, `Level` and `instrument` are unconditional
-    re-exports). The disabled `event_enabled!` and `span_enabled!` lack `=>`,
-    the disabled `enabled!` calls `tracing`, and the disabled `if_enabled!`
-    does not accept the `;`-separated statements its callers use.
-  - `#[instrument]` is re-exported ungated, so spans were never compiled out.
-  - `if_enabled!` is a compile-time feature gate, not a runtime check, and
-    leaks its `let` bindings into the surrounding scope.
+    - `default = ["enabled"]` is on for every crate, nothing sets
+      `default-features = false`, and the ~40 `enable-tracing` features only
+      enable what is already on.
+    - Building it with `--no-default-features` fails (`tracing` is an optional
+      dependency but `_trace_impl`, `Level` and `instrument` are unconditional
+      re-exports). The disabled `event_enabled!` and `span_enabled!` lack `=>`,
+      the disabled `enabled!` calls `tracing`, and the disabled `if_enabled!`
+      does not accept the `;`-separated statements its callers use.
+    - `#[instrument]` is re-exported ungated, so spans were never compiled out.
+    - `if_enabled!` is a compile-time feature gate, not a runtime check, and
+      leaks its `let` bindings into the surrounding scope.
 
-  `tracing` already provides both halves: disabled callsites cost one cached
-  atomic check, and `tracing`'s `max_level_*` / `release_max_level_*` features
-  cap levels at compile time for events and spans alike. So omni code uses
-  `tracing::*` directly, `crates/trace` and the `enable-tracing` features are
-  removed. There is no release level cap yet; if one is wanted later it is one
-  workspace-level `tracing` feature. The four `if_enabled!` sites change:
-  - `bridge_rpc_core/bridge/bridge_impl.rs` (two): use
-    `.instrument(tracing::info_span!(..))` unconditionally.
-  - `omni_term_ui/mux_output_presenter/tui_presenter.rs` (two): create and
-    enter the span unconditionally.
-  - Where a value is costly to compute only for tracing, use
-    `tracing::enabled!` (a runtime check) instead.
-  If a size-constrained or wasm target needs tracing absent, `tracing`'s
-  `max_level_off` provides it.
+    `tracing` already provides both halves: disabled callsites cost one cached
+    atomic check, and `tracing`'s `max_level_*` / `release_max_level_*` features
+    cap levels at compile time for events and spans alike. So omni code uses
+    `tracing::*` directly, `crates/trace` and the `enable-tracing` features are
+    removed. There is no release level cap yet; if one is wanted later it is one
+    workspace-level `tracing` feature. The four `if_enabled!` sites change:
+    - `bridge_rpc_core/bridge/bridge_impl.rs` (two): use
+      `.instrument(tracing::info_span!(..))` unconditionally.
+    - `omni_term_ui/mux_output_presenter/tui_presenter.rs` (two): create and
+      enter the span unconditionally.
+    - Where a value is costly to compute only for tracing, use
+      `tracing::enabled!` (a runtime check) instead.
+      If a size-constrained or wasm target needs tracing absent, `tracing`'s
+      `max_level_off` provides it.
+
 - **The crate generator is updated** so new crates start in the new shape
   (`generators/crate`):
-  - `Cargo.toml.tpl`: with `use_tracing`, depend on `tracing = { workspace = true }`
-    only. Drop `trace`, the optional `tracing`, the `[features]` block with
-    `enable-tracing`, and `log`.
-  - `project.omni.yaml.tpl`: drop the `dependencies: - trace` entry.
-  - `generator.omni.yaml`: the `use_tracing` prompt stays but now only adds
-    the `tracing` dependency (and the dev-dependencies already gated on it).
-  - `templates/src/main.rs.tpl`: the `println!` in the sample binary is
-    allowed (a bin crate's own output), or replaced by a result printed in the
-    `main` function, so the generated crate passes the new lint.
-  - A generated crate must build and pass clippy with the new lints; the
-    generator's own tests (or a CI step that generates and checks one) cover
-    it.
+    - `Cargo.toml.tpl`: with `use_tracing`, depend on `tracing = { workspace = true }`
+      only. Drop `trace`, the optional `tracing`, the `[features]` block with
+      `enable-tracing`, and `log`.
+    - `project.omni.yaml.tpl`: drop the `dependencies: - trace` entry.
+    - `generator.omni.yaml`: the `use_tracing` prompt stays but now only adds
+      the `tracing` dependency (and the dev-dependencies already gated on it).
+    - `templates/src/main.rs.tpl`: the `println!` in the sample binary is
+      allowed (a bin crate's own output), or replaced by a result printed in the
+      `main` function, so the generated crate passes the new lint.
+    - A generated crate must build and pass clippy with the new lints; the
+      generator's own tests (or a CI step that generates and checks one) cover
+      it.
 - **No omni crate depends on `log` directly.** `tracing-log` (kept) bridges
   `log` records from third-party crates into `tracing`, so they appear only
   under `--trace` or in the trace file. `log` stays in the build tree
@@ -812,20 +822,20 @@ detail. It is never the way a user is told something.
   points), `debug`, `trace`. A user is not expected to read any of them; if
   they should, it is a notice.
 - **Sinks**:
-  - stdout: **removed**. stdout belongs to results, and traces there are the
-    wrong place for three reasons: piped output (`omni ... | jq`) would be
-    corrupted; the MCP stdio transport uses stdout for JSON-RPC, so a trace
-    line would break the protocol; and today's `-t/--stdout-show-traces`
-    exists only because `LogFilter` mixed user output and traces on one
-    stream. Users who want traces in the same stream use `2>&1`, or
-    `--trace-file /dev/stdout`, which is an ordinary path and a deliberate
-    choice. No `--trace-stdout` flag is added.
-  - stderr: off by default; `--trace <filter>` (env `OMNI_TRACE`) enables it
-    with `EnvFilter` directives (`--trace omni_cache=debug`).
-  - file: unchanged in behavior, renamed `--trace-file` /
-    `--trace-file-level`; shared MCP mode keeps its current rules, plus the
-    stdout-path rejection in 4.5.
-  - custom outputs: unchanged.
+    - stdout: **removed**. stdout belongs to results, and traces there are the
+      wrong place for three reasons: piped output (`omni ... | jq`) would be
+      corrupted; the MCP stdio transport uses stdout for JSON-RPC, so a trace
+      line would break the protocol; and today's `-t/--stdout-show-traces`
+      exists only because `LogFilter` mixed user output and traces on one
+      stream. Users who want traces in the same stream use `2>&1`, or
+      `--trace-file /dev/stdout`, which is an ordinary path and a deliberate
+      choice. No `--trace-stdout` flag is added.
+    - stderr: off by default; `--trace <filter>` (env `OMNI_TRACE`) enables it
+      with `EnvFilter` directives (`--trace omni_cache=debug`).
+    - file: unchanged in behavior, renamed `--trace-file` /
+      `--trace-file-level`; shared MCP mode keeps its current rules, plus the
+      stdout-path rejection in 4.5.
+    - custom outputs: unchanged.
 - **`LogFilter` and `--*-show-traces` are removed.**
 - **Redaction**: values governed by RFC 0022 must not go into tracing fields.
   The optional `omni_redact` tracing layer (RFC 0022 4.3) becomes the backstop
@@ -833,19 +843,19 @@ detail. It is never the way a user is told something.
 
 ### 4.7 What each old thing becomes
 
-| Today | After |
-| --- | --- |
-| `notice!(.., Warn, "..")` | `notice!(sub, SomeNotice)`, a derived type with a code |
-| `notice!(.., Info, ..)` narration | Event field, or deleted |
-| `notice_event!` | Builds a `NoticeEvent` from a `Notice` |
-| `log::info!` in `omni_cli_core` | Presenter output |
-| `log::warn!`/`error!` in libraries, user-relevant | A `Notice` type at `Warn` or `Error` |
-| `log::warn!`/`error!` in libraries, not user-relevant | `tracing::warn!`/`error!` |
-| `log::debug!`/`trace!` | `tracing::debug!`/`trace!` |
-| `trace::*` (wrapper crate), `trace::if_enabled!`, `enable-tracing` features | `tracing::*` directly; gating removed |
-| `-l/--stdout-log-level` | `-q/--quiet` (omni's own lines always print by default, as with the current `info` default) |
-| `--stderr-log-level`, `--*-show-traces` | `--trace <filter>` |
-| `-f/--file-trace-level`, `--file-trace-output` | `--trace-file-level`, `--trace-file` |
+| Today                                                                       | After                                                                                       |
+| --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `notice!(.., Warn, "..")`                                                   | `notice!(sub, SomeNotice)`, a derived type with a code                                      |
+| `notice!(.., Info, ..)` narration                                           | Event field, or deleted                                                                     |
+| `notice_event!`                                                             | Builds a `NoticeEvent` from a `Notice`                                                      |
+| `log::info!` in `omni_cli_core`                                             | Presenter output                                                                            |
+| `log::warn!`/`error!` in libraries, user-relevant                           | A `Notice` type at `Warn` or `Error`                                                        |
+| `log::warn!`/`error!` in libraries, not user-relevant                       | `tracing::warn!`/`error!`                                                                   |
+| `log::debug!`/`trace!`                                                      | `tracing::debug!`/`trace!`                                                                  |
+| `trace::*` (wrapper crate), `trace::if_enabled!`, `enable-tracing` features | `tracing::*` directly; gating removed                                                       |
+| `-l/--stdout-log-level`                                                     | `-q/--quiet` (omni's own lines always print by default, as with the current `info` default) |
+| `--stderr-log-level`, `--*-show-traces`                                     | `--trace <filter>`                                                                          |
+| `-f/--file-trace-level`, `--file-trace-output`                              | `--trace-file-level`, `--trace-file`                                                        |
 
 The 117 `debug`/`trace` calls are a mechanical rename, as are the ~177 `trace::` references. The 77
 `info`/`warn`/`error` calls are triaged with 4.1 and 4.3, and the triage list
@@ -877,17 +887,17 @@ decision. Expected buckets:
   not `error` or `essential` ones, and `essential` is read from the event and matches the
   registry.
 - CLI e2e:
-  - stdout of `omni cache stats` and `omni project list` contains only
-    results, with and without `--trace debug`.
-  - A warning appears on stderr by default, does not change the exit status,
-    and `-q` hides a `warn` notice unless it is essential.
-  - `omni code explain <code>` prints the entry for an error code and a notice
-    code.
-  - `--meta-on-error fail` returns the fatal diagnostic and
-    `--meta-on-error exclude` reports the notice, with different codes.
-  - Dry-run command lines are unchanged; the dry-run header is gone.
-  - No tracing layer writes to stdout at any setting. An explicit user-chosen
-    `--trace-file /dev/stdout` is excluded; it is an ordinary file path.
+    - stdout of `omni cache stats` and `omni project list` contains only
+      results, with and without `--trace debug`.
+    - A warning appears on stderr by default, does not change the exit status,
+      and `-q` hides a `warn` notice unless it is essential.
+    - `omni code explain <code>` prints the entry for an error code and a notice
+      code.
+    - `--meta-on-error fail` returns the fatal diagnostic and
+      `--meta-on-error exclude` reports the notice, with different codes.
+    - Dry-run command lines are unchanged; the dry-run header is gone.
+    - No tracing layer writes to stdout at any setting. An explicit user-chosen
+      `--trace-file /dev/stdout` is excluded; it is an ordinary file path.
 - MCP: `notices` present for a run with a capability warning, absent
   otherwise; carried in `data.notices` on failure; per-call isolation under
   concurrency; cap and dedup; an `essential` notice emitted after the cap is
@@ -982,24 +992,24 @@ Each step leaves the tree working.
   `omni_notice_derive` and `omni_derive_support`.
 - **Code stability.** omni has no formal MCP stability promise today, so
   the registry carries one flag: `stable`.
-  - A code is unstable by default. Marking it `stable` in its derive
-    (`#[notice(code = .., stable)]`, or the diagnostic equivalent) is a
-    deliberate review step that promises the code, its kind (`Error` or
-    `Notice`), its `level` or `audience`, whether it is `essential`, and the
-    key names, value types and meaning in `fields`. Changing a field's type
-    or meaning is a breaking change, covered by a compatibility test.
-    `message` text is never part of the promise.
-  - An unstable code may change its message text, docs, `level`, `audience`,
-    `essential` and `fields` in any release. Its code string is never renamed
-    or reused, and its meaning never changes: a new meaning requires a new
-    code. It may be removed, and its name then stays reserved as a tombstone
-    (4.3).
-  - A stable code is changed only as a breaking change. It is retired by
-    marking it `deprecated`, not by deleting it.
-  - `omni code explain`, the MCP `code_explain` tool and the docs page show the flag,
-    so an agent or script knows which codes it may match on.
-  - Existing RFC 0021 diagnostic codes are marked `stable` when they ship
-    with that RFC. Before the first release anything may change.
+    - A code is unstable by default. Marking it `stable` in its derive
+      (`#[notice(code = .., stable)]`, or the diagnostic equivalent) is a
+      deliberate review step that promises the code, its kind (`Error` or
+      `Notice`), its `level` or `audience`, whether it is `essential`, and the
+      key names, value types and meaning in `fields`. Changing a field's type
+      or meaning is a breaking change, covered by a compatibility test.
+      `message` text is never part of the promise.
+    - An unstable code may change its message text, docs, `level`, `audience`,
+      `essential` and `fields` in any release. Its code string is never renamed
+      or reused, and its meaning never changes: a new meaning requires a new
+      code. It may be removed, and its name then stays reserved as a tombstone
+      (4.3).
+    - A stable code is changed only as a breaking change. It is retired by
+      marking it `deprecated`, not by deleting it.
+    - `omni code explain`, the MCP `code_explain` tool and the docs page show the flag,
+      so an agent or script knows which codes it may match on.
+    - Existing RFC 0021 diagnostic codes are marked `stable` when they ship
+      with that RFC. Before the first release anything may change.
 - **Flag names.** `--trace` and `--trace-file`. `-v` stays free for
   `-v/--value` (#51).
 - **Recovered cache/hash errors.** Decided per site with the rule in 4.4.
@@ -1036,7 +1046,7 @@ match it:
   renamed to `meta.filter_failed` (before any release), with `related =
   "meta.filter_excluded"`.
 - **`log` in one crate.** `bridge_rpc_services` still depends on `log`: its
-  `/log` service forwards script records with *dynamic* targets into an injected
+  `/log` service forwards script records with _dynamic_ targets into an injected
   `log::Log`, which `tracing` cannot express. Every other omni crate uses
   `tracing` only.
 - **Script logs (`ctx.log.*`).** The RFC does not place them. They are the

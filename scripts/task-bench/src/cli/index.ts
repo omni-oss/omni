@@ -91,7 +91,7 @@ function buildInput(opts: GenerateOpts): HarnessConfigInput {
     if (opts.tools !== undefined) input.tools = opts.tools;
 
     const dependency: NonNullable<HarnessConfigInput["dependency"]> = {
-        ...(base.dependency ?? {}),
+        ...base.dependency,
     };
     if (opts.strategy !== undefined)
         dependency.strategy = opts.strategy as NonNullable<
@@ -104,7 +104,7 @@ function buildInput(opts: GenerateOpts): HarnessConfigInput {
     if (Object.keys(dependency).length) input.dependency = dependency;
 
     const task: NonNullable<HarnessConfigInput["task"]> = {
-        ...(base.task ?? {}),
+        ...base.task,
     };
     if (opts.logLines !== undefined) task.logLines = opts.logLines;
     if (opts.work !== undefined) task.workIterations = opts.work;
@@ -114,7 +114,7 @@ function buildInput(opts: GenerateOpts): HarnessConfigInput {
     if (Object.keys(task).length) input.task = task;
 
     const versions: NonNullable<HarnessConfigInput["versions"]> = {
-        ...(base.versions ?? {}),
+        ...base.versions,
     };
     if (opts.turboVersion !== undefined) versions.turbo = opts.turboVersion;
     if (opts.nxVersion !== undefined) versions.nx = opts.nxVersion;
@@ -478,4 +478,4 @@ program
         }
     });
 
-program.parseAsync();
+await program.parseAsync();

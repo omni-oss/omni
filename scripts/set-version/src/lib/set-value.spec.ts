@@ -80,7 +80,6 @@ describe.each([
         };
 
         expect(() =>
-            // biome-ignore lint/suspicious/noExplicitAny: expected runtime code for testing
             set(objectGraph, ["foo", "bar", "baz", "qux"] as any, 43),
         ).toThrow(NoValueAtPathError);
     });

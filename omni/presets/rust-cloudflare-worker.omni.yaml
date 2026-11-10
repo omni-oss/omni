@@ -36,6 +36,8 @@ tasks:
       - ^build
     cache:
       key:
+        env:
+          append: [WORKER_BUILD_NO_OPT]
         files:
           append:
             - "./wrangler.toml"

@@ -148,12 +148,7 @@ owo-colors = { version = "^4.4.0" }
 tiny-gradient = { version = "^0.1.0" }
 omni_expressions = { path = "./crates/omni_expressions" }
 omni_cli_core = { path = "./crates/omni_cli_core" }
-cel = { version = "^0.15.0", features = [
-    "chrono",
-    "json",
-    "regex",
-    "bytes",
-] }
+cel = { version = "^0.15.0", features = ["chrono", "json", "regex", "bytes"] }
 omni_test_utils = { path = "./crates/omni_test_utils" }
 crossbeam-channel = { version = "^0.5.17" }
 shlex = { version = "^2.0.1" }
@@ -204,7 +199,10 @@ omni_remote_cache_storage_r2 = { path = "crates/omni_remote_cache_storage_r2" }
 omni_remote_cache_storage_s3 = { path = "crates/omni_remote_cache_storage_s3" }
 omni_remote_cache_storage_local = { path = "crates/omni_remote_cache_storage_local" }
 omni_remote_cache_storage_memory = { path = "crates/omni_remote_cache_storage_memory" }
-worker = { version = "^0.8.7", default-features = false, features = ["http", "axum"] }
+worker = { version = "^0.8.7", default-features = false, features = [
+    "http",
+    "axum",
+] }
 send_wrapper = { version = "^0.6.0" }
 omni_diagnostic = { path = "crates/omni_diagnostic" }
 omni_diagnostic_derive = { path = "crates/omni_diagnostic_derive" }

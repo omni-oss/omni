@@ -106,7 +106,9 @@ describe("cache paths outside the project", { tags: ["caching"] }, () => {
 
             const cached = await runOmni(["run", "build"], { cwd: ws.cwd });
             expect(cached).toHaveSucceeded();
-            expect(cached).toHaveStderrContaining("Cache hit for task 'app#build'");
+            expect(cached).toHaveStderrContaining(
+                "Cache hit for task 'app#build'",
+            );
 
             ws.write(
                 "shared/input.txt",
@@ -153,7 +155,9 @@ describe("cache paths outside the project", { tags: ["caching"] }, () => {
 
             const cached = await runOmni(["run", "build"], { cwd: ws.cwd });
             expect(cached).toHaveSucceeded();
-            expect(cached).toHaveStderrContaining("Cache hit for task 'app#build'");
+            expect(cached).toHaveStderrContaining(
+                "Cache hit for task 'app#build'",
+            );
             // A rerun writes a new UUID, so equal bytes prove actual restoration.
             expect(ws.read("shared/artifact.txt")).toBe(original);
         },
@@ -197,7 +201,9 @@ describe("cache paths outside the project", { tags: ["caching"] }, () => {
 
             const cached = await runOmni(["run", "build"], { cwd });
             expect(cached).toHaveSucceeded();
-            expect(cached).toHaveStderrContaining("Cache hit for task 'app#build'");
+            expect(cached).toHaveStderrContaining(
+                "Cache hit for task 'app#build'",
+            );
             expect(ws.exists("external/artifact.txt")).toBe(false);
 
             ws.write(

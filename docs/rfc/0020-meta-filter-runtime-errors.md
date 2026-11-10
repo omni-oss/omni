@@ -64,8 +64,8 @@ No tasks matched the given filters.
 ### Goals
 
 - A runtime error in a meta filter is never silently turned into `false`.
-- The diagnostic tells the user *which task* failed (project, task name, dir),
-  *what* failed (expression and CEL error), and *with what data* (the meta
+- The diagnostic tells the user _which task_ failed (project, task name, dir),
+  _what_ failed (expression and CEL error), and _with what data_ (the meta
   variables the expression saw).
 - The same diagnostic is available, structured, to MCP clients.
 - Users can still opt into tolerant filtering, but tolerated errors are
@@ -83,14 +83,14 @@ No tasks matched the given filters.
 
 ### 4.1 Behaviour
 
-| Situation                                   | Before            | After (default `fail`)         |
-| ------------------------------------------- | ----------------- | ------------------------------ |
-| Expression evaluates to true / false        | include / exclude | unchanged                      |
-| Expression references a missing meta key    | exclude silently  | **error**                      |
-| Type error, bad function call, overflow ... | exclude silently  | **error**                      |
-| Meta conversion error (`into_expression_context`) | already error | unchanged, now with task context |
-| Non-bool result (including `null`)          | truthy / falsy    | **error** (4.5)                |
-| Parse error                                 | error             | unchanged                      |
+| Situation                                         | Before            | After (default `fail`)           |
+| ------------------------------------------------- | ----------------- | -------------------------------- |
+| Expression evaluates to true / false              | include / exclude | unchanged                        |
+| Expression references a missing meta key          | exclude silently  | **error**                        |
+| Type error, bad function call, overflow ...       | exclude silently  | **error**                        |
+| Meta conversion error (`into_expression_context`) | already error     | unchanged, now with task context |
+| Non-bool result (including `null`)                | truthy / falsy    | **error** (4.5)                  |
+| Parse error                                       | error             | unchanged                        |
 
 Evaluation continues over all tasks and failures are aggregated with bounded
 memory (section 4.4); planning then returns one error.
@@ -227,29 +227,41 @@ locate the task without parsing text:
 
 ```json
 {
-  "code": -32602,
-  "message": "meta filter failed to evaluate for 500 task(s)",
-  "data": {
-    "kind": "meta_filter_evaluation",
-    "filter": "knd == \"e2e\"",
-    "total": 500,
-    "groups": [
-      {
-        "cause": "Undeclared reference to 'knd'",
-        "count": 500,
-        "samples": [
-          { "project": "web", "task": "test", "project_dir": "apps/web",
-            "meta": { "kind": "unit", "owner": "frontend" } },
-          { "project": "api", "task": "test", "project_dir": "apps/api",
-            "meta": { "kind": "e2e" } },
-          { "project": "docs", "task": "test", "project_dir": "apps/docs",
-            "meta": {} }
-        ],
-        "omitted": 497,
-        "hint": "`knd` is not defined for this task. Did you mean `kind`? For optional keys use has(meta.knd)."
-      }
-    ]
-  }
+    "code": -32602,
+    "message": "meta filter failed to evaluate for 500 task(s)",
+    "data": {
+        "kind": "meta_filter_evaluation",
+        "filter": "knd == \"e2e\"",
+        "total": 500,
+        "groups": [
+            {
+                "cause": "Undeclared reference to 'knd'",
+                "count": 500,
+                "samples": [
+                    {
+                        "project": "web",
+                        "task": "test",
+                        "project_dir": "apps/web",
+                        "meta": { "kind": "unit", "owner": "frontend" }
+                    },
+                    {
+                        "project": "api",
+                        "task": "test",
+                        "project_dir": "apps/api",
+                        "meta": { "kind": "e2e" }
+                    },
+                    {
+                        "project": "docs",
+                        "task": "test",
+                        "project_dir": "apps/docs",
+                        "meta": {}
+                    }
+                ],
+                "omitted": 497,
+                "hint": "`knd` is not defined for this task. Did you mean `kind`? For optional keys use has(meta.knd)."
+            }
+        ]
+    }
 }
 ```
 
@@ -365,14 +377,14 @@ Hints are produced in `omni_execution_plan` from `ErrorClass` plus the failing
 task's meta; never from message text. The same `hint: String` feeds the CLI
 output and MCP `data.hint`, so they cannot drift.
 
-| `ErrorClass`                    | Hint                                                                 |
-| ------------------------------- | -------------------------------------------------------------------- |
-| `MissingReference` (variable)   | `` `name` is not defined for this task. For optional keys use `has(meta.name)`. `` plus `Did you mean `kind`?` when a close key exists |
-| `MissingReference` (`is_call`)  | `` `name` is not a known function. `` plus the closest built-in name |
-| `MissingKey { key }`            | `` `key` is missing in a nested map. Use `has(meta.a.key)`. ``       |
-| `TypeMismatch { detail }`       | `Operand types differ: ` + the CEL detail (e.g. `int > string`)      |
-| `NonBool { got }`               | ``Filter must be a bool, got `got`. Compare explicitly, e.g. `owner != ""` or `size(tags) > 0`.`` |
-| `Other`                         | none                                                                 |
+| `ErrorClass`                   | Hint                                                                                                                                   |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `MissingReference` (variable)  | `` `name` is not defined for this task. For optional keys use `has(meta.name)`. `` plus `Did you mean `kind`?` when a close key exists |
+| `MissingReference` (`is_call`) | `` `name` is not a known function. `` plus the closest built-in name                                                                   |
+| `MissingKey { key }`           | `` `key` is missing in a nested map. Use `has(meta.a.key)`. ``                                                                         |
+| `TypeMismatch { detail }`      | `Operand types differ: ` + the CEL detail (e.g. `int > string`)                                                                        |
+| `NonBool { got }`              | ``Filter must be a bool, got `got`. Compare explicitly, e.g. `owner != ""` or `size(tags) > 0`.``                                      |
+| `Other`                        | none                                                                                                                                   |
 
 "Did you mean" uses Jaro-Winkler similarity from `strsim` (threshold 0.8) between the
 missing name and the task's meta keys, returning at most one suggestion. The
@@ -450,6 +462,7 @@ cases that rely on truthiness or missing keys) are updated to the new contract.
 ### 10.1 Unit tests
 
 `omni_expressions` (`evaluator.rs`):
+
 - `evaluate_bool` returns `Ok(true)` / `Ok(false)` for bool results.
 - Non-bool results (`1`, `"x"`, `[]`, `{}`, `null`, duration, timestamp, bytes)
   return `Err` naming the actual type.
@@ -461,6 +474,7 @@ cases that rely on truthiness or missing keys) are updated to the new contract.
   `startWith(x)` and false for a bare variable.
 
 `omni_configurations` (`meta_configuration.rs`):
+
 - `into_expression_context(&self)` exposes every top-level key and `meta`.
 - `meta.k` and `k` evaluate identically, including nested maps and lists.
 - A task key named `meta` wins and `meta` is not injected.
@@ -469,6 +483,7 @@ cases that rely on truthiness or missing keys) are updated to the new contract.
 - The meta is not consumed or cloned by the call (`&self`).
 
 `omni_execution_plan` (`filter.rs`, `execution_plan_provider.rs`):
+
 - Missing key, type error and non-bool result each yield a `FilterError` that
   carries project, task, project dir, filter, cause, and meta snapshot.
 - Task, project and dir pre-filters short-circuit: a failing meta filter is not
@@ -495,6 +510,7 @@ cases that rely on truthiness or missing keys) are updated to the new contract.
 - Valid boolean filters over complete meta give identical results to before.
 
 `omni_cli_core`, `omni_api`, `omni_mcp_core`:
+
 - `--meta-on-error` and `--meta-error-samples` parse, default to `fail` and `3`,
   and reject invalid values.
 - API and MCP parameters (`meta_on_error`, `meta_error_samples`) deserialize and
@@ -507,6 +523,7 @@ cases that rely on truthiness or missing keys) are updated to the new contract.
 In `tests/omni-tests/src/meta-filter-errors.e2e.spec.ts`, using the existing
 harness and fixture workspaces (three projects: `web` with `kind: unit`,
 `api` with `kind: e2e`, `docs` with no meta):
+
 - Typo (`--meta 'knd == "e2e"'`): non-zero exit, stderr has the filter, cause,
   `[3 tasks]`, the task names and dirs, meta snapshots and the hint; no task runs.
 - Missing key on some tasks (`--meta 'kind == "e2e"'`): fails naming `docs`;

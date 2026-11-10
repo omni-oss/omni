@@ -48,10 +48,7 @@ async function fixture() {
 }
 
 async function cacheDir(cwd: string, args: string[] = []) {
-    const result = await runOmni(
-        [...args, "cache", "dir"],
-        { cwd },
-    );
+    const result = await runOmni([...args, "cache", "dir"], { cwd });
     expect(result).toHaveSucceeded();
     return cleanPath(result.out);
 }

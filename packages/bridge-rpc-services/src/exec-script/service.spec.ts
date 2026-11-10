@@ -20,7 +20,11 @@ import {
 import { Mpsc, type MpscReceiver, Oneshot } from "@omni-oss/channels";
 import { describe, expect, test, vi } from "vitest";
 
-import { ExecScript, type LoadedScript } from "./service";
+import {
+    ExecScript,
+    type ExecScriptConfig,
+    type LoadedScript,
+} from "./service";
 
 // ──────────────────────────────────────────────────────────────────────────
 // Fixtures (reused from loader.spec.ts)
@@ -239,7 +243,9 @@ describe("ExecScript", () => {
 
         test("awaits async hooks before responding", async () => {
             let resolved = false;
-            const postImport = vi.fn(async () => {
+            const postImport = vi.fn<
+                NonNullable<ExecScriptConfig["postImport"]>
+            >(async () => {
                 await new Promise((r) => setTimeout(r, 5));
                 resolved = true;
             });
@@ -366,7 +372,8 @@ describe("ExecScript", () => {
         });
 
         test("does not invoke postImport on a bad request", async () => {
-            const postImport = vi.fn();
+            const postImport =
+                vi.fn<NonNullable<ExecScriptConfig["postImport"]>>();
             const service = new ExecScript({ postImport });
             const harness = makeJsonHarness(1);
 
@@ -390,7 +397,8 @@ describe("ExecScript", () => {
         });
 
         test("fails the whole request when one of N paths fails", async () => {
-            const postImportAll = vi.fn();
+            const postImportAll =
+                vi.fn<NonNullable<ExecScriptConfig["postImportAll"]>>();
             const service = new ExecScript({ postImportAll });
 
             const harness = makeJsonHarness([namedPath, missingPath]);

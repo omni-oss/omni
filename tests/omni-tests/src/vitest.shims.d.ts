@@ -14,6 +14,8 @@ declare module "vitest" {
             | "capability"
             | "tool"
             | "projection"
-            | "pack";
+            | "pack"
+            | "ignore"
+            | "remote-sources";
     }
 }

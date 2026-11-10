@@ -12,7 +12,8 @@ export class StreamTransport extends AbstractTransport implements Transport {
     constructor(config: StreamTransportConfig) {
         super();
         this.writer = config.output.getWriter();
-        config.input.pipeTo(
+        // The stream pump runs for the transport's lifetime, not the constructor's.
+        void config.input.pipeTo(
             new WritableStream({
                 write: this.receiveBytes,
             }),

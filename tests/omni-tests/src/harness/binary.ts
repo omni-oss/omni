@@ -70,16 +70,19 @@ function candidatePaths(
 ): string[] {
     const debug = join(root, "target", "debug", BIN_NAME);
     const release = join(root, "target", "release", BIN_NAME);
+    const crossDebugs = targets.map((t) =>
+        join(root, "target", t, "debug", BIN_NAME),
+    );
     const crossReleases = targets.map((t) =>
         join(root, "target", t, "release", BIN_NAME),
     );
 
-    if (profile === "debug") return [debug];
+    if (profile === "debug") return [...crossDebugs, debug];
     if (profile === "release") return [...crossReleases, release];
-    // No explicit profile: prefer a local debug build (what the test tasks
+    // No explicit profile: prefer a debug build, target-specific first (what the test tasks
     // produce via `omni#build:debug`), then a cross-compiled release, then a
     // native release.
-    return [debug, ...crossReleases, release];
+    return [...crossDebugs, debug, ...crossReleases, release];
 }
 
 /**
@@ -161,5 +164,7 @@ export function ensureOmniBinary(): string {
     execaSync("cargo", args, { cwd: root, stdio: "inherit" });
 
     cachedBin = undefined;
-    return resolveOmniBin({ profile });
+    // The native build only writes to `target/<profile>/`, so skip any
+    // (possibly stale) target-specific binaries.
+    return resolveOmniBin({ profile, targets: [] });
 }

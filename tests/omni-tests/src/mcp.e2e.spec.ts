@@ -662,7 +662,7 @@ describe(
                     name: "project_config",
                     arguments: { name: "does-not-exist" },
                 }),
-            ).rejects.toThrow();
+            ).rejects.toThrow(Error);
         });
 
         it("selects a config by an entry path from project_list", async () => {
@@ -832,7 +832,7 @@ describe(
                     name: "generator_inspect",
                     arguments: { name: "no-such-generator" },
                 }),
-            ).rejects.toThrow();
+            ).rejects.toThrow(Error);
         });
     },
 );
@@ -1031,7 +1031,7 @@ describe(
                         ignore_session: true,
                     },
                 }),
-            ).rejects.toThrow();
+            ).rejects.toThrow(Error);
 
             // Nothing should have been written.
             expect(ws.exists("out")).toBe(false);
@@ -1054,7 +1054,7 @@ describe(
                         ignore_session: true,
                     },
                 }),
-            ).rejects.toThrow();
+            ).rejects.toThrow(Error);
         });
 
         it("rejects recursion even on a dry run", async () => {
@@ -1075,7 +1075,7 @@ describe(
                         ignore_session: true,
                     },
                 }),
-            ).rejects.toThrow();
+            ).rejects.toThrow(Error);
         });
 
         it("runs a valid non-cyclic run-generator chain to completion", async () => {
@@ -1136,7 +1136,7 @@ describe(
                         max_depth: 0,
                     },
                 }),
-            ).rejects.toThrow();
+            ).rejects.toThrow(Error);
 
             // The nested write must not have happened.
             expect(ws.exists("out/nested.txt")).toBe(false);
@@ -1412,7 +1412,7 @@ describe(
                     name: "hash_project",
                     arguments: { name: "does-not-exist" },
                 }),
-            ).rejects.toThrow();
+            ).rejects.toThrow(Error);
         });
     },
 );
@@ -2020,7 +2020,7 @@ describe(
                         name: "task_run",
                         arguments: { tasks: ["build"], force },
                     }),
-                ).rejects.toThrow();
+                ).rejects.toThrow(Error);
             }
         });
     },
@@ -2272,7 +2272,7 @@ describe(
                 }),
             );
             expect(data.results.length).toBeGreaterThan(0);
-            expect(typeof data.results[0].command).toBe("string");
+            expect(typeof data.results[0]?.command).toBe("string");
         });
     },
 );

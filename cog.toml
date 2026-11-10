@@ -449,93 +449,67 @@ public_api = false
 
 [monorepo.packages.omni_remote_cache_core]
 path = "crates/omni_remote_cache_core"
-include = [
-    "crates/omni_remote_cache_core/**",
-]
+include = ["crates/omni_remote_cache_core/**"]
 public_api = false
 
 [monorepo.packages.omni_remote_cache_storage_r2]
 path = "crates/omni_remote_cache_storage_r2"
-include = [
-    "crates/omni_remote_cache_storage_r2/**",
-]
+include = ["crates/omni_remote_cache_storage_r2/**"]
 public_api = false
 
 [monorepo.packages.omni_remote_cache_worker]
 path = "services/omni_remote_cache_worker"
-include = [
-    "services/omni_remote_cache_worker/**",
-]
+include = ["services/omni_remote_cache_worker/**"]
 public_api = false
 
 [monorepo.packages.omni_remote_cache_storage_s3]
 path = "crates/omni_remote_cache_storage_s3"
-include = [
-    "crates/omni_remote_cache_storage_s3/**",
-]
+include = ["crates/omni_remote_cache_storage_s3/**"]
 public_api = false
 
 [monorepo.packages.omni_remote_cache_storage_local]
 path = "crates/omni_remote_cache_storage_local"
-include = [
-    "crates/omni_remote_cache_storage_local/**",
-]
+include = ["crates/omni_remote_cache_storage_local/**"]
 public_api = false
 
 [monorepo.packages.omni_remote_cache_storage_memory]
 path = "crates/omni_remote_cache_storage_memory"
-include = [
-    "crates/omni_remote_cache_storage_memory/**",
-]
+include = ["crates/omni_remote_cache_storage_memory/**"]
 public_api = false
 
 [monorepo.packages.omni_diagnostic]
 path = "crates/omni_diagnostic"
-include = [
-    "crates/omni_diagnostic/**",
-]
+include = ["crates/omni_diagnostic/**"]
 public_api = false
 
 [monorepo.packages.omni_diagnostic_derive]
 path = "crates/omni_diagnostic_derive"
-include = [
-    "crates/omni_diagnostic_derive/**",
-]
+include = ["crates/omni_diagnostic_derive/**"]
 public_api = false
 
 [monorepo.packages.omni_redact]
 path = "crates/omni_redact"
-include = [
-    "crates/omni_redact/**",
-]
+include = ["crates/omni_redact/**"]
 public_api = false
 
 [monorepo.packages.omni_codes]
 path = "crates/omni_codes"
-include = [
-    "crates/omni_codes/**",
-]
+include = ["crates/omni_codes/**"]
 public_api = false
 
 [monorepo.packages.omni_derive_support]
 path = "crates/omni_derive_support"
-include = [
-    "crates/omni_derive_support/**",
-]
+include = ["crates/omni_derive_support/**"]
 public_api = false
 
 [monorepo.packages.omni_notice]
 path = "crates/omni_notice"
-include = [
-    "crates/omni_notice/**",
-]
+include = ["crates/omni_notice/**"]
 public_api = false
 
 [monorepo.packages.omni_notice_derive]
 path = "crates/omni_notice_derive"
-include = [
-    "crates/omni_notice_derive/**",
-]
+include = ["crates/omni_notice_derive/**"]
 public_api = false
 
 # @anchor:new-rust-package
@@ -574,11 +548,6 @@ public_api = true
 path = "scripts/create-jobs"
 include = ["scripts/create-jobs/**"]
 public_api = true
-
-[monorepo.packages."@omni-oss/biome-config"]
-path = "packages/biome-config"
-include = ["packages/biome-config/**"]
-public_api = false
 
 [monorepo.packages."@omni-oss/tsconfig"]
 path = "packages/tsconfig"
@@ -688,7 +657,6 @@ include = [
     "README.md",
     "workspace.omni.yaml",
     "vitest.workspace.ts",
-    "biome.json",
 ]
 public_api = false
 pre_bump_hooks = [

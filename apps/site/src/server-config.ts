@@ -16,46 +16,46 @@
 // in-flight fetch and ships the dehydrated cache. The payload IS a
 // dehydrated QueryClient, which the client provider consumes with
 // TanStack's own `hydrate`.
-import { registerFlightDataSource } from '@solidjs/web/server-functions/server';
-import { FLIGHT_DATA_SOURCE, dehydrateSettled } from '@tanstack/solid-query';
-import { loadFlightTarget } from '@tanstack/solid-router/ssr/server';
+import { registerFlightDataSource } from "@solidjs/web/server-functions/server";
+import { FLIGHT_DATA_SOURCE, dehydrateSettled } from "@tanstack/solid-query";
+import { loadFlightTarget } from "@tanstack/solid-router/ssr/server";
 
 import {
-  planFlightCollection,
-  runFlightRecipes,
-  setFlightGate,
-} from './lib/flight';
-import { createQueryClient } from './lib/queries';
-import { createAppRouter } from './router';
+    planFlightCollection,
+    runFlightRecipes,
+    setFlightGate,
+} from "./lib/flight";
+import { createQueryClient } from "./lib/queries";
+import { createAppRouter } from "./router";
 
 registerFlightDataSource(FLIGHT_DATA_SOURCE, (event, outcome) => {
-  // A fresh cache and router per collection: the flight load runs the
-  // target URL's loaders into it, the same sequence SSR runs in
-  // src/setup.tsx, minus the render. (`loadFlightTarget` resolves undefined
-  // when there is no target — a non-browser caller, or a redirect leaving
-  // the app.)
-  //
-  // When the mutation declared its scope (`reload({ revalidate })`), the
-  // plan (src/lib/flight.ts) scopes that collection: the gate skips loader
-  // prefetches for data the caller already holds that no declared key
-  // names, and the recipes re-execute declared queries the loaders don't
-  // own. Undeclared mutations get an empty plan — full collection, exactly
-  // the sequence above.
-  const queryClient = createQueryClient();
-  const plan = planFlightCollection(outcome.request, outcome.revalidateKeys);
-  setFlightGate(queryClient, plan.skip);
-  return loadFlightTarget({
-    router: createAppRouter(queryClient),
-    event,
-    outcome,
-    async collect() {
-      await runFlightRecipes(queryClient, plan.recipes);
-      const state = await dehydrateSettled(queryClient);
-      // With keys declared, an empty slice still ships: delivering it is
-      // what hands the response to the client-side sweep.
-      return state.queries.length > 0 || outcome.revalidateKeys
-        ? state
-        : undefined;
-    },
-  });
+    // A fresh cache and router per collection: the flight load runs the
+    // target URL's loaders into it, the same sequence SSR runs in
+    // src/setup.tsx, minus the render. (`loadFlightTarget` resolves undefined
+    // when there is no target — a non-browser caller, or a redirect leaving
+    // the app.)
+    //
+    // When the mutation declared its scope (`reload({ revalidate })`), the
+    // plan (src/lib/flight.ts) scopes that collection: the gate skips loader
+    // prefetches for data the caller already holds that no declared key
+    // names, and the recipes re-execute declared queries the loaders don't
+    // own. Undeclared mutations get an empty plan — full collection, exactly
+    // the sequence above.
+    const queryClient = createQueryClient();
+    const plan = planFlightCollection(outcome.request, outcome.revalidateKeys);
+    setFlightGate(queryClient, plan.skip);
+    return loadFlightTarget({
+        router: createAppRouter(queryClient),
+        event,
+        outcome,
+        async collect() {
+            await runFlightRecipes(queryClient, plan.recipes);
+            const state = await dehydrateSettled(queryClient);
+            // With keys declared, an empty slice still ships: delivering it is
+            // what hands the response to the client-side sweep.
+            return state.queries.length > 0 || outcome.revalidateKeys
+                ? state
+                : undefined;
+        },
+    });
 });

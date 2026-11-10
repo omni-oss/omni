@@ -48,11 +48,13 @@ export class BridgeRpcSink {
 
             if (!response.status.equals(ResponseStatusCode.SUCCESS)) {
                 stderr.write(
-                    `Failed to send log entry via Bridge RPC: Non-success status code ${response.status}\n`,
+                    `Failed to send log entry via Bridge RPC: Non-success status code ${String(response.status)}\n`,
                 );
             }
         } catch (error) {
-            stderr.write(`Failed to send log entry via Bridge RPC: ${error}\n`);
+            stderr.write(
+                `Failed to send log entry via Bridge RPC: ${String(error)}\n`,
+            );
         }
     }
 }

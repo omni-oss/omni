@@ -214,7 +214,9 @@ function itPerRuntime(
         const title = reason
             ? `${opts.title(rt)} (skipped: ${reason})`
             : opts.title(rt);
-        it.skipIf(reason !== null)(title, (ctx) => body(rt, ctx));
+        // Assertions are supplied by the runtime-specific test body.
+        // eslint-disable-next-line vitest/expect-expect
+        it(`${title}`, { skip: reason !== null }, (ctx) => body(rt, ctx));
     }
 }
 
@@ -292,7 +294,7 @@ function capGeneratorSpec(opts: CapSpecOptions): WorkspaceSpec {
         files: {
             ".omni/sources/generator/.keep": "",
             "generators/capgen/gen.mjs": opts.script,
-            ...(opts.extraFiles ?? {}),
+            ...opts.extraFiles,
         },
     };
 }

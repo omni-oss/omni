@@ -13,7 +13,17 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 // We stub it so the context-assembly logic can be unit tested without a live
 // bridge connection, and so we can assert the client handle is forwarded.
 const { systemCreateMock, SYSTEM_MARKER } = vi.hoisted(() => ({
-    systemCreateMock: vi.fn(),
+    systemCreateMock: vi.fn<
+        (...args: unknown[]) => Promise<{
+            fs: { __marker: string };
+            proc: {
+                currentDir: () => string;
+                setCurrentDir: () => Promise<void>;
+                args: () => string[];
+                env: () => Record<string, string>;
+            };
+        }>
+    >(),
     SYSTEM_MARKER: {
         fs: { __marker: "fs" },
         proc: {

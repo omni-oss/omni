@@ -8,7 +8,7 @@ import type { JSX } from "@solidjs/web";
 //
 // This is deliberately hand-rolled (~20 lines) instead of depending on the
 // `solid-mdx`/`solid-jsx` packages, which are unmaintained and target Solid 1.
-import { createContext, useContext, type Component } from "solid-js";
+import { createContext, untrack, useContext, type Component } from "solid-js";
 
 export type MDXComponents = Record<string, Component<any>>;
 
@@ -38,7 +38,7 @@ export function MDXProvider(props: {
         <MDXContext
             value={{
                 ...parent,
-                ...props.components,
+                ...untrack(() => props.components),
             }}
         >
             {props.children}

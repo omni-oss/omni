@@ -56,7 +56,7 @@ export class RequestStateMachine {
         if (this._id !== null && !this._id.equals(eventId)) {
             throw new RequestStateMachineError(
                 "InvalidId",
-                `invalid id: expected: ${this._id}, actual: ${eventId}`,
+                `invalid id: expected: ${String(this._id)}, actual: ${String(eventId)}`,
             );
         }
 

@@ -1,5 +1,5 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/json-schemas/refs/heads/main/project.json
-name: ts-vite-lib
+name: ts-vite-app
 
 extends:
   - "./ts-lib.omni.yaml"
@@ -20,6 +20,9 @@ tasks:
           append:
             - "./vite.config.ts"
             - "./vitest.config.e2e.ts"
+      output:
+        files:
+          - ".vitest/**/*"
     dependencies:
       append:
         - ^test:e2e

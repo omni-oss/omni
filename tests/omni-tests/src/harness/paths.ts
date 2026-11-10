@@ -24,7 +24,6 @@ export function findRepoRoot(startDir: string = import.meta.dirname): string {
     }
 
     let dir = startDir;
-    // eslint-disable-next-line no-constant-condition
     while (true) {
         const cargoToml = join(dir, "Cargo.toml");
         if (

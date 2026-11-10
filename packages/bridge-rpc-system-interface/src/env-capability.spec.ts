@@ -162,14 +162,9 @@ describe("CapabilityFilteredEnv", () => {
                 "throw",
             );
             expect(() => env.get("AWS_TOKEN")).toThrow(EnvAccessDeniedError);
-            try {
-                env.get("AWS_TOKEN");
-            } catch (err) {
-                expect(err).toBeInstanceOf(EnvAccessDeniedError);
-                expect((err as EnvAccessDeniedError).variableName).toBe(
-                    "AWS_TOKEN",
-                );
-            }
+            expect(() => env.get("AWS_TOKEN")).toThrow(
+                expect.objectContaining({ variableName: "AWS_TOKEN" }),
+            );
         });
 
         test("throw still returns permitted values normally", () => {

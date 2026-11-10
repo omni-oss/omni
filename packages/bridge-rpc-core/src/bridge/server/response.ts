@@ -14,10 +14,7 @@ export class PendingResponse {
         private frameSender: MpscSender<Frame, number | undefined>,
     ) {}
 
-    public async start(
-        statusCode: ResponseStatusCode,
-        headers?: Headers | undefined,
-    ) {
+    public async start(statusCode: ResponseStatusCode, headers?: Headers) {
         if (this._isStarted) {
             throw new Error("Response already started");
         }
@@ -48,7 +45,7 @@ export class ActiveResponse {
         return this;
     }
 
-    public async end(trailers?: Headers | undefined) {
+    public async end(trailers?: Headers) {
         await this.ensureNotEnded();
         this._isEnded = true;
 

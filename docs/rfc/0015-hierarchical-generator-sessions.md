@@ -736,7 +736,7 @@ in-memory fixture):
     - targets and inputs are diffed independently;
     - the `shared` block is never touched by the delta.
 - versioned `SessionFile` round-trip: envelope parses `{ version, root,
-generators, shared }`; `version` always written; `root` omitted when false,
+  generators, shared }`; `version` always written; `root` omitted when false,
   emitted when true; empty `generators`/`shared` skipped on write; a legacy
   flat/bare-map file (no `version`) fails to deserialize with a natural error
   (not read, not empty).

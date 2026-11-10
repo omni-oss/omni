@@ -14,15 +14,15 @@ Target: `wasm32-unknown-unknown` via `workers-rs`, keeping the native (Tokio + S
 
 `omni_remote_cache_storage` is renamed to `omni_remote_cache_storage_core` and reduced to abstractions and helpers. Each backend becomes its own crate.
 
-| Crate | Purpose |
-| --- | --- |
-| `crates/omni_remote_cache_storage_core` | Traits, structs, errors, runtime-agnostic helpers (e.g. `LruCached`), test utils. No Tokio/AWS/fs. |
-| `crates/omni_remote_cache_storage_s3` | AWS S3 backend (native). |
-| `crates/omni_remote_cache_storage_local` | Local disk backend (native, Tokio fs). |
-| `crates/omni_remote_cache_storage_memory` | In-memory backend (tests, dev; Tokio-free so it also builds on wasm). |
-| `crates/omni_remote_cache_storage_r2` | `worker::Bucket` backend (Workers). |
-| `crates/omni_remote_cache_core` | Portable routes, handlers, auth, models. |
-| `services/omni_remote_cache_worker` | `cdylib` with the `fetch` entry point, config from env/secrets. |
+| Crate                                     | Purpose                                                                                            |
+| ----------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `crates/omni_remote_cache_storage_core`   | Traits, structs, errors, runtime-agnostic helpers (e.g. `LruCached`), test utils. No Tokio/AWS/fs. |
+| `crates/omni_remote_cache_storage_s3`     | AWS S3 backend (native).                                                                           |
+| `crates/omni_remote_cache_storage_local`  | Local disk backend (native, Tokio fs).                                                             |
+| `crates/omni_remote_cache_storage_memory` | In-memory backend (tests, dev; Tokio-free so it also builds on wasm).                              |
+| `crates/omni_remote_cache_storage_r2`     | `worker::Bucket` backend (Workers).                                                                |
+| `crates/omni_remote_cache_core`           | Portable routes, handlers, auth, models.                                                           |
+| `services/omni_remote_cache_worker`       | `cdylib` with the `fetch` entry point, config from env/secrets.                                    |
 
 All new crates are scaffolded empty via the `crate` generator; the rename is done.
 
@@ -54,8 +54,8 @@ Implemented:
 
 1. **Toolchain**: `rust-toolchain.toml` lists `wasm32-unknown-unknown` in `targets`, so `setup-rust-toolchain` and local rustup install it.
 2. **Presets**:
-   - `omni/presets/rust-wasm-compatible.omni.yaml` adds a `check-wasm` task (`cargo check --target wasm32-unknown-unknown`) and wires it into `test`. Applied to `omni_remote_cache_storage_core`, `_memory`, `_r2` and `omni_remote_cache_core`.
-   - `omni/presets/rust-cloudflare-worker.omni.yaml` (worker) adds `check-wasm-deps`, which fails if `mio`, `socket2`, `tokio-util` or `aws-sdk-s3` appear in the wasm dependency graph (guards against feature unification), and a `build` task running `worker-build --release` (installed on demand at a pinned version) with `build/**` cached as output.
+    - `omni/presets/rust-wasm-compatible.omni.yaml` adds a `check-wasm` task (`cargo check --target wasm32-unknown-unknown`) and wires it into `test`. Applied to `omni_remote_cache_storage_core`, `_memory`, `_r2` and `omni_remote_cache_core`.
+    - `omni/presets/rust-cloudflare-worker.omni.yaml` (worker) adds `check-wasm-deps`, which fails if `mio`, `socket2`, `tokio-util` or `aws-sdk-s3` appear in the wasm dependency graph (guards against feature unification), and a `build` task running `worker-build --release` (installed on demand at a pinned version) with `build/**` cached as output.
 3. **getrandom**: `.cargo/config.toml` sets the `wasm_js` backend cfg for the wasm target.
 
 Verified locally: `worker-build --release` produces a 1.5 MB wasm bundle, and the `omni-remote-cache-service-tests` suite passes against both targets (`REMOTE_CACHE_TEST_TARGETS` selects targets: `test:service:native` and `test:service:worker` (both extend `test:service:base`); `test:service` depends on both, and a manual vitest run with it unset covers both in one process). The worker target runs `wrangler dev --local` (miniflare R2, fresh state each run); a 20 MiB artifact round-trip covers the multipart path.

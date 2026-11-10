@@ -91,6 +91,8 @@ describe("+hash @hashing (golden workspace hash)", () => {
         const inCI = process.env.CI != null && process.env.CI !== "";
 
         if (existsSync(snapshotFile) || !inCI) {
+            // Missing platform snapshots may only be created locally, never in CI.
+            // eslint-disable-next-line vitest/no-conditional-expect
             expect(first.stdout).toMatchSnapshot();
         } else {
             console.warn(

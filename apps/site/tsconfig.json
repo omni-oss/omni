@@ -1,5 +1,6 @@
 {
     "extends": ["@omni-oss/tsconfig/base.json"],
+    "include": ["${configDir}/src/**/*.*", "${configDir}/index.tsx"],
     "compilerOptions": {
         // General
         "jsx": "preserve",

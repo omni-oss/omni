@@ -140,15 +140,12 @@ describe(
                     { cwd: ws.cwd },
                 );
 
-                if (fail) {
-                    expect(result).toHaveFailed();
-                    expect(result).toHaveStderrContaining(
-                        "script log discarded after failure",
-                    );
-                } else {
-                    expect(result).toHaveSucceeded();
-                    expect(result).toHaveStderrContaining("pw is ");
-                    expect(result).toHaveStderrContaining("script_target");
+                expect(result.exitCode === 0).toBe(!fail);
+                const expectedMessages = fail
+                    ? ["script log discarded after failure"]
+                    : ["pw is ", "script_target"];
+                for (const message of expectedMessages) {
+                    expect(result).toHaveStderrContaining(message);
                 }
                 expect(result.err).not.toContain("hunter2-secret");
                 expect(result.out).not.toContain("hunter2-secret");

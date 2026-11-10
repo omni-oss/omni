@@ -6,7 +6,6 @@ export function withTimeout<Args extends unknown[], R>(
     ms: number,
 ): (...args: Args) => Promise<R> {
     return async (...args: Args): Promise<R> => {
-        // biome-ignore lint/style/noNonNullAssertion: false
         let timeoutId: ReturnType<typeof setTimeout> = undefined!;
 
         const timeoutPromise = new Promise<never>((_, reject) => {

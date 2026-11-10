@@ -8,7 +8,7 @@ import { createConfig } from "@omni-oss/vite-config/app";
 import { createConfig } from "@omni-oss/vite-config/test";
 {% endif %}
 {% set exclude_deps_from_bundle = inputs.package_type == "lib" or (inputs.package_type == "script" and inputs.script_can_be_used_as_lib) %}
-import packageJson from "./package.json";
+import packageJson from "./package.json" with { type: "json" };
 
 export default createConfig({
     package: packageJson,

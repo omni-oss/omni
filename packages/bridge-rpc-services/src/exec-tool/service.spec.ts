@@ -18,7 +18,13 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 // Stub the context factory: the real one reaches over RPC to build a System.
 const { createContextMock } = vi.hoisted(() => ({
-    createContextMock: vi.fn(),
+    createContextMock: vi.fn<
+        (options: { inputs: unknown; cwd: string }) => Promise<{
+            inputs: unknown;
+            sys: typeof SYS_MARKER;
+            log: Logger;
+        }>
+    >(),
 }));
 
 vi.mock("./tool-script-context", () => ({

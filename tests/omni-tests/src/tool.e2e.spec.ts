@@ -19,7 +19,6 @@ import { makeWorkspace, runOmni, type WorkspaceSpec } from "@/harness";
  * non-JSON log lines (e.g. environment-specific keyring warnings) that may be
  * interleaved on stdout by the tracing subscriber.
  */
-// biome-ignore lint/suspicious/noExplicitAny: test file
 function parseJsonOutput(stdout: string): any {
     for (const line of stdout.split(/\r?\n/)) {
         const trimmed = line.trim();

@@ -53,5 +53,11 @@ export default defineConfig({
                 tabWidth: 2,
             },
         },
+        {
+            files: ["package.json"],
+            options: {
+                tabWidth: 4,
+            },
+        },
     ],
 });

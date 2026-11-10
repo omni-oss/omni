@@ -10,6 +10,17 @@ export default mergeConfig(
             exclude: [
                 "./src/**/__tests__/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}",
             ],
+            typecheck: {
+                enabled: true,
+                include: [
+                    "./src/**/*.{test,spec}.{ts,mts,cts,tsx}",
+                    "./src/**/*.{test,spec}-d.{ts,mts,cts,tsx}",
+                ],
+                exclude: [
+                    "**/node_modules/**",
+                    "./src/**/__tests__/**/*.{test,spec}.{ts,mts,cts,tsx}",
+                ],
+            },
         },
     }),
     { test: { coverage } },

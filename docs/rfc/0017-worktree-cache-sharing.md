@@ -50,7 +50,7 @@ The file lives beside `workspace.omni.{ext}`, not at an arbitrary repository roo
 ```yaml
 # worktree.omni.yaml — machine-local; do not commit
 cache:
-  dir: ../shared-cache/app
+    dir: ../shared-cache/app
 ```
 
 Recognize the existing supported configuration extensions: `yml`, `yaml`, `json`,

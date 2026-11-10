@@ -33,10 +33,10 @@ export function declareProcTests(args: ProcessTestDeclarationsArgs): void {
 
         it("env.get returns a present value and null for a missing one", () => {
             const env = args.proc.env();
-            const [firstKey, firstValue] =
-                Object.entries(args.env).find(([, v]) => v !== undefined) ?? [];
-            if (firstKey !== undefined) {
-                expect(env.get(firstKey)).toBe(firstValue);
+            for (const [key, value] of Object.entries(args.env).filter(
+                ([, v]) => v !== undefined,
+            )) {
+                expect(env.get(key)).toBe(value);
             }
             expect(env.get("__OMNI_DEFINITELY_MISSING_ENV__")).toBeNull();
         });

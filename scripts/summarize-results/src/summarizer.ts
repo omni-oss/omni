@@ -64,7 +64,6 @@ export function summarize(results: TaskResultArray): Summary {
             };
         }
 
-        // biome-ignore lint/style/noNonNullAssertion: expected
         summary.projects[result.task.project_name]!.tasks[
             result.task.task_name
         ] = {
@@ -94,7 +93,6 @@ export function summarize(results: TaskResultArray): Summary {
 
         applyResultToSummary(
             result,
-            // biome-ignore lint/style/noNonNullAssertion: should be assigned at this point
             summary.aggregated_by_project[result.task.project_name]!,
         );
 
@@ -105,7 +103,6 @@ export function summarize(results: TaskResultArray): Summary {
 
         applyResultToSummary(
             result,
-            // biome-ignore lint/style/noNonNullAssertion: should be assigned at this point
             summary.aggregated_by_task[result.task.task_name]!,
         );
     }

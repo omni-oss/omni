@@ -44,15 +44,15 @@ describe("ResponseErrorCode", () => {
         });
 
         it("should reject negative values", () => {
-            expect(() => ResponseErrorCode.from(-1)).toThrow();
+            expect(() => ResponseErrorCode.from(-1)).toThrow(/too_small/);
         });
 
         it("should reject values greater than or equal to 65536", () => {
-            expect(() => ResponseErrorCode.from(65_536)).toThrow();
+            expect(() => ResponseErrorCode.from(65_536)).toThrow(/too_big/);
         });
 
         it("should reject non-integer values", () => {
-            expect(() => ResponseErrorCode.from(2.5)).toThrow();
+            expect(() => ResponseErrorCode.from(2.5)).toThrow(/invalid_type/);
         });
 
         it("should accept the maximum allowed value (65535)", () => {
@@ -161,15 +161,15 @@ describe("RequestErrorCode", () => {
         });
 
         it("should reject negative values", () => {
-            expect(() => RequestErrorCode.from(-1)).toThrow();
+            expect(() => RequestErrorCode.from(-1)).toThrow(/too_small/);
         });
 
         it("should reject values greater than or equal to 65536", () => {
-            expect(() => RequestErrorCode.from(65_536)).toThrow();
+            expect(() => RequestErrorCode.from(65_536)).toThrow(/too_big/);
         });
 
         it("should reject non-integer values", () => {
-            expect(() => RequestErrorCode.from(3.14)).toThrow();
+            expect(() => RequestErrorCode.from(3.14)).toThrow(/invalid_type/);
         });
 
         it("should accept the maximum allowed value (65535)", () => {

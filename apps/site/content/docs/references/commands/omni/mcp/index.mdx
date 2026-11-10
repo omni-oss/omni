@@ -1,12 +1,8 @@
 ---
-
 title: "mcp"
 
 description: "Start an MCP server for AI agent integration"
-
 ---
-
-
 
 ## Usage
 
@@ -46,12 +42,12 @@ workspace-specific startup directory:
 
 ```json
 {
-  "mcpServers": {
-    "omni": {
-      "command": "omni",
-      "args": ["mcp", "--shared"]
+    "mcpServers": {
+        "omni": {
+            "command": "omni",
+            "args": ["mcp", "--shared"]
+        }
     }
-  }
 }
 ```
 
@@ -66,8 +62,8 @@ Or call `task_run` with:
 
 ```json
 {
-  "working_dir": "/home/user/repos/app/packages/frontend",
-  "tasks": ["build"]
+    "working_dir": "/home/user/repos/app/packages/frontend",
+    "tasks": ["build"]
 }
 ```
 

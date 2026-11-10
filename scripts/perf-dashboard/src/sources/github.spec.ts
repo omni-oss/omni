@@ -80,7 +80,7 @@ type Route = [string | RegExp, unknown];
 
 function mockFetch(routes: Route[]): typeof fetch {
     return (async (input: string | URL | Request) => {
-        const url = input.toString();
+        const url = input instanceof Request ? input.url : input.toString();
         for (const [pattern, payload] of routes) {
             const match =
                 typeof pattern === "string"

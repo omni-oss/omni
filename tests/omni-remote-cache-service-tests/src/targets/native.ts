@@ -2,8 +2,8 @@ import { spawn } from "node:child_process";
 
 import { resolveServiceBinOrThrow } from "../binary";
 import { getHost, sleep } from "../utils";
-import { waitForServer } from "./wait";
 import type { Target } from "./types";
+import { waitForServer } from "./wait";
 
 export const nativeTarget: Target = {
     name: "native",

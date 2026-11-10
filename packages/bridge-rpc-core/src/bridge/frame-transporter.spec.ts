@@ -8,7 +8,9 @@ import { FrameTransporter } from "./frame-transporter";
 
 describe("FrameTransporter", () => {
     it("should start and stop", async () => {
-        const senderFn = vi.fn();
+        const senderFn = vi
+            .fn<(data: Uint8Array) => Promise<void>>()
+            .mockResolvedValue(undefined);
         const transporter = new FrameTransporter(senderFn);
 
         await expect(transporter.start()).resolves.toBeUndefined();
@@ -21,14 +23,16 @@ describe("FrameTransporter", () => {
     });
 
     it("should send frame", async () => {
-        const senderFn = vi.fn();
+        const senderFn = vi
+            .fn<(data: Uint8Array) => Promise<void>>()
+            .mockResolvedValue(undefined);
         const transporter = new FrameTransporter(senderFn);
 
         await expect(transporter.start()).resolves.toBeUndefined();
         expect(transporter.isRunning).toBeTruthy();
 
         const frame = Frame.requestStart(Id.create(), "test");
-        transporter.sender.send(frame);
+        await transporter.sender.send(frame);
 
         await expect(transporter.stop()).resolves.toBeUndefined();
         expect(transporter.isRunning).toBeFalsy();

@@ -196,7 +196,7 @@ describe("installBuiltinModuleEnforcement — node:child_process", () => {
 
     function stub(key: string) {
         originals.set(key, cp[key]);
-        const spy = vi.fn(() => "spawned");
+        const spy = vi.fn<(...args: unknown[]) => string>(() => "spawned");
         cp[key] = spy;
         return spy;
     }
@@ -379,9 +379,11 @@ describe("installBuiltinModuleEnforcement — ChildProcess.prototype.spawn", () 
 
     function stubProtoSpawn() {
         original = cpProto.ChildProcess.prototype.spawn;
-        const spy = vi.fn(function (this: unknown) {
-            return this;
-        });
+        const spy = vi.fn<(this: unknown, ...args: unknown[]) => unknown>(
+            function (this: unknown) {
+                return this;
+            },
+        );
         cpProto.ChildProcess.prototype.spawn = spy as never;
         return spy;
     }
@@ -463,9 +465,11 @@ describe("installBuiltinModuleEnforcement — node:net", () => {
 
     function stubConnect() {
         original = net.Socket.prototype.connect;
-        const spy = vi.fn(function (this: unknown) {
-            return this;
-        });
+        const spy = vi.fn<(this: unknown, ...args: unknown[]) => unknown>(
+            function (this: unknown) {
+                return this;
+            },
+        );
         net.Socket.prototype.connect = spy as never;
         return spy;
     }
@@ -555,9 +559,11 @@ describe("installBuiltinModuleEnforcement — non-TCP / non-fetch egress", () =>
     }
 
     test("gates node:dgram UDP send against the net policy", () => {
-        const send = vi.fn(function (this: unknown) {
-            return this;
-        });
+        const send = vi.fn<(this: unknown, ...args: unknown[]) => unknown>(
+            function (this: unknown) {
+                return this;
+            },
+        );
         const proto: Record<string, unknown> = { send };
         const policy = CapabilityPolicy.parse(
             enforceJson({ net: { allow: ["metrics.internal:8125"] } }),
@@ -579,7 +585,7 @@ describe("installBuiltinModuleEnforcement — non-TCP / non-fetch egress", () =>
     });
 
     test("gates node:http2 connect against the net policy", () => {
-        const connect = vi.fn(() => "session");
+        const connect = vi.fn<(...args: unknown[]) => string>(() => "session");
         const http2: Record<string, unknown> = { connect };
         const policy = CapabilityPolicy.parse(
             enforceJson({ net: { allow: ["api.example:443"] } }),
@@ -649,7 +655,7 @@ describe("installBuiltinModuleEnforcement — non-TCP / non-fetch egress", () =>
     });
 
     test("gates Deno.connect and defaults an omitted host to 127.0.0.1", () => {
-        const connect = vi.fn(() => "conn");
+        const connect = vi.fn<(...args: unknown[]) => string>(() => "conn");
         const globalTarget: Record<string, unknown> = { Deno: { connect } };
         const policy = CapabilityPolicy.parse(
             enforceJson({ net: { allow: ["127.0.0.1:5432"] } }),
@@ -670,7 +676,7 @@ describe("installBuiltinModuleEnforcement — non-TCP / non-fetch egress", () =>
     });
 
     test("fails closed on a Deno.connect whose port cannot be determined", () => {
-        const connect = vi.fn(() => "conn");
+        const connect = vi.fn<(...args: unknown[]) => string>(() => "conn");
         const globalTarget: Record<string, unknown> = { Deno: { connect } };
         const policy = CapabilityPolicy.parse(
             enforceJson({ net: { allow: ["127.0.0.1:5432"] } }),
@@ -730,7 +736,7 @@ describe("installBuiltinModuleEnforcement — Bun native apis", () => {
     }
 
     test("gates Bun.spawn against the process policy and scrubs env", () => {
-        const spawn = vi.fn(() => "spawned");
+        const spawn = vi.fn<(...args: unknown[]) => string>(() => "spawned");
         const globalTarget: Record<string, unknown> = { Bun: { spawn } };
         const policy = CapabilityPolicy.parse(
             enforceJson({ process: { allow: ["git"] } }),
@@ -766,7 +772,7 @@ describe("installBuiltinModuleEnforcement — Bun native apis", () => {
     });
 
     test("gates the Bun.spawn { cmd } options form", () => {
-        const spawnSync = vi.fn(() => "ran");
+        const spawnSync = vi.fn<(...args: unknown[]) => string>(() => "ran");
         const globalTarget: Record<string, unknown> = { Bun: { spawnSync } };
         const policy = CapabilityPolicy.parse(
             enforceJson({ process: { allow: ["git"] } }),
@@ -786,7 +792,7 @@ describe("installBuiltinModuleEnforcement — Bun native apis", () => {
     });
 
     test("gates Bun.connect against the net policy", () => {
-        const connect = vi.fn(() => "conn");
+        const connect = vi.fn<(...args: unknown[]) => string>(() => "conn");
         const globalTarget: Record<string, unknown> = { Bun: { connect } };
         const policy = CapabilityPolicy.parse(
             enforceJson({ net: { allow: ["db.internal:5432"] } }),
@@ -808,7 +814,7 @@ describe("installBuiltinModuleEnforcement — Bun native apis", () => {
     });
 
     test("a Unix-domain Bun.connect has no host:port to authorize", () => {
-        const connect = vi.fn(() => "conn");
+        const connect = vi.fn<(...args: unknown[]) => string>(() => "conn");
         const globalTarget: Record<string, unknown> = { Bun: { connect } };
         const policy = CapabilityPolicy.parse(
             enforceJson({ net: { allow: ["db.internal:5432"] } }),
@@ -826,7 +832,7 @@ describe("installBuiltinModuleEnforcement — Bun native apis", () => {
     });
 
     test("fails closed on a Bun.connect whose port cannot be determined", () => {
-        const connect = vi.fn(() => "conn");
+        const connect = vi.fn<(...args: unknown[]) => string>(() => "conn");
         const globalTarget: Record<string, unknown> = { Bun: { connect } };
         const policy = CapabilityPolicy.parse(
             enforceJson({ net: { allow: ["db.internal:5432"] } }),
@@ -846,7 +852,7 @@ describe("installBuiltinModuleEnforcement — Bun native apis", () => {
     });
 
     test("gates the connected-peer of a Bun.udpSocket", () => {
-        const udpSocket = vi.fn(() => "sock");
+        const udpSocket = vi.fn<(...args: unknown[]) => string>(() => "sock");
         const globalTarget: Record<string, unknown> = { Bun: { udpSocket } };
         const policy = CapabilityPolicy.parse(
             enforceJson({ net: { allow: ["metrics.internal:8125"] } }),
@@ -870,8 +876,8 @@ describe("installBuiltinModuleEnforcement — Bun native apis", () => {
     });
 
     test("leaves Bun apis untouched when neither domain is enforced", () => {
-        const spawn = vi.fn(() => "spawned");
-        const connect = vi.fn(() => "conn");
+        const spawn = vi.fn<(...args: unknown[]) => string>(() => "spawned");
+        const connect = vi.fn<(...args: unknown[]) => string>(() => "conn");
         const globalTarget: Record<string, unknown> = {
             Bun: { spawn, connect },
         };
@@ -952,12 +958,14 @@ describe("installBuiltinModuleEnforcement — fresh-realm gating", () => {
     });
 
     test("blocks node:vm new-context execution but leaves runInThisContext", () => {
-        const runInThisContext = vi.fn(() => "ok");
+        const runInThisContext = vi.fn<(...args: unknown[]) => string>(
+            () => "ok",
+        );
         const vm: Record<string, unknown> = {
-            runInNewContext: vi.fn(),
-            runInContext: vi.fn(),
-            createContext: vi.fn(),
-            compileFunction: vi.fn(),
+            runInNewContext: vi.fn<(...args: unknown[]) => void>(),
+            runInContext: vi.fn<(...args: unknown[]) => void>(),
+            createContext: vi.fn<(...args: unknown[]) => void>(),
+            compileFunction: vi.fn<(...args: unknown[]) => void>(),
             SourceTextModule: class {},
             runInThisContext,
         };
@@ -985,7 +993,9 @@ describe("installBuiltinModuleEnforcement — fresh-realm gating", () => {
     });
 
     test("leaves realms alone when neither net nor process is enforced", () => {
-        const wt: Record<string, unknown> = { Worker: vi.fn(() => "worker") };
+        const wt: Record<string, unknown> = {
+            Worker: vi.fn<(...args: unknown[]) => string>(() => "worker"),
+        };
         installBuiltinModuleEnforcement(CapabilityPolicy.empty(), {
             nodeRequire: realmRequire({ "node:worker_threads": wt }),
             globalTarget: {},
@@ -1008,8 +1018,8 @@ describe("defineEnforcedGlobal", () => {
         // Neither reassignment nor deletion can recover the raw value.
         expect(() => {
             (target as { g: unknown }).g = () => "evil";
-        }).toThrow();
-        expect(() => delete target.g).toThrow();
+        }).toThrow(TypeError);
+        expect(() => delete target.g).toThrow(TypeError);
         expect(target.g).toBe(patched);
     });
 

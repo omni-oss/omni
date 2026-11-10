@@ -202,4 +202,4 @@ async function emit(output: RenderOutput, outDir?: string): Promise<void> {
     );
 }
 
-program.parseAsync();
+await program.parseAsync();

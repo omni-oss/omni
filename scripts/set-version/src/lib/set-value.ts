@@ -80,7 +80,6 @@ function setValueImpl<
     clone: boolean,
 ): SetAtPath<TObject, P, TValue> {
     if (path.length === 0) {
-        // biome-ignore lint/suspicious/noExplicitAny: expected runtime code
         return value as any;
     }
 
@@ -89,7 +88,6 @@ function setValueImpl<
     if (Array.isArray(objectGraph)) {
         const key = head as unknown as number;
 
-        // biome-ignore lint/suspicious/noExplicitAny: expected runtime code
         const toEdit: any = clone ? objectGraph.slice() : objectGraph;
 
         if (!toEdit[key]) {
@@ -98,7 +96,6 @@ function setValueImpl<
 
         toEdit[key] = setValueImpl(
             toEdit[key],
-            // biome-ignore lint/suspicious/noExplicitAny: expected runtime code
             tail as any,
             value,
             [...pathTraversed, key],
@@ -109,7 +106,6 @@ function setValueImpl<
 
     const key = head as unknown as keyof TObject;
 
-    // biome-ignore lint/suspicious/noExplicitAny: expected runtime code
     const toEdit: any = clone ? { ...objectGraph } : objectGraph;
 
     if (!toEdit[key]) {
@@ -118,7 +114,6 @@ function setValueImpl<
 
     toEdit[key] = setValueImpl(
         toEdit[key],
-        // biome-ignore lint/suspicious/noExplicitAny: expected runtime code
         tail as any,
         value,
         [...pathTraversed, key as unknown as number | string],

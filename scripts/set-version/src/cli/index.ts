@@ -64,4 +64,4 @@ program
         }
     });
 
-program.parseAsync();
+await program.parseAsync();

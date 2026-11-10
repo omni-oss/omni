@@ -432,7 +432,7 @@ describe("+projection @e2e", { tags: ["projection"] }, () => {
             expect(ws.read(`${ledger}.backup`)).toBe(original);
             expect(ws.read(`${ledger}/keep`)).toBe("do not overwrite");
 
-            if (command[0] === "prune") {
+            {
                 const preview = await runOmni(
                     ["projection", "prune", "--dry-run"],
                     { cwd: ws.cwd },
@@ -469,7 +469,7 @@ describe("+projection @e2e", { tags: ["projection"] }, () => {
                 lstatSync(ws.path(".agents/skills/rust.md")).isSymbolicLink(),
             ).toBe(true);
 
-            if (command[0] === "prune") {
+            {
                 const preview = await runOmni(
                     ["projection", "prune", "--dry-run"],
                     { cwd: ws.cwd },

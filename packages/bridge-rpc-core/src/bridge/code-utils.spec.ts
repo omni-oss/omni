@@ -16,7 +16,7 @@ describe("code-utils", () => {
         it("should return the existing value when the key is already present", () => {
             const map = new Map<string, number>();
             map.set("a", 42);
-            const factory = vi.fn(() => 1);
+            const factory = vi.fn<() => number>(() => 1);
 
             const result = getOrSet(map, "a", factory);
 
@@ -27,7 +27,7 @@ describe("code-utils", () => {
 
         it("should only invoke the factory once per missing key", () => {
             const map = new Map<string, number>();
-            const factory = vi.fn(() => 7);
+            const factory = vi.fn<() => number>(() => 7);
 
             const first = getOrSet(map, "key", factory);
             const second = getOrSet(map, "key", factory);
