@@ -153,15 +153,11 @@ A task may start once every dependency is merged. All tasks in a wave are depend
 | ---- | ----- | ---- | ---- | ------- |
 | F10.3 | Revalidation (content identity, negative reads) | M | F10.2 | capability |
 | P09.1 | Plugin contributor and subsystem selection | M | F08.5, P02 | source, cli |
-| P10.1 ⚠ | JS adapter scaffold + registration | S | P03 | plugin-builtins |
-| P11.1 ⚠ | Cargo package/aggregate classification | M | P03, P01.4 | plugin-builtins |
 | P13.1 | WIT package | M | P03, P01.1 | plugin-wasm |
 | R04.3 ⚠ | Replay and finalize (defaults after composition) | L | R04.2 | loader, extractor |
 | R07.2 ⚠ | Ordered raw layer traversal from extension graph | M | R04.2 | loader |
 
 ⚠ `loader` shared by R04.3, R07.2: serialize or give to one worker.
-
-⚠ `plugin-builtins` shared by P10.1, P11.1: serialize or give to one worker.
 
 ### Wave 4
 
@@ -172,9 +168,6 @@ A task may start once every dependency is merged. All tasks in a wave are depend
 | P04.1 ⚠ | Project inference controls | M | R04.3, P02 | config-types |
 | P04.2 ⚠ | Restricted additive plugin contribution types | M | R04.3, R03.2, B03 | config-types |
 | P09.2 | Static manifest validation and descriptors | M | P09.1 | plugin-config, source |
-| P10.3 ⚠ | JS manager selection | M | P10.1, P10.2 | plugin-builtins |
-| P10.6 ⚠ | JS script tasks | M | P10.1, R03.3 | plugin-builtins |
-| P11.4 ⚠ | Cargo build/check/test tasks | M | P11.1, R03.3 | plugin-builtins |
 | R04.4 | Migration fixtures and changelog | S | R04.3 | docs |
 | R05 ⚠ | Field-wise task composition, atomic alias transitions | M | R04.3 | config-types |
 | R07.3 ⚠ | Virtual classification in discovery/loader | M | R07.1, R04.3 | loader, discovery |
@@ -182,8 +175,6 @@ A task may start once every dependency is merged. All tasks in a wave are depend
 ⚠ `config-types` shared by R05, F07, P04.1, P04.2: serialize or give to one worker.
 
 ⚠ `loader` shared by R07.3, F07: serialize or give to one worker.
-
-⚠ `plugin-builtins` shared by P10.3, P10.6, P11.4: serialize or give to one worker.
 
 ### Wave 5
 
@@ -211,8 +202,12 @@ A task may start once every dependency is merged. All tasks in a wave are depend
 | P04.3 | Activation apply with scoped patches | L | P04.1, R05, F03.3, R07.2 | loader |
 | P06.1 ⚠ | Activation graph and binding validation | M | P03, F05.2 | plugin-host |
 | P06.2 ⚠ | Stage engine, snapshots, partitions, atomic commit | L | P03.2, P05, F05.2 | plugin-host |
+| P10.1 ⚠ | JS adapter scaffold + registration | S | P03, F05.2 | plugin-builtins |
+| P11.1 ⚠ | Cargo package/aggregate classification | M | P03, P01.4, F05.2 | plugin-builtins |
 
 ⚠ `plugin-host` shared by P06.1, P06.2: serialize or give to one worker.
+
+⚠ `plugin-builtins` shared by P10.1, P11.1: serialize or give to one worker.
 
 ### Wave 7
 
@@ -223,8 +218,13 @@ A task may start once every dependency is merged. All tasks in a wave are depend
 | P06.4 ⚠ | Dependency-ordered inference | M | P06.1, P06.2 | plugin-host |
 | P06.5 ⚠ | Claim and query service | L | P06.2, P01.1 | plugin-host |
 | P06.7 ⚠ | Budgets, cancellation, overflow splitting | L | P06.2, P01.5 | plugin-host |
+| P10.3 ⚠ | JS manager selection | M | P10.1, P10.2 | plugin-builtins |
+| P10.6 ⚠ | JS script tasks | M | P10.1, R03.3 | plugin-builtins |
+| P11.4 ⚠ | Cargo build/check/test tasks | M | P11.1, R03.3 | plugin-builtins |
 
 ⚠ `plugin-host` shared by P06.3, P06.4, P06.5, P06.7: serialize or give to one worker.
+
+⚠ `plugin-builtins` shared by P10.3, P10.6, P11.4: serialize or give to one worker.
 
 ### Wave 8
 

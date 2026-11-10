@@ -108,14 +108,14 @@ tasks:
   P09.1: {title: "Plugin contributor and subsystem selection", parent: P09, kind: code, size: M, deps: [F08.5, P02], touches: [source, cli]}
   P09.2: {title: "Static manifest validation and descriptors", parent: P09, kind: code, size: M, deps: [P09.1], touches: [plugin-config, source]}
   P09.3: {title: "Captured-byte artifact loading", parent: P09, kind: code, size: M, deps: [F10.3, F08.3, P09.2], touches: [source]}
-  P10.1: {title: "JS adapter scaffold + registration", parent: P10, kind: code, size: S, deps: [P03], touches: [plugin-builtins]}
+  P10.1: {title: "JS adapter scaffold + registration", parent: P10, kind: code, size: S, deps: [P03, F05.2], touches: [plugin-builtins]}
   P10.2: {title: "JS ownership/boundary fixtures", parent: P10, kind: spec, size: M, deps: [P01.3], touches: [docs]}
   P10.3: {title: "JS manager selection", parent: P10, kind: code, size: M, deps: [P10.1, P10.2], touches: [plugin-builtins]}
   P10.4: {title: "JS naming and identity/membership claims", parent: P10, kind: code, size: M, deps: [P10.1, P06.5], touches: [plugin-builtins]}
   P10.5: {title: "JS project edges and dependency claims", parent: P10, kind: code, size: L, deps: [P10.4], touches: [plugin-builtins]}
   P10.6: {title: "JS script tasks", parent: P10, kind: code, size: M, deps: [P10.1, R03.3], touches: [plugin-builtins]}
   P10.7: {title: "JS end-to-end conformance", parent: P10, kind: code, size: M, deps: [P10.3, P10.5, P10.6, P08.4, P08.5], touches: [plugin-builtins]}
-  P11.1: {title: "Cargo package/aggregate classification", parent: P11, kind: code, size: M, deps: [P03, P01.4], touches: [plugin-builtins]}
+  P11.1: {title: "Cargo package/aggregate classification", parent: P11, kind: code, size: M, deps: [P03, P01.4, F05.2], touches: [plugin-builtins]}
   P11.2: {title: "Cargo claims", parent: P11, kind: code, size: M, deps: [P11.1, P06.5], touches: [plugin-builtins]}
   P11.3: {title: "Cargo project edges", parent: P11, kind: code, size: M, deps: [P11.2], touches: [plugin-builtins]}
   P11.4: {title: "Cargo build/check/test tasks", parent: P11, kind: code, size: M, deps: [P11.1, R03.3], touches: [plugin-builtins]}
