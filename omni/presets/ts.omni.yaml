@@ -49,11 +49,8 @@ tasks:
   check:lint:
     # Root-only oxlint options must apply even when checking a single package.
     exec: sh -c 'project="$PWD" && cd "$(git rev-parse --show-toplevel)" && bun x oxlint "$project"'
-    # Deliberately no `^build`: the workspace-wide type-aware lint must resolve
-    # workspace packages from `src` (via the `development` condition). With
-    # `dist` present TypeScript mixes `dist` and `src` types and reports
-    # false errors. Only generated inputs that have no `src` are built.
     dependencies:
+      - ^build
       - "@omni-oss/workspace-gen#build"
       - "@omni-oss/site#prepare"
     cache:
@@ -68,9 +65,8 @@ tasks:
 
   check:types:
     exec: sh -c 'bun x tsc --noEmit -p tsconfig.json && if [ -f tsconfig.node.json ]; then bun x tsc --noEmit -p tsconfig.node.json; fi'
-    # No `^build`, same reason as `check:lint`: `dist` must not appear while the
-    # (concurrently running) workspace-wide lint resolves packages from `src`.
     dependencies:
+      - ^build
       - "@omni-oss/workspace-gen#build"
     cache:
       key:
