@@ -12,7 +12,7 @@ extends:
 
 tasks:
   check:lint:
-    exec: cargo clippy -p ${PROJECT_NAME} --lib --bins ${RUST_CHECK_ADDITIONAL_ARGS:-} -- -D warnings
+    exec: cargo clippy -p ${PROJECT_NAME} ${RUST_CHECK_ADDITIONAL_ARGS:-} -- -D warnings
     dependencies:
       - ^check
     cache:
