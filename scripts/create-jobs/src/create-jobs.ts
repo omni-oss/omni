@@ -21,9 +21,16 @@ export type Job = {
 };
 
 export type Jobs = {
+    check: CheckJobs;
+    build_debug: BuildJobs;
     test: TestJobs;
     build: BuildJobs;
     publish: PublishJobs;
+};
+
+export type CheckJobs = {
+    rust: Job[];
+    typescript: Job[];
 };
 
 export type TestJobs = {
@@ -48,6 +55,14 @@ export function createJobs(results: TaskResultArray, rootDir?: string): Jobs {
     }
 
     const jobs: Jobs = {
+        check: {
+            rust: [],
+            typescript: [],
+        },
+        build_debug: {
+            rust: [],
+            typescript: [],
+        },
         test: {
             rust: [],
             typescript: [],
@@ -78,6 +93,22 @@ export function createJobs(results: TaskResultArray, rootDir?: string): Jobs {
         // }
 
         const task = result.task;
+        if (task.task_name === "check") {
+            if (result.details.meta?.language === "rust") {
+                jobs.check.rust.push(jobFromResult(result, rootDir));
+            }
+
+            if (result.details.meta?.language === "typescript") {
+                jobs.check.typescript.push(jobFromResult(result, rootDir));
+            }
+        }
+
+        if (task.task_name === "build:debug") {
+            if (result.details.meta?.language === "rust") {
+                jobs.build_debug.rust.push(jobFromResult(result, rootDir));
+            }
+        }
+
         if (task.task_name === "test" || result.details.meta?.is_test_task) {
             if (result.details.meta?.language === "rust") {
                 jobs.test.rust.push(jobFromResult(result, rootDir));

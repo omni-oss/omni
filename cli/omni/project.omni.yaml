@@ -20,12 +20,16 @@ tasks:
 
   test:aarch64-unknown-linux-gnu:
     extends: [test-base]
+    dependencies:
+      append: [build:debug:aarch64-unknown-linux-gnu]
     env:
       vars:
         RUST_TEST_ADDITIONAL_ARGS: --features vendored-openssl
 
   test:x86_64-apple-darwin:
     extends: [test-base]
+    dependencies:
+      append: [build:debug:x86_64-apple-darwin]
     env:
       vars:
         RUST_TEST_ADDITIONAL_ARGS: --features vendored-openssl

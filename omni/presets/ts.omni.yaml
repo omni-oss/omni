@@ -14,6 +14,7 @@ tasks:
     exec: bun run test:unit
     dependencies:
       - ^build
+      - build
 
   test:integration:
     exec: bun run test:integration
@@ -31,6 +32,7 @@ tasks:
     exec: bun run build
     dependencies:
       - ^build
+      - check
     cache:
       output:
         files:

@@ -31,6 +31,16 @@ on:
         description: The prefix to use for the cache restore key
         required: false
         type: string
+      carry-stage:
+        description: Stage name; when set, the rust target dir is uploaded as a run-scoped carry-over artifact
+        required: false
+        default: ""
+        type: string
+      carry-restore:
+        description: Whether to restore rust target dirs carried over from earlier stages of this run
+        required: false
+        default: false
+        type: boolean
 
   workflow_dispatch:
     inputs:
@@ -210,6 +220,15 @@ jobs:
           echo "Task Args: $TASK_ARGS"
           echo "Project Flags: $PROJECT_FLAGS"
 
+      - if: ${{ inputs.carry-restore }}
+        name: Restore Carried Rust Artifacts
+        continue-on-error: true
+        uses: actions/download-artifact@v6
+        with:
+          pattern: carry-rust-*-host
+          path: target
+          merge-multiple: true
+
       - name: Setup Omni
         uses: ./.github/actions/setup-omni
         with:
@@ -238,6 +257,18 @@ jobs:
 
       - name: Run Tasks
         run: omni -i run -f=failed ${{ steps.process.outputs.TASK_ARGS }} ${{ steps.process.outputs.PROJECT_FLAGS }}
+
+      - if: ${{ inputs.carry-stage != '' }}
+        name: Carry Rust Artifacts To Next Stage
+        uses: actions/upload-artifact@v6
+        with:
+          name: carry-rust-${{ inputs.carry-stage }}-host
+          path: |
+            target
+            !target/**/incremental
+          if-no-files-found: ignore
+          retention-days: 1
+          overwrite: true
 
       - if: ${{ inputs.save-outputs }}
         name: Save Outputs As Artifacts
@@ -302,6 +333,15 @@ jobs:
           echo "Task Args: $TASK_ARGS"
           echo "Project Flags: $PROJECT_FLAGS"
 
+      - if: ${{ inputs.carry-restore }}
+        name: Restore Carried Rust Artifacts
+        continue-on-error: true
+        uses: actions/download-artifact@v6
+        with:
+          pattern: carry-rust-*-${{ matrix.target }}
+          path: target
+          merge-multiple: true
+
       - name: Setup Omni
         uses: ./.github/actions/setup-omni
         with:
@@ -331,6 +371,18 @@ jobs:
 
       - name: Run Tasks
         run: omni -i run -f=failed ${{ steps.process.outputs.TASK_ARGS }} ${{ steps.process.outputs.PROJECT_FLAGS }}
+
+      - if: ${{ inputs.carry-stage != '' }}
+        name: Carry Rust Artifacts To Next Stage
+        uses: actions/upload-artifact@v6
+        with:
+          name: carry-rust-${{ inputs.carry-stage }}-${{ matrix.target }}
+          path: |
+            target
+            !target/**/incremental
+          if-no-files-found: ignore
+          retention-days: 1
+          overwrite: true
 
       - if: ${{ inputs.save-outputs }}
         name: Save Outputs As Artifacts

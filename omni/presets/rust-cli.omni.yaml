@@ -20,7 +20,7 @@ tasks:
             - "@workspace/target/{{ args.profile }}/{{ env.PROJECT_NAME }}"
             - "@workspace/target/{{ args.profile }}/{{ env.PROJECT_NAME }}.exe"
     dependencies:
-      - test
+      - check
 
   build:
     extends: [build-base]
@@ -32,12 +32,16 @@ tasks:
     args:
       profile: debug
 
+  test:
+    dependencies:
+      append: [build:debug]
+
   install:
     cache:
       enabled: false
     exec: cargo install --path .
     dependencies:
-      - test
+      - build
 
 meta:
   type: cli

@@ -35,6 +35,8 @@ tasks:
     extends: [test-base]
     enabled: "{{ env.RUST_TARGET is defined and env.RUST_TARGET is containing(pat='aarch64-unknown-linux-gnu') }}"
     exec: cross test --target aarch64-unknown-linux-gnu -p ${PROJECT_NAME} ${RUST_TEST_ADDITIONAL_ARGS:-}
+    dependencies:
+      append: [build:debug:aarch64-unknown-linux-gnu]
     cache:
       key:
         files:
@@ -44,31 +46,43 @@ tasks:
     extends: [test-base]
     enabled: "{{ env.RUST_TARGET is defined and env.RUST_TARGET is containing(pat='x86_64-unknown-linux-gnu') }}"
     exec: cargo test --target x86_64-unknown-linux-gnu -p ${PROJECT_NAME} ${RUST_TEST_ADDITIONAL_ARGS:-}
+    dependencies:
+      append: [build:debug:x86_64-unknown-linux-gnu]
 
   test:x86_64-apple-darwin:
     extends: [test-base]
     enabled: "{{ env.RUST_TARGET is defined and env.RUST_TARGET is containing(pat='x86_64-apple-darwin') }}"
     exec: cargo test --target x86_64-apple-darwin -p ${PROJECT_NAME} ${RUST_TEST_ADDITIONAL_ARGS:-}
+    dependencies:
+      append: [build:debug:x86_64-apple-darwin]
 
   test:aarch64-apple-darwin:
     extends: [test-base]
     enabled: "{{ env.RUST_TARGET is defined and env.RUST_TARGET is containing(pat='aarch64-apple-darwin') }}"
     exec: cargo test --target aarch64-apple-darwin -p ${PROJECT_NAME} ${RUST_TEST_ADDITIONAL_ARGS:-}
+    dependencies:
+      append: [build:debug:aarch64-apple-darwin]
 
   test:x86_64-pc-windows-msvc:
     extends: [test-base]
     enabled: "{{ env.RUST_TARGET is defined and env.RUST_TARGET is containing(pat='x86_64-pc-windows-msvc') }}"
     exec: cargo test --target x86_64-pc-windows-msvc -p ${PROJECT_NAME} ${RUST_TEST_ADDITIONAL_ARGS:-}
+    dependencies:
+      append: [build:debug:x86_64-pc-windows-msvc]
 
   test:aarch64-pc-windows-msvc:
     extends: [test-base]
     enabled: "{{ env.RUST_TARGET is defined and env.RUST_TARGET is containing(pat='aarch64-pc-windows-msvc') }}"
     exec: cargo test --target aarch64-pc-windows-msvc -p ${PROJECT_NAME} ${RUST_TEST_ADDITIONAL_ARGS:-}
+    dependencies:
+      append: [build:debug:aarch64-pc-windows-msvc]
 
   test:current:
     extends: [test-base]
     enabled: "{{ env.RUST_TARGET is undefined or env.RUST_TARGET == '' }}"
     exec: cargo test -p ${PROJECT_NAME} ${RUST_TEST_ADDITIONAL_ARGS:-}
+    dependencies:
+      append: [build:debug:current]
 
   test:
     exec: ""
@@ -94,6 +108,7 @@ tasks:
       profile: release
     dependencies:
       - ^build
+      - check
     cache:
       key:
         env:
@@ -107,7 +122,7 @@ tasks:
     enabled: "{{ env.RUST_TARGET is defined and env.RUST_TARGET is containing(pat='aarch64-unknown-linux-gnu') }}"
     exec: cross build --profile {{ args.profile }} --target aarch64-unknown-linux-gnu -p ${PROJECT_NAME} ${RUST_BUILD_ADDITIONAL_ARGS:-}
     dependencies:
-      append: [test:aarch64-unknown-linux-gnu]
+      append: [check]
     cache:
       key:
         files:
@@ -122,7 +137,7 @@ tasks:
     enabled: "{{ env.RUST_TARGET is defined and env.RUST_TARGET is containing(pat='x86_64-unknown-linux-gnu') }}"
     exec: cargo build --profile {{ args.profile }} --target x86_64-unknown-linux-gnu -p ${PROJECT_NAME} ${RUST_BUILD_ADDITIONAL_ARGS:-}
     dependencies:
-      append: [test:x86_64-unknown-linux-gnu]
+      append: [check]
     cache:
       output:
         files:
@@ -134,7 +149,7 @@ tasks:
     enabled: "{{ env.RUST_TARGET is defined and env.RUST_TARGET is containing(pat='x86_64-apple-darwin') }}"
     exec: cargo build --profile {{ args.profile }} --target x86_64-apple-darwin -p ${PROJECT_NAME} ${RUST_BUILD_ADDITIONAL_ARGS:-}
     dependencies:
-      append: [test:x86_64-apple-darwin]
+      append: [check]
     cache:
       output:
         files:
@@ -146,7 +161,7 @@ tasks:
     enabled: "{{ env.RUST_TARGET is defined and env.RUST_TARGET is containing(pat='aarch64-apple-darwin') }}"
     exec: cargo build --profile {{ args.profile }} --target aarch64-apple-darwin -p ${PROJECT_NAME} ${RUST_BUILD_ADDITIONAL_ARGS:-}
     dependencies:
-      append: [test:aarch64-apple-darwin]
+      append: [check]
     cache:
       output:
         files:
@@ -158,7 +173,7 @@ tasks:
     enabled: "{{ env.RUST_TARGET is defined and env.RUST_TARGET is containing(pat='x86_64-pc-windows-msvc') }}"
     exec: cargo build --profile {{ args.profile }} --target x86_64-pc-windows-msvc -p ${PROJECT_NAME} ${RUST_BUILD_ADDITIONAL_ARGS:-}
     dependencies:
-      append: [test:x86_64-pc-windows-msvc]
+      append: [check]
     cache:
       output:
         files:
@@ -170,7 +185,7 @@ tasks:
     enabled: "{{ env.RUST_TARGET is defined and env.RUST_TARGET is containing(pat='aarch64-pc-windows-msvc') }}"
     exec: cargo build --profile {{ args.profile }} --target aarch64-pc-windows-msvc -p ${PROJECT_NAME} ${RUST_BUILD_ADDITIONAL_ARGS:-}
     dependencies:
-      append: [test:aarch64-pc-windows-msvc]
+      append: [check]
     cache:
       output:
         files:
@@ -182,7 +197,7 @@ tasks:
     enabled: "{{ env.RUST_TARGET is undefined or env.RUST_TARGET == '' }}"
     exec: cargo build --profile {{ args.profile }} -p ${PROJECT_NAME} ${RUST_BUILD_ADDITIONAL_ARGS:-}
     dependencies:
-      append: [test:current]
+      append: [check]
     cache:
       output:
         files:
@@ -235,7 +250,6 @@ tasks:
           - "@workspace/target/*/release/{{ env.PROJECT_NAME }}"
           - "@workspace/target/*/release/{{ env.PROJECT_NAME }}.exe"
     dependencies:
-      - test
       - ^build
       - build:current
       - build:aarch64-unknown-linux-gnu
@@ -291,7 +305,6 @@ tasks:
           - "@workspace/target/*/debug/{{ env.PROJECT_NAME }}"
           - "@workspace/target/*/debug/{{ env.PROJECT_NAME }}.exe"
     dependencies:
-      - test
       - ^build
       - build:debug:current
       - build:debug:aarch64-unknown-linux-gnu
