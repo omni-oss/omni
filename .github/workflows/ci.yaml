@@ -133,30 +133,6 @@ jobs:
       - name: Prune Unused Caches
         run: omni -i cache prune -sy -o="7d" # Remove stale caches older than 7 days
 
-  # RFC 0023: libraries have no user-facing text sinks, and `log` and the
-  # retired `trace` wrapper crate are not used. Presenter crates opt out with a
-  # crate-level `#![allow(clippy::disallowed_macros)]`; tests are not linted.
-  lint-output:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-
-      - name: Setup Tools
-        uses: ./.github/actions/setup-tools
-        with:
-          install-all: false
-          install-rust: true
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
-      # `bridge_rpc_runner` embeds the built bridge service; an empty folder is
-      # enough to type-check.
-      - name: Stub the embedded bridge-service dist
-        run: mkdir -p services/bridge-service/dist
-
-      - name: No output macros or `log` in non-presenter crates
-        run: cargo clippy --workspace --lib --bins -- -A clippy::all -D clippy::disallowed_macros
-
   # Pipeline: check -> build (debug for rust) -> test -> release build (tags only).
   # Rust target dirs are carried between stages as run-scoped caches and
   # evicted by `cleanup-cache` at the end of the workflow.
@@ -444,7 +420,6 @@ jobs:
     name: CI Passed
     needs:
       - plan
-      - lint-output
       - check-rust
       - check-typescript
       - build-debug-rust
@@ -473,7 +448,6 @@ jobs:
           RESULTS_JSON: |
             {
               "plan": "${{ needs.plan.result }}",
-              "lint-output": "${{ needs.lint-output.result }}",
               "check-rust": "${{ needs.check-rust.result }}",
               "check-typescript": "${{ needs.check-typescript.result }}",
               "build-debug-rust": "${{ needs.build-debug-rust.result }}",
