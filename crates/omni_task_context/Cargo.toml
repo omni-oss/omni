@@ -24,3 +24,6 @@ omni_tera = { workspace = true }
 omni_configurations = { workspace = true }
 omni_task_output_logs = { workspace = true }
 serde_json = { workspace = true }
+
+[lints]
+workspace = true

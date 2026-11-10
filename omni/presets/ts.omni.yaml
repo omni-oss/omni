@@ -52,6 +52,7 @@ tasks:
     dependencies:
       - ^build
       - "@omni-oss/workspace-gen#build"
+      - "@omni-oss/site#prepare"
     cache:
       key:
         files:

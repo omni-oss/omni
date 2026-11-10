@@ -19,6 +19,11 @@ edition = "2024"
 version = "0.22.0"
 authors = ["Clarence Manuel <rencedm112@gmail.com>"]
 
+# RFC 0023: see clippy.toml for the disallowed macro list. Presenter crates and
+# binaries opt out with a crate-level `#![allow(clippy::disallowed_macros)]`.
+[workspace.lints.clippy]
+disallowed_macros = "deny"
+
 [workspace.dependencies]
 serde = { version = "^1.0.229", features = ["derive", "rc", "alloc"] }
 serde-untagged = { version = "^0.1.9" }

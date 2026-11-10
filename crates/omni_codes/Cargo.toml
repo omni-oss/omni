@@ -20,3 +20,6 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 strum = { workspace = true }
 inventory = { workspace = true, optional = true }
+
+[lints]
+workspace = true

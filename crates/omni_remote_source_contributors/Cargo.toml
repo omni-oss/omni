@@ -32,3 +32,6 @@ path-clean = { workspace = true }
 tokio = { workspace = true }
 tempfile = { workspace = true }
 serde_json = { workspace = true }
+
+[lints]
+workspace = true

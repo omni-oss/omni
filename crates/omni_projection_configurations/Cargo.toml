@@ -17,3 +17,6 @@ enum-map = { workspace = true }
 strum = { workspace = true }
 lazy-regex = { workspace = true }
 serde_validate = { workspace = true }
+
+[lints]
+workspace = true

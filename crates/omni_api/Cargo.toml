@@ -85,3 +85,6 @@ system_traits = { workspace = true, features = [
     "real-sync",
     "real-async-tokio",
 ] }
+
+[lints]
+workspace = true

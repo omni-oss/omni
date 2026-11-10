@@ -25,3 +25,6 @@ bytes = { workspace = true }
 unicode-width = { workspace = true }
 system_traits = { workspace = true }
 enumflags2 = { workspace = true }
+
+[lints]
+workspace = true

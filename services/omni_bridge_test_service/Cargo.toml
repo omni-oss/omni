@@ -39,3 +39,6 @@ ntest = { workspace = true }
 rstest = { workspace = true }
 rstest_reuse = { workspace = true }
 pathdiff = { workspace = true }
+
+[lints]
+workspace = true

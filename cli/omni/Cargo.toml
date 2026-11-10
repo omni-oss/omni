@@ -40,3 +40,6 @@ omni_test_utils = { workspace = true }
 [build-dependencies]
 shadow-rs = { workspace = true, features = ["default"] }
 eyre = { workspace = true }
+
+[lints]
+workspace = true

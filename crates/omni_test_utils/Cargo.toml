@@ -12,3 +12,6 @@ omni_workspace_gen = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+
+[lints]
+workspace = true

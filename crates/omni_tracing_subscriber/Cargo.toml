@@ -16,3 +16,6 @@ parking_lot = { workspace = true }
 enumflags2 = { workspace = true }
 derive-new = { workspace = true }
 derive_builder = { workspace = true }
+
+[lints]
+workspace = true

@@ -24,3 +24,6 @@ serde = { workspace = true }
 [dev-dependencies]
 trybuild = { workspace = true }
 thiserror = { workspace = true }
+
+[lints]
+workspace = true

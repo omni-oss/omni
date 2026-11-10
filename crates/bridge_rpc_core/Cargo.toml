@@ -35,3 +35,6 @@ test-log = { workspace = true }
 mockall = { workspace = true }
 parking_lot = { workspace = true }
 ntest = { workspace = true }
+
+[lints]
+workspace = true

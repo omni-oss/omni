@@ -24,3 +24,6 @@ path-clean = { workspace = true }
 omni_types = { workspace = true }
 omni_diagnostic = { workspace = true }
 omni_codes = { workspace = true }
+
+[lints]
+workspace = true

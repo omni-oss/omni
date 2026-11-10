@@ -23,3 +23,6 @@ globset = { workspace = true }
 bon = { workspace = true }
 
 omni_glob = { workspace = true }
+
+[lints]
+workspace = true

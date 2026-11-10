@@ -47,3 +47,6 @@ omni_diagnostic = { workspace = true }
 omni_codes = { workspace = true }
 
 [dev-dependencies]
+
+[lints]
+workspace = true

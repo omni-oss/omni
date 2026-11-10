@@ -53,3 +53,6 @@ fastrand = { workspace = true }
 
 [build-dependencies]
 embed-manifest = { workspace = true }
+
+[lints]
+workspace = true

@@ -32,3 +32,6 @@ serde_validate = { workspace = true }
 omni_config_types = { workspace = true }
 omni_diagnostic = { workspace = true }
 omni_codes = { workspace = true }
+
+[lints]
+workspace = true
