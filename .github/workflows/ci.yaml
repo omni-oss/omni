@@ -57,14 +57,14 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           cache-key-prefix: plan
           cache-restore-key-prefixes: |
-            publish_rust_github
-            publish_generic
-            publish_npm
-            build_rust
-            build_typescript
+            plan
             test_rust
             test_typescript
-            plan
+            build_debug_rust
+            build_typescript
+            check_rust
+            check_typescript
+            build_rust
 
       - name: Setup Tools
         uses: ./.github/actions/setup-tools
@@ -145,10 +145,11 @@ jobs:
     with:
       jobs: ${{ needs.plan.outputs.jobs_check_rust }}
       cache-key-prefix: check_rust
-      cache-restore-key-prefixes: |
+      cache-lane: |
+        check_rust
         build_debug_rust
         test_rust
-        check_rust
+        build_rust
       carry-stage: check
 
   check-typescript:
@@ -160,11 +161,10 @@ jobs:
     with:
       jobs: ${{ needs.plan.outputs.jobs_check_typescript }}
       cache-key-prefix: check_typescript
-      cache-restore-key-prefixes: |
-        publish_npm
+      cache-lane: |
+        check_typescript
         build_typescript
         test_typescript
-        check_typescript
 
   build-debug-rust:
     needs:
@@ -177,9 +177,11 @@ jobs:
     with:
       jobs: ${{ needs.plan.outputs.jobs_build_debug_rust }}
       cache-key-prefix: build_debug_rust
-      cache-restore-key-prefixes: |
-        build_debug_rust
+      cache-lane: |
         check_rust
+        build_debug_rust
+        test_rust
+        build_rust
       carry-stage: build-debug
 
   build-typescript:
@@ -193,9 +195,9 @@ jobs:
     with:
       jobs: ${{ needs.plan.outputs.jobs_build_typescript }}
       cache-key-prefix: build_typescript
-      cache-restore-key-prefixes: |
-        build_typescript
+      cache-lane: |
         check_typescript
+        build_typescript
         test_typescript
       save-outputs: true
       artifacts-name: build-typescript
@@ -211,10 +213,11 @@ jobs:
     with:
       jobs: ${{ needs.plan.outputs.jobs_test_rust }}
       cache-key-prefix: test_rust
-      cache-restore-key-prefixes: |
-        build_rust
+      cache-lane: |
+        check_rust
         build_debug_rust
         test_rust
+        build_rust
       carry-stage: test
 
   test-typescript:
@@ -227,8 +230,8 @@ jobs:
     with:
       jobs: ${{ needs.plan.outputs.jobs_test_typescript }}
       cache-key-prefix: test_typescript
-      cache-restore-key-prefixes: |
-        publish_npm
+      cache-lane: |
+        check_typescript
         build_typescript
         test_typescript
 
@@ -244,8 +247,10 @@ jobs:
     with:
       jobs: ${{ needs.plan.outputs.jobs_build_rust }}
       cache-key-prefix: build_rust
-      cache-restore-key-prefixes: |
-        publish_rust_github
+      cache-lane: |
+        check_rust
+        build_debug_rust
+        test_rust
         build_rust
       save-outputs: true
       artifacts-name: build-rust
@@ -322,14 +327,15 @@ jobs:
     with:
       jobs: ${{ needs.plan.outputs.jobs_publish_generic }}
       cache-key-prefix: publish_generic
-      cache-restore-key-prefixes: |
-        publish_generic
-        publish_rust_github
-        publish_npm
-        build_rust
-        build_typescript
+      cache-lane: |
+        check_rust
+        build_debug_rust
         test_rust
+        build_rust
+        check_typescript
+        build_typescript
         test_typescript
+        publish_generic
 
   publish-npm:
     needs:
@@ -342,10 +348,11 @@ jobs:
     with:
       jobs: ${{ needs.plan.outputs.jobs_publish_npm }}
       cache-key-prefix: publish_npm
-      cache-restore-key-prefixes: |
-        publish_npm
-        build_rust
+      cache-lane: |
+        check_typescript
         build_typescript
+        test_typescript
+        publish_npm
 
   publish-rust-github:
     needs:
