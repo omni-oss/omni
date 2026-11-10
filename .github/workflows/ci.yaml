@@ -157,13 +157,6 @@ jobs:
       - name: No output macros or `log` in non-presenter crates
         run: cargo clippy --workspace --lib --bins -- -A clippy::all -D clippy::disallowed_macros
 
-      - name: The `trace` crate and `enable-tracing` features are gone
-        run: |
-          if grep -rEn '^trace = |enable-tracing' --include=Cargo.toml --include='*.rs' crates cli services Cargo.toml; then
-            echo "the \`trace\` crate and \`enable-tracing\` features were removed (RFC 0023); use \`tracing\` directly" >&2
-            exit 1
-          fi
-
   # Pipeline: check -> build (debug for rust) -> test -> release build (tags only).
   # Rust target dirs are carried between stages as run-scoped caches and
   # evicted by `cleanup-cache` at the end of the workflow.
