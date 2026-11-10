@@ -45,8 +45,7 @@ export class VirtualFileSystem implements FileSystem {
             const parts = path.split("/");
             let current: Record<string, FsNode> = tree;
 
-            for (let i = 0; i < parts.length; i++) {
-                const part = parts[i];
+            for (const [i, part] of parts.entries()) {
                 if (i === parts.length - 1) {
                     current[part] = {
                         type: "file",
@@ -87,8 +86,9 @@ async function writeFilesToDisk(vfs: VirtualFileSystem, basePath: string) {
 
     for (const path of files) {
         const content = await vfs.readFile(path);
-        if (!content) {
+        if (content === undefined) {
             console.error(`File not found: ${path}`);
+            continue;
         }
 
         const filePath = nodePath.join(basePath, path);
