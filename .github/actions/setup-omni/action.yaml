@@ -43,28 +43,40 @@ runs:
         CACHE_KEY_PREFIX: ${{ inputs.cache-key-prefix }}
         RUNNER_OS: ${{ runner.os }}
       run: |
-        # check if $RAW_RESTORE_KEY_LIST is empty
-        if [ -z "$RAW_RESTORE_KEY_LIST" ]; then
-          res="${RUNNER_OS}-omni-${CACHE_KEY_PREFIX}-"
-          echo "restore_key_list<<EOF" >> "$GITHUB_OUTPUT"
-          echo "$res" >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
-        else
-          # Define a literal newline
-          NL=$'\n'
+        # actions/cache allows at most 10 keys in total (1 primary + 9 restore keys).
+        MAX_RESTORE_KEYS=9
+        keys=()
 
-          for prefix in $RAW_RESTORE_KEY_LIST; do
-            # Use the variable for clean concatenation
-            res="${res}${NL}${RUNNER_OS}-omni-$prefix-"
+        add_key() {
+          local candidate="$1" existing
+          for existing in "${keys[@]}"; do
+            [ "$existing" = "$candidate" ] && return
           done
+          keys+=("$candidate")
+        }
 
-          res="${res}${NL}${RUNNER_OS}-omni-"
-
-          echo "restore_key_list<<EOF" >> "$GITHUB_OUTPUT"
-          echo "$res" >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
+        # most specific first: explicit prefixes (empty entries skipped, duplicates dropped)
+        for prefix in $RAW_RESTORE_KEY_LIST; do
+          add_key "${RUNNER_OS}-omni-${prefix}-"
+        done
+        if [ ${#keys[@]} -eq 0 ]; then
+          add_key "${RUNNER_OS}-omni-${CACHE_KEY_PREFIX}-"
         fi
-        echo "Restore Key List: $res"
+        # broadest fallback is always kept
+        add_key "${RUNNER_OS}-omni-"
+
+        if [ ${#keys[@]} -gt $MAX_RESTORE_KEYS ]; then
+          echo "::warning::Truncating restore keys from ${#keys[@]} to $MAX_RESTORE_KEYS (actions/cache limit)"
+          keys=("${keys[@]:0:$((MAX_RESTORE_KEYS - 1))}" "${RUNNER_OS}-omni-")
+        fi
+
+        {
+          echo "restore_key_list<<EOF"
+          printf '%s\n' "${keys[@]}"
+          echo "EOF"
+        } >> "$GITHUB_OUTPUT"
+        echo "Restore Key List:"
+        printf '%s\n' "${keys[@]}"
 
     - if: ${{ always() }}
       name: Cache Omni directory

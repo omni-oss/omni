@@ -103,12 +103,15 @@ jobs:
                         const key = keyParts.join('-');
 
                         if (!matrixMap[key]) {
-                            const tmp = process.env.RESTORE_KEY_PREFIXES
-                                    .split(/\s+/);
+                            const tmp = (process.env.RESTORE_KEY_PREFIXES ?? '')
+                                    .split(/\s+/)
+                                    .filter(Boolean);
+                            // target-scoped keys only (most specific first), the
+                            // broad target key last; setup-omni appends the global
+                            // fallback and enforces the actions/cache key limit.
                             const restoreKeyPrefixes = [
-                                targetName,
                                 ...tmp.map(prefix => `${targetName}-${prefix}`),
-                                ...tmp,
+                                targetName,
                             ]
                                 .join("\n");
                             matrixMap[key] = {
