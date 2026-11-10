@@ -101,10 +101,7 @@ where
         {
             Ok(r) => r,
             Err(e) => {
-                return Err(with_notices(
-                    e,
-                    subscriber.take_notices(),
-                ));
+                return Err(with_notices(e, subscriber.take_notices()));
             }
         };
         Ok(GeneratorRunResult {

@@ -58,10 +58,7 @@ where
         {
             Ok(r) => r,
             Err(e) => {
-                return Err(with_notices(
-                    e,
-                    subscriber.take_notices(),
-                ));
+                return Err(with_notices(e, subscriber.take_notices()));
             }
         };
         let ok = response.is_success();
@@ -101,10 +98,7 @@ where
             match self.make_api_with_subscriber(&subscriber)?.exec(req).await {
                 Ok(r) => r,
                 Err(e) => {
-                    return Err(with_notices(
-                        e,
-                        subscriber.take_notices(),
-                    ));
+                    return Err(with_notices(e, subscriber.take_notices()));
                 }
             };
         let ok = response.is_success();
