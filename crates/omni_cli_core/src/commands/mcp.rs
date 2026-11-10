@@ -65,7 +65,7 @@ pub fn is_stdout_path(path: &std::path::Path) -> bool {
         std::path::Path::new("/dev/fd/1"),
         std::path::Path::new("/proc/self/fd/1"),
     ];
-    if literal.iter().any(|p| path == *p) {
+    if literal.contains(&path) {
         return true;
     }
     #[cfg(unix)]

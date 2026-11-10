@@ -59,7 +59,7 @@ where
             Ok(r) => r,
             Err(e) => {
                 return Err(with_notices(
-                    eyre::Report::from(e),
+                    e,
                     subscriber.take_notices(),
                 ));
             }
@@ -102,7 +102,7 @@ where
                 Ok(r) => r,
                 Err(e) => {
                     return Err(with_notices(
-                        eyre::Report::from(e),
+                        e,
                         subscriber.take_notices(),
                     ));
                 }

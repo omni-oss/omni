@@ -1,5 +1,6 @@
 #![feature(decl_macro)]
 #![feature(try_blocks)]
+#![allow(clippy::redundant_field_names, clippy::result_large_err)]
 
 omni_codes::prefixes!("remote_cache");
 
