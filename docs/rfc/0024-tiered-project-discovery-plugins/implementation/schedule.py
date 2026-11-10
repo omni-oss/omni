@@ -21,6 +21,7 @@ class UniqueKeyLoader(yaml.SafeLoader):
     """Safe YAML loader that rejects duplicate mapping keys (e.g. repeated task ids)."""
 
     def construct_mapping(self, node, deep=False):
+        """Build the mapping, raising if any key appears more than once."""
         seen = set()
         for key_node, _ in node.value:
             key = self.construct_object(key_node, deep=deep)
