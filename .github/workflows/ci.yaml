@@ -178,8 +178,7 @@ jobs:
       jobs: ${{ needs.plan.outputs.jobs_check_rust }}
       cache-key-prefix: check_rust
       cache-restore-key-prefixes: |
-        publish_rust_github
-        build_rust
+        build_debug_rust
         test_rust
         check_rust
       carry-stage: check
@@ -245,7 +244,6 @@ jobs:
       jobs: ${{ needs.plan.outputs.jobs_test_rust }}
       cache-key-prefix: test_rust
       cache-restore-key-prefixes: |
-        publish_rust_github
         build_rust
         build_debug_rust
         test_rust
