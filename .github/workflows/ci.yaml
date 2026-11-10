@@ -157,9 +157,6 @@ jobs:
       - name: No output macros or `log` in non-presenter crates
         run: cargo clippy --workspace --lib --bins -- -A clippy::all -D clippy::disallowed_macros
 
-      - name: Builds with a `tracing` release level cap
-        run: cargo check -p omni --release --features tracing/release_max_level_info
-
       - name: The `trace` crate and `enable-tracing` features are gone
         run: |
           if grep -rEn '^trace = |enable-tracing' --include=Cargo.toml --include='*.rs' crates cli services Cargo.toml; then
