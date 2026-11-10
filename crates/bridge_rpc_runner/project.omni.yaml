@@ -4,6 +4,11 @@ extends:
   - "@workspace/omni/presets/rust-lib.omni.yaml"
 
 tasks:
+  # `cargo clippy` compiles the embedded `services/bridge-service/dist`.
+  check:lint:
+    dependencies:
+      append: ["@omni-oss/bridge-service#build"]
+
   test:
     dependencies:
       append: ["@omni-oss/bridge-service#build"]
