@@ -166,8 +166,8 @@ jobs:
           fi
 
   # Pipeline: check -> build (debug for rust) -> test -> release build (tags only).
-  # Rust target dirs are carried between stages as run-scoped artifacts and
-  # evicted by `cleanup-artifacts` at the end of the workflow.
+  # Rust target dirs are carried between stages as run-scoped caches and
+  # evicted by `cleanup-cache` at the end of the workflow.
   check-rust:
     needs:
       - plan
@@ -214,7 +214,6 @@ jobs:
         build_debug_rust
         check_rust
       carry-stage: build-debug
-      carry-restore: true
 
   build-typescript:
     needs:
@@ -251,7 +250,6 @@ jobs:
         build_debug_rust
         test_rust
       carry-stage: test
-      carry-restore: true
 
   test-typescript:
     needs:
@@ -285,7 +283,7 @@ jobs:
         build_rust
       save-outputs: true
       artifacts-name: build-rust
-      carry-restore: true
+      carry-stage: release
 
   resolve-versions:
     needs:
@@ -413,8 +411,8 @@ jobs:
     with:
       version: ${{ needs.resolve-versions.outputs.omni_version }}
 
-  # Evict the run-scoped rust carry-over artifacts once the workflow is done.
-  cleanup-artifacts:
+  # Evict the run-scoped rust carry-over caches once the workflow is done.
+  cleanup-cache:
     needs:
       - check-rust
       - build-debug-rust
@@ -429,20 +427,21 @@ jobs:
     permissions:
       actions: write
     steps:
-      - name: Delete carry-over artifacts
+      - name: Delete carry-over caches
         uses: actions/github-script@v8
         with:
           script: |
-            const artifacts = await github.paginate(
-              github.rest.actions.listWorkflowRunArtifacts,
-              { owner: context.repo.owner, repo: context.repo.repo, run_id: context.runId, per_page: 100 },
+            const prefix = `carry-rust-${context.runId}-`;
+            const caches = await github.paginate(
+              github.rest.actions.getActionsCacheList,
+              { owner: context.repo.owner, repo: context.repo.repo, key: prefix, per_page: 100 },
             );
-            for (const artifact of artifacts.filter((a) => a.name.startsWith('carry-rust-'))) {
-              core.info(`Deleting ${artifact.name}`);
-              await github.rest.actions.deleteArtifact({
+            for (const cache of caches.filter((c) => c.key.startsWith(prefix))) {
+              core.info(`Deleting cache ${cache.key}`);
+              await github.rest.actions.deleteActionsCacheById({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                artifact_id: artifact.id,
+                cache_id: cache.id,
               });
             }
 
