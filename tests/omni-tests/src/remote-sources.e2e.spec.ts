@@ -168,7 +168,8 @@ describe(
                     timeout: CLONE_TIMEOUT_MS,
                 });
                 expect(sync).toHaveSucceeded();
-                expect(ws.read(".agents/skills/rust.md")).toBe("# rust\n");
+                // A git checkout may convert line endings (Windows autocrlf).
+                expect(ws.read(".agents/skills/rust.md").trim()).toBe("# rust");
             },
             CLONE_TIMEOUT_MS,
         );
