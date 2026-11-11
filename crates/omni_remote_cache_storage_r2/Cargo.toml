@@ -19,3 +19,6 @@ futures = { workspace = true }
 send_wrapper = { workspace = true }
 worker = { workspace = true }
 omni_remote_cache_storage_core = { workspace = true }
+
+[lints]
+workspace = true

@@ -38,6 +38,8 @@ pub struct GeneratorCommand {
     pub subcommand: GeneratorSubcommand,
 }
 
+// Clap-derived CLI enum constructed once at startup; boxing buys nothing.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, clap::Subcommand)]
 pub enum GeneratorSubcommand {
     Run(#[command(flatten)] GeneratorRunCommand),

@@ -1,0 +1,11 @@
+{
+    "extends": ["@omni-oss/tsconfig/node.json"],
+    "include": [
+        "${configDir}/vite.config.ts",
+        "${configDir}/panda.config.ts",
+        "${configDir}/scripts/**/*.ts"
+    ],
+    "compilerOptions": {
+        "rootDir": "${configDir}"
+    }
+}

@@ -6,7 +6,9 @@ export default defineConfig({
     options: {
         reportUnusedDisableDirectives: "deny",
         typeAware: true,
-        typeCheck: true,
+        // TypeScript diagnostics come from `check:types` (tsc). Running them here
+        // too reports false mixed `src`/`dist` errors once dependencies are built.
+        typeCheck: false,
     },
     extends: [createConfig()],
     ignorePatterns,

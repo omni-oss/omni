@@ -19,3 +19,9 @@ dependencies:
   - omni_capabilities
   - omni_capability_enforcement
   - omni_capability_sys
+
+tasks:
+  # Compiling `bridge_rpc_runner` embeds `services/bridge-service/dist`.
+  check:lint:
+    dependencies:
+      append: ["@omni-oss/bridge-service#build"]

@@ -542,10 +542,7 @@ impl NetworkCapabilities {
     /// deliberately not granted here, so localhost servers remain unreachable
     /// under confinement.
     fn client() -> io::Result<Self> {
-        let mut sids = Vec::with_capacity(1);
-        for rid in [SECURITY_CAPABILITY_INTERNET_CLIENT] {
-            sids.push(capability_sid(rid)?);
-        }
+        let sids = vec![capability_sid(SECURITY_CAPABILITY_INTERNET_CLIENT)?];
         let attrs = sids
             .iter()
             .map(|&sid| SID_AND_ATTRIBUTES {

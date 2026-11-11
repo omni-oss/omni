@@ -51,8 +51,7 @@ pub async fn clone_repo(
     let tree_id = commit.tree().map_err(gix::Error::from_error)?.id();
 
     let mut index_state =
-        index::State::from_tree(&tree_id, &repo.objects, Default::default())
-            .map_err(gix::Error::from)?;
+        index::State::from_tree(&tree_id, &repo.objects, Default::default())?;
 
     repo.reference(
         "HEAD",
@@ -80,8 +79,7 @@ pub async fn clone_repo(
             overwrite_existing: true, // overwrite files from the HEAD checkout
             ..Options::new(filters)
         },
-    )
-    .map_err(gix::Error::from)?;
+    )?;
 
     Ok(CloneInfo::new(oid.to_string()))
 }

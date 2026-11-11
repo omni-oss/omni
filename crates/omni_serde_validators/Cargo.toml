@@ -20,3 +20,6 @@ serde = { workspace = true }
 serde_validate = { workspace = true }
 maps = { workspace = true }
 omni_tera = { workspace = true }
+
+[lints]
+workspace = true

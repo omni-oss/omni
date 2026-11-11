@@ -36,3 +36,6 @@ system_traits = { workspace = true }
 criterion = { workspace = true }
 tokio = { workspace = true }
 mimalloc = { workspace = true }
+
+[lints]
+workspace = true

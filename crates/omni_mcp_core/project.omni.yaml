@@ -21,3 +21,9 @@ dependencies:
   - omni_generator_configurations
   - omni_task_output_logs
   - omni_tracing_subscriber
+
+tasks:
+  # Compiling `bridge_rpc_runner` embeds `services/bridge-service/dist`.
+  check:lint:
+    dependencies:
+      append: ["@omni-oss/bridge-service#build"]

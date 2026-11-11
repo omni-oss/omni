@@ -27,9 +27,21 @@ on:
         required: false
         default: global
         type: string
-      cache-restore-key-prefixes:
-        description: The prefix to use for the cache restore key
+      cache-lane:
+        description: >-
+          Cache prefixes of every stage in this pipeline lane, in pipeline order
+          (one per line). Restore keys are derived from it by proximity to
+          `cache-key-prefix`.
         required: false
+        type: string
+      cache-restore-key-prefixes:
+        description: Deprecated, same as `cache-lane` (used when `cache-lane` is empty)
+        required: false
+        type: string
+      carry-stage:
+        description: Stage name; when set, the rust target dir is uploaded as a run-scoped carry-over cache
+        required: false
+        default: ""
         type: string
 
   workflow_dispatch:
@@ -53,8 +65,15 @@ on:
         required: false
         default: global
         type: string
+      cache-lane:
+        description: >-
+          Cache prefixes of every stage in this pipeline lane, in pipeline order
+          (one per line). Restore keys are derived from it by proximity to
+          `cache-key-prefix`.
+        required: false
+        type: string
       cache-restore-key-prefixes:
-        description: The prefix to use for the cache restore key
+        description: Deprecated, same as `cache-lane` (used when `cache-lane` is empty)
         required: false
         type: string
 
@@ -62,6 +81,7 @@ jobs:
   plan:
     outputs:
       jobs_count: ${{ steps.split.outputs.jobs_count }}
+      restore_key_prefixes: ${{ steps.split.outputs.restore_key_prefixes }}
       jobs: ${{ steps.split.outputs.jobs }}
       multiplatform_matrix: ${{ steps.split.outputs.multiplatform_matrix }}
       multiplatform_jobs_count: ${{ steps.split.outputs.multiplatform_jobs_count }}
@@ -72,10 +92,41 @@ jobs:
         uses: actions/github-script@v8
         env:
           RAW_JSON: ${{ inputs.jobs }}
-          RESTORE_KEY_PREFIXES: ${{ inputs.cache-restore-key-prefixes }}
+          CACHE_KEY_PREFIX: ${{ inputs.cache-key-prefix }}
+          CACHE_LANE: ${{ inputs.cache-lane || inputs.cache-restore-key-prefixes }}
         with:
           script: |
             const jobsInput = JSON.parse(process.env.RAW_JSON);
+
+            // Restore-key priority. actions/cache tries the restore keys in order and
+            // takes the newest cache matching the first key that has any match, so
+            // the order decides which cache seeds this job:
+            //   1. this stage itself: the same task set, from the previous run;
+            //   2. earlier stages, nearest first: they ran this stage's dependency
+            //      tasks (e.g. `test` re-uses the `build:debug` and `check` entries);
+            //   3. later stages, nearest first: supersets of this stage's tasks, but
+            //      older (tags only) and so less likely to match recent hashes.
+            // Stages of other lanes are skipped on purpose: their task entries
+            // never match.
+            const orderRestorePrefixes = (own, lane) => {
+                const stages = [...new Set(lane)];
+                const i = stages.indexOf(own);
+                if (i < 0) {
+                    return [own, ...stages];
+                }
+                return [
+                    own,
+                    ...stages.slice(0, i).reverse(),
+                    ...stages.slice(i + 1),
+                ];
+            };
+            const lane = (process.env.CACHE_LANE ?? '')
+                .split(/\s+/)
+                .filter(Boolean);
+            const orderedPrefixes = orderRestorePrefixes(
+                process.env.CACHE_KEY_PREFIX,
+                lane,
+            );
 
             const jobs = [];
             const matrixMap = {};
@@ -98,12 +149,12 @@ jobs:
                         const key = keyParts.join('-');
 
                         if (!matrixMap[key]) {
-                            const tmp = process.env.RESTORE_KEY_PREFIXES
-                                    .split(/\s+/);
+                            // target-scoped keys only (priority order), then the broad
+                            // target key; setup-omni appends the global fallback and
+                            // enforces the actions/cache key limit.
                             const restoreKeyPrefixes = [
+                                ...orderedPrefixes.map(prefix => `${targetName}-${prefix}`),
                                 targetName,
-                                ...tmp.map(prefix => `${targetName}-${prefix}`),
-                                ...tmp,
                             ]
                                 .join("\n");
                             matrixMap[key] = {
@@ -153,6 +204,7 @@ jobs:
             const multiplatformJobsCount = multiplatformMatrix.reduce((acc, matrix) => acc + matrix.jobs.length, 0);
 
             core.setOutput('jobs_count', jobs.length);
+            core.setOutput('restore_key_prefixes', orderedPrefixes.join('\n'));
             core.setOutput('jobs', JSON.stringify(jobs));
             core.setOutput('multiplatform_matrix', JSON.stringify(multiplatformMatrix));
             core.setOutput('multiplatform_jobs_count', multiplatformJobsCount);
@@ -210,12 +262,23 @@ jobs:
           echo "Task Args: $TASK_ARGS"
           echo "Project Flags: $PROJECT_FLAGS"
 
+      - if: ${{ inputs.carry-stage != '' }}
+        name: Carry Rust Target Dir Across Stages
+        uses: actions/cache@v5
+        with:
+          path: |
+            target
+            !target/**/incremental
+          key: carry-rust-${{ github.run_id }}-host-${{ inputs.carry-stage }}
+          restore-keys: |
+            carry-rust-${{ github.run_id }}-host-
+
       - name: Setup Omni
         uses: ./.github/actions/setup-omni
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           cache-key-prefix: ${{ inputs.cache-key-prefix }}
-          cache-restore-key-prefixes: ${{ inputs.cache-restore-key-prefixes }}
+          cache-restore-key-prefixes: ${{ needs.plan.outputs.restore_key_prefixes }}
 
       - name: Determine Build Tools
         id: determine
@@ -301,6 +364,17 @@ jobs:
           echo "PROJECT_FLAGS=$PROJECT_FLAGS" >> $GITHUB_OUTPUT
           echo "Task Args: $TASK_ARGS"
           echo "Project Flags: $PROJECT_FLAGS"
+
+      - if: ${{ inputs.carry-stage != '' }}
+        name: Carry Rust Target Dir Across Stages
+        uses: actions/cache@v5
+        with:
+          path: |
+            target
+            !target/**/incremental
+          key: carry-rust-${{ github.run_id }}-${{ matrix.target }}-${{ inputs.carry-stage }}
+          restore-keys: |
+            carry-rust-${{ github.run_id }}-${{ matrix.target }}-
 
       - name: Setup Omni
         uses: ./.github/actions/setup-omni

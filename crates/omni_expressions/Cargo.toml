@@ -31,3 +31,6 @@ omni_codes = { workspace = true }
 [dev-dependencies]
 criterion = { workspace = true }
 test-log = { workspace = true }
+
+[lints]
+workspace = true

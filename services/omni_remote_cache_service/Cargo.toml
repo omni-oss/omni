@@ -44,3 +44,6 @@ sets = { workspace = true }
 [build-dependencies]
 eyre = { workspace = true }
 shadow-rs = { workspace = true, features = ["default"] }
+
+[lints]
+workspace = true

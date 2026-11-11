@@ -35,3 +35,6 @@ bon = { workspace = true }
 
 [dev-dependencies]
 omni_tera = { workspace = true }
+
+[lints]
+workspace = true

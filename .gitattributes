@@ -1,0 +1,3 @@
+* text=auto eol=lf
+# generated changelogs contain mixed line endings; leave them untouched
+CHANGELOG*.md -text

@@ -20,3 +20,6 @@ path-clean = { workspace = true }
 pathdiff = { workspace = true }
 normalize-line-endings = { workspace = true }
 tokio = { workspace = true }
+
+[lints]
+workspace = true

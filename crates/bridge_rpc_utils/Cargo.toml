@@ -25,3 +25,6 @@ test-log = { workspace = true }
 rstest = { workspace = true }
 rstest_reuse = { workspace = true }
 tokio = { workspace = true }
+
+[lints]
+workspace = true

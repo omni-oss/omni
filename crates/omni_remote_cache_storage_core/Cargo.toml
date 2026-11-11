@@ -20,3 +20,6 @@ bytesize = { workspace = true }
 futures = { workspace = true }
 lru = { workspace = true }
 utoipa = { workspace = true, optional = true }
+
+[lints]
+workspace = true

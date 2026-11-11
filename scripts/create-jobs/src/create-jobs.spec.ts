@@ -433,4 +433,40 @@ describe("createJobs", () => {
         expect(jobs.publish.generic).toHaveLength(1);
         expect(jobs.publish.generic[0]?.project_name).toBe("rust-pkg");
     });
+
+    it("should route check tasks by language and build:debug tasks to rust debug builds", () => {
+        const mk = (
+            task_name: string,
+            project_name: string,
+            language: string,
+        ) => ({
+            status: "success",
+            task: {
+                task_name,
+                project_name,
+                project_dir: "/mnt/c/Users/user/project",
+            },
+            details: { meta: { language } },
+        });
+        const results: any[] = [
+            mk("check", "rust-pkg", "rust"),
+            mk("check", "ts-pkg", "typescript"),
+            mk("build:debug", "rust-app", "rust"),
+            mk("build:debug", "ts-app", "typescript"),
+        ];
+
+        const jobs = createJobs(results);
+
+        expect(jobs.check.rust.map((j) => j.project_name)).toEqual([
+            "rust-pkg",
+        ]);
+        expect(jobs.check.typescript.map((j) => j.project_name)).toEqual([
+            "ts-pkg",
+        ]);
+        expect(jobs.build_debug.rust.map((j) => j.project_name)).toEqual([
+            "rust-app",
+        ]);
+        expect(jobs.build.rust).toHaveLength(0);
+        expect(jobs.build.typescript).toHaveLength(0);
+    });
 });

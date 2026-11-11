@@ -33,3 +33,6 @@ schemars = { workspace = true, optional = true }
 [dev-dependencies]
 serde_json = { workspace = true }
 config_utils = { workspace = true }
+
+[lints]
+workspace = true

@@ -59,13 +59,16 @@ pub async fn run_shared(
 /// `true` if `path` is the process's stdout (`/dev/stdout`, `/dev/fd/1`,
 /// `/proc/self/fd/1`, or any path naming the same device as the inherited
 /// stdout). MCP rejects such a trace file: stdout carries JSON-RPC.
+// On non-unix targets the `#[cfg(unix)]` block below is compiled out, which makes
+// the early return look like a needless bool to clippy.
+#[allow(clippy::needless_bool)]
 pub fn is_stdout_path(path: &std::path::Path) -> bool {
     let literal = [
         std::path::Path::new("/dev/stdout"),
         std::path::Path::new("/dev/fd/1"),
         std::path::Path::new("/proc/self/fd/1"),
     ];
-    if literal.iter().any(|p| path == *p) {
+    if literal.contains(&path) {
         return true;
     }
     #[cfg(unix)]

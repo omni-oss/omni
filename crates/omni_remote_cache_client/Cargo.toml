@@ -25,3 +25,6 @@ reqwest-tracing = { workspace = true }
 [dev-dependencies]
 ntest = { workspace = true }
 test-log = { workspace = true }
+
+[lints]
+workspace = true

@@ -28,3 +28,6 @@ omni_codes = { workspace = true }
 tokio = { workspace = true }
 mockall = { workspace = true }
 ntest = { workspace = true }
+
+[lints]
+workspace = true

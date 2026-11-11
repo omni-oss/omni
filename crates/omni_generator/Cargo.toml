@@ -75,3 +75,6 @@ omni_config_types = { workspace = true }
 [dev-dependencies]
 tempfile = { workspace = true }
 omni_input_provider = { workspace = true, features = ["test-utils"] }
+
+[lints]
+workspace = true

@@ -30,3 +30,6 @@ omni_diagnostic_derive = { workspace = true }
 [dev-dependencies]
 thiserror = { workspace = true }
 trybuild = { workspace = true }
+
+[lints]
+workspace = true

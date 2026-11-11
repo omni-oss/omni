@@ -12,3 +12,6 @@ path = "src/lib.rs"
 
 [dependencies]
 omni_constants = { workspace = true }
+
+[lints]
+workspace = true

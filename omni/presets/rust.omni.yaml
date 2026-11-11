@@ -11,10 +11,33 @@ extends:
   - "./base.omni.yaml"
 
 tasks:
+  check:lint:
+    exec: cargo clippy -p ${PROJECT_NAME} ${RUST_CHECK_ADDITIONAL_ARGS:-} -- -D warnings
+    cache:
+      key:
+        env:
+          append: [RUST_CHECK_ADDITIONAL_ARGS]
+        files:
+          append: ["./tests/**/*.rs", "./benches/**/*.rs"]
+
+  check:format:
+    exec: cargo fmt -p ${PROJECT_NAME} -- --check
+    cache:
+      key:
+        files:
+          append: ["./tests/**/*.rs", "./benches/**/*.rs", "@workspace/rustfmt.toml", "@workspace/.rustfmt.toml"]
+
+  check:
+    exec: ""
+    dependencies:
+      - check:lint
+      - check:format
+
   test:
     exec: cargo test -p ${PROJECT_NAME} ${RUST_TEST_ADDITIONAL_ARGS:-}
     dependencies:
       - ^test
+      - check
     env:
       vars:
         # RUST_LOG_SPAN_EVENTS: new,close

@@ -30,3 +30,6 @@ system_traits = { workspace = true, features = [
     "real-async-tokio",
 ] }
 omni_utils = { workspace = true }
+
+[lints]
+workspace = true

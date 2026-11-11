@@ -43,3 +43,6 @@ utoipa = { workspace = true }
 
 [target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
 time = { workspace = true, features = ["wasm-bindgen"] }
+
+[lints]
+workspace = true

@@ -21,3 +21,6 @@ omni_remote_cache_storage_core = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true }
+
+[lints]
+workspace = true

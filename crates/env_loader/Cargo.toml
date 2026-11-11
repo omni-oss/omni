@@ -19,3 +19,6 @@ omni_diagnostic = { workspace = true }
 
 [dev-dependencies]
 eyre = { workspace = true }
+
+[lints]
+workspace = true

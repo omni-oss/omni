@@ -25,3 +25,6 @@ system_traits = { workspace = true, features = [
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt"] }
 serde_json = { workspace = true }
+
+[lints]
+workspace = true

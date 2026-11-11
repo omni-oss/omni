@@ -85,3 +85,6 @@ criterion = { workspace = true }
 tempfile = { workspace = true }
 omni_test_utils = { workspace = true }
 omni_tracing_subscriber = { workspace = true }
+
+[lints]
+workspace = true

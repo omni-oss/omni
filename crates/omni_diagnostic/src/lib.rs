@@ -128,7 +128,7 @@ pub mod __private {
 
     impl<'a, T: std::error::Error + 'static> ViaBox<'a> for Delegate<'a, Box<T>> {
         fn __omni_lookup(&self) -> Option<&'a dyn crate::Diagnostic> {
-            let inner: &'a T = &**self.0;
+            let inner: &'a T = self.0;
             crate::find_in_error(inner)
         }
     }

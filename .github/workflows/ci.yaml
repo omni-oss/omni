@@ -26,6 +26,12 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       jobs: ${{ steps.plan.outputs.jobs }}
+      jobs_check_typescript: ${{ steps.plan.outputs.jobs_check_typescript }}
+      jobs_check_typescript_count: ${{ steps.plan.outputs.jobs_check_typescript_count }}
+      jobs_check_rust: ${{ steps.plan.outputs.jobs_check_rust }}
+      jobs_check_rust_count: ${{ steps.plan.outputs.jobs_check_rust_count }}
+      jobs_build_debug_rust: ${{ steps.plan.outputs.jobs_build_debug_rust }}
+      jobs_build_debug_rust_count: ${{ steps.plan.outputs.jobs_build_debug_rust_count }}
       jobs_test_typescript: ${{ steps.plan.outputs.jobs_test_typescript }}
       jobs_test_typescript_count: ${{ steps.plan.outputs.jobs_test_typescript_count }}
       jobs_test_rust: ${{ steps.plan.outputs.jobs_test_rust }}
@@ -51,14 +57,14 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           cache-key-prefix: plan
           cache-restore-key-prefixes: |
-            publish_rust_github
-            publish_generic
-            publish_npm
-            build_rust
-            build_typescript
+            plan
             test_rust
             test_typescript
-            plan
+            build_debug_rust
+            build_typescript
+            check_rust
+            check_typescript
+            build_rust
 
       - name: Setup Tools
         uses: ./.github/actions/setup-tools
@@ -67,8 +73,14 @@ jobs:
           install-bun: true
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
+      # Release builds and publishing are only planned for tagged (release) runs.
       - name: Generate Dry Run Results
-        run: omni -i run -f=failed -d --result=result.json test build publish
+        run: |
+          if [ "${{ startsWith(github.ref, 'refs/tags/') }}" = "true" ]; then
+            omni -i run -f=failed -d --result=result.json check build:debug test build publish
+          else
+            omni -i run -f=failed -d --result=result.json check build:debug test
+          fi
 
       - name: Create Plan
         id: plan
@@ -78,8 +90,10 @@ jobs:
             const fs = require('fs');
             const execSync = require('child_process').execSync;
 
-            // 1. Run the bun command
-            execSync('bun --bun x @omni-oss/create-jobs result.json --output=jobs.json');
+            // 1. Run the workspace's own create-jobs (not the published package, which
+            // may not know about newer job types such as `check` and `build:debug`)
+            execSync('bun install --frozen-lockfile --filter @omni-oss/create-jobs', { stdio: 'inherit' });
+            execSync('bun run scripts/create-jobs/src/cli/index.ts result.json --output=jobs.json', { stdio: 'inherit' });
 
             // 2. Read and parse the generated JSON
             const jobsRaw = fs.readFileSync('jobs.json', 'utf8');
@@ -101,6 +115,11 @@ jobs:
             core.setOutput('jobs', jobsRaw);
 
             // 4. Set specific sections
+            setJobOutput('jobs_check_typescript', jobs.check?.typescript || []);
+            setJobOutput('jobs_check_rust', jobs.check?.rust || []);
+
+            setJobOutput('jobs_build_debug_rust', jobs.build_debug?.rust || []);
+
             setJobOutput('jobs_test_typescript', jobs.test?.typescript || []);
             setJobOutput('jobs_test_rust', jobs.test?.rust || []);
 
@@ -114,100 +133,128 @@ jobs:
       - name: Prune Unused Caches
         run: omni -i cache prune -sy -o="7d" # Remove stale caches older than 7 days
 
-  # RFC 0023: libraries have no user-facing text sinks, and `log` and the
-  # retired `trace` wrapper crate are not used. Presenter crates opt out with a
-  # crate-level `#![allow(clippy::disallowed_macros)]`; tests are not linted.
-  lint-output:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-
-      - name: Setup Tools
-        uses: ./.github/actions/setup-tools
-        with:
-          install-all: false
-          install-rust: true
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
-      # `bridge_rpc_runner` embeds the built bridge service; an empty folder is
-      # enough to type-check.
-      - name: Stub the embedded bridge-service dist
-        run: mkdir -p services/bridge-service/dist
-
-      - name: No output macros or `log` in non-presenter crates
-        run: cargo clippy --workspace --lib --bins -- -A clippy::all -D clippy::disallowed_macros
-
-      - name: Builds with a `tracing` release level cap
-        run: cargo check -p omni --release --features tracing/release_max_level_info
-
-      - name: The `trace` crate and `enable-tracing` features are gone
-        run: |
-          if grep -rEn '^trace = |enable-tracing' --include=Cargo.toml --include='*.rs' crates cli services Cargo.toml; then
-            echo "the \`trace\` crate and \`enable-tracing\` features were removed (RFC 0023); use \`tracing\` directly" >&2
-            exit 1
-          fi
-
-  test-rust:
+  # Pipeline: check -> build (debug for rust) -> test -> release build (tags only).
+  # Rust target dirs are carried between stages as run-scoped caches and
+  # evicted by `cleanup-cache` at the end of the workflow.
+  check-rust:
     needs:
       - plan
-    if: ${{ needs.plan.outputs.jobs_test_rust_count > 0 }}
+    if: ${{ needs.plan.outputs.jobs_check_rust_count > 0 }}
     uses: ./.github/workflows/run-omni-jobs.yaml
     secrets: inherit
     with:
-      jobs: ${{ needs.plan.outputs.jobs_test_rust }}
-      cache-key-prefix: test_rust
-      cache-restore-key-prefixes: |
-        publish_rust_github
-        build_rust
+      jobs: ${{ needs.plan.outputs.jobs_check_rust }}
+      cache-key-prefix: check_rust
+      cache-lane: |
+        check_rust
+        build_debug_rust
         test_rust
+        build_rust
+      carry-stage: check
 
-  test-typescript:
+  check-typescript:
     needs:
       - plan
-    if: ${{ needs.plan.outputs.jobs_test_typescript_count > 0 }}
+    if: ${{ needs.plan.outputs.jobs_check_typescript_count > 0 }}
     uses: ./.github/workflows/run-omni-jobs.yaml
     secrets: inherit
     with:
-      jobs: ${{ needs.plan.outputs.jobs_test_typescript }}
-      cache-key-prefix: test_typescript
-      cache-restore-key-prefixes: |
-        publish_npm
+      jobs: ${{ needs.plan.outputs.jobs_check_typescript }}
+      cache-key-prefix: check_typescript
+      cache-lane: |
+        check_typescript
         build_typescript
         test_typescript
 
-  build-rust:
+  build-debug-rust:
     needs:
-      - test-typescript
-      - test-rust
       - plan
-    if: ${{ needs.plan.outputs.jobs_build_rust_count > 0 }}
+      - check-rust
+      - check-typescript
+    if: ${{ !cancelled() && !failure() && needs.plan.outputs.jobs_build_debug_rust_count > 0 }}
     uses: ./.github/workflows/run-omni-jobs.yaml
     secrets: inherit
     with:
-      jobs: ${{ needs.plan.outputs.jobs_build_rust }}
-      cache-key-prefix: build_rust
-      cache-restore-key-prefixes: |
-        publish_rust_github
+      jobs: ${{ needs.plan.outputs.jobs_build_debug_rust }}
+      cache-key-prefix: build_debug_rust
+      cache-lane: |
+        check_rust
+        build_debug_rust
+        test_rust
         build_rust
-      save-outputs: true
-      artifacts-name: build-rust
+      carry-stage: build-debug
 
   build-typescript:
     needs:
       - plan
-      - test-typescript
-    if: ${{ needs.plan.outputs.jobs_build_typescript_count > 0 }}
+      - check-typescript
+      - check-rust
+    if: ${{ !cancelled() && !failure() && needs.plan.outputs.jobs_build_typescript_count > 0 }}
     uses: ./.github/workflows/run-omni-jobs.yaml
     secrets: inherit
     with:
       jobs: ${{ needs.plan.outputs.jobs_build_typescript }}
       cache-key-prefix: build_typescript
-      cache-restore-key-prefixes: |
+      cache-lane: |
+        check_typescript
         build_typescript
         test_typescript
       save-outputs: true
       artifacts-name: build-typescript
+
+  test-rust:
+    needs:
+      - plan
+      - build-debug-rust
+      - build-typescript
+    if: ${{ !cancelled() && !failure() && needs.plan.outputs.jobs_test_rust_count > 0 }}
+    uses: ./.github/workflows/run-omni-jobs.yaml
+    secrets: inherit
+    with:
+      jobs: ${{ needs.plan.outputs.jobs_test_rust }}
+      cache-key-prefix: test_rust
+      cache-lane: |
+        check_rust
+        build_debug_rust
+        test_rust
+        build_rust
+      carry-stage: test
+
+  test-typescript:
+    needs:
+      - plan
+      - build-typescript
+    if: ${{ !cancelled() && !failure() && needs.plan.outputs.jobs_test_typescript_count > 0 }}
+    uses: ./.github/workflows/run-omni-jobs.yaml
+    secrets: inherit
+    with:
+      jobs: ${{ needs.plan.outputs.jobs_test_typescript }}
+      cache-key-prefix: test_typescript
+      cache-lane: |
+        check_typescript
+        build_typescript
+        test_typescript
+
+  # Release build: only for tagged (release) runs, after everything passed.
+  build-rust:
+    needs:
+      - plan
+      - test-rust
+      - test-typescript
+    if: ${{ !cancelled() && !failure() && startsWith(github.ref, 'refs/tags/') && needs.plan.outputs.jobs_build_rust_count > 0 }}
+    uses: ./.github/workflows/run-omni-jobs.yaml
+    secrets: inherit
+    with:
+      jobs: ${{ needs.plan.outputs.jobs_build_rust }}
+      cache-key-prefix: build_rust
+      cache-lane: |
+        check_rust
+        build_debug_rust
+        test_rust
+        build_rust
+      save-outputs: true
+      artifacts-name: build-rust
+      carry-stage: release
 
   resolve-versions:
     needs:
@@ -274,43 +321,45 @@ jobs:
       - resolve-versions
       - build-rust
       - build-typescript
-    if: ${{ needs.plan.outputs.jobs_publish_generic_count > 0 && startsWith(github.ref, 'refs/tags/') }}
+    if: ${{ !cancelled() && !failure() && needs.plan.outputs.jobs_publish_generic_count > 0 && startsWith(github.ref, 'refs/tags/') }}
     uses: ./.github/workflows/run-omni-jobs.yaml
     secrets: inherit
     with:
       jobs: ${{ needs.plan.outputs.jobs_publish_generic }}
       cache-key-prefix: publish_generic
-      cache-restore-key-prefixes: |
-        publish_generic
-        publish_rust_github
-        publish_npm
-        build_rust
-        build_typescript
+      cache-lane: |
+        check_rust
+        build_debug_rust
         test_rust
+        build_rust
+        check_typescript
+        build_typescript
         test_typescript
+        publish_generic
 
   publish-npm:
     needs:
       - plan
       - resolve-versions
       - build-typescript
-    if: ${{ needs.plan.outputs.jobs_publish_npm_count > 0 && startsWith(github.ref, 'refs/tags/') }}
+    if: ${{ !cancelled() && !failure() && needs.plan.outputs.jobs_publish_npm_count > 0 && startsWith(github.ref, 'refs/tags/') }}
     uses: ./.github/workflows/run-omni-jobs.yaml
     secrets: inherit
     with:
       jobs: ${{ needs.plan.outputs.jobs_publish_npm }}
       cache-key-prefix: publish_npm
-      cache-restore-key-prefixes: |
-        publish_npm
-        build_rust
+      cache-lane: |
+        check_typescript
         build_typescript
+        test_typescript
+        publish_npm
 
   publish-rust-github:
     needs:
       - plan
       - resolve-versions
       - build-rust
-    if: ${{ needs.plan.outputs.jobs_publish_rust_github_count > 0 && startsWith(github.ref, 'refs/tags/') }}
+    if: ${{ !cancelled() && !failure() && needs.plan.outputs.jobs_publish_rust_github_count > 0 && startsWith(github.ref, 'refs/tags/') }}
     uses: ./.github/workflows/publish-rust-github.yaml
     permissions:
       actions: read
@@ -326,7 +375,7 @@ jobs:
       - resolve-versions
       - build-rust
       - publish-rust-github
-    if: ${{ needs.plan.outputs.jobs_publish_rust_github_count > 0 && startsWith(github.ref, 'refs/tags/') }}
+    if: ${{ !cancelled() && !failure() && needs.plan.outputs.jobs_publish_rust_github_count > 0 && startsWith(github.ref, 'refs/tags/') }}
     uses: ./.github/workflows/publish-json-schemas.yaml
     secrets: inherit
     permissions:
@@ -334,6 +383,40 @@ jobs:
       contents: write
     with:
       version: ${{ needs.resolve-versions.outputs.omni_version }}
+
+  # Evict the run-scoped rust carry-over caches once the workflow is done.
+  cleanup-cache:
+    needs:
+      - check-rust
+      - build-debug-rust
+      - test-rust
+      - build-rust
+      - publish-generic
+      - publish-npm
+      - publish-rust-github
+      - publish-json-schemas
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Delete carry-over caches
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const prefix = `carry-rust-${context.runId}-`;
+            const caches = await github.paginate(
+              github.rest.actions.getActionsCacheList,
+              { owner: context.repo.owner, repo: context.repo.repo, key: prefix, per_page: 100 },
+            );
+            for (const cache of caches.filter((c) => c.key.startsWith(prefix))) {
+              core.info(`Deleting cache ${cache.key}`);
+              await github.rest.actions.deleteActionsCacheById({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                cache_id: cache.id,
+              });
+            }
 
   # Static gatekeeper: this is the ONLY status check to require in the
   # branch protection rule / ruleset for `main`. GitHub cannot match the
@@ -344,7 +427,9 @@ jobs:
     name: CI Passed
     needs:
       - plan
-      - lint-output
+      - check-rust
+      - check-typescript
+      - build-debug-rust
       - test-rust
       - test-typescript
       - build-rust
@@ -370,7 +455,9 @@ jobs:
           RESULTS_JSON: |
             {
               "plan": "${{ needs.plan.result }}",
-              "lint-output": "${{ needs.lint-output.result }}",
+              "check-rust": "${{ needs.check-rust.result }}",
+              "check-typescript": "${{ needs.check-typescript.result }}",
+              "build-debug-rust": "${{ needs.build-debug-rust.result }}",
               "test-rust": "${{ needs.test-rust.result }}",
               "test-typescript": "${{ needs.test-typescript.result }}",
               "build-rust": "${{ needs.build-rust.result }}",
@@ -410,7 +497,7 @@ jobs:
   #     - resolve-versions
   #     - publish-rust-github
   #     - publish-npm
-  #   if: ${{ needs.plan.outputs.jobs_publish_rust_github_count > 0 && startsWith(github.ref, 'refs/tags/') }}
+  #   if: ${{ !cancelled() && !failure() && needs.plan.outputs.jobs_publish_rust_github_count > 0 && startsWith(github.ref, 'refs/tags/') }}
   #   runs-on: ubuntu-latest
   #   permissions:
   #     actions: write
