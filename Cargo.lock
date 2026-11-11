@@ -7624,6 +7624,7 @@ dependencies = [
  "omni_hasher",
  "omni_notice",
  "omni_projection_configurations",
+ "omni_test_capabilities",
  "omni_types",
  "path-clean",
  "pathdiff",
@@ -10771,6 +10772,7 @@ name = "system_traits"
 version = "0.3.0"
 dependencies = [
  "async-trait",
+ "reflink-copy",
  "sys_traits",
  "tempfile",
  "tokio 1.54.1",
