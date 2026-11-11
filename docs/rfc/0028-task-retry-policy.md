@@ -503,8 +503,11 @@ Steps 1 to 4 are implemented. Deviations from the design above:
   invalid combination fails that task with an error message.
 - **Single CLI step.** The temporary mapping of the old flags was skipped; the
   new flags replaced them in the same change.
-- **Repository tasks migrated.** Seven `project.omni.yaml` files used the removed
-  task keys and moved to `retry:`.
+- **Repository retries removed for now.** Seven `project.omni.yaml` files used
+  the removed task keys. CI runs a released omni that rejects `retry:`, and the new
+  omni rejects the old keys, so this change drops their retry settings so that both
+  load. Restore `retry:` in those files in a follow-up once a release containing
+  this change is used by CI.
 - **Docs.** The `run` and `exec` references were edited by hand, because
   regenerating them also rewrote unrelated pages. A new guide,
   `apps/site/content/docs/guides/retrying-tasks.mdx`, covers the settings and the

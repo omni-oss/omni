@@ -18,11 +18,7 @@ tasks:
     enabled: true
 
   test:unit:
-    retry:
-      max_retries: 5
     enabled: true
 
   test:integration:
-    retry:
-      max_retries: 5
     enabled: true

@@ -6,8 +6,6 @@ extends:
 
 tasks:
   test:
-    retry:
-      max_retries: 5
     dependencies:
       - omni_remote_cache_service#build
 
