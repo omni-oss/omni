@@ -192,7 +192,10 @@ async fn materialize<S: ApplierSys>(
             // need no sandbox read grant. Hard links are never chosen here,
             // because editing one in place would change the shared tree.
             match link_files(sys, pair, src_is_dir, FileOp::Reflink).await {
-                Ok(()) => return Ok(ResolvedKind::Reflink),
+                Ok(()) => {
+                    make_owned_writable(&pair.dest_abs);
+                    return Ok(ResolvedKind::Reflink);
+                }
                 Err(error) if is_situational(&error) => {}
                 Err(error) => return Err(error.into()),
             }
@@ -201,7 +204,9 @@ async fn materialize<S: ApplierSys>(
             {
                 return Ok(kind);
             }
-            copy(sys, pair, src_is_dir).await
+            let kind = copy(sys, pair, src_is_dir).await?;
+            make_owned_writable(&pair.dest_abs);
+            Ok(kind)
         }
         LinkKind::Auto => {
             if let Some(kind) =
@@ -229,8 +234,44 @@ async fn materialize<S: ApplierSys>(
             link_files(sys, pair, src_is_dir, FileOp::Hardlink).await?;
             Ok(ResolvedKind::Hardlink)
         }
-        LinkKind::Copy => copy(sys, pair, src_is_dir).await,
+        LinkKind::Copy => {
+            let kind = copy(sys, pair, src_is_dir).await?;
+            if opts.from_store {
+                make_owned_writable(&pair.dest_abs);
+            }
+            Ok(kind)
+        }
     }
+}
+
+/// Store files are read-only so a hard link or symlink cannot edit the shared
+/// tree. A copy or reflink is the workspace's own file, so give it back its
+/// write permission. Best effort: a failure leaves a read-only file, never a
+/// failed projection.
+fn make_owned_writable(path: &Path) {
+    fn visit(path: &Path) {
+        let Ok(meta) = std::fs::symlink_metadata(path) else {
+            return;
+        };
+        if meta.is_symlink() {
+            return;
+        }
+        if meta.is_dir() {
+            if let Ok(entries) = std::fs::read_dir(path) {
+                for entry in entries.flatten() {
+                    visit(&entry.path());
+                }
+            }
+            return;
+        }
+        let mut permissions = meta.permissions();
+        if permissions.readonly() {
+            #[allow(clippy::permissions_set_readonly_false)]
+            permissions.set_readonly(false);
+            let _ = std::fs::set_permissions(path, permissions);
+        }
+    }
+    visit(path);
 }
 
 /// The `auto` symlink step. `Ok(None)` means symlinks are unavailable here

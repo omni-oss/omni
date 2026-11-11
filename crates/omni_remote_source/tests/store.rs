@@ -527,3 +527,217 @@ async fn concurrent_prune_and_materialize_both_succeed_and_leave_a_usable_store(
     assert_eq!(mat.pin, commit);
     assert!(mat.root.join("README.md").exists());
 }
+
+fn source_of(url: &Url, rev: &str) -> RemoteSource {
+    RemoteSource::Git {
+        uri: url.clone(),
+        rev: rev.to_string(),
+    }
+}
+
+#[tokio::test]
+async fn a_published_tree_is_plain_sealed_and_recorded_in_the_layout() {
+    if !git_available() {
+        eprintln!("skipping: `git` is not available on PATH");
+        return;
+    }
+    let (_src, url, _) = build_repo("sealed\n");
+    let ws = Workspace::new();
+    let mat = ws
+        .manager()
+        .await
+        .materialize(&source_of(&url, "main"))
+        .await
+        .expect("materialize");
+
+    assert!(
+        !mat.root.join(".git").exists(),
+        "a tree is not a repository"
+    );
+    assert!(mat.root.starts_with(ws.store_root.join("trees")));
+    assert_eq!(
+        std::fs::read_to_string(ws.store_root.join("VERSION"))
+            .unwrap()
+            .trim(),
+        "1"
+    );
+    let readme = std::fs::metadata(mat.root.join("README.md")).unwrap();
+    assert!(
+        readme.permissions().readonly(),
+        "published files are read-only"
+    );
+    // One bare mirror per remote.
+    let mirrors: Vec<_> = std::fs::read_dir(ws.store_root.join("git"))
+        .unwrap()
+        .flatten()
+        .collect();
+    assert_eq!(mirrors.len(), 1);
+    assert!(mirrors[0].file_name().to_string_lossy().ends_with(".git"));
+}
+
+#[tokio::test]
+async fn deleting_only_the_trees_re_exports_offline_from_the_mirror() {
+    if !git_available() {
+        eprintln!("skipping: `git` is not available on PATH");
+        return;
+    }
+    let (src, url, commit) = build_repo("offline\n");
+    let ws = Workspace::new();
+    let manager = ws.manager().await;
+    let source = source_of(&url, "main");
+    let first = manager.materialize(&source).await.expect("materialize");
+    manager.persist_pins().await.unwrap();
+
+    // The remote is gone and the trees are deleted; the mirror remains.
+    drop(src);
+    std::fs::remove_dir_all(ws.store_root.join("trees")).unwrap();
+
+    let again = ws
+        .manager()
+        .await
+        .materialize(&source)
+        .await
+        .expect("re-export without the network");
+    assert_eq!(again.pin, commit);
+    assert_eq!(again.root, first.root);
+    assert_eq!(
+        std::fs::read_to_string(again.root.join("README.md")).unwrap(),
+        "offline\n"
+    );
+}
+
+#[tokio::test]
+async fn with_the_mirror_gone_too_it_names_the_remote_when_offline() {
+    if !git_available() {
+        eprintln!("skipping: `git` is not available on PATH");
+        return;
+    }
+    let (src, url, _) = build_repo("gone\n");
+    let ws = Workspace::new();
+    let manager = ws.manager().await;
+    let source = source_of(&url, "main");
+    manager.materialize(&source).await.expect("materialize");
+    manager.persist_pins().await.unwrap();
+
+    drop(src);
+    std::fs::remove_dir_all(&ws.store_root).unwrap();
+
+    let error = ws
+        .manager()
+        .await
+        .materialize(&source)
+        .await
+        .expect_err("cannot refetch");
+    let message = format!("{error:#}");
+    assert!(message.contains("could not fetch"), "{message}");
+    assert!(
+        message.contains(url.as_str()),
+        "names the remote: {message}"
+    );
+    assert!(message.contains("network"), "{message}");
+}
+
+#[tokio::test]
+async fn a_partially_deleted_tree_is_re_exported_not_reused() {
+    if !git_available() {
+        eprintln!("skipping: `git` is not available on PATH");
+        return;
+    }
+    let (src, url, _) = build_repo("whole\n");
+    std::fs::create_dir_all(src.path().join("sub")).unwrap();
+    std::fs::write(src.path().join("sub/inner.txt"), "inner").unwrap();
+    git(src.path(), &["add", "."]);
+    git(src.path(), &["commit", "-q", "-m", "second file"]);
+    let ws = Workspace::new();
+    let manager = ws.manager().await;
+    let source = source_of(&url, "main");
+    let mat = manager.materialize(&source).await.expect("materialize");
+    manager.persist_pins().await.unwrap();
+
+    // A cache cleaner removed one file; the directory itself is still there.
+    std::fs::remove_file(mat.root.join("sub/inner.txt")).unwrap();
+
+    let again = ws
+        .manager()
+        .await
+        .materialize(&source)
+        .await
+        .expect("materialize");
+    assert_eq!(again.root, mat.root);
+    assert_eq!(
+        std::fs::read_to_string(again.root.join("sub/inner.txt")).unwrap(),
+        "inner",
+        "the missing file was restored"
+    );
+}
+
+#[tokio::test]
+async fn commits_of_one_remote_share_one_mirror_with_a_tree_each() {
+    if !git_available() {
+        eprintln!("skipping: `git` is not available on PATH");
+        return;
+    }
+    let (src, url, c1) = build_repo("one\n");
+    let ws = Workspace::new();
+    let manager = ws.manager().await;
+    let first = manager
+        .materialize(&source_of(&url, &c1))
+        .await
+        .expect("c1");
+
+    std::fs::write(src.path().join("two.txt"), "two").unwrap();
+    git(src.path(), &["add", "."]);
+    git(src.path(), &["commit", "-q", "-m", "two"]);
+    let second = manager
+        .materialize(&source_of(&url, "main"))
+        .await
+        .expect("c2 by branch");
+
+    assert_ne!(first.pin, second.pin);
+    assert!(first.root.exists() && second.root.exists());
+    assert!(!first.root.join("two.txt").exists());
+    assert!(second.root.join("two.txt").exists());
+    let mirrors = std::fs::read_dir(ws.store_root.join("git"))
+        .unwrap()
+        .count();
+    assert_eq!(mirrors, 1, "history is stored once, not per commit");
+}
+
+#[tokio::test]
+async fn an_unknown_revision_is_an_error_naming_it() {
+    if !git_available() {
+        eprintln!("skipping: `git` is not available on PATH");
+        return;
+    }
+    let (_src, url, _) = build_repo("x\n");
+    let ws = Workspace::new();
+    let error = ws
+        .manager()
+        .await
+        .materialize(&source_of(&url, "no-such-branch"))
+        .await
+        .expect_err("unknown rev");
+    assert!(format!("{error:#}").contains("no-such-branch"), "{error:#}");
+}
+
+#[tokio::test]
+async fn a_store_from_a_newer_layout_is_refused_not_modified() {
+    if !git_available() {
+        eprintln!("skipping: `git` is not available on PATH");
+        return;
+    }
+    let (_src, url, _) = build_repo("x\n");
+    let ws = Workspace::new();
+    std::fs::create_dir_all(&ws.store_root).unwrap();
+    std::fs::write(ws.store_root.join("VERSION"), "99\n").unwrap();
+
+    let error = ws
+        .manager()
+        .await
+        .materialize(&source_of(&url, "main"))
+        .await
+        .expect_err("newer layout");
+    let message = format!("{error:#}");
+    assert!(message.contains("layout 99"), "{message}");
+    assert!(!ws.store_root.join("trees").exists(), "nothing was written");
+}

@@ -28,6 +28,7 @@ omni_file_data_serde = { workspace = true }
 system_traits = { workspace = true }
 url = { workspace = true }
 tokio = { workspace = true }
+serde_json = { workspace = true }
 
 [dev-dependencies]
 test-log = { workspace = true }

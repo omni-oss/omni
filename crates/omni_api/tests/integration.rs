@@ -1678,7 +1678,7 @@ async fn a_source_used_by_two_subsystems_is_fetched_once() {
     .unwrap();
 
     let lockfile = ws.path().join(".omni/sources/lock.json");
-    let store_git = ws.path().join(".omni/sources/store/git");
+    let store_git = ws.path().join(".omni/sources/store/trees");
 
     // First subsystem: the generator path materializes and pins the repo.
     make_api(ws.path())
@@ -1715,7 +1715,7 @@ async fn a_source_used_by_two_subsystems_is_fetched_once() {
     );
 }
 
-/// Count `store/git/<slug>/<commit>` directories across every slug.
+/// Count `store/trees/<slug>/<commit>` directories across every slug.
 fn count_commit_dirs(store_git: &Path) -> usize {
     let mut count = 0;
     let Ok(slugs) = std::fs::read_dir(store_git) else {
@@ -1723,7 +1723,7 @@ fn count_commit_dirs(store_git: &Path) -> usize {
     };
     for slug in slugs.flatten() {
         if let Ok(commits) = std::fs::read_dir(slug.path()) {
-            count += commits.flatten().count();
+            count += commits.flatten().filter(|c| c.path().is_dir()).count();
         }
     }
     count

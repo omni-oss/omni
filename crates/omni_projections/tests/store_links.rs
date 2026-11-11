@@ -323,3 +323,35 @@ async fn an_unchanged_pin_skips_a_healthy_link_but_repairs_a_dangling_one() {
     assert_eq!(RealSys.fs_read_link_async(&dest).await.unwrap(), new_tree);
     assert_eq!(std::fs::read(dest.join("a.txt")).unwrap(), b"a");
 }
+
+#[tokio::test]
+async fn copies_and_reflinks_of_sealed_store_files_are_writable_but_hardlinks_stay_shared()
+ {
+    let scratch = scratch_dir(Capability::Hardlink);
+    if !require(Capability::Hardlink, scratch.path()) {
+        return;
+    }
+    let tree = make_tree(scratch.path());
+    // Seal the tree like the store does: files read-only.
+    for file in [tree.join("a.txt"), tree.join("sub/b.txt")] {
+        let mut permissions = std::fs::metadata(&file).unwrap().permissions();
+        permissions.set_readonly(true);
+        std::fs::set_permissions(&file, permissions).unwrap();
+    }
+
+    let copied = scratch.path().join("ws/copy");
+    apply(&RealSys, &tree, &copied, LinkKind::Copy, true)
+        .await
+        .unwrap();
+    std::fs::write(copied.join("a.txt"), b"mine").expect("a copy is writable");
+    assert_eq!(std::fs::read(tree.join("a.txt")).unwrap(), b"a");
+
+    // A hard link shares the sealed inode, so an in-place edit is refused
+    // instead of silently changing what every workspace reads.
+    let linked = scratch.path().join("ws/linked");
+    apply(&RealSys, &tree, &linked, LinkKind::Hardlink, true)
+        .await
+        .unwrap();
+    assert!(std::fs::write(linked.join("a.txt"), b"nope").is_err());
+    assert_eq!(std::fs::read(tree.join("a.txt")).unwrap(), b"a");
+}

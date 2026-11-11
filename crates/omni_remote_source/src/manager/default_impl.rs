@@ -6,7 +6,6 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use omni_git_utils::CloneInfo;
 use omni_lockfile::{Lockfile, data::LockfileData};
 use omni_utils::lock::LockGuard;
 use url::Url;
@@ -14,6 +13,7 @@ use url::Url;
 use crate::{
     error::Error,
     manager::config::RemoteSourceConfig,
+    manager::tree,
     refs::{GitRef, RefSetData, RefSetDataV1_0_0},
     source::{MaterializedSource, RemoteSource, RemoteSourceRef},
     sys::RemoteSourceSys,
@@ -21,6 +21,11 @@ use crate::{
 use system_traits::FsMetadataValue as _;
 
 const GIT_KIND_SEGMENT: &str = "git";
+const TREES_SEGMENT: &str = "trees";
+const LAYOUT_VERSION_FILE: &str = "VERSION";
+/// The store layout this omni reads and writes: bare mirrors under `git/`,
+/// plain trees under `trees/`.
+const LAYOUT_VERSION: u32 = 1;
 const LOCKS_SEGMENT: &str = "locks";
 
 /// `<commit>.used`, the sibling marker whose mtime is a checkout's last use.
@@ -190,55 +195,154 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
         uri: &Url,
         rev: &str,
     ) -> Result<(PathBuf, String), Error> {
-        if let Some(commit) = self.lockfile.get_git_commit(uri, rev).await {
-            let dir = self.git_commit_dir(uri, &commit)?;
-            if self.sys.fs_exists_no_err_async(&dir).await {
-                self.mark_used(&dir).await;
-                return Ok((dir, commit));
-            }
+        let slug = omni_git_utils::url_to_safe_dir_name(uri.as_str())?;
+        let pinned = self.lockfile.get_git_commit(uri, rev).await;
 
-            let published = self.publish_git(uri, &commit).await?;
-            let dir = self.git_commit_dir(uri, &published)?;
-            self.mark_used(&dir).await;
-            return Ok((dir, published));
+        // Fast path: a pinned commit whose tree is complete needs no lock and
+        // no network.
+        if let Some(commit) = &pinned {
+            let tree = self.tree_dir(&slug, commit);
+            if self.tree_is_complete(&tree).await {
+                self.mark_used(&tree).await;
+                return Ok((tree, commit.clone()));
+            }
         }
 
-        let commit = self.publish_git(uri, rev).await?;
-        self.lockfile.lock_git_commit(uri, rev, &commit).await?;
-        let dir = self.git_commit_dir(uri, &commit)?;
-        self.mark_used(&dir).await;
-        Ok((dir, commit))
+        // One fetch or export per remote at a time across every workspace
+        // sharing the store; a peer that finished first leaves the tree for us.
+        let _remote_guard =
+            LockGuard::acquire_exclusive(self.remote_lock_path(&slug)).await?;
+        self.check_layout().await?;
+
+        let bare = self.bare_dir(&slug);
+        let commit = self
+            .resolve_commit(uri, &bare, pinned.as_deref(), rev)
+            .await?;
+        let tree = self.tree_dir(&slug, &commit);
+        if !self.tree_is_complete(&tree).await {
+            self.export_tree(&bare, &commit, &tree).await?;
+        }
+        self.mark_used(&tree).await;
+
+        if pinned.is_none() {
+            self.lockfile.lock_git_commit(uri, rev, &commit).await?;
+        }
+        Ok((tree, commit))
     }
 
-    async fn publish_git(&self, uri: &Url, rev: &str) -> Result<String, Error> {
-        // One fetch per remote at a time across every workspace sharing the
-        // store; a peer that finished first leaves the commit for us to reuse.
-        let _remote_guard =
-            LockGuard::acquire_exclusive(self.remote_lock_path(uri)?).await?;
-        let pending = self.new_pending_dir();
-        let clone = self.clone_repo_inner(&pending, uri, rev).await?;
-        let commit = clone.commit;
-        let dest = self.git_commit_dir(uri, &commit)?;
-
-        if self.sys.fs_exists_no_err_async(&dest).await {
-            let _ = self.sys.fs_remove_dir_all_async(&pending).await;
-            return Ok(commit);
+    /// The commit to materialize. A pinned commit already in the mirror needs no
+    /// network; anything else (a moving ref, a first use, a pin the mirror lacks)
+    /// fetches first so it is resolved against the remote's current state.
+    async fn resolve_commit(
+        &self,
+        uri: &Url,
+        bare: &Path,
+        pinned: Option<&str>,
+        rev: &str,
+    ) -> Result<String, Error> {
+        if let Some(commit) = pinned
+            && omni_git_utils::resolve_commit(bare, commit).as_deref()
+                == Some(commit)
+        {
+            return Ok(commit.to_string());
         }
 
-        if let Some(parent) = dest.parent() {
+        omni_git_utils::fetch_bare(&self.sys, uri.as_str(), bare)
+            .await
+            .map_err(|error| {
+                Error::custom(format!(
+                    "could not fetch {} (the network is needed when the local mirror does not have `{}`): {error}",
+                    omni_redact::redact_url_userinfo(uri.as_ref()),
+                    pinned.unwrap_or(rev),
+                ))
+            })?;
+        tracing::trace!(
+            "fetched git repo uri: {}",
+            omni_redact::redact_url_userinfo(uri.as_ref()),
+        );
+        let wanted = pinned.unwrap_or(rev);
+        omni_git_utils::resolve_commit(bare, wanted).ok_or_else(|| {
+            Error::custom(format!(
+                "revision `{wanted}` was not found in {}",
+                omni_redact::redact_url_userinfo(uri.as_ref())
+            ))
+        })
+    }
+
+    /// Export `commit` into `tree` through the pending directory so a reader
+    /// never sees a half-written tree. Replaces an incomplete tree left by a
+    /// cleaner or a crash.
+    async fn export_tree(
+        &self,
+        bare: &Path,
+        commit: &str,
+        tree: &Path,
+    ) -> Result<(), Error> {
+        let pending = self.new_pending_dir();
+        omni_git_utils::export_tree(&self.sys, bare, commit, &pending).await?;
+        let sealed = {
+            let pending = pending.clone();
+            tokio::task::spawn_blocking(move || tree::seal(&pending))
+                .await
+                .map_err(|e| Error::custom(e.to_string()))?
+        };
+        if let Err(error) = sealed {
+            let _ = self.sys.fs_remove_dir_all_async(&pending).await;
+            return Err(error.into());
+        }
+
+        if self.sys.fs_exists_no_err_async(tree).await {
+            // Incomplete (a complete one was handled by the caller).
+            self.sys.fs_remove_dir_all_async(tree).await?;
+        }
+        if let Some(parent) = tree.parent() {
             self.sys.fs_create_dir_all_async(parent).await?;
         }
+        if let Err(error) = self.sys.fs_rename_async(&pending, tree).await {
+            let _ = self.sys.fs_remove_dir_all_async(&pending).await;
+            return Err(error.into());
+        }
+        Ok(())
+    }
 
-        match self.sys.fs_rename_async(&pending, &dest).await {
-            Ok(()) => Ok(commit),
-            Err(err) => {
-                let _ = self.sys.fs_remove_dir_all_async(&pending).await;
-                if self.sys.fs_exists_no_err_async(&dest).await {
-                    Ok(commit)
-                } else {
-                    Err(err.into())
+    async fn tree_is_complete(&self, tree: &Path) -> bool {
+        let tree = tree.to_path_buf();
+        tokio::task::spawn_blocking(move || tree::is_complete(&tree))
+            .await
+            .unwrap_or(false)
+    }
+
+    /// Refuse to touch a store written by a newer layout; create `VERSION` for
+    /// a new one.
+    async fn check_layout(&self) -> Result<(), Error> {
+        let path = self.store_root_path.join(LAYOUT_VERSION_FILE);
+        match self.sys.fs_read_to_string_async(&path).await {
+            Ok(text) => match text.trim().parse::<u32>() {
+                Ok(found) if found > LAYOUT_VERSION => {
+                    Err(Error::custom(format!(
+                        "the remote-source store at {} uses layout {found}, newer than this omni supports ({LAYOUT_VERSION}); upgrade omni or choose another store with --sources-dir",
+                        self.store_root_path.display()
+                    )))
                 }
+                Ok(_) => Ok(()),
+                Err(_) => Err(Error::custom(format!(
+                    "unrecognized store layout marker in {}",
+                    path.display()
+                ))),
+            },
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                self.sys
+                    .fs_create_dir_all_async(&self.store_root_path)
+                    .await?;
+                self.sys
+                    .fs_write_async(
+                        &path,
+                        format!("{LAYOUT_VERSION}\n").as_bytes(),
+                    )
+                    .await?;
+                Ok(())
             }
+            Err(error) => Err(error.into()),
         }
     }
 
@@ -317,38 +421,19 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
         Ok(())
     }
 
-    async fn clone_repo_inner(
-        &self,
-        dest: &Path,
-        uri: &Url,
-        commit: &str,
-    ) -> Result<CloneInfo, Error> {
-        let clone = omni_git_utils::clone_repo(
-            &self.sys,
-            uri.as_str(),
-            Some(commit),
-            dest,
-        )
-        .await?;
-        tracing::trace!(
-            "cloned git repo uri: {}, rev: {}",
-            omni_redact::redact_url_userinfo(uri.as_ref()),
-            commit,
-        );
-        Ok(clone)
+    /// `trees/<slug>/<commit>`: the plain export of one commit.
+    fn tree_dir(&self, slug: &str, commit: &str) -> PathBuf {
+        self.store_root_path
+            .join(TREES_SEGMENT)
+            .join(slug)
+            .join(commit)
     }
 
-    fn git_commit_dir(
-        &self,
-        uri: &Url,
-        commit: &str,
-    ) -> Result<PathBuf, omni_git_utils::Error> {
-        let slug = omni_git_utils::url_to_safe_dir_name(uri.as_str())?;
-        Ok(self
-            .store_root_path
+    /// `git/<slug>.git`: the bare mirror of one remote, shared by every commit.
+    fn bare_dir(&self, slug: &str) -> PathBuf {
+        self.store_root_path
             .join(GIT_KIND_SEGMENT)
-            .join(slug)
-            .join(commit))
+            .join(format!("{slug}.git"))
     }
 
     fn new_pending_dir(&self) -> PathBuf {
@@ -364,15 +449,10 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
             .join(format!("{pid}-{nanos}-{seq}"))
     }
 
-    fn remote_lock_path(
-        &self,
-        uri: &Url,
-    ) -> Result<PathBuf, omni_git_utils::Error> {
-        let slug = omni_git_utils::url_to_safe_dir_name(uri.as_str())?;
-        Ok(self
-            .store_root_path
+    fn remote_lock_path(&self, slug: &str) -> PathBuf {
+        self.store_root_path
             .join(LOCKS_SEGMENT)
-            .join(format!("{slug}.lock")))
+            .join(format!("{slug}.lock"))
     }
 
     fn refs_dir(&self) -> PathBuf {
@@ -461,13 +541,13 @@ impl StorePruneFilter {
 impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
     /// Every checkout in the store with its size and last use.
     pub async fn store_entries(&self) -> Result<Vec<StoreEntry>, Error> {
-        let git_root = self.store_root_path.join(GIT_KIND_SEGMENT);
-        if !self.sys.fs_exists_no_err_async(&git_root).await {
+        let trees_root = self.store_root_path.join(TREES_SEGMENT);
+        if !self.sys.fs_exists_no_err_async(&trees_root).await {
             return Ok(Vec::new());
         }
 
         let mut entries = Vec::new();
-        for remote_dir in self.sys.fs_read_dir_async(&git_root).await? {
+        for remote_dir in self.sys.fs_read_dir_async(&trees_root).await? {
             let Some(remote) = remote_dir
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())
@@ -539,12 +619,17 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
             let _ =
                 self.sys.fs_remove_file_async(used_marker(&entry.dir)).await;
             if let Some(parent) = entry.dir.parent() {
-                // Drop the remote's directory once its last checkout is gone.
+                // Once a remote's last tree is gone its mirror has nothing
+                // left to serve, so drop it too.
                 if matches!(
                     self.sys.fs_read_dir_async(parent).await.map(|d| d.len()),
                     Ok(0)
                 ) {
                     let _ = self.sys.fs_remove_dir_all_async(parent).await;
+                    let _ = self
+                        .sys
+                        .fs_remove_dir_all_async(self.bare_dir(&entry.remote))
+                        .await;
                 }
             }
             removed.push(entry);

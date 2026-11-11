@@ -28,7 +28,7 @@ import {
 
 const CLONE_TIMEOUT_MS = 60_000;
 
-/** Count `store/git/<slug>/<commit>` directories across every slug. */
+/** Count `store/trees/<slug>/<commit>` directories across every slug. */
 function countCommitDirs(storeGit: string): number {
     let slugs: Dirent<string>[];
     try {
@@ -106,7 +106,7 @@ describe(
                 // The single committed lockfile lives at .omni/sources/lock.json,
                 // and the shared store holds exactly one commit-keyed checkout.
                 expect(ws.exists(".omni/sources/lock.json")).toBe(true);
-                const storeGit = ws.path(".omni/sources/store/git");
+                const storeGit = ws.path(".omni/sources/store/trees");
                 expect(countCommitDirs(storeGit)).toBe(1);
 
                 const lockAfterInstall = ws.read(".omni/sources/lock.json");
@@ -268,7 +268,7 @@ describe(
                         timeout: CLONE_TIMEOUT_MS,
                     }),
                 ).toHaveSucceeded();
-                expect(countCommitDirs(join(store, "git"))).toBe(1);
+                expect(countCommitDirs(join(store, "trees"))).toBe(1);
                 // Nothing lands in the workspace's own store.
                 expect(withSource.exists(".omni/sources/store")).toBe(false);
 
@@ -280,7 +280,7 @@ describe(
                         env,
                     }),
                 ).toHaveSucceeded();
-                expect(countCommitDirs(join(store, "git"))).toBe(1);
+                expect(countCommitDirs(join(store, "trees"))).toBe(1);
 
                 // The store is a disposable cache: delete it and the next use
                 // refetches the pinned commit.
@@ -297,7 +297,7 @@ describe(
                 });
                 expect(listed).toHaveSucceeded();
                 expect(listed).toOutputContaining("shared");
-                expect(countCommitDirs(join(store, "git"))).toBe(1);
+                expect(countCommitDirs(join(store, "trees"))).toBe(1);
             },
             CLONE_TIMEOUT_MS,
         );
@@ -329,7 +329,7 @@ describe(
                         timeout: CLONE_TIMEOUT_MS,
                     }),
                 ).toHaveSucceeded();
-                expect(countCommitDirs(ws.path(".store/git"))).toBe(1);
+                expect(countCommitDirs(ws.path(".store/trees"))).toBe(1);
 
                 const flagDir = join(
                     mkdtempSync(join(tmpdir(), "omni-e2e-flag-")),
@@ -347,7 +347,7 @@ describe(
                         { cwd: ws.cwd, env, timeout: CLONE_TIMEOUT_MS },
                     ),
                 ).toHaveSucceeded();
-                expect(countCommitDirs(join(flagDir, "git"))).toBe(1);
+                expect(countCommitDirs(join(flagDir, "trees"))).toBe(1);
                 expect(existsSync(ws.path(".omni/sources/store"))).toBe(false);
             },
             CLONE_TIMEOUT_MS,
@@ -427,7 +427,7 @@ describe(
                         generators: [{ source: "git", uri, rev: "main" }],
                     },
                 });
-                const storeGit = ws.path(".omni/sources/store/git");
+                const storeGit = ws.path(".omni/sources/store/trees");
                 const run = (args: string[]) =>
                     runOmni(["remote-sources", ...args], {
                         cwd: ws.cwd,

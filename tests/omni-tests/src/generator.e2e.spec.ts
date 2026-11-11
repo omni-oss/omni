@@ -1332,7 +1332,7 @@ describe(
 /**
  * A workspace whose `generators` config points at a real git remote. Pulling
  * is what gen-014 exercises: the repo is cloned into the shared store at
- * `.omni/sources/store/git/<slug>/<commit>/`, locked in the shared
+ * `.omni/sources/store/trees/<slug>/<commit>/`, locked in the shared
  * `.omni/sources/lock.json`, and its generators become discoverable.
  */
 function gitGeneratorSourceSpec() {
