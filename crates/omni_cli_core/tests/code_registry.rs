@@ -16,6 +16,7 @@ fn registry_is_valid() {
 fn surviving_notice_sites_are_registered() {
     for (code, level, essential) in [
         ("redact.disabled", NoticeLevel::Warn, true),
+        ("cache.dependency_demoted", NoticeLevel::Info, false),
         ("sandbox.os_disabled", NoticeLevel::Warn, true),
         ("capabilities.not_enforced", NoticeLevel::Warn, false),
         ("capabilities.no_floor", NoticeLevel::Warn, false),

@@ -19,7 +19,7 @@ use derive_new::new;
 use crate::{
     Call, ExecutionConfig, TaskExecutionResult, TaskExecutorSys,
     execution_plan_provider::ContextExecutionPlanProvider,
-    notices::RedactDisabled,
+    notices::{CacheDependencyDemoted, RedactDisabled},
     pipeline::{ExecutionPipeline, ExecutionPipelineError},
 };
 
@@ -153,6 +153,17 @@ impl<'a, TSys: TaskExecutorSys, S: ExecutionEventSubscriber>
         );
 
         let results = pipeline.run().await?;
+
+        let demoted = results
+            .iter()
+            .filter(|r| {
+                !r.is_skipped()
+                    && r.cache_status().is_some_and(|s| s.is_demoted())
+            })
+            .count();
+        if demoted > 0 {
+            notice!(self.subscriber, CacheDependencyDemoted { count: demoted });
+        }
 
         let total_time_saved: Duration = results
             .iter()
