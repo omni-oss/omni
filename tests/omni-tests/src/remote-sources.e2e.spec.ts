@@ -334,5 +334,56 @@ describe(
             },
             CLONE_TIMEOUT_MS,
         );
+
+        it(
+            "finds the owned manifest of a local member nested in a git projection bundle when ignore sync hides the store",
+            async (ctx) => {
+                await skipUnlessGitCliAvailable(ctx);
+
+                const repo = await makeLocalGitRepoWithAnnotatedTag({
+                    files: {
+                        "projection.omni.yaml": [
+                            'name: "@vendor/bundle"',
+                            "sources:",
+                            "  - source: local",
+                            "    path: ./skills",
+                            "    id: skills",
+                            "",
+                        ].join("\n"),
+                        "skills/projection.omni.yaml": [
+                            'name: "@vendor/skills"',
+                            "routes:",
+                            "  - strategy: mirror",
+                            '    scope: "*.md"',
+                            '    target: "@workspace/.agents/skills"',
+                            "",
+                        ].join("\n"),
+                        "skills/rust.md": "# rust\n",
+                    },
+                });
+                const uri = pathToFileURL(repo.url).href;
+
+                const ws = makeWorkspace({
+                    workspace: {
+                        projects: ["**"],
+                        projections: [
+                            { source: "git", uri, rev: "main", id: "bundle" },
+                        ],
+                    },
+                });
+
+                expect(
+                    await runOmni(["ignore", "sync"], { cwd: ws.cwd }),
+                ).toHaveSucceeded();
+
+                const sync = await runOmni(["projection", "sync", "--update"], {
+                    cwd: ws.cwd,
+                    timeout: CLONE_TIMEOUT_MS,
+                });
+                expect(sync).toHaveSucceeded();
+                expect(ws.read(".agents/skills/rust.md")).toBe("# rust\n");
+            },
+            CLONE_TIMEOUT_MS,
+        );
     },
 );
