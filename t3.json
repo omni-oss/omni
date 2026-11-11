@@ -1,0 +1,11 @@
+{
+  "defaultThreadEnvMode": "worktree",
+  "scripts": [
+    {
+      "name": "Prepare worktree",
+      "command": "bun install && omni remote-sources install && omni projection sync && omni ignore sync",
+      "icon": "configure",
+      "runOnWorktreeCreate": true
+    }
+  ]
+}
