@@ -3,7 +3,7 @@
   "scripts": [
     {
       "name": "Prepare worktree",
-      "command": "bun install && omni remote-sources install && omni projection sync && omni ignore sync && { [ -f \"$T3CODE_PROJECT_ROOT/AGENTS.md\" ] && [ ! -e AGENTS.md ] && cp \"$T3CODE_PROJECT_ROOT/AGENTS.md\" AGENTS.md || true; }",
+      "command": "bun install && omni remote-sources install && omni projection sync && omni ignore sync && { [ -f \"$T3CODE_PROJECT_ROOT/AGENTS.md\" ] && [ ! -e AGENTS.md ] && cp \"$T3CODE_PROJECT_ROOT/AGENTS.md\" AGENTS.md || true; } && { [ -f \"$T3CODE_PROJECT_ROOT/.agents/agent-choices.local.md\" ] && [ ! -e .agents/agent-choices.local.md ] && mkdir -p .agents && cp \"$T3CODE_PROJECT_ROOT/.agents/agent-choices.local.md\" .agents/agent-choices.local.md || true; }",
       "icon": "configure",
       "runOnWorktreeCreate": true,
       "async": false
