@@ -74,29 +74,39 @@ impl<T> Merge for GlobConfig<T> {
 pub enum MergeGlobConfig<T: Merge> {
     Single(T),
     Many(MergeSingleOrMany<T>),
+    /// A side that is `None` was omitted: it contributes nothing when layers
+    /// merge, unlike an explicit empty list, which clears the side.
     IncludeAndExclude {
-        include: MergeSingleOrMany<T>,
-        exclude: MergeSingleOrMany<T>,
+        #[cfg_attr(
+            feature = "serde",
+            serde(skip_serializing_if = "Option::is_none")
+        )]
+        include: Option<MergeSingleOrMany<T>>,
+        #[cfg_attr(
+            feature = "serde",
+            serde(skip_serializing_if = "Option::is_none")
+        )]
+        exclude: Option<MergeSingleOrMany<T>>,
     },
 }
+
+type Side<T> = Option<MergeSingleOrMany<T>>;
 
 impl<T: Merge> MergeGlobConfig<T> {
     pub fn normalize(self) -> GlobPatterns<T> {
         let (include, exclude) = self.into_sides();
         GlobPatterns {
-            include: include.into_vec(),
-            exclude: exclude.into_vec(),
+            include: include.map(|s| s.into_vec()).unwrap_or_default(),
+            exclude: exclude.map(|s| s.into_vec()).unwrap_or_default(),
         }
     }
 
-    // Every form as an (include, exclude) pair. Single and Many have an empty
-    // exclude, so a cross-variant merge is always a per-side merge.
-    fn into_sides(self) -> (MergeSingleOrMany<T>, MergeSingleOrMany<T>) {
+    // Every form as an (include, exclude) pair. Single and Many omit the
+    // exclude side, so a cross-variant merge is always a per-side merge.
+    fn into_sides(self) -> (Side<T>, Side<T>) {
         match self {
-            Self::Single(t) => {
-                (MergeSingleOrMany::Single(t), MergeSingleOrMany::empty())
-            }
-            Self::Many(m) => (m, MergeSingleOrMany::empty()),
+            Self::Single(t) => (Some(MergeSingleOrMany::Single(t)), None),
+            Self::Many(m) => (Some(m), None),
             Self::IncludeAndExclude { include, exclude } => (include, exclude),
         }
     }
@@ -106,9 +116,12 @@ impl<T: Merge> MergeGlobConfig<T> {
         match self {
             Self::Single(t) => Box::new(std::slice::from_mut(t).iter_mut()),
             Self::Many(m) => Box::new(m.iter_mut()),
-            Self::IncludeAndExclude { include, exclude } => {
-                Box::new(include.iter_mut().chain(exclude.iter_mut()))
-            }
+            Self::IncludeAndExclude { include, exclude } => Box::new(
+                include
+                    .iter_mut()
+                    .flat_map(|s| s.iter_mut())
+                    .chain(exclude.iter_mut().flat_map(|s| s.iter_mut())),
+            ),
         }
     }
 }
@@ -119,20 +132,28 @@ impl<T: Merge> Default for MergeGlobConfig<T> {
     }
 }
 
+fn merge_side<T: Merge + Clone>(base: Side<T>, other: Side<T>) -> Side<T> {
+    match (base, other) {
+        (Some(mut b), Some(o)) => {
+            b.merge(o);
+            Some(b)
+        }
+        (b, None) => b,
+        (None, o) => o,
+    }
+}
+
 // A cross-variant merge (a Many under an IncludeAndExclude) folds the Many into
-// the include side, so the result is always a well-defined include/exclude
-// pair.
+// the include side. Only sides present in the overlay are replayed.
 impl<T: Merge + Clone> Merge for MergeGlobConfig<T> {
     fn merge(&mut self, other: Self) {
         let this =
             std::mem::replace(self, Self::Many(MergeSingleOrMany::empty()));
-        let (mut si, mut se) = this.into_sides();
+        let (si, se) = this.into_sides();
         let (oi, oe) = other.into_sides();
-        si.merge(oi);
-        se.merge(oe);
         *self = Self::IncludeAndExclude {
-            include: si,
-            exclude: se,
+            include: merge_side(si, oi),
+            exclude: merge_side(se, oe),
         };
     }
 }
@@ -197,8 +218,8 @@ mod de {
         if obj.contains_key("include") || obj.contains_key("exclude") {
             reject_unknown_keys(obj)?;
             Ok(MergeGlobConfig::IncludeAndExclude {
-                include: side(obj, "include", MergeSingleOrMany::empty)?,
-                exclude: side(obj, "exclude", MergeSingleOrMany::empty)?,
+                include: side(obj, "include", || None)?,
+                exclude: side(obj, "exclude", || None)?,
             })
         } else {
             serde_path_to_error::deserialize::<_, MergeSingleOrMany<T>>(value)
@@ -374,18 +395,18 @@ mod tests {
     #[test]
     fn merge_glob_config_layers_each_side() {
         let mut base = MergeGlobConfig::IncludeAndExclude {
-            include: MergeSingleOrMany::from_vec(vec![
+            include: Some(MergeSingleOrMany::from_vec(vec![
                 config_utils::Replace::new("src/**".to_string()),
-            ]),
-            exclude: MergeSingleOrMany::empty(),
+            ])),
+            exclude: Some(MergeSingleOrMany::empty()),
         };
         let overlay = MergeGlobConfig::IncludeAndExclude {
-            include: MergeSingleOrMany::List(ListConfig::append(vec![
+            include: Some(MergeSingleOrMany::List(ListConfig::append(vec![
                 config_utils::Replace::new("gen/**".to_string()),
-            ])),
-            exclude: MergeSingleOrMany::from_vec(vec![
+            ]))),
+            exclude: Some(MergeSingleOrMany::from_vec(vec![
                 config_utils::Replace::new("dist/**".to_string()),
-            ]),
+            ])),
         };
 
         base.merge(overlay);
@@ -409,18 +430,20 @@ mod tests {
         // disturb the exclude side. The overlay's exclude appends nothing
         // (rather than an empty Value, which would replace and wipe it).
         let mut base = MergeGlobConfig::IncludeAndExclude {
-            include: MergeSingleOrMany::from_vec(vec![
+            include: Some(MergeSingleOrMany::from_vec(vec![
                 config_utils::Replace::new("src/**".to_string()),
-            ]),
-            exclude: MergeSingleOrMany::from_vec(vec![
+            ])),
+            exclude: Some(MergeSingleOrMany::from_vec(vec![
                 config_utils::Replace::new("src/gen/**".to_string()),
-            ]),
+            ])),
         };
         let overlay = MergeGlobConfig::IncludeAndExclude {
-            include: MergeSingleOrMany::List(ListConfig::prepend(vec![
+            include: Some(MergeSingleOrMany::List(ListConfig::prepend(vec![
                 config_utils::Replace::new("id".to_string()),
-            ])),
-            exclude: MergeSingleOrMany::List(ListConfig::append(Vec::new())),
+            ]))),
+            exclude: Some(MergeSingleOrMany::List(ListConfig::append(
+                Vec::new(),
+            ))),
         };
 
         base.merge(overlay);
@@ -445,12 +468,12 @@ mod tests {
                 config_utils::Replace::new("src/**".to_string()),
             ]));
         let overlay = MergeGlobConfig::IncludeAndExclude {
-            include: MergeSingleOrMany::List(ListConfig::append(vec![
+            include: Some(MergeSingleOrMany::List(ListConfig::append(vec![
                 config_utils::Replace::new("gen/**".to_string()),
-            ])),
-            exclude: MergeSingleOrMany::from_vec(vec![
+            ]))),
+            exclude: Some(MergeSingleOrMany::from_vec(vec![
                 config_utils::Replace::new("dist/**".to_string()),
-            ]),
+            ])),
         };
 
         base.merge(overlay);
@@ -465,6 +488,64 @@ mod tests {
         assert_eq!(
             patterns.exclude,
             vec![config_utils::Replace::new("dist/**".to_string())]
+        );
+    }
+
+    type G = MergeGlobConfig<config_utils::Replace<String>>;
+
+    fn r(s: &str) -> config_utils::Replace<String> {
+        config_utils::Replace::new(s.to_string())
+    }
+
+    fn layered(
+        base: &str,
+        overlay: &str,
+    ) -> GlobPatterns<config_utils::Replace<String>> {
+        let mut base: G = serde_json::from_str(base).unwrap();
+        base.merge(serde_json::from_str(overlay).unwrap());
+        base.normalize()
+    }
+
+    const BASE: &str = r#"{"include": ["src/**"], "exclude": ["src/gen/**"]}"#;
+
+    #[test]
+    fn include_only_child_keeps_parent_exclude() {
+        let p = layered(BASE, r#"{"include": {"append": ["package.json"]}}"#);
+        assert_eq!(p.include, vec![r("src/**"), r("package.json")]);
+        assert_eq!(p.exclude, vec![r("src/gen/**")]);
+    }
+
+    #[test]
+    fn exclude_only_child_keeps_parent_include() {
+        let p = layered(BASE, r#"{"exclude": {"append": ["tmp/**"]}}"#);
+        assert_eq!(p.include, vec![r("src/**")]);
+        assert_eq!(p.exclude, vec![r("src/gen/**"), r("tmp/**")]);
+    }
+
+    #[test]
+    fn explicit_empty_clears_only_that_side() {
+        let p = layered(BASE, r#"{"exclude": []}"#);
+        assert_eq!(p.include, vec![r("src/**")]);
+        assert!(p.exclude.is_empty());
+
+        let p = layered(BASE, r#"{"include": []}"#);
+        assert!(p.include.is_empty());
+        assert_eq!(p.exclude, vec![r("src/gen/**")]);
+    }
+
+    #[test]
+    fn append_nothing_is_an_identity_operation() {
+        let p = layered(BASE, r#"{"include": {"append": []}}"#);
+        assert_eq!(p.include, vec![r("src/**")]);
+        assert_eq!(p.exclude, vec![r("src/gen/**")]);
+    }
+
+    #[test]
+    fn omitted_side_is_not_serialized() {
+        let cfg: G = serde_json::from_str(r#"{"include": ["a/**"]}"#).unwrap();
+        assert_eq!(
+            serde_json::to_string(&cfg).unwrap(),
+            r#"{"include":["a/**"]}"#
         );
     }
 }

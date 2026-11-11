@@ -1,5 +1,7 @@
 mod dict_config;
 mod dyn_value;
+#[cfg(feature = "serde")]
+mod envelope;
 mod list_config;
 mod newtype;
 mod option;

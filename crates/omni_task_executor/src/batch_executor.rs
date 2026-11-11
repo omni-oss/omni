@@ -29,7 +29,7 @@ use tracing::Level;
 
 use crate::{
     OnFailure, SkipReason, TaskDetails, TaskExecutionResult, TaskExecutorSys,
-    cache_manager::{CacheManager, TaskResultContext},
+    cache_manager::{CacheManager, TaskResultContext, is_cache_eligible},
     task_context_provider::DefaultTaskContextProvider,
 };
 
@@ -527,8 +527,9 @@ where
                 continue;
             }
 
-            if let Some(cached_result) =
-                cached_results.get(task_ctx.node.full_task_name())
+            if let Some(cached_result) = cached_results
+                .get(task_ctx.node.full_task_name())
+                .filter(|_| is_cache_eligible(task_ctx))
             {
                 new_results.insert(
                     task_ctx.node.full_task_name().to_string(),
