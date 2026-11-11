@@ -12,8 +12,21 @@ fn collect(table: &Table, workspace: &Table, out: &mut Vec<String>) {
             continue;
         };
         for (key, spec) in deps {
-            let resolved =
-                spec.get("package").and_then(|p| p.as_str()).unwrap_or(key);
+            let inherited =
+                spec.get("workspace").and_then(|w| w.as_bool()) == Some(true);
+            let package = |v: &toml::Value| {
+                v.get("package")
+                    .and_then(|p| p.as_str())
+                    .map(str::to_string)
+            };
+            let resolved = package(spec)
+                .or_else(|| {
+                    inherited
+                        .then(|| workspace.get(key.as_str()))
+                        .flatten()
+                        .and_then(package)
+                })
+                .unwrap_or_else(|| key.clone());
             out.push(resolved);
         }
     }
