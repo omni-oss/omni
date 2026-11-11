@@ -71,7 +71,7 @@ fn benches(c: &mut Criterion) {
     let mut g = c.benchmark_group("pipeline/plan_building");
     for p in &prepared {
         let provider = ContextExecutionPlanProvider::new(&p.ctx);
-        let call = Call::new_tasks(vec![p.leaf.clone()]);
+        let call = Call::pattern_tasks([p.leaf.clone()]);
         g.bench_with_input(
             BenchmarkId::from_parameter(&p.name),
             &(),

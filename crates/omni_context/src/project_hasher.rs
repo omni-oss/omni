@@ -36,11 +36,11 @@ impl<'a, TSys: ContextSys> ProjectHasher<'a, TSys> {
 
         let seed =
             DefaultHasher::hash(seed.unwrap_or("DEFAULT_SEED").as_bytes());
-        let call = Call::new_tasks(if task_names.is_empty() {
-            vec!["**".to_string()]
+        let call = if task_names.is_empty() {
+            Call::all_tasks()
         } else {
-            task_names.iter().map(|s| s.to_string()).collect()
-        });
+            Call::pattern_tasks(task_names.iter().copied())
+        };
 
         let plan = execution_plan_provider
             .get_execution_plan(

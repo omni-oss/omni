@@ -88,7 +88,7 @@ impl Scenario {
             .ignore_dependencies(false)
             .with_dependents(false)
             .max_concurrency(concurrency)
-            .call(Call::new_tasks(tasks));
+            .call(Call::pattern_tasks(tasks));
 
         match self {
             Scenario::Warm => {
