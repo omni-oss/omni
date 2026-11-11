@@ -1,0 +1,12 @@
+{
+  "defaultThreadEnvMode": "worktree",
+  "scripts": [
+    {
+      "name": "Prepare worktree",
+      "command": "bun install && omni remote-sources install && omni projection sync && omni ignore sync && { [ -f \"$T3CODE_PROJECT_ROOT/AGENTS.md\" ] && [ ! -e AGENTS.md ] && cp \"$T3CODE_PROJECT_ROOT/AGENTS.md\" AGENTS.md || true; }",
+      "icon": "configure",
+      "runOnWorktreeCreate": true,
+      "async": false
+    }
+  ]
+}
