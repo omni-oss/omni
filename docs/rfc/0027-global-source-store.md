@@ -65,6 +65,14 @@ Done when:
   around the workspace. A projection symlink resolving into `~/.cache/omni`
   would be unreadable inside the sandbox. **Not covered by the earlier
   assessment; added here.**
+- Rebased onto PR #81 (workspace ignore rules vs fetched sources). It carries
+  source locality through expansion by pin (`Locality` in
+  `omni_remote_source_contributors`), explicitly not by path, and discovery over
+  a fetched source already skips workspace ignores. Moving the store outside
+  the workspace needs no change there; existing fixtures and the
+  `remote-sources` e2e spec must pass unchanged with a global store root, and
+  step 1 adds a check that a git source in a store outside the workspace still
+  ignores workspace rules.
 
 ## 4. Design
 
