@@ -28,8 +28,11 @@ Done when:
 1. Two workspaces (worktrees or unrelated clones) pinning the same commit fetch
    it once and share it on disk.
 2. Deleting any part of the store, or all of it, never breaks a later
-   `omni` command: tools, generators, packs and projections refetch on next use
-   (network permitting; offline from the bare repo where it survives).
+   `omni` command: tools, generators and packs refetch on next use (network
+   permitting; offline from the bare repo where it survives). Projections whose
+   links are owned files (reflink, copy) are unaffected; a projection that is a
+   symlink into the store is flagged by `projection status` and repaired by
+   `projection sync`, not silently on every read.
 3. No command run in one workspace deletes data another workspace needs, except
    the explicit prune command, and the effect of that is recoverable by (2).
 4. The store location follows the precedence in section 4.1.
@@ -125,9 +128,17 @@ the same single read of the worktree files.
 - Export: without the lock, check out the commit into `pending/`, then rename to
   `trees/<slug>/<commit>`; a racing identical export is discarded (existing
   logic).
-- Read: a reader that finds `trees/<slug>/<commit>` uses it and touches `.used`.
-  Missing tree => export from bare repo; missing bare repo => fetch.
-- Trees are read-only by convention; nothing writes into a published tree.
+- Export writes a manifest (`.manifest`: relative path, size, mode per file)
+  into the tree last, inside `pending/` before the rename. It is the
+  completeness marker.
+- Read: a reader that finds `trees/<slug>/<commit>` checks it against the
+  manifest (every listed path exists with the recorded size; a stat per file, no
+  hashing). If it passes, use it and touch `.used`. If the manifest is missing or
+  any file is missing or the wrong size (a cleaner deleted part of the tree),
+  discard the tree and re-export from the bare repo. Missing bare repo => fetch.
+- Published trees have their files made read-only (directories stay writable so
+  `prune` can delete them). A projection that shares the inode or follows a
+  symlink then fails on an in-place write instead of altering the shared tree.
 
 Format is introduced in step 3. Steps 1–2 keep today's
 `git/<slug>/<commit>` full-clone layout under the new root, so the location
@@ -162,9 +173,12 @@ Explicit and automatic link methods are separated.
   `apply.rs`; the junction call stays only as an internal `auto` fallback.
 
 `LinkKind::Auto` order becomes, for sources under the store root only:
-reflink → hardlink (same volume) → symlink (junction for directories on
-Windows when symlinks are denied) → copy. Copy is always the
-last resort. Each step is attempted only when the situation allows it and falls
+reflink → symlink (junction for directories on Windows when symlinks are
+denied) → copy. Copy is always the last resort. `auto` never hardlinks a store
+source: a hard link shares the inode, so an in-place edit of the projection
+would change the tree every other workspace reads (read-only files reduce but
+do not remove this, since a user can chmod). Hardlink remains an explicit,
+strict value for users who accept that. Each step is attempted only when the situation allows it and falls
 through to the next otherwise. Explicit `symlink` links into the store, with
 absolute targets when the source is outside the workspace (relative links break
 when a workspace moves). Local (in-workspace) projection sources keep today's
@@ -180,10 +194,11 @@ junction for the whole directory, then copy), and a partial tree is never left
 behind. The ledger records the file set of a per-file directory so `status` can
 check each file and `sync` can repair or remove it.
 
-Rationale: reflink and hardlink give owned files that survive cache deletion
-(goal 2) and need no sandbox grant (section 3). Where neither is available
-(for example ext4 or NTFS across volumes), Auto yields a link into the store
-rather than a full copy, so it costs no disk space. Those links can dangle
+Rationale: reflink gives independent owned files that survive cache deletion
+(goal 2) and need no sandbox grant (section 3). Where it is unavailable (for
+example ext4 or NTFS), Auto yields a symlink into the store rather than a full
+copy, so it costs no disk space; users who want an owned, writable result set
+`link: copy`. Those links can dangle
 after a prune or cache deletion; `status` reports them and `sync` repairs them
 (below). Sandboxed tasks reading through such a link rely on the store read
 grant (4.5), which therefore applies to projections as well.
@@ -194,11 +209,14 @@ commit (refetch) and re-apply the link.
 
 ### 4.5 Sandbox
 
-Tools, generators and packs that execute directly from the store need a read
-grant for the store root. Add the resolved store root to the baseline read set
-the capability layer computes for a task, alongside the workspace. Projections
-that resolve to a symlink into the store need the same grant; those that
-resolve to a reflink, hardlink or copy do not.
+Tools, generators and packs that execute directly from the store need read
+access, and symlinked projections need it for their targets. The store is shared
+across workspaces and may hold private repositories fetched by another
+workspace, so do not grant the whole root. Grant read only to the
+`trees/<slug>/<commit>` directories this workspace's refs and lockfile
+reference (plus the symlink targets of its ledger). Other workspaces' trees stay
+unreadable. Reflink, hardlink and copy results need no grant. Verified with
+Landlock; seatbelt and AppContainer take the same path list.
 
 ## 5. Worked example (becomes the integration test fixture)
 
@@ -208,10 +226,13 @@ L at `/w/l`, unrelated clone U at `/w/u`. `HOME=/h`, Linux.
 Happy path:
 1. In P, `omni remote-sources install` pins R@main=c1. Store is
    `/h/.cache/omni/sources`; `trees/R/c1` exists; P's lock and refs record c1.
-2. In L, install: no network fetch; L reuses `trees/R/c1`.
-3. P projects a file from R with Auto: on Btrfs/APFS it is a reflink, on ext4
-   with the store on the same volume a hardlink, on another volume a symlink
-   into the store; a copy only if symlinks are also unavailable.
+2. L's `.omni/sources/lock.json` is tracked in git, so L already records
+   R@main=c1 (same commit as P). Install in L uses that pin: no network fetch,
+   and it reuses `trees/R/c1`. A worktree with no lock entry resolves R@main
+   through the remote like any fresh workspace; that case is not this example.
+3. P projects a file from R with Auto: on Btrfs/APFS it is a reflink; on
+   ext4/NTFS (or another volume) a symlink into the store; a copy only if
+   symlinks are also unavailable. Never a hardlink.
 
 Complexities:
 4. P and U install concurrently, both needing a new commit c2 of R: one fetch
@@ -222,7 +243,7 @@ Complexities:
 
 Edge cases and failure paths:
 7. `rm -rf /h/.cache/omni/sources`, then `omni run` of a tool in L: refetches c1
-   and runs. P's hardlinked projection still has its content.
+   and runs. P's reflinked projection still has its content.
 8. A symlink-kind projection in P after the tree is deleted: `projection status`
    reports broken; `projection sync` refetches and repairs it.
 9. Same as 7 while offline, bare repo intact (only `trees/` removed): re-export
@@ -240,7 +261,8 @@ Edge cases and failure paths:
 | Shared store with per-workspace GC (status quo widened) | Proven to delete other workspaces' checkouts. |
 | Registration/lease files for cross-workspace GC | Works but adds persistent shared state to keep correct; unnecessary once the store is a disposable cache. |
 | Collect refs via `git worktree list` | Misses unrelated clones and non-git setups. |
-| Keep symlink-first Auto into the global store | Dangling after any prune even where a reflink or hardlink was possible. Symlink is now tried only after those, before copy. |
+| Keep symlink-first Auto into the global store | Dangling after any prune even where a reflink was possible. Symlink is now tried only after reflink, before copy. |
+| Hardlink in `auto` | Shares the inode with the store tree, so an in-place edit of a projection changes what every workspace reads. |
 | `~/.omni` as default | Not the platform convention for disposable data; excluded from nothing (backups, cleaners). |
 
 ## 7. Steps
@@ -251,7 +273,7 @@ Each step leaves omni working and is reviewable alone.
 | --- | --- | --- | --- | --- |
 | 0 | Regression test: two workspaces on one store root; `install` in A must not delete B's entries (fails today) | — | Test fails before step 1, passes after | Delete test |
 | 1 | `install` stops deleting store entries; store root resolved by precedence (4.1) with `sources.dir`, env var, flag; per-remote lock; current layout | 0 | Unit tests for precedence and path rules; examples 1, 2, 5, 10, 11; test 0 | Revert; old per-workspace stores are untouched |
-| 2 | Shared test helper and per-lane required capabilities (section 10); projections: explicit values limited to auto/symlink/hardlink/copy (`junction` removed from `LinkKind`, schema and docs updated); store-sourced Auto = reflink → hardlink → symlink → copy (per file for directory sources, ledger records the file set); absolute targets for explicit symlinks; `sync` repairs dangling/missing; sandbox read grant for store root | 1 | Examples 3, 6, 7, 8 on Linux, macOS, Windows CI | Revert; existing links keep working, new syncs return to old order |
+| 2 | Shared test helper and per-lane required capabilities (section 10); projections: explicit values limited to auto/symlink/hardlink/copy (`junction` removed from `LinkKind`, schema and docs updated); store-sourced Auto = reflink → symlink → copy (never hardlink) (per file for directory sources, ledger records the file set); absolute targets for explicit symlinks; `sync` repairs dangling/missing; sandbox read grant for this workspace's referenced trees | 1 | Examples 3, 6, 7, 8 on Linux, macOS, Windows CI | Revert; existing links keep working, new syncs return to old order |
 | 3 | `omni remote-sources prune` with `.used` markers | 1 | Dry-run lists, real run deletes, refetch after (7); concurrent prune vs install | Revert; store just grows |
 | 4 | Layout v1: bare repo + trees + `VERSION` | 1, 3 | Examples 4, 9, 12; disk use measured on a repo with 2 pins | Revert; old layout directory is a different path, both can coexist |
 | 5 | Docs: reference page, `worktree.omni` reference, release notes | 1–4 | Site build | Revert |
@@ -267,8 +289,8 @@ before starting it is allowed to reorder 3 and 4.
 | --- | --- | --- |
 | Concurrent prune removes a tree a running task reads | Low / task error | Prune is explicit only; document; retry on next run refetches |
 | Reflink and hardlink unavailable → Auto symlinks into the store, which dangle after prune or cache deletion | Medium / low | `status` flags dangling links, `sync` refetches and repairs; users wanting immunity set `link: copy` |
-| Hardlinked projection edited in place corrupts the store tree | Medium / medium | Store trees are inputs only; on export, verify nothing; document that projections from remote sources are read-only; reflink preferred |
-| Sandbox grant broadens task read scope | Low / medium | Grant only the resolved store root, read-only; second reviewer from capabilities owners |
+| An in-place edit through a shared inode or symlink changes the store tree | Medium / medium | `auto` never hardlinks; published files are read-only; the manifest check on read re-exports a changed-size tree; explicit `hardlink` documented as shared |
+| Sandbox grant exposes other workspaces' (possibly private) sources | Low / medium | Grant only the trees this workspace references, read-only, never the store root; second reviewer from capabilities owners |
 | Multiple omni versions on one machine | Medium / medium | `VERSION` file; different layout paths per version |
 | Platform tests skip silently on CI and prove nothing | Medium / high | Section 10: required-capability lists per lane make a skip a failure; markers in the job summary |
 | Global store on a slow or network home dir | Low / medium | `OMNI_SOURCES_DIR` / `sources.dir` override |
@@ -301,7 +323,7 @@ Decisions (resolved with the owner):
    status` reports it as broken once the target is gone; `projection sync`
    refetches and repairs it. Automatic repair on every read (rejected for now)
    can be revisited if manual `sync` proves annoying, since `auto` can also
-   produce symlinks.
+   produce symlinks. Goal 2 is worded to match.
 2. The CLI flag is `--sources-dir`, matching `sources.dir`.
 3. No automatic age-based prune in this RFC; only `omni remote-sources prune`.
 4. `hardlink` stays an explicit value, strict (error when impossible), and
@@ -344,7 +366,7 @@ must name what went wrong.
    a skipped capability is in the lane's required list.
 4. **Fallbacks are asserted, not skipped.** Where a capability is absent the
    test asserts the fallback: on a non-reflink filesystem `auto` yields
-   hardlink, then symlink, then copy with the expected `ResolvedKind`; a
+   symlink, then copy with the expected `ResolvedKind`; a
    second directory on another volume (tmpfs, `/dev/shm`) must produce the
    cross-volume fall-through. These run on every lane.
 5. **Fall through only on known situational errors.** `auto` moves to the next
