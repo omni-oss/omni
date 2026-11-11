@@ -5,6 +5,8 @@ use std::{
 };
 
 use async_trait::async_trait;
+
+use crate::Locality;
 use omni_configurations::{
     GeneratorSourceConfiguration, GitSource, LocalSource, PackManifest,
     PackProfile, PackSourceConfiguration, PackSubsystem, ProjectionId,
@@ -233,6 +235,7 @@ where
         manager,
         update,
         refs: Mutex::new(Vec::new()),
+        locality: Locality::default(),
     };
 
     let effective = expand(
@@ -317,6 +320,7 @@ struct PackMetaExpand<'a, TSys: RemoteSourceSys> {
     manager: &'a RemoteSourceManager<TSys>,
     update: bool,
     refs: Mutex<Vec<RemoteSourceRef>>,
+    locality: Locality,
 }
 
 impl<TSys> MetaExpand for PackMetaExpand<'_, TSys>
@@ -384,7 +388,12 @@ where
         let children = manifest.packs;
         let leaf = PackLeaf {
             root: root.clone(),
-            is_local: pin.is_none() && !self.manager.is_in_store(parent_root),
+            is_local: self.locality.resolve(
+                qualified_id,
+                depth,
+                pin.is_some(),
+                false,
+            ),
             name: manifest.name,
             version: manifest.version,
             description: manifest.description,

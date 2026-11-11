@@ -57,12 +57,6 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
         &self.sys
     }
 
-    /// Whether `path` lies inside the shared source store, i.e. in a fetched
-    /// checkout rather than in the workspace proper.
-    pub fn is_in_store(&self, path: &Path) -> bool {
-        path.starts_with(&self.store_root_path)
-    }
-
     /// Materialize a remote source into the shared, content-addressed store,
     /// returning its checkout root and immutable pin. The git arm honors a
     /// locked commit (materializing offline when the checkout is already

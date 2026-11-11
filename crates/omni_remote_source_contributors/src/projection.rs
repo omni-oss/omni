@@ -4,6 +4,8 @@ use std::{
 };
 
 use async_trait::async_trait;
+
+use crate::Locality;
 use omni_configuration_discovery::ConfigurationDiscovery;
 use omni_configurations::{
     OwnedProjectionBody, OwnedProjectionConfiguration, ProjectionProfile,
@@ -59,6 +61,7 @@ where
             manager,
             update: options.update,
             refs: Mutex::new(Vec::new()),
+            locality: Locality::default(),
         };
 
         expand(
@@ -82,6 +85,7 @@ struct MaterializeOnlyExpand<'a, TSys: RemoteSourceSys> {
     manager: &'a RemoteSourceManager<TSys>,
     update: bool,
     refs: Mutex<Vec<RemoteSourceRef>>,
+    locality: Locality,
 }
 
 impl<TSys> MetaExpand for MaterializeOnlyExpand<'_, TSys>
@@ -140,7 +144,9 @@ where
         // Local only if reached from the workspace alone; a git source, or a
         // source nested in one, lives in the store and must not see the
         // workspace's ignore rules.
-        let is_local = pin.is_none() && !self.manager.is_in_store(parent_root);
+        let is_local =
+            self.locality
+                .resolve(qualified_id, depth, pin.is_some(), false);
         let manifest =
             discover_owned_manifest(self.sys, &root, is_local).await?;
         let node = match manifest.map(|m| m.body) {

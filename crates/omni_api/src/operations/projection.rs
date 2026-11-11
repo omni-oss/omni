@@ -230,6 +230,7 @@ where
         update: req.update,
         git_refs: Mutex::new(Vec::new()),
         non_local_ids: &non_local_ids,
+        locality: omni_remote_source_contributors::Locality::default(),
     };
     let max_depth = req.max_depth.unwrap_or(DEFAULT_META_PROJECTION_DEPTH);
     let effective = expand(
@@ -621,6 +622,7 @@ struct ProjectionMetaExpand<'a, TSys: RemoteSourceSys> {
     /// appended as top-level sources, so position alone cannot tell they are
     /// inside the store.
     non_local_ids: &'a std::collections::HashSet<String>,
+    locality: omni_remote_source_contributors::Locality,
 }
 
 impl<TSys> MetaExpand for ProjectionMetaExpand<'_, TSys>
@@ -686,9 +688,12 @@ where
         // Local only if reached from the workspace alone; a git source, or a
         // source nested in one, lives in the store and must not see the
         // workspace's ignore rules.
-        let is_local = pin.is_none()
-            && !self.remote.is_in_store(parent_root)
-            && !(depth == 0 && self.non_local_ids.contains(qualified_id));
+        let is_local = self.locality.resolve(
+            qualified_id,
+            depth,
+            pin.is_some(),
+            depth == 0 && self.non_local_ids.contains(qualified_id),
+        );
         let manifest =
             discover_owned_manifest(self.sys, &root, is_local).await?;
         let trusted = depth == 0 && workspace_routes.is_some();
