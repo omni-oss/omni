@@ -155,6 +155,8 @@ omni_expressions = { path = "./crates/omni_expressions" }
 omni_cli_core = { path = "./crates/omni_cli_core" }
 cel = { version = "^0.15.0", features = ["chrono", "json", "regex", "bytes"] }
 omni_test_utils = { path = "./crates/omni_test_utils" }
+omni_test_capabilities = { path = "./crates/omni_test_capabilities" }
+reflink-copy = { version = "^0.1.29" }
 crossbeam-channel = { version = "^0.5.17" }
 shlex = { version = "^2.0.1" }
 path-clean = { version = "^1.0.1" }

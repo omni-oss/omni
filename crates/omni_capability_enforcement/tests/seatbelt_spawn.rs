@@ -36,16 +36,14 @@ use omni_capability_enforcement::{
 /// `OMNI_REQUIRE_OS_SANDBOX` is set, which makes an unavailable floor a hard
 /// failure so a run that *should* prove confinement cannot pass by skipping.
 fn should_run_confined() -> bool {
-    if seatbelt_sandbox::is_supported() {
-        return true;
-    }
-    assert!(
-        std::env::var_os("OMNI_REQUIRE_OS_SANDBOX").is_none(),
-        "OMNI_REQUIRE_OS_SANDBOX is set but this host provides no usable \
-         Seatbelt facility"
-    );
-    eprintln!("skipping: the host does not provide Seatbelt");
-    false
+    omni_test_capabilities::gate(
+        "os-sandbox",
+        seatbelt_sandbox::is_supported(),
+        format!(
+            "os={} mechanism=seatbelt: the host does not provide Seatbelt",
+            std::env::consts::OS
+        ),
+    )
 }
 
 /// First existing candidate path, or `None` (test then skips).
