@@ -18,10 +18,7 @@ use crate::{
     source::{MaterializedSource, RemoteSource, RemoteSourceRef},
     sys::RemoteSourceSys,
 };
-use system_traits::{
-    FsMetadataAsync as _, FsMetadataValue as _, FsRemoveFileAsync as _,
-    FsWriteAsync as _,
-};
+use system_traits::FsMetadataValue as _;
 
 const GIT_KIND_SEGMENT: &str = "git";
 const LOCKS_SEGMENT: &str = "locks";
