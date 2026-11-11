@@ -14,7 +14,10 @@ cache:
       append:
         - "@workspace/crates/**/*.rs"
         - "@workspace/crates/**/Cargo.toml"
+        - "@workspace/Cargo.toml"
         - "@workspace/Cargo.lock"
+        - "@workspace/services/bridge-service/package.json"
+        - "@workspace/services/bridge-service/dist/**/*"
 
 tasks:
   # Compiling `bridge_rpc_runner` embeds `services/bridge-service/dist`.
