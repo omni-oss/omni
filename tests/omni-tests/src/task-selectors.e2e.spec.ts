@@ -53,24 +53,24 @@ describe("+run @e2e (positional tasks stay globs)", () => {
 describe("+cache @cache (internal all-tasks selection)", () => {
     it("plan-based `cache stats --dir` with no -t lists every cached task", async () => {
         const ws = makeWorkspace(spec());
-        expect(
-            await runOmni(["run", "build", "test"], { cwd: ws.cwd }),
-        ).toHaveSucceeded();
+        expect(await runOmni(["run", "*"], { cwd: ws.cwd })).toHaveSucceeded();
 
         const stats = await runOmni(["cache", "stats", "--dir", "svc/**"], {
             cwd: ws.cwd,
         });
 
         expect(stats).toHaveSucceeded();
-        expect(stats).toOutputContaining("build");
-        expect(stats).toOutputContaining("test");
+        expect(stats).toOutputContaining("- Task: *");
+        expect(stats).toOutputContaining("- Task: build");
+        expect(stats).toOutputContaining("- Task: test");
     });
 
     it("`prune --stale-only` plans all tasks and keeps fresh entries", async () => {
         const ws = makeWorkspace(spec());
-        expect(
-            await runOmni(["run", "build", "test"], { cwd: ws.cwd }),
-        ).toHaveSucceeded();
+        expect(await runOmni(["run", "*"], { cwd: ws.cwd })).toHaveSucceeded();
+
+        const before = await runOmni(["cache", "stats"], { cwd: ws.cwd });
+        expect(before).toOutputContaining("- Task: *");
 
         const dry = await runOmni(
             ["cache", "prune", "--stale-only", "--dry-run"],
@@ -81,6 +81,9 @@ describe("+cache @cache (internal all-tasks selection)", () => {
         expect(dry).toOutputContaining(
             "No cache entries matched the given filters",
         );
+
+        const after = await runOmni(["cache", "stats"], { cwd: ws.cwd });
+        expect(after).toOutputContaining("- Task: *");
     });
 });
 
