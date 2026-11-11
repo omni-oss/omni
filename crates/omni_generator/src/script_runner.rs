@@ -195,7 +195,7 @@ fn exec_timeout_from_env() -> Option<Duration> {
 /// resolved runtime + authorizer + [`SpawnPolicy`] into a spawned, confined
 /// process).
 pub struct LazyScriptRunner {
-    pool: RunnerPool<(DelegatingJsRuntimeOption, String)>,
+    pool: RunnerPool<(DelegatingJsRuntimeOption, String, Vec<PathBuf>)>,
     /// An **unconfined** runner per runtime used only to compute the import
     /// closure (§5.5). It runs omni's own trusted resolve tooling, so it must
     /// reach `package.json`/`tsconfig`/`node_modules` across the tree — the very
@@ -356,7 +356,8 @@ impl JsScriptRunner for LazyScriptRunner {
         // enforced (a generator that declares none is confined to the built-in
         // floor). When it has not, the script runs unconfined: an
         // allow-everything spawn plan and a pass-through broker.
-        let (spawn_policy, shim_policy, mut diagnostics) = if policy.enforce {
+        let (mut spawn_policy, shim_policy, mut diagnostics) = if policy.enforce
+        {
             build_spawn_plan(resolved, policy, SpawnPosture::from_env())?
         } else {
             // The feature is off. If the run nonetheless declares a capability
@@ -400,7 +401,34 @@ impl JsScriptRunner for LazyScriptRunner {
             )
         };
 
-        let key = (resolved, policy.fingerprint());
+        // A generator fetched into the shared remote-source store lives outside
+        // the workspace floor, so a confined runtime must be granted the
+        // directories its scripts load from. The grant is fixed at spawn, so
+        // such runs are pooled per directory set; scripts inside the workspace
+        // keep sharing one process.
+        let mut extra_read: Vec<PathBuf> = Vec::new();
+        if policy.enforce {
+            let workspace = policy.roots.base(Root::Workspace);
+            for invocation in invocations {
+                let Some(dir) = Path::new(&invocation.path).parent() else {
+                    continue;
+                };
+                if workspace.is_some_and(|ws| dir.starts_with(ws)) {
+                    continue;
+                }
+                let dir = std::fs::canonicalize(dir)
+                    .unwrap_or_else(|_| dir.to_path_buf());
+                if !extra_read.contains(&dir) {
+                    extra_read.push(dir);
+                }
+            }
+            extra_read.sort();
+        }
+        for dir in &extra_read {
+            spawn_policy.grant_read(dir);
+        }
+
+        let key = (resolved, policy.fingerprint(), extra_read);
         let factory = &self.factory;
         let runner = self
             .pool

@@ -46,7 +46,7 @@ pub struct LazyToolRunner<S> {
     /// defaults to the workspace root when the caller supplies no working dir.
     working_dir: PathBuf,
     version: String,
-    pool: RunnerPool<(DelegatingJsRuntimeOption, String)>,
+    pool: RunnerPool<(DelegatingJsRuntimeOption, String, Option<PathBuf>)>,
     /// Notices raised while launching tools, for the caller to publish.
     notices: std::sync::Mutex<Vec<omni_messages::NoticeEvent>>,
     /// When set, notices are sent here as they are raised instead of queued, so
@@ -223,7 +223,15 @@ where
         let sys = self.sys.clone();
         let context_dir = self.context_dir.clone();
         let version = self.version.clone();
-        let key = (resolved, policy.fingerprint());
+        // A tool fetched into the shared remote-source store lives outside the
+        // workspace floor, so a confined runtime must be granted its directory.
+        // The grant is fixed at spawn, so such tools are pooled per directory;
+        // tools inside the workspace keep sharing one process.
+        let extra_read = entrypoint
+            .parent()
+            .filter(|dir| policy.enforce && !dir.starts_with(&self.context_dir))
+            .map(|dir| std::fs::canonicalize(dir).unwrap_or(dir.to_path_buf()));
+        let key = (resolved, policy.fingerprint(), extra_read.clone());
 
         let runner = self
             .pool
@@ -236,6 +244,9 @@ where
                             .map_err(Error::from)?;
 
                     let mut spawn_policy = spawn_policy;
+                    if let Some(dir) = &extra_read {
+                        spawn_policy.grant_read(dir);
+                    }
 
                     // On Windows the confined child is granted only a minimal
                     // boot set, so the vendored bundle root must be granted

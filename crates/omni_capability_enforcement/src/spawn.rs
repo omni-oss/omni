@@ -9,7 +9,7 @@
 //! can contribute without changing callers.
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// A platform-neutral description of the filesystem confinement a
 /// [`Tier::OsSandbox`](crate::Tier::OsSandbox) backend wants applied to the
@@ -146,6 +146,26 @@ impl SpawnPolicy {
         self.notes.push(note.into());
     }
 
+    /// Additionally let the confined runtime read `dir` (recursively), for code
+    /// it must load from outside the workspace floor, such as a tool or
+    /// generator fetched into the shared remote-source store. Grants the Deno
+    /// `--allow-read` flag and the OS-sandbox read subtree; it widens nothing
+    /// else. A path that cannot be passed safely in a flag (it contains `,`,
+    /// `=` or a control character) is not granted, so the runtime then fails
+    /// loudly rather than reading more than intended.
+    pub fn grant_read(&mut self, dir: &Path) {
+        let value = dir.to_string_lossy().replace('\\', "/");
+        if value.contains([',', '=']) || value.chars().any(char::is_control) {
+            return;
+        }
+        self.args.push(format!("--allow-read={value}"));
+        if let Some(spec) = self.os_sandbox.as_mut()
+            && !spec.read_paths.iter().any(|p| p == dir)
+        {
+            spec.read_paths.push(dir.to_path_buf());
+        }
+    }
+
     /// Fold another backend's contribution into this one (order preserved).
     pub fn extend(&mut self, other: SpawnPolicy) {
         self.args.extend(other.args);
@@ -197,5 +217,33 @@ mod tests {
 
         base.extend(OsSandboxSpec::default());
         assert!(base.confine, "a non-confining fold cannot clear confine");
+    }
+
+    #[test]
+    fn grant_read_adds_the_deno_flag_and_the_os_subtree_once() {
+        let mut policy = SpawnPolicy::new();
+        policy.os_sandbox = Some(OsSandboxSpec::new());
+        let dir = Path::new("/home/u/.cache/omni/sources/git/r/abc");
+
+        policy.grant_read(dir);
+        policy.grant_read(dir);
+
+        assert_eq!(
+            policy.args,
+            vec![
+                format!("--allow-read={}", dir.display()),
+                format!("--allow-read={}", dir.display())
+            ]
+        );
+        assert_eq!(policy.os_sandbox.unwrap().read_paths, vec![dir]);
+    }
+
+    #[test]
+    fn grant_read_refuses_a_path_that_could_inject_flag_values() {
+        let mut policy = SpawnPolicy::new();
+        for bad in ["/a,/etc", "/a=b", "/a\nb"] {
+            policy.grant_read(Path::new(bad));
+        }
+        assert!(policy.args.is_empty());
     }
 }
