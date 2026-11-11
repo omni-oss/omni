@@ -144,9 +144,13 @@ where
         // Local only if reached from the workspace alone; a git source, or a
         // source nested in one, lives in the store and must not see the
         // workspace's ignore rules.
-        let is_local =
-            self.locality
-                .resolve(qualified_id, depth, pin.is_some(), false);
+        let is_local = self.locality.resolve(
+            &root,
+            parent_root,
+            depth,
+            pin.is_some(),
+            false,
+        );
         let manifest =
             discover_owned_manifest(self.sys, &root, is_local).await?;
         let node = match manifest.map(|m| m.body) {
