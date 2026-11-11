@@ -137,6 +137,7 @@ mod tests {
         on_existing: ExistingPolicy,
     ) -> PlannedItem {
         PlannedItem {
+            from_store: false,
             source_id: "src".to_string(),
             pair: LinkPair {
                 source_abs: PathBuf::from(source),
@@ -311,6 +312,7 @@ mod tests {
         let items: Vec<PlannedItem> = planned
             .into_iter()
             .map(|p| PlannedItem {
+                from_store: false,
                 source_id: "id".to_string(),
                 dest_rel: p.pair.dest_abs.to_string_lossy().into_owned(),
                 pair: p.pair,
@@ -335,6 +337,7 @@ mod tests {
 
     fn real_item(source: &Path, dest: &Path, dest_rel: &str) -> PlannedItem {
         PlannedItem {
+            from_store: false,
             source_id: "pkg".to_string(),
             pair: LinkPair {
                 source_abs: source.to_path_buf(),

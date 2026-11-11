@@ -311,7 +311,7 @@ where
 
         let dest = workspace_root.join(&link.dest);
 
-        if link.kind == ResolvedKind::Copy
+        if matches!(link.kind, ResolvedKind::Copy | ResolvedKind::Reflink)
             && copy_was_modified(sys, &dest, &link.target).await
         {
             report.warnings.push(format!(

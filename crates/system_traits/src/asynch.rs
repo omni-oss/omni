@@ -433,6 +433,38 @@ pub trait FsHardLinkAsync: BaseFsHardLinkAsync {
 
 impl<T: BaseFsHardLinkAsync> FsHardLinkAsync for T {}
 
+// == FsReflink ==
+
+/// Copy-on-write clone of a single file (a "reflink"): the destination gets its
+/// own inode that shares data blocks with the source until either is written.
+///
+/// Implementations fail instead of falling back to a copy, so callers decide
+/// what to do when the volume cannot clone (for example
+/// [`io::ErrorKind::Unsupported`] or [`io::ErrorKind::CrossesDevices`]).
+/// Directories are not supported; clone file by file.
+#[async_trait]
+pub trait BaseFsReflinkAsync {
+    #[doc(hidden)]
+    async fn base_fs_reflink_async(
+        &self,
+        src: &Path,
+        dst: &Path,
+    ) -> io::Result<()>;
+}
+
+#[async_trait]
+pub trait FsReflinkAsync: BaseFsReflinkAsync {
+    async fn fs_reflink_async(
+        &self,
+        src: impl AsRef<Path> + Send,
+        dst: impl AsRef<Path> + Send,
+    ) -> io::Result<()> {
+        self.base_fs_reflink_async(src.as_ref(), dst.as_ref()).await
+    }
+}
+
+impl<T: BaseFsReflinkAsync> FsReflinkAsync for T {}
+
 // == FsSymlinkFile ==
 
 #[async_trait]

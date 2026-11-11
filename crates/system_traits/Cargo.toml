@@ -10,7 +10,7 @@ version = "0.3.0"
 default = ["sync", "async"]
 sync = ["dep:sys_traits"]
 async = ["dep:async-trait"]
-real-async-tokio = ["dep:tokio", "async", "dep:sys_traits", "sys_traits/real"]
+real-async-tokio = ["dep:tokio", "dep:reflink-copy", "async", "dep:sys_traits", "sys_traits/real"]
 memory-async = ["async", "dep:sys_traits", "sys_traits/memory"]
 real-sync = ["dep:sys_traits", "sys_traits/real", "sync"]
 memory-sync = ["dep:sys_traits", "sys_traits/memory", "sync"]
@@ -19,6 +19,7 @@ memory-sync = ["dep:sys_traits", "sys_traits/memory", "sync"]
 tokio = { workspace = true, optional = true }
 sys_traits = { workspace = true, optional = true, features = [] }
 async-trait = { workspace = true, optional = true }
+reflink-copy = { workspace = true, optional = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

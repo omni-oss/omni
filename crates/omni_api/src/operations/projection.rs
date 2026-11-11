@@ -878,6 +878,7 @@ fn kind_str(kind: omni_projections::ResolvedKind) -> &'static str {
     match kind {
         Symlink => "symlink",
         Junction => "junction",
+        Reflink => "reflink",
         Hardlink => "hardlink",
         Copy => "copy",
     }

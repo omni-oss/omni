@@ -1,0 +1,325 @@
+//! How a projection from the shared remote-source store is materialized
+//! (RFC 0027, section 4.4): `auto` prefers independent owned files (reflink),
+//! then a link into the store, then a copy; explicit kinds do exactly what they
+//! say.
+//!
+//! Tests that need a reflink-capable filesystem or a second volume are gated
+//! with `omni_test_capabilities`: they skip with a `SKIPPED[...]` marker locally
+//! and fail on a CI lane that lists the capability in
+//! `OMNI_REQUIRE_CAPABILITIES`. The fall-back tests use the in-memory
+//! filesystem, which models a volume that cannot reflink, so they run on every
+//! lane.
+
+use std::path::{Path, PathBuf};
+
+use omni_projection_configurations::{ExistingPolicy, LinkKind};
+use omni_projections::{
+    ApplyOptions, ApplyOutcome, LinkPair, PriorLink, ResolvedKind, apply_link,
+};
+use omni_test_capabilities::{Capability, gate, require, scratch_dir};
+use system_traits::{
+    FsCreateDirAllAsync, FsReadAsync, FsReadLinkAsync, FsWriteAsync,
+    impls::{InMemorySys, RealSys},
+};
+
+fn opts(link: LinkKind, from_store: bool) -> ApplyOptions {
+    ApplyOptions {
+        link,
+        on_existing: ExistingPolicy::Error,
+        from_store,
+    }
+}
+
+async fn apply(
+    sys: &RealSys,
+    src: &Path,
+    dest: &Path,
+    link: LinkKind,
+    from_store: bool,
+) -> omni_projections::Result<ResolvedKind> {
+    let pair = LinkPair {
+        source_abs: src.to_path_buf(),
+        dest_abs: dest.to_path_buf(),
+    };
+    match apply_link(sys, &pair, &opts(link, from_store), None).await? {
+        ApplyOutcome::Linked { kind, .. } => Ok(kind),
+        ApplyOutcome::Skipped => panic!("unexpected skip"),
+    }
+}
+
+/// `store/tree/{a.txt, sub/b.txt}`
+fn make_tree(root: &Path) -> PathBuf {
+    let tree = root.join("store/tree");
+    std::fs::create_dir_all(tree.join("sub")).unwrap();
+    std::fs::write(tree.join("a.txt"), b"a").unwrap();
+    std::fs::write(tree.join("sub/b.txt"), b"b").unwrap();
+    tree
+}
+
+/// A directory on a different volume than `dir`, when the host has one.
+/// Linux: `/dev/shm` (tmpfs) against a disk-backed `dir`.
+fn other_volume(dir: &Path) -> Option<tempfile::TempDir> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let shm = Path::new("/dev/shm");
+        let other = tempfile::tempdir_in(shm).ok()?;
+        let a = std::fs::metadata(dir).ok()?.dev();
+        let b = std::fs::metadata(other.path()).ok()?.dev();
+        (a != b).then_some(other)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = dir;
+        None
+    }
+}
+
+#[tokio::test]
+async fn auto_from_store_reflinks_files_and_directories_when_supported() {
+    let scratch = scratch_dir(Capability::Reflink);
+    if !require(Capability::Reflink, scratch.path()) {
+        return;
+    }
+    let tree = make_tree(scratch.path());
+
+    let file_dest = scratch.path().join("ws/a.txt");
+    let kind = apply(
+        &RealSys,
+        &tree.join("a.txt"),
+        &file_dest,
+        LinkKind::Auto,
+        true,
+    )
+    .await
+    .unwrap();
+    assert_eq!(kind, ResolvedKind::Reflink);
+    assert!(!file_dest.is_symlink());
+
+    let dir_dest = scratch.path().join("ws/tree");
+    let kind = apply(&RealSys, &tree, &dir_dest, LinkKind::Auto, true)
+        .await
+        .unwrap();
+    assert_eq!(kind, ResolvedKind::Reflink);
+    assert!(dir_dest.is_dir() && !dir_dest.is_symlink());
+    assert_eq!(std::fs::read(dir_dest.join("sub/b.txt")).unwrap(), b"b");
+
+    // Independent of the store: editing leaves the tree alone, and deleting the
+    // store leaves the projection intact.
+    std::fs::write(dir_dest.join("a.txt"), b"edited").unwrap();
+    assert_eq!(std::fs::read(tree.join("a.txt")).unwrap(), b"a");
+    std::fs::remove_dir_all(scratch.path().join("store")).unwrap();
+    assert_eq!(std::fs::read(dir_dest.join("sub/b.txt")).unwrap(), b"b");
+    assert_eq!(std::fs::read(&file_dest).unwrap(), b"a");
+}
+
+#[tokio::test]
+async fn auto_from_store_without_reflink_links_by_absolute_path_never_hardlinks()
+ {
+    // The in-memory filesystem cannot reflink, so this runs on every lane.
+    let sys = InMemorySys::default();
+    sys.fs_create_dir_all_async("/store/tree").await.unwrap();
+    sys.fs_write_async("/store/tree/a.txt", b"a").await.unwrap();
+    sys.fs_create_dir_all_async("/ws").await.unwrap();
+
+    for (src, dest) in [
+        ("/store/tree/a.txt", "/ws/a.txt"),
+        ("/store/tree", "/ws/tree"),
+    ] {
+        let pair = LinkPair {
+            source_abs: src.into(),
+            dest_abs: dest.into(),
+        };
+        let outcome =
+            apply_link(&sys, &pair, &opts(LinkKind::Auto, true), None)
+                .await
+                .unwrap();
+        assert_eq!(
+            outcome,
+            ApplyOutcome::Linked {
+                kind: ResolvedKind::Symlink,
+                backup: None
+            }
+        );
+        let target = sys.fs_read_link_async(dest).await.unwrap();
+        assert_eq!(target, Path::new(src), "store links are absolute");
+    }
+}
+
+#[tokio::test]
+async fn auto_from_store_surfaces_real_errors_instead_of_falling_through() {
+    let dir = tempfile::tempdir().unwrap();
+    // A missing source is not "reflink unsupported" (the clone call reports
+    // it as an invalid argument): it must be an error, not a symlink to
+    // nothing.
+    let result = apply(
+        &RealSys,
+        &dir.path().join("store/missing.txt"),
+        &dir.path().join("ws/missing.txt"),
+        LinkKind::Auto,
+        true,
+    )
+    .await;
+    assert!(result.is_err(), "{result:?}");
+    assert!(!dir.path().join("ws/missing.txt").exists());
+}
+
+#[tokio::test]
+async fn auto_from_store_falls_through_across_volumes_with_a_cause() {
+    let scratch = scratch_dir(Capability::Hardlink);
+    let Some(other) = other_volume(scratch.path()) else {
+        let detail = format!(
+            "os={} dir={}: no second volume (needs /dev/shm on a different device)",
+            std::env::consts::OS,
+            scratch.path().display()
+        );
+        gate("cross-volume", false, detail);
+        return;
+    };
+    let tree = make_tree(scratch.path());
+
+    // Reflink and hardlink both fail across volumes (CrossesDevices); `auto`
+    // must move on to the absolute symlink rather than erroring.
+    let dest = other.path().join("tree");
+    let kind = apply(&RealSys, &tree, &dest, LinkKind::Auto, true)
+        .await
+        .unwrap();
+    assert_eq!(kind, ResolvedKind::Symlink);
+    assert_eq!(RealSys.fs_read_link_async(&dest).await.unwrap(), tree);
+}
+
+#[tokio::test]
+async fn explicit_hardlink_links_a_directory_file_by_file() {
+    let scratch = scratch_dir(Capability::Hardlink);
+    if !require(Capability::Hardlink, scratch.path()) {
+        return;
+    }
+    let tree = make_tree(scratch.path());
+    let dest = scratch.path().join("ws/tree");
+
+    let kind = apply(&RealSys, &tree, &dest, LinkKind::Hardlink, true)
+        .await
+        .unwrap();
+    assert_eq!(kind, ResolvedKind::Hardlink);
+    assert!(dest.is_dir() && !dest.is_symlink());
+    assert_eq!(std::fs::read(dest.join("sub/b.txt")).unwrap(), b"b");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        assert_eq!(
+            std::fs::metadata(dest.join("a.txt")).unwrap().ino(),
+            std::fs::metadata(tree.join("a.txt")).unwrap().ino()
+        );
+    }
+}
+
+#[tokio::test]
+async fn explicit_hardlink_is_strict_and_leaves_no_partial_tree() {
+    let scratch = scratch_dir(Capability::Hardlink);
+    let Some(other) = other_volume(scratch.path()) else {
+        let detail = format!(
+            "os={} dir={}: no second volume",
+            std::env::consts::OS,
+            scratch.path().display()
+        );
+        gate("cross-volume", false, detail);
+        return;
+    };
+    let tree = make_tree(scratch.path());
+    let dest = other.path().join("tree");
+
+    let result = apply(&RealSys, &tree, &dest, LinkKind::Hardlink, true).await;
+    assert!(result.is_err(), "hardlink across volumes must error");
+    assert!(!dest.exists(), "no partial tree may remain");
+}
+
+#[tokio::test]
+async fn explicit_symlink_from_store_is_absolute_and_dangles_when_the_store_goes()
+ {
+    let scratch = scratch_dir(Capability::Symlink);
+    if !require(Capability::Symlink, scratch.path()) {
+        return;
+    }
+    let tree = make_tree(scratch.path());
+    let dest = scratch.path().join("ws/tree");
+
+    let kind = apply(&RealSys, &tree, &dest, LinkKind::Symlink, true)
+        .await
+        .unwrap();
+    assert_eq!(kind, ResolvedKind::Symlink);
+    assert_eq!(RealSys.fs_read_link_async(&dest).await.unwrap(), tree);
+
+    std::fs::remove_dir_all(scratch.path().join("store")).unwrap();
+    assert!(!dest.exists(), "the link dangles once the store is deleted");
+}
+
+#[tokio::test]
+async fn local_sources_keep_relative_symlinks() {
+    let scratch = scratch_dir(Capability::Symlink);
+    if !require(Capability::Symlink, scratch.path()) {
+        return;
+    }
+    let tree = make_tree(scratch.path());
+    let dest = scratch.path().join("ws/a.txt");
+
+    let kind =
+        apply(&RealSys, &tree.join("a.txt"), &dest, LinkKind::Auto, false)
+            .await
+            .unwrap();
+    assert_eq!(kind, ResolvedKind::Symlink);
+    assert!(
+        RealSys
+            .fs_read_link_async(&dest)
+            .await
+            .unwrap()
+            .is_relative()
+    );
+}
+
+#[tokio::test]
+async fn an_unchanged_pin_skips_a_healthy_link_but_repairs_a_dangling_one() {
+    let scratch = scratch_dir(Capability::Symlink);
+    if !require(Capability::Symlink, scratch.path()) {
+        return;
+    }
+    let old_tree = make_tree(&scratch.path().join("old"));
+    let new_tree = make_tree(&scratch.path().join("new"));
+    let dest = scratch.path().join("ws/tree");
+    let options = opts(LinkKind::Symlink, true);
+    let old_pair = LinkPair {
+        source_abs: old_tree,
+        dest_abs: dest.clone(),
+    };
+    apply_link(&RealSys, &old_pair, &options, None)
+        .await
+        .unwrap();
+
+    // The engine maps a moved store's old link to the new source path.
+    let pair = LinkPair {
+        source_abs: new_tree.clone(),
+        dest_abs: dest.clone(),
+    };
+    let prior = PriorLink {
+        source_abs: &new_tree,
+        pin_unchanged: true,
+    };
+
+    // The old store still resolves, so the link is healthy and left alone.
+    let outcome = apply_link(&RealSys, &pair, &options, Some(&prior))
+        .await
+        .unwrap();
+    assert_eq!(outcome, ApplyOutcome::Skipped);
+
+    // Once the old store is deleted the link dangles and is repaired.
+    std::fs::remove_dir_all(scratch.path().join("old")).unwrap();
+    assert!(!dest.exists());
+    let outcome = apply_link(&RealSys, &pair, &options, Some(&prior))
+        .await
+        .unwrap();
+    assert!(
+        matches!(outcome, ApplyOutcome::Linked { .. }),
+        "{outcome:?}"
+    );
+    assert_eq!(RealSys.fs_read_link_async(&dest).await.unwrap(), new_tree);
+    assert_eq!(std::fs::read(dest.join("a.txt")).unwrap(), b"a");
+}

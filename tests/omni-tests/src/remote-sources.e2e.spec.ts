@@ -352,5 +352,64 @@ describe(
             },
             CLONE_TIMEOUT_MS,
         );
+
+        it(
+            "a projection from a deleted store is repaired by the next sync, whichever link kind auto chose",
+            async (ctx) => {
+                await skipUnlessGitCliAvailable(ctx);
+
+                const repo = await makeLocalGitRepoWithAnnotatedTag({
+                    files: { "content.md": "# shared\n" },
+                });
+                const uri = pathToFileURL(repo.url).href;
+                const ws = makeWorkspace({
+                    workspace: {
+                        projects: ["**"],
+                        projections: [
+                            {
+                                source: "git",
+                                uri,
+                                rev: "main",
+                                id: "shared",
+                                routes: [
+                                    {
+                                        strategy: "mirror",
+                                        allow_git: true,
+                                        allow_omni_config: true,
+                                        target: "@workspace/.agents/shared",
+                                    },
+                                ],
+                            },
+                        ],
+                    },
+                });
+                const sync = () =>
+                    runOmni(["projection", "sync"], {
+                        cwd: ws.cwd,
+                        timeout: CLONE_TIMEOUT_MS,
+                    });
+
+                expect(await sync()).toHaveSucceeded();
+                expect(ws.read(".agents/shared/content.md").trim()).toBe(
+                    "# shared",
+                );
+
+                // `auto` links to the store (symlink) or owns independent files
+                // (reflink) depending on the filesystem; either way deleting the
+                // store must not leave the workspace broken after a sync.
+                rmSync(ws.path(".omni/sources/store"), {
+                    recursive: true,
+                    force: true,
+                });
+                expect(await sync()).toHaveSucceeded();
+                expect(ws.read(".agents/shared/content.md").trim()).toBe(
+                    "# shared",
+                );
+                expect(
+                    await runOmni(["projection", "status"], { cwd: ws.cwd }),
+                ).toHaveSucceeded();
+            },
+            CLONE_TIMEOUT_MS,
+        );
     },
 );
