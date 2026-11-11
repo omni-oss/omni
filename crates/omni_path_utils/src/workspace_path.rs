@@ -210,14 +210,13 @@ impl WorkspacePath {
         if segment.contains('/') {
             return Err(WorkspacePathError::EmptySegment(segment.to_string()));
         }
-        let seg = Self::parse(segment)?;
-        if seg.is_root() {
+        if segment == "." {
             return Err(WorkspacePathError::DotSegment(segment.to_string()));
         }
         if self.is_root() {
-            Ok(seg)
+            Self::parse(segment)
         } else {
-            Self::parse(&format!("{}/{}", self.0, seg.0))
+            Self::parse(&format!("{}/{}", self.0, segment))
         }
     }
 }
@@ -637,6 +636,20 @@ mod tests {
         for bad in ["", ".", "..", "a/b", "a\\b"] {
             assert!(r.join(bad).is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn join_is_consistent_with_parse() {
+        let dir = WorkspacePath::parse("dir").unwrap();
+        assert_eq!(
+            dir.join("C:x").unwrap(),
+            WorkspacePath::parse("dir/C:x").unwrap()
+        );
+        assert!(matches!(
+            WorkspacePath::root().join("C:x"),
+            Err(WorkspacePathError::DrivePrefix(_))
+        ));
+        assert!(dir.join("").is_err());
     }
 
     #[test]
