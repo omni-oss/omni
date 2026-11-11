@@ -1,4 +1,4 @@
 pub mod config;
 mod default_impl;
 
-pub use default_impl::RemoteSourceManager;
+pub use default_impl::{RemoteSourceManager, StoreEntry, StorePruneFilter};

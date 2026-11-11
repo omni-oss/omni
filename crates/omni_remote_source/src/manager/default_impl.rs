@@ -18,9 +18,23 @@ use crate::{
     source::{MaterializedSource, RemoteSource, RemoteSourceRef},
     sys::RemoteSourceSys,
 };
+use system_traits::{
+    FsMetadataAsync as _, FsMetadataValue as _, FsRemoveFileAsync as _,
+    FsWriteAsync as _,
+};
 
 const GIT_KIND_SEGMENT: &str = "git";
 const LOCKS_SEGMENT: &str = "locks";
+
+/// `<commit>.used`, the sibling marker whose mtime is a checkout's last use.
+fn used_marker(commit_dir: &Path) -> PathBuf {
+    let mut name = commit_dir
+        .file_name()
+        .map(|n| n.to_os_string())
+        .unwrap_or_default();
+    name.push(".used");
+    commit_dir.with_file_name(name)
+}
 
 /// Process-wide counter making pending directory names unique even when a
 /// single process publishes several checkouts at once.
@@ -182,16 +196,21 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
         if let Some(commit) = self.lockfile.get_git_commit(uri, rev).await {
             let dir = self.git_commit_dir(uri, &commit)?;
             if self.sys.fs_exists_no_err_async(&dir).await {
+                self.mark_used(&dir).await;
                 return Ok((dir, commit));
             }
 
             let published = self.publish_git(uri, &commit).await?;
-            return Ok((self.git_commit_dir(uri, &published)?, published));
+            let dir = self.git_commit_dir(uri, &published)?;
+            self.mark_used(&dir).await;
+            return Ok((dir, published));
         }
 
         let commit = self.publish_git(uri, rev).await?;
         self.lockfile.lock_git_commit(uri, rev, &commit).await?;
-        Ok((self.git_commit_dir(uri, &commit)?, commit))
+        let dir = self.git_commit_dir(uri, &commit)?;
+        self.mark_used(&dir).await;
+        Ok((dir, commit))
     }
 
     async fn publish_git(&self, uri: &Url, rev: &str) -> Result<String, Error> {
@@ -223,6 +242,16 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
                     Err(err.into())
                 }
             }
+        }
+    }
+
+    /// Record that a checkout was just used, for age-based pruning. The marker
+    /// is a sibling `<commit>.used` file whose mtime is the last use. Failing to
+    /// write it only makes the checkout look older than it is.
+    async fn mark_used(&self, commit_dir: &Path) {
+        let marker = used_marker(commit_dir);
+        if let Err(error) = self.sys.fs_write_async(&marker, b"").await {
+            tracing::debug!("could not mark {commit_dir:?} used: {error}");
         }
     }
 
@@ -377,5 +406,184 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
             self.sys.fs_create_dir_all_async(parent).await?;
         }
         Ok(())
+    }
+}
+
+/// One checkout in the store, as reported by
+/// [`RemoteSourceManager::store_entries`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoreEntry {
+    /// The remote's directory name in the store.
+    pub remote: String,
+    pub commit: String,
+    pub dir: PathBuf,
+    /// Total size of the files in the checkout, in bytes.
+    pub size: u64,
+    /// When the checkout was last used (its `.used` marker, else its own
+    /// modification time).
+    pub last_used: SystemTime,
+}
+
+/// Which store entries [`RemoteSourceManager::prune_store`] selects. An entry
+/// must satisfy every filter that is set; `all` selects every entry.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct StorePruneFilter {
+    pub all: bool,
+    pub older_than: Option<std::time::Duration>,
+    pub larger_than: Option<u64>,
+}
+
+impl StorePruneFilter {
+    pub fn has_criteria(&self) -> bool {
+        self.all || self.older_than.is_some() || self.larger_than.is_some()
+    }
+
+    fn matches(&self, entry: &StoreEntry, now: SystemTime) -> bool {
+        if !self.has_criteria() {
+            return false;
+        }
+        if self.all {
+            return true;
+        }
+        if let Some(age) = self.older_than {
+            let used_for =
+                now.duration_since(entry.last_used).unwrap_or_default();
+            if used_for < age {
+                return false;
+            }
+        }
+        if let Some(size) = self.larger_than
+            && entry.size <= size
+        {
+            return false;
+        }
+        true
+    }
+}
+
+impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
+    /// Every checkout in the store with its size and last use.
+    pub async fn store_entries(&self) -> Result<Vec<StoreEntry>, Error> {
+        let git_root = self.store_root_path.join(GIT_KIND_SEGMENT);
+        if !self.sys.fs_exists_no_err_async(&git_root).await {
+            return Ok(Vec::new());
+        }
+
+        let mut entries = Vec::new();
+        for remote_dir in self.sys.fs_read_dir_async(&git_root).await? {
+            let Some(remote) = remote_dir
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+            else {
+                continue;
+            };
+            let Ok(children) = self.sys.fs_read_dir_async(&remote_dir).await
+            else {
+                continue;
+            };
+            for dir in children {
+                if !self.sys.fs_is_dir_no_err_async(&dir).await {
+                    continue;
+                }
+                let Some(commit) =
+                    dir.file_name().map(|n| n.to_string_lossy().into_owned())
+                else {
+                    continue;
+                };
+                let last_used = self.last_used(&dir).await;
+                let size = self.dir_size(&dir).await;
+                entries.push(StoreEntry {
+                    remote: remote.clone(),
+                    commit,
+                    dir,
+                    size,
+                    last_used,
+                });
+            }
+        }
+        entries.sort_by(|a, b| a.dir.cmp(&b.dir));
+        Ok(entries)
+    }
+
+    /// Delete the checkouts `filter` selects, or only report them when
+    /// `dry_run`. This is the only operation that removes checkouts from the
+    /// store: nothing else deletes, so a workspace never loses what another
+    /// needs. Each remote's entries are removed under that remote's lock, so a
+    /// concurrent fetch of the same remote waits instead of racing the delete.
+    /// A deleted checkout is refetched the next time it is used.
+    pub async fn prune_store(
+        &self,
+        filter: &StorePruneFilter,
+        dry_run: bool,
+    ) -> Result<Vec<StoreEntry>, Error> {
+        let now = SystemTime::now();
+        let selected: Vec<StoreEntry> = self
+            .store_entries()
+            .await?
+            .into_iter()
+            .filter(|entry| filter.matches(entry, now))
+            .collect();
+        if dry_run {
+            return Ok(selected);
+        }
+
+        let mut removed = Vec::new();
+        for entry in selected {
+            let lock = self
+                .store_root_path
+                .join(LOCKS_SEGMENT)
+                .join(format!("{}.lock", entry.remote));
+            let _guard = LockGuard::acquire_exclusive(lock).await?;
+            // Another process may have removed it while we waited.
+            if self.sys.fs_exists_no_err_async(&entry.dir).await {
+                self.sys.fs_remove_dir_all_async(&entry.dir).await?;
+                tracing::debug!("pruned store checkout: {:?}", entry.dir);
+            }
+            let _ =
+                self.sys.fs_remove_file_async(used_marker(&entry.dir)).await;
+            if let Some(parent) = entry.dir.parent() {
+                // Drop the remote's directory once its last checkout is gone.
+                if matches!(
+                    self.sys.fs_read_dir_async(parent).await.map(|d| d.len()),
+                    Ok(0)
+                ) {
+                    let _ = self.sys.fs_remove_dir_all_async(parent).await;
+                }
+            }
+            removed.push(entry);
+        }
+        Ok(removed)
+    }
+
+    async fn last_used(&self, commit_dir: &Path) -> SystemTime {
+        for path in [used_marker(commit_dir), commit_dir.to_path_buf()] {
+            if let Ok(meta) = self.sys.fs_metadata_async(&path).await
+                && let Ok(modified) = meta.modified()
+            {
+                return modified;
+            }
+        }
+        UNIX_EPOCH
+    }
+
+    async fn dir_size(&self, dir: &Path) -> u64 {
+        let mut total = 0;
+        let mut stack = vec![dir.to_path_buf()];
+        while let Some(current) = stack.pop() {
+            let Ok(children) = self.sys.fs_read_dir_async(&current).await
+            else {
+                continue;
+            };
+            for child in children {
+                if self.sys.fs_is_dir_no_err_async(&child).await {
+                    stack.push(child);
+                } else if let Ok(meta) =
+                    self.sys.fs_symlink_metadata_async(&child).await
+                {
+                    total += meta.len();
+                }
+            }
+        }
+        total
     }
 }

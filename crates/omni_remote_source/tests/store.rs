@@ -8,7 +8,9 @@ use std::{path::Path, process::Command};
 
 use omni_remote_source::{
     RemoteSource, RemoteSourceRef,
-    manager::{RemoteSourceManager, config::RemoteSourceConfig},
+    manager::{
+        RemoteSourceManager, StorePruneFilter, config::RemoteSourceConfig,
+    },
 };
 use system_traits::{FsMetadataAsync, impls::RealSys};
 use tempfile::TempDir;
@@ -305,4 +307,223 @@ async fn concurrent_materialization_of_one_remote_publishes_once() {
         .map(|d| d.flatten().collect())
         .unwrap_or_default();
     assert!(leftovers.is_empty(), "pending dirs left: {leftovers:?}");
+}
+
+fn age_marker(commit_dir: &Path, days: u64) {
+    let mut marker = commit_dir.as_os_str().to_owned();
+    marker.push(".used");
+    let file = std::fs::OpenOptions::new()
+        .write(true)
+        .open(&marker)
+        .expect("a materialized checkout has a .used marker");
+    file.set_modified(
+        std::time::SystemTime::now()
+            - std::time::Duration::from_secs(days * 86_400),
+    )
+    .expect("set mtime");
+}
+
+async fn two_checkouts(
+    ws: &Workspace,
+) -> (
+    RemoteSourceManager<RealSys>,
+    [(RemoteSource, std::path::PathBuf); 2],
+    [TempDir; 2],
+) {
+    let (a, url_a, _) = build_repo("alpha alpha alpha\n");
+    let (b, url_b, _) = build_repo("b\n");
+    let manager = ws.manager().await;
+    let mut out = Vec::new();
+    for url in [url_a, url_b] {
+        let source = RemoteSource::Git {
+            uri: url,
+            rev: "main".to_string(),
+        };
+        let mat = manager.materialize(&source).await.expect("materialize");
+        out.push((source, mat.root));
+    }
+    let [first, second]: [_; 2] = out.try_into().unwrap();
+    (manager, [first, second], [a, b])
+}
+
+#[tokio::test]
+async fn store_entries_report_size_and_last_use() {
+    if !git_available() {
+        eprintln!("skipping: `git` is not available on PATH");
+        return;
+    }
+    let ws = Workspace::new();
+    let (manager, [(_, dir_a), (_, dir_b)], _repos) = two_checkouts(&ws).await;
+
+    let entries = manager.store_entries().await.expect("entries");
+    assert_eq!(entries.len(), 2);
+    assert!(entries.iter().any(|e| e.dir == dir_a));
+    assert!(entries.iter().any(|e| e.dir == dir_b));
+    for entry in &entries {
+        assert!(entry.size > 0, "{entry:?}");
+        assert!(entry.last_used.elapsed().unwrap().as_secs() < 60);
+    }
+}
+
+#[tokio::test]
+async fn prune_needs_criteria_and_dry_run_deletes_nothing() {
+    if !git_available() {
+        eprintln!("skipping: `git` is not available on PATH");
+        return;
+    }
+    let ws = Workspace::new();
+    let (manager, [(_, dir_a), (_, dir_b)], _repos) = two_checkouts(&ws).await;
+
+    // No filter selects nothing, even for a real run.
+    let none = manager
+        .prune_store(&StorePruneFilter::default(), false)
+        .await
+        .expect("prune");
+    assert!(none.is_empty());
+
+    let all = StorePruneFilter {
+        all: true,
+        ..Default::default()
+    };
+    let would = manager.prune_store(&all, true).await.expect("dry run");
+    assert_eq!(would.len(), 2);
+    assert!(
+        dir_a.exists() && dir_b.exists(),
+        "dry run deleted something"
+    );
+}
+
+#[tokio::test]
+async fn prune_by_age_removes_only_old_checkouts_and_they_refetch() {
+    if !git_available() {
+        eprintln!("skipping: `git` is not available on PATH");
+        return;
+    }
+    let ws = Workspace::new();
+    let (manager, [(source_a, dir_a), (_, dir_b)], _repos) =
+        two_checkouts(&ws).await;
+    age_marker(&dir_a, 30);
+
+    let filter = StorePruneFilter {
+        older_than: Some(std::time::Duration::from_secs(7 * 86_400)),
+        ..Default::default()
+    };
+    let removed = manager.prune_store(&filter, false).await.expect("prune");
+
+    assert_eq!(removed.len(), 1);
+    assert_eq!(removed[0].dir, dir_a);
+    assert!(!dir_a.exists(), "the old checkout is gone");
+    assert!(
+        !dir_a.parent().unwrap().exists(),
+        "an emptied remote directory is removed"
+    );
+    assert!(dir_b.exists(), "the recently used checkout stays");
+
+    // The store is a cache: the next use refetches the pinned commit.
+    let again = manager.materialize(&source_a).await.expect("refetch");
+    assert_eq!(again.root, dir_a);
+    assert!(dir_a.exists());
+}
+
+#[tokio::test]
+async fn prune_by_size_and_all() {
+    if !git_available() {
+        eprintln!("skipping: `git` is not available on PATH");
+        return;
+    }
+    let ws = Workspace::new();
+    let (manager, [(_, dir_a), (_, dir_b)], _repos) = two_checkouts(&ws).await;
+    let sizes: Vec<u64> = manager
+        .store_entries()
+        .await
+        .unwrap()
+        .iter()
+        .map(|e| e.size)
+        .collect();
+    let (min, max) =
+        (*sizes.iter().min().unwrap(), *sizes.iter().max().unwrap());
+    assert!(min < max, "fixtures must differ in size: {sizes:?}");
+
+    // Strictly larger than the smaller checkout: only the bigger one goes.
+    let removed = manager
+        .prune_store(
+            &StorePruneFilter {
+                larger_than: Some(min),
+                ..Default::default()
+            },
+            false,
+        )
+        .await
+        .unwrap();
+    assert_eq!(removed.len(), 1);
+    assert_eq!(removed[0].size, max);
+
+    let rest = manager
+        .prune_store(
+            &StorePruneFilter {
+                all: true,
+                ..Default::default()
+            },
+            false,
+        )
+        .await
+        .unwrap();
+    assert_eq!(rest.len(), 1);
+    assert!(!dir_a.exists() && !dir_b.exists());
+    assert!(manager.store_entries().await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn concurrent_prune_and_materialize_both_succeed_and_leave_a_usable_store()
+ {
+    if !git_available() {
+        eprintln!("skipping: `git` is not available on PATH");
+        return;
+    }
+    let (_src, url, commit) = build_repo("race\n");
+    let shared = tempfile::tempdir().expect("shared store");
+    let store_root = shared.path().join("sources");
+    let source = RemoteSource::Git {
+        uri: url,
+        rev: "main".to_string(),
+    };
+    let all = StorePruneFilter {
+        all: true,
+        ..Default::default()
+    };
+
+    for _ in 0..5 {
+        let installer = Workspace::with_store(&store_root);
+        let pruner = Workspace::with_store(&store_root);
+        let source = source.clone();
+        let install = tokio::spawn(async move {
+            installer
+                .manager()
+                .await
+                .materialize(&source)
+                .await
+                .map(|_| ())
+        });
+        let prune = tokio::spawn(async move {
+            pruner
+                .manager()
+                .await
+                .prune_store(&all, false)
+                .await
+                .map(|_| ())
+        });
+        install.await.expect("join").expect("materialize");
+        prune.await.expect("join").expect("prune");
+    }
+
+    // Whatever the interleaving, the next use yields a complete checkout.
+    let ws = Workspace::with_store(&store_root);
+    let mat = ws
+        .manager()
+        .await
+        .materialize(&source)
+        .await
+        .expect("final");
+    assert_eq!(mat.pin, commit);
+    assert!(mat.root.join("README.md").exists());
 }

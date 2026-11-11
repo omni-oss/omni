@@ -794,4 +794,22 @@ where
         )
         .await
     }
+
+    /// Delete checkouts from the shared remote-source store by age or size.
+    /// The only operation that removes checkouts.
+    pub async fn remote_sources_prune(
+        &self,
+        req: crate::operations::remote_source::RemoteSourcesPruneRequest,
+    ) -> eyre::Result<
+        crate::operations::remote_source::RemoteSourcesPruneResponse,
+    > {
+        let ctx = self.ctx.lock().await;
+        let sys = ctx.as_context().sys().clone();
+        crate::operations::remote_source::handle_remote_sources_prune(
+            ctx.as_context(),
+            &sys,
+            req,
+        )
+        .await
+    }
 }

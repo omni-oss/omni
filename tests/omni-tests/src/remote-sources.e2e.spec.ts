@@ -411,5 +411,68 @@ describe(
             },
             CLONE_TIMEOUT_MS,
         );
+
+        it(
+            "prune is the only command that deletes from the store, and what it deletes is refetched",
+            async (ctx) => {
+                await skipUnlessGitCliAvailable(ctx);
+
+                const repo = await makeLocalGitRepoWithAnnotatedTag({
+                    files: { "generator.omni.yaml": "name: shared\n" },
+                });
+                const uri = pathToFileURL(repo.url).href;
+                const ws = makeWorkspace({
+                    workspace: {
+                        projects: ["**"],
+                        generators: [{ source: "git", uri, rev: "main" }],
+                    },
+                });
+                const storeGit = ws.path(".omni/sources/store/git");
+                const run = (args: string[]) =>
+                    runOmni(["remote-sources", ...args], {
+                        cwd: ws.cwd,
+                        timeout: CLONE_TIMEOUT_MS,
+                    });
+
+                expect(await run(["install"])).toHaveSucceeded();
+                expect(countCommitDirs(storeGit)).toBe(1);
+
+                // A prune with no filter is refused rather than deleting all.
+                const refused = await run(["prune", "--yes"]);
+                expect(refused.exitCode).not.toBe(0);
+                expect(countCommitDirs(storeGit)).toBe(1);
+
+                // Dry run lists and deletes nothing.
+                const dry = await run(["prune", "--all", "--dry-run"]);
+                expect(dry).toHaveSucceeded();
+                expect(dry).toOutputContaining("would prune 1 checkouts");
+                expect(countCommitDirs(storeGit)).toBe(1);
+
+                // A recent checkout is not older than a day.
+                const recent = await run([
+                    "prune",
+                    "--older-than",
+                    "1d",
+                    "--yes",
+                ]);
+                expect(recent).toHaveSucceeded();
+                expect(countCommitDirs(storeGit)).toBe(1);
+
+                const pruned = await run(["prune", "--all", "--yes"]);
+                expect(pruned).toHaveSucceeded();
+                expect(pruned).toOutputContaining("Pruned 1 checkouts");
+                expect(countCommitDirs(storeGit)).toBe(0);
+
+                // The pin stays in the lockfile, so the next use refetches.
+                const listed = await runOmni(["generator", "list"], {
+                    cwd: ws.cwd,
+                    timeout: CLONE_TIMEOUT_MS,
+                });
+                expect(listed).toHaveSucceeded();
+                expect(listed).toOutputContaining("shared");
+                expect(countCommitDirs(storeGit)).toBe(1);
+            },
+            CLONE_TIMEOUT_MS,
+        );
     },
 );

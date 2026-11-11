@@ -1,9 +1,13 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, time::Duration};
+
+use bytesize::ByteSize;
 
 use omni_context::{Context, ContextSys};
 use omni_remote_source::{
     InstallOptions, RemoteSource, RemoteSourceContributor,
-    manager::{RemoteSourceManager, config::RemoteSourceConfig},
+    manager::{
+        RemoteSourceManager, StorePruneFilter, config::RemoteSourceConfig,
+    },
     sys::RemoteSourceSys,
 };
 use omni_remote_source_contributors::{
@@ -40,6 +44,84 @@ where
         sys.clone(),
     )
     .await?)
+}
+
+/// Filters for [`handle_remote_sources_prune`]. At least one of `all`,
+/// `older_than` and `larger_than` is required; an entry must satisfy every
+/// filter that is set.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+pub struct RemoteSourcesPruneRequest {
+    /// Select every checkout in the store.
+    pub all: bool,
+    /// Only checkouts last used longer ago than this.
+    pub older_than: Option<Duration>,
+    /// Only checkouts larger than this.
+    #[schemars(with = "Option<u64>")]
+    pub larger_than: Option<ByteSize>,
+    /// Only report what would be deleted.
+    pub dry_run: bool,
+}
+
+/// One store checkout that matched a prune.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct StoreCheckoutView {
+    /// The remote's directory name in the store.
+    pub remote: String,
+    pub commit: String,
+    pub size_bytes: u64,
+    /// Seconds since the checkout was last used.
+    pub unused_for_secs: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct RemoteSourcesPruneResponse {
+    /// The checkouts that matched; deleted unless the request was a dry run.
+    pub checkouts: Vec<StoreCheckoutView>,
+    pub deleted: bool,
+}
+
+/// Delete checkouts from the shared remote-source store. This is the only
+/// operation that does: install never deletes, because the store may be shared
+/// by many workspaces. A deleted checkout is refetched the next time it is
+/// used.
+pub async fn handle_remote_sources_prune<TSys>(
+    ctx: &Context<TSys>,
+    sys: &TSys,
+    req: RemoteSourcesPruneRequest,
+) -> eyre::Result<RemoteSourcesPruneResponse>
+where
+    TSys: ContextSys + RemoteSourceSys,
+{
+    let filter = StorePruneFilter {
+        all: req.all,
+        older_than: req.older_than,
+        larger_than: req.larger_than.map(|size| size.as_u64()),
+    };
+    if !filter.has_criteria() {
+        eyre::bail!(
+            "refusing to prune without a filter: pass --older-than, \
+             --larger-than or --all"
+        );
+    }
+
+    let manager = open_source_store(ctx, sys).await?;
+    let now = std::time::SystemTime::now();
+    let matched = manager.prune_store(&filter, req.dry_run).await?;
+    Ok(RemoteSourcesPruneResponse {
+        checkouts: matched
+            .into_iter()
+            .map(|entry| StoreCheckoutView {
+                remote: entry.remote,
+                commit: entry.commit,
+                size_bytes: entry.size,
+                unused_for_secs: now
+                    .duration_since(entry.last_used)
+                    .unwrap_or_default()
+                    .as_secs(),
+            })
+            .collect(),
+        deleted: !req.dry_run,
+    })
 }
 
 /// Which subsystems an install pass processes. No flag set means all of them.
