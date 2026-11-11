@@ -3,12 +3,17 @@
   "git": {
     "https://github.com/cs-clarence/swe-docs": {
       "main": {
-        "commit": "5dd1399e31b7f8230ee9ea4f1531be3dd53d8242"
+        "commit": "0e22c39dbc934dd54f90c99dc4a85ec30c004c69"
+      }
+    },
+    "https://github.com/cs-clarence/swe-skills": {
+      "main": {
+        "commit": "b20d4f636e92ec31fc2245b592cd8280cb346079"
       }
     },
     "https://github.com/cursor/plugins.git": {
       "main": {
-        "commit": "6ed0f7a9504f577d7529064103cecce9be7dfc5e"
+        "commit": "63912a91d52c43946f974f2aaf661334a6116a82"
       }
     },
     "https://github.com/mattpocock/skills.git": {

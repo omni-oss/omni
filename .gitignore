@@ -53,6 +53,15 @@ orcs.config.json
 /.agents/skills/how
 /.agents/skills/interrogate
 /.agents/skills/show-me-your-work
+/.agents/skills/swe-assess
+/.agents/skills/swe-author
+/.agents/skills/swe-debug
+/.agents/skills/swe-docs-write
+/.agents/skills/swe-init
+/.agents/skills/swe-plan
+/.agents/skills/swe-release
+/.agents/skills/swe-review
+/.agents/skills/swe-self-review
 /.agents/skills/teach
 /.agents/skills/technical-writing
 /.agents/skills/to-questionnaire
@@ -66,4 +75,4 @@ orcs.config.json
 /docs/guidelines/core
 /docs/guidelines/planning
 /docs/guidelines/reviewing
-# @@omni-managed:end 59d9fd17
+# @@omni-managed:end e01e34e8

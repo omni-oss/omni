@@ -23,3 +23,7 @@ projections:
     source: git
     uri: https://github.com/cs-clarence/swe-docs
     rev: main
+  - id: swe-skills
+    source: git
+    uri: https://github.com/cs-clarence/swe-skills
+    rev: main
