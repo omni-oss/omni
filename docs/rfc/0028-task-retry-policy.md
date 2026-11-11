@@ -95,7 +95,7 @@ pub struct RetryPolicy {
     pub max_retries: u8,
     pub backoff: Backoff,
     pub base: Duration,
-    pub max_delay: Option<Duration>,
+    pub max_delay: Duration,
     pub jitter: Jitter,
 }
 
@@ -105,7 +105,7 @@ impl Default for RetryPolicy {
             max_retries: 0,
             backoff: Backoff::Exponential { factor: 2.0 },
             base: Duration::from_secs(1),
-            max_delay: Some(Duration::from_secs(60)),
+            max_delay: Duration::from_secs(60),
             jitter: Jitter::None,
         }
     }
@@ -120,6 +120,7 @@ impl RetryPolicy {
             Backoff::Linear { step } => {
                 self.base.saturating_add(step.saturating_mul(n))
             }
+            Backoff::Exponential { .. } if self.base.is_zero() => Duration::ZERO,
             Backoff::Exponential { factor } => {
                 Duration::try_from_secs_f64(
                     self.base.as_secs_f64() * factor.powi(n as i32),
@@ -127,7 +128,7 @@ impl RetryPolicy {
                 .unwrap_or(Duration::MAX)
             }
         };
-        let capped = self.max_delay.map_or(raw, |c| raw.min(c));
+        let capped = raw.min(self.max_delay);
         match self.jitter {
             Jitter::None => capped,
             Jitter::Full => capped.mul_f64(rng.random::<f64>()),
@@ -199,20 +200,22 @@ Rules:
 - **`ConfigDuration`** replaces the hand-written `mod retry_interval` in
   `task_configuration.rs`. It uses `humantime_serde`, which the workspace already
   depends on, and is the one place duration text is parsed.
-- **Validate each layer on its own** (`validate_layer`, one function). In one
-  layer, `step` needs `strategy: linear` and `factor` needs
-  `strategy: exponential`. A layer that sets `step` or `factor` without any
-  strategy is also an error. `deny_unknown_fields` rejects unknown keys and
+- **Validate each layer on its own** (`validate_layer`, one function). Only when
+  a layer names a `strategy` itself, `step` needs `linear` and `factor` needs
+  `exponential`. A `step` or `factor` in a layer with no strategy is accepted,
+  because the effective strategy may come from another layer; it is checked or
+  ignored when resolving (next rule). So `-r 255,factor=10` is valid. `deny_unknown_fields` rejects unknown keys and
   typos, and serde rejects a bad value or an unknown strategy.
 - **Ignore inapplicable fields when resolving.** After the layers are merged, a
-  `step` left over from a lower layer is ignored if the effective strategy is not
+  `step` (from any layer, including a strategy-less `-r 3,step=1s`) is ignored if the effective strategy is not
   `linear`, and likewise `factor`. This is what makes `-r 3,fixed` work on a task
   whose config says `strategy: linear, step: 2s`, with no merge code that has to
   know which fields belong together.
 - **Resolve into the typed policy.** `into_policy(self) -> Result<RetryPolicy, _>`
   fills the defaults, builds the strict `Backoff` enum from 4.1, and checks the
-  values serde cannot: `factor` is finite and `>= 1.0`, and `max_delay >= base`
-  when both are set. The type-level guarantee (a `Linear` policy has a `step`, an
+  values serde cannot: `factor` is finite and `>= 1.0`, and `max_delay >= base`. A missing `step` defaults to `base`, so `-r 3,linear` works.
+  There is no "uncapped" value: `max_delay` always has a value (default 60s), and
+  a user who wants a very long cap sets a large one such as `max_delay: 24h`. The type-level guarantee (a `Linear` policy has a `step`, an
   `Exponential` policy has a `factor`) lives in `RetryPolicy`, which the executor
   uses.
 
@@ -356,7 +359,7 @@ mentions the new order.
 | `-r 3,linear,base=1s,step=2s` | 1s, 3s, 5s |
 | `-r 3,exponential,base=1s,jitter=full` | each in `[0, d]`, `d` the un-jittered delay |
 | config `retry: {max_retries: 5, jitter: full}` plus `-r 3` | `max_retries` 3, jitter full kept |
-| `-r 3,step=1s` (exponential) | error: `step` is only valid for `linear` |
+| `-r 3,step=1s` (exponential) | `step` ignored, delays 1s, 2s, 4s |
 | `--retry-interval 2s` | clap unknown-argument error |
 | `-r 255,factor=10` | no panic, capped by `max_delay` |
 | no `max_retries` anywhere | no retries |

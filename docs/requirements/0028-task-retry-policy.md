@@ -42,9 +42,11 @@ MCP. The CLI gets one compact override flag and a flag to turn retries off.
    `jitter=equal`, it is between half the delay and the full delay.
 6. A task configured with `retry: {max_retries: 5, jitter: full}` run with `-r 3` retries
    3 times with full jitter.
-7. Naming a strategy in `-r` drops `factor` and `step` set in lower layers.
-8. `-r 3,step=1s` on an exponential policy fails with an error saying `step` is
-   only valid for `linear`. An unknown key fails with an error listing the valid
+7. After merging, a `factor` or `step` that does not apply to the effective
+   strategy is ignored. Applicable lower-layer values are kept, and a missing
+   `step` defaults to `base`.
+8. `-r 3,exponential,step=1s` fails with an error saying `step` is only valid
+   for `linear`. An unknown key fails with an error listing the valid
    keys.
 9. `-r 255,factor=10` does not panic and respects `max_delay`.
 10. `--no-retry` together with `-r` is rejected. `--no-retry` alone means no
