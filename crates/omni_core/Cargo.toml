@@ -17,6 +17,8 @@ strum = { workspace = true }
 derive-new = { workspace = true }
 maps = { workspace = true }
 merge = { workspace = true }
+config_utils = { workspace = true }
+humantime-serde = { workspace = true }
 sets = { workspace = true }
 omni_config_types = { workspace = true }
 omni_command_config = { workspace = true }
