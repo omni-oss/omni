@@ -5,6 +5,17 @@ extends:
   - "@workspace/omni/presets/rust-cli.omni.yaml"
   - "@workspace/omni/presets/rust-multiplatform.omni.yaml"
 
+# The binary is built from the workspace crates, which are not omni project
+# dependencies, so their sources must be part of the cache key. Otherwise a
+# cache restore serves a stale binary to the e2e tests.
+cache:
+  key:
+    files:
+      append:
+        - "@workspace/crates/**/*.rs"
+        - "@workspace/crates/**/Cargo.toml"
+        - "@workspace/Cargo.lock"
+
 tasks:
   # Compiling `bridge_rpc_runner` embeds `services/bridge-service/dist`.
   check:lint:
