@@ -16,13 +16,10 @@ sources:
               - pstack/skills/unslop
               - pstack/skills/teach
               - pstack/skills/show-me-your-work
-              - pstack/skills/technical-writing
               - pstack/skills/why
               - pstack/skills/how
               - pstack/skills/bro
               - pstack/skills/blast-radius
-              - pstack/skills/figure-it-out
-              - pstack/skills/interrogate
             match_kind: dir
 
   - id: mattpocock-skills
