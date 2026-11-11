@@ -40,7 +40,7 @@ describe("+cache @cache @e2e (B01 lookup honors cache.enabled)", () => {
         expect(hit).toHaveSucceeded();
         expect(hit).toHaveStderrContaining("Cache hit for task 'app#build'");
 
-        ws.write("app/project.omni.yaml", appSpec(false).projects!.app);
+        ws.write("app/project.omni.yaml", appSpec(false).projects!.app!);
 
         const disabled = await runOmni(
             ["run", "build", "--output-logs", "all"],
