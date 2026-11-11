@@ -22,7 +22,7 @@ use omni_process::{
     ChildProcessError, TaskChildProcess, TaskChildProcessResult,
 };
 use omni_redact::Redactor;
-use omni_retry_config::RetryConfiguration;
+use omni_retry_config::{RetryConfiguration, RetryPolicy};
 use omni_task_context::{TaskContext, TaskContextProviderExt as _};
 use omni_task_output_logs::{EffectiveOutputLogs, LogsDisplay};
 use omni_types::{OmniPath, Root, RootMap, enum_map};
@@ -579,6 +579,23 @@ where
             )
             .map_err(|e| redact_error(e, &redacting))?;
 
+            let retry_policy = self
+                .resolve_retry(task_ctx)
+                .into_policy()
+                .map_err(|source| {
+                    redact_error(
+                        BatchExecutorErrorInner::InvalidRetry {
+                            task_full_name: task_ctx
+                                .node
+                                .full_task_name()
+                                .to_string(),
+                            source,
+                        }
+                        .into(),
+                        &redacting,
+                    )
+                })?;
+
             if self.dry_run {
                 // Resolve a second time with environment values hidden: the
                 // expanded form may contain secrets (e.g. `$TOKEN` or
@@ -640,7 +657,7 @@ where
                     override_retry_command,
                     record_logs,
                     self.resolve_output_logs(task_ctx),
-                    self.resolve_retry(task_ctx),
+                    retry_policy,
                 ));
             }
         }
@@ -931,8 +948,12 @@ where
     results
 }
 
-/// Executes a task and retries failed executions according to `retry`, which
-/// is resolved into a [`RetryPolicy`] before the first attempt. Process errors
+/// Attempt number as the `u8` the events carry; saturates at 255.
+fn attempts(tries: u16) -> u8 {
+    u8::try_from(tries).unwrap_or(u8::MAX)
+}
+
+/// Executes a task and retries failed executions according to `policy`. Process errors
 /// become result messages redacted by `subscriber`; raw output streams pass
 /// through unchanged.
 #[allow(clippy::too_many_arguments)]
@@ -945,20 +966,9 @@ async fn run_process<'a, S: ExecutionEventSubscriber>(
     override_retry_command: Option<Command>,
     record_logs: bool,
     output_logs: EffectiveOutputLogs,
-    retry: RetryConfiguration,
+    policy: RetryPolicy,
 ) -> TaskResultContext<'a> {
-    let mut tries = 0u8;
-
-    let policy = match retry.into_policy() {
-        Ok(p) => p,
-        Err(e) => {
-            return TaskResultContext::new_error(
-                task_ctx,
-                subscriber.redact(e.to_string()).into_owned(),
-                tries,
-            );
-        }
-    };
+    let mut tries = 0u16;
 
     let reg_cmd: Option<&Command> = override_command.as_ref();
     let retry_cmd: Option<&Command> =
@@ -986,7 +996,7 @@ async fn run_process<'a, S: ExecutionEventSubscriber>(
                 subscriber
                     .redact(ChildProcessError::no_command().to_string())
                     .into_owned(),
-                tries,
+                attempts(tries),
             );
         };
 
@@ -1002,7 +1012,7 @@ async fn run_process<'a, S: ExecutionEventSubscriber>(
                     return TaskResultContext::new_error(
                         task_ctx,
                         subscriber.redact(e.to_string()).into_owned(),
-                        tries,
+                        attempts(tries),
                     );
                 }
             };
@@ -1063,16 +1073,16 @@ async fn run_process<'a, S: ExecutionEventSubscriber>(
         let result = proc.exec().await;
 
         if (result.is_err() || result.as_ref().is_ok_and(|f| !f.success()))
-            && tries <= policy.max_retries
+            && tries <= u16::from(policy.max_retries)
         {
-            let delay = policy.delay(tries, rand::random::<f64>());
+            let delay = policy.delay(attempts(tries), rand::random::<f64>());
 
             subscriber
                 .on_task_retrying(TaskRetryingEvent {
                     task_id: task_ctx.node.full_task_name().to_string(),
                     project: task_ctx.node.project_name().to_string(),
                     task: task_ctx.node.task_name().to_string(),
-                    attempt: tries,
+                    attempt: attempts(tries),
                     max_retries: policy.max_retries,
                     delay: Some(delay),
                 })
@@ -1101,7 +1111,7 @@ async fn run_process<'a, S: ExecutionEventSubscriber>(
                         exit_code,
                         elapsed,
                         cache_hit: false,
-                        tries,
+                        tries: attempts(tries),
                     })
                     .await;
             } else {
@@ -1111,11 +1121,11 @@ async fn run_process<'a, S: ExecutionEventSubscriber>(
                         project: task_ctx.node.project_name().to_string(),
                         task: task_ctx.node.task_name().to_string(),
                         error: format!("exit code '{}'", exit_code),
-                        tries,
+                        tries: attempts(tries),
                     })
                     .await;
             }
-            TaskResultContext::new_completed(task_ctx, t, tries)
+            TaskResultContext::new_completed(task_ctx, t, attempts(tries))
         }
         Err(e) => {
             subscriber
@@ -1124,13 +1134,13 @@ async fn run_process<'a, S: ExecutionEventSubscriber>(
                     project: task_ctx.node.project_name().to_string(),
                     task: task_ctx.node.task_name().to_string(),
                     error: e.to_string(),
-                    tries,
+                    tries: attempts(tries),
                 })
                 .await;
             TaskResultContext::new_error(
                 task_ctx,
                 subscriber.redact(e.to_string()).into_owned(),
-                tries,
+                attempts(tries),
             )
         }
     }
@@ -1191,6 +1201,14 @@ pub(crate) enum BatchExecutorErrorInner {
     #[error("can't get task hash: {task_full_name}")]
     #[diagnostic(skip)]
     CantGetTaskHash { task_full_name: String },
+
+    #[error("invalid retry settings for task {task_full_name}: {source}")]
+    #[diagnostic(skip)]
+    InvalidRetry {
+        task_full_name: String,
+        #[source]
+        source: omni_retry_config::RetryConfigurationError,
+    },
 
     #[error(transparent)]
     #[diagnostic(skip)]

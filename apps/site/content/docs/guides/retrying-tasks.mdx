@@ -55,7 +55,10 @@ omni run test --no-retry
 
 The task keys `max_retries` and `retry_interval` are gone; move them into
 `retry` (`retry_interval` becomes `retry.base` with `strategy: fixed`). The
-`--retry-interval` flag is removed; use `-r COUNT,fixed,base=DURATION`.
+`--retry-interval` flag is removed; use `-r COUNT,fixed,base=DURATION`. If the
+old interval was longer than the 60s default `max_delay`, also set `max_delay`
+to at least that long, for example `-r 3,fixed,base=2m,max_delay=2m`. A `base`
+larger than `max_delay` is an error.
 
 Tasks that set `max_retries` without an interval used to retry at once. They now
 wait 1s, 2s, 4s... by default. Set `strategy: fixed` and `base: 0s` to keep the

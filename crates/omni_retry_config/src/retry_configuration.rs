@@ -161,6 +161,11 @@ impl RetryConfiguration {
                 return Err(RetryConfigurationError::FactorWithoutExponential);
             }
         }
+        if let (Some(base), Some(max_delay)) = (&self.base, &self.max_delay)
+            && max_delay.0 < base.0
+        {
+            return Err(RetryConfigurationError::MaxDelayBelowBase);
+        }
         if let Some(factor) = self.factor.as_ref().map(|f| **f)
             && !(factor.is_finite() && factor >= 1.0)
         {
@@ -282,6 +287,22 @@ mod tests {
         assert_eq!(
             parse(r#"{"base":"2m"}"#).unwrap().into_policy(),
             Err(RetryConfigurationError::MaxDelayBelowBase)
+        );
+    }
+
+    #[test]
+    fn layer_rejects_base_above_max_delay() {
+        assert!(
+            parse(r#"{"base":"2s","max_delay":"1s"}"#)
+                .unwrap()
+                .check_layer()
+                .is_err()
+        );
+        assert!(
+            parse(r#"{"base":"1s","max_delay":"1s"}"#)
+                .unwrap()
+                .check_layer()
+                .is_ok()
         );
     }
 }
