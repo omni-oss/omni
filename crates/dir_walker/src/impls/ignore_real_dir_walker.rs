@@ -344,7 +344,7 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     use super::*;
-    use crate::{DirEntry as _, DirWalker as _};
+    use crate::DirWalker as _;
 
     fn walked_files(
         config: IgnoreRealDirWalkerConfig,
