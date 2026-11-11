@@ -676,7 +676,12 @@ where
             }
         };
 
-        let manifest = discover_owned_manifest(self.sys, &root).await?;
+        // Local only if reached from the workspace alone; a git source, or a
+        // source nested in one, lives in the store and must not see the
+        // workspace's ignore rules.
+        let is_local = pin.is_none() && !self.remote.is_in_store(parent_root);
+        let manifest =
+            discover_owned_manifest(self.sys, &root, is_local).await?;
         let trusted = depth == 0 && workspace_routes.is_some();
         let node =
             classify_routes(qualified_id, workspace_routes, manifest, trusted)?;
@@ -760,6 +765,7 @@ fn classify_routes(
 async fn discover_owned_manifest<TSys>(
     sys: &TSys,
     source_root: &std::path::Path,
+    is_local: bool,
 ) -> eyre::Result<Option<OwnedProjectionConfiguration>>
 where
     TSys: FsReadAsync + Send + Sync,
@@ -781,7 +787,7 @@ where
         &IGNORE_FILES[..],
         "projection",
     )
-    .with_parent_ignores(false);
+    .with_parent_ignores(is_local);
 
     let Some(file) = discovery.discover().await?.into_iter().next() else {
         return Ok(None);

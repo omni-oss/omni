@@ -26,6 +26,7 @@ use system_traits::FsReadAsync;
 /// and the three subsystem source lists from its manifest.
 struct PackLeaf {
     root: PathBuf,
+    is_local: bool,
     name: String,
     version: Option<String>,
     description: Option<String>,
@@ -44,6 +45,10 @@ pub struct ExpandedPackNode {
     pub version: Option<String>,
     pub description: Option<String>,
     pub root: PathBuf,
+    /// Whether the pack is reached from the workspace alone. False for a git
+    /// pack and for any pack nested inside one, whose files live in a fetched
+    /// checkout in the shared source store.
+    pub is_local: bool,
     pub pin: Option<String>,
     pub effective_provides: Option<Vec<PackSubsystem>>,
     pub generators: Vec<GeneratorSourceConfiguration>,
@@ -66,6 +71,10 @@ impl ExpandedPackNode {
 pub struct PackContributedSource<P: omni_configurations::SourceConfigProfile> {
     pub qualified_id: String,
     pub root: PathBuf,
+    /// Whether the contributing pack is reached from the workspace alone.
+    /// Discovery under a non-local pack must not apply the workspace's ignore
+    /// rules, which hide the source store.
+    pub is_local: bool,
     pub source: SourceConfig<P>,
 }
 
@@ -105,6 +114,7 @@ impl ExpandedPacks {
                 out.push(PackContributedSource {
                     qualified_id: node.qualified_id.clone(),
                     root: node.root.clone(),
+                    is_local: node.is_local,
                     source: source.clone(),
                 });
             }
@@ -224,6 +234,7 @@ where
                 version: e.leaf.version.clone(),
                 description: e.leaf.description.clone(),
                 root: e.leaf.root.clone(),
+                is_local: e.leaf.is_local,
                 pin: e.pin.clone(),
                 effective_provides,
                 generators: e.leaf.generators.clone(),
@@ -346,6 +357,7 @@ where
         let children = manifest.packs;
         let leaf = PackLeaf {
             root: root.clone(),
+            is_local: pin.is_none() && !self.manager.is_in_store(parent_root),
             name: manifest.name,
             version: manifest.version,
             description: manifest.description,
