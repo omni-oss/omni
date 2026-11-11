@@ -41,6 +41,7 @@ where
         };
         let req = TaskRunRequest {
             tasks: params.tasks,
+            exact_tasks: vec![],
             ignore_dependencies: params.ignore_dependencies,
             force: params.force,
             filters,

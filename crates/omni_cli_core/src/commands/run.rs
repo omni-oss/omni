@@ -88,7 +88,7 @@ pub async fn run(
         .on_failure(command.on_failure.value())
         .no_cache(command.no_cache)
         .force(command.force.value())
-        .call(Call::new_tasks(&command.task[..]));
+        .call(Call::pattern_tasks(&command.task));
 
     command
         .run

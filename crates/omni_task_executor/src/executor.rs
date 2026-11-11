@@ -312,7 +312,7 @@ mod diagnostic_tests {
 
     fn nothing_to_execute() -> TaskExecutorError {
         TaskExecutorErrorInner::new_nothing_to_execute(
-            Call::Tasks(vec!["build".into()]),
+            Call::pattern_tasks(["build"]),
             vec!["web".into()],
             vec![],
             Some("meta.type == 'lib'".into()),

@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use maps::UnorderedMap;
 use omni_context::LoadedContext;
-use omni_execution_plan::{Call, ScmAffectedFilter};
+use omni_execution_plan::{Call, ScmAffectedFilter, TaskSelector};
 use omni_messages::ExecutionEventSubscriber;
 use omni_scm::SelectScm;
 use omni_task_executor::{
@@ -70,8 +70,10 @@ impl Default for TaskRunFilters {
 /// Request to run one or more named tasks.
 #[derive(Debug, Clone, JsonSchema)]
 pub struct TaskRunRequest {
-    /// Task names to execute.
+    /// Task name globs to execute.
     pub tasks: Vec<String>,
+    /// Task names to execute exactly; glob characters are literal.
+    pub exact_tasks: Vec<String>,
     /// Skip dependency resolution and run only the requested tasks.
     pub ignore_dependencies: bool,
     /// Also run tasks that depend on the matching tasks.
@@ -98,6 +100,7 @@ impl Default for TaskRunRequest {
     fn default() -> Self {
         Self {
             tasks: vec![],
+            exact_tasks: vec![],
             ignore_dependencies: false,
             with_dependents: false,
             on_failure: OnFailure::SkipDependents,
@@ -151,7 +154,13 @@ where
         .on_failure(req.on_failure)
         .no_cache(req.no_cache)
         .force(req.force)
-        .call(Call::new_tasks(&req.tasks[..]));
+        .call(Call::Tasks(
+            req.tasks
+                .iter()
+                .map(TaskSelector::pattern)
+                .chain(req.exact_tasks.iter().map(TaskSelector::exact))
+                .collect(),
+        ));
 
     if let Some(output_logs) = req.output_logs {
         builder.output_logs(output_logs);
