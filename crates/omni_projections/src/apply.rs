@@ -14,9 +14,17 @@ use crate::routing::LinkPair;
 
 /// The link kind that was actually materialized (after `auto` fallback).
 #[derive(
-    serde::Serialize, serde::Deserialize, Debug, Clone, Copy, PartialEq, Eq,
+    serde::Serialize,
+    serde::Deserialize,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    strum::Display,
 )]
 #[serde(rename_all = "kebab-case")]
+#[strum(serialize_all = "kebab-case")]
 pub enum ResolvedKind {
     Reflink,
     Symlink,

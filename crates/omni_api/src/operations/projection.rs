@@ -384,7 +384,7 @@ where
         response.applied.extend(outcome.applied.iter().map(|a| {
             AppliedLinkInfo {
                 dest: a.dest.clone(),
-                kind: kind_str(a.kind).to_string(),
+                kind: a.kind.to_string(),
                 backup: a.backup.clone(),
                 skipped: a.skipped,
             }
@@ -871,17 +871,6 @@ fn env_file_names<TSys: ContextSys>(ctx: &Context<TSys>) -> Vec<String> {
         .iter()
         .map(|p| p.to_string_lossy().into_owned())
         .collect()
-}
-
-fn kind_str(kind: omni_projections::ResolvedKind) -> &'static str {
-    use omni_projections::ResolvedKind::*;
-    match kind {
-        Symlink => "symlink",
-        Junction => "junction",
-        Reflink => "reflink",
-        Hardlink => "hardlink",
-        Copy => "copy",
-    }
 }
 
 #[cfg(test)]
