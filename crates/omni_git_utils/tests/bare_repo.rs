@@ -67,8 +67,11 @@ fn fixture() -> (tempfile::TempDir, String, [String; 3]) {
 
 #[tokio::test]
 async fn fetch_brings_every_branch_and_tag_and_resolves_offline() {
-    if !git_available() {
-        eprintln!("skipping: `git` is not available on PATH");
+    if !omni_test_capabilities::gate(
+        "git",
+        git_available(),
+        "git binary not found on PATH",
+    ) {
         return;
     }
     let (src, url, [c1, c2, c3]) = fixture();
@@ -100,8 +103,11 @@ async fn fetch_brings_every_branch_and_tag_and_resolves_offline() {
 
 #[tokio::test]
 async fn a_second_fetch_is_incremental_and_picks_up_new_refs() {
-    if !git_available() {
-        eprintln!("skipping: `git` is not available on PATH");
+    if !omni_test_capabilities::gate(
+        "git",
+        git_available(),
+        "git binary not found on PATH",
+    ) {
         return;
     }
     let (src, url, _) = fixture();
@@ -140,8 +146,11 @@ async fn a_failed_first_clone_leaves_nothing_behind() {
 
 #[tokio::test]
 async fn export_writes_a_plain_tree_of_the_requested_commit() {
-    if !git_available() {
-        eprintln!("skipping: `git` is not available on PATH");
+    if !omni_test_capabilities::gate(
+        "git",
+        git_available(),
+        "git binary not found on PATH",
+    ) {
         return;
     }
     let (_src, url, [c1, c2, c3]) = fixture();
@@ -191,8 +200,11 @@ async fn export_writes_a_plain_tree_of_the_requested_commit() {
 async fn export_keeps_executable_bits_and_symlinks() {
     use std::os::unix::fs::{PermissionsExt, symlink};
 
-    if !git_available() {
-        eprintln!("skipping: `git` is not available on PATH");
+    if !omni_test_capabilities::gate(
+        "git",
+        git_available(),
+        "git binary not found on PATH",
+    ) {
         return;
     }
     let src = tempfile::tempdir().unwrap();

@@ -109,8 +109,11 @@ impl Workspace {
 
 #[tokio::test]
 async fn publish_is_idempotent_and_offline_after_locking() {
-    if !git_available() {
-        eprintln!("skipping: `git` is not available on PATH");
+    if !omni_test_capabilities::gate(
+        "git",
+        git_available(),
+        "git binary not found on PATH",
+    ) {
         return;
     }
 
@@ -142,8 +145,11 @@ async fn publish_is_idempotent_and_offline_after_locking() {
 
 #[tokio::test]
 async fn revs_resolving_to_the_same_commit_share_one_checkout() {
-    if !git_available() {
-        eprintln!("skipping: `git` is not available on PATH");
+    if !omni_test_capabilities::gate(
+        "git",
+        git_available(),
+        "git binary not found on PATH",
+    ) {
         return;
     }
 
@@ -175,8 +181,11 @@ async fn revs_resolving_to_the_same_commit_share_one_checkout() {
 
 #[tokio::test]
 async fn reconcile_keeps_every_checkout_and_drops_unreferenced_pins() {
-    if !git_available() {
-        eprintln!("skipping: `git` is not available on PATH");
+    if !omni_test_capabilities::gate(
+        "git",
+        git_available(),
+        "git binary not found on PATH",
+    ) {
         return;
     }
 
@@ -227,8 +236,11 @@ async fn reconcile_keeps_every_checkout_and_drops_unreferenced_pins() {
 
 #[tokio::test]
 async fn one_workspace_reconciling_never_deletes_another_workspaces_checkout() {
-    if !git_available() {
-        eprintln!("skipping: `git` is not available on PATH");
+    if !omni_test_capabilities::gate(
+        "git",
+        git_available(),
+        "git binary not found on PATH",
+    ) {
         return;
     }
 
@@ -273,8 +285,11 @@ async fn one_workspace_reconciling_never_deletes_another_workspaces_checkout() {
 
 #[tokio::test]
 async fn concurrent_materialization_of_one_remote_publishes_once() {
-    if !git_available() {
-        eprintln!("skipping: `git` is not available on PATH");
+    if !omni_test_capabilities::gate(
+        "git",
+        git_available(),
+        "git binary not found on PATH",
+    ) {
         return;
     }
 
@@ -348,8 +363,11 @@ async fn two_checkouts(
 
 #[tokio::test]
 async fn store_entries_report_size_and_last_use() {
-    if !git_available() {
-        eprintln!("skipping: `git` is not available on PATH");
+    if !omni_test_capabilities::gate(
+        "git",
+        git_available(),
+        "git binary not found on PATH",
+    ) {
         return;
     }
     let ws = Workspace::new();
@@ -367,8 +385,11 @@ async fn store_entries_report_size_and_last_use() {
 
 #[tokio::test]
 async fn prune_needs_criteria_and_dry_run_deletes_nothing() {
-    if !git_available() {
-        eprintln!("skipping: `git` is not available on PATH");
+    if !omni_test_capabilities::gate(
+        "git",
+        git_available(),
+        "git binary not found on PATH",
+    ) {
         return;
     }
     let ws = Workspace::new();
@@ -395,8 +416,11 @@ async fn prune_needs_criteria_and_dry_run_deletes_nothing() {
 
 #[tokio::test]
 async fn prune_by_age_removes_only_old_checkouts_and_they_refetch() {
-    if !git_available() {
-        eprintln!("skipping: `git` is not available on PATH");
+    if !omni_test_capabilities::gate(
+        "git",
+        git_available(),
+        "git binary not found on PATH",
+    ) {
         return;
     }
     let ws = Workspace::new();
@@ -427,8 +451,11 @@ async fn prune_by_age_removes_only_old_checkouts_and_they_refetch() {
 
 #[tokio::test]
 async fn prune_by_size_and_all() {
-    if !git_available() {
-        eprintln!("skipping: `git` is not available on PATH");
+    if !omni_test_capabilities::gate(
+        "git",
+        git_available(),
+        "git binary not found on PATH",
+    ) {
         return;
     }
     let ws = Workspace::new();
@@ -476,8 +503,11 @@ async fn prune_by_size_and_all() {
 #[tokio::test]
 async fn concurrent_prune_and_materialize_both_succeed_and_leave_a_usable_store()
  {
-    if !git_available() {
-        eprintln!("skipping: `git` is not available on PATH");
+    if !omni_test_capabilities::gate(
+        "git",
+        git_available(),
+        "git binary not found on PATH",
+    ) {
         return;
     }
     let (_src, url, commit) = build_repo("race\n");
@@ -537,8 +567,11 @@ fn source_of(url: &Url, rev: &str) -> RemoteSource {
 
 #[tokio::test]
 async fn a_published_tree_is_plain_sealed_and_recorded_in_the_layout() {
-    if !git_available() {
-        eprintln!("skipping: `git` is not available on PATH");
+    if !omni_test_capabilities::gate(
+        "git",
+        git_available(),
+        "git binary not found on PATH",
+    ) {
         return;
     }
     let (_src, url, _) = build_repo("sealed\n");
@@ -577,8 +610,11 @@ async fn a_published_tree_is_plain_sealed_and_recorded_in_the_layout() {
 
 #[tokio::test]
 async fn deleting_only_the_trees_re_exports_offline_from_the_mirror() {
-    if !git_available() {
-        eprintln!("skipping: `git` is not available on PATH");
+    if !omni_test_capabilities::gate(
+        "git",
+        git_available(),
+        "git binary not found on PATH",
+    ) {
         return;
     }
     let (src, url, commit) = build_repo("offline\n");
@@ -608,8 +644,11 @@ async fn deleting_only_the_trees_re_exports_offline_from_the_mirror() {
 
 #[tokio::test]
 async fn with_the_mirror_gone_too_it_names_the_remote_when_offline() {
-    if !git_available() {
-        eprintln!("skipping: `git` is not available on PATH");
+    if !omni_test_capabilities::gate(
+        "git",
+        git_available(),
+        "git binary not found on PATH",
+    ) {
         return;
     }
     let (src, url, _) = build_repo("gone\n");
@@ -639,8 +678,11 @@ async fn with_the_mirror_gone_too_it_names_the_remote_when_offline() {
 
 #[tokio::test]
 async fn a_partially_deleted_tree_is_re_exported_not_reused() {
-    if !git_available() {
-        eprintln!("skipping: `git` is not available on PATH");
+    if !omni_test_capabilities::gate(
+        "git",
+        git_available(),
+        "git binary not found on PATH",
+    ) {
         return;
     }
     let (src, url, _) = build_repo("whole\n");
@@ -673,8 +715,11 @@ async fn a_partially_deleted_tree_is_re_exported_not_reused() {
 
 #[tokio::test]
 async fn commits_of_one_remote_share_one_mirror_with_a_tree_each() {
-    if !git_available() {
-        eprintln!("skipping: `git` is not available on PATH");
+    if !omni_test_capabilities::gate(
+        "git",
+        git_available(),
+        "git binary not found on PATH",
+    ) {
         return;
     }
     let (src, url, c1) = build_repo("one\n");
@@ -705,8 +750,11 @@ async fn commits_of_one_remote_share_one_mirror_with_a_tree_each() {
 
 #[tokio::test]
 async fn an_unknown_revision_is_an_error_naming_it() {
-    if !git_available() {
-        eprintln!("skipping: `git` is not available on PATH");
+    if !omni_test_capabilities::gate(
+        "git",
+        git_available(),
+        "git binary not found on PATH",
+    ) {
         return;
     }
     let (_src, url, _) = build_repo("x\n");
@@ -722,8 +770,11 @@ async fn an_unknown_revision_is_an_error_naming_it() {
 
 #[tokio::test]
 async fn a_store_from_a_newer_layout_is_refused_not_modified() {
-    if !git_available() {
-        eprintln!("skipping: `git` is not available on PATH");
+    if !omni_test_capabilities::gate(
+        "git",
+        git_available(),
+        "git binary not found on PATH",
+    ) {
         return;
     }
     let (_src, url, _) = build_repo("x\n");
@@ -744,8 +795,11 @@ async fn a_store_from_a_newer_layout_is_refused_not_modified() {
 
 #[tokio::test]
 async fn a_tracked_dot_manifest_file_is_exported_untouched() {
-    if !git_available() {
-        eprintln!("skipping: `git` is not available on PATH");
+    if !omni_test_capabilities::gate(
+        "git",
+        git_available(),
+        "git binary not found on PATH",
+    ) {
         return;
     }
     let (src, url, _) = build_repo("x\n");
