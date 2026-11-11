@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     path::{Path, PathBuf},
     sync::Mutex,
 };
@@ -140,6 +140,35 @@ impl ExpandedPacks {
             }
         }
         out
+    }
+}
+
+impl ExpandedPacks {
+    /// The rebased `local` projection roots contributed by packs that are not
+    /// local (a git pack, or one nested in it). These sources join the
+    /// workspace's list as top-level entries, so nothing about their position
+    /// says they live in the store; this set carries that.
+    pub fn non_local_projection_roots(&self) -> HashSet<PathBuf> {
+        let mut roots = HashSet::new();
+        for node in &self.nodes {
+            if node.is_local || !node.contributes(PackSubsystem::Projections) {
+                continue;
+            }
+            for source in &node.projections {
+                if let SourceConfig::Local(local) = source {
+                    let paths: Vec<&String> = match &local.path {
+                        SingleOrMany::Single(p) => vec![p],
+                        SingleOrMany::Many(ps) => ps.iter().collect(),
+                    };
+                    roots.extend(
+                        paths
+                            .into_iter()
+                            .map(|p| PathBuf::from(rebase_path(&node.root, p))),
+                    );
+                }
+            }
+        }
+        roots
     }
 }
 
