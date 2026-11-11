@@ -1,0 +1,109 @@
+---
+title: "Remote-source store"
+description: "Where fetched generators, tools, packs and projections live, how to move or share the store, and how projections link to it"
+---
+
+Omni fetches remote sources (git repositories named by `generators`, `tools`,
+`projections` and packs) into a **store**. The store is a per-user cache, like the
+ones bun or pnpm keep, shared by every workspace and Git worktree on the machine:
+a repository is fetched once and each commit is exported once, however many
+workspaces pin it.
+
+Each workspace still owns its **lockfile** (`.omni/sources/lock.json`, commit it)
+and its reference sets under `.omni/sources/`. The store holds only content.
+
+## Location
+
+By default the store is `sources` inside the platform cache directory, for
+example `~/.cache/omni/sources` on Linux. The directory is created on first fetch.
+
+To change it, in order of precedence:
+
+1. `--sources-dir <path>` or the `OMNI_SOURCES_DIR` environment variable.
+2. `sources.dir` in the current workspace's `worktree.omni.*` file.
+3. `sources.dir` in the corresponding primary worktree's `worktree.omni.*` file.
+4. The per-user default above.
+5. `.omni/sources/store` in the workspace, only when the system has no per-user
+   cache directory.
+
+```yaml
+# worktree.omni.yaml (machine-local, not committed)
+sources:
+    dir: ../shared-sources
+```
+
+The path rules are the same as for the [worktree cache](/docs/references/worktree-cache):
+relative paths resolve against the workspace declaring them, `~` and environment
+variables are not expanded (use `OMNI_SOURCES_DIR` for those), and a directory
+that equals or contains a workspace is rejected. A null or omitted `sources.dir`
+inherits. Setting `cache.dir` does not affect the store, and the reverse.
+
+Stores written by older omni versions (`.omni/sources/store` inside a workspace)
+are left in place and ignored; delete them when you like.
+
+## The store is safe to delete
+
+It is a cache. Delete any part of it, or all of it, and the next command refetches
+what it needs from the lockfile pins (from the local mirror when that survives,
+otherwise from the network). Commands never delete from the store, so one
+workspace cannot remove what another needs; `omni remote-sources install` only
+prunes the workspace's own lockfile pins.
+
+To reclaim space, use [`omni remote-sources prune`](/docs/references/commands/omni/remote-sources/prune):
+
+```bash
+omni remote-sources prune --older-than 30d --dry-run   # list
+omni remote-sources prune --older-than 30d --yes       # delete
+omni remote-sources prune --larger-than 200MB --all --dry-run
+```
+
+It refuses to run without a filter. A checkout's age is when any workspace last
+used it.
+
+## Layout
+
+```text
+<store>/
+  VERSION                         layout number
+  locks/<remote>.lock             one fetch or export per remote at a time
+  git/<remote>.git/               bare mirror of every branch and tag, shared
+  trees/<remote>/<commit>/        the files of one commit, no .git
+  trees/<remote>/<commit>.manifest  files and sizes, to detect a damaged tree
+  trees/<remote>/<commit>.used    last use, for pruning
+```
+
+History is stored once per remote, not once per pinned commit. A tree whose files
+were partly deleted is detected and re-exported. Published files are read-only so
+a link into the store cannot edit shared content in place. A store with a newer
+`VERSION` than this omni understands is refused with a message; point
+`--sources-dir` elsewhere or upgrade.
+
+## Projections
+
+`link: auto` (the default) chooses how a projected file or directory from a
+remote source reaches your workspace:
+
+| Source | Order tried |
+| --- | --- |
+| File | copy-on-write clone (reflink), symlink into the store, copy |
+| Directory | reflink each file, copy |
+
+A reflink gives an independent file that survives deleting the store and costs no
+extra disk on APFS, Btrfs, XFS and ReFS. Hard links are never chosen by `auto`,
+because editing one would change the file for every workspace. Directories are
+never linked into the store for the same reason. Copies and reflinks are yours to
+edit.
+
+Explicit values do exactly what they say and never fall back: `symlink`,
+`hardlink` (an error when impossible; works on a directory file by file) and
+`copy`. An explicit `symlink` into the store dangles if the store is deleted:
+`omni projection status` reports it as broken and `omni projection sync`
+refetches and repairs it. An explicit `hardlink` or directory `symlink` shares the
+store's content, so edits show up in the store. The `junction` value was removed;
+`auto` uses a junction on its own where it helps.
+
+## Tools and generators under capability enforcement
+
+When capability enforcement is on, a tool or generator loaded from the store is
+granted read access to the directory it loads from, and only that directory, so
+other workspaces' fetched sources stay unreadable to it.

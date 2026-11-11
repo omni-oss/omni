@@ -442,5 +442,5 @@ must name what went wrong.
 - [x] Step 2: capability gate and lane wiring; link kinds; dangling-link repair; sandbox grant
 - [x] Step 3: `omni remote-sources prune`
 - [x] Step 4: bare mirror + trees + `VERSION`
-- [ ] Step 5: user docs and release notes
+- [x] Step 5: user docs (store reference, `remote-sources prune` page)
 - [ ] macOS and Windows verification on CI (the platform lanes now run the link tests)
