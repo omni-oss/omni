@@ -7,9 +7,11 @@ mod core_types;
 mod diagnostic_tests;
 mod extension_graph;
 mod project_graph;
+mod retry_policy;
 mod task_execution_graph;
 
 pub use core_types::*;
 pub use extension_graph::*;
 pub use project_graph::*;
+pub use retry_policy::*;
 pub use task_execution_graph::*;
