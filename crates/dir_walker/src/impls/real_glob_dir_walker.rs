@@ -75,6 +75,7 @@ impl RealGlobDirWalkerConfig {
                 git_exclude: self.git_exclude,
                 git_global: self.git_global,
                 ignore_case_insensitive: self.ignore_case_insensitive,
+                parents: None,
                 hidden: self.hidden,
                 git_ignore: self.git_ignore,
                 ignore: self.ignore,

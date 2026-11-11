@@ -120,5 +120,110 @@ describe(
             },
             CLONE_TIMEOUT_MS,
         );
+
+        it(
+            "finds a git source's own projection.omni.yaml when ignore sync hides the store",
+            async (ctx) => {
+                await skipUnlessGitCliAvailable(ctx);
+
+                const repo = await makeLocalGitRepoWithAnnotatedTag({
+                    files: {
+                        "projection.omni.yaml": [
+                            'name: "@vendor/skills"',
+                            "routes:",
+                            "  - strategy: mirror",
+                            '    scope: "*.md"',
+                            '    target: "@workspace/.agents/skills"',
+                            "",
+                        ].join("\n"),
+                        "rust.md": "# rust\n",
+                    },
+                });
+                const uri = pathToFileURL(repo.url).href;
+
+                // No workspace routes: they must come from the source's manifest.
+                const ws = makeWorkspace({
+                    workspace: {
+                        projects: ["**"],
+                        projections: [
+                            {
+                                source: "git",
+                                uri,
+                                rev: "main",
+                                id: "vendor-skills",
+                            },
+                        ],
+                    },
+                });
+
+                // `ignore sync` writes `/.omni/sources/**`, which hides the
+                // source store from walks that honor the workspace's ignores.
+                expect(
+                    await runOmni(["ignore", "sync"], { cwd: ws.cwd }),
+                ).toHaveSucceeded();
+                expect(ws.read(".omniignore")).toContain("/.omni/sources/**");
+
+                const sync = await runOmni(["projection", "sync", "--update"], {
+                    cwd: ws.cwd,
+                    timeout: CLONE_TIMEOUT_MS,
+                });
+                expect(sync).toHaveSucceeded();
+                // A git checkout may convert line endings (Windows autocrlf).
+                expect(ws.read(".agents/skills/rust.md").trim()).toBe("# rust");
+            },
+            CLONE_TIMEOUT_MS,
+        );
+
+        it(
+            "finds a git source's generators and tools when ignore sync hides the store",
+            async (ctx) => {
+                await skipUnlessGitCliAvailable(ctx);
+
+                const repo = await makeLocalGitRepoWithAnnotatedTag({
+                    files: {
+                        "generator.omni.yaml":
+                            "name: remote-gen\ndescription: from a git source\n",
+                        "tool.omni.yaml": [
+                            "type: js",
+                            "name: remote-tool",
+                            "entrypoint: ./index.mjs",
+                            "",
+                        ].join("\n"),
+                        "index.mjs": "export default () => {};\n",
+                    },
+                });
+                const uri = pathToFileURL(repo.url).href;
+
+                const ws = makeWorkspace({
+                    workspace: {
+                        projects: ["**"],
+                        generators: [{ source: "git", uri, rev: "main" }],
+                        tools: [{ source: "git", uri, rev: "main" }],
+                    },
+                });
+
+                // `ignore sync` writes `/.omni/sources/**`, which hides the
+                // source store from walks that honor the workspace's ignores.
+                expect(
+                    await runOmni(["ignore", "sync"], { cwd: ws.cwd }),
+                ).toHaveSucceeded();
+                expect(ws.read(".omniignore")).toContain("/.omni/sources/**");
+
+                const generators = await runOmni(["generator", "list"], {
+                    cwd: ws.cwd,
+                    timeout: CLONE_TIMEOUT_MS,
+                });
+                expect(generators).toHaveSucceeded();
+                expect(generators).toOutputContaining("remote-gen");
+
+                const tools = await runOmni(["tool", "list"], {
+                    cwd: ws.cwd,
+                    timeout: CLONE_TIMEOUT_MS,
+                });
+                expect(tools).toHaveSucceeded();
+                expect(tools).toOutputContaining("remote-tool");
+            },
+            CLONE_TIMEOUT_MS,
+        );
     },
 );

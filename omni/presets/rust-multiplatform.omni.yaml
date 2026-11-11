@@ -108,6 +108,7 @@ tasks:
       profile: release
     dependencies:
       - ^build
+      - ^passthrough
       - check
     cache:
       key:
