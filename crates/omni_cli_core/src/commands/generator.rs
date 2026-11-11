@@ -569,7 +569,7 @@ async fn get_generators(
                     };
                     let materialized =
                         remote_sources.materialize(&source).await?;
-                    let configurations = omni_generator::discover(
+                    let configurations = omni_generator::discover_in_source(
                         &materialized.root,
                         &["**"],
                         &sys,
@@ -635,7 +635,7 @@ async fn get_generators(
                     };
                     let materialized =
                         remote_sources.materialize(&source).await?;
-                    let discovered = omni_generator::discover(
+                    let discovered = omni_generator::discover_in_source(
                         &materialized.root,
                         &["**"],
                         sys,

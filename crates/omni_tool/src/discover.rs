@@ -25,6 +25,29 @@ pub async fn discover<G: AsRef<str>>(
     glob_patterns: &[G],
     sys: &impl ToolSys,
 ) -> Result<Vec<Cow<'static, ToolConfiguration>>, Error> {
+    discover_with(root_dir, glob_patterns, sys, true).await
+}
+
+/// Like [`discover`], for a self-contained source tree such as a fetched git
+/// checkout. Ignore files in directories above `root_dir` are not applied, so
+/// the enclosing workspace's rules (which hide the source store) cannot hide
+/// the source's own tools. The source's own ignore files still apply.
+#[allow(clippy::result_large_err)]
+pub async fn discover_in_source<G: AsRef<str>>(
+    root_dir: &Path,
+    glob_patterns: &[G],
+    sys: &impl ToolSys,
+) -> Result<Vec<Cow<'static, ToolConfiguration>>, Error> {
+    discover_with(root_dir, glob_patterns, sys, false).await
+}
+
+#[allow(clippy::result_large_err)]
+async fn discover_with<G: AsRef<str>>(
+    root_dir: &Path,
+    glob_patterns: &[G],
+    sys: &impl ToolSys,
+    parent_ignores: bool,
+) -> Result<Vec<Cow<'static, ToolConfiguration>>, Error> {
     let no_exclude: &[G] = &[];
     let discovery = ConfigurationDiscovery::new(
         root_dir,
@@ -33,7 +56,8 @@ pub async fn discover<G: AsRef<str>>(
         CONFIG_FILE_NAMES.as_slice(),
         IGNORE_FILE_NAMES.as_slice(),
         "tool",
-    );
+    )
+    .with_parent_ignores(parent_ignores);
 
     let files = discovery.discover().await?;
 
