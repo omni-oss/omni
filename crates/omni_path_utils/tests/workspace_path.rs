@@ -63,3 +63,41 @@ fn schema_is_bounded_string() {
         assert_eq!(v["maxLength"], 4096);
     }
 }
+
+#[test]
+fn schema_pattern_matches_parser() {
+    let v = serde_json::to_value(schema_for!(WorkspacePath)).unwrap();
+    let re = regex::Regex::new(v["pattern"].as_str().unwrap()).unwrap();
+    let cases = [
+        ".",
+        "a",
+        "a/b",
+        "a/B",
+        "..x",
+        ".hidden/a",
+        "a:b",
+        "a/C:x",
+        "...",
+        "",
+        "..",
+        "a/../b",
+        "./a",
+        "a/./b",
+        "a/",
+        "/a",
+        "a//b",
+        "a\\b",
+        "C:/Windows",
+        "c:",
+        "a/..",
+        "../a",
+        "a\0b",
+    ];
+    for c in cases {
+        assert_eq!(
+            re.is_match(c),
+            WorkspacePath::parse(c).is_ok(),
+            "pattern and parser disagree on {c:?}"
+        );
+    }
+}

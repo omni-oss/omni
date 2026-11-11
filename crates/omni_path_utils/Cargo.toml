@@ -19,6 +19,7 @@ thiserror = { workspace = true }
 omni_path_utils = { path = ".", features = ["schemars"] }
 serde_json = { workspace = true }
 schemars = { workspace = true }
+regex = { workspace = true }
 serde = { workspace = true }
 
 [lints]

@@ -14,6 +14,8 @@ pub enum WorkspacePathError {
     Nul,
     #[error("workspace path contains a backslash: {0:?}")]
     Backslash(String),
+    #[error("workspace path starts with a drive prefix: {0:?}")]
+    DrivePrefix(String),
     #[error("workspace path is absolute: {0:?}")]
     Absolute(String),
     #[error("workspace path has an empty segment: {0:?}")]
@@ -27,6 +29,17 @@ pub enum WorkspacePathError {
     #[error("path is not valid UTF-8")]
     NotUtf8,
 }
+
+/// Mirrors `WorkspacePath::parse` without lookaheads: `.`, or `/`-joined
+/// segments that are not `.`/`..`, contain no `/`, `\` or NUL, and where the
+/// first segment is not a drive prefix such as `C:`.
+#[cfg(feature = "schemars")]
+const WORKSPACE_PATH_PATTERN: &str = concat!(
+    r"^(?:\.|",
+    r"(?:[A-Za-z](?:[^/\\\x00:][^/\\\x00]*)?|[^/\\\x00.A-Za-z][^/\\\x00]*|\.[^/\\\x00.][^/\\\x00]*|\.\.[^/\\\x00]+)",
+    r"(?:/(?:[^/\\\x00.][^/\\\x00]*|\.[^/\\\x00.][^/\\\x00]*|\.\.[^/\\\x00]+))*",
+    r")$"
+);
 
 /// A validated, normalized path relative to the workspace root.
 ///
@@ -77,6 +90,10 @@ impl WorkspacePath {
         }
         if value.contains('\\') {
             return Err(WorkspacePathError::Backslash(value.to_string()));
+        }
+        let b = value.as_bytes();
+        if b.len() >= 2 && b[0].is_ascii_alphabetic() && b[1] == b':' {
+            return Err(WorkspacePathError::DrivePrefix(value.to_string()));
         }
         if value == "." {
             return Ok(Self::root());
@@ -159,12 +176,14 @@ impl WorkspacePath {
                     a == b
                 }
             };
-            if r.comps.len() > p.comps.len()
-                || !r.comps.iter().zip(&p.comps).all(|(a, b)| eq(a, b))
+            let skip = |c: &&str| !c.is_empty() && *c != ".";
+            let rc: Vec<&str> = r.comps.into_iter().filter(skip).collect();
+            let pc: Vec<&str> = p.comps.into_iter().filter(skip).collect();
+            if rc.len() > pc.len() || !rc.iter().zip(&pc).all(|(a, b)| eq(a, b))
             {
                 return Err(outside());
             }
-            p.comps[r.comps.len()..].to_vec()
+            pc[rc.len()..].to_vec()
         } else {
             p.comps
         };
@@ -229,7 +248,10 @@ fn split_os(s: &str, windows: bool) -> OsParts<'_> {
     let mut absolute = false;
     if let Some(r) = s.strip_prefix("\\\\?\\") {
         absolute = true;
-        if r.len() >= 4 && r[..4].eq_ignore_ascii_case("UNC\\") {
+        if r.as_bytes()
+            .get(..4)
+            .is_some_and(|b| b.eq_ignore_ascii_case(b"UNC\\"))
+        {
             if let Some((pre, n)) = take_unc(&r[4..]) {
                 prefix = pre;
                 rest = &r[4 + n..];
@@ -342,6 +364,7 @@ impl schemars::JsonSchema for WorkspacePath {
             "type": "string",
             "minLength": 1,
             "maxLength": DEFAULT_MAX_WORKSPACE_PATH_LEN,
+            "pattern": WORKSPACE_PATH_PATTERN,
             "description": "Normalized workspace-relative path: `/`-separated, no empty, `.` or `..` segments, no trailing `/`; the root is `.`.",
         })
     }
@@ -432,6 +455,45 @@ mod tests {
         assert!(matches!(WorkspacePath::parse("a\0b"), Err(E::Nul)));
         assert!(matches!(WorkspacePath::parse("/a"), Err(E::Absolute(_))));
         assert!(WorkspacePath::parse("C:\\a").is_err());
+    }
+
+    #[test]
+    fn parse_rejects_drive_prefix() {
+        use WorkspacePathError as E;
+        for bad in ["C:/Windows", "c:", "C:foo", "z:/a"] {
+            assert!(
+                matches!(WorkspacePath::parse(bad), Err(E::DrivePrefix(_))),
+                "{bad}"
+            );
+        }
+        assert_eq!(ok("ab:c"), "ab:c");
+        assert_eq!(ok("dir/C:x"), "dir/C:x");
+        assert_eq!(ok("1:/x"), "1:/x");
+    }
+
+    #[test]
+    fn roots_are_normalized_before_containment() {
+        let u =
+            |r, p| WorkspacePath::from_unix_path(r, p).map(|p| p.to_string());
+        assert_eq!(u("/ws/", "/ws/file").unwrap(), "file");
+        assert_eq!(u("/ws//./", "/ws//a/./b").unwrap(), "a/b");
+        assert_eq!(u("/", "/a/b").unwrap(), "a/b");
+        assert_eq!(u("/", "/").unwrap(), ".");
+        assert!(u("/ws/", "/ws/../x").is_err());
+        assert!(u("/ws/", "/wsx").is_err());
+        assert_eq!(win("C:\\", "C:\\a\\b").unwrap(), "a/b");
+        assert_eq!(win("C:\\ws\\", "C:\\ws\\a").unwrap(), "a");
+        assert_eq!(win("C:\\ws\\.\\", "C:\\ws\\a").unwrap(), "a");
+        assert!(win("C:\\ws\\", "C:\\ws\\..\\x").is_err());
+    }
+
+    #[test]
+    fn verbatim_non_ascii_does_not_panic() {
+        for p in ["\\\\?\\abc\u{e9}", "\\\\?\\UN\u{e9}", "\\\\?\\\u{e9}\u{e9}"]
+        {
+            let _ = WorkspacePath::from_windows_path("C:\\ws", p);
+            let _ = WorkspacePath::from_windows_path(p, "C:\\ws");
+        }
     }
 
     #[test]
