@@ -598,11 +598,7 @@ mod tests {
     fn from_os_path_uses_path_api() {
         let p =
             WorkspacePath::from_os_path(Path::new("/ws"), Path::new("/ws/x"));
-        if cfg!(windows) {
-            assert!(p.is_err());
-        } else {
-            assert_eq!(p.unwrap().as_str(), "x");
-        }
+        assert_eq!(p.unwrap().as_str(), "x");
     }
 
     #[test]
