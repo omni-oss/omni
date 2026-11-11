@@ -19,7 +19,7 @@ use crate::{
     Call, Context, DefaultProjectFilter, DefaultTaskFilter,
     DefaultTaskScmAffectedFilter, ExecutionPlanProvider, FilterError,
     MetaErrorOptions, MetaFilterError, MetaOnError, ProjectFilter as _,
-    ProjectFilterExt as _, ScmAffectedFilter, TaskFilter as _,
+    ProjectFilterExt as _, ScmAffectedFilter, TaskFilter as _, TaskSelector,
 };
 
 #[derive(Debug, new)]
@@ -127,7 +127,7 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
 
                 // Apply the project/dir/meta filters to the synthetic command
                 // task too, so `exec` honors `--dir`/`-m` (not just `-p`).
-                let command_task_names = [tfqn.as_str()];
+                let command_task_names = [TaskSelector::exact(tfqn.as_str())];
                 let task_filter = self.get_task_filter(
                     call.is_command(),
                     &command_task_names,
@@ -163,12 +163,9 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
                 nodes
             }
             Call::Tasks(tnames) => {
-                let task_names_str =
-                    tnames.iter().map(|t| t.as_str()).collect::<Vec<_>>();
-
                 let task_filter = self.get_task_filter(
                     call.is_command(),
-                    &task_names_str,
+                    tnames,
                     project_filters,
                     dir_filters,
                     meta_filter,
@@ -229,7 +226,7 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
     fn get_task_filter(
         &'a self,
         use_project_meta: bool,
-        task_names: &[&str],
+        task_names: &[TaskSelector],
         project_filters: &[&str],
         dir_filters: &[&str],
         meta_filter: Option<&str>,
@@ -336,13 +333,10 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
                     );
                 });
 
-                vec![task_name]
+                vec![TaskSelector::exact(task_name)]
             }
-            Call::Tasks(task_names) => task_names.clone(),
+            Call::Tasks(selectors) => selectors.clone(),
         };
-
-        let task_names =
-            task_names.iter().map(|t| t.as_str()).collect::<Vec<_>>();
 
         let tf = self.get_task_filter(
             call.is_command(),
@@ -564,5 +558,123 @@ mod tests {
                 "hello world".to_string(),
             ])
         );
+    }
+
+    struct FixtureContext {
+        projects: Vec<omni_core::Project>,
+        patterns: GlobPatterns<OmniPath>,
+    }
+
+    #[derive(Debug, thiserror::Error)]
+    #[error("fixture")]
+    struct FixtureError;
+
+    impl Context for FixtureContext {
+        type Error = FixtureError;
+
+        fn get_project_meta_config(
+            &self,
+            _: &str,
+        ) -> Option<&MetaConfiguration> {
+            None
+        }
+
+        fn get_task_meta_config(
+            &self,
+            _: &str,
+            _: &str,
+        ) -> Option<&MetaConfiguration> {
+            None
+        }
+
+        fn get_cache_input_files(
+            &self,
+            _: &str,
+            _: &str,
+        ) -> &GlobPatterns<OmniPath> {
+            &self.patterns
+        }
+
+        fn get_project_graph(
+            &self,
+        ) -> Result<omni_core::ProjectGraph, Self::Error> {
+            omni_core::ProjectGraph::from_projects(self.projects.clone())
+                .map_err(|_| FixtureError)
+        }
+
+        fn projects(&self) -> &[omni_core::Project] {
+            &self.projects
+        }
+
+        fn root_dir(&self) -> &std::path::Path {
+            std::path::Path::new("/ws")
+        }
+    }
+
+    fn planned(call: &Call) -> Vec<String> {
+        let task = || {
+            Task::new(
+                Some(CommandConfig::Shell("echo".into())),
+                None,
+                vec![],
+                None,
+                TeraExprBoolean::Boolean(true),
+                false,
+                false,
+                vec![],
+                None,
+                None,
+            )
+        };
+        let mut project = omni_core::Project::new(
+            "app",
+            "/ws/app".into(),
+            vec![],
+            Default::default(),
+        );
+        for name in ["*", "build", "test"] {
+            project.tasks.insert(name.to_string(), task());
+        }
+        let ctx = FixtureContext {
+            projects: vec![project],
+            patterns: GlobPatterns::default(),
+        };
+        let plan = DefaultExecutionPlanProvider::new(ctx)
+            .get_execution_plan(call, &[], &[], None, None, true, false)
+            .unwrap();
+        let mut names: Vec<String> = plan
+            .into_iter()
+            .flatten()
+            .map(|n| n.task_name().to_string())
+            .collect();
+        names.sort();
+        names
+    }
+
+    #[test]
+    fn exact_star_selects_only_the_task_named_star() {
+        assert_eq!(planned(&Call::exact_tasks(["*"])), vec!["*"]);
+    }
+
+    #[test]
+    fn pattern_star_selects_all_tasks() {
+        assert_eq!(
+            planned(&Call::pattern_tasks(["*"])),
+            vec!["*", "build", "test"]
+        );
+    }
+
+    #[test]
+    fn all_tasks_selects_all_tasks() {
+        assert_eq!(planned(&Call::all_tasks()), vec!["*", "build", "test"]);
+    }
+
+    #[test]
+    fn mixed_exact_and_pattern_selectors_union() {
+        let call = Call::Tasks(vec![
+            TaskSelector::exact("*"),
+            TaskSelector::pattern("te*"),
+        ]);
+        assert_eq!(planned(&call), vec!["*", "test"]);
     }
 }

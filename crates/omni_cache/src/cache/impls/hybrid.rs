@@ -153,11 +153,11 @@ impl HybridTaskExecutionCacheStore {
         dir_globs: &[&str],
         meta_filter: Option<&str>,
     ) -> Result<HashSet<String>, LocalTaskExecutionCacheStoreError> {
-        let call = Call::new_tasks(if task_name_globs.is_empty() {
-            vec!["*".to_string()]
+        let call = if task_name_globs.is_empty() {
+            Call::all_tasks()
         } else {
-            task_name_globs.iter().map(|s| s.to_string()).collect()
-        });
+            Call::pattern_tasks(task_name_globs.iter().copied())
+        };
 
         let plan =
             DefaultExecutionPlanProvider::new(ContextWrapper::new(context))
@@ -1178,11 +1178,11 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
 
             let time_now = SystemTime::now();
 
-            let call = Call::new_tasks(if args.task_name_globs.is_empty() {
-                vec!["*".to_string()]
+            let call = if args.task_name_globs.is_empty() {
+                Call::all_tasks()
             } else {
-                args.task_name_globs.iter().map(|s| s.to_string()).collect()
-            });
+                Call::pattern_tasks(args.task_name_globs.iter().copied())
+            };
             let plan =
                 DefaultExecutionPlanProvider::new(ContextWrapper::new(context))
                     .get_execution_plan(

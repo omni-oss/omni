@@ -74,7 +74,7 @@ fn prepare(rt: &Runtime) -> Vec<Prepared> {
                 .on_failure(OnFailure::Continue)
                 .max_concurrency(concurrency)
                 .force(Force::All)
-                .call(Call::new_tasks(vec![leaf.clone()]))
+                .call(Call::pattern_tasks([leaf.clone()]))
                 .build()
                 .expect("config");
             rt.block_on(TaskExecutor::new(cfg, &ctx, NoopSubscriber).run())
@@ -83,7 +83,7 @@ fn prepare(rt: &Runtime) -> Vec<Prepared> {
             // Materialize the task-graph nodes for the called task.
             let plan = ContextExecutionPlanProvider::new(&ctx)
                 .get_execution_plan(
-                    &Call::new_tasks(vec![leaf.clone()]),
+                    &Call::pattern_tasks([leaf.clone()]),
                     &[],
                     &[],
                     None,
