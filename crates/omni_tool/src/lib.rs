@@ -13,7 +13,7 @@ mod run;
 mod sys;
 
 pub use bridge_runner::LazyToolRunner;
-pub use discover::discover;
+pub use discover::{discover, discover_in_source};
 pub use run::{
     EXEC_TOOL_PATH, ExecToolPayload, ToolEnforcement, ToolRunner, run_named,
 };

@@ -496,7 +496,7 @@ where
                     };
                     let materialized =
                         remote_sources.materialize(&source).await?;
-                    let configurations = omni_generator::discover(
+                    let configurations = omni_generator::discover_in_source(
                         &materialized.root,
                         &["**"],
                         &sys,
@@ -551,8 +551,17 @@ where
                         SingleOrMany::Single(p) => vec![p.clone()],
                         SingleOrMany::Many(ps) => ps.clone(),
                     };
-                    omni_generator::discover(&contributed.root, &paths, sys)
+                    if contributed.is_local {
+                        omni_generator::discover(&contributed.root, &paths, sys)
+                            .await?
+                    } else {
+                        omni_generator::discover_in_source(
+                            &contributed.root,
+                            &paths,
+                            sys,
+                        )
                         .await?
+                    }
                 }
                 SourceConfig::Git(git) => {
                     let source = RemoteSource::Git {
@@ -561,7 +570,7 @@ where
                     };
                     let materialized =
                         remote_sources.materialize(&source).await?;
-                    let discovered = omni_generator::discover(
+                    let discovered = omni_generator::discover_in_source(
                         &materialized.root,
                         &["**"],
                         sys,

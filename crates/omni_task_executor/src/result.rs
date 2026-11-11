@@ -8,6 +8,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumIs};
 
+use crate::CacheStatus;
+
 #[derive(Debug, new, EnumIs, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "status")]
 #[serde(rename_all = "kebab-case")]
@@ -23,6 +25,9 @@ pub enum TaskExecutionResult {
         #[new(default)]
         details: Option<TaskDetails>,
         tries: u8,
+        #[new(default)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cache_status: Option<CacheStatus>,
     },
     Errored {
         task: TaskExecutionNode,
@@ -30,12 +35,18 @@ pub enum TaskExecutionResult {
         #[new(default)]
         details: Option<TaskDetails>,
         tries: u8,
+        #[new(default)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cache_status: Option<CacheStatus>,
     },
     Skipped {
         task: TaskExecutionNode,
         skip_reason: SkipReason,
         #[new(default)]
         details: Option<TaskDetails>,
+        #[new(default)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cache_status: Option<CacheStatus>,
     },
 }
 
@@ -92,6 +103,26 @@ impl TaskExecutionResult {
             TaskExecutionResult::Completed { details, .. }
             | TaskExecutionResult::Errored { details, .. }
             | TaskExecutionResult::Skipped { details, .. } => details.as_mut(),
+        }
+    }
+
+    pub fn cache_status(&self) -> Option<&CacheStatus> {
+        match self {
+            TaskExecutionResult::Completed { cache_status, .. }
+            | TaskExecutionResult::Errored { cache_status, .. }
+            | TaskExecutionResult::Skipped { cache_status, .. } => {
+                cache_status.as_ref()
+            }
+        }
+    }
+
+    pub fn set_cache_status(&mut self, status: CacheStatus) {
+        match self {
+            TaskExecutionResult::Completed { cache_status, .. }
+            | TaskExecutionResult::Errored { cache_status, .. }
+            | TaskExecutionResult::Skipped { cache_status, .. } => {
+                *cache_status = Some(status);
+            }
         }
     }
 

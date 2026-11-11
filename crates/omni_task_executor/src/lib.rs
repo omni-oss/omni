@@ -2,6 +2,7 @@
 
 mod batch_executor;
 mod cache_manager;
+mod cache_status;
 mod cache_store_provider;
 mod config;
 mod execution_plan_provider;
@@ -17,6 +18,7 @@ mod sys;
 mod task_context_provider;
 mod utils;
 
+pub use cache_status::CacheStatus;
 pub use config::*;
 pub use executor::*;
 pub use force::*;

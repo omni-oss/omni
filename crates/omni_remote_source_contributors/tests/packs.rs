@@ -152,3 +152,90 @@ async fn provides_narrows_and_cascades_and_never_widens() {
         "both packs contribute generators"
     );
 }
+
+const SKILLS_PACK: &str = "name: \"@org/kit\"\nprojections:\n  - source: local\n    path: ./skills\n    id: skills\ngenerators:\n  - source: local\n    path: ./gens\npacks:\n  - source: local\n    path: ./inner\n    id: inner\n";
+const INNER_PACK: &str =
+    "name: \"@org/inner\"\ntools:\n  - source: local\n    path: ./tools\n";
+
+#[tokio::test]
+async fn packs_reached_from_the_workspace_alone_are_local() {
+    let ws = tempfile::tempdir().expect("ws");
+    let sources_root = ws.path().join(".omni/sources");
+    write_manifest(&ws.path().join("kit"), SKILLS_PACK);
+    write_manifest(&ws.path().join("kit/inner"), INNER_PACK);
+
+    let manager = manager(&sources_root).await;
+    let sources = vec![pack_source("kit", "./kit", None)];
+    let (packs, _refs) =
+        expand_packs(&manager, &sources, ws.path(), false, None)
+            .await
+            .unwrap();
+
+    assert_eq!(packs.nodes.len(), 2);
+    assert!(packs.nodes.iter().all(|n| n.is_local));
+    assert!(
+        packs
+            .effective_generator_sources()
+            .iter()
+            .all(|s| s.is_local)
+    );
+    assert!(packs.effective_tool_sources().iter().all(|s| s.is_local));
+    assert!(
+        packs.non_local_projection_ids().is_empty(),
+        "no projection of a local pack is marked non-local"
+    );
+}
+
+/// A workspace-local pack may be configured to point into the store. It was
+/// reached from the workspace alone, so it and its local children stay local
+/// and keep the workspace's ignore rules.
+#[tokio::test]
+async fn a_workspace_local_pack_pointing_into_the_store_keeps_its_children_local()
+ {
+    let ws = tempfile::tempdir().expect("ws");
+    let sources_root = ws.path().join(".omni/sources");
+    let in_store = sources_root.join("store/manual/kit");
+    write_manifest(&in_store, SKILLS_PACK);
+    write_manifest(&in_store.join("inner"), INNER_PACK);
+
+    let manager = manager(&sources_root).await;
+    let sources =
+        vec![pack_source("kit", "./.omni/sources/store/manual/kit", None)];
+    let (packs, _refs) =
+        expand_packs(&manager, &sources, ws.path(), false, None)
+            .await
+            .unwrap();
+
+    assert_eq!(packs.nodes.len(), 2);
+    assert!(
+        packs.nodes.iter().all(|n| n.is_local),
+        "locality follows how the pack was reached, not where its files are"
+    );
+    assert!(packs.effective_tool_sources().iter().all(|s| s.is_local));
+    assert!(packs.non_local_projection_ids().is_empty());
+}
+
+/// Pack ids are free-form strings, so a child id may contain the `::` that joins
+/// qualified ids. Locality is resolved through the real parent, not by parsing
+/// the qualified id, so such a child of a local pack stays local.
+#[tokio::test]
+async fn a_child_id_containing_the_separator_keeps_its_parents_locality() {
+    let ws = tempfile::tempdir().expect("ws");
+    let sources_root = ws.path().join(".omni/sources");
+    write_manifest(
+        &ws.path().join("kit"),
+        "name: \"@org/kit\"\npacks:\n  - source: local\n    path: ./inner\n    id: \"inner::leaf\"\n",
+    );
+    write_manifest(&ws.path().join("kit/inner"), INNER_PACK);
+
+    let manager = manager(&sources_root).await;
+    let sources = vec![pack_source("kit", "./kit", None)];
+    let (packs, _refs) =
+        expand_packs(&manager, &sources, ws.path(), false, None)
+            .await
+            .unwrap();
+
+    assert_eq!(packs.nodes.len(), 2);
+    assert!(packs.nodes.iter().all(|n| n.is_local));
+    assert!(packs.effective_tool_sources().iter().all(|s| s.is_local));
+}

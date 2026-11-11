@@ -1,5 +1,6 @@
 use std::{
     borrow::Cow,
+    collections::HashSet,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -15,7 +16,7 @@ use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
 use crate::{
     MetaFilterCollector, MetaFilterError, MetaFilterErrorLimits, ProjectFilter,
-    ScmAffectedFilter, TaskFilter,
+    ScmAffectedFilter, TaskFilter, TaskSelector,
 };
 
 pub struct DefaultProjectFilter {
@@ -66,6 +67,7 @@ where
         for<'a> Fn(&'a TaskExecutionNode) -> Option<&'b MetaConfiguration>,
 {
     task_matcher: Option<Arc<GlobSet>>,
+    exact_task_names: HashSet<String>,
     meta_filter: Option<Evaluator>,
     meta_filter_source: Option<String>,
     collector: Option<MetaFilterCollector>,
@@ -80,18 +82,33 @@ where
         for<'a> Fn(&'a TaskExecutionNode) -> Option<&'b MetaConfiguration>,
 {
     pub fn new(
-        task_filters: &[&str],
+        task_filters: &[TaskSelector],
         project_filters: &[&str],
         dir_filters: &[&str],
         workspace_root_dir: &Path,
         meta_filter: Option<&str>,
         get_task_meta: TGetTaskMetaFn,
     ) -> Result<Self, FilterError> {
-        let task_matcher = if task_filters.is_empty() {
+        let select_all = task_filters.is_empty()
+            || task_filters.iter().any(|s| matches!(s, TaskSelector::All));
+        let mut exact_task_names = HashSet::new();
+        let mut task_patterns: Vec<&str> = vec![];
+        if !select_all {
+            for selector in task_filters {
+                match selector {
+                    TaskSelector::Exact(n) => {
+                        exact_task_names.insert(n.clone());
+                    }
+                    TaskSelector::Pattern(p) => task_patterns.push(p),
+                    TaskSelector::All => {}
+                }
+            }
+        }
+        let task_matcher = if task_patterns.is_empty() {
             None
         } else {
             Some(
-                include_set(task_filters, GlobOptions::default())
+                include_set(&task_patterns, GlobOptions::default())
                     .map_err(FilterErrorInner::Glob)?,
             )
         };
@@ -147,6 +164,7 @@ where
             meta_filter,
             meta_filter_source,
             collector: None,
+            exact_task_names,
             project_matcher,
             dir_matcher,
             get_task_meta,
@@ -184,6 +202,7 @@ where
         node: &TaskExecutionNode,
     ) -> Result<bool, Self::Error> {
         if self.task_matcher.is_none()
+            && self.exact_task_names.is_empty()
             && self.meta_filter.is_none()
             && self.project_matcher.is_none()
             && self.dir_matcher.is_none()
@@ -197,8 +216,14 @@ where
             return Ok(false);
         }
 
-        if let Some(tm) = &self.task_matcher
-            && !tm.is_match(node.task_name())
+        let by_exact = self.exact_task_names.contains(node.task_name());
+        let by_pattern = self
+            .task_matcher
+            .as_ref()
+            .is_some_and(|tm| tm.is_match(node.task_name()));
+        if (self.task_matcher.is_some() || !self.exact_task_names.is_empty())
+            && !by_exact
+            && !by_pattern
         {
             return Ok(false);
         }
@@ -484,7 +509,7 @@ mod tests {
         }));
 
         let filter = DefaultTaskFilter::new(
-            &["test"],
+            &[TaskSelector::pattern("test")],
             &["project1"],
             &[],
             Path::new(""),
@@ -537,7 +562,7 @@ mod tests {
     #[test_log::test]
     fn test_meta_filter_missing_key_is_an_error() {
         let filter = DefaultTaskFilter::new(
-            &["test"],
+            &[TaskSelector::pattern("test")],
             &[],
             &[],
             Path::new(""),
@@ -593,7 +618,7 @@ mod tests {
     #[test_log::test]
     fn test_meta_filter_skipped_for_tasks_excluded_by_other_matchers() {
         let filter = DefaultTaskFilter::new(
-            &["build"],
+            &[TaskSelector::pattern("build")],
             &[],
             &[],
             Path::new(""),
@@ -719,7 +744,7 @@ mod tests {
     fn test_default_task_filter_matching_dir_filter() {
         // Non-rooted dir filters are joined onto the workspace root.
         let filter = DefaultTaskFilter::new(
-            &["test"],
+            &[TaskSelector::pattern("test")],
             &[],
             &["packages/*"],
             Path::new("/ws"),
@@ -752,7 +777,7 @@ mod tests {
     #[test_log::test]
     fn test_default_task_filter_not_matching_dir_filter() {
         let filter = DefaultTaskFilter::new(
-            &["test"],
+            &[TaskSelector::pattern("test")],
             &[],
             &["packages/*"],
             Path::new("/ws"),
@@ -791,7 +816,7 @@ mod tests {
     #[test_log::test]
     fn test_default_task_filter_leading_bang_is_literal() {
         let filter = DefaultTaskFilter::new(
-            &["!build"],
+            &[TaskSelector::pattern("!build")],
             &[],
             &[],
             Path::new(""),
@@ -819,5 +844,58 @@ mod tests {
                 .expect("should have value"),
             "a leading `!` must not negate: an unrelated task stays excluded"
         );
+    }
+
+    fn selects(selectors: &[TaskSelector], task: &str) -> bool {
+        let filter = DefaultTaskFilter::new(
+            selectors,
+            &[],
+            &[],
+            Path::new(""),
+            None,
+            |_| None,
+        )
+        .unwrap();
+        filter.should_include_task(&node("p", task)).unwrap()
+    }
+
+    #[test]
+    fn exact_selector_matches_literal_star_name_only() {
+        let star = [TaskSelector::exact("*")];
+        assert!(selects(&star, "*"));
+        assert!(!selects(&star, "build"));
+    }
+
+    #[test]
+    fn exact_selector_does_not_expand_globs() {
+        let sel = [TaskSelector::exact("build*")];
+        assert!(selects(&sel, "build*"));
+        assert!(!selects(&sel, "build"));
+        assert!(!selects(&sel, "build:ci"));
+    }
+
+    #[test]
+    fn pattern_star_selects_every_task() {
+        let sel = [TaskSelector::pattern("*")];
+        assert!(selects(&sel, "build"));
+        assert!(selects(&sel, "a/b"));
+    }
+
+    #[test]
+    fn all_selector_selects_every_task() {
+        assert!(selects(&[TaskSelector::All], "anything:at/all"));
+    }
+
+    #[test]
+    fn no_selectors_keeps_the_select_everything_default() {
+        assert!(selects(&[], "build"));
+    }
+
+    #[test]
+    fn exact_and_pattern_selectors_union() {
+        let sel = [TaskSelector::exact("*"), TaskSelector::pattern("test*")];
+        assert!(selects(&sel, "*"));
+        assert!(selects(&sel, "test:unit"));
+        assert!(!selects(&sel, "build"));
     }
 }

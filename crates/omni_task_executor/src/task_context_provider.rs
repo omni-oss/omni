@@ -10,7 +10,7 @@ use omni_task_context::{
     TaskContextProvider, TaskContextProviderError, TaskHashProvider,
 };
 
-use crate::TaskExecutionResult;
+use crate::{SkipReason, TaskExecutionResult};
 
 pub struct DefaultTaskContextProvider<'a, TSys: ContextSys> {
     inner: Implementation<
@@ -114,6 +114,39 @@ struct OverallResultsTashHashProvider<'a> {
 
 impl<'a> TaskHashProvider for OverallResultsTashHashProvider<'a> {
     fn get_task_hash(&self, task_full_name: &str) -> Option<DefaultHash> {
-        self.overall_results.get(task_full_name).map(|r| r.hash())?
+        let result = self.overall_results.get(task_full_name)?;
+        // An uncached task's hash is the zero sentinel, which proves nothing
+        // about freshness, so it never becomes a dependency digest.
+        if result
+            .cache_status()
+            .is_some_and(|s| !s.provides_reusable_hash())
+        {
+            return None;
+        }
+        result.hash()
+    }
+
+    fn get_dependency_hashes(&self, task_full_name: &str) -> Vec<DefaultHash> {
+        let mut hashes = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        let mut stack = vec![task_full_name];
+
+        while let Some(name) = stack.pop() {
+            if !seen.insert(name) {
+                continue;
+            }
+            match self.overall_results.get(name) {
+                Some(TaskExecutionResult::Skipped {
+                    skip_reason: SkipReason::NoCommand | SkipReason::Disabled,
+                    task,
+                    ..
+                }) => stack.extend(
+                    task.dependencies().iter().rev().map(|d| d.as_str()),
+                ),
+                _ => hashes.extend(self.get_task_hash(name)),
+            }
+        }
+
+        hashes
     }
 }

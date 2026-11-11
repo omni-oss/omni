@@ -1724,3 +1724,262 @@ fn count_commit_dirs(store_git: &Path) -> usize {
     }
     count
 }
+
+/// A git source's own `projection.omni.yaml` is found even when the workspace's
+/// ignore files hide the source store, as `omni ignore sync` makes them do. The
+/// workspace's ignore rules must not apply inside a fetched source.
+#[tokio::test]
+async fn projection_git_owned_manifest_is_found_under_ignored_store() {
+    if !git_available() {
+        eprintln!("skipping: `git` is not available on PATH");
+        return;
+    }
+
+    let repo = tempfile::TempDir::new().unwrap();
+    git(repo.path(), &["init", "-q", "-b", "main"]);
+    std::fs::write(repo.path().join("rust.md"), b"# rust\n").unwrap();
+    std::fs::write(
+        repo.path().join("projection.omni.yaml"),
+        concat!(
+            "name: \"@vendor/skills\"\n",
+            "routes:\n",
+            "  - strategy: mirror\n",
+            "    scope: \"*.md\"\n",
+            "    target: \"@workspace/.agents/skills\"\n",
+        ),
+    )
+    .unwrap();
+    git(repo.path(), &["add", "."]);
+    git(repo.path(), &["commit", "-q", "-m", "initial commit"]);
+    let uri = format!("file://{}", repo.path().display());
+
+    let ws = tempfile::TempDir::new().unwrap();
+    std::fs::write(
+        ws.path().join("workspace.omni.yaml"),
+        format!(
+            concat!(
+                "projects:\n",
+                "  - \"projects/**\"\n",
+                "projections:\n",
+                "  - source: git\n",
+                "    uri: {uri}\n",
+                "    rev: main\n",
+                "    id: vendor-skills\n",
+            ),
+            uri = uri
+        ),
+    )
+    .unwrap();
+    for ignore_file in [".omniignore", ".ignore"] {
+        std::fs::write(
+            ws.path().join(ignore_file),
+            concat!("/.omni/sources/**\n", "!/.omni/sources/lock.json\n",),
+        )
+        .unwrap();
+    }
+
+    let resp = make_api(ws.path())
+        .projection_sync(omni_api::ProjectionSyncRequest::default())
+        .await
+        .expect("sync with the source's owned routes");
+    assert_eq!(resp.applied.len(), 1);
+    assert!(ws.path().join(".agents/skills/rust.md").exists());
+}
+
+// ── fetched sources under an ignored source store ────────────────────────────
+//
+// `omni ignore sync` writes `/.omni/sources/**` into the workspace's ignore
+// files, and fetched sources live under it. Workspace ignore rules must never
+// apply inside a fetched source, so each subsystem still discovers the source's
+// own manifests. A source is local only if reached from the workspace alone.
+
+/// A one-commit git repo holding `files`; returns its `file://` URI.
+fn git_repo_with(files: &[(&str, &str)]) -> (tempfile::TempDir, String) {
+    let repo = tempfile::TempDir::new().unwrap();
+    git(repo.path(), &["init", "-q", "-b", "main"]);
+    for (name, content) in files {
+        write_file(repo.path(), name, content);
+    }
+    git(repo.path(), &["add", "."]);
+    git(repo.path(), &["commit", "-q", "-m", "initial commit"]);
+    let uri = format!("file://{}", repo.path().display());
+    (repo, uri)
+}
+
+/// A workspace with `workspace.omni.yaml` = `config` and the ignore files that
+/// `omni ignore sync` writes for the source store.
+fn workspace_with_ignored_store(config: &str) -> tempfile::TempDir {
+    let ws = tempfile::TempDir::new().unwrap();
+    std::fs::write(ws.path().join("workspace.omni.yaml"), config).unwrap();
+    for ignore_file in [".omniignore", ".ignore"] {
+        std::fs::write(
+            ws.path().join(ignore_file),
+            "/.omni/sources/**\n!/.omni/sources/lock.json\n",
+        )
+        .unwrap();
+    }
+    ws
+}
+
+const GENERATOR_MANIFEST: &str =
+    "name: remote-gen\ndescription: from a fetched source\n";
+const TOOL_MANIFEST: &str =
+    "type: js\nname: remote-tool\nentrypoint: ./index.mjs\n";
+
+#[tokio::test]
+async fn git_source_generators_and_tools_are_found_under_an_ignored_store() {
+    if !git_available() {
+        eprintln!("skipping: `git` is not available on PATH");
+        return;
+    }
+    let (_repo, uri) = git_repo_with(&[
+        ("generator.omni.yaml", GENERATOR_MANIFEST),
+        ("tool.omni.yaml", TOOL_MANIFEST),
+    ]);
+    let ws = workspace_with_ignored_store(&format!(
+        "projects:\n  - \"projects/**\"\ngenerators:\n  - source: git\n    uri: {uri}\n    rev: main\ntools:\n  - source: git\n    uri: {uri}\n    rev: main\n"
+    ));
+
+    let generators = make_api(ws.path()).generator_list().await.unwrap();
+    assert!(
+        generators.generators.iter().any(|g| g.name == "remote-gen"),
+        "generator found: {:?}",
+        generators
+            .generators
+            .iter()
+            .map(|g| &g.name)
+            .collect::<Vec<_>>()
+    );
+    let tools = make_api(ws.path()).tool_list().await.unwrap();
+    assert!(tools.tools.iter().any(|t| t.name == "remote-tool"));
+}
+
+#[tokio::test]
+async fn git_pack_local_paths_are_found_under_an_ignored_store() {
+    if !git_available() {
+        eprintln!("skipping: `git` is not available on PATH");
+        return;
+    }
+    // The pack contributes by `local` path, and its child pack nests further.
+    let (_repo, uri) = git_repo_with(&[
+        (
+            "pack.omni.yaml",
+            "name: \"@org/kit\"\ngenerators:\n  - source: local\n    path: \"gens/**\"\npacks:\n  - source: local\n    path: ./inner\n    id: inner\n",
+        ),
+        ("gens/g/generator.omni.yaml", GENERATOR_MANIFEST),
+        (
+            "inner/pack.omni.yaml",
+            "name: \"@org/inner\"\ntools:\n  - source: local\n    path: \"tools/**\"\n",
+        ),
+        ("inner/tools/t/tool.omni.yaml", TOOL_MANIFEST),
+    ]);
+    let ws = workspace_with_ignored_store(&format!(
+        "projects:\n  - \"projects/**\"\npacks:\n  - source: git\n    uri: {uri}\n    rev: main\n    id: kit\n"
+    ));
+
+    let generators = make_api(ws.path()).generator_list().await.unwrap();
+    assert!(
+        generators
+            .generators
+            .iter()
+            .any(|g| g.name.ends_with("remote-gen")),
+        "pack generator found: {:?}",
+        generators
+            .generators
+            .iter()
+            .map(|g| &g.name)
+            .collect::<Vec<_>>()
+    );
+    let tools = make_api(ws.path()).tool_list().await.unwrap();
+    assert!(
+        tools.tools.iter().any(|t| t.name.ends_with("remote-tool")),
+        "nested pack tool found: {:?}",
+        tools.tools.iter().map(|t| &t.name).collect::<Vec<_>>()
+    );
+}
+
+#[tokio::test]
+async fn git_pack_projection_is_found_under_an_ignored_store() {
+    if !git_available() {
+        eprintln!("skipping: `git` is not available on PATH");
+        return;
+    }
+    // The pack's projection ships its own routes; the workspace declares none.
+    let (_repo, uri) = git_repo_with(&[
+        (
+            "pack.omni.yaml",
+            "name: \"@org/kit\"\nprojections:\n  - source: local\n    path: ./skills\n    id: skills\n",
+        ),
+        (
+            "skills/projection.omni.yaml",
+            "name: \"@vendor/skills\"\nroutes:\n  - strategy: mirror\n    scope: \"*.md\"\n    target: \"@workspace/.agents/skills\"\n",
+        ),
+        ("skills/rust.md", "# rust\n"),
+    ]);
+    let ws = workspace_with_ignored_store(&format!(
+        "projects:\n  - \"projects/**\"\npacks:\n  - source: git\n    uri: {uri}\n    rev: main\n    id: kit\n"
+    ));
+
+    make_api(ws.path())
+        .projection_sync(omni_api::ProjectionSyncRequest::default())
+        .await
+        .expect("sync finds the pack projection's owned manifest");
+    assert!(ws.path().join(".agents/skills/rust.md").exists());
+}
+
+#[tokio::test]
+async fn git_projection_bundle_members_are_found_under_an_ignored_store() {
+    if !git_available() {
+        eprintln!("skipping: `git` is not available on PATH");
+        return;
+    }
+    // The bundle's local member ships its own routes; no route is declared at
+    // the bundle or in the workspace.
+    let (_repo, uri) = git_repo_with(&[
+        (
+            "projection.omni.yaml",
+            "name: \"@vendor/bundle\"\nsources:\n  - source: local\n    path: ./skills\n    id: skills\n",
+        ),
+        (
+            "skills/projection.omni.yaml",
+            "name: \"@vendor/skills\"\nroutes:\n  - strategy: mirror\n    scope: \"*.md\"\n    target: \"@workspace/.agents/skills\"\n",
+        ),
+        ("skills/rust.md", "# rust\n"),
+    ]);
+    let ws = workspace_with_ignored_store(&format!(
+        "projects:\n  - \"projects/**\"\nprojections:\n  - source: git\n    uri: {uri}\n    rev: main\n    id: bundle\n"
+    ));
+
+    make_api(ws.path())
+        .projection_sync(omni_api::ProjectionSyncRequest::default())
+        .await
+        .expect("sync finds the bundle member's owned manifest");
+    assert!(ws.path().join(".agents/skills/rust.md").exists());
+}
+
+/// Workspace-local sources keep the workspace's ignore rules: the same rule that
+/// hides a source's files from walks of the workspace still applies to them.
+#[tokio::test]
+async fn local_source_manifests_still_honor_workspace_ignores() {
+    let ws = workspace_with_ignored_store(
+        "projects:\n  - \"projects/**\"\nprojections:\n  - source: local\n    path: ./vendor/skills\n    id: local-skills\n",
+    );
+    std::fs::write(ws.path().join(".omniignore"), "/vendor/**\n").unwrap();
+    write_file(ws.path(), "vendor/skills/rust.md", "# rust\n");
+    write_file(
+        ws.path(),
+        "vendor/skills/projection.omni.yaml",
+        "name: \"@vendor/skills\"\nroutes:\n  - strategy: mirror\n    scope: \"*.md\"\n    target: \"@workspace/.agents/skills\"\n",
+    );
+
+    let err = make_api(ws.path())
+        .projection_sync(omni_api::ProjectionSyncRequest::default())
+        .await
+        .expect_err(
+            "a local source's manifest is hidden by the workspace rule",
+        );
+    assert!(
+        err.to_string().contains("declares no routes"),
+        "unexpected error: {err}"
+    );
+}

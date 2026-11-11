@@ -25,6 +25,29 @@ pub async fn discover<G: AsRef<str>>(
     glob_patterns: &[G],
     sys: &impl ToolSys,
 ) -> Result<Vec<Cow<'static, ToolConfiguration>>, Error> {
+    discover_with(root_dir, glob_patterns, sys, true).await
+}
+
+/// Like [`discover`], for a self-contained source tree such as a fetched git
+/// checkout. Ignore files in directories above `root_dir` are not applied, so
+/// the enclosing workspace's rules (which hide the source store) cannot hide
+/// the source's own tools. The source's own ignore files still apply.
+#[allow(clippy::result_large_err)]
+pub async fn discover_in_source<G: AsRef<str>>(
+    root_dir: &Path,
+    glob_patterns: &[G],
+    sys: &impl ToolSys,
+) -> Result<Vec<Cow<'static, ToolConfiguration>>, Error> {
+    discover_with(root_dir, glob_patterns, sys, false).await
+}
+
+#[allow(clippy::result_large_err)]
+async fn discover_with<G: AsRef<str>>(
+    root_dir: &Path,
+    glob_patterns: &[G],
+    sys: &impl ToolSys,
+    parent_ignores: bool,
+) -> Result<Vec<Cow<'static, ToolConfiguration>>, Error> {
     let no_exclude: &[G] = &[];
     let discovery = ConfigurationDiscovery::new(
         root_dir,
@@ -33,7 +56,8 @@ pub async fn discover<G: AsRef<str>>(
         CONFIG_FILE_NAMES.as_slice(),
         IGNORE_FILE_NAMES.as_slice(),
         "tool",
-    );
+    )
+    .with_parent_ignores(parent_ignores);
 
     let files = discovery.discover().await?;
 
@@ -123,5 +147,66 @@ mod tests {
         let configs = discover(root, &["tools/**"], &sys).await.unwrap();
         assert_eq!(configs.len(), 1);
         assert_eq!(configs[0].config_path, manifest);
+    }
+}
+
+#[cfg(test)]
+mod source_tests {
+    use std::path::Path;
+
+    use system_traits::impls::RealSys;
+    use tempfile::TempDir;
+
+    use super::*;
+
+    /// `<root>/store/source/<manifest>` with an ignore file in `<root>` hiding
+    /// `store/`, as the synced `/.omni/sources/**` rule does. Returns the
+    /// source dir.
+    fn source_under_ignored_store(root: &Path) -> std::path::PathBuf {
+        let source = root.join("store/source");
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::write(
+            source.join("tool.omni.yaml"),
+            "type: js\nname: remote-tool\nentrypoint: ./index.mjs\n",
+        )
+        .unwrap();
+        std::fs::write(root.join(".omniignore"), "/store/**\n").unwrap();
+        source
+    }
+
+    #[tokio::test]
+    async fn discover_applies_ancestor_ignore_files() {
+        let dir = TempDir::new().unwrap();
+        let source = source_under_ignored_store(dir.path());
+
+        let found = discover(&source, &["**"], &RealSys).await.unwrap();
+
+        assert!(found.is_empty(), "the workspace rule hides it: {found:?}");
+    }
+
+    #[tokio::test]
+    async fn discover_in_source_skips_ancestor_ignore_files() {
+        let dir = TempDir::new().unwrap();
+        let source = source_under_ignored_store(dir.path());
+
+        let found = discover_in_source(&source, &["**"], &RealSys)
+            .await
+            .unwrap();
+
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].name, "remote-tool");
+    }
+
+    #[tokio::test]
+    async fn discover_in_source_keeps_the_sources_own_ignore_files() {
+        let dir = TempDir::new().unwrap();
+        let source = source_under_ignored_store(dir.path());
+        std::fs::write(source.join(".omniignore"), "tool.omni.yaml\n").unwrap();
+
+        let found = discover_in_source(&source, &["**"], &RealSys)
+            .await
+            .unwrap();
+
+        assert!(found.is_empty(), "the source's own rule applies: {found:?}");
     }
 }

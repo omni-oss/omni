@@ -8,6 +8,13 @@ use crate::{CacheInfo, TaskContext, aliases::EnvVars};
 
 pub trait TaskHashProvider {
     fn get_task_hash(&self, task_full_name: &str) -> Option<DefaultHash>;
+
+    /// The digests a dependent should be keyed on for this dependency. A node
+    /// with no hash of its own (a commandless aggregate) may forward the
+    /// digests of its own dependencies.
+    fn get_dependency_hashes(&self, task_full_name: &str) -> Vec<DefaultHash> {
+        self.get_task_hash(task_full_name).into_iter().collect()
+    }
 }
 
 pub trait Context {
