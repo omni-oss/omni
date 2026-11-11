@@ -26,6 +26,7 @@ use system_traits::FsReadAsync;
 /// and the three subsystem source lists from its manifest.
 struct PackLeaf {
     root: PathBuf,
+    in_store: bool,
     name: String,
     version: Option<String>,
     description: Option<String>,
@@ -44,6 +45,9 @@ pub struct ExpandedPackNode {
     pub version: Option<String>,
     pub description: Option<String>,
     pub root: PathBuf,
+    /// Whether `root` is inside the shared source store (a fetched checkout, or
+    /// a path within one) rather than in the workspace proper.
+    pub in_store: bool,
     pub pin: Option<String>,
     pub effective_provides: Option<Vec<PackSubsystem>>,
     pub generators: Vec<GeneratorSourceConfiguration>,
@@ -66,6 +70,9 @@ impl ExpandedPackNode {
 pub struct PackContributedSource<P: omni_configurations::SourceConfigProfile> {
     pub qualified_id: String,
     pub root: PathBuf,
+    /// Whether `root` is inside the shared source store; discovery under it must
+    /// not apply the workspace's ignore rules.
+    pub in_store: bool,
     pub source: SourceConfig<P>,
 }
 
@@ -105,6 +112,7 @@ impl ExpandedPacks {
                 out.push(PackContributedSource {
                     qualified_id: node.qualified_id.clone(),
                     root: node.root.clone(),
+                    in_store: node.in_store,
                     source: source.clone(),
                 });
             }
@@ -224,6 +232,7 @@ where
                 version: e.leaf.version.clone(),
                 description: e.leaf.description.clone(),
                 root: e.leaf.root.clone(),
+                in_store: e.leaf.in_store,
                 pin: e.pin.clone(),
                 effective_provides,
                 generators: e.leaf.generators.clone(),
@@ -346,6 +355,7 @@ where
         let children = manifest.packs;
         let leaf = PackLeaf {
             root: root.clone(),
+            in_store: self.manager.is_in_store(&root),
             name: manifest.name,
             version: manifest.version,
             description: manifest.description,
