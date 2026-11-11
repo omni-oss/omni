@@ -162,3 +162,102 @@ describe("+config @e2e (B03 strict operator envelopes)", () => {
         expect(result).toHaveSucceeded();
     });
 });
+
+function depSpec(tasks: Record<string, unknown>): WorkspaceSpec {
+    return {
+        workspace: { projects: ["**"] },
+        projects: {
+            app: {
+                name: "app",
+                // Keep the config file out of every cache key.
+                cache: { key: { defaults: false, files: ["src/**"] } },
+                tasks,
+            },
+        },
+        files: { "app/src/a.txt": "a\n" },
+    };
+}
+
+const UNCACHED = { exec: 'echo "gen"', cache: { enabled: false } };
+
+async function runTwice(
+    tasks: Record<string, unknown>,
+    target: string,
+): Promise<{ second: Awaited<ReturnType<typeof runOmni>> }> {
+    const ws = makeWorkspace(depSpec(tasks));
+    expect(await runOmni(["run", target], { cwd: ws.cwd })).toHaveSucceeded();
+    const second = await runOmni(["run", target], { cwd: ws.cwd });
+    expect(second).toHaveSucceeded();
+    return { second };
+}
+
+describe("+cache @cache @e2e (B04 uncached dependency demotion)", () => {
+    it("a cache-enabled task is not reused after an uncached dependency", async () => {
+        const { second } = await runTwice(
+            {
+                gen: UNCACHED,
+                build: { exec: 'echo "build"', dependencies: ["gen"] },
+            },
+            "build",
+        );
+
+        expect(second.stderr).not.toContain("Cache hit for task 'app#build'");
+        expect(second).toHaveStderrContaining("ran uncached");
+    });
+
+    it("demotion propagates along a dependency chain", async () => {
+        const { second } = await runTwice(
+            {
+                gen: UNCACHED,
+                mid: { exec: 'echo "mid"', dependencies: ["gen"] },
+                top: { exec: 'echo "top"', dependencies: ["mid"] },
+            },
+            "top",
+        );
+
+        expect(second.stderr).not.toContain("Cache hit for task 'app#mid'");
+        expect(second.stderr).not.toContain("Cache hit for task 'app#top'");
+    });
+
+    it("a commandless aggregate node is transparent", async () => {
+        const { second } = await runTwice(
+            {
+                gen: 'echo "gen"',
+                agg: { dependencies: ["gen"] },
+                build: { exec: 'echo "build"', dependencies: ["agg"] },
+            },
+            "build",
+        );
+
+        expect(second).toHaveStderrContaining("Cache hit for task 'app#build'");
+        expect(second.stderr).not.toContain("ran uncached");
+    });
+
+    it("an uncached task behind an aggregate node still demotes", async () => {
+        const { second } = await runTwice(
+            {
+                gen: UNCACHED,
+                agg: { dependencies: ["gen"] },
+                build: { exec: 'echo "build"', dependencies: ["agg"] },
+            },
+            "build",
+        );
+
+        expect(second.stderr).not.toContain("Cache hit for task 'app#build'");
+    });
+
+    it("cached dependencies and unrelated tasks keep hitting", async () => {
+        const { second } = await runTwice(
+            {
+                gen: 'echo "gen"',
+                build: { exec: 'echo "build"', dependencies: ["gen"] },
+                other: UNCACHED,
+                free: 'echo "free"',
+            },
+            "build",
+        );
+
+        expect(second).toHaveStderrContaining("Cache hit for task 'app#gen'");
+        expect(second).toHaveStderrContaining("Cache hit for task 'app#build'");
+    });
+});

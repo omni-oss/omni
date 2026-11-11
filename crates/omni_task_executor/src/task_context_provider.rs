@@ -114,6 +114,15 @@ struct OverallResultsTashHashProvider<'a> {
 
 impl<'a> TaskHashProvider for OverallResultsTashHashProvider<'a> {
     fn get_task_hash(&self, task_full_name: &str) -> Option<DefaultHash> {
-        self.overall_results.get(task_full_name).map(|r| r.hash())?
+        let result = self.overall_results.get(task_full_name)?;
+        // An uncached task's hash is the zero sentinel, which proves nothing
+        // about freshness, so it never becomes a dependency digest.
+        if result
+            .cache_status()
+            .is_some_and(|s| !s.provides_reusable_hash())
+        {
+            return None;
+        }
+        result.hash()
     }
 }

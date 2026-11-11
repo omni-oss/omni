@@ -28,8 +28,10 @@ use strum::{EnumDiscriminants, IntoDiscriminant as _};
 use tracing::Level;
 
 use crate::{
-    OnFailure, SkipReason, TaskDetails, TaskExecutionResult, TaskExecutorSys,
+    CacheStatus, OnFailure, SkipReason, TaskDetails, TaskExecutionResult,
+    TaskExecutorSys,
     cache_manager::{CacheManager, TaskResultContext, is_cache_eligible},
+    cache_status::{DependencyOutcome, OwnFacts, derive_status},
     task_context_provider::DefaultTaskContextProvider,
 };
 
@@ -713,6 +715,49 @@ where
         Ok(new_results)
     }
 
+    fn derive_cache_statuses(
+        &self,
+        task_contexts: &[Cow<'_, TaskContext<'_>>],
+        overall_results: &UnorderedMap<String, TaskExecutionResult>,
+    ) -> UnorderedMap<String, CacheStatus> {
+        let lookup = |name: &str| match overall_results.get(name) {
+            Some(TaskExecutionResult::Skipped {
+                skip_reason: SkipReason::NoCommand | SkipReason::Disabled,
+                task,
+                ..
+            }) => DependencyOutcome::Transparent(task.dependencies()),
+            Some(r) => r
+                .cache_status()
+                .map(DependencyOutcome::Status)
+                .unwrap_or(DependencyOutcome::Unknown),
+            None => DependencyOutcome::Unknown,
+        };
+
+        task_contexts
+            .iter()
+            .map(|ctx| {
+                let own = OwnFacts {
+                    has_command: ctx.node.task_exec_config().is_some(),
+                    persistent: ctx.node.persistent(),
+                    cache_enabled: ctx
+                        .cache_info
+                        .as_ref()
+                        .is_some_and(|ci| ci.cache_enabled),
+                    no_cache: self.no_cache,
+                };
+                let deps = if self.ignore_dependencies {
+                    &[][..]
+                } else {
+                    ctx.node.dependencies()
+                };
+                (
+                    ctx.node.full_task_name().to_string(),
+                    derive_status(own, deps, &lookup),
+                )
+            })
+            .collect()
+    }
+
     #[tracing::instrument(
             level = Level::DEBUG,
             skip_all,
@@ -733,11 +778,41 @@ where
         let tmp_task_contexts = ctx_provider
             .get_task_contexts(batch, self.ignore_dependencies)
             .map_err(BatchExecutorErrorInner::new_cant_get_task_contexts)?;
-        let task_contexts = self.expand_templates(&tmp_task_contexts)?;
+        let mut task_contexts = self.expand_templates(&tmp_task_contexts)?;
+
+        let statuses =
+            self.derive_cache_statuses(&task_contexts, overall_results);
+        for ctx in &mut task_contexts {
+            let demoted = statuses
+                .get(ctx.node.full_task_name())
+                .is_some_and(|s| s.is_demoted());
+            if demoted && let Some(info) = ctx.to_mut().cache_info.as_mut() {
+                info.to_mut().cache_enabled = false;
+            }
+        }
 
         let mut new_results = self
             .execute_batch_inner(batch, &task_contexts, overall_results)
             .await?;
+
+        for result in new_results.values_mut() {
+            let status = match result {
+                TaskExecutionResult::Skipped {
+                    skip_reason: SkipReason::NoCommand,
+                    ..
+                } => Some(CacheStatus::NoCommand),
+                TaskExecutionResult::Skipped {
+                    skip_reason: SkipReason::Disabled,
+                    ..
+                } => Some(CacheStatus::Disabled {
+                    deciding_source: None,
+                }),
+                _ => statuses.get(result.task().full_task_name()).cloned(),
+            };
+            if let Some(status) = status {
+                result.set_cache_status(status);
+            }
+        }
 
         if self.add_task_details {
             let task_ctx_map = task_contexts
