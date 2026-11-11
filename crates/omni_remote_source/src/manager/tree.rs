@@ -1,9 +1,11 @@
 //! A published store tree: its completeness manifest and read-only seal.
 //!
-//! The manifest is written last, inside the pending directory, so a tree that
-//! has one was fully exported. A reader that finds files missing or the wrong
-//! size (a cleaner deleted part of the tree) treats the tree as absent and
-//! re-exports it.
+//! The manifest lives *beside* the tree (`<commit>.manifest`), never inside it:
+//! a repository may track a root file with any name, and the export must be
+//! byte-for-byte what the commit contains. It is written after the tree is
+//! renamed into place, so a tree without a manifest is treated as incomplete
+//! and re-exported. A reader that finds files missing or the wrong size (a
+//! cleaner deleted part of the tree) does the same.
 
 use std::{
     fs, io,
@@ -11,9 +13,6 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
-
-/// File name of the manifest inside a published tree.
-pub(super) const MANIFEST_NAME: &str = ".manifest";
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Manifest {
@@ -28,36 +27,40 @@ struct ManifestEntry {
     symlink: bool,
 }
 
-/// Record `dir`'s files in its manifest and make them read-only. Directories
-/// stay writable so a prune can delete the tree.
-pub(super) fn seal(dir: &Path) -> io::Result<()> {
+/// Seal the exported tree in `dir`: make its files read-only, so a hard link or
+/// file symlink into the tree cannot edit shared content in place, and return
+/// the manifest bytes to publish beside it.
+///
+/// Directories stay writable on purpose: the store must be safe to delete with
+/// ordinary tools (`rm -rf`, a cache cleaner). That is also why `auto` never
+/// links a *directory* from the store: a directory symlink could add or replace
+/// files in the shared tree.
+pub(super) fn seal(dir: &Path) -> io::Result<Vec<u8>> {
     let mut files = Vec::new();
     walk(dir, dir, &mut files)?;
     files.sort_by(|a, b| a.path.cmp(&b.path));
 
     let manifest = Manifest { files };
-    let body = serde_json::to_vec(&manifest).map_err(io::Error::other)?;
-    fs::write(dir.join(MANIFEST_NAME), body)?;
-
+    let bytes = serde_json::to_vec(&manifest).map_err(io::Error::other)?;
     for entry in &manifest.files {
-        if entry.symlink {
-            continue;
+        if !entry.symlink {
+            set_readonly(&dir.join(&entry.path), true)?;
         }
-        let path = dir.join(&entry.path);
-        let mut permissions = fs::metadata(&path)?.permissions();
-        permissions.set_readonly(true);
-        fs::set_permissions(&path, permissions)?;
     }
-    let manifest_path = dir.join(MANIFEST_NAME);
-    let mut permissions = fs::metadata(&manifest_path)?.permissions();
-    permissions.set_readonly(true);
-    fs::set_permissions(&manifest_path, permissions)
+    Ok(bytes)
 }
 
-/// Whether `dir` is a complete published tree: it has a manifest and every
+fn set_readonly(path: &Path, readonly: bool) -> io::Result<()> {
+    let mut permissions = fs::metadata(path)?.permissions();
+    #[allow(clippy::permissions_set_readonly_false)]
+    permissions.set_readonly(readonly);
+    fs::set_permissions(path, permissions)
+}
+
+/// Whether `dir` is a complete published tree: its manifest exists and every
 /// listed file exists with its recorded size.
-pub(super) fn is_complete(dir: &Path) -> bool {
-    let Ok(body) = fs::read(dir.join(MANIFEST_NAME)) else {
+pub(super) fn is_complete(dir: &Path, manifest: &Path) -> bool {
+    let Ok(body) = fs::read(manifest) else {
         return false;
     };
     let Ok(manifest) = serde_json::from_slice::<Manifest>(&body) else {
@@ -86,9 +89,6 @@ fn walk(
             let meta = fs::symlink_metadata(&path)?;
             if meta.is_dir() {
                 stack.push(path);
-                continue;
-            }
-            if path == root.join(MANIFEST_NAME) {
                 continue;
             }
             let relative = path
@@ -120,49 +120,89 @@ mod tests {
         dir
     }
 
+    fn manifest_file(dir: &tempfile::TempDir) -> PathBuf {
+        let path = dir.path().join("..").join(format!(
+            "{}.manifest",
+            dir.path().file_name().unwrap().to_string_lossy()
+        ));
+        path
+    }
+
+    fn publish(dir: &tempfile::TempDir) -> PathBuf {
+        let manifest = seal(dir.path()).unwrap();
+        let path = manifest_file(dir);
+        fs::write(&path, manifest).unwrap();
+        path
+    }
+
     #[test]
-    fn a_sealed_tree_is_complete_and_its_files_are_read_only() {
+    fn a_sealed_tree_is_complete_and_read_only() {
         let dir = tree();
-        assert!(!is_complete(dir.path()), "no manifest yet");
+        let manifest = manifest_file(&dir);
+        assert!(!is_complete(dir.path(), &manifest), "no manifest yet");
 
-        seal(dir.path()).unwrap();
+        let manifest = publish(&dir);
 
-        assert!(is_complete(dir.path()));
-        for file in ["a.txt", "sub/b.txt", MANIFEST_NAME] {
+        assert!(is_complete(dir.path(), &manifest));
+        for file in ["a.txt", "sub/b.txt"] {
             let meta = fs::metadata(dir.path().join(file)).unwrap();
             assert!(meta.permissions().readonly(), "{file}");
         }
-        // Directories stay writable so the tree can be deleted.
-        assert!(!fs::metadata(dir.path()).unwrap().permissions().readonly());
+        let _ = fs::remove_file(manifest);
+    }
+
+    #[test]
+    fn the_manifest_never_overwrites_a_tracked_dot_manifest_file() {
+        let dir = tree();
+        fs::write(dir.path().join(".manifest"), b"tracked by the repo")
+            .unwrap();
+        let manifest = publish(&dir);
+
+        assert_eq!(
+            fs::read(dir.path().join(".manifest")).unwrap(),
+            b"tracked by the repo"
+        );
+        assert!(is_complete(dir.path(), &manifest));
+        let _ = fs::remove_file(manifest);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_sealed_tree_refuses_in_place_edits_but_stays_deletable() {
+        let dir = tree();
+        let manifest = publish(&dir);
+
+        assert!(fs::write(dir.path().join("a.txt"), b"AAA").is_err());
+        assert!(fs::write(dir.path().join("sub/b.txt"), b"BB").is_err());
+
+        // Ordinary deletion works without any chmod: the store is safe to
+        // delete.
         fs::remove_dir_all(dir.path().join("sub")).unwrap();
+        fs::remove_file(dir.path().join("a.txt")).unwrap();
+        let _ = fs::remove_file(manifest);
     }
 
     #[test]
     fn a_missing_or_resized_file_makes_the_tree_incomplete() {
         let dir = tree();
-        seal(dir.path()).unwrap();
-        assert!(is_complete(dir.path()));
+        let manifest = publish(&dir);
+        assert!(is_complete(dir.path(), &manifest));
 
-        // A cleaner removed one file.
         fs::remove_file(dir.path().join("sub/b.txt")).unwrap();
-        assert!(!is_complete(dir.path()));
+        assert!(!is_complete(dir.path(), &manifest));
 
-        // A file was replaced by one of another size.
         fs::write(dir.path().join("sub/b.txt"), b"much longer").unwrap();
-        assert!(!is_complete(dir.path()));
+        assert!(!is_complete(dir.path(), &manifest));
+        let _ = fs::remove_file(manifest);
     }
 
     #[test]
     fn a_corrupt_manifest_is_incomplete_not_an_error() {
         let dir = tree();
-        seal(dir.path()).unwrap();
-        let manifest = dir.path().join(MANIFEST_NAME);
-        let mut permissions = fs::metadata(&manifest).unwrap().permissions();
-        #[allow(clippy::permissions_set_readonly_false)]
-        permissions.set_readonly(false);
-        fs::set_permissions(&manifest, permissions).unwrap();
+        let manifest = publish(&dir);
         fs::write(&manifest, b"{not json").unwrap();
-        assert!(!is_complete(dir.path()));
+        assert!(!is_complete(dir.path(), &manifest));
+        let _ = fs::remove_file(manifest);
     }
 
     #[cfg(unix)]
@@ -172,10 +212,11 @@ mod tests {
         std::os::unix::fs::symlink("a.txt", dir.path().join("link")).unwrap();
         std::os::unix::fs::symlink("nowhere", dir.path().join("dangling"))
             .unwrap();
-        seal(dir.path()).unwrap();
-        assert!(is_complete(dir.path()));
+        let manifest = publish(&dir);
+        assert!(is_complete(dir.path(), &manifest));
 
         fs::remove_file(dir.path().join("link")).unwrap();
-        assert!(!is_complete(dir.path()));
+        assert!(!is_complete(dir.path(), &manifest));
+        let _ = fs::remove_file(manifest);
     }
 }

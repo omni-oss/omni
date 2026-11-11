@@ -207,8 +207,12 @@ async fn materialize<S: ApplierSys>(
                 Err(error) if is_situational(&error) => {}
                 Err(error) => return Err(error.into()),
             }
-            if let Some(kind) =
-                auto_symlink(sys, &symlink_target, pair, src_is_dir).await?
+            // A directory is never linked into the store: a directory symlink
+            // lets the workspace add or replace files in the shared tree, which
+            // read-only files cannot prevent. It is copied instead.
+            if !src_is_dir
+                && let Some(kind) =
+                    auto_symlink(sys, &symlink_target, pair, src_is_dir).await?
             {
                 return Ok(kind);
             }

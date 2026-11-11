@@ -741,3 +741,33 @@ async fn a_store_from_a_newer_layout_is_refused_not_modified() {
     assert!(message.contains("layout 99"), "{message}");
     assert!(!ws.store_root.join("trees").exists(), "nothing was written");
 }
+
+#[tokio::test]
+async fn a_tracked_dot_manifest_file_is_exported_untouched() {
+    if !git_available() {
+        eprintln!("skipping: `git` is not available on PATH");
+        return;
+    }
+    let (src, url, _) = build_repo("x\n");
+    std::fs::write(src.path().join(".manifest"), "tracked by the repo")
+        .unwrap();
+    git(src.path(), &["add", "."]);
+    git(src.path(), &["commit", "-q", "-m", "tracked .manifest"]);
+
+    let ws = Workspace::new();
+    let mat = ws
+        .manager()
+        .await
+        .materialize(&source_of(&url, "main"))
+        .await
+        .expect("materialize");
+
+    assert_eq!(
+        std::fs::read_to_string(mat.root.join(".manifest")).unwrap(),
+        "tracked by the repo"
+    );
+    // The store's own manifest sits beside the tree, outside it.
+    let mut beside = mat.root.as_os_str().to_owned();
+    beside.push(".manifest");
+    assert!(std::path::Path::new(&beside).is_file());
+}

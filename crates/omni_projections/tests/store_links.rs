@@ -114,7 +114,7 @@ async fn auto_from_store_reflinks_files_and_directories_when_supported() {
 }
 
 #[tokio::test]
-async fn auto_from_store_without_reflink_links_by_absolute_path_never_hardlinks()
+async fn auto_from_store_without_reflink_symlinks_files_by_absolute_path_and_copies_directories()
  {
     // The in-memory filesystem cannot reflink, so this runs on every lane.
     let sys = InMemorySys::default();
@@ -122,28 +122,47 @@ async fn auto_from_store_without_reflink_links_by_absolute_path_never_hardlinks(
     sys.fs_write_async("/store/tree/a.txt", b"a").await.unwrap();
     sys.fs_create_dir_all_async("/ws").await.unwrap();
 
-    for (src, dest) in [
-        ("/store/tree/a.txt", "/ws/a.txt"),
-        ("/store/tree", "/ws/tree"),
-    ] {
-        let pair = LinkPair {
-            source_abs: src.into(),
-            dest_abs: dest.into(),
-        };
-        let outcome =
-            apply_link(&sys, &pair, &opts(LinkKind::Auto, true), None)
-                .await
-                .unwrap();
-        assert_eq!(
-            outcome,
-            ApplyOutcome::Linked {
-                kind: ResolvedKind::Symlink,
-                backup: None
-            }
-        );
-        let target = sys.fs_read_link_async(dest).await.unwrap();
-        assert_eq!(target, Path::new(src), "store links are absolute");
-    }
+    // A file: an absolute link into the store, never a hard link.
+    let file = LinkPair {
+        source_abs: "/store/tree/a.txt".into(),
+        dest_abs: "/ws/a.txt".into(),
+    };
+    let outcome = apply_link(&sys, &file, &opts(LinkKind::Auto, true), None)
+        .await
+        .unwrap();
+    assert_eq!(
+        outcome,
+        ApplyOutcome::Linked {
+            kind: ResolvedKind::Symlink,
+            backup: None
+        }
+    );
+    assert_eq!(
+        sys.fs_read_link_async("/ws/a.txt").await.unwrap(),
+        Path::new("/store/tree/a.txt"),
+        "store links are absolute"
+    );
+
+    // A directory: copied, because a directory symlink could change the shared
+    // tree.
+    let dir = LinkPair {
+        source_abs: "/store/tree".into(),
+        dest_abs: "/ws/tree".into(),
+    };
+    let outcome = apply_link(&sys, &dir, &opts(LinkKind::Auto, true), None)
+        .await
+        .unwrap();
+    assert_eq!(
+        outcome,
+        ApplyOutcome::Linked {
+            kind: ResolvedKind::Copy,
+            backup: None
+        }
+    );
+    assert_eq!(
+        sys.fs_read_async("/ws/tree/a.txt").await.unwrap().as_ref(),
+        b"a"
+    );
 }
 
 #[tokio::test]
@@ -180,12 +199,21 @@ async fn auto_from_store_falls_through_across_volumes_with_a_cause() {
 
     // Reflink and hardlink both fail across volumes (CrossesDevices); `auto`
     // must move on to the absolute symlink rather than erroring.
-    let dest = other.path().join("tree");
-    let kind = apply(&RealSys, &tree, &dest, LinkKind::Auto, true)
+    let file = tree.join("a.txt");
+    let linked = other.path().join("a.txt");
+    let kind = apply(&RealSys, &file, &linked, LinkKind::Auto, true)
         .await
         .unwrap();
     assert_eq!(kind, ResolvedKind::Symlink);
-    assert_eq!(RealSys.fs_read_link_async(&dest).await.unwrap(), tree);
+    assert_eq!(RealSys.fs_read_link_async(&linked).await.unwrap(), file);
+
+    // A directory is copied across volumes rather than linked.
+    let copied = other.path().join("tree");
+    let kind = apply(&RealSys, &tree, &copied, LinkKind::Auto, true)
+        .await
+        .unwrap();
+    assert_eq!(kind, ResolvedKind::Copy);
+    assert_eq!(std::fs::read(copied.join("sub/b.txt")).unwrap(), b"b");
 }
 
 #[tokio::test]

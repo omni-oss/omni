@@ -38,6 +38,17 @@ fn used_marker(commit_dir: &Path) -> PathBuf {
     commit_dir.with_file_name(name)
 }
 
+/// `<commit>.manifest`, the sibling file listing a published tree's files. It
+/// lives outside the tree so it can never collide with a tracked file.
+fn manifest_path(commit_dir: &Path) -> PathBuf {
+    let mut name = commit_dir
+        .file_name()
+        .map(|n| n.to_os_string())
+        .unwrap_or_default();
+    name.push(".manifest");
+    commit_dir.with_file_name(name)
+}
+
 /// Process-wide counter making pending directory names unique even when a
 /// single process publishes several checkouts at once.
 static PENDING_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -280,34 +291,56 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
     ) -> Result<(), Error> {
         let pending = self.new_pending_dir();
         omni_git_utils::export_tree(&self.sys, bare, commit, &pending).await?;
-        let sealed = {
+        let manifest = {
             let pending = pending.clone();
             tokio::task::spawn_blocking(move || tree::seal(&pending))
                 .await
                 .map_err(|e| Error::custom(e.to_string()))?
         };
-        if let Err(error) = sealed {
-            let _ = self.sys.fs_remove_dir_all_async(&pending).await;
-            return Err(error.into());
-        }
+        let manifest = match manifest {
+            Ok(manifest) => manifest,
+            Err(error) => {
+                self.remove_tree(&pending).await;
+                return Err(error.into());
+            }
+        };
 
         if self.sys.fs_exists_no_err_async(tree).await {
             // Incomplete (a complete one was handled by the caller).
-            self.sys.fs_remove_dir_all_async(tree).await?;
+            self.remove_tree(tree).await;
         }
         if let Some(parent) = tree.parent() {
             self.sys.fs_create_dir_all_async(parent).await?;
         }
         if let Err(error) = self.sys.fs_rename_async(&pending, tree).await {
-            let _ = self.sys.fs_remove_dir_all_async(&pending).await;
+            self.remove_tree(&pending).await;
+            return Err(error.into());
+        }
+        // Published last: until it exists the tree reads as incomplete.
+        let staging = self.new_pending_dir();
+        self.sys.fs_write_async(&staging, &manifest).await?;
+        if let Err(error) = self
+            .sys
+            .fs_rename_async(&staging, manifest_path(tree))
+            .await
+        {
+            let _ = self.sys.fs_remove_file_async(&staging).await;
             return Err(error.into());
         }
         Ok(())
     }
 
+    /// Delete a tree and its sibling markers.
+    async fn remove_tree(&self, tree: &Path) {
+        let _ = self.sys.fs_remove_dir_all_async(tree).await;
+        let _ = self.sys.fs_remove_file_async(manifest_path(tree)).await;
+        let _ = self.sys.fs_remove_file_async(used_marker(tree)).await;
+    }
+
     async fn tree_is_complete(&self, tree: &Path) -> bool {
+        let manifest = manifest_path(tree);
         let tree = tree.to_path_buf();
-        tokio::task::spawn_blocking(move || tree::is_complete(&tree))
+        tokio::task::spawn_blocking(move || tree::is_complete(&tree, &manifest))
             .await
             .unwrap_or(false)
     }
@@ -613,11 +646,9 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
             let _guard = LockGuard::acquire_exclusive(lock).await?;
             // Another process may have removed it while we waited.
             if self.sys.fs_exists_no_err_async(&entry.dir).await {
-                self.sys.fs_remove_dir_all_async(&entry.dir).await?;
+                self.remove_tree(&entry.dir).await;
                 tracing::debug!("pruned store checkout: {:?}", entry.dir);
             }
-            let _ =
-                self.sys.fs_remove_file_async(used_marker(&entry.dir)).await;
             if let Some(parent) = entry.dir.parent() {
                 // Once a remote's last tree is gone its mirror has nothing
                 // left to serve, so drop it too.
