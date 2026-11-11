@@ -373,9 +373,12 @@ where
                     };
                     let materialized =
                         remote_sources.materialize(&source).await?;
-                    let configurations =
-                        omni_tool::discover(&materialized.root, &["**"], &sys)
-                            .await?;
+                    let configurations = omni_tool::discover_in_source(
+                        &materialized.root,
+                        &["**"],
+                        &sys,
+                    )
+                    .await?;
                     let git_ref = RemoteSourceRef {
                         source,
                         pin: materialized.pin,
@@ -428,9 +431,12 @@ where
                     };
                     let materialized =
                         remote_sources.materialize(&source).await?;
-                    let discovered =
-                        omni_tool::discover(&materialized.root, &["**"], sys)
-                            .await?;
+                    let discovered = omni_tool::discover_in_source(
+                        &materialized.root,
+                        &["**"],
+                        sys,
+                    )
+                    .await?;
                     refs.push(RemoteSourceRef {
                         source,
                         pin: materialized.pin,
