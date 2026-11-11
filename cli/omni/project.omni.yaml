@@ -5,15 +5,12 @@ extends:
   - "@workspace/omni/presets/rust-cli.omni.yaml"
   - "@workspace/omni/presets/rust-multiplatform.omni.yaml"
 
-# The binary is built from the workspace crates, which are not omni project
-# dependencies, so their sources must be part of the cache key. Otherwise a
-# cache restore serves a stale binary to the e2e tests.
+# Workspace-level inputs of the binary that no dependency project owns.
+# Crate sources reach the key through `^passthrough` on the build tasks.
 cache:
   key:
     files:
       append:
-        - "@workspace/crates/**/*.rs"
-        - "@workspace/crates/**/Cargo.toml"
         - "@workspace/Cargo.toml"
         - "@workspace/Cargo.lock"
         - "@workspace/services/bridge-service/package.json"
