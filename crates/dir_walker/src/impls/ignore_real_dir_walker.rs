@@ -338,3 +338,73 @@ pub(crate) enum IgnoreRealDirWalkerErrorInner {
     #[error(transparent)]
     Ignore(#[from] ignore::Error),
 }
+
+#[cfg(test)]
+mod tests {
+    use std::path::{Path, PathBuf};
+
+    use super::*;
+    use crate::{DirEntry as _, DirWalker as _};
+
+    fn walked_files(
+        config: IgnoreRealDirWalkerConfig,
+        root: &Path,
+    ) -> Vec<PathBuf> {
+        let walker = IgnoreRealDirWalker::new_with_config(config);
+        let mut files = walker
+            .walk_dir(&[root])
+            .expect("walk starts")
+            .into_iter()
+            .map(|e| e.expect("entry"))
+            .filter(|e| e.path().is_file())
+            .map(|e| e.path().strip_prefix(root).unwrap().to_path_buf())
+            .collect::<Vec<_>>();
+        files.sort();
+        files
+    }
+
+    /// `root/store/source/file.txt`, with an ignore file in `root` that hides
+    /// `store/`. The walk starts at `root/store/source`.
+    fn tree_with_ancestor_ignore() -> (tempfile::TempDir, PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("store/source");
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::write(source.join("file.txt"), "x").unwrap();
+        std::fs::write(dir.path().join(".omniignore"), "/store/**\n").unwrap();
+        (dir, source)
+    }
+
+    fn config(parents: Option<bool>) -> IgnoreRealDirWalkerConfig {
+        IgnoreRealDirWalkerConfig::builder()
+            .standard_filters(true)
+            .maybe_parents(parents)
+            .custom_ignore_filenames(vec![".omniignore".to_string()])
+            .build()
+    }
+
+    #[test]
+    fn ancestor_ignore_files_apply_by_default() {
+        let (_dir, source) = tree_with_ancestor_ignore();
+
+        assert!(walked_files(config(None), &source).is_empty());
+        assert!(walked_files(config(Some(true)), &source).is_empty());
+    }
+
+    #[test]
+    fn parents_false_skips_ancestor_ignore_files() {
+        let (_dir, source) = tree_with_ancestor_ignore();
+
+        assert_eq!(
+            walked_files(config(Some(false)), &source),
+            vec![PathBuf::from("file.txt")]
+        );
+    }
+
+    #[test]
+    fn parents_false_keeps_the_roots_own_ignore_files() {
+        let (_dir, source) = tree_with_ancestor_ignore();
+        std::fs::write(source.join(".omniignore"), "file.txt\n").unwrap();
+
+        assert!(walked_files(config(Some(false)), &source).is_empty());
+    }
+}
