@@ -422,7 +422,17 @@ where
                         SingleOrMany::Single(p) => vec![p.clone()],
                         SingleOrMany::Many(ps) => ps.clone(),
                     };
-                    omni_tool::discover(&contributed.root, &paths, sys).await?
+                    if contributed.in_store {
+                        omni_tool::discover_in_source(
+                            &contributed.root,
+                            &paths,
+                            sys,
+                        )
+                        .await?
+                    } else {
+                        omni_tool::discover(&contributed.root, &paths, sys)
+                            .await?
+                    }
                 }
                 SourceConfig::Git(git) => {
                     let source = RemoteSource::Git {
