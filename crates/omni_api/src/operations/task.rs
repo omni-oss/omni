@@ -1,9 +1,8 @@
-use std::time::Duration;
-
 use maps::UnorderedMap;
 use omni_context::LoadedContext;
 use omni_execution_plan::{Call, ScmAffectedFilter};
 use omni_messages::ExecutionEventSubscriber;
+use omni_retry_config::RetryConfiguration;
 use omni_scm::SelectScm;
 use omni_task_executor::{
     ExecutionConfigBuilder, Force, OnFailure, TaskExecutionResult,
@@ -39,10 +38,9 @@ pub struct TaskRunFilters {
     /// SCM strategy for affected-files detection.
     #[schemars(with = "String")]
     pub scm_affected: SelectScm,
-    /// Override max retries for all tasks.
-    pub retry: Option<u8>,
-    /// Override retry interval for all tasks.
-    pub retry_interval: Option<Duration>,
+    /// Override the retry settings of all tasks, merged per field over each
+    /// task's own configuration.
+    pub retry: Option<RetryConfiguration>,
     /// Extra key=value arguments forwarded to tasks.
     pub args: Vec<(String, String)>,
 }
@@ -61,7 +59,6 @@ impl Default for TaskRunFilters {
             scm_target: None,
             scm_affected: SelectScm::None,
             retry: None,
-            retry_interval: None,
             args: vec![],
         }
     }
@@ -192,12 +189,8 @@ pub(crate) fn apply_filters(
 
     builder.dry_run(filters.dry_run);
 
-    if let Some(retry) = filters.retry {
-        builder.max_retries(retry);
-    }
-
-    if let Some(retry_interval) = filters.retry_interval {
-        builder.retry_interval(retry_interval);
+    if let Some(retry) = &filters.retry {
+        builder.retry(retry.clone());
     }
 
     let mut scm = filters.scm_affected;

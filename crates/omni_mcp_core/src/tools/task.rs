@@ -37,6 +37,7 @@ where
             dir: params.dir,
             dry_run: params.dry_run,
             args: params.args,
+            retry: params.retry,
             ..Default::default()
         };
         let req = TaskRunRequest {
@@ -85,6 +86,7 @@ where
             project: params.project,
             dir: params.dir,
             dry_run: params.dry_run,
+            retry: params.retry,
             ..Default::default()
         };
         let req = ExecRequest {

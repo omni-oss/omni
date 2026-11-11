@@ -480,4 +480,34 @@ Open questions: none.
 
 ## 8. Implementation status and deviations
 
-Not started.
+Steps 1 to 4 are implemented. Deviations from the design above:
+
+- **New crate `omni_retry_config`.** `RetryConfiguration`, `ConfigDuration`,
+  `RetryPolicy`, `Backoff` and `Jitter` live here, not in `omni_core` (policy) or
+  `omni_configurations` (config). `omni_configurations` depends on `omni_core`,
+  and `omni_core`'s `Task` and `TaskExecutionNode` have to carry the retry
+  settings, so the config type cannot live in `omni_configurations`. A small
+  crate below both avoids the cycle and keeps `omni_core` free of config code.
+- **Jitter input.** `RetryPolicy::delay(retry_n, sample)` takes a uniform sample
+  in `[0, 1)` instead of an `Rng`. The executor passes `rand::random()`. Tests
+  need no seeded RNG and `omni_retry_config` has no `rand` dependency.
+- **Validation without garde.** `RetryConfiguration::check_layer()` is a plain
+  method. `TaskConfigurationLongForm` calls it through a field-level
+  `garde(custom(...))`, and the CLI parser calls it directly. A struct-level
+  `garde(custom)` was not usable with `allow_unvalidated`.
+- **Equality.** `RetryConfiguration` implements `Eq` and `Ord` by hand (comparing
+  `factor` by its bits) because `TaskExecutionNode` derives them and `factor` is
+  an `f64` that is validated finite.
+- **Resolution point.** The task's configuration and the run-level override are
+  merged and resolved into a `RetryPolicy` at the start of `run_process`, so an
+  invalid combination fails that task with an error message.
+- **Single CLI step.** The temporary mapping of the old flags was skipped; the
+  new flags replaced them in the same change.
+- **Repository tasks migrated.** Seven `project.omni.yaml` files used the removed
+  task keys and moved to `retry:`.
+- **Docs.** The `run` and `exec` references were edited by hand, because
+  regenerating them also rewrote unrelated pages. A new guide,
+  `apps/site/content/docs/guides/retrying-tasks.mdx`, covers the settings and the
+  migration.
+- **Not done.** A retry-loop test in `omni_task_executor` with `base = 0`; the
+  delay math and the config are unit-tested instead.

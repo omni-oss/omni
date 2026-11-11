@@ -13,6 +13,8 @@ use crate::{Backoff, Jitter, RetryPolicy};
     Copy,
     PartialEq,
     Eq,
+    PartialOrd,
+    Ord,
     Serialize,
     Deserialize,
     JsonSchema,
@@ -27,7 +29,16 @@ pub enum RetryStrategy {
 }
 
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Serialize,
+    Deserialize,
+    JsonSchema,
 )]
 #[serde(rename_all = "kebab-case")]
 pub enum JitterConfiguration {
@@ -48,7 +59,16 @@ impl From<JitterConfiguration> for Jitter {
 
 /// A duration written as text, such as `500ms` or `2s`.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Serialize,
+    Deserialize,
+    JsonSchema,
 )]
 #[serde(transparent)]
 #[schemars(with = "String")]
@@ -105,6 +125,29 @@ pub struct RetryConfiguration {
 
 // `factor` is validated finite, so equality is reflexive.
 impl Eq for RetryConfiguration {}
+
+impl Ord for RetryConfiguration {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        let key = |c: &Self| {
+            (
+                c.max_retries,
+                c.strategy,
+                c.base,
+                c.max_delay,
+                c.jitter,
+                c.step,
+                c.factor.map(|f| f.into_inner().to_bits()),
+            )
+        };
+        key(self).cmp(&key(other))
+    }
+}
+
+impl PartialOrd for RetryConfiguration {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
 
 impl RetryConfiguration {
     /// Checks one layer on its own. A `step` or `factor` is only rejected

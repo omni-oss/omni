@@ -149,8 +149,7 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
                         TeraExprBoolean::Boolean(true),
                         false,
                         false,
-                        None,
-                        None,
+                        Default::default(),
                     );
 
                     if task_filter.should_include_task(&node)? {
@@ -207,8 +206,7 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
                             task.enabled.clone(),
                             task.interactive,
                             task.persistent,
-                            task.max_retries,
-                            task.retry_interval,
+                            task.retry.clone(),
                         );
 
                         if passes_tf(&node)? {
@@ -330,8 +328,7 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
                             false,
                             false,
                             vec![],
-                            None,
-                            None,
+                            Default::default(),
                         ),
                     );
                 });

@@ -19,6 +19,7 @@ dependencies:
   - omni_file_data_serde
   - omni_projection_configurations
   - omni_command_config
+  - omni_retry_config
   - omni_glob
   - omni_redact
   - omni_diagnostic

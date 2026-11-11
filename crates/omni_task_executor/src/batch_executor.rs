@@ -2,6 +2,7 @@ use std::{borrow::Cow, future::Future, time::Duration};
 
 use futures::stream::{FuturesUnordered, StreamExt as _};
 use maps::{UnorderedMap, unordered_map};
+use merge::Merge as _;
 use omni_cache::{CachedTaskExecution, TaskExecutionCacheStore};
 use omni_command_config::{
     Command, CommandConfig, resolve_command, resolve_command_with,
@@ -21,6 +22,7 @@ use omni_process::{
     ChildProcessError, TaskChildProcess, TaskChildProcessResult,
 };
 use omni_redact::Redactor;
+use omni_retry_config::RetryConfiguration;
 use omni_task_context::{TaskContext, TaskContextProviderExt as _};
 use omni_task_output_logs::{EffectiveOutputLogs, LogsDisplay};
 use omni_types::{OmniPath, Root, RootMap, enum_map};
@@ -51,8 +53,7 @@ where
     dry_run: bool,
     output_logs: Option<LogsDisplay>,
     output_cached_logs: Option<LogsDisplay>,
-    max_retries: Option<u8>,
-    retry_interval: Option<Duration>,
+    retry: Option<RetryConfiguration>,
     no_cache: bool,
     add_task_details: bool,
     args: &'s UnorderedMap<String, serde_json::Value>,
@@ -77,8 +78,7 @@ where
         dry_run: bool,
         output_logs: Option<LogsDisplay>,
         output_cached_logs: Option<LogsDisplay>,
-        max_retries: Option<u8>,
-        retry_interval: Option<Duration>,
+        retry: Option<RetryConfiguration>,
         no_cache: bool,
         add_task_details: bool,
         args: &'s UnorderedMap<String, serde_json::Value>,
@@ -97,8 +97,7 @@ where
             dry_run,
             output_logs,
             output_cached_logs,
-            max_retries,
-            retry_interval,
+            retry,
             no_cache,
             add_task_details,
             args,
@@ -205,6 +204,15 @@ where
             .iter()
             .find(|d| overall_results.get(*d).is_some_and(|r| r.is_failure()))
             .cloned()
+    }
+
+    /// The task's own retry settings with the run-level override on top.
+    fn resolve_retry(&self, task_ctx: &TaskContext<'_>) -> RetryConfiguration {
+        let mut retry = task_ctx.node.retry().clone();
+        if let Some(over) = &self.retry {
+            retry.merge(over.clone());
+        }
+        retry
     }
 
     fn resolve_output_logs(
@@ -632,9 +640,7 @@ where
                     override_retry_command,
                     record_logs,
                     self.resolve_output_logs(task_ctx),
-                    self.max_retries
-                        .unwrap_or(task_ctx.node.max_retries().unwrap_or(0)),
-                    self.retry_interval.or(task_ctx.node.retry_interval()),
+                    self.resolve_retry(task_ctx),
                 ));
             }
         }
@@ -925,8 +931,8 @@ where
     results
 }
 
-/// Executes a task and retries failed executions up to `max_retries` times,
-/// waiting `retry_duration` between attempts when provided. Process errors
+/// Executes a task and retries failed executions according to `retry`, which
+/// is resolved into a [`RetryPolicy`] before the first attempt. Process errors
 /// become result messages redacted by `subscriber`; raw output streams pass
 /// through unchanged.
 #[allow(clippy::too_many_arguments)]
@@ -939,10 +945,20 @@ async fn run_process<'a, S: ExecutionEventSubscriber>(
     override_retry_command: Option<Command>,
     record_logs: bool,
     output_logs: EffectiveOutputLogs,
-    max_retries: u8,
-    retry_duration: Option<Duration>,
+    retry: RetryConfiguration,
 ) -> TaskResultContext<'a> {
     let mut tries = 0u8;
+
+    let policy = match retry.into_policy() {
+        Ok(p) => p,
+        Err(e) => {
+            return TaskResultContext::new_error(
+                task_ctx,
+                subscriber.redact(e.to_string()).into_owned(),
+                tries,
+            );
+        }
+    };
 
     let reg_cmd: Option<&Command> = override_command.as_ref();
     let retry_cmd: Option<&Command> =
@@ -1047,13 +1063,9 @@ async fn run_process<'a, S: ExecutionEventSubscriber>(
         let result = proc.exec().await;
 
         if (result.is_err() || result.as_ref().is_ok_and(|f| !f.success()))
-            && tries <= max_retries
+            && tries <= policy.max_retries
         {
-            if let Some(duration) = retry_duration
-                && !duration.is_zero()
-            {
-                tokio::time::sleep(duration).await;
-            }
+            let delay = policy.delay(tries, rand::random::<f64>());
 
             subscriber
                 .on_task_retrying(TaskRetryingEvent {
@@ -1061,10 +1073,14 @@ async fn run_process<'a, S: ExecutionEventSubscriber>(
                     project: task_ctx.node.project_name().to_string(),
                     task: task_ctx.node.task_name().to_string(),
                     attempt: tries,
-                    max_retries,
-                    delay: retry_duration,
+                    max_retries: policy.max_retries,
+                    delay: Some(delay),
                 })
                 .await;
+
+            if !delay.is_zero() {
+                tokio::time::sleep(delay).await;
+            }
 
             continue;
         }

@@ -13,7 +13,8 @@ dependencies:
 
 tasks:
   test:e2e:
-    # max_retries: 5
+    # retry:
+    #   max_retries: 5
     enabled: true
     # Replaces the preset's `^build`: the harness prefers the debug binary, so
     # `omni#build` would only add an unused release (LTO) build.

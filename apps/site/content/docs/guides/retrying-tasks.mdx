@@ -1,0 +1,63 @@
+---
+title: "Retrying failed tasks"
+description: "Configure how many times a task is retried and how long omni waits between attempts"
+---
+
+A task that fails can be retried. The `retry` block of a task sets how many
+times, and how long omni waits before each retry.
+
+```yaml
+tasks:
+  fetch:
+    command: curl ...
+    retry:
+      max_retries: 5
+      strategy: exponential
+      base: 500ms
+      factor: 2
+      max_delay: 30s
+      jitter: full
+```
+
+## Settings
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `max_retries` | `0` | Retries after the first attempt. `0` means no retries. |
+| `strategy` | `exponential` | `fixed`, `linear` or `exponential`. |
+| `base` | `1s` | Delay before the first retry. |
+| `max_delay` | `60s` | Upper bound for any single delay. |
+| `jitter` | `none` | `none`, `full` (0 to the delay) or `equal` (half the delay plus up to half). |
+| `step` | `base` | `linear` only. Added to the delay after every retry. |
+| `factor` | `2` | `exponential` only. Multiplies the delay after every retry. |
+
+With the defaults and `max_retries: 5`, omni waits 1s, 2s, 4s, 8s and 16s.
+`step` and `factor` that do not apply to the strategy are ignored when they come
+from another configuration layer, but are an error next to a conflicting
+`strategy` in the same layer.
+
+## From the command line
+
+`-r, --retry` takes `COUNT[,strategy][,key=value...]` and is merged per field over
+the task's `retry` block. It accepts the same keys and values as the
+configuration.
+
+```bash
+omni run test -r 3
+omni run test -r 3,exponential,base=500ms,max_delay=30s,jitter=full
+omni run test --no-retry
+```
+
+`--no-retry` cannot be combined with `-r`. The API and the MCP `task_run` and
+`exec_command` tools take the same settings as a `retry` object.
+
+## Migrating
+
+The task keys `max_retries` and `retry_interval` are gone; move them into
+`retry` (`retry_interval` becomes `retry.base` with `strategy: fixed`). The
+`--retry-interval` flag is removed; use `-r COUNT,fixed,base=DURATION`.
+
+Tasks that set `max_retries` without an interval used to retry at once. They now
+wait 1s, 2s, 4s... by default. Set `strategy: fixed` and `base: 0s` to keep the
+old behavior. The retry event is also emitted before the wait instead of after
+it, and reports the delay that was actually used.
