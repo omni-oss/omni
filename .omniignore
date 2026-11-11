@@ -21,7 +21,9 @@
 /.agents/skills/swe-author
 /.agents/skills/swe-debug
 /.agents/skills/swe-docs-write
+/.agents/skills/swe-execute
 /.agents/skills/swe-init
+/.agents/skills/swe-orchestrate
 /.agents/skills/swe-plan
 /.agents/skills/swe-release
 /.agents/skills/swe-review
@@ -39,4 +41,4 @@
 /docs/guidelines/core
 /docs/guidelines/planning
 /docs/guidelines/reviewing
-# @@omni-managed:end e01e34e8
+# @@omni-managed:end a1db3dfe
