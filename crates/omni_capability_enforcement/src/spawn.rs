@@ -123,6 +123,27 @@ pub struct SpawnPolicy {
     pub env: Option<BTreeMap<String, String>>,
 }
 
+/// The directory a confined runtime must be able to read to load `entry`: the
+/// root of the published store tree containing it (so sibling modules resolve),
+/// recognised by the `<commit>.manifest` file the store keeps beside each tree,
+/// else the entry's own directory.
+pub fn load_root(entry: &Path) -> PathBuf {
+    for ancestor in entry.ancestors().skip(1) {
+        let Some(name) = ancestor.file_name() else {
+            break;
+        };
+        let mut manifest = name.to_os_string();
+        manifest.push(".manifest");
+        if ancestor.with_file_name(manifest).is_file() {
+            return ancestor.to_path_buf();
+        }
+    }
+    entry
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| entry.to_path_buf())
+}
+
 impl SpawnPolicy {
     pub fn new() -> Self {
         Self::default()
@@ -148,17 +169,20 @@ impl SpawnPolicy {
 
     /// Additionally let the confined runtime read `dir` (recursively), for code
     /// it must load from outside the workspace floor, such as a tool or
-    /// generator fetched into the shared remote-source store. Grants the Deno
-    /// `--allow-read` flag and the OS-sandbox read subtree; it widens nothing
-    /// else. A path that cannot be passed safely in a flag (it contains `,`,
-    /// `=` or a control character) is not granted, so the runtime then fails
-    /// loudly rather than reading more than intended.
-    pub fn grant_read(&mut self, dir: &Path) {
+    /// generator fetched into the shared remote-source store. Adds `dir` to the
+    /// OS-sandbox read subtree for every runtime, and the `--allow-read` flag
+    /// only when `deno_flag` is set (Node rejects unknown options). It widens
+    /// nothing else. A path that cannot be passed safely in a flag (it contains
+    /// `,`, `=` or a control character) is not granted, so the runtime then
+    /// fails loudly rather than reading more than intended.
+    pub fn grant_read(&mut self, dir: &Path, deno_flag: bool) {
         let value = dir.to_string_lossy().replace('\\', "/");
         if value.contains([',', '=']) || value.chars().any(char::is_control) {
             return;
         }
-        self.args.push(format!("--allow-read={value}"));
+        if deno_flag {
+            self.args.push(format!("--allow-read={value}"));
+        }
         if let Some(spec) = self.os_sandbox.as_mut()
             && !spec.read_paths.iter().any(|p| p == dir)
         {
@@ -225,8 +249,8 @@ mod tests {
         policy.os_sandbox = Some(OsSandboxSpec::new());
         let dir = Path::new("/home/u/.cache/omni/sources/git/r/abc");
 
-        policy.grant_read(dir);
-        policy.grant_read(dir);
+        policy.grant_read(dir, true);
+        policy.grant_read(dir, true);
 
         assert_eq!(
             policy.args,
@@ -239,10 +263,42 @@ mod tests {
     }
 
     #[test]
+    fn grant_read_adds_no_deno_flag_for_other_runtimes_but_keeps_the_os_grant()
+    {
+        let mut policy = SpawnPolicy::new();
+        policy.os_sandbox = Some(OsSandboxSpec::new());
+        let dir = Path::new("/store/trees/r/abc");
+
+        policy.grant_read(dir, false);
+
+        assert!(policy.args.is_empty(), "{:?}", policy.args);
+        assert_eq!(policy.os_sandbox.unwrap().read_paths, vec![dir]);
+    }
+
+    #[test]
+    fn load_root_is_the_published_tree_so_sibling_modules_resolve() {
+        let store = tempfile::tempdir().unwrap();
+        let tree = store.path().join("trees/remote/abc123");
+        std::fs::create_dir_all(tree.join("gens/a")).unwrap();
+        std::fs::write(tree.join("gens/a/gen.mjs"), b"").unwrap();
+        // Unpublished: no manifest beside the tree.
+        assert_eq!(
+            load_root(&tree.join("gens/a/gen.mjs")),
+            tree.join("gens/a")
+        );
+        std::fs::write(
+            store.path().join("trees/remote/abc123.manifest"),
+            b"{}",
+        )
+        .unwrap();
+        assert_eq!(load_root(&tree.join("gens/a/gen.mjs")), tree);
+    }
+
+    #[test]
     fn grant_read_refuses_a_path_that_could_inject_flag_values() {
         let mut policy = SpawnPolicy::new();
         for bad in ["/a,/etc", "/a=b", "/a\nb"] {
-            policy.grant_read(Path::new(bad));
+            policy.grant_read(Path::new(bad), true);
         }
         assert!(policy.args.is_empty());
     }

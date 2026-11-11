@@ -50,7 +50,7 @@ pub use operations::{
     },
     remote_source::{
         RemoteSourcesInstallRequest, RemoteSourcesInstallResponse,
-        RemoteSourcesPruneRequest, RemoteSourcesPruneResponse,
+        RemoteSourcesPruneRequest, RemoteSourcesPruneResponse, StoreCheckoutId,
         StoreCheckoutView, SubsystemReportView, SubsystemSelection,
     },
     task::{TaskRunFilters, TaskRunRequest, TaskRunResponse},

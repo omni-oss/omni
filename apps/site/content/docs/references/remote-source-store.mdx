@@ -54,7 +54,8 @@ To reclaim space, use [`omni remote-sources prune`](/docs/references/commands/om
 ```bash
 omni remote-sources prune --older-than 30d --dry-run   # list
 omni remote-sources prune --older-than 30d --yes       # delete
-omni remote-sources prune --larger-than 200MB --all --dry-run
+omni remote-sources prune --larger-than 200MB --dry-run
+omni remote-sources prune --all --dry-run
 ```
 
 It refuses to run without a filter. A checkout's age is when any workspace last

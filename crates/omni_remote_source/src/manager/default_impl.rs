@@ -18,7 +18,7 @@ use crate::{
     source::{MaterializedSource, RemoteSource, RemoteSourceRef},
     sys::RemoteSourceSys,
 };
-use system_traits::FsMetadataValue as _;
+use system_traits::{FileType, FsMetadataValue as _};
 
 const GIT_KIND_SEGMENT: &str = "git";
 const TREES_SEGMENT: &str = "trees";
@@ -348,6 +348,17 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
     /// Refuse to touch a store written by a newer layout; create `VERSION` for
     /// a new one.
     async fn check_layout(&self) -> Result<(), Error> {
+        self.layout(true).await
+    }
+
+    /// The same compatibility guard without creating anything, for operations
+    /// that only read or delete (listing, pruning): an older omni must not
+    /// delete from a layout it cannot interpret.
+    async fn check_layout_readonly(&self) -> Result<(), Error> {
+        self.layout(false).await
+    }
+
+    async fn layout(&self, create: bool) -> Result<(), Error> {
         let path = self.store_root_path.join(LAYOUT_VERSION_FILE);
         match self.sys.fs_read_to_string_async(&path).await {
             Ok(text) => match text.trim().parse::<u32>() {
@@ -363,7 +374,9 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
                     path.display()
                 ))),
             },
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            Err(error)
+                if create && error.kind() == std::io::ErrorKind::NotFound =>
+            {
                 self.sys
                     .fs_create_dir_all_async(&self.store_root_path)
                     .await?;
@@ -373,6 +386,9 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
                         format!("{LAYOUT_VERSION}\n").as_bytes(),
                     )
                     .await?;
+                Ok(())
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 Ok(())
             }
             Err(error) => Err(error.into()),
@@ -537,19 +553,30 @@ pub struct StoreEntry {
 /// Which store entries [`RemoteSourceManager::prune_store`] selects. An entry
 /// must satisfy every filter that is set; `all` selects every entry.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct StorePruneFilter {
+pub struct StorePruneFilter<'a> {
     pub all: bool,
     pub older_than: Option<std::time::Duration>,
     pub larger_than: Option<u64>,
+    /// Restrict the selection to these `(remote, commit)` pairs: the checkouts a
+    /// user was shown and confirmed. A checkout added since is never deleted by
+    /// a confirmed prune.
+    pub only: Option<&'a [(String, String)]>,
 }
 
-impl StorePruneFilter {
+impl StorePruneFilter<'_> {
     pub fn has_criteria(&self) -> bool {
         self.all || self.older_than.is_some() || self.larger_than.is_some()
     }
 
     fn matches(&self, entry: &StoreEntry, now: SystemTime) -> bool {
         if !self.has_criteria() {
+            return false;
+        }
+        if let Some(only) = self.only
+            && !only.iter().any(|(remote, commit)| {
+                *remote == entry.remote && *commit == entry.commit
+            })
+        {
             return false;
         }
         if self.all {
@@ -574,6 +601,7 @@ impl StorePruneFilter {
 impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
     /// Every checkout in the store with its size and last use.
     pub async fn store_entries(&self) -> Result<Vec<StoreEntry>, Error> {
+        self.check_layout_readonly().await?;
         let trees_root = self.store_root_path.join(TREES_SEGMENT);
         if !self.sys.fs_exists_no_err_async(&trees_root).await {
             return Ok(Vec::new());
@@ -623,7 +651,7 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
     /// A deleted checkout is refetched the next time it is used.
     pub async fn prune_store(
         &self,
-        filter: &StorePruneFilter,
+        filter: &StorePruneFilter<'_>,
         dry_run: bool,
     ) -> Result<Vec<StoreEntry>, Error> {
         let now = SystemTime::now();
@@ -688,12 +716,16 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
                 continue;
             };
             for child in children {
-                if self.sys.fs_is_dir_no_err_async(&child).await {
-                    stack.push(child);
-                } else if let Ok(meta) =
-                    self.sys.fs_symlink_metadata_async(&child).await
-                {
-                    total += meta.len();
+                // Inspect the link itself: following a directory symlink would
+                // count its target twice, and `a -> .` would never end.
+                let Ok(meta) = self.sys.fs_symlink_metadata_async(&child).await
+                else {
+                    continue;
+                };
+                match meta.file_type() {
+                    FileType::Dir => stack.push(child),
+                    FileType::Symlink => {}
+                    _ => total += meta.len(),
                 }
             }
         }

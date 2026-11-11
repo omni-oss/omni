@@ -10,8 +10,10 @@ description: "Delete checkouts from the remote-source store by age or size. They
 omni remote-sources prune [OPTIONS]
 ```
 
-At least one of `--older-than`, `--larger-than` or `--all` is required. When
-several filters are given a checkout must match all of them. See the
+At least one of `--older-than`, `--larger-than` or `--all` is required.
+`--older-than` and `--larger-than` combine (a checkout must match both);
+`--all` cannot be combined with them. The checkouts listed are the ones deleted:
+newer ones added while you confirm are left alone. See the
 [remote-source store](/docs/references/remote-source-store).
 
 ---

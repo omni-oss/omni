@@ -227,10 +227,11 @@ where
         // workspace floor, so a confined runtime must be granted its directory.
         // The grant is fixed at spawn, so such tools are pooled per directory;
         // tools inside the workspace keep sharing one process.
-        let extra_read = entrypoint
-            .parent()
-            .filter(|dir| policy.enforce && !dir.starts_with(&self.context_dir))
-            .map(|dir| std::fs::canonicalize(dir).unwrap_or(dir.to_path_buf()));
+        let extra_read = policy
+            .enforce
+            .then(|| omni_capability_enforcement::load_root(entrypoint))
+            .filter(|dir| !dir.starts_with(&self.context_dir))
+            .map(|dir| std::fs::canonicalize(&dir).unwrap_or(dir));
         let key = (resolved, policy.fingerprint(), extra_read.clone());
 
         let runner = self
@@ -245,7 +246,10 @@ where
 
                     let mut spawn_policy = spawn_policy;
                     if let Some(dir) = &extra_read {
-                        spawn_policy.grant_read(dir);
+                        spawn_policy.grant_read(
+                            dir,
+                            resolved == DelegatingJsRuntimeOption::Deno,
+                        );
                     }
 
                     // On Windows the confined child is granted only a minimal

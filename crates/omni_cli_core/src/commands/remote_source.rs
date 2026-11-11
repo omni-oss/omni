@@ -5,7 +5,7 @@ use std::time::Duration;
 use bytesize::ByteSize;
 use omni_api::{
     OmniApi, RemoteSourcesInstallRequest, RemoteSourcesPruneRequest,
-    SubsystemSelection,
+    StoreCheckoutId, SubsystemSelection,
 };
 use omni_context::Context;
 use omni_messages::NoopSubscriber;
@@ -49,7 +49,8 @@ pub struct RemoteSourcesPruneArgs {
     #[arg(
         long,
         action = clap::ArgAction::SetTrue,
-        help = "Select every checkout in the store"
+        conflicts_with_all = ["older_than", "larger_than"],
+        help = "Select every checkout in the store (not combinable with --older-than or --larger-than)"
     )]
     pub all: bool,
 
@@ -121,14 +122,15 @@ async fn run_prune(
     ctx: &Context,
 ) -> eyre::Result<ExitCode> {
     let api = OmniApi::new_with_sys(ctx.clone(), NoopSubscriber);
-    let request = |dry_run| RemoteSourcesPruneRequest {
+    let request = |dry_run, only| RemoteSourcesPruneRequest {
         all: args.all,
         older_than: args.older_than,
         larger_than: args.larger_than,
         dry_run,
+        only,
     };
 
-    let candidates = api.remote_sources_prune(request(true)).await?;
+    let candidates = api.remote_sources_prune(request(true, None)).await?;
     if candidates.checkouts.is_empty() {
         println!("No store checkouts matched the given filters");
         return Ok(ExitCode::SUCCESS);
@@ -169,7 +171,19 @@ async fn run_prune(
         }
     }
 
-    let pruned = api.remote_sources_prune(request(false)).await?;
+    // Delete exactly what was listed (and confirmed), not whatever matches by
+    // the time the user answers.
+    let shown = candidates
+        .checkouts
+        .iter()
+        .map(|c| StoreCheckoutId {
+            remote: c.remote.clone(),
+            commit: c.commit.clone(),
+        })
+        .collect();
+    let pruned = api
+        .remote_sources_prune(request(false, Some(shown)))
+        .await?;
     println!("Pruned {} checkouts", pruned.checkouts.len());
     Ok(ExitCode::SUCCESS)
 }
@@ -250,6 +264,15 @@ mod tests {
         assert_eq!(args.older_than, Some(Duration::from_secs(30 * 86_400)));
         assert_eq!(args.larger_than, Some(ByteSize::mb(100)));
         assert!(args.dry_run);
+    }
+
+    #[test]
+    fn prune_all_cannot_be_combined_with_age_or_size_filters() {
+        for extra in [["--older-than", "30d"], ["--larger-than", "1MB"]] {
+            let mut argv = vec!["omni", "prune", "--all"];
+            argv.extend(extra);
+            assert!(TestCli::try_parse_from(argv).is_err(), "{extra:?}");
+        }
     }
 
     #[test]

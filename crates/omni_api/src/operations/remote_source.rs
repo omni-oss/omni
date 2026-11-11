@@ -60,6 +60,18 @@ pub struct RemoteSourcesPruneRequest {
     pub larger_than: Option<ByteSize>,
     /// Only report what would be deleted.
     pub dry_run: bool,
+    /// Restrict the prune to these checkouts (as returned by an earlier dry
+    /// run). The CLI passes what the user confirmed so a checkout another
+    /// workspace adds meanwhile is never deleted unseen.
+    #[serde(default)]
+    pub only: Option<Vec<StoreCheckoutId>>,
+}
+
+/// Identity of one store checkout.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+pub struct StoreCheckoutId {
+    pub remote: String,
+    pub commit: String,
 }
 
 /// One store checkout that matched a prune.
@@ -92,10 +104,16 @@ pub async fn handle_remote_sources_prune<TSys>(
 where
     TSys: ContextSys + RemoteSourceSys,
 {
+    let only: Option<Vec<(String, String)>> = req.only.as_ref().map(|ids| {
+        ids.iter()
+            .map(|id| (id.remote.clone(), id.commit.clone()))
+            .collect()
+    });
     let filter = StorePruneFilter {
         all: req.all,
         older_than: req.older_than,
         larger_than: req.larger_than.map(|size| size.as_u64()),
+        only: only.as_deref(),
     };
     if !filter.has_criteria() {
         eyre::bail!(

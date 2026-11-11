@@ -825,3 +825,107 @@ async fn a_tracked_dot_manifest_file_is_exported_untouched() {
     beside.push(".manifest");
     assert!(std::path::Path::new(&beside).is_file());
 }
+
+#[tokio::test]
+async fn a_confirmed_prune_deletes_only_what_was_shown() {
+    if !omni_test_capabilities::gate(
+        "git",
+        git_available(),
+        "git binary not found on PATH",
+    ) {
+        return;
+    }
+    let ws = Workspace::new();
+    let (manager, [(_, dir_a), (_, dir_b)], _repos) = two_checkouts(&ws).await;
+    let all = StorePruneFilter {
+        all: true,
+        ..Default::default()
+    };
+
+    // The user saw only A in the dry run; B arrived before they answered.
+    let shown = manager.prune_store(&all, true).await.unwrap();
+    let only_a: Vec<(String, String)> = shown
+        .iter()
+        .filter(|e| e.dir == dir_a)
+        .map(|e| (e.remote.clone(), e.commit.clone()))
+        .collect();
+    assert_eq!(only_a.len(), 1);
+
+    let removed = manager
+        .prune_store(
+            &StorePruneFilter {
+                all: true,
+                only: Some(&only_a),
+                ..Default::default()
+            },
+            false,
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(removed.len(), 1);
+    assert!(!dir_a.exists());
+    assert!(dir_b.exists(), "a checkout the user never saw survives");
+}
+
+#[tokio::test]
+async fn pruning_and_listing_refuse_a_newer_layout_without_deleting() {
+    if !omni_test_capabilities::gate(
+        "git",
+        git_available(),
+        "git binary not found on PATH",
+    ) {
+        return;
+    }
+    let ws = Workspace::new();
+    let (manager, [(_, dir_a), _], _repos) = two_checkouts(&ws).await;
+    std::fs::write(ws.store_root.join("VERSION"), "99\n").unwrap();
+
+    let all = StorePruneFilter {
+        all: true,
+        ..Default::default()
+    };
+    for result in [
+        manager.prune_store(&all, false).await.map(|_| ()),
+        manager.store_entries().await.map(|_| ()),
+    ] {
+        let message = format!("{:#}", result.expect_err("newer layout"));
+        assert!(message.contains("layout 99"), "{message}");
+    }
+    assert!(dir_a.exists(), "nothing was deleted");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn measuring_a_tree_never_follows_directory_symlinks() {
+    if !omni_test_capabilities::gate(
+        "git",
+        git_available(),
+        "git binary not found on PATH",
+    ) {
+        return;
+    }
+    let (src, url, _) = build_repo("loop\n");
+    // `a -> .` and `b -> .` would make a following walk expand without end.
+    std::os::unix::fs::symlink(".", src.path().join("a")).unwrap();
+    std::os::unix::fs::symlink(".", src.path().join("b")).unwrap();
+    git(src.path(), &["add", "."]);
+    git(src.path(), &["commit", "-q", "-m", "loops"]);
+
+    let ws = Workspace::new();
+    let manager = ws.manager().await;
+    manager
+        .materialize(&source_of(&url, "main"))
+        .await
+        .expect("materialize");
+
+    let entries = tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        manager.store_entries(),
+    )
+    .await
+    .expect("the walk terminates")
+    .unwrap();
+    assert_eq!(entries.len(), 1);
+    assert!(entries[0].size < 1_000_000, "{:?}", entries[0]);
+}

@@ -410,14 +410,13 @@ impl JsScriptRunner for LazyScriptRunner {
         if policy.enforce {
             let workspace = policy.roots.base(Root::Workspace);
             for invocation in invocations {
-                let Some(dir) = Path::new(&invocation.path).parent() else {
-                    continue;
-                };
+                let dir = omni_capability_enforcement::load_root(Path::new(
+                    &invocation.path,
+                ));
                 if workspace.is_some_and(|ws| dir.starts_with(ws)) {
                     continue;
                 }
-                let dir = std::fs::canonicalize(dir)
-                    .unwrap_or_else(|_| dir.to_path_buf());
+                let dir = std::fs::canonicalize(&dir).unwrap_or(dir);
                 if !extra_read.contains(&dir) {
                     extra_read.push(dir);
                 }
@@ -425,7 +424,8 @@ impl JsScriptRunner for LazyScriptRunner {
             extra_read.sort();
         }
         for dir in &extra_read {
-            spawn_policy.grant_read(dir);
+            spawn_policy
+                .grant_read(dir, resolved == DelegatingJsRuntimeOption::Deno);
         }
 
         let key = (resolved, policy.fingerprint(), extra_read);
