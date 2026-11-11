@@ -109,8 +109,13 @@ where
 
         let inputs = inputs
             .iter()
+            .filter(|i| is_cache_eligible(i.as_ref()))
             .filter_map(|i| i.as_ref().execution_info())
             .collect::<Vec<_>>();
+
+        if inputs.is_empty() {
+            return Ok(unordered_map!());
+        }
 
         let cached_items = self.store.get_many(&inputs).await.map_err(|e| {
             CacheManagerErrorInner::GetCacheFailed { source: e.into() }
@@ -148,11 +153,7 @@ where
         let to_cache = cache_contexts
             .iter()
             .filter_map(|r| {
-                if r.task_context()
-                    .cache_info
-                    .as_ref()
-                    .is_some_and(|ci| ci.cache_enabled)
-                    && !r.task_context().node.persistent()
+                if is_cache_eligible(r.task_context())
                     && let Some(exec_info) = r.task_context().execution_info()
                 {
                     Some(NewCacheInfo {
@@ -233,6 +234,12 @@ where
     }
 }
 
+/// Whether a task may read, replay or write execution-cache entries.
+pub(crate) fn is_cache_eligible(task: &TaskContext<'_>) -> bool {
+    task.cache_info.as_ref().is_some_and(|ci| ci.cache_enabled)
+        && !task.node.persistent()
+}
+
 #[derive(Debug, thiserror::Error, omni_diagnostic::Diagnostic)]
 #[error(transparent)]
 #[diagnostic(forward)]
@@ -274,4 +281,76 @@ pub(crate) enum CacheManagerErrorInner {
     #[error(transparent)]
     #[diagnostic(skip)]
     Collector(#[from] omni_collector::error::Error),
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{borrow::Cow, path::PathBuf, sync::Arc};
+
+    use omni_command_config::CommandConfig;
+    use omni_config_types::TeraExprBoolean;
+    use omni_core::TaskExecutionNode;
+    use omni_task_context::{CacheInfo, TaskContext};
+
+    use super::is_cache_eligible;
+
+    fn node(persistent: bool) -> TaskExecutionNode {
+        TaskExecutionNode::new(
+            "t".to_string(),
+            Some(CommandConfig::Shell("echo".to_string())),
+            None,
+            "p".to_string(),
+            PathBuf::from(""),
+            vec![],
+            TeraExprBoolean::Boolean(true),
+            false,
+            persistent,
+            None,
+            None,
+        )
+    }
+
+    fn info(enabled: bool) -> CacheInfo {
+        CacheInfo {
+            cache_enabled: enabled,
+            key_defaults: true,
+            key_env_keys: vec![],
+            key_input_files: Default::default(),
+            cache_output_files: Default::default(),
+            cache_logs: false,
+            args: Default::default(),
+        }
+    }
+
+    fn eligible(node: &TaskExecutionNode, info: Option<CacheInfo>) -> bool {
+        let ctx = TaskContext {
+            node,
+            dependency_hashes: vec![],
+            env_vars: Arc::new(Default::default()),
+            cache_info: info.map(Cow::Owned),
+            output_logs: None,
+            template_context: Default::default(),
+        };
+        is_cache_eligible(&ctx)
+    }
+
+    #[test]
+    fn enabled_non_persistent_is_eligible() {
+        assert!(eligible(&node(false), Some(info(true))));
+    }
+
+    #[test]
+    fn disabled_task_is_not_eligible() {
+        assert!(!eligible(&node(false), Some(info(false))));
+    }
+
+    #[test]
+    fn persistent_task_is_not_eligible() {
+        assert!(!eligible(&node(true), Some(info(true))));
+    }
+
+    #[test]
+    fn task_without_cache_info_is_not_eligible() {
+        assert!(!eligible(&node(false), None));
+    }
 }

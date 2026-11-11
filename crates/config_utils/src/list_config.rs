@@ -37,6 +37,8 @@ impl<'a, T: for<'de> serde::Deserialize<'de> + Merge> serde::Deserialize<'a>
                 let value: serde_json::Value = m.deserialize()?;
 
                 if value.is_object() && value["merge"].is_array() {
+                    crate::envelope::ensure_sole_operator(&value, "merge")
+                        .map_err(serde::de::Error::custom)?;
                     Ok(ListConfig::merge(
                         serde_path_to_error::deserialize(
                             value["merge"].clone(),
@@ -44,6 +46,8 @@ impl<'a, T: for<'de> serde::Deserialize<'de> + Merge> serde::Deserialize<'a>
                         .map_err(serde::de::Error::custom)?,
                     ))
                 } else if value.is_object() && value["replace"].is_array() {
+                    crate::envelope::ensure_sole_operator(&value, "replace")
+                        .map_err(serde::de::Error::custom)?;
                     Ok(ListConfig::replace(
                         serde_path_to_error::deserialize(
                             value["replace"].clone(),
@@ -51,6 +55,8 @@ impl<'a, T: for<'de> serde::Deserialize<'de> + Merge> serde::Deserialize<'a>
                         .map_err(serde::de::Error::custom)?,
                     ))
                 } else if value.is_object() && value["append"].is_array() {
+                    crate::envelope::ensure_sole_operator(&value, "append")
+                        .map_err(serde::de::Error::custom)?;
                     Ok(ListConfig::append(
                         serde_path_to_error::deserialize(
                             value["append"].clone(),
@@ -58,6 +64,8 @@ impl<'a, T: for<'de> serde::Deserialize<'de> + Merge> serde::Deserialize<'a>
                         .map_err(serde::de::Error::custom)?,
                     ))
                 } else if value.is_object() && value["prepend"].is_array() {
+                    crate::envelope::ensure_sole_operator(&value, "prepend")
+                        .map_err(serde::de::Error::custom)?;
                     Ok(ListConfig::prepend(
                         serde_path_to_error::deserialize(
                             value["prepend"].clone(),

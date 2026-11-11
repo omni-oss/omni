@@ -35,6 +35,8 @@ impl<'a, T: for<'de> serde::Deserialize<'de> + Merge> serde::Deserialize<'a>
                 let value: serde_json::Value = m.deserialize()?;
 
                 if value["merge"].is_object() {
+                    crate::envelope::ensure_sole_operator(&value, "merge")
+                        .map_err(serde::de::Error::custom)?;
                     Ok(DictConfig::merge(
                         serde_path_to_error::deserialize(
                             value["merge"].clone(),
@@ -42,6 +44,8 @@ impl<'a, T: for<'de> serde::Deserialize<'de> + Merge> serde::Deserialize<'a>
                         .map_err(serde::de::Error::custom)?,
                     ))
                 } else if value["replace"].is_object() {
+                    crate::envelope::ensure_sole_operator(&value, "replace")
+                        .map_err(serde::de::Error::custom)?;
                     Ok(DictConfig::replace(
                         serde_path_to_error::deserialize(
                             value["replace"].clone(),

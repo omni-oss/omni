@@ -221,14 +221,12 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
 
                     // The project's own config-file ids seed the include side
                     // only; defaults are always includes. The exclude side
-                    // appends nothing so the project's excludes survive.
+                    // is omitted so the project's excludes survive.
                     files.merge(MergeGlobConfig::IncludeAndExclude {
-                        include: MergeSingleOrMany::List(ListConfig::prepend(
-                            additional_files,
+                        include: Some(MergeSingleOrMany::List(
+                            ListConfig::prepend(additional_files),
                         )),
-                        exclude: MergeSingleOrMany::List(ListConfig::append(
-                            Vec::new(),
-                        )),
+                        exclude: None,
                     });
                     files.normalize()
                 } else {
