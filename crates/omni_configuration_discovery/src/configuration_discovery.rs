@@ -12,6 +12,13 @@ use omni_glob::GlobMatcher;
 
 use crate::error::{Error, ErrorInner};
 
+/// Walks `root_dir` for configuration files, honoring ignore files.
+///
+/// Rule: workspace ignore rules never apply inside a fetched source. Use
+/// [`with_parent_ignores(false)`](Self::with_parent_ignores) for any root in the
+/// shared source store (a git source, or a pack reached through one); the synced
+/// `/.omni/sources/**` rule would otherwise hide everything in it. Local
+/// sources and the workspace itself keep the default. See RFC 0012, decision 13.
 #[derive(Debug, Clone, new)]
 pub struct ConfigurationDiscovery<'a, G, C, I>
 where
