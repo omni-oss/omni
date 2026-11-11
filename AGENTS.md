@@ -1,6 +1,6 @@
 # Agent instructions
 
-Follow the guidelines in `docs/guidelines`.
+Follow the guidelines in `docs/guidelines`. They are projected from swe-docs and not tracked, so in a fresh checkout run `bun install && omni remote-sources install && omni projection sync` first.
 
 ## Artifacts
 
@@ -19,7 +19,7 @@ Tasks run through omni and are defined in `omni/presets/*.omni.yaml`; CI runs th
 | `test` (Rust) | `cargo test -p <crate>` | Rust crates |
 | `check:format` (TS) | `bun x oxfmt --check` | TS projects |
 | `check:lint` (TS) | `bun x oxlint <project>` | TS projects |
-| `check:types` (TS) | `bun x tsc --noEmit -p tsconfig.json` | TS projects |
+| `check:types` (TS) | `bun x tsc --noEmit -p tsconfig.json && if [ -f tsconfig.node.json ]; then bun x tsc --noEmit -p tsconfig.node.json; fi` | TS projects |
 | `test:unit`, `test:integration` (TS) | `bun run test:unit`, `bun run test:integration` | TS projects |
 | `build` | `bun run build` (TS), cargo build (Rust) | Per project; `cli/omni` lint needs `@omni-oss/bridge-service#build` first |
 
