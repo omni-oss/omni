@@ -7863,6 +7863,7 @@ dependencies = [
  "omni_redact",
  "omni_utils",
  "serde",
+ "serde_json",
  "strum 0.28.0",
  "system_traits",
  "tempfile",
