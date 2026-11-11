@@ -782,7 +782,10 @@ describe("+run-filters @e2e (retry overrides)", () => {
 
         expect(result).toHaveFailed();
         // `-r 0` overrides `max_retries: 3`, so there are no retry attempts.
-        expect(result.stdout).not.toContain("retrying...");
+        const attempts = (
+            result.stderr.match(/retrying( in \S+)?\.\.\./g) ?? []
+        ).length;
+        expect(attempts).toBe(0);
     });
 
     it("`-r/--retry` rejects an invalid spec", async () => {
