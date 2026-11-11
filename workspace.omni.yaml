@@ -19,3 +19,7 @@ projections:
   - id: skills
     source: local
     path: ./omni/projections/skills
+  - id: swe-docs
+    source: git
+    uri: https://github.com/cs-clarence/swe-docs
+    rev: main

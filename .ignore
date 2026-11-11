@@ -1,0 +1,33 @@
+# @@omni-managed:begin (managed by `omni ignore sync`; do not edit by hand)
+/.omni/cache/**
+/.omni/locks/**
+/.omni/remote-cache.omni.*
+/.omni/scratch/**
+/.omni/sources/**
+!/.omni/sources/lock.json
+/.omni/sources/lock.json.lock
+/.omni/trace/**
+/worktree.omni.*
+/.agents/skills/blast-radius
+/.agents/skills/bro
+/.agents/skills/figure-it-out
+/.agents/skills/grill-me
+/.agents/skills/grilling
+/.agents/skills/handoff
+/.agents/skills/how
+/.agents/skills/interrogate
+/.agents/skills/show-me-your-work
+/.agents/skills/teach
+/.agents/skills/technical-writing
+/.agents/skills/to-questionnaire
+/.agents/skills/unslop
+/.agents/skills/wait-what
+/.agents/skills/why
+/.agents/skills/writing-for-agents
+/docs/guidelines/CHANGELOG.md
+/docs/guidelines/README.md
+/docs/guidelines/authoring
+/docs/guidelines/core
+/docs/guidelines/planning
+/docs/guidelines/reviewing
+# @@omni-managed:end 59d9fd17
