@@ -135,11 +135,11 @@ impl CacheResolutionState {
     }
 }
 
-fn empty_path(path: &Path) -> bool {
+pub(crate) fn empty_path(path: &Path) -> bool {
     path.to_str().is_some_and(|value| value.trim().is_empty())
 }
 
-fn mapped_workspace(
+pub(crate) fn mapped_workspace(
     root: &Path,
     layout: CheckoutLayout,
     sys: &impl ContextSys,
@@ -166,10 +166,42 @@ fn mapped_workspace(
     mapped
 }
 
+/// Which `worktree.omni.*` directory field a resolution reads.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum WorktreeDir {
+    Cache,
+    Sources,
+}
+
+impl WorktreeDir {
+    fn field(self) -> &'static str {
+        match self {
+            Self::Cache => "cache.dir",
+            Self::Sources => "sources.dir",
+        }
+    }
+
+    fn select(self, config: WorktreeConfiguration) -> Option<String> {
+        match self {
+            Self::Cache => config.cache.and_then(|c| c.dir),
+            Self::Sources => config.sources.and_then(|s| s.dir),
+        }
+    }
+}
+
 #[allow(clippy::result_large_err)]
 fn configured_directory(
     root: &Path,
     sys: &impl ContextSys,
+) -> Result<Option<(PathBuf, PathBuf)>, ContextError> {
+    configured_worktree_directory(root, sys, WorktreeDir::Cache)
+}
+
+#[allow(clippy::result_large_err)]
+pub(crate) fn configured_worktree_directory(
+    root: &Path,
+    sys: &impl ContextSys,
+    kind: WorktreeDir,
 ) -> Result<Option<(PathBuf, PathBuf)>, ContextError> {
     let mut files = Vec::new();
     for name in config_file_names(WORKTREE_OMNI) {
@@ -191,7 +223,7 @@ fn configured_directory(
     let config = WorktreeConfiguration::load(&file, sys).map_err(|error| {
         ContextErrorInner::WorktreeConfiguration(file.clone(), error)
     })?;
-    let Some(dir) = config.cache.and_then(|cache| cache.dir) else {
+    let Some(dir) = kind.select(config) else {
         return Ok(None);
     };
     let expansion = dir == "~"
@@ -209,7 +241,7 @@ fn configured_directory(
                 && tail.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
         }) && dir.matches('%').count() >= 2;
     if dir.trim().is_empty() || expansion {
-        return Err(ContextErrorInner::CacheDirectory(format!("invalid cache.dir in {}: use a nonempty literal path; home/environment expansion is not supported", file.display())).into());
+        return Err(ContextErrorInner::CacheDirectory(format!("invalid {} in {}: use a nonempty literal path; home/environment expansion is not supported", kind.field(), file.display())).into());
     }
     #[cfg(windows)]
     if !std::path::Path::new(&dir).has_root()
@@ -219,7 +251,7 @@ fn configured_directory(
         )
     {
         return Err(ContextErrorInner::CacheDirectory(format!(
-            "invalid cache.dir in {}: drive-relative paths are ambiguous; use a fully absolute or workspace-relative path", file.display()
+            "invalid {} in {}: drive-relative paths are ambiguous; use a fully absolute or workspace-relative path", kind.field(), file.display()
         )).into());
     }
     Ok(Some((root.join(dir), file)))

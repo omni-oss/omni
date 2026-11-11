@@ -1,4 +1,7 @@
 use crate::cache_resolution::{CacheDirectorySource, CacheResolutionState};
+use crate::sources_resolution::{
+    SourcesDirectorySource, SourcesResolutionState, global_sources_dir,
+};
 use std::path::{Path, PathBuf};
 
 pub(crate) use crate::env_loader::EnvLoader;
@@ -49,6 +52,9 @@ pub struct Context<TSys: ContextSys = RealSysSync> {
     cache_dir: PathBuf,
     cache_resolution: CacheResolutionState,
     cache_source: CacheDirectorySource,
+    sources_resolution: SourcesResolutionState,
+    sources_dir: PathBuf,
+    sources_source: SourcesDirectorySource,
     tracing_config: TracingConfig,
     sys: TSys,
 }
@@ -141,6 +147,13 @@ impl<TSys: ContextSys> Context<TSys> {
             &sys,
             omni_scm::discover_checkout,
         );
+        let sources_resolution = SourcesResolutionState::new(
+            &root_dir,
+            None,
+            global_sources_dir(),
+            &sys,
+            omni_scm::discover_checkout,
+        );
         Self::new_with_cache_resolution(
             sys,
             env,
@@ -150,8 +163,41 @@ impl<TSys: ContextSys> Context<TSys> {
             override_env_files,
             tracing_config,
             cache_resolution,
+            sources_resolution,
             working_dir,
         )
+    }
+
+    /// Override the remote-source store directory (the `--sources-dir` flag or
+    /// `OMNI_SOURCES_DIR`). `None` keeps the worktree/global resolution. The
+    /// override is retained across reloads; relative paths resolve against the
+    /// invocation directory.
+    #[allow(clippy::result_large_err)]
+    pub fn with_sources_dir(
+        mut self,
+        dir: Option<PathBuf>,
+    ) -> Result<Self, ContextError> {
+        let Some(dir) = dir else {
+            return Ok(self);
+        };
+        let dir = match &self.working_dir {
+            Some(wd) if !dir.is_absolute() && !dir.as_os_str().is_empty() => {
+                wd.join(dir)
+            }
+            _ => dir,
+        };
+        let state = SourcesResolutionState::new(
+            &self.root_dir,
+            Some(dir),
+            global_sources_dir(),
+            &self.sys,
+            |_| unreachable!("explicit sources dir skips discovery"),
+        );
+        let (path, source) = state.resolve(&self.root_dir, &self.sys)?;
+        self.sources_resolution = state;
+        self.sources_dir = path;
+        self.sources_source = source;
+        Ok(self)
     }
 
     #[allow(clippy::result_large_err, clippy::too_many_arguments)]
@@ -164,11 +210,14 @@ impl<TSys: ContextSys> Context<TSys> {
         override_env_files: Option<Vec<PathBuf>>,
         tracing_config: &TracingConfig,
         cache_resolution: CacheResolutionState,
+        sources_resolution: SourcesResolutionState,
         working_dir: Option<PathBuf>,
     ) -> Result<Self, ContextError> {
         let root_dir = root_dir.to_path_buf();
         let (cache_dir, cache_source) =
             cache_resolution.resolve(&root_dir, &sys)?;
+        let (sources_dir, sources_source) =
+            sources_resolution.resolve(&root_dir, &sys)?;
         let workspace = get_workspace_configuration(&env, &root_dir, &sys)?;
         let omni_dir = root_dir.join(OMNI_DIR);
         let remote_cache = get_remote_cache_configuration(&cache_dir, &sys)?;
@@ -184,6 +233,9 @@ impl<TSys: ContextSys> Context<TSys> {
             cache_dir,
             cache_resolution,
             cache_source,
+            sources_resolution,
+            sources_dir,
+            sources_source,
             env_root_dir_marker: root_marker.to_string(),
             sys,
             tracing_config: tracing_config.clone(),
@@ -219,6 +271,7 @@ impl<TSys: ContextSys> Context<TSys> {
             self.override_env_files.clone(),
             &self.tracing_config,
             self.cache_resolution.clone(),
+            self.sources_resolution.clone(),
             self.working_dir.clone(),
         )
     }
@@ -235,6 +288,7 @@ impl<TSys: ContextSys> Context<TSys> {
 
         let entries = workspace_files
             .chain(self.cache_resolution.configuration_paths(&self.root_dir))
+            .chain(self.sources_resolution.configuration_paths(&self.root_dir))
             .chain(self.remote_cache_configuration_paths())
             .map(|path| {
                 let stamp = self
@@ -557,6 +611,16 @@ impl<TSys: ContextSys> Context<TSys> {
         &self.cache_source
     }
 
+    /// The remote-source store root, resolved from `--sources-dir`, the
+    /// worktree configuration, or the per-user default.
+    pub fn sources_dir(&self) -> &Path {
+        &self.sources_dir
+    }
+
+    pub fn sources_directory_source(&self) -> &SourcesDirectorySource {
+        &self.sources_source
+    }
+
     pub fn scratch_dir(&self) -> PathBuf {
         self.root_dir.join(SCRATCH_DIR)
     }
@@ -761,6 +825,14 @@ pub(crate) enum ContextErrorInner {
     )]
     CacheDirectory(String),
 
+    /// The remote-source store directory configuration is invalid or unsafe.
+    #[error("{0}")]
+    #[diagnostic(
+        code = "workspace.invalid_sources_directory",
+        hint = "use one worktree configuration file and a dedicated nonempty literal sources path that neither equals nor contains a workspace"
+    )]
+    SourcesDirectory(String),
+
     /// The worktree configuration file could not be loaded.
     #[error("failed to load worktree configuration: '{0}'")]
     #[diagnostic(
@@ -959,6 +1031,8 @@ mod tests {
             &TracingConfig::disabled(),
             Some(root.join("fixed")),
         )
+        .unwrap()
+        .with_sources_dir(Some(root.join("fixed-sources")))
         .unwrap();
         let fingerprint = explicit.config_fingerprint();
         std::fs::write(&policy, "invalid: true").unwrap();

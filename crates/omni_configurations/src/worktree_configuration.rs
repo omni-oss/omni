@@ -5,12 +5,21 @@ use system_traits::FsRead;
 
 use crate::{LoadConfigError, utils::fs};
 
-/// Machine-local cache policy. Missing and null fields both inherit.
+/// Machine-local cache and remote-source store policy. Missing and null fields both inherit.
 #[derive(Clone, Debug, Default, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WorktreeConfiguration {
     #[serde(default)]
     pub cache: Option<WorktreeCacheConfiguration>,
+    #[serde(default)]
+    pub sources: Option<WorktreeSourcesConfiguration>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WorktreeSourcesConfiguration {
+    #[serde(default)]
+    pub dir: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Deserialize)]
@@ -67,11 +76,25 @@ mod tests {
             assert!(config.cache.and_then(|cache| cache.dir).is_none());
         }
         for value in [
+            r#"{"sources":{}}"#,
+            r#"{"sources":null}"#,
+            r#"{"sources":{"dir":null}}"#,
+        ] {
+            let config: WorktreeConfiguration =
+                serde_json::from_str(value).unwrap();
+            assert!(config.sources.and_then(|s| s.dir).is_none());
+        }
+        let config: WorktreeConfiguration =
+            serde_json::from_str(r#"{"sources":{"dir":"../s"}}"#).unwrap();
+        assert_eq!(config.sources.unwrap().dir.as_deref(), Some("../s"));
+        for value in [
             r#"{"cache":{"directory":"cache"}}"#,
             r#"{"extends":"other"}"#,
             r#"{"cache":false}"#,
             r#"{"cache":{"dir":42}}"#,
             r#"{"cache":{"dir":[]}}"#,
+            r#"{"sources":{"directory":"s"}}"#,
+            r#"{"sources":{"dir":42}}"#,
         ] {
             assert!(
                 serde_json::from_str::<WorktreeConfiguration>(value).is_err(),
