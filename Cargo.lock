@@ -7958,6 +7958,7 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+ "toml",
  "url",
 ]
 
