@@ -84,10 +84,10 @@ a link into the store cannot edit shared content in place. A store with a newer
 `link: auto` (the default) chooses how a projected file or directory from a
 remote source reaches your workspace:
 
-| Source | Order tried |
-| --- | --- |
-| File | copy-on-write clone (reflink), symlink into the store, copy |
-| Directory | reflink each file, copy |
+| Source    | Order tried                                                 |
+| --------- | ----------------------------------------------------------- |
+| File      | copy-on-write clone (reflink), symlink into the store, copy |
+| Directory | reflink each file, copy                                     |
 
 A reflink gives an independent file that survives deleting the store and costs no
 extra disk on APFS, Btrfs, XFS and ReFS. Hard links are never chosen by `auto`,
