@@ -144,31 +144,29 @@ impl ExpandedPacks {
 }
 
 impl ExpandedPacks {
-    /// The rebased `local` projection roots contributed by packs that are not
-    /// local (a git pack, or one nested in it). These sources join the
-    /// workspace's list as top-level entries, so nothing about their position
-    /// says they live in the store; this set carries that.
-    pub fn non_local_projection_roots(&self) -> HashSet<PathBuf> {
-        let mut roots = HashSet::new();
+    /// The ids of the projection sources contributed by packs that are not
+    /// local (a git pack, or one nested in it), as they appear in
+    /// [`effective_projection_sources`](Self::effective_projection_sources).
+    /// Those sources join the workspace's list as top-level entries, so nothing
+    /// about their position says they live in the store; this set carries that.
+    /// Ids are compared rather than paths so the match is platform independent.
+    pub fn non_local_projection_ids(&self) -> HashSet<String> {
+        let mut ids = HashSet::new();
         for node in &self.nodes {
             if node.is_local || !node.contributes(PackSubsystem::Projections) {
                 continue;
             }
+            let prefix = node.qualified_id.replace("::", "/");
             for source in &node.projections {
-                if let SourceConfig::Local(local) = source {
-                    let paths: Vec<&String> = match &local.path {
-                        SingleOrMany::Single(p) => vec![p],
-                        SingleOrMany::Many(ps) => ps.iter().collect(),
-                    };
-                    roots.extend(
-                        paths
-                            .into_iter()
-                            .map(|p| PathBuf::from(rebase_path(&node.root, p))),
-                    );
-                }
+                let id = match source {
+                    SourceConfig::Local(local) => &local.extra.id,
+                    SourceConfig::Git(git) => &git.extra.id,
+                    SourceConfig::Registry(_) => continue,
+                };
+                ids.insert(format!("{prefix}/{id}"));
             }
         }
-        roots
+        ids
     }
 }
 

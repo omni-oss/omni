@@ -179,7 +179,7 @@ where
     let packs = ctx.workspace_configuration().packs.clone();
     let mut sources = ctx.workspace_configuration().projections.clone();
     let mut pack_refs = Vec::new();
-    let mut non_local_roots = std::collections::HashSet::new();
+    let mut non_local_ids = std::collections::HashSet::new();
     if !packs.is_empty() {
         let (expanded, refs) = omni_remote_source_contributors::expand_packs(
             &remote,
@@ -190,7 +190,7 @@ where
         )
         .await?;
         pack_refs = refs;
-        non_local_roots = expanded.non_local_projection_roots();
+        non_local_ids = expanded.non_local_projection_ids();
         sources.extend(expanded.effective_projection_sources());
     }
     let sources = &sources;
@@ -229,7 +229,7 @@ where
         remote: &remote,
         update: req.update,
         git_refs: Mutex::new(Vec::new()),
-        non_local_roots: &non_local_roots,
+        non_local_ids: &non_local_ids,
     };
     let max_depth = req.max_depth.unwrap_or(DEFAULT_META_PROJECTION_DEPTH);
     let effective = expand(
@@ -617,10 +617,10 @@ struct ProjectionMetaExpand<'a, TSys: RemoteSourceSys> {
     /// Every git ref pulled during expansion, recorded so a full sync can
     /// retain the meta repos and every git child from garbage collection.
     git_refs: Mutex<Vec<RemoteSourceRef>>,
-    /// Roots of pack-contributed `local` sources whose pack is not local. They
-    /// are appended as top-level sources, so position alone cannot tell they
-    /// are inside the store.
-    non_local_roots: &'a std::collections::HashSet<std::path::PathBuf>,
+    /// Ids of pack-contributed sources whose pack is not local. They are
+    /// appended as top-level sources, so position alone cannot tell they are
+    /// inside the store.
+    non_local_ids: &'a std::collections::HashSet<String>,
 }
 
 impl<TSys> MetaExpand for ProjectionMetaExpand<'_, TSys>
@@ -688,7 +688,7 @@ where
         // workspace's ignore rules.
         let is_local = pin.is_none()
             && !self.remote.is_in_store(parent_root)
-            && !self.non_local_roots.contains(&root);
+            && !(depth == 0 && self.non_local_ids.contains(qualified_id));
         let manifest =
             discover_owned_manifest(self.sys, &root, is_local).await?;
         let trusted = depth == 0 && workspace_routes.is_some();
