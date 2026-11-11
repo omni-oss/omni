@@ -145,8 +145,8 @@ where
         // source nested in one, lives in the store and must not see the
         // workspace's ignore rules.
         let is_local = self.locality.resolve(
-            &root,
-            parent_root,
+            qualified_id,
+            self.declared_id(src),
             depth,
             pin.is_some(),
             false,

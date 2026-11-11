@@ -389,8 +389,8 @@ where
         let leaf = PackLeaf {
             root: root.clone(),
             is_local: self.locality.resolve(
-                &root,
-                parent_root,
+                qualified_id,
+                self.declared_id(src),
                 depth,
                 pin.is_some(),
                 false,
