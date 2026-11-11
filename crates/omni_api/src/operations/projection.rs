@@ -780,7 +780,8 @@ where
         &NAMES[..],
         &IGNORE_FILES[..],
         "projection",
-    );
+    )
+    .with_parent_ignores(false);
 
     let Some(file) = discovery.discover().await?.into_iter().next() else {
         return Ok(None);
