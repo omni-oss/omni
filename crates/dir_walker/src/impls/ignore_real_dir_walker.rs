@@ -27,6 +27,8 @@ pub struct IgnoreRealDirWalkerConfig {
     pub git_global: Option<bool>,
     #[builder(into)]
     pub ignore_case_insensitive: Option<bool>,
+    #[builder(into)]
+    pub parents: Option<bool>,
     #[builder(into, default)]
     pub custom_ignore_filenames: Vec<String>,
     #[builder(into)]
@@ -62,6 +64,7 @@ impl Default for IgnoreRealDirWalkerConfig {
     fn default() -> Self {
         Self {
             ignore_case_insensitive: None,
+            parents: None,
             standard_filters: Some(true),
             git_ignore: None,
             hidden: None,
@@ -108,6 +111,9 @@ impl IgnoreRealDirWalkerConfig {
         }
         if let Some(ignore_case_insensitive) = self.ignore_case_insensitive {
             builder.ignore_case_insensitive(ignore_case_insensitive);
+        }
+        if let Some(parents) = self.parents {
+            builder.parents(parents);
         }
         if let Some(ignore) = self.ignore {
             builder.ignore(ignore);

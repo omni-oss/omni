@@ -1724,3 +1724,64 @@ fn count_commit_dirs(store_git: &Path) -> usize {
     }
     count
 }
+
+/// A git source's own `projection.omni.yaml` is found even when the workspace's
+/// ignore files hide the source store, as `omni ignore sync` makes them do. The
+/// workspace's ignore rules must not apply inside a fetched source.
+#[tokio::test]
+async fn projection_git_owned_manifest_is_found_under_ignored_store() {
+    if !git_available() {
+        eprintln!("skipping: `git` is not available on PATH");
+        return;
+    }
+
+    let repo = tempfile::TempDir::new().unwrap();
+    git(repo.path(), &["init", "-q", "-b", "main"]);
+    std::fs::write(repo.path().join("rust.md"), b"# rust\n").unwrap();
+    std::fs::write(
+        repo.path().join("projection.omni.yaml"),
+        concat!(
+            "name: \"@vendor/skills\"\n",
+            "routes:\n",
+            "  - strategy: mirror\n",
+            "    scope: \"*.md\"\n",
+            "    target: \"@workspace/.agents/skills\"\n",
+        ),
+    )
+    .unwrap();
+    git(repo.path(), &["add", "."]);
+    git(repo.path(), &["commit", "-q", "-m", "initial commit"]);
+    let uri = format!("file://{}", repo.path().display());
+
+    let ws = tempfile::TempDir::new().unwrap();
+    std::fs::write(
+        ws.path().join("workspace.omni.yaml"),
+        format!(
+            concat!(
+                "projects:\n",
+                "  - \"projects/**\"\n",
+                "projections:\n",
+                "  - source: git\n",
+                "    uri: {uri}\n",
+                "    rev: main\n",
+                "    id: vendor-skills\n",
+            ),
+            uri = uri
+        ),
+    )
+    .unwrap();
+    for ignore_file in [".omniignore", ".ignore"] {
+        std::fs::write(
+            ws.path().join(ignore_file),
+            concat!("/.omni/sources/**\n", "!/.omni/sources/lock.json\n",),
+        )
+        .unwrap();
+    }
+
+    let resp = make_api(ws.path())
+        .projection_sync(omni_api::ProjectionSyncRequest::default())
+        .await
+        .expect("sync with the source's owned routes");
+    assert_eq!(resp.applied.len(), 1);
+    assert!(ws.path().join(".agents/skills/rust.md").exists());
+}

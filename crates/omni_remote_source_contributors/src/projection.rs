@@ -219,7 +219,8 @@ where
         &NAMES[..],
         &IGNORE_FILES[..],
         "projection",
-    );
+    )
+    .with_parent_ignores(false);
 
     let discoveries = discovery.discover().await?;
     if let Some(file) = discoveries.first() {
