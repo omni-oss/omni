@@ -726,10 +726,11 @@ where
                 task,
                 ..
             }) => DependencyOutcome::Transparent(task.dependencies()),
-            Some(r) => r
+            Some(r @ TaskExecutionResult::Completed { .. }) => r
                 .cache_status()
                 .map(DependencyOutcome::Status)
-                .unwrap_or(DependencyOutcome::Unknown),
+                .unwrap_or(DependencyOutcome::Unreusable),
+            Some(_) => DependencyOutcome::Unreusable,
             None => DependencyOutcome::Unknown,
         };
 

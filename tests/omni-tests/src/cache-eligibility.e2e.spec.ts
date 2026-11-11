@@ -260,4 +260,34 @@ describe("+cache @cache @e2e (B04 uncached dependency demotion)", () => {
         expect(second).toHaveStderrContaining("Cache hit for task 'app#gen'");
         expect(second).toHaveStderrContaining("Cache hit for task 'app#build'");
     });
+
+    it("a change behind a commandless aggregate node still invalidates dependents", async () => {
+        const ws = makeWorkspace({
+            ...depSpec({
+                gen: {
+                    exec: 'echo "gen"',
+                    cache: { key: { defaults: false, files: ["gen-in/**"] } },
+                },
+                agg: { dependencies: ["gen"] },
+                build: {
+                    exec: 'echo "build"',
+                    dependencies: ["agg"],
+                    cache: { key: { defaults: false, files: ["build-in/**"] } },
+                },
+            }),
+            files: { "app/gen-in/a.txt": "a\n", "app/build-in/b.txt": "b\n" },
+        });
+        const run = () => runOmni(["run", "build"], { cwd: ws.cwd });
+
+        expect(await run()).toHaveSucceeded();
+        expect(await run()).toHaveStderrContaining(
+            "Cache hit for task 'app#build'",
+        );
+
+        ws.write("app/gen-in/a.txt", "changed\n");
+
+        const rerun = await run();
+        expect(rerun).toHaveSucceeded();
+        expect(rerun.stderr).not.toContain("Cache hit for task 'app#build'");
+    });
 });

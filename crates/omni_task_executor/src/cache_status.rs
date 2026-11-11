@@ -53,7 +53,9 @@ pub(crate) enum DependencyOutcome<'a> {
     Status(&'a CacheStatus),
     /// A commandless or disabled node: judged by its own dependencies.
     Transparent(&'a [String]),
-    /// Not part of this plan, or never ran; contributes nothing.
+    /// The dependency errored or never ran, so there is no digest to key on.
+    Unreusable,
+    /// Not part of this plan; contributes nothing.
     Unknown,
 }
 
@@ -116,6 +118,9 @@ fn first_uncached_dependency<'a>(
             }
             DependencyOutcome::Transparent(deps) => {
                 stack.extend(deps.iter().rev().map(|d| (direct, d.as_str())));
+            }
+            DependencyOutcome::Unreusable => {
+                return Some((direct.to_string(), name.to_string()));
             }
             DependencyOutcome::Unknown => {}
         }
@@ -278,6 +283,20 @@ mod tests {
 
         let g = graph(&[("c", CacheStatus::Eligible)], &[("agg", &["c"])]);
         assert_eq!(derive(facts(), &["agg"], &g), CacheStatus::Eligible);
+    }
+
+    #[test]
+    fn errored_dependency_is_unreusable() {
+        let d = derive_status(facts(), &names(&["a"]), &|_| {
+            DependencyOutcome::Unreusable
+        });
+        assert_eq!(
+            d,
+            CacheStatus::Demoted {
+                direct_dependency: "a".into(),
+                root_cause: "a".into()
+            }
+        );
     }
 
     #[test]

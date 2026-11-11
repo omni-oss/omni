@@ -10,7 +10,7 @@ use omni_task_context::{
     TaskContextProvider, TaskContextProviderError, TaskHashProvider,
 };
 
-use crate::TaskExecutionResult;
+use crate::{SkipReason, TaskExecutionResult};
 
 pub struct DefaultTaskContextProvider<'a, TSys: ContextSys> {
     inner: Implementation<
@@ -124,5 +124,29 @@ impl<'a> TaskHashProvider for OverallResultsTashHashProvider<'a> {
             return None;
         }
         result.hash()
+    }
+
+    fn get_dependency_hashes(&self, task_full_name: &str) -> Vec<DefaultHash> {
+        let mut hashes = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        let mut stack = vec![task_full_name];
+
+        while let Some(name) = stack.pop() {
+            if !seen.insert(name) {
+                continue;
+            }
+            match self.overall_results.get(name) {
+                Some(TaskExecutionResult::Skipped {
+                    skip_reason: SkipReason::NoCommand | SkipReason::Disabled,
+                    task,
+                    ..
+                }) => stack.extend(
+                    task.dependencies().iter().rev().map(|d| d.as_str()),
+                ),
+                _ => hashes.extend(self.get_task_hash(name)),
+            }
+        }
+
+        hashes
     }
 }

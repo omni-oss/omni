@@ -156,7 +156,10 @@ impl<'a, TSys: TaskExecutorSys, S: ExecutionEventSubscriber>
 
         let demoted = results
             .iter()
-            .filter(|r| r.cache_status().is_some_and(|s| s.is_demoted()))
+            .filter(|r| {
+                !r.is_skipped()
+                    && r.cache_status().is_some_and(|s| s.is_demoted())
+            })
             .count();
         if demoted > 0 {
             notice!(self.subscriber, CacheDependencyDemoted { count: demoted });
