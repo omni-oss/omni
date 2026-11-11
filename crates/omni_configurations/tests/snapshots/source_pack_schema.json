@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SourceConfig",
+  "description": "A registered source of configuration artifacts (generator manifests, tool\nmanifests, projection inputs, or packs).\n\nThe type is generic over a [`SourceConfigProfile`] that assigns each variant\nits own flattened extra family. `P = ()` yields the plain `local`/`git`\nsource shared by generators and tools; richer profiles add sibling fields\nwithout changing the wire shape of the `source`/`path`/`uri`/`rev` keys.",
+  "oneOf": [
+    {
+      "description": "A `local` source: one or more workspace-relative paths.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "path": {
+          "$ref": "#/$defs/SingleOrMany"
+        },
+        "provides": {
+          "description": "Consumer-side subsystem gate. When omitted, the pack contributes every\nface its manifest declares. Narrowing only; a consumer can never widen\nwhat a pack offers, and the gate cascades to sub-packs.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "default": null,
+          "items": {
+            "$ref": "#/$defs/PackSubsystem"
+          }
+        },
+        "source": {
+          "type": "string",
+          "const": "local"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "path",
+        "id"
+      ]
+    },
+    {
+      "description": "A `git` source: a repository URI pinned to a revision.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "provides": {
+          "description": "Consumer-side subsystem gate. When omitted, the pack contributes every\nface its manifest declares. Narrowing only; a consumer can never widen\nwhat a pack offers, and the gate cascades to sub-packs.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "default": null,
+          "items": {
+            "$ref": "#/$defs/PackSubsystem"
+          }
+        },
+        "rev": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string",
+          "const": "git"
+        },
+        "uri": {
+          "type": "string",
+          "format": "uri"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "uri",
+        "rev",
+        "id"
+      ]
+    }
+  ],
+  "$defs": {
+    "PackSubsystem": {
+      "description": "The subsystems a pack may contribute to. Used by a consumer's `provides`\ngate to narrow what a pack registers.",
+      "type": "string",
+      "enum": [
+        "generators",
+        "tools",
+        "projections"
+      ]
+    },
+    "SingleOrMany": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      ]
+    }
+  }
+}

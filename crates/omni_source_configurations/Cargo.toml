@@ -1,0 +1,19 @@
+[package]
+name = "omni_source_configurations"
+rust-version.workspace = true
+edition.workspace = true
+repository.workspace = true
+version = "0.1.0"
+
+[dependencies]
+serde = { workspace = true }
+schemars = { workspace = true }
+garde = { workspace = true }
+url = { workspace = true }
+omni_config_types = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+
+[lints]
+workspace = true
