@@ -1,3 +1,10 @@
+mod workspace_path;
+
+pub use workspace_path::{
+    DEFAULT_MAX_WORKSPACE_PATH_LEN, ProjectRootId, WorkspacePath,
+    WorkspacePathError,
+};
+
 use std::collections::HashSet;
 
 /// Escapes a path component to be safe for cross-platform file systems.

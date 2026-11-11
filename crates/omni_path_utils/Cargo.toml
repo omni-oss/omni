@@ -6,7 +6,20 @@ version = "0.1.0"
 authors.workspace = true
 repository.workspace = true
 
+[features]
+serde = ["dep:serde"]
+schemars = ["dep:schemars", "serde"]
+
 [dependencies]
+schemars = { workspace = true, optional = true }
+serde = { workspace = true, optional = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+omni_path_utils = { path = ".", features = ["schemars"] }
+serde_json = { workspace = true }
+schemars = { workspace = true }
+serde = { workspace = true }
 
 [lints]
 workspace = true
