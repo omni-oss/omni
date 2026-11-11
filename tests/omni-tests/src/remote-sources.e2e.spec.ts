@@ -6,11 +6,18 @@
  * `crates/omni_cli_core/src/commands/remote_source.rs`.
  */
 
-import { readdirSync, type Dirent } from "node:fs";
+import {
+    existsSync,
+    mkdtempSync,
+    readdirSync,
+    rmSync,
+    type Dirent,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished } from "vitest";
 
 import {
     makeLocalGitRepoWithAnnotatedTag,
@@ -222,6 +229,126 @@ describe(
                 });
                 expect(tools).toHaveSucceeded();
                 expect(tools).toOutputContaining("remote-tool");
+            },
+            CLONE_TIMEOUT_MS,
+        );
+
+        it(
+            "workspaces sharing one store never delete each other's checkouts, and a deleted store is refetched",
+            async (ctx) => {
+                await skipUnlessGitCliAvailable(ctx);
+
+                const repo = await makeLocalGitRepoWithAnnotatedTag({
+                    files: { "generator.omni.yaml": "name: shared\n" },
+                });
+                const uri = pathToFileURL(repo.url).href;
+                const store = join(
+                    mkdtempSync(join(tmpdir(), "omni-e2e-store-")),
+                    "sources",
+                );
+                onTestFinished(() =>
+                    rmSync(join(store, ".."), { recursive: true, force: true }),
+                );
+                const env = { OMNI_SOURCES_DIR: store };
+
+                const withSource = makeWorkspace({
+                    workspace: {
+                        projects: ["**"],
+                        generators: [{ source: "git", uri, rev: "main" }],
+                    },
+                });
+                const withoutSource = makeWorkspace({
+                    workspace: { projects: ["**"] },
+                });
+
+                expect(
+                    await runOmni(["remote-sources", "install"], {
+                        cwd: withSource.cwd,
+                        env,
+                        timeout: CLONE_TIMEOUT_MS,
+                    }),
+                ).toHaveSucceeded();
+                expect(countCommitDirs(join(store, "git"))).toBe(1);
+                // Nothing lands in the workspace's own store.
+                expect(withSource.exists(".omni/sources/store")).toBe(false);
+
+                // An install in a workspace that references nothing used to
+                // garbage-collect every checkout it did not know about.
+                expect(
+                    await runOmni(["remote-sources", "install"], {
+                        cwd: withoutSource.cwd,
+                        env,
+                    }),
+                ).toHaveSucceeded();
+                expect(countCommitDirs(join(store, "git"))).toBe(1);
+
+                // The store is a disposable cache: delete it and the next use
+                // refetches the pinned commit.
+                // Workspace ignore rules must not hide a store outside the
+                // workspace either.
+                expect(
+                    await runOmni(["ignore", "sync"], { cwd: withSource.cwd }),
+                ).toHaveSucceeded();
+                rmSync(store, { recursive: true, force: true });
+                const listed = await runOmni(["generator", "list"], {
+                    cwd: withSource.cwd,
+                    env,
+                    timeout: CLONE_TIMEOUT_MS,
+                });
+                expect(listed).toHaveSucceeded();
+                expect(listed).toOutputContaining("shared");
+                expect(countCommitDirs(join(store, "git"))).toBe(1);
+            },
+            CLONE_TIMEOUT_MS,
+        );
+
+        it(
+            "sources.dir in worktree.omni.yaml selects the store, and --sources-dir overrides it",
+            async (ctx) => {
+                await skipUnlessGitCliAvailable(ctx);
+
+                const repo = await makeLocalGitRepoWithAnnotatedTag({
+                    files: { "generator.omni.yaml": "name: shared\n" },
+                });
+                const uri = pathToFileURL(repo.url).href;
+                const ws = makeWorkspace({
+                    workspace: {
+                        projects: ["**"],
+                        generators: [{ source: "git", uri, rev: "main" }],
+                    },
+                });
+                ws.write("worktree.omni.yaml", "sources:\n  dir: .store\n");
+                // `undefined` lets the worktree file decide instead of the
+                // harness's per-workspace isolation.
+                const env = { OMNI_SOURCES_DIR: undefined };
+
+                expect(
+                    await runOmni(["remote-sources", "install"], {
+                        cwd: ws.cwd,
+                        env,
+                        timeout: CLONE_TIMEOUT_MS,
+                    }),
+                ).toHaveSucceeded();
+                expect(countCommitDirs(ws.path(".store/git"))).toBe(1);
+
+                const flagDir = join(
+                    mkdtempSync(join(tmpdir(), "omni-e2e-flag-")),
+                    "s",
+                );
+                onTestFinished(() =>
+                    rmSync(join(flagDir, ".."), {
+                        recursive: true,
+                        force: true,
+                    }),
+                );
+                expect(
+                    await runOmni(
+                        ["--sources-dir", flagDir, "remote-sources", "install"],
+                        { cwd: ws.cwd, env, timeout: CLONE_TIMEOUT_MS },
+                    ),
+                ).toHaveSucceeded();
+                expect(countCommitDirs(join(flagDir, "git"))).toBe(1);
+                expect(existsSync(ws.path(".omni/sources/store"))).toBe(false);
             },
             CLONE_TIMEOUT_MS,
         );

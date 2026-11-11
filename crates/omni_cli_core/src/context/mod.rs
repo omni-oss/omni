@@ -45,6 +45,7 @@ pub fn workspace_init_config(cli: &CliArgs) -> WorkspaceInitConfig {
         env_root_dir_marker: root_marker,
         inherit_env_vars: cli.inherit_env_vars,
         cache_dir: cli.cache_dir.clone(),
+        sources_dir: cli.sources_dir.clone(),
     }
 }
 
@@ -78,7 +79,8 @@ pub fn from_config_root_dir_and_sys<TSys: ContextSys>(
         cfg.env_files.clone(),
         tracing,
         cfg.cache_dir.clone(),
-    )?;
+    )?
+    .with_sources_dir(cfg.sources_dir.clone())?;
     Ok(ctx)
 }
 

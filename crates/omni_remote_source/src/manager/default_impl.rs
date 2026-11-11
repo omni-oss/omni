@@ -20,6 +20,7 @@ use crate::{
 };
 
 const GIT_KIND_SEGMENT: &str = "git";
+const LOCKS_SEGMENT: &str = "locks";
 
 /// Process-wide counter making pending directory names unique even when a
 /// single process publishes several checkouts at once.
@@ -110,16 +111,18 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
         Ok(())
     }
 
-    /// Reconcile the shared store against the union of every persisted
-    /// reference set: delete any store checkout no subsystem references
-    /// (including orphans left by an advanced mutable ref), prune unreferenced
-    /// lockfile pins, and write the pruned lockfile. Runs under the exclusive
-    /// advisory lock so no concurrent write races the reconcile.
-    pub async fn retain(&self) -> Result<usize, Error> {
+    /// Drop lockfile pins that no persisted reference set references, and write
+    /// the pruned lockfile. Runs under the exclusive advisory lock so no
+    /// concurrent write races the reconcile.
+    ///
+    /// This never deletes from the store. The store can be shared by many
+    /// workspaces, and the reference sets here belong to one of them, so it
+    /// cannot tell which checkouts another workspace still needs. Removing
+    /// checkouts is the explicit prune command's job.
+    pub async fn reconcile_pins(&self) -> Result<(), Error> {
         let _guard =
             LockGuard::acquire_exclusive(self.advisory_lock_path()).await?;
 
-        let mut retained_dirs: HashSet<PathBuf> = HashSet::new();
         let mut retained_keys: HashSet<(Url, String)> = HashSet::new();
 
         let refs_dir = self.refs_dir();
@@ -135,10 +138,7 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
                 match data {
                     RefSetData::V1_0_0(v1) => {
                         for (uri, revs) in v1.git {
-                            for (rev, git_ref) in revs {
-                                retained_dirs.insert(
-                                    self.git_commit_dir(&uri, &git_ref.commit)?,
-                                );
+                            for rev in revs.into_keys() {
                                 retained_keys.insert((uri.clone(), rev));
                             }
                         }
@@ -147,12 +147,11 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
             }
         }
 
-        let removed = self.prune_store(&retained_dirs).await?;
         self.prune_lockfile_pins(&retained_keys).await?;
         self.ensure_lockfile_parent().await?;
         self.lockfile.save(&self.sys).await?;
 
-        Ok(removed)
+        Ok(())
     }
 
     /// Merge this manager's in-memory pins onto whatever is currently on disk
@@ -196,6 +195,10 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
     }
 
     async fn publish_git(&self, uri: &Url, rev: &str) -> Result<String, Error> {
+        // One fetch per remote at a time across every workspace sharing the
+        // store; a peer that finished first leaves the commit for us to reuse.
+        let _remote_guard =
+            LockGuard::acquire_exclusive(self.remote_lock_path(uri)?).await?;
         let pending = self.new_pending_dir();
         let clone = self.clone_repo_inner(&pending, uri, rev).await?;
         let commit = clone.commit;
@@ -221,37 +224,6 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
                 }
             }
         }
-    }
-
-    async fn prune_store(
-        &self,
-        retained_dirs: &HashSet<PathBuf>,
-    ) -> Result<usize, Error> {
-        let git_root = self.store_root_path.join(GIT_KIND_SEGMENT);
-        if !self.sys.fs_exists_no_err_async(&git_root).await {
-            return Ok(0);
-        }
-
-        let mut removed = 0;
-        for slug_dir in self.sys.fs_read_dir_async(&git_root).await? {
-            let commit_dirs = match self.sys.fs_read_dir_async(&slug_dir).await
-            {
-                Ok(dirs) => dirs,
-                Err(_) => continue,
-            };
-
-            for commit_dir in commit_dirs {
-                if !retained_dirs.contains(&commit_dir) {
-                    self.sys.fs_remove_dir_all_async(&commit_dir).await?;
-                    removed += 1;
-                    tracing::debug!(
-                        "removed unreferenced store checkout: {commit_dir:?}"
-                    );
-                }
-            }
-        }
-
-        Ok(removed)
     }
 
     async fn prune_lockfile_pins(
@@ -364,6 +336,17 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
         self.store_root_path
             .join(omni_constants::PENDING_SEGMENT)
             .join(format!("{pid}-{nanos}-{seq}"))
+    }
+
+    fn remote_lock_path(
+        &self,
+        uri: &Url,
+    ) -> Result<PathBuf, omni_git_utils::Error> {
+        let slug = omni_git_utils::url_to_safe_dir_name(uri.as_str())?;
+        Ok(self
+            .store_root_path
+            .join(LOCKS_SEGMENT)
+            .join(format!("{slug}.lock")))
     }
 
     fn refs_dir(&self) -> PathBuf {

@@ -15,7 +15,9 @@ use serde::{Deserialize, Serialize};
 use system_traits::FsReadAsync;
 use url::Url;
 
-/// Open the single shared remote-source store for the workspace, rooted at
+/// Open the single shared remote-source store for the workspace. The store
+/// root is the context's resolved sources directory (a per-user location by
+/// default); the lockfile and reference sets stay per workspace under
 /// `.omni/sources/`. Every subsystem and `install` resolve remote sources
 /// through the manager this returns, so fetch, pin, and deduplication behavior
 /// is identical across them.
@@ -27,10 +29,8 @@ where
     TSys: ContextSys + RemoteSourceSys,
 {
     let sources_dir = ctx.omni_dir().join(omni_constants::SOURCES_SEGMENT);
-    let store_root = sources_dir.join(omni_constants::STORE_SEGMENT);
+    let store_root = ctx.sources_dir().to_path_buf();
     let lockfile_path = sources_dir.join(omni_constants::SOURCE_LOCKFILE_NAME);
-
-    sys.fs_create_dir_all_async(&store_root).await?;
 
     Ok(RemoteSourceManager::new(
         RemoteSourceConfig::builder()
@@ -87,8 +87,6 @@ pub struct SubsystemReportView {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct RemoteSourcesInstallResponse {
     pub subsystems: Vec<SubsystemReportView>,
-    /// Store checkouts reclaimed by the union garbage collection.
-    pub garbage_collected: usize,
 }
 
 /// The system capabilities `omni remote-sources install` needs: workspace
@@ -104,8 +102,8 @@ impl<T: ContextSys + RemoteSourceSys + FsReadAsync> RemoteSourceInstallSys
 }
 
 /// Prefetch and pin every remote source declared in the workspace across the
-/// selected subsystems, then reconcile the shared store with a union garbage
-/// collection. Every subsystem materializes through one shared store, so a
+/// selected subsystems, then drop lockfile pins no subsystem references (the
+/// store itself is never pruned here). Every subsystem materializes through one shared store, so a
 /// repository used by more than one subsystem is fetched once.
 pub async fn handle_remote_sources_install<TSys>(
     ctx: &Context<TSys>,
@@ -152,8 +150,8 @@ where
 }
 
 /// Drive a set of contributors against one shared store: materialize (via each
-/// contributor), persist each subsystem's reference set, reconcile with union
-/// garbage collection, and aggregate per-subsystem counts. A source shared by
+/// contributor), persist each subsystem's reference set, reconcile lockfile
+/// pins, and aggregate per-subsystem counts. A source shared by
 /// two subsystems is credited as materialized to the first and deduplicated to
 /// the rest.
 async fn run_contributors<TSys>(
@@ -192,12 +190,9 @@ where
         });
     }
 
-    let garbage_collected = manager.retain().await?;
+    manager.reconcile_pins().await?;
 
-    Ok(RemoteSourcesInstallResponse {
-        subsystems,
-        garbage_collected,
-    })
+    Ok(RemoteSourcesInstallResponse { subsystems })
 }
 
 #[cfg(test)]

@@ -42,7 +42,11 @@ fn make_api(dir: &Path) -> OmniApi<RealSys, NoopSubscriber> {
         None,
         &TracingConfig::disabled(),
     )
-    .expect("context creation failed");
+    .expect("context creation failed")
+    // Keep remote sources in the workspace, never the developer's real
+    // per-user store.
+    .with_sources_dir(Some(dir.join(".omni/sources/store")))
+    .expect("sources dir");
     OmniApi::new_with_sys(ctx, NoopSubscriber)
 }
 

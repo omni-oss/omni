@@ -83,7 +83,6 @@ async fn run_install(
             subsystem.subsystem, subsystem.materialized, subsystem.deduplicated
         );
     }
-    println!("  garbage-collected: {}", response.garbage_collected);
 
     Ok(ExitCode::SUCCESS)
 }

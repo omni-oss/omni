@@ -6987,6 +6987,7 @@ dependencies = [
  "criterion",
  "derive-new",
  "dir_walker",
+ "directories",
  "either",
  "enum-map",
  "env",

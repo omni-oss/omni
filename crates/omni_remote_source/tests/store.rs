@@ -67,6 +67,7 @@ fn build_repo(content: &str) -> (TempDir, Url, String) {
 struct Workspace {
     _dir: TempDir,
     sources_root: std::path::PathBuf,
+    store_root: std::path::PathBuf,
 }
 
 impl Workspace {
@@ -74,9 +75,20 @@ impl Workspace {
         let dir = tempfile::tempdir().expect("workspace tempdir");
         let sources_root = dir.path().join(".omni/sources");
         std::fs::create_dir_all(&sources_root).expect("create sources root");
+        let store_root = sources_root.join("store");
         Workspace {
             _dir: dir,
             sources_root,
+            store_root,
+        }
+    }
+
+    /// A different workspace (own lockfile and refs) whose store root is
+    /// `store_root`, as when two worktrees share the global store.
+    fn with_store(store_root: &Path) -> Self {
+        Workspace {
+            store_root: store_root.to_path_buf(),
+            ..Workspace::new()
         }
     }
 
@@ -84,7 +96,7 @@ impl Workspace {
         RemoteSourceManager::new(
             RemoteSourceConfig::builder()
                 .lockfile_path(self.sources_root.join("lock.json"))
-                .store_root_path(self.sources_root.join("store"))
+                .store_root_path(self.store_root.clone())
                 .build(),
             RealSys,
         )
@@ -160,7 +172,7 @@ async fn revs_resolving_to_the_same_commit_share_one_checkout() {
 }
 
 #[tokio::test]
-async fn retain_keeps_cross_subsystem_refs_and_removes_orphans() {
+async fn reconcile_keeps_every_checkout_and_drops_unreferenced_pins() {
     if !git_available() {
         eprintln!("skipping: `git` is not available on PATH");
         return;
@@ -196,19 +208,101 @@ async fn retain_keeps_cross_subsystem_refs_and_removes_orphans() {
         .await
         .expect("record refs");
 
-    manager.retain().await.expect("retain");
+    manager.reconcile_pins().await.expect("reconcile");
 
+    // The store is a cache owned by no single workspace: nothing is deleted.
+    assert!(RealSys.fs_exists_no_err_async(&mat_a.root).await);
     assert!(
-        RealSys.fs_exists_no_err_async(&mat_a.root).await,
-        "referenced checkout must survive"
-    );
-    assert!(
-        !RealSys.fs_exists_no_err_async(&mat_b.root).await,
-        "unreferenced checkout must be removed"
+        RealSys.fs_exists_no_err_async(&mat_b.root).await,
+        "reconcile must never delete from the store"
     );
 
-    // The pruned pin is gone from the lockfile; the retained one is present.
+    // The unreferenced pin is gone from the lockfile; the referenced one stays.
     let reopened = ws.manager().await;
     assert_eq!(reopened.locked_commit(&url_a, "main").await, Some(commit_a));
     assert_eq!(reopened.locked_commit(&url_b, "main").await, None);
+}
+
+#[tokio::test]
+async fn one_workspace_reconciling_never_deletes_another_workspaces_checkout() {
+    if !git_available() {
+        eprintln!("skipping: `git` is not available on PATH");
+        return;
+    }
+
+    let (_src, url, commit) = build_repo("shared\n");
+    let shared_store = tempfile::tempdir().expect("shared store");
+    let store_root = shared_store.path().join("sources");
+
+    let a = Workspace::with_store(&store_root);
+    let b = Workspace::with_store(&store_root);
+    let source = RemoteSource::Git {
+        uri: url.clone(),
+        rev: "main".to_string(),
+    };
+
+    // B pins and references the checkout; A references nothing.
+    let mgr_b = b.manager().await;
+    let mat_b = mgr_b.materialize(&source).await.expect("materialize b");
+    mgr_b
+        .record_refs(
+            "generator",
+            &[RemoteSourceRef {
+                source: source.clone(),
+                pin: commit.clone(),
+            }],
+        )
+        .await
+        .expect("record refs");
+    mgr_b.persist_pins().await.expect("persist pins");
+
+    // `omni remote-sources install` in A reconciles against A's refs only.
+    a.manager()
+        .await
+        .reconcile_pins()
+        .await
+        .expect("reconcile a");
+
+    assert!(
+        RealSys.fs_exists_no_err_async(&mat_b.root).await,
+        "B's checkout in the shared store was deleted by A"
+    );
+}
+
+#[tokio::test]
+async fn concurrent_materialization_of_one_remote_publishes_once() {
+    if !git_available() {
+        eprintln!("skipping: `git` is not available on PATH");
+        return;
+    }
+
+    let (_src, url, commit) = build_repo("race\n");
+    let shared_store = tempfile::tempdir().expect("shared store");
+    let store_root = shared_store.path().join("sources");
+    let source = RemoteSource::Git {
+        uri: url,
+        rev: "main".to_string(),
+    };
+
+    let mut tasks = Vec::new();
+    for _ in 0..4 {
+        let ws = Workspace::with_store(&store_root);
+        let source = source.clone();
+        tasks.push(tokio::spawn(async move {
+            let manager = ws.manager().await;
+            manager.materialize(&source).await.map(|m| (m, ws))
+        }));
+    }
+    let mut roots = std::collections::HashSet::new();
+    for task in tasks {
+        let (mat, _ws) = task.await.expect("join").expect("materialize");
+        assert_eq!(mat.pin, commit);
+        roots.insert(mat.root);
+    }
+    assert_eq!(roots.len(), 1);
+
+    let leftovers: Vec<_> = std::fs::read_dir(store_root.join(".pending"))
+        .map(|d| d.flatten().collect())
+        .unwrap_or_default();
+    assert!(leftovers.is_empty(), "pending dirs left: {leftovers:?}");
 }
