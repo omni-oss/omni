@@ -551,16 +551,16 @@ where
                         SingleOrMany::Single(p) => vec![p.clone()],
                         SingleOrMany::Many(ps) => ps.clone(),
                     };
-                    if contributed.in_store {
+                    if contributed.is_local {
+                        omni_generator::discover(&contributed.root, &paths, sys)
+                            .await?
+                    } else {
                         omni_generator::discover_in_source(
                             &contributed.root,
                             &paths,
                             sys,
                         )
                         .await?
-                    } else {
-                        omni_generator::discover(&contributed.root, &paths, sys)
-                            .await?
                     }
                 }
                 SourceConfig::Git(git) => {
