@@ -240,3 +240,30 @@ async fn export_keeps_executable_bits_and_symlinks() {
             .is_symlink()
     );
 }
+
+#[tokio::test]
+async fn an_invalid_mirror_is_replaced_instead_of_blocking_every_later_fetch() {
+    if !omni_test_capabilities::gate(
+        "git",
+        git_available(),
+        "git binary not found on PATH",
+    ) {
+        return;
+    }
+    let (_src, url, [_, c2, _]) = fixture();
+    let store = tempfile::tempdir().unwrap();
+    let bare = store.path().join("remote.git");
+    fetch_bare(&RealSys, &url, &bare).await.expect("clone");
+
+    // A cleaner deleted HEAD but left the objects: no longer a repository.
+    std::fs::remove_file(bare.join("HEAD")).unwrap();
+    assert_eq!(resolve_commit(&bare, "main"), None);
+
+    fetch_bare(&RealSys, &url, &bare).await.expect("recovers");
+    assert_eq!(resolve_commit(&bare, "main"), Some(c2));
+    let siblings: Vec<_> = std::fs::read_dir(store.path())
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(siblings, ["remote.git"], "no leftovers: {siblings:?}");
+}

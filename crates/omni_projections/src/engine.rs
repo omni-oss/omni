@@ -59,6 +59,9 @@ pub struct PlannedItem {
     pub pin: String,
     /// The source is a git checkout in the shared remote-source store.
     pub from_store: bool,
+    /// The source's root directory (its checkout), used to recognise a moved
+    /// store's tail.
+    pub source_root: PathBuf,
 }
 
 /// One source's full plan: every planned link plus the desired destination set
@@ -188,6 +191,7 @@ where
                 link,
                 pin: pin.clone(),
                 from_store: source.git_pin.is_some(),
+                source_root: source.source_root.to_path_buf(),
             });
         }
     }
@@ -229,7 +233,7 @@ where
                 && same_store_file(
                     Path::new(&l.target),
                     &item.pair.source_abs,
-                    source.source_root,
+                    &item.source_root,
                 ) {
                 &item.pair.source_abs
             } else {
@@ -286,7 +290,7 @@ where
 
 /// Whether `prior_target` is the same file as `source_abs` in a store that has
 /// since moved: both end in `<slug>/<commit>/<path inside the source>`.
-fn same_store_file(
+pub(crate) fn same_store_file(
     prior_target: &Path,
     source_abs: &Path,
     source_root: &Path,

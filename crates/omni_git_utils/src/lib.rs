@@ -146,9 +146,31 @@ pub async fn fetch_bare(
         let _ = std::fs::remove_dir_all(&staging);
         return Err(error);
     }
+    // A directory that is not a repository (its `HEAD` was deleted, say) would
+    // block the rename. Set it aside, and put it back if publishing fails so a
+    // failed attempt never loses what was there.
+    let aside = if bare_dir.exists() {
+        let mut name = bare_dir
+            .file_name()
+            .map(|n| n.to_os_string())
+            .unwrap_or_default();
+        name.push(format!(".invalid-{}", std::process::id()));
+        let aside = parent.join(name);
+        let _ = std::fs::remove_dir_all(&aside);
+        std::fs::rename(bare_dir, &aside)?;
+        Some(aside)
+    } else {
+        None
+    };
     if let Err(error) = std::fs::rename(&staging, bare_dir) {
         let _ = std::fs::remove_dir_all(&staging);
+        if let Some(aside) = &aside {
+            let _ = std::fs::rename(aside, bare_dir);
+        }
         return Err(error.into());
+    }
+    if let Some(aside) = aside {
+        let _ = std::fs::remove_dir_all(aside);
     }
     Ok(())
 }

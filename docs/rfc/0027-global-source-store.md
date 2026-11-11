@@ -126,9 +126,11 @@ the same single read of the worktree files.
 - Fetch: under `locks/<slug>.lock` (required: unlocked concurrent fetches
   fail with a reference race, see section 9), fetch with explicit refspecs
   into the bare repo (incremental after the first clone).
-- Export: without the lock, check out the commit into `pending/`, then rename to
-  `trees/<slug>/<commit>`; a racing identical export is discarded (existing
-  logic).
+- Export: under the same per-remote lock as the fetch, check out the commit into
+  `.pending/`, rename it to `trees/<slug>/<commit>`, then write its manifest.
+  Validation of an existing tree and recovery of an incomplete one also run under
+  that lock, so a reader never removes a tree an exporter is still publishing; the
+  only lock-free path is a read of a tree whose manifest already validates.
 - The completeness manifest lives **beside** the tree, as
   `trees/<slug>/<commit>.manifest`, never inside it: a repository may track a
   root file with any name (including `.manifest`), and the export must be exactly
@@ -393,13 +395,15 @@ must name what went wrong.
 3. **Each CI lane declares what it must prove.** Implemented in
    `.github/workflows/run-omni-jobs.yaml` (the multiplatform job sets
    `OMNI_REQUIRE_CAPABILITIES` per target):
-   - Linux (x86_64): `symlink,hardlink,reflink`. Reflink runs on a Btrfs loop
+   - Linux (x86_64): `symlink,hardlink,git,reflink`. Reflink runs on a Btrfs loop
      volume mounted at `/mnt/omni-reflink` (`OMNI_TEST_REFLINK_DIR`); default
      runner disks are ext4. aarch64 Linux tests run under `cross` in a container
      that sees neither the volume nor the variables, so they require nothing.
-   - macOS: `symlink,hardlink,reflink` (APFS temp dir).
-   - Windows: `symlink,hardlink`; the runners offer no ReFS volume, so reflink is
+   - macOS: `symlink,hardlink,git,reflink` (APFS temp dir).
+   - Windows: `symlink,hardlink,git`; the runners offer no ReFS volume, so reflink is
      not required there and rule 4 covers the fall-back.
+   - Targetless jobs (the default Linux runner, which runs crates that are not
+     multiplatform) require `symlink,hardlink,git`.
    - `os-sandbox` is not required on any lane yet: the Seatbelt and AppContainer
      tests live in `omni_capability_enforcement`, which only runs on the Linux job
      today (only `cli/omni` has per-platform test lanes). Making that crate

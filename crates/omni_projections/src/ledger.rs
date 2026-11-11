@@ -440,11 +440,19 @@ where
     Ok(report)
 }
 
-pub(crate) async fn copy_was_modified<S: FsReadAsync + Sync>(
+pub(crate) async fn copy_was_modified<S>(
     sys: &S,
     dest: &Path,
     source: &str,
-) -> bool {
+) -> bool
+where
+    S: ApplierSys + FsReadAsync,
+{
+    if sys.fs_is_dir_no_err_async(dest).await
+        && !sys.fs_is_symlink_no_err_async(dest).await
+    {
+        return dir_was_modified(sys, dest, Path::new(source)).await;
+    }
     let dest_bytes = match sys.fs_read_async(dest).await {
         Ok(b) => b,
         Err(_) => return false,
@@ -455,6 +463,54 @@ pub(crate) async fn copy_was_modified<S: FsReadAsync + Sync>(
         Err(_) => return true,
     };
     dest_bytes != source_bytes
+}
+
+/// Whether a projected directory differs from its source tree. Anything that
+/// cannot be compared (the source is gone, a read fails) counts as modified, so
+/// teardown keeps the user's files rather than deleting what it cannot vouch for.
+async fn dir_was_modified<S>(sys: &S, dest: &Path, source: &Path) -> bool
+where
+    S: ApplierSys + FsReadAsync,
+{
+    let mut stack = vec![(dest.to_path_buf(), source.to_path_buf())];
+    while let Some((dest_dir, source_dir)) = stack.pop() {
+        let (Ok(dest_entries), Ok(source_entries)) = (
+            sys.fs_read_dir_async(&dest_dir).await,
+            sys.fs_read_dir_async(&source_dir).await,
+        ) else {
+            return true;
+        };
+        let names = |entries: &[PathBuf]| {
+            let mut names: Vec<_> =
+                entries.iter().filter_map(|e| e.file_name()).collect();
+            names.sort();
+            names.into_iter().map(|n| n.to_owned()).collect::<Vec<_>>()
+        };
+        if names(&dest_entries) != names(&source_entries) {
+            return true;
+        }
+        for dest_entry in dest_entries {
+            let Some(name) = dest_entry.file_name() else {
+                continue;
+            };
+            let source_entry = source_dir.join(name);
+            if sys.fs_is_symlink_no_err_async(&dest_entry).await {
+                continue;
+            }
+            if sys.fs_is_dir_no_err_async(&dest_entry).await {
+                stack.push((dest_entry, source_entry));
+                continue;
+            }
+            match (
+                sys.fs_read_async(&dest_entry).await,
+                sys.fs_read_async(&source_entry).await,
+            ) {
+                (Ok(a), Ok(b)) if a == b => {}
+                _ => return true,
+            }
+        }
+    }
+    false
 }
 
 pub(crate) async fn remove_path<S: ApplierSys>(
@@ -1114,5 +1170,35 @@ mod tests {
 
         assert!(!dest.exists());
         assert!(backup.exists(), "backup untouched under Leave");
+    }
+
+    #[tokio::test]
+    async fn an_edited_projected_directory_counts_as_modified() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("src");
+        let dst = dir.path().join("dst");
+        for root in [&src, &dst] {
+            std::fs::create_dir_all(root.join("sub")).unwrap();
+            std::fs::write(root.join("a.txt"), b"a").unwrap();
+            std::fs::write(root.join("sub/b.txt"), b"b").unwrap();
+        }
+        let source = src.to_string_lossy().into_owned();
+        let sys = RealSys;
+
+        assert!(!copy_was_modified(&sys, &dst, &source).await, "identical");
+
+        std::fs::write(dst.join("sub/b.txt"), b"edited").unwrap();
+        assert!(copy_was_modified(&sys, &dst, &source).await, "edited file");
+        std::fs::write(dst.join("sub/b.txt"), b"b").unwrap();
+
+        std::fs::write(dst.join("extra.txt"), b"mine").unwrap();
+        assert!(copy_was_modified(&sys, &dst, &source).await, "added file");
+        std::fs::remove_file(dst.join("extra.txt")).unwrap();
+
+        std::fs::remove_dir_all(&src).unwrap();
+        assert!(
+            copy_was_modified(&sys, &dst, &source).await,
+            "an unverifiable copy is kept"
+        );
     }
 }

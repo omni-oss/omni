@@ -383,3 +383,90 @@ async fn copies_and_reflinks_of_sealed_store_files_are_writable_but_hardlinks_st
     assert!(std::fs::write(linked.join("a.txt"), b"nope").is_err());
     assert_eq!(std::fs::read(tree.join("a.txt")).unwrap(), b"a");
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn preflight_treats_a_moved_stores_old_link_as_owned_not_a_conflict() {
+    use omni_projections::{
+        ExistingConflict, Ledger, LedgerLink, PlannedItem,
+        existing_file_conflicts,
+    };
+
+    let scratch = tempfile::tempdir().unwrap();
+    let old_root = scratch.path().join("old/trees/slug/abc");
+    let new_root = scratch.path().join("new/trees/slug/abc");
+    std::fs::create_dir_all(&old_root).unwrap();
+    std::fs::create_dir_all(&new_root).unwrap();
+    std::fs::write(new_root.join("a.txt"), b"a").unwrap();
+    let dest = scratch.path().join("ws/a.txt");
+    std::fs::create_dir_all(dest.parent().unwrap()).unwrap();
+    // The link omni made into the old store, which is now gone.
+    std::os::unix::fs::symlink(old_root.join("a.txt"), &dest).unwrap();
+
+    let ledger = Ledger::from_links(vec![LedgerLink {
+        source_id: "src".into(),
+        dest: "a.txt".into(),
+        target: old_root.join("a.txt").to_string_lossy().into_owned(),
+        kind: ResolvedKind::Symlink,
+        source_pin: "abc".into(),
+        backup: None,
+    }]);
+    let item = |source_root: &Path| PlannedItem {
+        source_id: "src".into(),
+        pair: LinkPair {
+            source_abs: source_root.join("a.txt"),
+            dest_abs: dest.clone(),
+        },
+        dest_rel: "a.txt".into(),
+        is_dir_link: false,
+        on_existing: ExistingPolicy::Error,
+        link: LinkKind::Auto,
+        pin: "abc".into(),
+        from_store: true,
+        source_root: source_root.to_path_buf(),
+    };
+
+    let conflicts: Vec<ExistingConflict> =
+        existing_file_conflicts(&RealSys, &[item(&new_root)], &ledger)
+            .await
+            .unwrap();
+    assert!(conflicts.is_empty(), "{conflicts:?}");
+
+    // A different file at the same destination is still foreign.
+    let other = PlannedItem {
+        pair: LinkPair {
+            source_abs: new_root.join("b.txt"),
+            dest_abs: dest.clone(),
+        },
+        ..item(&new_root)
+    };
+    let conflicts = existing_file_conflicts(&RealSys, &[other], &ledger)
+        .await
+        .unwrap();
+    assert_eq!(conflicts.len(), 1);
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn symlinks_inside_a_source_tree_are_reproduced_not_followed() {
+    let scratch = scratch_dir(Capability::Hardlink);
+    if !require(Capability::Hardlink, scratch.path()) {
+        return;
+    }
+    let secret = scratch.path().join("private.txt");
+    std::fs::write(&secret, b"outside the source").unwrap();
+    let tree = make_tree(scratch.path());
+    std::os::unix::fs::symlink(&secret, tree.join("escape")).unwrap();
+    std::os::unix::fs::symlink(scratch.path(), tree.join("sub/up")).unwrap();
+
+    for (kind, name) in [(LinkKind::Copy, "copy"), (LinkKind::Hardlink, "hard")]
+    {
+        let dest = scratch.path().join(format!("ws/{name}"));
+        apply(&RealSys, &tree, &dest, kind, true).await.unwrap();
+        for link in ["escape", "sub/up"] {
+            let meta = std::fs::symlink_metadata(dest.join(link)).unwrap();
+            assert!(meta.is_symlink(), "{name}: {link} must stay a link");
+        }
+        assert_eq!(std::fs::read(dest.join("a.txt")).unwrap(), b"a");
+    }
+}

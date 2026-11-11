@@ -5,8 +5,8 @@ use omni_projection_configurations::{ExistingPolicy, LinkKind};
 use system_traits::{
     FileType, FsCopyAsync, FsCreateDirAllAsync, FsCreateJunctionAsync,
     FsHardLinkAsync, FsMetadataAsync, FsMetadataValue, FsReadDirAsync,
-    FsReflinkAsync, FsRemoveDirAllAsync, FsRemoveFileAsync, FsRenameAsync,
-    FsSymlinkDirAsync, FsSymlinkFileAsync,
+    FsReadLinkAsync, FsReflinkAsync, FsRemoveDirAllAsync, FsRemoveFileAsync,
+    FsRenameAsync, FsSymlinkDirAsync, FsSymlinkFileAsync,
 };
 
 use crate::error::{ProjectionError, Result};
@@ -82,6 +82,7 @@ pub trait ApplierSys:
     + FsSymlinkDirAsync
     + FsCreateJunctionAsync
     + FsHardLinkAsync
+    + FsReadLinkAsync
     + FsReflinkAsync
     + FsCopyAsync
     + FsRenameAsync
@@ -99,6 +100,7 @@ impl<T> ApplierSys for T where
         + FsSymlinkDirAsync
         + FsCreateJunctionAsync
         + FsHardLinkAsync
+        + FsReadLinkAsync
         + FsReflinkAsync
         + FsCopyAsync
         + FsRenameAsync
@@ -380,6 +382,9 @@ async fn link_tree<S: ApplierSys>(
                 continue;
             };
             let child_to = to.join(&name);
+            if copy_symlink(sys, &entry, &child_to).await? {
+                continue;
+            }
             if sys.fs_is_dir_no_err_async(&entry).await {
                 stack.push((entry, child_to));
             } else {
@@ -389,6 +394,29 @@ async fn link_tree<S: ApplierSys>(
     }
 
     Ok(())
+}
+
+/// A symlink inside a source tree is reproduced as a symlink, never followed:
+/// following one would read (and copy or link) whatever it points at, including
+/// files outside the source root. Returns whether `entry` was a symlink.
+async fn copy_symlink<S: ApplierSys>(
+    sys: &S,
+    entry: &Path,
+    to: &Path,
+) -> std::io::Result<bool> {
+    let is_symlink = matches!(
+        sys.fs_symlink_metadata_async(entry)
+            .await
+            .map(|meta| meta.file_type()),
+        Ok(FileType::Symlink)
+    );
+    if !is_symlink {
+        return Ok(false);
+    }
+    let target = sys.fs_read_link_async(entry).await?;
+    let points_at_dir = sys.fs_is_dir_no_err_async(entry).await;
+    try_symlink(sys, &target, to, points_at_dir).await?;
+    Ok(true)
 }
 
 /// Errors that mean "this method cannot work here" (the volume, platform or
@@ -448,6 +476,12 @@ async fn copy_recursive<S: ApplierSys>(
                 None => continue,
             };
             let child_to = to.join(&name);
+            if copy_symlink(sys, &entry, &child_to)
+                .await
+                .map_err(ProjectionError::from)?
+            {
+                continue;
+            }
             if sys.fs_is_dir_no_err_async(&entry).await {
                 stack.push((entry, child_to));
             } else {
