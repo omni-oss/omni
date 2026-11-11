@@ -283,5 +283,56 @@ describe(
             },
             CLONE_TIMEOUT_MS,
         );
+
+        it(
+            "treats a local pack nested in a git pack as remote when ignore sync hides the store",
+            async (ctx) => {
+                await skipUnlessGitCliAvailable(ctx);
+
+                const repo = await makeLocalGitRepoWithAnnotatedTag({
+                    files: {
+                        "pack.omni.yaml": [
+                            'name: "@org/outer"',
+                            "packs:",
+                            "  - source: local",
+                            "    path: ./inner",
+                            "    id: inner",
+                            "",
+                        ].join("\n"),
+                        "inner/pack.omni.yaml": [
+                            'name: "@org/inner"',
+                            "generators:",
+                            "  - source: local",
+                            "    path: gens/**",
+                            "",
+                        ].join("\n"),
+                        "inner/gens/g/generator.omni.yaml":
+                            "name: nested-gen\ndescription: from a nested pack\n",
+                    },
+                });
+                const uri = pathToFileURL(repo.url).href;
+
+                const ws = makeWorkspace({
+                    workspace: {
+                        projects: ["**"],
+                        packs: [
+                            { source: "git", uri, rev: "main", id: "outer" },
+                        ],
+                    },
+                });
+
+                expect(
+                    await runOmni(["ignore", "sync"], { cwd: ws.cwd }),
+                ).toHaveSucceeded();
+
+                const generators = await runOmni(["generator", "list"], {
+                    cwd: ws.cwd,
+                    timeout: CLONE_TIMEOUT_MS,
+                });
+                expect(generators).toHaveSucceeded();
+                expect(generators).toOutputContaining("nested-gen");
+            },
+            CLONE_TIMEOUT_MS,
+        );
     },
 );
