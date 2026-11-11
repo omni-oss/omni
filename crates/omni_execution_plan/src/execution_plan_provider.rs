@@ -619,8 +619,7 @@ mod tests {
                 false,
                 false,
                 vec![],
-                None,
-                None,
+                Default::default(),
             )
         };
         let mut project = omni_core::Project::new(
