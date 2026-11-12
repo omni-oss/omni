@@ -12,19 +12,26 @@
 //! later layer's value always replaces the earlier one, as for
 //! [`crate::ProjectConfiguration`].
 
+use std::path::Path;
+
 use config_utils::{DictConfig, DynValue, ListConfig, Replace};
+use enum_map::EnumMap;
 use merge::Merge;
 use omni_command_config::CommandConfig;
 use omni_config_types::{SingleOrMany, TeraExprBoolean};
 use omni_glob_config::MergeGlobConfig;
 use omni_retry_config::RetryConfiguration;
 use omni_task_output_logs::OutputLogsConfiguration;
-use omni_types::OmniPath;
+use omni_types::{OmniPath, Root};
 use serde::{Deserialize, Serialize};
+use system_traits::FsReadAsync;
 
 use crate::{
-    MetaConfiguration, RedactConfiguration, TaskDependencyConfiguration,
-    TaskEnvConfiguration,
+    CacheConfiguration, CacheKeyConfiguration, LoadConfigError,
+    MetaConfiguration, ProjectConfiguration, ProjectEnvConfiguration,
+    RedactConfiguration, TaskConfiguration, TaskConfigurationLongForm,
+    TaskDependencyConfiguration, TaskEnvConfiguration, TaskOutputConfiguration,
+    utils,
 };
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, Merge)]
@@ -245,10 +252,230 @@ pub struct ProjectLayer {
     pub tasks: Option<DictConfig<TaskLayer>>,
 }
 
+impl CacheLayer {
+    /// Resolve `@project` glob patterns against a layer's own directory.
+    fn resolve_project_paths(&mut self, bases: &EnumMap<Root, &Path>) {
+        let globs = self
+            .key
+            .iter_mut()
+            .filter_map(|key| key.files.as_mut())
+            .chain(self.output.iter_mut().filter_map(|o| o.files.as_mut()));
+        for glob in globs {
+            glob.iter_mut()
+                .filter(|path| path.is_rooted(Root::Project))
+                .for_each(|path| path.resolve_in_place(bases));
+        }
+    }
+}
+
+impl ProjectLayer {
+    /// Parse one configuration file into a layer, without defaults or any
+    /// required field.
+    #[allow(clippy::result_large_err)]
+    pub async fn load<'a>(
+        path: impl Into<&'a Path>,
+        sys: &(impl FsReadAsync + Send + Sync),
+    ) -> Result<Self, LoadConfigError> {
+        utils::fs::load_config_async(path, sys).await
+    }
+
+    /// Resolve the layer's `@project` cache glob patterns against the
+    /// directory of the file it was read from. This is a per-layer origin: it
+    /// stays with the layer when it is composed into another project.
+    pub fn resolve_origin_paths(&mut self, bases: &EnumMap<Root, &Path>) {
+        if let Some(cache) = self.cache.as_mut() {
+            cache.resolve_project_paths(bases);
+        }
+        for task in self.tasks.iter_mut().flat_map(|t| t.values_mut()) {
+            if let TaskLayer::LongForm(task) = task
+                && let Some(cache) = task.cache.as_mut()
+            {
+                cache.resolve_project_paths(bases);
+            }
+        }
+    }
+}
+
+/// A project layer with the file it was read from and that file's directory.
+/// The directory is the layer's path origin; the effective project root of a
+/// composed project is the directory of the concrete (last) layer.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct LoadedLayer {
+    pub file: OmniPath,
+    pub dir: OmniPath,
+    pub layer: ProjectLayer,
+}
+
+impl Merge for LoadedLayer {
+    fn merge(&mut self, other: Self) {
+        self.file = other.file;
+        self.dir = other.dir;
+        self.layer.merge(other.layer);
+    }
+}
+
+impl omni_core::ExtensionGraphNode for LoadedLayer {
+    type Id = OmniPath;
+
+    fn id(&self) -> &Self::Id {
+        &self.file
+    }
+
+    fn extendee_ids(&self) -> &[Self::Id] {
+        match &self.layer.extends {
+            Some(SingleOrMany::Single(path)) => std::slice::from_ref(path),
+            Some(SingleOrMany::Many(paths)) => paths.as_slice(),
+            None => &[],
+        }
+    }
+}
+
+impl LoadedLayer {
+    /// Apply defaults and validate this layer alone as an eager configuration.
+    pub fn finalize(self) -> Result<ProjectConfiguration, MissingProjectName> {
+        self.layer.finalize(self.file, self.dir)
+    }
+}
+
+/// A project layer has no `name`, which every finalized project requires.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error("project configuration has no `name`")]
+pub struct MissingProjectName;
+
+impl TaskOutputLayer {
+    /// Fill every omitted field with its default.
+    pub fn finalize(self) -> TaskOutputConfiguration {
+        TaskOutputConfiguration {
+            files: self.files.unwrap_or_else(utils::merge_glob_config_default),
+            logs: self.logs.unwrap_or(true),
+        }
+    }
+}
+
+impl CacheKeyLayer {
+    /// Fill every omitted field with its default.
+    pub fn finalize(self) -> CacheKeyConfiguration {
+        CacheKeyConfiguration {
+            defaults: self.defaults,
+            env: self.env.unwrap_or_else(utils::list_config_default),
+            files: self.files.unwrap_or_else(utils::merge_glob_config_default),
+        }
+    }
+}
+
+impl CacheLayer {
+    /// Fill every omitted field with its default.
+    pub fn finalize(self) -> CacheConfiguration {
+        CacheConfiguration {
+            key: self.key.map(CacheKeyLayer::finalize).unwrap_or_default(),
+            enabled: self.enabled,
+            output: self
+                .output
+                .map(TaskOutputLayer::finalize)
+                .unwrap_or_default(),
+        }
+    }
+}
+
+impl ProjectEnvLayer {
+    pub fn finalize(self) -> ProjectEnvConfiguration {
+        ProjectEnvConfiguration {
+            vars: self.vars.unwrap_or_default(),
+        }
+    }
+}
+
+impl TaskLongFormLayer {
+    /// Fill every omitted field with its default.
+    pub fn finalize(self) -> TaskConfigurationLongForm {
+        TaskConfigurationLongForm {
+            base: self.base.unwrap_or(false),
+            extends: self.extends,
+            exec: self.exec,
+            retry_exec: self.retry_exec,
+            args: self.args.unwrap_or_default(),
+            dependencies: self
+                .dependencies
+                .unwrap_or_else(utils::list_config_default),
+            with: self.with.unwrap_or_else(utils::list_config_default),
+            description: self.description,
+            enabled: self.enabled,
+            interactive: self.interactive,
+            persistent: self.persistent,
+            env: self.env.unwrap_or_default(),
+            redact: self.redact.unwrap_or_default(),
+            cache: self.cache.map(CacheLayer::finalize).unwrap_or_default(),
+            output_logs: self.output_logs,
+            meta: self.meta.unwrap_or_default(),
+            retry: self.retry,
+        }
+    }
+}
+
+impl TaskLayer {
+    /// Finalize keeping the written form: a short form stays short.
+    pub fn finalize(self) -> TaskConfiguration {
+        match self {
+            TaskLayer::ShortForm(command) => {
+                TaskConfiguration::ShortForm(command)
+            }
+            TaskLayer::LongForm(long_form) => {
+                TaskConfiguration::LongForm(Box::new(long_form.finalize()))
+            }
+        }
+    }
+}
+
+fn finalize_tasks(
+    tasks: DictConfig<TaskLayer>,
+) -> DictConfig<TaskConfiguration> {
+    let finalize = |map: maps::Map<String, TaskLayer>| {
+        map.into_iter().map(|(k, v)| (k, v.finalize())).collect()
+    };
+    match tasks {
+        DictConfig::Value(m) => DictConfig::Value(finalize(m)),
+        DictConfig::Merge { merge } => DictConfig::Merge {
+            merge: finalize(merge),
+        },
+        DictConfig::Replace { replace } => DictConfig::Replace {
+            replace: finalize(replace),
+        },
+    }
+}
+
+impl ProjectLayer {
+    /// Apply defaults and enforce the required `name`, producing the eager
+    /// configuration. `file` and `dir` are the concrete project's own file and
+    /// directory.
+    pub fn finalize(
+        self,
+        file: OmniPath,
+        dir: OmniPath,
+    ) -> Result<ProjectConfiguration, MissingProjectName> {
+        Ok(ProjectConfiguration {
+            file,
+            dir,
+            base: self.base.unwrap_or(false),
+            extends: self.extends,
+            name: self.name.ok_or(MissingProjectName)?,
+            description: self.description,
+            dependencies: self
+                .dependencies
+                .unwrap_or_else(utils::list_config_default),
+            env: self.env.map(ProjectEnvLayer::finalize).unwrap_or_default(),
+            cache: self.cache.map(CacheLayer::finalize).unwrap_or_default(),
+            output_logs: self.output_logs,
+            meta: self.meta.unwrap_or_default(),
+            redact: self.redact.unwrap_or_default(),
+            tasks: self.tasks.map(finalize_tasks).unwrap_or_default(),
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ProjectConfiguration;
+    use crate::{ProjectConfiguration, utils::list_config_default};
 
     fn layer(json: &str) -> ProjectLayer {
         serde_json::from_str(json).unwrap()
@@ -457,5 +684,69 @@ mod tests {
             et.dependencies.clone().into_vec()
         );
         assert_eq!(t.cache.as_ref().unwrap().enabled, et.cache.enabled);
+    }
+
+    fn finalized(json: &str) -> ProjectConfiguration {
+        layer(json)
+            .finalize(OmniPath::default(), OmniPath::default())
+            .unwrap()
+    }
+
+    #[test]
+    fn finalizing_a_single_layer_equals_eager_deserialization() {
+        let docs = [
+            r#"{"name":"a"}"#,
+            r#"{"name":"a","base":true,"extends":["x.yaml","y.yaml"],
+            "description":"d","dependencies":{"prepend":["p"]},
+            "env":{"vars":{"A":"1"}},"output_logs":"never",
+            "meta":{"k":"v"},
+            "cache":{"enabled":false,"key":{"defaults":false,"env":["E"],
+                     "files":{"include":["i"]}},
+                     "output":{"files":"o","logs":false}},
+            "tasks":{"s":"echo hi","a":["x","y"],
+              "t":{"exec":"c","dependencies":["^t"],"with":["w"],
+                   "args":{"k":1},"enabled":"true","interactive":true,
+                   "cache":{"key":{"env":["T"]},"output":{"logs":false}},
+                   "env":{"vars":{"B":"2"}}}}}"#,
+            r#"{"name":"a","dependencies":[],"env":{},"cache":{},
+            "tasks":{"replace":{"t":{}}}}"#,
+        ];
+        for doc in docs {
+            assert_eq!(finalized(doc), eager(doc), "{doc}");
+        }
+    }
+
+    #[test]
+    fn finalize_applies_defaults_for_omissions() {
+        let c = finalized(r#"{"name":"a","cache":{"output":{"files":"o"}}}"#);
+        assert!(!c.base);
+        assert!(c.cache.output.logs);
+        assert_eq!(c.dependencies, list_config_default());
+    }
+
+    #[test]
+    fn finalize_requires_a_name() {
+        let err = layer(r#"{"base":true}"#)
+            .finalize(OmniPath::default(), OmniPath::default())
+            .unwrap_err();
+        assert_eq!(err, MissingProjectName);
+    }
+
+    #[test]
+    fn loaded_layer_merge_takes_the_later_origin() {
+        let mut a = LoadedLayer {
+            file: OmniPath::new("a/p.yaml"),
+            dir: OmniPath::new("a"),
+            layer: layer(r#"{"name":"a","base":true}"#),
+        };
+        a.merge(LoadedLayer {
+            file: OmniPath::new("b/p.yaml"),
+            dir: OmniPath::new("b"),
+            layer: layer(r#"{"description":"d"}"#),
+        });
+        assert_eq!(a.file, OmniPath::new("b/p.yaml"));
+        assert_eq!(a.dir, OmniPath::new("b"));
+        assert_eq!(a.layer.name.as_deref(), Some("a"));
+        assert_eq!(a.layer.base, None);
     }
 }

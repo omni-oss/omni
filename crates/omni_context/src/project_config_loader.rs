@@ -6,8 +6,8 @@ use std::{
 use derive_new::new;
 use enum_map::enum_map;
 use omni_configurations::{
-    LoadConfigError, LoadConfigErrorKind, ProjectConfiguration,
-    TaskConfiguration, types::SingleOrMany,
+    LoadConfigError, LoadConfigErrorKind, LoadedLayer, ProjectConfiguration,
+    ProjectLayer, types::SingleOrMany,
 };
 use omni_types::{OmniPath, Root};
 use path_clean::clean;
@@ -34,11 +34,11 @@ struct RelatedPath {
 impl<'a, TSys: ContextSys> ProjectConfigLoader<'a, TSys> {
     #[tracing::instrument(level = Level::DEBUG, skip(self))]
     #[allow(clippy::result_large_err)]
-    pub async fn load_project_configs(
+    pub async fn load_project_layers(
         &self,
         project_paths: &[PathBuf],
-    ) -> Result<Vec<ProjectConfiguration>, ProjectConfigLoaderError> {
-        let mut project_configs = vec![];
+    ) -> Result<Vec<LoadedLayer>, ProjectConfigLoaderError> {
+        let mut layers = vec![];
         let mut loaded = HashSet::new();
         let mut to_process = project_paths
             .iter()
@@ -57,79 +57,50 @@ impl<'a, TSys: ContextSys> ProjectConfigLoader<'a, TSys> {
 
             let start_time = std::time::SystemTime::now();
 
-            let mut project =
-                ProjectConfiguration::load(&conf.path as &Path, self.sys)
-                    .await
-                    .map_err(|e| {
-                        if e.kind() == LoadConfigErrorKind::FileNotFound {
-                            if let Some(extendee_path) = &conf.extender {
-                                ProjectConfigLoaderErrorInner::ExtendedProjectConfigDoesNotExist {
-                                    extender_path: extendee_path.clone(),
-                                    extendee_path: conf.path.clone(),
-                                }
-                            } else {
-                                ProjectConfigLoaderErrorInner::ProjectConfigDoesNotExist {
-                                    path: conf.path.clone(),
-                                }
+            let mut layer = ProjectLayer::load(&conf.path as &Path, self.sys)
+                .await
+                .map_err(|e| {
+                    if e.kind() == LoadConfigErrorKind::FileNotFound {
+                        if let Some(extendee_path) = &conf.extender {
+                            ProjectConfigLoaderErrorInner::ExtendedProjectConfigDoesNotExist {
+                                extender_path: extendee_path.clone(),
+                                extendee_path: conf.path.clone(),
                             }
                         } else {
-                            ProjectConfigLoaderErrorInner::LoadConfig(e)
+                            ProjectConfigLoaderErrorInner::ProjectConfigDoesNotExist {
+                                path: conf.path.clone(),
+                            }
                         }
-                    })?;
+                    } else {
+                        ProjectConfigLoaderErrorInner::LoadConfig(e)
+                    }
+                })?;
 
             let elapsed = start_time.elapsed().unwrap_or_default();
             tracing::trace!(
-                project_configuration = ?project,
+                project_layer = ?layer,
                 "loaded project configuration file {:?} in {} ms",
                 conf,
                 elapsed.as_millis()
             );
 
-            project.file = file;
             let project_dir = conf.path.parent().ok_or_else(|| {
                 ProjectConfigLoaderErrorInner::NoParentDirFoundForPath(
                     conf.path.clone(),
                 )
             })?;
-            project.dir = project_dir.into();
-            loaded.insert(project.file.clone());
+            loaded.insert(file.clone());
 
             let bases = enum_map! {
                 Root::Workspace => root_dir,
                 Root::Project => project_dir,
             };
 
-            // resolve @project paths to the current project dir
-            project.cache.key.files.iter_mut().for_each(|a| {
-                if a.is_rooted(Root::Project) {
-                    a.resolve_in_place(&bases);
-                }
-            });
-
-            project.cache.output.files.iter_mut().for_each(|a| {
-                if a.is_rooted(Root::Project) {
-                    a.resolve_in_place(&bases);
-                }
-            });
-
-            project.tasks.values_mut().for_each(|a| {
-                if let TaskConfiguration::LongForm(a) = a {
-                    a.cache.key.files.iter_mut().for_each(|a| {
-                        if a.is_rooted(Root::Project) {
-                            a.resolve_in_place(&bases);
-                        }
-                    });
-
-                    a.cache.output.files.iter_mut().for_each(|a| {
-                        if a.is_rooted(Root::Project) {
-                            a.resolve_in_place(&bases);
-                        }
-                    });
-                }
-            });
+            // Resolve @project paths against this layer's own directory.
+            layer.resolve_origin_paths(&bases);
 
             for extended_parent in
-                project.extends.iter_mut().flat_map(SingleOrMany::iter_mut)
+                layer.extends.iter_mut().flat_map(SingleOrMany::iter_mut)
             {
                 if extended_parent.is_any_rooted() {
                     extended_parent.resolve_in_place(&bases);
@@ -160,11 +131,40 @@ impl<'a, TSys: ContextSys> ProjectConfigLoader<'a, TSys> {
                 }
             }
 
-            project_configs.push(project);
+            layers.push(LoadedLayer {
+                file,
+                dir: project_dir.into(),
+                layer,
+            });
         }
 
-        Ok(project_configs)
+        Ok(layers)
     }
+
+    /// Load every layer and finalize each on its own.
+    #[tracing::instrument(level = Level::DEBUG, skip(self))]
+    #[allow(clippy::result_large_err)]
+    pub async fn load_project_configs(
+        &self,
+        project_paths: &[PathBuf],
+    ) -> Result<Vec<ProjectConfiguration>, ProjectConfigLoaderError> {
+        self.load_project_layers(project_paths)
+            .await?
+            .into_iter()
+            .map(finalize_layer)
+            .collect()
+    }
+}
+
+#[allow(clippy::result_large_err)]
+fn finalize_layer(
+    layer: LoadedLayer,
+) -> Result<ProjectConfiguration, ProjectConfigLoaderError> {
+    let path = layer.file.path().map(Path::to_path_buf).unwrap_or_default();
+    layer
+        .finalize()
+        .map_err(|_| ProjectConfigLoaderErrorInner::MissingProjectName { path })
+        .map_err(Into::into)
 }
 
 #[derive(Error, Debug, omni_diagnostic::Diagnostic)]
@@ -225,6 +225,17 @@ pub(crate) enum ProjectConfigLoaderErrorInner {
         extendee_path: PathBuf,
     },
 
+    /// A project has no `name` once its layers are composed.
+    #[error("project configuration has no `name`: {path}", path = path.display())]
+    #[diagnostic(
+        code = "workspace.project_name_missing",
+        hint = "add a `name` to {path:?} or to a file it extends"
+    )]
+    MissingProjectName {
+        #[diagnostic(detail)]
+        path: PathBuf,
+    },
+
     /// A discovered project configuration file does not exist.
     #[error("project configuration file does not exist: {path}", path = path.display())]
     #[diagnostic(
@@ -235,4 +246,181 @@ pub(crate) enum ProjectConfigLoaderErrorInner {
         #[diagnostic(detail)]
         path: PathBuf,
     },
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use system_traits::impls::RealSys;
+
+    use super::*;
+    use crate::test_fixture::tmp;
+
+    fn write(root: &Path, rel: &str, content: &str) -> PathBuf {
+        let path = root.join(rel);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, content).unwrap();
+        path
+    }
+
+    async fn layers(root: &Path, files: &[PathBuf]) -> Vec<LoadedLayer> {
+        ProjectConfigLoader::new(&RealSys, root)
+            .load_project_layers(files)
+            .await
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn layer_keeps_absent_fields_and_its_own_origin() {
+        let dir = tmp();
+        let root = dir.path();
+        let file = write(root, "app/project.omni.yaml", "name: app\n");
+
+        let layers = layers(root, std::slice::from_ref(&file)).await;
+
+        assert_eq!(layers.len(), 1);
+        assert_eq!(layers[0].file, OmniPath::from(file));
+        assert_eq!(layers[0].dir, OmniPath::from(root.join("app")));
+        assert_eq!(layers[0].layer.name.as_deref(), Some("app"));
+        assert!(layers[0].layer.cache.is_none());
+        assert!(layers[0].layer.tasks.is_none());
+    }
+
+    #[tokio::test]
+    async fn a_layer_without_a_name_loads() {
+        let dir = tmp();
+        let root = dir.path();
+        let file = write(root, "app/project.omni.yaml", "base: true\n");
+
+        let layers = layers(root, &[file]).await;
+
+        assert_eq!(layers[0].layer.name, None);
+    }
+
+    #[tokio::test]
+    async fn project_paths_resolve_against_each_layers_own_directory() {
+        let dir = tmp();
+        let root = dir.path();
+        let base = write(
+            root,
+            "shared/base.omni.yaml",
+            "name: base\ncache:\n  key:\n    files: ['@project/in.txt']\ntasks:\n  t:\n    cache:\n      output:\n        files: ['@project/out']\n",
+        );
+        let app = write(
+            root,
+            "app/project.omni.yaml",
+            "name: app\nextends: ../shared/base.omni.yaml\n",
+        );
+
+        let layers = layers(root, &[app]).await;
+
+        let by_file = |f: &Path| {
+            layers.iter().find(|l| l.file == OmniPath::from(f)).unwrap()
+        };
+        let base = by_file(&base);
+        let key_files = base
+            .layer
+            .cache
+            .clone()
+            .unwrap()
+            .key
+            .unwrap()
+            .files
+            .unwrap()
+            .normalize();
+        assert_eq!(
+            key_files.include[0].path().unwrap(),
+            root.join("shared/in.txt")
+        );
+        let Some(config_utils::DictConfig::Value(tasks)) =
+            base.layer.tasks.clone()
+        else {
+            panic!("tasks")
+        };
+        let omni_configurations::TaskLayer::LongForm(task) = &tasks["t"] else {
+            panic!("long form")
+        };
+        let out = task
+            .cache
+            .clone()
+            .unwrap()
+            .output
+            .unwrap()
+            .files
+            .unwrap()
+            .normalize();
+        assert_eq!(out.include[0].path().unwrap(), root.join("shared/out"));
+
+        let app = layers
+            .iter()
+            .find(|l| l.layer.name.as_deref() == Some("app"))
+            .unwrap();
+        assert_eq!(app.dir, OmniPath::from(root.join("app")));
+        assert_eq!(
+            app.layer.extends,
+            Some(SingleOrMany::Single(OmniPath::from(
+                root.join("shared/base.omni.yaml")
+            )))
+        );
+    }
+
+    #[tokio::test]
+    async fn extends_outside_the_workspace_is_rejected() {
+        let dir = tmp();
+        let root = dir.path().join("ws");
+        let app = write(
+            &root,
+            "app/project.omni.yaml",
+            "name: app\nextends: ../../outside.yaml\n",
+        );
+
+        let err = ProjectConfigLoader::new(&RealSys, root.as_path())
+            .load_project_layers(&[app])
+            .await
+            .unwrap_err();
+
+        assert_eq!(
+            err.kind(),
+            ProjectConfigLoaderErrorKind::ExtendedProjectConfigOutsideWorkspace
+        );
+    }
+
+    #[tokio::test]
+    async fn missing_extendee_is_reported_with_its_extender() {
+        let dir = tmp();
+        let root = dir.path();
+        let app = write(
+            root,
+            "app/project.omni.yaml",
+            "name: app\nextends: ../nope.yaml\n",
+        );
+
+        let err = ProjectConfigLoader::new(&RealSys, root)
+            .load_project_layers(&[app])
+            .await
+            .unwrap_err();
+
+        assert_eq!(
+            err.kind(),
+            ProjectConfigLoaderErrorKind::ExtendedProjectConfigDoesNotExist
+        );
+    }
+
+    #[tokio::test]
+    async fn the_eager_entry_point_requires_a_name() {
+        let dir = tmp();
+        let root = dir.path();
+        let file = write(root, "app/project.omni.yaml", "base: true\n");
+
+        let err = ProjectConfigLoader::new(&RealSys, root)
+            .load_project_configs(&[file])
+            .await
+            .unwrap_err();
+
+        assert_eq!(
+            err.kind(),
+            ProjectConfigLoaderErrorKind::MissingProjectName
+        );
+    }
 }
