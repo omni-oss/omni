@@ -41,6 +41,7 @@ The native drivers are cargo features of the service and are on by default.
         "before_timeout_ms": 2000,
         "after_timeout_ms": 10000,
         "after_max_in_flight": 2,
+        "api_key_id_secret": "${KEY_ID_PEPPER}",
         "before_failure_policy": "fail_closed"
     },
     "caching": {
@@ -126,9 +127,13 @@ Hooks run on every artifact operation: `get`, `get_many`, `head`, `head_many`,
 - `before` parameters: operation, tenant, organization, workspace, environment,
   digest, api key id. `after` has the same, with the outcome (`hit`, `miss`,
   `stored`, `deleted`, `failed`) before the api key id. The digest is empty for
-  list operations. The api key id is an opaque fingerprint (16 hex characters
-  of the key's SHA-256), so usage can be attributed to a key without exposing
-  it.
+  list operations. The api key id is an opaque fingerprint (16 hex characters),
+  so usage can be attributed to a key without exposing it. Set
+  `hooks.api_key_id_secret` to make it an HMAC-SHA256 under that secret. Without
+  a secret it is an unkeyed SHA-256 prefix, so anyone who can read your usage
+  table can test key guesses offline. That is only safe for long random keys,
+  and the service logs a warning when hooks are on without a secret. Changing
+  the secret changes every id, so old usage rows stop matching.
 - At most `after_max_in_flight` `after` hooks run at once. On the native service it defaults to `hooks_max_connections`, and on D1 to 64. Extra ones are skipped and logged, so slow hooks cannot starve authorization lookups.
 - A `before` hook that errors or times out blocks the request by default
   (`fail_closed`). Set `fail_open` to let requests through instead.

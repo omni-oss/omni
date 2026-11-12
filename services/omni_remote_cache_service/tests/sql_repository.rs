@@ -64,7 +64,7 @@ fn repository_config(url: &str) -> serde_json::Value {
             "api_key_environment": "SELECT (COUNT(*) > 0) AS found FROM api_keys WHERE key_hash = ?1",
             "api_key_scope": "SELECT 1 AS found FROM key_scopes WHERE key_hash = ?1 AND scope = ?2"
         },
-        "hooks": { "queries": {
+        "hooks": { "api_key_id_secret": "pepper", "queries": {
             "before": "SELECT reason AS veto_reason FROM vetoes WHERE tenant = ?2 AND (op = ?1 OR op = '*') LIMIT 1",
             "after": "INSERT INTO usage VALUES (?1, ?2, ?6, ?7, ?8)"
         }}
@@ -155,7 +155,9 @@ async fn sql_backend_authorizes_validates_vetoes_and_records_usage() {
         .await
         .assert_status(http::StatusCode::NO_CONTENT);
     assert!(usage_rows(&db, "stored").await);
-    let key_id = omni_remote_cache_service::hooks::api_key_id(KEY);
+    let key_id =
+        omni_remote_cache_service::hooks::api_key_id_keyed("pepper", KEY);
+    assert_ne!(key_id, omni_remote_cache_service::hooks::api_key_id(KEY));
     assert!(
         db.exists(
             "SELECT 1 AS found FROM usage WHERE outcome = 'stored' AND api_key_id = ?1",

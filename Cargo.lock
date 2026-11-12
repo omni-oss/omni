@@ -7796,6 +7796,7 @@ dependencies = [
  "derive-new",
  "eyre",
  "futures 0.3.34",
+ "hmac 0.12.1",
  "http 1.5.0",
  "http-body 1.1.0",
  "maps",
@@ -7842,6 +7843,7 @@ dependencies = [
  "sha2 0.10.9",
  "thiserror 2.0.21",
  "tokio 1.54.1",
+ "tracing",
 ]
 
 [[package]]

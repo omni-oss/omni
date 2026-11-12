@@ -12,7 +12,7 @@ use crate::{
     QueryDependencyProvider, QueryExecutor, QueryHooks,
 };
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 pub struct HooksConfiguration {
     #[serde(default)]
     pub queries: HookQueriesConfiguration,
@@ -25,10 +25,33 @@ pub struct HooksConfiguration {
     /// Most `after` hooks in flight at once. Defaults to 64.
     #[serde(default)]
     pub after_max_in_flight: Option<usize>,
+    /// Secret for the `api_key_id` hooks see. With it the id is an
+    /// HMAC-SHA256 of the key, so a reader of your usage table cannot test key
+    /// guesses offline. Without it the id is an unkeyed SHA-256 prefix, which
+    /// is only safe when keys are long and random. Changing it changes every
+    /// id.
+    #[serde(default)]
+    pub api_key_id_secret: Option<String>,
     /// What a failing or timed-out `before` hook does. Defaults to
     /// `fail_closed`.
     #[serde(default)]
     pub before_failure_policy: Option<FailurePolicy>,
+}
+
+impl std::fmt::Debug for HooksConfiguration {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HooksConfiguration")
+            .field("queries", &self.queries)
+            .field("before_timeout_ms", &self.before_timeout_ms)
+            .field("after_timeout_ms", &self.after_timeout_ms)
+            .field("after_max_in_flight", &self.after_max_in_flight)
+            .field(
+                "api_key_id_secret",
+                &self.api_key_id_secret.as_ref().map(|_| "<redacted>"),
+            )
+            .field("before_failure_policy", &self.before_failure_policy)
+            .finish()
+    }
 }
 
 impl HooksConfiguration {
@@ -113,6 +136,14 @@ impl RepositoryConfiguration {
         // `before` shares the authorization executor because it is on the
         // request path too. Only `after` may use its own, so slow usage
         // writes cannot starve either.
+        if self.hooks.api_key_id_secret.is_none()
+            && (self.hooks.queries.before.is_some()
+                || self.hooks.queries.after.is_some())
+        {
+            tracing::warn!(
+                "hooks.api_key_id_secret is not set, so api key ids are an unkeyed hash that is only safe for long random keys"
+            );
+        }
         let hooks = Arc::new(QueryHooks::new(
             executor.clone(),
             hooks_executor.unwrap_or_else(|| executor.clone()),
@@ -123,7 +154,8 @@ impl RepositoryConfiguration {
             self.queries,
             self.api_key_hash,
         )?
-        .with_hooks(hooks, self.hooks.settings());
+        .with_hooks(hooks, self.hooks.settings())
+        .with_api_key_id_secret(self.hooks.api_key_id_secret.clone());
         if let Some(rt) = runtime {
             provider = provider.with_runtime(rt);
         }

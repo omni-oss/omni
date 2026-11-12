@@ -6,7 +6,10 @@ use omni_remote_cache_core::{
         organizations::DynOrganizationRepository, tenants::DynTenantRepository,
         workspaces::DynWorkspaceRepository,
     },
-    hooks::{DynArtifactHooks, HookSettings, HostRuntime, NoopHooks},
+    hooks::{
+        DynArtifactHooks, HookSettings, HostRuntime, NoopHooks, api_key_id,
+        api_key_id_keyed,
+    },
     providers::DependencyProvider,
     security::DynSecurityService,
     services::{DefaultValidationService, DynValidationService},
@@ -23,6 +26,7 @@ pub struct QueryDependencyProvider {
     repos: QueryRepositories,
     hash: Arc<ApiKeyHashConfiguration>,
     hooks: DynArtifactHooks,
+    api_key_id_secret: Option<String>,
     hook_settings: HookSettings,
     runtime: Option<Arc<dyn HostRuntime>>,
 }
@@ -39,6 +43,7 @@ impl QueryDependencyProvider {
             repos: QueryRepositories::new(executor, Arc::new(queries)),
             hash: Arc::new(hash),
             hooks: Arc::new(NoopHooks),
+            api_key_id_secret: None,
             hook_settings: HookSettings::default(),
             runtime: None,
         })
@@ -51,6 +56,12 @@ impl QueryDependencyProvider {
     ) -> Self {
         self.hooks = hooks;
         self.hook_settings = settings;
+        self
+    }
+
+    /// Keys the `api_key_id` hooks see (see `api_key_id_keyed`).
+    pub fn with_api_key_id_secret(mut self, secret: Option<String>) -> Self {
+        self.api_key_id_secret = secret.filter(|s| !s.is_empty());
         self
     }
 
@@ -91,6 +102,13 @@ impl DependencyProvider for QueryDependencyProvider {
             self.repos.clone(),
             self.hash.clone(),
         ))
+    }
+
+    fn api_key_id(&self, api_key: &str) -> String {
+        match &self.api_key_id_secret {
+            Some(secret) => api_key_id_keyed(secret, api_key),
+            None => api_key_id(api_key),
+        }
     }
 
     fn hooks(&self) -> DynArtifactHooks {
@@ -230,6 +248,24 @@ mod tests {
             .unwrap();
         assert!(!ok);
         assert_eq!(exec.calls.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn api_key_ids_are_keyed_when_a_secret_is_set() {
+        let make = |secret: Option<&str>| {
+            QueryDependencyProvider::new(
+                Arc::new(Recording::default()),
+                queries(),
+                ApiKeyHashConfiguration::default(),
+            )
+            .unwrap()
+            .with_api_key_id_secret(secret.map(String::from))
+        };
+        assert_eq!(make(None).api_key_id("k"), api_key_id("k"));
+        assert_eq!(make(Some("")).api_key_id("k"), api_key_id("k"));
+        let keyed = make(Some("s")).api_key_id("k");
+        assert_eq!(keyed, api_key_id_keyed("s", "k"));
+        assert_ne!(keyed, api_key_id("k"));
     }
 
     #[test]

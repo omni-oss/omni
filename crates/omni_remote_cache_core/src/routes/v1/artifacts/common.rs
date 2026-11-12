@@ -222,7 +222,7 @@ pub macro before_hook(
         $query:expr,
         $digests:expr$(,)?
     ) {{
-    use crate::hooks::{HookContext, api_key_id, run_before};
+    use crate::hooks::{HookContext, run_before};
 
     let ctx = HookContext {
         op: $op,
@@ -231,7 +231,7 @@ pub macro before_hook(
         ws: $query.ws.clone(),
         env: $query.env.clone(),
         digests: $digests,
-        api_key_id: api_key_id($api_key),
+        api_key_id: $state.provider.api_key_id($api_key),
     };
 
     if let Some(response) = run_before($state.provider.as_ref(), &ctx).await {

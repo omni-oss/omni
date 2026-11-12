@@ -19,6 +19,13 @@ pub trait DependencyProvider: Send + Sync + 'static {
     fn validation_service(&self) -> DynValidationService;
     fn security_service(&self) -> DynSecurityService;
 
+    /// The opaque id hooks see for an API key. Unkeyed by default, so
+    /// providers that expose usage to untrusted readers should override it
+    /// with `api_key_id_keyed`.
+    fn api_key_id(&self, api_key: &str) -> String {
+        crate::hooks::api_key_id(api_key)
+    }
+
     /// Veto-capable hooks. No-op unless overridden.
     fn hooks(&self) -> DynArtifactHooks {
         Arc::new(NoopHooks)

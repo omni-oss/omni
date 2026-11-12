@@ -394,6 +394,10 @@ impl DependencyProvider for CachingProvider {
         ))
     }
 
+    fn api_key_id(&self, api_key: &str) -> String {
+        self.inner.api_key_id(api_key)
+    }
+
     fn hooks(&self) -> DynArtifactHooks {
         self.inner.hooks()
     }

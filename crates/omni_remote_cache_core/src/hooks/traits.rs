@@ -44,15 +44,32 @@ pub struct HookContext {
     pub api_key_id: String,
 }
 
+fn hex_prefix(bytes: &[u8]) -> String {
+    bytes.iter().take(8).map(|b| format!("{b:02x}")).collect()
+}
+
 /// The id hooks see for `api_key`: 16 hex characters of its SHA-256.
+///
+/// This is unkeyed, so anyone who can read an id can test key guesses
+/// offline. That is fine for long random keys. Use `api_key_id_keyed`
+/// otherwise.
 pub fn api_key_id(api_key: &str) -> String {
     use sha2::{Digest as _, Sha256};
 
-    Sha256::digest(api_key.as_bytes())
-        .iter()
-        .take(8)
-        .map(|b| format!("{b:02x}"))
-        .collect()
+    hex_prefix(&Sha256::digest(api_key.as_bytes()))
+}
+
+/// Like `api_key_id`, but an HMAC-SHA256 under `secret`. Without the secret an
+/// id cannot be computed for a guessed key, so a leaked usage table does not
+/// allow offline guessing. Changing the secret changes every id.
+pub fn api_key_id_keyed(secret: &str, api_key: &str) -> String {
+    use hmac::{Hmac, Mac as _};
+    use sha2::Sha256;
+
+    let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes())
+        .expect("hmac accepts keys of any length");
+    mac.update(api_key.as_bytes());
+    hex_prefix(&mac.finalize().into_bytes())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -132,5 +149,22 @@ impl Default for HookSettings {
             before_policy: FailurePolicy::FailClosed,
             after_max_in_flight: 64,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn keyed_ids_depend_on_the_secret_and_never_equal_the_plain_id() {
+        let plain = api_key_id("key");
+        let a = api_key_id_keyed("secret-a", "key");
+        let b = api_key_id_keyed("secret-b", "key");
+        assert_eq!(a, api_key_id_keyed("secret-a", "key"), "deterministic");
+        assert_ne!(a, b);
+        assert_ne!(a, plain);
+        assert_ne!(a, api_key_id_keyed("secret-a", "other"));
+        assert_eq!(a.len(), 16);
     }
 }
