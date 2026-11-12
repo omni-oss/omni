@@ -4,8 +4,10 @@ description: "How project configuration files combine when one extends another, 
 ---
 
 When a project `extends` other files, omni combines the files in order. A field
-a file leaves out keeps the value from the files below it. A field a file
-states, even with its default value, overrides them. Defaults apply once, after
+a file leaves out keeps the value from the files below it. A single-value field
+a file states, even with its default value, overrides them. Lists and
+dictionaries still combine with the inherited entries: an empty `env.vars`
+does not clear inherited variables, `replace` does. Defaults apply once, after
 every file has been combined.
 
 This is a behavior change from earlier versions, which filled in defaults for
@@ -55,7 +57,9 @@ omits come from the task it extends.
 
 `name` is required for a finished project, not for every file. A file may leave
 it out when a file it extends supplies it. A project with no name in any of its
-files is rejected, and the error names the file.
+files is rejected, and the error names the file. The published JSON schema
+still lists `name` as required for every file, so an editor using it may flag
+a nameless extending file even though omni accepts it.
 
 ## What did not change
 
@@ -65,4 +69,4 @@ files is rejected, and the error names the file.
 - `base`: a file's `base: true` is not inherited by the files that extend it.
 - Each side of a glob (`include`, `exclude`) combines on its own.
 - `@project` paths resolve against the directory of the file that wrote them.
-- The configuration schema.
+- The configuration schema, including `name` being required in it.
