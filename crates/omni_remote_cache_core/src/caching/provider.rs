@@ -21,7 +21,7 @@ use crate::{
             WorkspaceRepositoryError,
         },
     },
-    hooks::{Background, DynArtifactHooks, HookSettings},
+    hooks::{DynArtifactHooks, HookSettings, HostRuntime},
     providers::DependencyProvider,
     security::{DynSecurityService, SecurityService, SecurityServiceError},
     services::{DefaultValidationService, DynValidationService},
@@ -355,8 +355,8 @@ impl DependencyProvider for CachingProvider {
         self.inner.hook_settings()
     }
 
-    fn background(&self) -> Option<Arc<dyn Background>> {
-        self.inner.background()
+    fn runtime(&self) -> Option<Arc<dyn HostRuntime>> {
+        self.inner.runtime()
     }
 }
 

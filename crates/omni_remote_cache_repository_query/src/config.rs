@@ -2,7 +2,7 @@ use std::{sync::Arc, time::Duration};
 
 use omni_remote_cache_core::{
     caching::{CachingConfiguration, CachingProvider, CachingState},
-    hooks::{Background, FailurePolicy, HookSettings},
+    hooks::{FailurePolicy, HookSettings, HostRuntime},
     providers::DependencyProvider,
 };
 use serde::{Deserialize, Serialize};
@@ -77,7 +77,7 @@ impl RepositoryConfiguration {
     pub fn build_provider(
         self,
         executor: Arc<dyn QueryExecutor>,
-        background: Option<Arc<dyn Background>>,
+        runtime: Option<Arc<dyn HostRuntime>>,
         caching_state: Option<Arc<CachingState>>,
     ) -> eyre::Result<Arc<dyn DependencyProvider>> {
         let hooks = Arc::new(QueryHooks::new(
@@ -90,8 +90,8 @@ impl RepositoryConfiguration {
             self.api_key_hash,
         )?
         .with_hooks(hooks, self.hooks.settings());
-        if let Some(bg) = background {
-            provider = provider.with_background(bg);
+        if let Some(rt) = runtime {
+            provider = provider.with_runtime(rt);
         }
         let provider: Arc<dyn DependencyProvider> = Arc::new(provider);
         Ok(match (&self.caching, caching_state) {

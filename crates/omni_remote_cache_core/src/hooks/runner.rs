@@ -7,21 +7,21 @@ use axum::response::{IntoResponse as _, Response};
 use futures::future::{Either, select};
 
 use super::{
-    ArtifactHooks, Background, FailurePolicy, HookContext, HookDecision,
-    HookError, HookOutcome,
+    ArtifactHooks, FailurePolicy, HookContext, HookDecision, HookError,
+    HookOutcome, HostRuntime,
 };
 use crate::{providers::DependencyProvider, routes::v1::artifacts::common};
 
 async fn with_timeout<T>(
-    background: Option<&Arc<dyn Background>>,
+    runtime: Option<&Arc<dyn HostRuntime>>,
     timeout: std::time::Duration,
     fut: impl Future<Output = Result<T, HookError>>,
 ) -> Result<T, HookError> {
-    let Some(bg) = background else {
+    let Some(rt) = runtime else {
         return fut.await;
     };
     let fut = Box::pin(fut);
-    match select(fut, bg.sleep(timeout)).await {
+    match select(fut, rt.sleep(timeout)).await {
         Either::Left((r, _)) => r,
         Either::Right(_) => {
             Err(HookError(eyre::eyre!("hook timed out after {timeout:?}")))
@@ -58,9 +58,9 @@ pub async fn run_before(
 ) -> Option<Response> {
     let settings = provider.hook_settings();
     let hooks = provider.hooks();
-    let bg = provider.background();
+    let rt = provider.runtime();
 
-    match with_timeout(bg.as_ref(), settings.before_timeout, hooks.before(ctx))
+    match with_timeout(rt.as_ref(), settings.before_timeout, hooks.before(ctx))
         .await
     {
         Ok(HookDecision::Allow) => None,
@@ -84,7 +84,7 @@ pub async fn run_before(
     }
 }
 
-/// Runs the `after` hook off the request path when a `Background` is
+/// Runs the `after` hook off the request path when a `HostRuntime` is
 /// available, otherwise inline. Failures are logged, never surfaced.
 pub async fn run_after(
     provider: &dyn DependencyProvider,
@@ -93,7 +93,7 @@ pub async fn run_after(
 ) {
     let settings = provider.hook_settings();
     let hooks: Arc<dyn ArtifactHooks> = provider.hooks();
-    let bg = provider.background();
+    let rt = provider.runtime();
 
     let Some(permit) = InFlight::acquire(settings.after_max_in_flight) else {
         tracing::warn!(op = %ctx.op, "too many after hooks in flight, skipping");
@@ -101,11 +101,11 @@ pub async fn run_after(
     };
 
     let task = {
-        let bg = bg.clone();
+        let rt = rt.clone();
         async move {
             let _permit = permit;
             let r = with_timeout(
-                bg.as_ref(),
+                rt.as_ref(),
                 settings.after_timeout,
                 hooks.after(&ctx, &outcome),
             )
@@ -116,8 +116,8 @@ pub async fn run_after(
         }
     };
 
-    match bg {
-        Some(bg) => bg.spawn(Box::pin(task)),
+    match rt {
+        Some(rt) => rt.spawn_detached(Box::pin(task)),
         None => task.await,
     }
 }

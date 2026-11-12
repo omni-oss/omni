@@ -87,8 +87,8 @@ pub type BoxTask = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
 
 /// Runs work after the response and provides a timer, since core is
 /// runtime-agnostic (tokio natively, `waitUntil` on Workers).
-pub trait Background: Send + Sync + 'static {
-    fn spawn(&self, task: BoxTask);
+pub trait HostRuntime: Send + Sync + 'static {
+    fn spawn_detached(&self, task: BoxTask);
     fn sleep(&self, duration: Duration) -> BoxTask;
 }
 

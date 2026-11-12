@@ -6,7 +6,7 @@ use omni_remote_cache_core::{
         organizations::DynOrganizationRepository, tenants::DynTenantRepository,
         workspaces::DynWorkspaceRepository,
     },
-    hooks::{Background, DynArtifactHooks, HookSettings, NoopHooks},
+    hooks::{DynArtifactHooks, HookSettings, HostRuntime, NoopHooks},
     providers::DependencyProvider,
     security::DynSecurityService,
     services::{DefaultValidationService, DynValidationService},
@@ -18,13 +18,13 @@ use crate::{
 };
 
 /// A `DependencyProvider` whose data comes from operator queries run by a
-/// `QueryExecutor`. Hooks and the background runner are optional.
+/// `QueryExecutor`. Hooks and the host runtime are optional.
 pub struct QueryDependencyProvider {
     repos: QueryRepositories,
     hash: Arc<ApiKeyHashConfiguration>,
     hooks: DynArtifactHooks,
     hook_settings: HookSettings,
-    background: Option<Arc<dyn Background>>,
+    runtime: Option<Arc<dyn HostRuntime>>,
 }
 
 impl QueryDependencyProvider {
@@ -40,7 +40,7 @@ impl QueryDependencyProvider {
             hash: Arc::new(hash),
             hooks: Arc::new(NoopHooks),
             hook_settings: HookSettings::default(),
-            background: None,
+            runtime: None,
         })
     }
 
@@ -54,8 +54,8 @@ impl QueryDependencyProvider {
         self
     }
 
-    pub fn with_background(mut self, background: Arc<dyn Background>) -> Self {
-        self.background = Some(background);
+    pub fn with_runtime(mut self, runtime: Arc<dyn HostRuntime>) -> Self {
+        self.runtime = Some(runtime);
         self
     }
 }
@@ -101,8 +101,8 @@ impl DependencyProvider for QueryDependencyProvider {
         self.hook_settings
     }
 
-    fn background(&self) -> Option<Arc<dyn Background>> {
-        self.background.clone()
+    fn runtime(&self) -> Option<Arc<dyn HostRuntime>> {
+        self.runtime.clone()
     }
 }
 

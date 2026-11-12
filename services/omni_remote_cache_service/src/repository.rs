@@ -1,7 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
 use omni_remote_cache_core::{
-    hooks::{Background, BoxTask},
+    hooks::{BoxTask, HostRuntime},
     providers::DependencyProvider,
 };
 use omni_remote_cache_repository_query::RepositoryConfiguration;
@@ -41,10 +41,10 @@ pub struct SqlRepositoryFile {
     pub repository: RepositoryConfiguration,
 }
 
-struct TokioBackground;
+struct TokioRuntime;
 
-impl Background for TokioBackground {
-    fn spawn(&self, task: BoxTask) {
+impl HostRuntime for TokioRuntime {
+    fn spawn_detached(&self, task: BoxTask) {
         tokio::spawn(task);
     }
 
@@ -74,7 +74,7 @@ pub async fn build_sql_provider(
     .with_query_timeout(Duration::from_millis(file.database.query_timeout_ms));
     file.repository.build_provider(
         Arc::new(executor),
-        Some(Arc::new(TokioBackground)),
+        Some(Arc::new(TokioRuntime)),
         None,
     )
 }

@@ -6,7 +6,7 @@ use crate::{
         organizations::DynOrganizationRepository, tenants::DynTenantRepository,
         workspaces::DynWorkspaceRepository,
     },
-    hooks::{Background, DynArtifactHooks, HookSettings, NoopHooks},
+    hooks::{DynArtifactHooks, HookSettings, HostRuntime, NoopHooks},
     security::DynSecurityService,
     services::DynValidationService,
 };
@@ -30,7 +30,7 @@ pub trait DependencyProvider: Send + Sync + 'static {
 
     /// Post-response task runner and timer. Without one, `after` hooks run
     /// inline and hook timeouts are not enforced.
-    fn background(&self) -> Option<Arc<dyn Background>> {
+    fn runtime(&self) -> Option<Arc<dyn HostRuntime>> {
         None
     }
 }

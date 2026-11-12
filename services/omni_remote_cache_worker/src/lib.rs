@@ -9,7 +9,7 @@ use omni_remote_cache_core::{
     routes::root::{RouterConfig, build_router},
     state::{ServiceInfo, ServiceState},
 };
-use omni_remote_cache_repository_d1::{D1Executor, WaitUntilBackground};
+use omni_remote_cache_repository_d1::{D1Executor, WaitUntilRuntime};
 use omni_remote_cache_repository_query::RepositoryConfiguration;
 use omni_remote_cache_storage_r2::R2Backend;
 use tower_service::Service as _;
@@ -50,7 +50,7 @@ fn build_provider(
         return config
             .build_provider(
                 Arc::new(executor),
-                Some(Arc::new(WaitUntilBackground::new(ctx))),
+                Some(Arc::new(WaitUntilRuntime::new(ctx))),
                 state,
             )
             .map_err(internal);

@@ -1,11 +1,11 @@
-//! Cloudflare D1 `QueryExecutor` and Workers `Background` runner. Empty on
+//! Cloudflare D1 `QueryExecutor` and the Workers `HostRuntime`. Empty on
 //! native targets, where `omni_remote_cache_repository_sql` is used.
 #![cfg(target_arch = "wasm32")]
 
 use std::time::Duration;
 
 use async_trait::async_trait;
-use omni_remote_cache_core::hooks::{Background, BoxTask};
+use omni_remote_cache_core::hooks::{BoxTask, HostRuntime};
 use omni_remote_cache_repository_query::{QueryError, QueryExecutor};
 use send_wrapper::SendWrapper;
 use serde_json::Value;
@@ -123,11 +123,11 @@ impl QueryExecutor for D1Executor {
 }
 
 /// Runs `after` hooks past the response with `waitUntil`.
-pub struct WaitUntilBackground {
+pub struct WaitUntilRuntime {
     ctx: SendWrapper<Context>,
 }
 
-impl WaitUntilBackground {
+impl WaitUntilRuntime {
     pub fn new(ctx: Context) -> Self {
         Self {
             ctx: SendWrapper::new(ctx),
@@ -135,8 +135,8 @@ impl WaitUntilBackground {
     }
 }
 
-impl Background for WaitUntilBackground {
-    fn spawn(&self, task: BoxTask) {
+impl HostRuntime for WaitUntilRuntime {
+    fn spawn_detached(&self, task: BoxTask) {
         self.ctx.wait_until(task);
     }
 
