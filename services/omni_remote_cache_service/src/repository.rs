@@ -56,8 +56,15 @@ impl Background for TokioBackground {
 pub async fn build_sql_provider(
     path: &str,
 ) -> eyre::Result<Arc<dyn DependencyProvider>> {
-    let file: SqlRepositoryFile =
+    let mut file: SqlRepositoryFile =
         serde_json::from_str(&std::fs::read_to_string(path)?)?;
+    // Hooks share the pool with authorization lookups, so unless set, keep
+    // one connection free of `after` work.
+    let reserve = file.database.max_connections.saturating_sub(1).max(1);
+    file.repository
+        .hooks
+        .after_max_in_flight
+        .get_or_insert(reserve as usize);
     let executor = SqlxExecutor::connect(
         &file.database.url,
         file.database.max_connections,

@@ -109,7 +109,7 @@ Hooks run on every artifact operation: `get`, `get_many`, `head`, `head_many`,
 - `before` parameters: operation, tenant, organization, workspace, environment,
   digest. `after` adds the outcome (`hit`, `miss`, `stored`, `deleted`,
   `failed`). The digest is empty for list operations.
-- At most `after_max_in_flight` `after` hooks run at once. Extra ones are
+- At most `after_max_in_flight` `after` hooks run at once (on the native service the default is `max_connections - 1`, so one connection stays free for authorization lookups; on D1 it is 64). Extra ones are
   skipped and logged, so slow hooks cannot starve authorization lookups.
 - A `before` hook that errors or times out blocks the request by default
   (`fail_closed`). Set `fail_open` to let requests through instead.
