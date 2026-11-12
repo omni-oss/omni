@@ -43,8 +43,8 @@ const repositoryConfig = {
     },
     hooks: {
         queries: {
-            before: `SELECT reason AS veto_reason FROM vetoes WHERE tenant = ?2 AND (op = ?1 OR op = '*')${refs(3, 6)} LIMIT 1`,
-            after: `INSERT INTO usage SELECT ?1, ?2, ?6, ?7 WHERE 1 = 1${refs(3, 5)}`,
+            before: `SELECT reason AS veto_reason FROM vetoes WHERE tenant = ?2 AND (op = ?1 OR op = '*')${refs(3, 7)} LIMIT 1`,
+            after: `INSERT INTO usage SELECT ?1, ?2, ?6, ?7, ?8 WHERE 1 = 1${refs(3, 5)}`,
         },
     },
 };
@@ -57,7 +57,7 @@ CREATE TABLE envs(ws TEXT, code TEXT);
 CREATE TABLE api_keys(key_hash TEXT, tenant TEXT);
 CREATE TABLE key_scopes(key_hash TEXT, scope TEXT);
 CREATE TABLE vetoes(tenant TEXT, op TEXT, reason TEXT);
-CREATE TABLE usage(op TEXT, tenant TEXT, digest TEXT, outcome TEXT);
+CREATE TABLE usage(op TEXT, tenant TEXT, digest TEXT, outcome TEXT, api_key_id TEXT);
 INSERT INTO tenants VALUES ('tenant1');
 INSERT INTO orgs VALUES ('tenant1', 'org1');
 INSERT INTO workspaces VALUES ('org1', 'ws1');

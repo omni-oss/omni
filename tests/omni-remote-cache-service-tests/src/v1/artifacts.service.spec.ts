@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { expect, test } from "vitest";
 
 import { sleep, withTimeout } from "@/utils";
@@ -151,11 +153,15 @@ describeTargets("v1.artifacts.api", (target) => {
         let usage = "";
         for (let i = 0; i < 50 && !usage.includes("stored"); i++) {
             usage = await sql(
-                `SELECT outcome FROM usage WHERE digest = '${digest}' AND op = 'put'`,
+                `SELECT outcome, api_key_id FROM usage WHERE digest = '${digest}' AND op = 'put'`,
             );
             await sleep(100);
         }
         expect(usage).toContain("stored");
+        // attributed to an opaque id, never the key
+        expect(usage).toContain(
+            createHash("sha256").update(API_KEY).digest("hex").slice(0, 16),
+        );
 
         await sql(`INSERT INTO vetoes VALUES ('${TENANT}', 'get', 'pruning')`);
         const vetoed = await getArtifact(target.apiBaseUrl);

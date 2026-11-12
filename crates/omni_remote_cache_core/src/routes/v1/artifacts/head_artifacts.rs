@@ -71,6 +71,7 @@ pub async fn head_artifacts(
     let hook_ctx = before_hook!(
         state,
         ArtifactOp::HeadMany,
+        &api_key,
         &tenant_code,
         &query,
         Vec::new(),

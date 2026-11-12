@@ -11,7 +11,8 @@ use crate::QueryExecutor;
 
 /// Optional operator SQL for the hooks backend. Both params lists start with
 /// `op, tenant, org, ws, env, digest`, where `digest` is empty for list
-/// operations. `op` is one of `get`, `get_many`, `head`, `head_many`, `put`
+/// operations, and end with `api_key_id`, an opaque fingerprint of the key
+/// (see `omni_remote_cache_core::hooks::api_key_id`). `op` is one of `get`, `get_many`, `head`, `head_many`, `put`
 /// and `delete`.
 #[derive(
     Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize, JsonSchema,
@@ -19,13 +20,13 @@ use crate::QueryExecutor;
 pub struct HookQueriesConfiguration {
     /// Returns a row with a text `veto_reason` to veto, otherwise zero rows
     /// or NULL. Runs before the operation.
-    /// params: op, tenant, org, ws, env, digest
+    /// params: op, tenant, org, ws, env, digest, api_key_id
     #[serde(default)]
     pub before: Option<String>,
 
     /// A statement that records usage, for example an upsert of
     /// `last_read_at`. Runs after the operation, off the request path.
-    /// params: op, tenant, org, ws, env, digest, outcome
+    /// params: op, tenant, org, ws, env, digest, outcome, api_key_id
     /// (`hit`, `miss`, `stored`, `deleted`, `failed`)
     #[serde(default)]
     pub after: Option<String>,
@@ -70,7 +71,15 @@ impl ArtifactHooks for QueryHooks {
                 .executor
                 .veto_reason(
                     sql,
-                    &[&op, &ctx.tenant, &ctx.org, &ctx.ws, &ctx.env, digest],
+                    &[
+                        &op,
+                        &ctx.tenant,
+                        &ctx.org,
+                        &ctx.ws,
+                        &ctx.env,
+                        digest,
+                        &ctx.api_key_id,
+                    ],
                 )
                 .await
                 .map_err(|e| HookError(e.into()))?;
@@ -103,6 +112,7 @@ impl ArtifactHooks for QueryHooks {
                         &ctx.env,
                         digest,
                         outcome,
+                        &ctx.api_key_id,
                     ],
                 )
                 .await
@@ -168,6 +178,7 @@ mod tests {
             ws: "w".into(),
             env: "e".into(),
             digests: digests.iter().map(|d| d.to_string()).collect(),
+            api_key_id: "kid".into(),
         }
     }
 
@@ -199,7 +210,7 @@ mod tests {
         );
         assert_eq!(
             f.calls.lock().unwrap()[0].1,
-            ["get", "t", "o", "w", "e", "d1"]
+            ["get", "t", "o", "w", "e", "d1", "kid"]
         );
 
         let f = Arc::new(Fake::default());
@@ -224,7 +235,7 @@ mod tests {
             .unwrap();
         let calls = f.calls.lock().unwrap();
         assert_eq!(calls.len(), 2);
-        assert_eq!(calls[1].1, ["get", "t", "o", "w", "e", "d2", "hit"]);
+        assert_eq!(calls[1].1, ["get", "t", "o", "w", "e", "d2", "hit", "kid"]);
     }
 
     #[tokio::test]

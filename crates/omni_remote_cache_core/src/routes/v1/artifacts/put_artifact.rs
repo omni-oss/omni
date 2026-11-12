@@ -78,6 +78,7 @@ pub async fn put_artifact(
     let hook_ctx = before_hook!(
         state,
         ArtifactOp::Put,
+        &api_key,
         &tenant_code,
         &query,
         vec![digest.clone()],

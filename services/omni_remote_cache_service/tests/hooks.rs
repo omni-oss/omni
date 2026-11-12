@@ -63,6 +63,7 @@ struct Recorder {
     veto_ops: Vec<ArtifactOp>,
     before: AtomicUsize,
     after: AtomicUsize,
+    key_ids: std::sync::Mutex<Vec<String>>,
 }
 
 #[async_trait]
@@ -72,6 +73,7 @@ impl ArtifactHooks for Recorder {
         ctx: &HookContext,
     ) -> Result<HookDecision, HookError> {
         self.before.fetch_add(1, Ordering::SeqCst);
+        self.key_ids.lock().unwrap().push(ctx.api_key_id.clone());
         Ok(if self.veto_ops.contains(&ctx.op) {
             HookDecision::Veto {
                 reason: "blocked by policy".into(),
@@ -202,4 +204,10 @@ async fn allowed_operation_runs_after() {
     res.assert_status(http::StatusCode::NO_CONTENT);
     assert_eq!(hooks.before.load(Ordering::SeqCst), 1);
     assert_eq!(hooks.after.load(Ordering::SeqCst), 1);
+
+    // hooks see an opaque id, never the key itself
+    let ids = hooks.key_ids.lock().unwrap();
+    assert_eq!(ids[0], omni_remote_cache_service::hooks::api_key_id("k"));
+    assert_ne!(ids[0], "k");
+    assert_eq!(ids[0].len(), 16);
 }

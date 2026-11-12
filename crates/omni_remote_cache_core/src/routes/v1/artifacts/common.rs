@@ -217,11 +217,12 @@ pub async fn after_response(
 pub macro before_hook(
         $state:expr,
         $op:expr,
+        $api_key:expr,
         $tenant_code:expr,
         $query:expr,
         $digests:expr$(,)?
     ) {{
-    use crate::hooks::{HookContext, run_before};
+    use crate::hooks::{HookContext, api_key_id, run_before};
 
     let ctx = HookContext {
         op: $op,
@@ -230,6 +231,7 @@ pub macro before_hook(
         ws: $query.ws.clone(),
         env: $query.env.clone(),
         digests: $digests,
+        api_key_id: api_key_id($api_key),
     };
 
     if let Some(response) = run_before($state.provider.as_ref(), &ctx).await {

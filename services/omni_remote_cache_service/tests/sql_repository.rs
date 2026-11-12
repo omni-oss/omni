@@ -26,7 +26,7 @@ async fn seed(url: &str) -> SqlxExecutor {
         "CREATE TABLE api_keys(key_hash TEXT, tenant TEXT)",
         "CREATE TABLE key_scopes(key_hash TEXT, scope TEXT)",
         "CREATE TABLE vetoes(tenant TEXT, op TEXT, reason TEXT)",
-        "CREATE TABLE usage(op TEXT, tenant TEXT, digest TEXT, outcome TEXT)",
+        "CREATE TABLE usage(op TEXT, tenant TEXT, digest TEXT, outcome TEXT, api_key_id TEXT)",
         "INSERT INTO tenants VALUES ('t')",
         "INSERT INTO orgs VALUES ('t','o')",
         "INSERT INTO workspaces VALUES ('o','w')",
@@ -66,7 +66,7 @@ fn repository_config(url: &str) -> serde_json::Value {
         },
         "hooks": { "queries": {
             "before": "SELECT reason AS veto_reason FROM vetoes WHERE tenant = ?2 AND (op = ?1 OR op = '*') LIMIT 1",
-            "after": "INSERT INTO usage VALUES (?1, ?2, ?6, ?7)"
+            "after": "INSERT INTO usage VALUES (?1, ?2, ?6, ?7, ?8)"
         }}
     })
 }
@@ -155,6 +155,16 @@ async fn sql_backend_authorizes_validates_vetoes_and_records_usage() {
         .await
         .assert_status(http::StatusCode::NO_CONTENT);
     assert!(usage_rows(&db, "stored").await);
+    let key_id = omni_remote_cache_service::hooks::api_key_id(KEY);
+    assert!(
+        db.exists(
+            "SELECT 1 AS found FROM usage WHERE outcome = 'stored' AND api_key_id = ?1",
+            &[&key_id],
+        )
+        .await
+        .unwrap(),
+        "usage is attributed to the key's opaque id"
+    );
 
     call(s.get(ONE), KEY, "t")
         .await

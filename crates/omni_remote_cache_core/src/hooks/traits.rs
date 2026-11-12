@@ -38,6 +38,21 @@ pub struct HookContext {
     pub ws: String,
     pub env: String,
     pub digests: Vec<String>,
+    /// An opaque, stable id for the presented API key (a truncated SHA-256
+    /// fingerprint). It identifies the key in usage records without
+    /// exposing it.
+    pub api_key_id: String,
+}
+
+/// The id hooks see for `api_key`: 16 hex characters of its SHA-256.
+pub fn api_key_id(api_key: &str) -> String {
+    use sha2::{Digest as _, Sha256};
+
+    Sha256::digest(api_key.as_bytes())
+        .iter()
+        .take(8)
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

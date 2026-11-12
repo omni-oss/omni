@@ -72,6 +72,7 @@ pub async fn delete_artifact(
     let hook_ctx = before_hook!(
         state,
         ArtifactOp::Delete,
+        &api_key,
         &tenant_code,
         &query,
         vec![digest.clone()],
