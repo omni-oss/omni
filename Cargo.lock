@@ -6959,6 +6959,7 @@ dependencies = [
  "omni_redact",
  "omni_retry_config",
  "omni_serde_validators",
+ "omni_source_configurations",
  "omni_task_output_logs",
  "omni_types",
  "petgraph",
@@ -7973,6 +7974,19 @@ dependencies = [
  "uuid",
  "windows-native-keyring-store",
  "zbus-secret-service-keyring-store",
+]
+
+[[package]]
+name = "omni_source_configurations"
+version = "0.1.0"
+dependencies = [
+ "garde",
+ "omni_config_types",
+ "schemars",
+ "serde",
+ "serde_json",
+ "toml",
+ "url",
 ]
 
 [[package]]
