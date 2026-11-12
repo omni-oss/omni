@@ -25,4 +25,21 @@ pub trait QueryExecutor: Send + Sync + 'static {
         sql: &str,
         params: &[&str],
     ) -> Result<bool, QueryError>;
+
+    /// Runs a hook veto query. Zero rows, or a NULL `veto_reason`, means
+    /// allow. A row with a text `veto_reason` vetoes with that reason. More
+    /// than one row, or a non-text reason, is `QueryError::Shape`.
+    async fn veto_reason(
+        &self,
+        sql: &str,
+        params: &[&str],
+    ) -> Result<Option<String>, QueryError>;
+
+    /// Runs a statement (for example an upsert of usage) and ignores any
+    /// rows. Same verbatim-SQL and ordered-binding rules as `exists`.
+    async fn execute(
+        &self,
+        sql: &str,
+        params: &[&str],
+    ) -> Result<(), QueryError>;
 }

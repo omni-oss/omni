@@ -7,6 +7,7 @@
 
 mod executor;
 mod hashing;
+mod hooks;
 mod provider;
 mod queries;
 mod repositories;
@@ -14,6 +15,7 @@ mod security;
 
 pub use executor::*;
 pub use hashing::*;
+pub use hooks::*;
 pub use provider::*;
 pub use queries::*;
 pub use repositories::*;

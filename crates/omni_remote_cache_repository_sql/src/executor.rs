@@ -33,6 +33,45 @@ impl SqlxExecutor {
     }
 }
 
+fn driver(e: sqlx::Error) -> QueryError {
+    QueryError::Driver(e.to_string())
+}
+
+impl SqlxExecutor {
+    // `sql` comes from operator configuration, never from a request, so it
+    // is audited here, in the only place a query string is built. Request
+    // values reach the database only through `bind`.
+    fn build<'q>(
+        sql: &str,
+        params: &[&str],
+    ) -> sqlx::query::Query<'q, sqlx::Any, sqlx::any::AnyArguments> {
+        let mut query = sqlx::query(sqlx::AssertSqlSafe(sql.to_owned()));
+        for p in params {
+            query = query.bind((*p).to_owned());
+        }
+        query
+    }
+
+    /// Returns the single row, `None` for zero rows, or a shape error for
+    /// more than one.
+    async fn single_row(
+        &self,
+        sql: &str,
+        params: &[&str],
+    ) -> Result<Option<sqlx::any::AnyRow>, QueryError> {
+        let mut rows = Self::build(sql, params).fetch(&self.pool);
+        let Some(row) = rows.try_next().await.map_err(driver)? else {
+            return Ok(None);
+        };
+        if rows.try_next().await.map_err(driver)?.is_some() {
+            return Err(QueryError::Shape(
+                "expected at most one row".to_string(),
+            ));
+        }
+        Ok(Some(row))
+    }
+}
+
 #[async_trait]
 impl QueryExecutor for SqlxExecutor {
     async fn exists(
@@ -40,33 +79,9 @@ impl QueryExecutor for SqlxExecutor {
         sql: &str,
         params: &[&str],
     ) -> Result<bool, QueryError> {
-        // `sql` comes from operator configuration, never from a request, so
-        // it is audited here, in the only place a query string is built.
-        // Request values reach the database only through `bind`.
-        let mut query = sqlx::query(sqlx::AssertSqlSafe(sql.to_owned()));
-        for p in params {
-            query = query.bind((*p).to_owned());
-        }
-
-        let mut rows = query.fetch(&self.pool);
-        let first = rows
-            .try_next()
-            .await
-            .map_err(|e| QueryError::Driver(e.to_string()))?;
-        let Some(row) = first else {
+        let Some(row) = self.single_row(sql, params).await? else {
             return Ok(false);
         };
-        if rows
-            .try_next()
-            .await
-            .map_err(|e| QueryError::Driver(e.to_string()))?
-            .is_some()
-        {
-            return Err(QueryError::Shape(
-                "expected at most one row".to_string(),
-            ));
-        }
-
         match row.try_get::<i64, _>("found") {
             Ok(v) => Ok(v != 0),
             Err(_) => row.try_get::<bool, _>("found").map_err(|e| {
@@ -75,6 +90,34 @@ impl QueryExecutor for SqlxExecutor {
                 ))
             }),
         }
+    }
+
+    async fn veto_reason(
+        &self,
+        sql: &str,
+        params: &[&str],
+    ) -> Result<Option<String>, QueryError> {
+        let Some(row) = self.single_row(sql, params).await? else {
+            return Ok(None);
+        };
+        row.try_get::<Option<String>, _>("veto_reason")
+            .map_err(|e| {
+                QueryError::Shape(format!(
+                    "`veto_reason` must be text or NULL: {e}"
+                ))
+            })
+    }
+
+    async fn execute(
+        &self,
+        sql: &str,
+        params: &[&str],
+    ) -> Result<(), QueryError> {
+        Self::build(sql, params)
+            .execute(&self.pool)
+            .await
+            .map(|_| ())
+            .map_err(driver)
     }
 }
 
@@ -131,6 +174,35 @@ mod tests {
             .exists("SELECT 1 AS found FROM t WHERE code = ?", &["a"])
             .await;
         assert!(matches!(many, Err(QueryError::Shape(_))), "{many:?}");
+    }
+
+    #[tokio::test]
+    async fn veto_reason_and_execute() {
+        let e = db().await;
+        let q = "SELECT label AS veto_reason FROM t WHERE code = ? AND deleted = 0 AND label <> 'dup'";
+        assert_eq!(e.veto_reason(q, &["a"]).await.unwrap(), Some("x".into()));
+        assert_eq!(e.veto_reason(q, &["zzz"]).await.unwrap(), None);
+        assert_eq!(
+            e.veto_reason(q, &["n"]).await.unwrap(),
+            None,
+            "NULL allows"
+        );
+        let many = e
+            .veto_reason(
+                "SELECT label AS veto_reason FROM t WHERE code = ?",
+                &["a"],
+            )
+            .await;
+        assert!(matches!(many, Err(QueryError::Shape(_))));
+
+        e.execute("INSERT INTO t VALUES (?, 0, ?)", &["new", "l"])
+            .await
+            .unwrap();
+        assert!(
+            e.exists("SELECT 1 AS found FROM t WHERE code = ?", &["new"])
+                .await
+                .unwrap()
+        );
     }
 
     #[tokio::test]

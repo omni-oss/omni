@@ -134,6 +134,18 @@ mod tests {
             ));
             Ok(self.answer)
         }
+
+        async fn veto_reason(
+            &self,
+            _: &str,
+            _: &[&str],
+        ) -> Result<Option<String>, QueryError> {
+            Ok(None)
+        }
+
+        async fn execute(&self, _: &str, _: &[&str]) -> Result<(), QueryError> {
+            Ok(())
+        }
     }
 
     fn queries() -> QueriesConfiguration {
