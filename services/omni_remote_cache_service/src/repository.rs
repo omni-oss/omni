@@ -70,35 +70,54 @@ impl HostRuntime for TokioRuntime {
     }
 }
 
-/// Rejects a remote Postgres or MySQL url that does not verify the server
-/// certificate, because sqlx falls back to plaintext by default.
+/// Rejects a remote Postgres or MySQL url that does not verify the server's
+/// identity, because sqlx falls back to plaintext by default.
+///
+/// This checks what sqlx will apply, not the first thing it sees: the last
+/// TLS-mode parameter wins, and Postgres `host` and `hostaddr` parameters
+/// replace the url's host. `verify-ca` is not accepted because it does not
+/// check the host name.
 pub fn check_tls(url: &str) -> eyre::Result<()> {
     let parsed = url::Url::parse(url)?;
-    let (key, verified): (&str, &[&str]) = match parsed.scheme() {
-        "postgres" | "postgresql" => ("sslmode", &["verify-full", "verify-ca"]),
-        "mysql" | "mariadb" => ("ssl-mode", &["verify_identity", "verify_ca"]),
+    let verified: &[&str] = match parsed.scheme() {
+        "postgres" | "postgresql" => &["verify-full"],
+        "mysql" | "mariadb" => &["verify_identity"],
         _ => return Ok(()),
+    };
+
+    let is_local = |h: &str| {
+        let h = h.trim_start_matches('[').trim_end_matches(']');
+        // an empty host or a path is a unix socket
+        h.is_empty()
+            || h.starts_with('/')
+            || h.eq_ignore_ascii_case("localhost")
+            || h.parse::<std::net::IpAddr>()
+                .is_ok_and(|ip| ip.is_loopback())
     };
     // Non-special schemes such as `postgres:` keep hosts opaque, so IPs
     // arrive as text and have to be parsed here.
-    let local = parsed.host_str().is_none_or(|h| {
-        let h = h.trim_start_matches('[').trim_end_matches(']');
-        h.eq_ignore_ascii_case("localhost")
-            || h.parse::<std::net::IpAddr>()
-                .is_ok_and(|ip| ip.is_loopback())
-    });
-    if local {
+    let mut hosts: Vec<String> =
+        parsed.host_str().map(String::from).into_iter().collect();
+    let mut mode = None;
+    for (k, v) in parsed.query_pairs() {
+        let k = k.to_ascii_lowercase();
+        match k.as_str() {
+            "host" | "hostaddr" => {
+                hosts.extend(v.split(',').map(|h| h.trim().to_string()))
+            }
+            "sslmode" | "ssl-mode" => mode = Some(v.to_ascii_lowercase()),
+            _ => {}
+        }
+    }
+
+    if hosts.iter().all(|h| is_local(h)) {
         return Ok(());
     }
-    let mode = parsed
-        .query_pairs()
-        .find(|(k, _)| k.eq_ignore_ascii_case(key))
-        .map(|(_, v)| v.to_ascii_lowercase());
     if mode.as_deref().is_some_and(|m| verified.contains(&m)) {
         return Ok(());
     }
     eyre::bail!(
-        "the database url must set `{key}` to one of {verified:?} for a remote host (or set `allow_insecure_tls`)"
+        "a remote database url must set the TLS mode to one of {verified:?} (`sslmode` or `ssl-mode`, last value wins), or set `allow_insecure_tls`"
     )
 }
 
@@ -155,15 +174,15 @@ mod tests {
     use super::check_tls;
 
     #[test]
-    fn remote_databases_must_verify_the_certificate() {
+    fn remote_databases_must_verify_the_server_identity() {
         for ok in [
             "postgres://u:p@db.example.com/d?sslmode=verify-full",
-            "postgres://u:p@db.example.com/d?sslmode=verify-ca",
+            "postgres://u:p@db.example.com/d?sslmode=disable&sslmode=verify-full",
             "mysql://u:p@db.example.com/d?ssl-mode=VERIFY_IDENTITY",
-            "mysql://u:p@db.example.com/d?ssl-mode=verify_ca",
             "postgres://u:p@localhost/d",
             "postgres://u:p@127.0.0.1/d",
             "postgres://u:p@[::1]/d",
+            "postgres:///d?host=/var/run/postgresql",
             "sqlite://file.db",
             "sqlite::memory:",
         ] {
@@ -173,8 +192,15 @@ mod tests {
             "postgres://u:p@db.example.com/d",
             "postgres://u:p@db.example.com/d?sslmode=require",
             "postgres://u:p@db.example.com/d?sslmode=prefer",
-            "mysql://u:p@db.example.com/d",
+            // verify-ca does not check the host name
+            "postgres://u:p@db.example.com/d?sslmode=verify-ca",
+            "mysql://u:p@db.example.com/d?ssl-mode=VERIFY_CA",
             "mysql://u:p@db.example.com/d?ssl-mode=REQUIRED",
+            // the last mode wins
+            "postgres://u:p@db.example.com/d?sslmode=verify-full&sslmode=disable",
+            // host and hostaddr replace the url's host
+            "postgres://localhost/d?host=db.example.com&sslmode=disable",
+            "postgres://localhost/d?hostaddr=10.0.0.5",
         ] {
             assert!(check_tls(bad).is_err(), "{bad}");
         }

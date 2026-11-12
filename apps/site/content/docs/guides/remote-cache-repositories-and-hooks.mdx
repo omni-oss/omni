@@ -54,15 +54,19 @@ The native drivers are cargo features of the service and are on by default.
 its place, and the rest of the file is the same.
 
 A Postgres or MySQL database that is not on the same host must verify the
-server certificate: `sslmode=verify-full` or `verify-ca` for Postgres,
-`ssl-mode=VERIFY_IDENTITY` or `VERIFY_CA` for MySQL. The service refuses to
-start otherwise, because the drivers fall back to plaintext by default. Set
-`allow_insecure_tls` to opt out, for example on a trusted private network.
-Each statement is bounded by `query_timeout_ms`.
+server's identity: `sslmode=verify-full` for Postgres, `ssl-mode=VERIFY_IDENTITY`
+for MySQL. `verify-ca` is not accepted because it does not check the host name.
+The service refuses to start otherwise, because the drivers fall back to
+plaintext by default. It checks what the driver will apply: the last TLS-mode
+parameter wins, and a Postgres `host` or `hostaddr` parameter replaces the
+host in the url. Set `allow_insecure_tls` to opt out, for example on a trusted
+private network. Each statement is bounded by `query_timeout_ms`.
 
-Hooks use their own pool of `hooks_max_connections` connections (default 2),
-so slow hook queries cannot take connections from authorization lookups. It
-is ignored for in-memory SQLite, which has to share one connection.
+`after` hooks use their own pool of `hooks_max_connections` connections
+(default 2), so slow usage writes cannot take connections from authorization
+lookups or from `before` hooks, which run on the main pool because they are on
+the request path too. With in-memory SQLite or `hooks_max_connections: 0`,
+`after` hooks share the main pool, and a slow one can delay authorization.
 
 At startup the native service asks the driver to describe every query. It must
 prepare, use the number of parameters listed below (SQLite allows fewer) and

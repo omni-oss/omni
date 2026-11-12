@@ -85,9 +85,14 @@ impl RepositoryConfiguration {
                 .await
                 .map_err(|e| eyre::eyre!("query `{}`: {e}", spec.name))?;
         }
-        let hooks = hooks_executor.unwrap_or(executor);
+        let after = hooks_executor.unwrap_or(executor);
         for spec in self.hooks.queries.specs() {
-            hooks
+            let target = if spec.name == "hooks.after" {
+                after
+            } else {
+                executor
+            };
+            target
                 .validate(spec.sql, spec.params, spec.column)
                 .await
                 .map_err(|e| eyre::eyre!("query `{}`: {e}", spec.name))?;
@@ -105,9 +110,11 @@ impl RepositoryConfiguration {
         runtime: Option<Arc<dyn HostRuntime>>,
         caching_state: Option<Arc<CachingState>>,
     ) -> eyre::Result<Arc<dyn DependencyProvider>> {
-        // Hooks may use their own executor so slow hook work cannot starve
-        // authorization lookups of connections.
+        // `before` shares the authorization executor because it is on the
+        // request path too. Only `after` may use its own, so slow usage
+        // writes cannot starve either.
         let hooks = Arc::new(QueryHooks::new(
+            executor.clone(),
             hooks_executor.unwrap_or_else(|| executor.clone()),
             self.hooks.queries.clone(),
         ));

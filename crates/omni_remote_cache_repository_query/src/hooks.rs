@@ -58,16 +58,25 @@ impl HookQueriesConfiguration {
 /// `ArtifactHooks` backed by operator queries. An external service can read
 /// what `after` records to prune old or unused entries.
 pub struct QueryHooks {
-    executor: Arc<dyn QueryExecutor>,
+    before_executor: Arc<dyn QueryExecutor>,
+    after_executor: Arc<dyn QueryExecutor>,
     queries: HookQueriesConfiguration,
 }
 
 impl QueryHooks {
+    /// `before` runs on the request path, so give it the same executor as
+    /// authorization. `after` runs off it and can use a separate one, so slow
+    /// usage writes cannot take connections from either.
     pub fn new(
-        executor: Arc<dyn QueryExecutor>,
+        before_executor: Arc<dyn QueryExecutor>,
+        after_executor: Arc<dyn QueryExecutor>,
         queries: HookQueriesConfiguration,
     ) -> Self {
-        Self { executor, queries }
+        Self {
+            before_executor,
+            after_executor,
+            queries,
+        }
     }
 }
 
@@ -91,7 +100,7 @@ impl ArtifactHooks for QueryHooks {
         let op = ctx.op.to_string();
         for digest in digests(ctx) {
             let reason = self
-                .executor
+                .before_executor
                 .veto_reason(
                     sql,
                     &[
@@ -124,7 +133,7 @@ impl ArtifactHooks for QueryHooks {
         let op = ctx.op.to_string();
         let outcome: &'static str = outcome.kind.into();
         for digest in digests(ctx) {
-            self.executor
+            self.after_executor
                 .execute(
                     sql,
                     &[
@@ -207,6 +216,7 @@ mod tests {
 
     fn hooks(f: Arc<Fake>) -> QueryHooks {
         QueryHooks::new(
+            f.clone(),
             f,
             HookQueriesConfiguration {
                 before: Some("B".into()),
@@ -264,7 +274,7 @@ mod tests {
     #[tokio::test]
     async fn unset_queries_are_noops() {
         let f = Arc::new(Fake::default());
-        let h = QueryHooks::new(f.clone(), Default::default());
+        let h = QueryHooks::new(f.clone(), f.clone(), Default::default());
         assert_eq!(
             h.before(&ctx(ArtifactOp::Put, &["d"])).await.unwrap(),
             HookDecision::Allow
