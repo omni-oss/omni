@@ -39,7 +39,7 @@ The native drivers are cargo features of the service and are on by default.
         },
         "before_timeout_ms": 2000,
         "after_timeout_ms": 10000,
-        "after_max_in_flight": 64,
+        "after_max_in_flight": 4,
         "before_failure_policy": "fail_closed"
     },
     "caching": {
@@ -109,7 +109,7 @@ Hooks run on every artifact operation: `get`, `get_many`, `head`, `head_many`,
 - `before` parameters: operation, tenant, organization, workspace, environment,
   digest. `after` adds the outcome (`hit`, `miss`, `stored`, `deleted`,
   `failed`). The digest is empty for list operations.
-- At most `after_max_in_flight` `after` hooks run at once (on the native service the default is `max_connections - 1`, so one connection stays free for authorization lookups; on D1 it is 64). Extra ones are
+- At most `after_max_in_flight` `after` hooks run at once (on the native service the default is `max_connections - 1`, so one connection stays free for authorization lookups; on D1 it is 64). With `max_connections` set to 1 nothing can be reserved, so a slow `after` hook can delay authorization lookups. Use at least 2 connections when you enable `after` hooks. Keep `after_max_in_flight` below `max_connections`. Extra ones are
   skipped and logged, so slow hooks cannot starve authorization lookups.
 - A `before` hook that errors or times out blocks the request by default
   (`fail_closed`). Set `fail_open` to let requests through instead.
