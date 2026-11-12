@@ -16,7 +16,7 @@ Done means all of these hold:
 
 1. **SQL backend.** Reads ownership data from any database `sqlx` supports on native, using operator-supplied queries.
 2. **D1 backend.** Reads the same data from Cloudflare D1 inside `omni_remote_cache_worker`, using operator-supplied queries.
-3. **Query shape contract.** Any schema works as long as the query returns the documented shape. A query that returns the wrong shape fails at startup validation, not at request time.
+3. **Query shape contract.** Any schema works as long as the query returns the documented shape. Startup validation checks the columns and parameter count where the driver can describe the query. Row values and row counts are checked on each request. A NULL or unsupported `found` value, or more than one row, is a shape error detected at request time. A request-time shape error is logged and metered, and the request fails with a 500 (fail closed, never treated as "found").
 4. **Embedder-supplied data.** A host can supply its own data without SQL by implementing the repository traits (or a closure-based adapter). This covers ownership data and API keys and scopes, so any backend can supply them.
 5. **Hooks.** Hooks run on every operation the service has (get, get-many, head, head-many, put, delete), and can **veto** the operation.
 6. **SQL hooks backend.** A SQL (and D1) hook backend lets an external service prune old or unused entries.
@@ -51,11 +51,11 @@ An operator runs the Worker with D1 and an external pruning service.
 **Happy path**
 
 1. Config points ownership lookups at D1 with these queries:
-   - `SELECT 1 FROM orgs o JOIN tenants t ON t.id = o.tenant_id WHERE t.code = ?1 AND o.code = ?2`
+   - `SELECT 1 AS found FROM orgs o JOIN tenants t ON t.id = o.tenant_id WHERE t.code = ?1 AND o.code = ?2`
    - Equivalents for the workspace and environment checks.
 2. `PUT /v1/artifacts/abc?org=o&ws=w&env=e` passes auth and ownership validation. The `before` hook allows it, the artifact is stored, and the `after` hook inserts a row in `artifact_events`.
 3. `GET` of the same artifact runs the `before` hook, which allows it, then serves it and upserts `last_read_at` in `artifact_usage`.
-4. The external pruner reads `artifact_usage`, deletes cold entries, and the next `GET` returns 404.
+4. The external pruner reads `artifact_usage`, deletes cold entries, and the next `GET` returns 404. Usage can be stale (a failed `after`, sampled or batched writes), so a recently read entry can look cold. The pruner contract: it must only delete entries idle for longer than a minimum age that exceeds the expected usage-update delay (sampling or batch interval plus `after` timeout), or accept that a wrongly pruned entry is a cache miss and a rebuild, not data loss.
 
 **Complexities**
 
@@ -101,7 +101,7 @@ trait ArtifactHooks {
   before(&ctx) -> HookDecision          // Allow | Veto { reason }
   after(&ctx, &outcome)                 // observe, cannot veto
 }
-ctx = { tenant, org, ws, env, op, digest?, api_key_id, size? }
+ctx = { tenant, org, ws, env, op, digests, api_key_id, size? }   // digests: one for single ops, all requested for *Many
 op  = Get | GetMany | Head | HeadMany | Put | Delete
 ```
 
@@ -110,6 +110,7 @@ op  = Get | GetMany | Head | HeadMany | Put | Delete
 - **Async and deadlines.** Hooks are async with a per-hook timeout.
 - **`after` on the request path.** `after` hooks run after the response is decided. On native they are spawned. On Workers they use `waitUntil`.
 - **SQL hooks backend.** It uses configured queries to record events or usage, and optional queries to veto. A `before` query that returns a `veto_reason` column vetoes with that reason.
+- **Batch operations.** `GetMany` and `HeadMany` call `before` once with the full `digests` list. A veto rejects the whole batch (403 with the reason), because partial results would hide the veto from the client. `after` receives the per-digest outcome (hit, miss) so usage is recorded for each artifact.
 - **Usage writes.** To avoid a write on every read, the SQL hook can sample or batch `last_read_at` updates (configurable granularity).
 
 ### API key hashing
@@ -140,7 +141,7 @@ Backends never cache. A separate decorator wraps any implementation of the repos
 - **Negative results.** Cached only if configured, with a separate (shorter) TTL, so that a newly created tenant is not rejected for long.
 - **Scope.** Per process, and per isolate on Workers, where it lives only as long as the isolate. It is runtime-agnostic: no Tokio, with a clock that works on wasm (`time` with `wasm-bindgen`).
 - **Defaults when enabled.** Repositories: TTL 60 seconds, 10,000 entries, negative results not cached. Security service: TTL 10 seconds. All configurable.
-- **Security caveat.** Caching API key and scope lookups delays revocation by up to the TTL. The docs must say so, and the default TTL for the security service is shorter than for the repositories.
+- **Security caveat.** Caching API key and scope lookups delays revocation by up to the TTL, and caching ownership lookups in the repositories delays ownership changes (a deleted tenant, organization, workspace or environment staying valid) by up to the repository TTL (60 seconds by default). Both bounds are documented side by side. The docs must say so, and the default TTL for the security service is shorter than for the repositories.
 - **Concurrency.** A concurrent miss for one key may query twice. No request coalescing in the first version.
 
 ### Wiring
