@@ -1,10 +1,12 @@
 import { nativeTarget } from "./native";
 import type { Target } from "./types";
 import { workerTarget } from "./worker";
+import { workerD1Target } from "./worker-d1";
 
 const targets: Record<string, Target> = {
     native: nativeTarget,
     worker: workerTarget,
+    "worker-d1": workerD1Target,
 };
 
 /** Targets to run, from `REMOTE_CACHE_TEST_TARGETS` (comma separated; all by default). */
