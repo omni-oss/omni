@@ -53,8 +53,10 @@ pub struct Context<TSys: ContextSys = RealSysSync> {
     cache_resolution: CacheResolutionState,
     cache_source: CacheDirectorySource,
     sources_resolution: SourcesResolutionState,
-    sources_dir: PathBuf,
-    sources_source: SourcesDirectorySource,
+    /// Resolved lazily-failing: an invalid `worktree.omni.*` only matters to
+    /// commands that use the store, and an explicit `--cache-dir` still bypasses
+    /// worktree configuration errors (RFC 0017).
+    sources: Result<(PathBuf, SourcesDirectorySource), String>,
     tracing_config: TracingConfig,
     sys: TSys,
 }
@@ -195,8 +197,7 @@ impl<TSys: ContextSys> Context<TSys> {
         );
         let (path, source) = state.resolve(&self.root_dir, &self.sys)?;
         self.sources_resolution = state;
-        self.sources_dir = path;
-        self.sources_source = source;
+        self.sources = Ok((path, source));
         Ok(self)
     }
 
@@ -216,8 +217,9 @@ impl<TSys: ContextSys> Context<TSys> {
         let root_dir = root_dir.to_path_buf();
         let (cache_dir, cache_source) =
             cache_resolution.resolve(&root_dir, &sys)?;
-        let (sources_dir, sources_source) =
-            sources_resolution.resolve(&root_dir, &sys)?;
+        let sources = sources_resolution
+            .resolve(&root_dir, &sys)
+            .map_err(|error| error.to_string());
         let workspace = get_workspace_configuration(&env, &root_dir, &sys)?;
         let omni_dir = root_dir.join(OMNI_DIR);
         let remote_cache = get_remote_cache_configuration(&cache_dir, &sys)?;
@@ -234,8 +236,7 @@ impl<TSys: ContextSys> Context<TSys> {
             cache_resolution,
             cache_source,
             sources_resolution,
-            sources_dir,
-            sources_source,
+            sources,
             env_root_dir_marker: root_marker.to_string(),
             sys,
             tracing_config: tracing_config.clone(),
@@ -613,12 +614,19 @@ impl<TSys: ContextSys> Context<TSys> {
 
     /// The remote-source store root, resolved from `--sources-dir`, the
     /// worktree configuration, or the per-user default.
-    pub fn sources_dir(&self) -> &Path {
-        &self.sources_dir
+    #[allow(clippy::result_large_err)]
+    pub fn sources_dir(&self) -> Result<&Path, ContextError> {
+        match &self.sources {
+            Ok((path, _)) => Ok(path),
+            Err(message) => {
+                Err(ContextErrorInner::SourcesDirectory(message.clone()).into())
+            }
+        }
     }
 
-    pub fn sources_directory_source(&self) -> &SourcesDirectorySource {
-        &self.sources_source
+    /// Where the store location came from, when it resolved.
+    pub fn sources_directory_source(&self) -> Option<&SourcesDirectorySource> {
+        self.sources.as_ref().ok().map(|(_, source)| source)
     }
 
     pub fn scratch_dir(&self) -> PathBuf {
@@ -970,6 +978,40 @@ mod tests {
         let loaded = reloaded.into_loaded().await.unwrap();
         assert_eq!(loaded.current_dir().unwrap(), dir);
         assert_eq!(std::env::current_dir().unwrap(), cwd_before);
+    }
+
+    #[test]
+    fn an_invalid_worktree_file_only_fails_commands_that_use_the_store() {
+        let (tmp, sys) = default_fixture();
+        let root = tmp.path();
+        std::fs::write(
+            root.join("worktree.omni.yaml"),
+            "sources: {dir: '~/s'}",
+        )
+        .unwrap();
+
+        // With an explicit cache directory the context still loads (RFC 0017:
+        // explicit overrides bypass worktree configuration errors) ...
+        let explicit = Context::new_with_cache_dir(
+            sys,
+            "testing",
+            root,
+            false,
+            "workspace.omni.yaml",
+            None,
+            &TracingConfig::disabled(),
+            Some(root.join("fixed")),
+        )
+        .expect("the context loads");
+        // ... and only asking for the store location reports the problem.
+        let error = explicit.sources_dir().expect_err("invalid sources.dir");
+        assert!(error.to_string().contains("sources.dir"), "{error}");
+
+        // An explicit sources directory resolves it and bypasses the file.
+        let fixed = explicit
+            .with_sources_dir(Some(root.join("store")))
+            .expect("explicit override");
+        assert!(fixed.sources_dir().unwrap().ends_with("store"));
     }
 
     #[tokio::test]

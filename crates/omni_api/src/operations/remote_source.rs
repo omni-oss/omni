@@ -33,7 +33,7 @@ where
     TSys: ContextSys + RemoteSourceSys,
 {
     let sources_dir = ctx.omni_dir().join(omni_constants::SOURCES_SEGMENT);
-    let store_root = ctx.sources_dir().to_path_buf();
+    let store_root = ctx.sources_dir()?.to_path_buf();
     let lockfile_path = sources_dir.join(omni_constants::SOURCE_LOCKFILE_NAME);
 
     Ok(RemoteSourceManager::new(

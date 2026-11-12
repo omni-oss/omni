@@ -183,6 +183,11 @@ impl SpawnPolicy {
         if deno_flag {
             self.args.push(format!("--allow-read={value}"));
         }
+        // On Windows the AppContainer is granted a minimal boot set at spawn and
+        // the loaded entry's directory is granted per call (`grant_read_scope`),
+        // so a spawn-time ACL walk over this directory is neither needed nor
+        // wanted.
+        #[cfg(not(windows))]
         if let Some(spec) = self.os_sandbox.as_mut()
             && !spec.read_paths.iter().any(|p| p == dir)
         {
@@ -259,6 +264,7 @@ mod tests {
                 format!("--allow-read={}", dir.display())
             ]
         );
+        #[cfg(not(windows))]
         assert_eq!(policy.os_sandbox.unwrap().read_paths, vec![dir]);
     }
 
@@ -272,6 +278,7 @@ mod tests {
         policy.grant_read(dir, false);
 
         assert!(policy.args.is_empty(), "{:?}", policy.args);
+        #[cfg(not(windows))]
         assert_eq!(policy.os_sandbox.unwrap().read_paths, vec![dir]);
     }
 

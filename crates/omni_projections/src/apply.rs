@@ -460,9 +460,19 @@ pub fn is_situational(error: &std::io::Error) -> bool {
         // ENOTTY: ext4 and friends answer a clone ioctl this way.
         #[cfg(unix)]
         Some(25) => true,
-        // INVALID_FUNCTION, NOT_SUPPORTED, PRIVILEGE_NOT_HELD.
+        // INVALID_FUNCTION, NOT_SUPPORTED, PRIVILEGE_NOT_HELD. Some Windows
+        // calls report them as an HRESULT (`0x8007xxxx`) instead of the plain
+        // code, so compare the low word of either form.
         #[cfg(windows)]
-        Some(1 | 50 | 1314) => true,
+        Some(code) => {
+            let code = code as u32;
+            let code = if code >> 16 == 0x8007 {
+                code & 0xFFFF
+            } else {
+                code
+            };
+            matches!(code, 1 | 50 | 1314)
+        }
         _ => false,
     }
 }
@@ -609,7 +619,14 @@ mod tests {
         assert_eq!(symlink_unavailable(&denied), cfg!(unix));
         assert!(!symlink_unavailable(&Error::from(ErrorKind::NotFound)));
         #[cfg(windows)]
-        assert!(is_situational(&Error::from_raw_os_error(1314)));
+        {
+            assert!(is_situational(&Error::from_raw_os_error(1314)));
+            // The same codes as an HRESULT (ERROR_INVALID_FUNCTION).
+            assert!(is_situational(&Error::from_raw_os_error(
+                0x8007_0001u32 as i32
+            )));
+            assert!(!is_situational(&Error::from_raw_os_error(5)));
+        }
     }
 
     #[test]
