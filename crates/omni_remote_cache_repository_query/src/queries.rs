@@ -34,7 +34,51 @@ pub struct QueriesConfiguration {
     pub api_key_scope: String,
 }
 
+/// A query with the parameter count and result column it must have.
+pub struct QuerySpec<'a> {
+    pub name: &'static str,
+    pub sql: &'a str,
+    pub params: usize,
+    pub column: Option<&'static str>,
+}
+
 impl QueriesConfiguration {
+    pub fn specs(&self) -> Vec<QuerySpec<'_>> {
+        let q = |name, sql, params| QuerySpec {
+            name,
+            sql,
+            params,
+            column: Some("found"),
+        };
+        vec![
+            q("tenant_exists", &self.tenant_exists, 1),
+            q("organization_exists", &self.organization_exists, 1),
+            q(
+                "organization_belongs_to_tenant",
+                &self.organization_belongs_to_tenant,
+                2,
+            ),
+            q("workspace_exists", &self.workspace_exists, 1),
+            q(
+                "workspace_belongs_to_organization",
+                &self.workspace_belongs_to_organization,
+                2,
+            ),
+            q("environment_exists", &self.environment_exists, 1),
+            q(
+                "environment_belongs_to_workspace",
+                &self.environment_belongs_to_workspace,
+                2,
+            ),
+            q("api_key_valid", &self.api_key_valid, 1),
+            q("api_key_tenant", &self.api_key_tenant, 2),
+            q("api_key_organization", &self.api_key_organization, 3),
+            q("api_key_workspace", &self.api_key_workspace, 4),
+            q("api_key_environment", &self.api_key_environment, 5),
+            q("api_key_scope", &self.api_key_scope, 2),
+        ]
+    }
+
     pub fn validate(&self) -> Result<(), String> {
         let all = [
             ("tenant_exists", &self.tenant_exists),

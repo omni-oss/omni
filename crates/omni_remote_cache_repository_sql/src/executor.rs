@@ -3,11 +3,14 @@ use std::time::Duration;
 use async_trait::async_trait;
 use futures::TryStreamExt as _;
 use omni_remote_cache_repository_query::{QueryError, QueryExecutor};
-use sqlx::{AnyPool, Row as _, any::AnyPoolOptions};
+use sqlx::{AnyPool, Either, Row as _, any::AnyPoolOptions};
 
 #[derive(Clone)]
 pub struct SqlxExecutor {
     pool: AnyPool,
+    /// SQLite reports the highest parameter index a query uses and accepts
+    /// extra bound values, so fewer is fine there.
+    lenient_params: bool,
     query_timeout: Duration,
 }
 
@@ -28,12 +31,15 @@ impl SqlxExecutor {
             .connect(url)
             .await
             .map_err(|e| QueryError::Driver(e.to_string()))?;
-        Ok(Self::from_pool(pool))
+        let mut executor = Self::from_pool(pool);
+        executor.lenient_params = url.starts_with("sqlite");
+        Ok(executor)
     }
 
     pub fn from_pool(pool: AnyPool) -> Self {
         Self {
             pool,
+            lenient_params: false,
             query_timeout: DEFAULT_QUERY_TIMEOUT,
         }
     }
@@ -135,6 +141,55 @@ impl QueryExecutor for SqlxExecutor {
                     "`veto_reason` must be text or NULL: {e}"
                 ))
             })
+    }
+
+    async fn validate(
+        &self,
+        sql: &str,
+        params: usize,
+        column: Option<&str>,
+    ) -> Result<(), QueryError> {
+        use sqlx::{
+            Column as _, Executor as _, SqlSafeStr as _, Statement as _,
+        };
+
+        // Operator configuration, never request data (see `build`).
+        let statement = self
+            .bounded(async {
+                self.pool
+                    .prepare(sqlx::AssertSqlSafe(sql.to_owned()).into_sql_str())
+                    .await
+                    .map_err(driver)
+            })
+            .await?;
+
+        let needed = statement.parameters().map(|p| match p {
+            Either::Left(types) => types.len(),
+            Either::Right(count) => count,
+        });
+        if let Some(needed) = needed {
+            let ok = if self.lenient_params {
+                needed <= params
+            } else {
+                needed == params
+            };
+            if !ok {
+                return Err(QueryError::Shape(format!(
+                    "the query uses {needed} parameter(s) but {params} are bound"
+                )));
+            }
+        }
+        if let Some(column) = column
+            && !statement
+                .columns()
+                .iter()
+                .any(|c| c.name().eq_ignore_ascii_case(column))
+        {
+            return Err(QueryError::Shape(format!(
+                "the query must return a `{column}` column"
+            )));
+        }
+        Ok(())
     }
 
     async fn execute(
@@ -254,6 +309,27 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn startup_validation_describes_queries() {
+        let e = db().await;
+        let ok = "SELECT 1 AS found FROM t WHERE code = ?1 AND label = ?2";
+        e.validate(ok, 2, Some("found")).await.unwrap();
+        // SQLite accepts extra bound values
+        e.validate("SELECT 1 AS found WHERE ?1 = 'a'", 2, Some("found"))
+            .await
+            .unwrap();
+
+        let missing = e.validate("SELECT 1 AS nope", 0, Some("found")).await;
+        assert!(matches!(missing, Err(QueryError::Shape(_))), "{missing:?}");
+        let more = e.validate(ok, 1, Some("found")).await;
+        assert!(matches!(more, Err(QueryError::Shape(_))), "{more:?}");
+        let bad = e.validate("SELEC nonsense", 0, None).await;
+        assert!(matches!(bad, Err(QueryError::Driver(_))), "{bad:?}");
+        e.validate("INSERT INTO t VALUES (?1, 0, ?2)", 2, None)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
     async fn driver_errors_are_reported() {
         let e = db().await;
         let r = e.exists("SELECT 1 AS found FROM missing_table", &[]).await;
@@ -286,6 +362,19 @@ mod server_tests {
         assert!(e.exists(int_q, &["a"]).await.unwrap());
         assert!(!e.exists(int_q, &["zzz"]).await.unwrap());
         assert!(e.exists(bool_q, &["a"]).await.unwrap());
+
+        // startup validation describes the query on a real server too
+        e.validate(int_q, 1, Some("found")).await.unwrap();
+        let wrong_count = e.validate(int_q, 2, Some("found")).await;
+        assert!(
+            matches!(wrong_count, Err(QueryError::Shape(_))),
+            "{wrong_count:?}"
+        );
+        let wrong_col = e.validate(int_q, 1, Some("veto_reason")).await;
+        assert!(
+            matches!(wrong_col, Err(QueryError::Shape(_))),
+            "{wrong_col:?}"
+        );
     }
 
     #[tokio::test]

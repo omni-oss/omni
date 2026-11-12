@@ -42,4 +42,17 @@ pub trait QueryExecutor: Send + Sync + 'static {
         sql: &str,
         params: &[&str],
     ) -> Result<(), QueryError>;
+
+    /// Checks at startup, where the driver can describe the query, that it
+    /// prepares, needs `params` parameters and returns `column`. Drivers
+    /// that cannot describe a query keep this default, and a wrong query
+    /// then fails on first use.
+    async fn validate(
+        &self,
+        _sql: &str,
+        _params: usize,
+        _column: Option<&str>,
+    ) -> Result<(), QueryError> {
+        Ok(())
+    }
 }

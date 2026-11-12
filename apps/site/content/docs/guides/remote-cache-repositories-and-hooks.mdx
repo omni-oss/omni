@@ -25,6 +25,7 @@ The native drivers are cargo features of the service and are on by default.
     "database": {
         "url": "postgres://user:pass@host/db?sslmode=verify-full",
         "max_connections": 5,
+        "hooks_max_connections": 2,
         "query_timeout_ms": 10000
     },
     "queries": {
@@ -34,12 +35,12 @@ The native drivers are cargo features of the service and are on by default.
     "api_key_hash": { "algorithm": "sha256", "encoding": "hex" },
     "hooks": {
         "queries": {
-            "before": "SELECT reason AS veto_reason FROM vetoes WHERE tenant = $2 AND $1 IS NOT NULL AND $3 IS NOT NULL AND $4 IS NOT NULL AND $5 IS NOT NULL AND $6 IS NOT NULL LIMIT 1",
+            "before": "SELECT reason AS veto_reason FROM vetoes WHERE tenant = $2 AND $1 IS NOT NULL AND $3 IS NOT NULL AND $4 IS NOT NULL AND $5 IS NOT NULL AND $6 IS NOT NULL AND $7 IS NOT NULL LIMIT 1",
             "after": "INSERT INTO artifact_usage (...) VALUES (...)"
         },
         "before_timeout_ms": 2000,
         "after_timeout_ms": 10000,
-        "after_max_in_flight": 4,
+        "after_max_in_flight": 2,
         "before_failure_policy": "fail_closed"
     },
     "caching": {
@@ -52,14 +53,26 @@ The native drivers are cargo features of the service and are on by default.
 `database` applies to the native service only. On Workers the D1 binding takes
 its place, and the rest of the file is the same.
 
-Use a TLS mode that verifies the server certificate (`sslmode=verify-full` for
-Postgres, `ssl-mode=VERIFY_IDENTITY` for MySQL) for any database that is not
-on the same host. The drivers do not require TLS by default. Each statement is
-bounded by `query_timeout_ms`.
+A Postgres or MySQL database that is not on the same host must verify the
+server certificate: `sslmode=verify-full` or `verify-ca` for Postgres,
+`ssl-mode=VERIFY_IDENTITY` or `VERIFY_CA` for MySQL. The service refuses to
+start otherwise, because the drivers fall back to plaintext by default. Set
+`allow_insecure_tls` to opt out, for example on a trusted private network.
+Each statement is bounded by `query_timeout_ms`.
 
-Organization, workspace and environment codes must be unique across tenants.
-Artifacts are stored under `org/ws/env`, so two tenants that reuse the same
-codes would share storage.
+Hooks use their own pool of `hooks_max_connections` connections (default 2),
+so slow hook queries cannot take connections from authorization lookups. It
+is ignored for in-memory SQLite, which has to share one connection.
+
+At startup the native service asks the driver to describe every query. It must
+prepare, use the number of parameters listed below (SQLite allows fewer) and
+return the documented column. A wrong query stops the service from starting.
+D1 cannot describe a query, so there a wrong query fails on first use.
+
+Artifacts are stored under `tenant/org/ws/env`, so tenants never share
+storage, even when they reuse the same codes. Upgrading from a version that
+stored under `org/ws/env` leaves old artifacts unreachable. They are cache
+entries, so they are rebuilt.
 
 ## The query contract
 
@@ -107,10 +120,12 @@ Hooks run on every artifact operation: `get`, `get_many`, `head`, `head_many`,
 - `after` observes the result and cannot change it, so use it to record usage.
   It runs after the response is sent.
 - `before` parameters: operation, tenant, organization, workspace, environment,
-  digest. `after` adds the outcome (`hit`, `miss`, `stored`, `deleted`,
-  `failed`). The digest is empty for list operations.
-- At most `after_max_in_flight` `after` hooks run at once (on the native service the default is `max_connections - 1`, so one connection stays free for authorization lookups; on D1 it is 64). With `max_connections` set to 1 nothing can be reserved, so a slow `after` hook can delay authorization lookups. Use at least 2 connections when you enable `after` hooks. Keep `after_max_in_flight` below `max_connections`. Extra ones are
-  skipped and logged, so slow hooks cannot starve authorization lookups.
+  digest, api key id. `after` has the same, with the outcome (`hit`, `miss`,
+  `stored`, `deleted`, `failed`) before the api key id. The digest is empty for
+  list operations. The api key id is an opaque fingerprint (16 hex characters
+  of the key's SHA-256), so usage can be attributed to a key without exposing
+  it.
+- At most `after_max_in_flight` `after` hooks run at once. On the native service it defaults to `hooks_max_connections`, and on D1 to 64. Extra ones are skipped and logged, so slow hooks cannot starve authorization lookups.
 - A `before` hook that errors or times out blocks the request by default
   (`fail_closed`). Set `fail_open` to let requests through instead.
 

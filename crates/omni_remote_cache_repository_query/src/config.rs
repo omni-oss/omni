@@ -71,17 +71,44 @@ impl RepositoryConfiguration {
         Ok(serde_json::from_str(json)?)
     }
 
+    /// Asks the drivers to describe every configured query, so a wrong query
+    /// fails at startup instead of on a request. Hooks are checked with
+    /// `hooks_executor` when there is one.
+    pub async fn validate_queries(
+        &self,
+        executor: &dyn QueryExecutor,
+        hooks_executor: Option<&dyn QueryExecutor>,
+    ) -> eyre::Result<()> {
+        for spec in self.queries.specs() {
+            executor
+                .validate(spec.sql, spec.params, spec.column)
+                .await
+                .map_err(|e| eyre::eyre!("query `{}`: {e}", spec.name))?;
+        }
+        let hooks = hooks_executor.unwrap_or(executor);
+        for spec in self.hooks.queries.specs() {
+            hooks
+                .validate(spec.sql, spec.params, spec.column)
+                .await
+                .map_err(|e| eyre::eyre!("query `{}`: {e}", spec.name))?;
+        }
+        Ok(())
+    }
+
     /// Builds the provider, with the optional caching decorator on top. Pass
     /// a long-lived `caching_state` when the provider is rebuilt per request
     /// so cached entries survive between requests.
     pub fn build_provider(
         self,
         executor: Arc<dyn QueryExecutor>,
+        hooks_executor: Option<Arc<dyn QueryExecutor>>,
         runtime: Option<Arc<dyn HostRuntime>>,
         caching_state: Option<Arc<CachingState>>,
     ) -> eyre::Result<Arc<dyn DependencyProvider>> {
+        // Hooks may use their own executor so slow hook work cannot starve
+        // authorization lookups of connections.
         let hooks = Arc::new(QueryHooks::new(
-            executor.clone(),
+            hooks_executor.unwrap_or_else(|| executor.clone()),
             self.hooks.queries.clone(),
         ));
         let mut provider = QueryDependencyProvider::new(

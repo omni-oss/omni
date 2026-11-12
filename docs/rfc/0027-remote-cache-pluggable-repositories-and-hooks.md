@@ -96,7 +96,6 @@ repository:
 
 - **Row shape.** Every query returns zero or one row with the documented columns. `exists` queries return a column named `found` that is a boolean or an integer. Non-zero means true. Any other type, including NULL, is a shape error. Zero rows means false.
 - **Parameter binding.** The SQL text is passed to the driver verbatim. We do not rewrite placeholders, and the operator writes them in the dialect of their driver (`$1` for Postgres, `?` for MySQL and SQLite, `?1` for D1). The configured `params` list is bound in order, so the n-th entry binds to the n-th placeholder. Values are always bound, never interpolated.
-- **Startup validation.** Where the driver can describe a query, validation checks the columns and parameter count at startup.
 
 ### Hooks
 
@@ -176,13 +175,13 @@ Backends never cache. A separate decorator wraps any implementation of the repos
 
 **Spike result (done, code in `/tmp/opencode/spike`, not committed).** Run against real engines: `sqlx` 0.9.0 `Any` with SQLite, Postgres 16 and MySQL 8, and D1 under `wrangler dev --local`. The wasm build also compiled for `wasm32-unknown-unknown`.
 
-| Question                      | Result                                                                                                                                                                                                                                             |
-| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Query contract through `sqlx` | Works. Verbatim SQL, positional string binds, `found` column, zero rows means false. Verified for `?`, `?1` (SQLite), `$1` (Postgres) and `?` (MySQL). Injection strings are inert.                                                                |
-| Same contract on D1           | Works with `?1`. Same results as SQLite.                                                                                                                                                                                                           |
-| `Send` option A               | Works. `Send` traits, with `SendWrapper<D1Database>` and `SendFuture` in the D1 backend, compile and run on Workers. Core needs no change.                                                                                                         |
+| Question                      | Result                                                                                                                                                                                                                                                       |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Query contract through `sqlx` | Works. Verbatim SQL, positional string binds, `found` column, zero rows means false. Verified for `?`, `?1` (SQLite), `$1` (Postgres) and `?` (MySQL). Injection strings are inert.                                                                          |
+| Same contract on D1           | Works with `?1`. Same results as SQLite.                                                                                                                                                                                                                     |
+| `Send` option A               | Works. `Send` traits, with `SendWrapper<D1Database>` and `SendFuture` in the D1 backend, compile and run on Workers. Core needs no change.                                                                                                                   |
 | `after` via `waitUntil`       | Works. A `HostRuntime` trait (`spawn_detached(BoxFuture + Send)`) in core, implemented by `tokio::spawn` natively and `ctx.wait_until` on Workers (context held in `SendWrapper`). The event was written after the response (0 to 1), and a veto skipped it. |
-| Veto                          | Works end to end. A `before` query returning `veto_reason` gave 403 with the reason and no `after` write.                                                                                                                                          |
+| Veto                          | Works end to end. A `before` query returning `veto_reason` gave 403 with the reason and no `after` write.                                                                                                                                                    |
 
 Findings that change the design:
 
@@ -268,9 +267,10 @@ Where the build differs from the plan above:
 - **D1 strictness.** D1 rejects a query that binds more parameters than it references. Operators must reference every parameter. Verified under `wrangler dev --local`.
 - **Verified.** SQLite, Postgres 16 and MySQL 8 for the executor, and the whole worker under `wrangler dev --local` (auth, validation, usage recorded with `waitUntil`, veto). Postgres and MySQL tests run when `TEST_POSTGRES_URL` or `TEST_MYSQL_URL` is set.
 - **Startup validation.** The first version checks that every query is present and non-empty. It does not prepare queries against the driver, so invalid SQL or a missing column surfaces on first use (a 500, logged). Driver-backed preparation at startup is follow-up work.
-- **`api_key_id` in the hook context.** Not included. Lookups are by hashed key and there is no per-key id, and passing the key would expose the secret. Hooks that need attribution need an id source defined first (follow-up).
-- **Hook concurrency.** `after` hooks are capped by `after_max_in_flight` (default 64); extra ones are skipped and logged. Hooks share the executor with authorization lookups, so operators should size `max_connections` for both.
 - **Statement deadline.** Native statements are bounded by `query_timeout_ms` (default 10000).
-- **TLS.** The SQL crate enables `sqlx/tls-rustls` by default (`tls` feature). Operators must still choose a verifying mode in the URL.
-- **Caching.** Expiry uses a monotonic clock natively and the wall clock on wasm32. On Workers the cache state is held per isolate so entries survive between requests. `CachingProvider` rebuilds ownership validation from its cached repositories.
-- **Tenant isolation of storage.** Artifacts are stored under `org/ws/env` as before this RFC. Codes must be unique across tenants. Adding the tenant to the storage key changes where existing artifacts live and is not part of this change.
+- **TLS.** The SQL crate enables `sqlx/tls-rustls` by default (`tls` feature). The service refuses a remote Postgres or MySQL url that does not verify the certificate, unless `allow_insecure_tls` is set. Loopback and unix-socket hosts are exempt.
+- **Caching.** Expiry uses a monotonic clock natively and the wall clock on wasm32. On Workers the cache state is held per isolate so entries survive between requests. `CachingProvider` delegates ownership validation to the wrapped provider and caches only the result, so the wrapped provider's own rules still apply.
+- **Startup validation.** The native executor prepares every configured query at startup. It checks the parameter count (SQLite allows fewer, because it reports the highest index used) and the `found` or `veto_reason` column, and a wrong query stops the service. D1 cannot describe a query, so it keeps first-use failures. Row values and row counts are still checked per request.
+- **`api_key_id` in the hook context.** An opaque fingerprint (16 hex characters of the key's SHA-256). It is the last parameter of the `before` query and follows the outcome in the `after` query.
+- **Hook isolation.** `after` hooks run on their own pool (`hooks_max_connections`, default 2) and `after_max_in_flight` defaults to that size, so slow hooks cannot starve authorization lookups, including with a one-connection main pool.
+- **Tenant isolation of storage.** Artifacts are stored under `tenant/org/ws/env`. This is a change from `org/ws/env`: existing artifacts are unreachable after upgrading and are rebuilt as cache misses.

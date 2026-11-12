@@ -50,6 +50,7 @@ fn build_provider(
         return config
             .build_provider(
                 Arc::new(executor),
+                None,
                 Some(Arc::new(WaitUntilRuntime::new(ctx))),
                 state,
             )

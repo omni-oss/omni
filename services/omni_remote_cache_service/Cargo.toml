@@ -23,6 +23,7 @@ bytes = { workspace = true }
 bytesize = { workspace = true }
 http = { workspace = true }
 omni_remote_cache_core = { workspace = true }
+url = { workspace = true }
 omni_remote_cache_repository_query = { workspace = true }
 omni_remote_cache_repository_sql = { workspace = true }
 omni_remote_cache_storage_core = { workspace = true }

@@ -32,6 +32,29 @@ pub struct HookQueriesConfiguration {
     pub after: Option<String>,
 }
 
+impl HookQueriesConfiguration {
+    pub fn specs(&self) -> Vec<crate::QuerySpec<'_>> {
+        let mut specs = Vec::new();
+        if let Some(sql) = &self.before {
+            specs.push(crate::QuerySpec {
+                name: "hooks.before",
+                sql,
+                params: 7,
+                column: Some("veto_reason"),
+            });
+        }
+        if let Some(sql) = &self.after {
+            specs.push(crate::QuerySpec {
+                name: "hooks.after",
+                sql,
+                params: 8,
+                column: None,
+            });
+        }
+        specs
+    }
+}
+
 /// `ArtifactHooks` backed by operator queries. An external service can read
 /// what `after` records to prune old or unused entries.
 pub struct QueryHooks {
