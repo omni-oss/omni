@@ -4,6 +4,7 @@ pub mod args;
 mod build;
 mod init_tracing;
 pub mod local_disk_backend;
+pub mod repository;
 pub mod s3_backend;
 pub mod state;
 pub mod storage_backend;

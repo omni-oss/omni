@@ -135,6 +135,7 @@ async fn server(hooks: Arc<Recorder>) -> TestServer {
         Some(100),
         BackendType::InMemory,
         Some(RouterArgs::new(Some("/api".to_string()), false)),
+        None,
     );
     let mut state = build_state(&serve_args).await.unwrap();
     state.provider = Arc::new(WithHooks {
