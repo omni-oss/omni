@@ -53,7 +53,7 @@ The native drivers are cargo features of the service and are on by default.
 its place, and the rest of the file is the same.
 
 Use a TLS mode that verifies the server certificate (`sslmode=verify-full` for
-Postgres, `ssl-mode=VERIFIED_IDENTITY` for MySQL) for any database that is not
+Postgres, `ssl-mode=VERIFY_IDENTITY` for MySQL) for any database that is not
 on the same host. The drivers do not require TLS by default. Each statement is
 bounded by `query_timeout_ms`.
 
