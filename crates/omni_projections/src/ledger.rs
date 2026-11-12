@@ -494,7 +494,16 @@ where
                 continue;
             };
             let source_entry = source_dir.join(name);
-            if sys.fs_is_symlink_no_err_async(&dest_entry).await {
+            let dest_is_link =
+                sys.fs_is_symlink_no_err_async(&dest_entry).await;
+            // A projected symlink replaced by a file (or the reverse) is a
+            // change even when the bytes match.
+            if dest_is_link
+                != sys.fs_is_symlink_no_err_async(&source_entry).await
+            {
+                return true;
+            }
+            if dest_is_link {
                 // A symlink is compared by where it points, not followed. One
                 // that points elsewhere than the source's (or cannot be read)
                 // is the user's change.
@@ -1227,6 +1236,25 @@ mod tests {
 
         std::fs::remove_file(dst.join("link")).unwrap();
         std::os::unix::fs::symlink("custom", dst.join("link")).unwrap();
+        assert!(copy_was_modified(&RealSys, &dst, &source).await);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_symlink_replaced_by_a_file_with_the_same_bytes_counts_as_modified()
+     {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("src");
+        let dst = dir.path().join("dst");
+        for root in [&src, &dst] {
+            std::fs::create_dir_all(root).unwrap();
+            std::fs::write(root.join("real.txt"), b"same").unwrap();
+        }
+        std::os::unix::fs::symlink("real.txt", src.join("link")).unwrap();
+        // The user swapped the projected link for a regular file of equal bytes.
+        std::fs::write(dst.join("link"), b"same").unwrap();
+
+        let source = src.to_string_lossy().into_owned();
         assert!(copy_was_modified(&RealSys, &dst, &source).await);
     }
 }

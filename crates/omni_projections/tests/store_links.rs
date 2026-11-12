@@ -304,6 +304,7 @@ async fn local_sources_keep_relative_symlinks() {
     );
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn an_unchanged_pin_repoints_a_link_into_a_moved_store_and_repairs_a_dangling_one()
  {
