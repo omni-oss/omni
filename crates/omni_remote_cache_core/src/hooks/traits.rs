@@ -103,6 +103,9 @@ pub struct HookSettings {
     pub before_timeout: Duration,
     pub after_timeout: Duration,
     pub before_policy: FailurePolicy,
+    /// Most `after` hooks in flight at once. Beyond it they are shed and
+    /// logged, so slow hooks cannot starve request-path work.
+    pub after_max_in_flight: usize,
 }
 
 impl Default for HookSettings {
@@ -111,6 +114,7 @@ impl Default for HookSettings {
             before_timeout: Duration::from_secs(2),
             after_timeout: Duration::from_secs(10),
             before_policy: FailurePolicy::FailClosed,
+            after_max_in_flight: 64,
         }
     }
 }

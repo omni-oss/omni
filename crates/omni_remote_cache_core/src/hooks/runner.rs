@@ -1,4 +1,7 @@
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    atomic::{AtomicUsize, Ordering},
+};
 
 use axum::response::{IntoResponse as _, Response};
 use futures::future::{Either, select};
@@ -23,6 +26,28 @@ async fn with_timeout<T>(
         Either::Right(_) => {
             Err(HookError(eyre::eyre!("hook timed out after {timeout:?}")))
         }
+    }
+}
+
+static AFTER_IN_FLIGHT: AtomicUsize = AtomicUsize::new(0);
+
+struct InFlight;
+
+impl InFlight {
+    fn acquire(max: usize) -> Option<Self> {
+        let prev = AFTER_IN_FLIGHT.fetch_add(1, Ordering::SeqCst);
+        if prev >= max {
+            AFTER_IN_FLIGHT.fetch_sub(1, Ordering::SeqCst);
+            None
+        } else {
+            Some(Self)
+        }
+    }
+}
+
+impl Drop for InFlight {
+    fn drop(&mut self) {
+        AFTER_IN_FLIGHT.fetch_sub(1, Ordering::SeqCst);
     }
 }
 
@@ -70,9 +95,15 @@ pub async fn run_after(
     let hooks: Arc<dyn ArtifactHooks> = provider.hooks();
     let bg = provider.background();
 
+    let Some(permit) = InFlight::acquire(settings.after_max_in_flight) else {
+        tracing::warn!(op = %ctx.op, "too many after hooks in flight, skipping");
+        return;
+    };
+
     let task = {
         let bg = bg.clone();
         async move {
+            let _permit = permit;
             let r = with_timeout(
                 bg.as_ref(),
                 settings.after_timeout,

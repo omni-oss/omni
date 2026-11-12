@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use omni_remote_cache_core::{
+    caching::CachingState,
     config::Configuration,
     providers::{ConfigBasedDependencyProvider, DependencyProvider},
     routes::root::{RouterConfig, build_router},
@@ -44,11 +45,13 @@ fn build_provider(
     if let Some(repo) = text_binding(env, REPOSITORY_CONFIG_BINDING) {
         let config =
             RepositoryConfiguration::from_json(&repo).map_err(internal)?;
+        let state = caching_state(&config);
         let executor = D1Executor::new(env.d1(D1_BINDING)?);
         return config
             .build_provider(
                 Arc::new(executor),
                 Some(Arc::new(WaitUntilBackground::new(ctx))),
+                state,
             )
             .map_err(internal);
     }
@@ -61,6 +64,24 @@ fn build_provider(
         Arc::new(config.to_in_memory_database()),
         Arc::new(config.security.api_keys.clone()),
     )))
+}
+
+thread_local! {
+    // Workers run one thread per isolate. The caches live as long as the
+    // isolate so cached lookups are shared by requests, unlike the provider,
+    // which holds request-scoped handles and is rebuilt each time.
+    static CACHING_STATE: std::cell::OnceCell<Arc<CachingState>> =
+        const { std::cell::OnceCell::new() };
+}
+
+fn caching_state(
+    config: &RepositoryConfiguration,
+) -> Option<Arc<CachingState>> {
+    let caching = config.caching.as_ref()?;
+    Some(CACHING_STATE.with(|c| {
+        c.get_or_init(|| Arc::new(CachingState::new(caching)))
+            .clone()
+    }))
 }
 
 fn build_state(

@@ -8,7 +8,10 @@ use sqlx::{AnyPool, Row as _, any::AnyPoolOptions};
 #[derive(Clone)]
 pub struct SqlxExecutor {
     pool: AnyPool,
+    query_timeout: Duration,
 }
+
+const DEFAULT_QUERY_TIMEOUT: Duration = Duration::from_secs(10);
 
 impl SqlxExecutor {
     /// Connects to `url`. The scheme (`sqlite:`, `postgres:`, `mysql:`)
@@ -25,11 +28,35 @@ impl SqlxExecutor {
             .connect(url)
             .await
             .map_err(|e| QueryError::Driver(e.to_string()))?;
-        Ok(Self { pool })
+        Ok(Self::from_pool(pool))
     }
 
     pub fn from_pool(pool: AnyPool) -> Self {
-        Self { pool }
+        Self {
+            pool,
+            query_timeout: DEFAULT_QUERY_TIMEOUT,
+        }
+    }
+
+    /// Bounds each statement, so a stalled database cannot hold pool
+    /// connections indefinitely. `acquire_timeout` only bounds acquiring.
+    pub fn with_query_timeout(mut self, timeout: Duration) -> Self {
+        self.query_timeout = timeout;
+        self
+    }
+
+    async fn bounded<T>(
+        &self,
+        fut: impl std::future::Future<Output = Result<T, QueryError>>,
+    ) -> Result<T, QueryError> {
+        tokio::time::timeout(self.query_timeout, fut)
+            .await
+            .map_err(|_| {
+                QueryError::Driver(format!(
+                    "query timed out after {:?}",
+                    self.query_timeout
+                ))
+            })?
     }
 }
 
@@ -79,7 +106,8 @@ impl QueryExecutor for SqlxExecutor {
         sql: &str,
         params: &[&str],
     ) -> Result<bool, QueryError> {
-        let Some(row) = self.single_row(sql, params).await? else {
+        let Some(row) = self.bounded(self.single_row(sql, params)).await?
+        else {
             return Ok(false);
         };
         match row.try_get::<i64, _>("found") {
@@ -97,7 +125,8 @@ impl QueryExecutor for SqlxExecutor {
         sql: &str,
         params: &[&str],
     ) -> Result<Option<String>, QueryError> {
-        let Some(row) = self.single_row(sql, params).await? else {
+        let Some(row) = self.bounded(self.single_row(sql, params)).await?
+        else {
             return Ok(None);
         };
         row.try_get::<Option<String>, _>("veto_reason")
@@ -113,11 +142,14 @@ impl QueryExecutor for SqlxExecutor {
         sql: &str,
         params: &[&str],
     ) -> Result<(), QueryError> {
-        Self::build(sql, params)
-            .execute(&self.pool)
-            .await
-            .map(|_| ())
-            .map_err(driver)
+        self.bounded(async {
+            Self::build(sql, params)
+                .execute(&self.pool)
+                .await
+                .map(|_| ())
+                .map_err(driver)
+        })
+        .await
     }
 }
 
@@ -202,6 +234,22 @@ mod tests {
             e.exists("SELECT 1 AS found FROM t WHERE code = ?", &["new"])
                 .await
                 .unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn statements_are_bounded_by_the_query_timeout() {
+        let e = db().await.with_query_timeout(Duration::from_millis(50));
+        // A recursive CTE that runs far longer than the deadline.
+        let r = e
+            .exists(
+                "WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c WHERE x < 2000000000) SELECT (MAX(x) > 0) AS found FROM c",
+                &[],
+            )
+            .await;
+        assert!(
+            matches!(&r, Err(QueryError::Driver(m)) if m.contains("timed out")),
+            "{r:?}"
         );
     }
 

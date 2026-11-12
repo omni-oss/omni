@@ -17,6 +17,13 @@ pub struct DatabaseConfiguration {
     pub max_connections: u32,
     #[serde(default = "default_acquire_timeout_ms")]
     pub acquire_timeout_ms: u64,
+    /// Upper bound for one statement. Defaults to 10000.
+    #[serde(default = "default_query_timeout_ms")]
+    pub query_timeout_ms: u64,
+}
+
+fn default_query_timeout_ms() -> u64 {
+    10_000
 }
 
 fn default_max_connections() -> u32 {
@@ -56,7 +63,11 @@ pub async fn build_sql_provider(
         file.database.max_connections,
         Duration::from_millis(file.database.acquire_timeout_ms),
     )
-    .await?;
-    file.repository
-        .build_provider(Arc::new(executor), Some(Arc::new(TokioBackground)))
+    .await?
+    .with_query_timeout(Duration::from_millis(file.database.query_timeout_ms));
+    file.repository.build_provider(
+        Arc::new(executor),
+        Some(Arc::new(TokioBackground)),
+        None,
+    )
 }

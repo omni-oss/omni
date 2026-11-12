@@ -1,11 +1,24 @@
 use std::{collections::HashMap, sync::Mutex, time::Duration};
 
+#[cfg(target_arch = "wasm32")]
 use time::OffsetDateTime;
 
 use super::CacheConfiguration;
 
 pub type Clock = fn() -> i128;
 
+/// Monotonic where the platform has one, so a backward wall-clock step cannot
+/// extend a cached authorization result. `Instant` panics on wasm32, which
+/// falls back to the wall clock.
+#[cfg(not(target_arch = "wasm32"))]
+fn system_clock() -> i128 {
+    use std::{sync::OnceLock, time::Instant};
+
+    static START: OnceLock<Instant> = OnceLock::new();
+    START.get_or_init(Instant::now).elapsed().as_nanos() as i128
+}
+
+#[cfg(target_arch = "wasm32")]
 fn system_clock() -> i128 {
     OffsetDateTime::now_utc().unix_timestamp_nanos()
 }

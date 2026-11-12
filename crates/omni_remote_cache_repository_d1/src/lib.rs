@@ -69,7 +69,14 @@ impl D1Executor {
 fn found(value: &Value) -> Result<bool, QueryError> {
     match value.get("found") {
         Some(Value::Bool(b)) => Ok(*b),
-        Some(Value::Number(n)) => Ok(n.as_f64().is_some_and(|f| f != 0.0)),
+        Some(Value::Number(n)) if n.is_i64() || n.is_u64() => {
+            Ok(n.as_i64() != Some(0) && n.as_u64() != Some(0))
+        }
+        Some(Value::Number(n))
+            if n.as_f64().is_some_and(|f| f.fract() == 0.0) =>
+        {
+            Ok(n.as_f64() != Some(0.0))
+        }
         other => Err(QueryError::Shape(format!(
             "`found` must be a boolean or an integer, got {other:?}"
         ))),

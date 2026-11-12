@@ -1,7 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
 use omni_remote_cache_core::{
-    caching::{CachingConfiguration, CachingProvider},
+    caching::{CachingConfiguration, CachingProvider, CachingState},
     hooks::{Background, FailurePolicy, HookSettings},
     providers::DependencyProvider,
 };
@@ -22,6 +22,9 @@ pub struct HooksConfiguration {
     /// Defaults to 10000.
     #[serde(default)]
     pub after_timeout_ms: Option<u64>,
+    /// Most `after` hooks in flight at once. Defaults to 64.
+    #[serde(default)]
+    pub after_max_in_flight: Option<usize>,
     /// What a failing or timed-out `before` hook does. Defaults to
     /// `fail_closed`.
     #[serde(default)]
@@ -41,6 +44,9 @@ impl HooksConfiguration {
             before_policy: self
                 .before_failure_policy
                 .unwrap_or(d.before_policy),
+            after_max_in_flight: self
+                .after_max_in_flight
+                .unwrap_or(d.after_max_in_flight),
         }
     }
 }
@@ -65,11 +71,14 @@ impl RepositoryConfiguration {
         Ok(serde_json::from_str(json)?)
     }
 
-    /// Builds the provider, with the optional caching decorator on top.
+    /// Builds the provider, with the optional caching decorator on top. Pass
+    /// a long-lived `caching_state` when the provider is rebuilt per request
+    /// so cached entries survive between requests.
     pub fn build_provider(
         self,
         executor: Arc<dyn QueryExecutor>,
         background: Option<Arc<dyn Background>>,
+        caching_state: Option<Arc<CachingState>>,
     ) -> eyre::Result<Arc<dyn DependencyProvider>> {
         let hooks = Arc::new(QueryHooks::new(
             executor.clone(),
@@ -85,9 +94,12 @@ impl RepositoryConfiguration {
             provider = provider.with_background(bg);
         }
         let provider: Arc<dyn DependencyProvider> = Arc::new(provider);
-        Ok(match &self.caching {
-            Some(c) => Arc::new(CachingProvider::new(provider, c)),
-            None => provider,
+        Ok(match (&self.caching, caching_state) {
+            (Some(_), Some(state)) => {
+                Arc::new(CachingProvider::with_state(provider, state))
+            }
+            (Some(c), None) => Arc::new(CachingProvider::new(provider, c)),
+            (None, _) => provider,
         })
     }
 }

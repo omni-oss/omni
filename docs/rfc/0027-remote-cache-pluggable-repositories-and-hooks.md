@@ -267,3 +267,10 @@ Where the build differs from the plan above:
 - **Timers.** Core has no runtime, so `Background` also provides `sleep`, used for hook timeouts. Without a `Background`, `after` runs inline and timeouts are not enforced.
 - **D1 strictness.** D1 rejects a query that binds more parameters than it references. Operators must reference every parameter. Verified under `wrangler dev --local`.
 - **Verified.** SQLite, Postgres 16 and MySQL 8 for the executor, and the whole worker under `wrangler dev --local` (auth, validation, usage recorded with `waitUntil`, veto). Postgres and MySQL tests run when `TEST_POSTGRES_URL` or `TEST_MYSQL_URL` is set.
+- **Startup validation.** The first version checks that every query is present and non-empty. It does not prepare queries against the driver, so invalid SQL or a missing column surfaces on first use (a 500, logged). Driver-backed preparation at startup is follow-up work.
+- **`api_key_id` in the hook context.** Not included. Lookups are by hashed key and there is no per-key id, and passing the key would expose the secret. Hooks that need attribution need an id source defined first (follow-up).
+- **Hook concurrency.** `after` hooks are capped by `after_max_in_flight` (default 64); extra ones are skipped and logged. Hooks share the executor with authorization lookups, so operators should size `max_connections` for both.
+- **Statement deadline.** Native statements are bounded by `query_timeout_ms` (default 10000).
+- **TLS.** The SQL crate enables `sqlx/tls-rustls` by default (`tls` feature). Operators must still choose a verifying mode in the URL.
+- **Caching.** Expiry uses a monotonic clock natively and the wall clock on wasm32. On Workers the cache state is held per isolate so entries survive between requests. `CachingProvider` rebuilds ownership validation from its cached repositories.
+- **Tenant isolation of storage.** Artifacts are stored under `org/ws/env` as before this RFC. Codes must be unique across tenants. Adding the tenant to the storage key changes where existing artifacts live and is not part of this change.
