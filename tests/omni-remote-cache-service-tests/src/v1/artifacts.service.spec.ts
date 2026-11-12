@@ -143,12 +143,16 @@ describeTargets("v1.artifacts.api", (target) => {
         if (!target.sql) ctx.skip();
         const sql = target.sql!;
 
-        const put = await putArtifact(target.apiBaseUrl);
+        // A unique digest ties the assertion to this upload's after hook.
+        const digest = crypto.randomUUID();
+        const put = await putArtifact(target.apiBaseUrl, digest);
         expect(put.status).toBeOneOf([200, 204]);
 
         let usage = "";
         for (let i = 0; i < 50 && !usage.includes("stored"); i++) {
-            usage = await sql("SELECT outcome FROM usage");
+            usage = await sql(
+                `SELECT outcome FROM usage WHERE digest = '${digest}' AND op = 'put'`,
+            );
             await sleep(100);
         }
         expect(usage).toContain("stored");
