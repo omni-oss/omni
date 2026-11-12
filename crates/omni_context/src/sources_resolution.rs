@@ -1,8 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use omni_constants::{
-    OMNI_SOURCES_DIR, STORE_SEGMENT, WORKTREE_OMNI, config_file_names,
-};
+use omni_constants::{OMNI_SOURCES_DIR, STORE_SEGMENT};
 use omni_scm::CheckoutLayout;
 
 use crate::{
@@ -77,20 +75,6 @@ impl SourcesResolutionState {
             primary,
             global_default,
         }
-    }
-
-    pub(crate) fn configuration_paths(&self, root: &Path) -> Vec<PathBuf> {
-        if self.explicit.is_some() {
-            return vec![];
-        }
-        std::iter::once(root)
-            .chain(self.primary.as_deref().filter(|primary| *primary != root))
-            .flat_map(|root| {
-                config_file_names(WORKTREE_OMNI)
-                    .into_iter()
-                    .map(move |name| root.join(name))
-            })
-            .collect()
     }
 
     /// Precedence: explicit, this worktree's `sources.dir`, the primary
@@ -269,7 +253,6 @@ mod tests {
             &RealSys,
             |_| panic!("explicit override must not discover"),
         );
-        assert!(state.configuration_paths(&f.root).is_empty());
         assert_eq!(
             state.resolve(&f.root, &RealSys).unwrap(),
             (f.root.join("custom"), SourcesDirectorySource::Explicit)

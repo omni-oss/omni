@@ -52,11 +52,12 @@ pub struct Context<TSys: ContextSys = RealSysSync> {
     cache_dir: PathBuf,
     cache_resolution: CacheResolutionState,
     cache_source: CacheDirectorySource,
-    sources_resolution: SourcesResolutionState,
+    sources_explicit: Option<PathBuf>,
     /// Resolved lazily-failing: an invalid `worktree.omni.*` only matters to
     /// commands that use the store, and an explicit `--cache-dir` still bypasses
     /// worktree configuration errors (RFC 0017).
-    sources: Result<(PathBuf, SourcesDirectorySource), String>,
+    sources:
+        std::sync::OnceLock<Result<(PathBuf, SourcesDirectorySource), String>>,
     tracing_config: TracingConfig,
     sys: TSys,
 }
@@ -149,13 +150,6 @@ impl<TSys: ContextSys> Context<TSys> {
             &sys,
             omni_scm::discover_checkout,
         );
-        let sources_resolution = SourcesResolutionState::new(
-            &root_dir,
-            None,
-            global_sources_dir(),
-            &sys,
-            omni_scm::discover_checkout,
-        );
         Self::new_with_cache_resolution(
             sys,
             env,
@@ -165,7 +159,7 @@ impl<TSys: ContextSys> Context<TSys> {
             override_env_files,
             tracing_config,
             cache_resolution,
-            sources_resolution,
+            None,
             working_dir,
         )
     }
@@ -188,16 +182,17 @@ impl<TSys: ContextSys> Context<TSys> {
             }
             _ => dir,
         };
+        // Validated now: an explicit value is the user's to get right.
         let state = SourcesResolutionState::new(
             &self.root_dir,
-            Some(dir),
+            Some(dir.clone()),
             global_sources_dir(),
             &self.sys,
             |_| unreachable!("explicit sources dir skips discovery"),
         );
-        let (path, source) = state.resolve(&self.root_dir, &self.sys)?;
-        self.sources_resolution = state;
-        self.sources = Ok((path, source));
+        let resolved = state.resolve(&self.root_dir, &self.sys)?;
+        self.sources_explicit = Some(dir);
+        self.sources = std::sync::OnceLock::from(Ok(resolved));
         Ok(self)
     }
 
@@ -211,15 +206,13 @@ impl<TSys: ContextSys> Context<TSys> {
         override_env_files: Option<Vec<PathBuf>>,
         tracing_config: &TracingConfig,
         cache_resolution: CacheResolutionState,
-        sources_resolution: SourcesResolutionState,
+        sources_explicit: Option<PathBuf>,
         working_dir: Option<PathBuf>,
     ) -> Result<Self, ContextError> {
         let root_dir = root_dir.to_path_buf();
         let (cache_dir, cache_source) =
             cache_resolution.resolve(&root_dir, &sys)?;
-        let sources = sources_resolution
-            .resolve(&root_dir, &sys)
-            .map_err(|error| error.to_string());
+
         let workspace = get_workspace_configuration(&env, &root_dir, &sys)?;
         let omni_dir = root_dir.join(OMNI_DIR);
         let remote_cache = get_remote_cache_configuration(&cache_dir, &sys)?;
@@ -235,8 +228,8 @@ impl<TSys: ContextSys> Context<TSys> {
             cache_dir,
             cache_resolution,
             cache_source,
-            sources_resolution,
-            sources,
+            sources_explicit,
+            sources: std::sync::OnceLock::new(),
             env_root_dir_marker: root_marker.to_string(),
             sys,
             tracing_config: tracing_config.clone(),
@@ -272,7 +265,7 @@ impl<TSys: ContextSys> Context<TSys> {
             self.override_env_files.clone(),
             &self.tracing_config,
             self.cache_resolution.clone(),
-            self.sources_resolution.clone(),
+            self.sources_explicit.clone(),
             self.working_dir.clone(),
         )
     }
@@ -289,7 +282,6 @@ impl<TSys: ContextSys> Context<TSys> {
 
         let entries = workspace_files
             .chain(self.cache_resolution.configuration_paths(&self.root_dir))
-            .chain(self.sources_resolution.configuration_paths(&self.root_dir))
             .chain(self.remote_cache_configuration_paths())
             .map(|path| {
                 let stamp = self
@@ -614,9 +606,28 @@ impl<TSys: ContextSys> Context<TSys> {
 
     /// The remote-source store root, resolved from `--sources-dir`, the
     /// worktree configuration, or the per-user default.
+    /// Resolved on first use, not at construction: most commands never touch the
+    /// store, and resolving reads the worktree files, discovers the checkout and
+    /// asks the OS for the per-user directory.
+    fn resolved_sources(
+        &self,
+    ) -> &Result<(PathBuf, SourcesDirectorySource), String> {
+        self.sources.get_or_init(|| {
+            SourcesResolutionState::new(
+                &self.root_dir,
+                self.sources_explicit.clone(),
+                global_sources_dir(),
+                &self.sys,
+                omni_scm::discover_checkout,
+            )
+            .resolve(&self.root_dir, &self.sys)
+            .map_err(|error| error.to_string())
+        })
+    }
+
     #[allow(clippy::result_large_err)]
     pub fn sources_dir(&self) -> Result<&Path, ContextError> {
-        match &self.sources {
+        match self.resolved_sources() {
             Ok((path, _)) => Ok(path),
             Err(message) => {
                 Err(ContextErrorInner::SourcesDirectory(message.clone()).into())
@@ -626,7 +637,10 @@ impl<TSys: ContextSys> Context<TSys> {
 
     /// Where the store location came from, when it resolved.
     pub fn sources_directory_source(&self) -> Option<&SourcesDirectorySource> {
-        self.sources.as_ref().ok().map(|(_, source)| source)
+        self.resolved_sources()
+            .as_ref()
+            .ok()
+            .map(|(_, source)| source)
     }
 
     pub fn scratch_dir(&self) -> PathBuf {
