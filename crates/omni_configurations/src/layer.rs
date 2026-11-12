@@ -337,6 +337,65 @@ impl LoadedLayer {
     }
 }
 
+/// A composed project: the default-filled configuration plus the cache each
+/// task ends up with once project-level settings are inherited.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FinalizedProject {
+    pub config: ProjectConfiguration,
+    /// Effective cache per task name. Empty for `base` projects, which run no
+    /// tasks.
+    pub task_cache: maps::Map<String, CacheConfiguration>,
+}
+
+/// Why a composed project cannot be finalized.
+#[derive(Debug, thiserror::Error)]
+pub enum FinalizeError {
+    #[error(transparent)]
+    MissingName(#[from] MissingProjectName),
+    #[error(transparent)]
+    TaskExtension(#[from] crate::TaskExtensionError),
+}
+
+impl LoadedLayer {
+    /// Finalize a fully composed layer: resolve task extensions and inherit
+    /// project-level cache settings into each task on the presence-aware
+    /// layers, and only then apply defaults and validate the name.
+    pub fn finalize_composed(self) -> Result<FinalizedProject, FinalizeError> {
+        let LoadedLayer {
+            file,
+            dir,
+            mut layer,
+        } = self;
+        if layer.name.is_none() {
+            return Err(MissingProjectName.into());
+        }
+        let mut task_cache = maps::Map::default();
+        if layer.base != Some(true) {
+            if let Some(tasks) = layer.tasks.as_mut() {
+                crate::task_extension::resolve_task_layer_extensions(tasks)?;
+            }
+            let project_cache = layer.cache.clone();
+            let project_effective =
+                project_cache.clone().unwrap_or_default().finalize();
+            for (name, task) in layer.tasks.iter().flat_map(|t| t.iter()) {
+                let effective = match task {
+                    TaskLayer::LongForm(task) if task.cache.is_some() => {
+                        let mut cache = project_cache.clone();
+                        merge::option::recurse(&mut cache, task.cache.clone());
+                        cache.unwrap_or_default().finalize()
+                    }
+                    _ => project_effective.clone(),
+                };
+                task_cache.insert(name.clone(), effective);
+            }
+        }
+        Ok(FinalizedProject {
+            config: layer.finalize(file, dir)?,
+            task_cache,
+        })
+    }
+}
+
 /// A project layer has no `name`, which every finalized project requires.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 #[error("project configuration has no `name`")]
@@ -413,6 +472,25 @@ impl TaskLongFormLayer {
 }
 
 impl TaskLayer {
+    /// Canonical long-form patch of this task, as
+    /// [`TaskConfiguration::into_long_form`] but with every other field left
+    /// absent: a short form is its command plus the implicit upstream
+    /// dependency on its own name.
+    pub fn into_long_form(self, name: &str) -> TaskLongFormLayer {
+        match self {
+            TaskLayer::LongForm(long_form) => *long_form,
+            TaskLayer::ShortForm(command) => TaskLongFormLayer {
+                exec: Some(Replace::new(command)),
+                dependencies: Some(ListConfig::append(vec![
+                    TaskDependencyConfiguration::Upstream {
+                        task: name.to_string(),
+                    },
+                ])),
+                ..Default::default()
+            },
+        }
+    }
+
     /// Finalize keeping the written form: a short form stays short.
     pub fn finalize(self) -> TaskConfiguration {
         match self {
@@ -748,5 +826,129 @@ mod tests {
         assert_eq!(a.dir, OmniPath::new("b"));
         assert_eq!(a.layer.name.as_deref(), Some("a"));
         assert_eq!(a.layer.base, None);
+    }
+
+    fn composed(docs: &[&str]) -> FinalizedProject {
+        let mut it = docs.iter().map(|d| LoadedLayer {
+            layer: layer(d),
+            ..Default::default()
+        });
+        let mut acc = it.next().unwrap();
+        for next in it {
+            acc.merge(next);
+        }
+        acc.finalize_composed().unwrap()
+    }
+
+    /// Where the old behavior was correct (nothing resets an omitted value),
+    /// composing layers equals merging eager configurations.
+    #[test]
+    fn composition_equals_the_eager_merge_where_old_behavior_was_correct() {
+        let docs = [
+            r#"{"name":"a","dependencies":["d1"],"env":{"vars":{"A":"1"}},
+            "cache":{"enabled":true,"key":{"env":["E1"],"files":["f1"]},
+                     "output":{"files":["o1"],"logs":false}},
+            "tasks":{"tpl":{"base":true,"exec":"t","env":{"vars":{"X":"1"}}},
+                     "t":{"extends":"tpl","dependencies":["^t"]},"s":"echo"}}"#,
+            r#"{"name":"b","dependencies":{"prepend":["d0"]},
+            "cache":{"key":{"files":{"exclude":["f2"]}},
+                     "output":{"logs":false}},
+            "tasks":{"t":{"exec":"b","cache":{"output":{"logs":false}}}}}"#,
+            r#"{"name":"c","dependencies":{"replace":["only"]},
+            "tasks":{"s":{"exec":"z"},"u":"u"}}"#,
+        ];
+        let mut e = eager(docs[0]);
+        for d in &docs[1..] {
+            e.merge(eager(d));
+        }
+        e.resolve_task_extensions().unwrap();
+        let got = composed(&docs).config;
+        // Operators are folded differently (`Value` vs `Append`), so compare
+        // effective values. `logs` is the documented divergence.
+        assert_eq!(got.name, e.name);
+        assert_eq!(got.dependencies.into_vec(), e.dependencies.into_vec());
+        assert_eq!(got.env, e.env);
+        assert_eq!(got.cache.enabled, e.cache.enabled);
+        assert_eq!(got.cache.key.env.into_vec(), e.cache.key.env.into_vec());
+        assert_eq!(
+            got.cache.key.files.normalize(),
+            e.cache.key.files.normalize()
+        );
+        assert_eq!(
+            got.cache.output.files.normalize(),
+            e.cache.output.files.normalize()
+        );
+        assert_eq!(
+            got.tasks.keys().collect::<Vec<_>>().len(),
+            e.tasks.keys().count()
+        );
+        for (name, task) in got.tasks.iter() {
+            let (a, b) = (
+                task.clone().into_long_form(name),
+                e.tasks.as_map()[name].clone().into_long_form(name),
+            );
+            assert_eq!(a.exec, b.exec, "{name}");
+            assert_eq!(a.env, b.env, "{name}");
+            assert_eq!(
+                a.dependencies.into_vec(),
+                b.dependencies.into_vec(),
+                "{name}"
+            );
+            assert_eq!(a.cache.output.logs, b.cache.output.logs, "{name}");
+        }
+    }
+
+    #[test]
+    fn omitted_logs_survive_composition_and_task_inheritance() {
+        let out = composed(&[
+            r#"{"name":"a","cache":{"output":{"logs":false}},
+            "tasks":{"t":{"exec":"x"},"s":"echo"}}"#,
+            r#"{"cache":{"key":{"env":["E"]}},
+            "tasks":{"t":{"cache":{"key":{"env":["T"]}}}}}"#,
+        ]);
+        assert!(!out.config.cache.output.logs);
+        assert!(!out.task_cache["t"].output.logs);
+        assert!(!out.task_cache["s"].output.logs);
+    }
+
+    #[test]
+    fn explicit_task_default_overrides_the_project_value() {
+        let out =
+            composed(&[r#"{"name":"a","cache":{"output":{"logs":false}},
+            "tasks":{"t":{"cache":{"output":{"logs":true}}}}}"#]);
+        assert!(out.task_cache["t"].output.logs);
+    }
+
+    #[test]
+    fn project_to_task_cache_keeps_per_side_glob_presence() {
+        let out = composed(&[
+            r#"{"name":"a","cache":{"key":{"files":{"include":["i"],
+            "exclude":["x"]}}},
+            "tasks":{"t":{"cache":{"key":{"files":{"include":{"append":["j"]}}}}}}}"#,
+        ]);
+        let files = out.task_cache["t"].key.files.clone().normalize();
+        assert_eq!(files.exclude.len(), 1);
+        assert_eq!(files.include.len(), 2);
+    }
+
+    #[test]
+    fn base_projects_run_no_tasks_and_skip_task_resolution() {
+        let out = composed(&[
+            r#"{"name":"a","base":true,"tasks":{"t":{"extends":"gone"}}}"#,
+        ]);
+        assert!(out.task_cache.is_empty());
+        assert!(out.config.tasks.as_map().contains_key("t"));
+    }
+
+    #[test]
+    fn unknown_task_extendee_fails_composition() {
+        let l = LoadedLayer {
+            layer: layer(r#"{"name":"a","tasks":{"t":{"extends":"gone"}}}"#),
+            ..Default::default()
+        };
+        assert!(matches!(
+            l.finalize_composed(),
+            Err(FinalizeError::TaskExtension(_))
+        ));
     }
 }

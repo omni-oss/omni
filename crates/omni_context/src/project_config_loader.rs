@@ -6,9 +6,10 @@ use std::{
 use derive_new::new;
 use enum_map::enum_map;
 use omni_configurations::{
-    LoadConfigError, LoadConfigErrorKind, LoadedLayer, ProjectConfiguration,
-    ProjectLayer, types::SingleOrMany,
+    FinalizeError, FinalizedProject, LoadConfigError, LoadConfigErrorKind,
+    LoadedLayer, ProjectLayer, TaskExtensionError, types::SingleOrMany,
 };
+use omni_core::{ExtensionGraph, ExtensionGraphError};
 use omni_types::{OmniPath, Root};
 use path_clean::clean;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
@@ -141,30 +142,50 @@ impl<'a, TSys: ContextSys> ProjectConfigLoader<'a, TSys> {
         Ok(layers)
     }
 
-    /// Load every layer and finalize each on its own.
+    /// Load every layer, compose each project's extension closure by
+    /// replaying the raw layers in extension order, then finalize: task
+    /// extensions and project-to-task inheritance first, defaults and
+    /// validation last.
     #[tracing::instrument(level = Level::DEBUG, skip(self))]
     #[allow(clippy::result_large_err)]
     pub async fn load_project_configs(
         &self,
         project_paths: &[PathBuf],
-    ) -> Result<Vec<ProjectConfiguration>, ProjectConfigLoaderError> {
-        self.load_project_layers(project_paths)
-            .await?
+    ) -> Result<LoadedProjects, ProjectConfigLoaderError> {
+        let layers = self.load_project_layers(project_paths).await?;
+        let mut extension_graph = ExtensionGraph::from_nodes(layers)?;
+        let projects = extension_graph
+            .get_or_process_all_nodes()?
             .into_iter()
-            .map(finalize_layer)
-            .collect()
+            .map(|composed| {
+                let path = composed
+                    .file
+                    .path()
+                    .map(Path::to_path_buf)
+                    .unwrap_or_default();
+                composed.finalize_composed().map_err(|e| match e {
+                    FinalizeError::MissingName(_) => {
+                        ProjectConfigLoaderErrorInner::MissingProjectName {
+                            path,
+                        }
+                    }
+                    FinalizeError::TaskExtension(e) => e.into(),
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(LoadedProjects {
+            projects,
+            extension_graph,
+        })
     }
 }
 
-#[allow(clippy::result_large_err)]
-fn finalize_layer(
-    layer: LoadedLayer,
-) -> Result<ProjectConfiguration, ProjectConfigLoaderError> {
-    let path = layer.file.path().map(Path::to_path_buf).unwrap_or_default();
-    layer
-        .finalize()
-        .map_err(|_| ProjectConfigLoaderErrorInner::MissingProjectName { path })
-        .map_err(Into::into)
+/// Finalized projects and the extension graph they were composed from.
+#[derive(Debug)]
+pub struct LoadedProjects {
+    pub projects: Vec<FinalizedProject>,
+    pub extension_graph: ExtensionGraph<LoadedLayer>,
 }
 
 #[derive(Error, Debug, omni_diagnostic::Diagnostic)]
@@ -194,6 +215,14 @@ pub(crate) enum ProjectConfigLoaderErrorInner {
     #[error(transparent)]
     #[diagnostic(delegate)]
     LoadConfig(#[from] LoadConfigError),
+
+    #[error(transparent)]
+    #[diagnostic(delegate)]
+    ExtensionGraph(#[from] ExtensionGraphError),
+
+    #[error(transparent)]
+    #[diagnostic(delegate)]
+    TaskExtension(#[from] TaskExtensionError),
 
     #[error("no parent dir found for path: {0}")]
     #[diagnostic(skip)]
@@ -422,5 +451,204 @@ mod tests {
             err.kind(),
             ProjectConfigLoaderErrorKind::MissingProjectName
         );
+    }
+
+    async fn compose(root: &Path, files: &[PathBuf]) -> Vec<FinalizedProject> {
+        ProjectConfigLoader::new(&RealSys, root)
+            .load_project_configs(files)
+            .await
+            .unwrap()
+            .projects
+    }
+
+    fn named<'a>(
+        projects: &'a [FinalizedProject],
+        name: &str,
+    ) -> &'a FinalizedProject {
+        projects.iter().find(|p| p.config.name == name).unwrap()
+    }
+
+    fn deps(p: &FinalizedProject) -> Vec<String> {
+        p.config.dependencies.clone().into_vec_inner()
+    }
+
+    #[tokio::test]
+    async fn base_replace_then_child_append_replays_in_order() {
+        let dir = tmp();
+        let root = dir.path();
+        write(
+            root,
+            "lib/a.yaml",
+            "name: a\nbase: true\ndependencies: [x]\n",
+        );
+        write(
+            root,
+            "lib/b.yaml",
+            "name: b\nbase: true\nextends: a.yaml\ndependencies:\n  replace: [base]\n",
+        );
+        let app = write(
+            root,
+            "app/project.omni.yaml",
+            "name: app\nextends: ../lib/b.yaml\ndependencies:\n  append: [child]\n",
+        );
+
+        let projects = compose(root, &[app]).await;
+
+        assert_eq!(deps(named(&projects, "app")), ["base", "child"]);
+    }
+
+    #[tokio::test]
+    async fn multiple_bases_apply_in_order_and_diamond_ancestor_applies_once() {
+        let dir = tmp();
+        let root = dir.path();
+        write(
+            root,
+            "lib/top.yaml",
+            "name: top\nbase: true\ndependencies: [top]\n",
+        );
+        write(
+            root,
+            "lib/l.yaml",
+            "name: l\nbase: true\nextends: top.yaml\ndependencies:\n  append: [l]\n",
+        );
+        write(
+            root,
+            "lib/r.yaml",
+            "name: r\nbase: true\nextends: top.yaml\ndependencies:\n  append: [r]\n",
+        );
+        let app = write(
+            root,
+            "app/project.omni.yaml",
+            "name: app\nextends: [../lib/l.yaml, ../lib/r.yaml]\n",
+        );
+
+        let projects = compose(root, &[app]).await;
+
+        let d = deps(named(&projects, "app"));
+        assert_eq!(d.iter().filter(|x| *x == "top").count(), 1, "{d:?}");
+        assert!(d.contains(&"l".to_string()) && d.contains(&"r".to_string()));
+    }
+
+    #[tokio::test]
+    async fn explicit_values_survive_a_child_that_omits_them() {
+        let dir = tmp();
+        let root = dir.path();
+        write(
+            root,
+            "lib/base.yaml",
+            "name: base\nbase: true\ncache:\n  output:\n    logs: false\ntasks:\n  t:\n    exec: x\n",
+        );
+        let app = write(
+            root,
+            "app/project.omni.yaml",
+            "name: app\nextends: ../lib/base.yaml\ncache:\n  key:\n    env: [E]\ntasks:\n  t:\n    cache:\n      key:\n        env: [T]\n",
+        );
+
+        let projects = compose(root, &[app]).await;
+
+        let app = named(&projects, "app");
+        assert!(!app.config.cache.output.logs);
+        assert!(!app.task_cache["t"].output.logs);
+    }
+
+    #[tokio::test]
+    async fn an_explicit_default_in_the_child_wins() {
+        let dir = tmp();
+        let root = dir.path();
+        write(
+            root,
+            "lib/base.yaml",
+            "name: base\nbase: true\ncache:\n  output:\n    logs: false\n",
+        );
+        let app = write(
+            root,
+            "app/project.omni.yaml",
+            "name: app\nextends: ../lib/base.yaml\ncache:\n  output:\n    logs: true\n",
+        );
+
+        let projects = compose(root, &[app]).await;
+
+        assert!(named(&projects, "app").config.cache.output.logs);
+    }
+
+    #[tokio::test]
+    async fn defaults_apply_only_after_composition() {
+        let dir = tmp();
+        let root = dir.path();
+        let app = write(
+            root,
+            "app/project.omni.yaml",
+            "name: app\ntasks:\n  t: echo\n",
+        );
+
+        let projects = compose(root, &[app]).await;
+
+        let app = named(&projects, "app");
+        assert!(app.task_cache["t"].output.logs);
+        assert!(!app.config.base);
+    }
+
+    #[tokio::test]
+    async fn a_child_may_take_its_name_from_a_base() {
+        let dir = tmp();
+        let root = dir.path();
+        write(root, "lib/base.yaml", "name: shared\nbase: true\n");
+        let app =
+            write(root, "app/project.omni.yaml", "extends: ../lib/base.yaml\n");
+
+        let projects = compose(root, &[app]).await;
+
+        assert!(projects.iter().any(|p| p.config.name == "shared"));
+    }
+
+    #[tokio::test]
+    async fn a_project_without_any_name_fails_at_finalization() {
+        let dir = tmp();
+        let root = dir.path();
+        let app = write(root, "app/project.omni.yaml", "description: d\n");
+
+        let err = ProjectConfigLoader::new(&RealSys, root)
+            .load_project_configs(&[app])
+            .await
+            .unwrap_err();
+
+        assert_eq!(
+            err.kind(),
+            ProjectConfigLoaderErrorKind::MissingProjectName
+        );
+    }
+
+    #[tokio::test]
+    async fn base_is_declaration_local() {
+        let dir = tmp();
+        let root = dir.path();
+        write(root, "lib/base.yaml", "name: base\nbase: true\n");
+        let app = write(
+            root,
+            "app/project.omni.yaml",
+            "name: app\nextends: ../lib/base.yaml\n",
+        );
+
+        let projects = compose(root, &[app]).await;
+
+        assert!(!named(&projects, "app").config.base);
+        assert!(named(&projects, "base").config.base);
+    }
+
+    #[tokio::test]
+    async fn task_extension_keeps_omitted_fields_absent() {
+        let dir = tmp();
+        let root = dir.path();
+        let app = write(
+            root,
+            "app/project.omni.yaml",
+            "name: app\ncache:\n  output:\n    logs: false\ntasks:\n  tpl:\n    base: true\n    exec: x\n  t:\n    extends: tpl\n",
+        );
+
+        let projects = compose(root, &[app]).await;
+
+        let app = named(&projects, "app");
+        assert!(!app.task_cache["t"].output.logs);
+        assert!(!app.config.tasks.as_map().contains_key("tpl"));
     }
 }
