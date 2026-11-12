@@ -22,9 +22,13 @@ use crate::{Backoff, Jitter, RetryPolicy};
 )]
 #[serde(rename_all = "kebab-case")]
 #[strum(serialize_all = "kebab-case")]
+/// Which backoff formula to use.
 pub enum RetryStrategy {
+    /// The same delay every time.
     Fixed,
+    /// The delay grows by a constant step.
     Linear,
+    /// The delay is multiplied by a factor every time.
     Exponential,
 }
 
@@ -41,9 +45,13 @@ pub enum RetryStrategy {
     JsonSchema,
 )]
 #[serde(rename_all = "kebab-case")]
+/// Randomization applied to each delay.
 pub enum JitterConfiguration {
+    /// No randomization.
     None,
+    /// Between zero and the delay.
     Full,
+    /// Between half the delay and the delay.
     Equal,
 }
 
@@ -75,6 +83,7 @@ impl From<JitterConfiguration> for Jitter {
 pub struct ConfigDuration(#[serde(with = "humantime_serde")] pub Duration);
 
 #[derive(Debug, Clone, thiserror::Error, PartialEq)]
+/// Why a retry configuration is invalid.
 pub enum RetryConfigurationError {
     #[error("`step` is only valid for the `linear` strategy")]
     StepWithoutLinear,
