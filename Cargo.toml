@@ -194,6 +194,7 @@ omni_tool = { path = "crates/omni_tool" }
 omni_tool_configurations = { path = "crates/omni_tool_configurations" }
 omni_projections = { path = "crates/omni_projections" }
 omni_projection_configurations = { path = "crates/omni_projection_configurations" }
+omni_source_configurations = { path = "crates/omni_source_configurations" }
 omni_glob = { path = "crates/omni_glob" }
 omni_glob_config = { path = "crates/omni_glob_config" }
 omni_meta = { path = "crates/omni_meta" }

@@ -60,11 +60,11 @@ pub struct CachedTaskExecution {
 
     #[new(into)]
     #[serde(default = "default_tries")]
-    pub tries: u8,
+    pub tries: u16,
 }
 
 #[inline(always)]
-fn default_tries() -> u8 {
+fn default_tries() -> u16 {
     1
 }
 

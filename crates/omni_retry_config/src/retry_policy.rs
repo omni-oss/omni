@@ -1,24 +1,36 @@
 use std::time::Duration;
 
+/// Randomization applied to a computed delay.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Jitter {
+    /// Use the delay as computed.
     None,
+    /// Pick uniformly between zero and the delay.
     Full,
+    /// Pick uniformly between half the delay and the delay.
     Equal,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// How the delay grows between retries.
 pub enum Backoff {
+    /// Always wait `base`.
     Fixed,
+    /// Wait `base`, plus `step` for every earlier retry.
     Linear { step: Duration },
+    /// Wait `base`, multiplied by `factor` for every earlier retry.
     Exponential { factor: f64 },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// A fully resolved retry policy with every default filled in.
 pub struct RetryPolicy {
+    /// Retries allowed after the first attempt.
     pub max_retries: u8,
     pub backoff: Backoff,
+    /// Delay before the first retry.
     pub base: Duration,
+    /// Upper bound for any single delay, applied before jitter.
     pub max_delay: Duration,
     pub jitter: Jitter,
 }
@@ -40,7 +52,7 @@ impl RetryPolicy {
     ///
     /// `sample` is a uniform random number in `[0, 1)` used for jitter; it is
     /// ignored when jitter is `None`.
-    pub fn delay(&self, retry_n: u8, sample: f64) -> Duration {
+    pub fn delay(&self, retry_n: u16, sample: f64) -> Duration {
         let n = u32::from(retry_n.saturating_sub(1));
         let raw = match self.backoff {
             Backoff::Fixed => self.base,
@@ -73,8 +85,19 @@ mod tests {
         Duration::from_secs(s)
     }
 
-    fn delays(p: &RetryPolicy, n: u8) -> Vec<Duration> {
+    fn delays(p: &RetryPolicy, n: u16) -> Vec<Duration> {
         (1..=n).map(|i| p.delay(i, 0.5)).collect()
+    }
+
+    #[test]
+    fn delay_accepts_attempts_past_255() {
+        let p = RetryPolicy {
+            backoff: Backoff::Linear { step: secs(1) },
+            base: secs(1),
+            max_delay: secs(1000),
+            ..RetryPolicy::default()
+        };
+        assert_eq!(p.delay(300, 0.0), secs(300));
     }
 
     #[test]
