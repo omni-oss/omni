@@ -315,8 +315,7 @@ mod tests {
             false,
             false,
             vec![],
-            None,
-            None,
+            Default::default(),
         )
     }
 

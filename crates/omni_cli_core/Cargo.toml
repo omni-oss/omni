@@ -83,6 +83,7 @@ omni_redact = { workspace = true }
 omni_notice = { workspace = true }
 omni_diagnostic = { workspace = true }
 omni_task_executor = { workspace = true }
+omni_retry_config = { workspace = true }
 omni_task_output_logs = { workspace = true }
 clap_declspec = { workspace = true }
 atty = { workspace = true }

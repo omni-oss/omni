@@ -760,8 +760,11 @@ describe("+run-filters @e2e (retry overrides)", () => {
                     tasks: {
                         flaky: {
                             exec: "false",
-                            max_retries: 3,
-                            retry_interval: "5ms",
+                            retry: {
+                                max_retries: 3,
+                                strategy: "fixed",
+                                base: "5ms",
+                            },
                         },
                     },
                 },
@@ -769,7 +772,7 @@ describe("+run-filters @e2e (retry overrides)", () => {
         };
     }
 
-    it("`-r/--retry` overrides the task's `max_retries`", async () => {
+    it("`-r/--retry` overrides the task's `retry.max_retries`", async () => {
         const ws = makeWorkspace(flakySpec());
 
         const result = await runOmni(
@@ -779,14 +782,17 @@ describe("+run-filters @e2e (retry overrides)", () => {
 
         expect(result).toHaveFailed();
         // `-r 0` overrides `max_retries: 3`, so there are no retry attempts.
-        expect(result.stdout).not.toContain("retrying...");
+        const attempts = (
+            result.stderr.match(/retrying( in \S+)?\.\.\./g) ?? []
+        ).length;
+        expect(attempts).toBe(0);
     });
 
-    it("`--retry-interval` rejects a non-duration value", async () => {
+    it("`-r/--retry` rejects an invalid spec", async () => {
         const ws = makeWorkspace(flakySpec());
 
         const result = await runOmni(
-            ["run", "flaky", "--retry-interval", "notaduration"],
+            ["run", "flaky", "-r", "3,base=notaduration"],
             {
                 cwd: ws.cwd,
             },

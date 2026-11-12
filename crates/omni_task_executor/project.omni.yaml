@@ -17,6 +17,7 @@ tasks:
 
 dependencies:
   - omni_core
+  - omni_retry_config
   - omni_configurations
   - omni_expressions
   - omni_hasher

@@ -31,10 +31,13 @@ required-features = ["bench-support"]
 [dependencies]
 eyre = { workspace = true }
 thiserror = { workspace = true }
+merge = { workspace = true }
+rand = { workspace = true }
 strum = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 omni_core = { workspace = true }
+omni_retry_config = { workspace = true }
 omni_command_config = { workspace = true }
 
 tracing = { workspace = true }
