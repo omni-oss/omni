@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use maps::Map;
 
-use crate::CommandConfig;
+use crate::{CommandConfig, CommandOperand};
 
 /// Errors produced while resolving a [`CommandConfig`] into a concrete argv.
 #[derive(Debug, thiserror::Error, omni_diagnostic::Diagnostic)]
@@ -208,6 +208,14 @@ where
 
             Ok(Command::from_argv(argv))
         }
+        CommandConfig::Operands(items) => {
+            let argv = items
+                .iter()
+                .map(|op| resolve_operand(op, tera_ctx, env_vars, &transform))
+                .collect::<Result<Vec<String>, ResolveError>>()?;
+
+            Ok(Command::from_argv(argv))
+        }
         CommandConfig::Argv(items) => {
             let argv = items
                 .iter()
@@ -226,6 +234,90 @@ where
             Ok(Command::from_argv(argv))
         }
     }
+}
+
+fn expand_env<'a>(
+    s: Cow<'a, str>,
+    env_vars: Option<&Map<String, String>>,
+) -> Cow<'a, str> {
+    match env_vars {
+        Some(vars) => Cow::Owned(::env::expand(s.as_ref(), vars)),
+        None => s,
+    }
+}
+
+fn resolve_operand<F>(
+    op: &CommandOperand,
+    tera_ctx: Option<&omni_tera::Context>,
+    env_vars: Option<&Map<String, String>>,
+    transform: &F,
+) -> Result<String, ResolveError>
+where
+    F: for<'s> Fn(Cow<'s, str>) -> Cow<'s, str>,
+{
+    match op {
+        CommandOperand::Literal(s) => {
+            Ok(transform(Cow::Borrowed(s.as_str())).into_owned())
+        }
+        CommandOperand::Expression(s) => {
+            let e = expand_env(maybe_render(s, tera_ctx)?, env_vars);
+            Ok(transform(e).into_owned())
+        }
+        CommandOperand::Interpolated {
+            expression,
+            literals,
+        } => {
+            // Render with opaque placeholders, then put the real values in
+            // after every interpretation step has run.
+            let names: Vec<&String> = literals.keys().collect();
+            let rendered = match tera_ctx {
+                Some(base) => {
+                    let mut ctx = base.clone();
+                    for (i, name) in names.iter().enumerate() {
+                        ctx.insert(name.to_string(), &placeholder(i));
+                    }
+                    omni_tera::one_off(expression, "command", &ctx)?
+                }
+                None => expression.clone(),
+            };
+            let expanded = expand_env(Cow::Owned(rendered), env_vars);
+            let values: Vec<&String> = literals.values().collect();
+            let substituted = substitute_placeholders(&expanded, &values);
+            Ok(transform(Cow::Owned(substituted)).into_owned())
+        }
+    }
+}
+
+const PLACEHOLDER_MARK: char = '\u{1}';
+
+fn placeholder(index: usize) -> String {
+    format!("{PLACEHOLDER_MARK}{index}{PLACEHOLDER_MARK}")
+}
+
+/// Single pass, so substituted values are never rescanned.
+fn substitute_placeholders(s: &str, values: &[&String]) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(start) = rest.find(PLACEHOLDER_MARK) {
+        out.push_str(&rest[..start]);
+        let after = &rest[start + 1..];
+        let replaced = after.find(PLACEHOLDER_MARK).and_then(|end| {
+            let idx = after[..end].parse::<usize>().ok()?;
+            Some((values.get(idx)?, end))
+        });
+        match replaced {
+            Some((value, end)) => {
+                out.push_str(value);
+                rest = &after[end + 1..];
+            }
+            None => {
+                out.push(PLACEHOLDER_MARK);
+                rest = after;
+            }
+        }
+    }
+    out.push_str(rest);
+    out
 }
 
 #[cfg(test)]
@@ -439,5 +531,130 @@ mod tests {
     #[test]
     fn display_of_empty_is_empty() {
         assert_eq!(Command::default().to_string(), "");
+    }
+
+    const NASTY: &[&str] = &[
+        "$VAR",
+        "${VAR}",
+        "$(touch /tmp/omni-r03-pwned)",
+        "{{ x }}",
+        "{% if true %}y{% endif %}",
+        "{# c #}",
+        "a\\b\\n",
+        "--flag=value",
+        "-rf",
+        "a b 'c' \"d\"",
+        "x;y|z&&w",
+        "",
+    ];
+
+    fn lit_resolve(v: &str, ctx: bool) -> Command {
+        let mut c = Context::new();
+        c.insert("x", "RENDERED");
+        let e = env(&[("VAR", "EXPANDED")]);
+        resolve_command(
+            &CommandConfig::operands([
+                CommandOperand::literal("echo"),
+                CommandOperand::literal(v),
+            ]),
+            ctx.then_some(&c),
+            Some(&e),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn literal_is_never_interpreted() {
+        for v in NASTY {
+            for ctx in [true, false] {
+                let r = lit_resolve(v, ctx);
+                assert_eq!(
+                    r.to_argv(),
+                    vec!["echo".to_string(), v.to_string()]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn same_text_expression_is_interpreted() {
+        let mut c = Context::new();
+        c.insert("x", "RENDERED");
+        let e = env(&[("VAR", "EXPANDED")]);
+        let r = resolve_command(
+            &CommandConfig::operands([
+                CommandOperand::expression("echo"),
+                CommandOperand::expression("$VAR"),
+                CommandOperand::expression("{{ x }}"),
+            ]),
+            Some(&c),
+            Some(&e),
+        )
+        .unwrap();
+        assert_eq!(r.to_argv(), vec!["echo", "EXPANDED", "RENDERED"]);
+    }
+
+    #[test]
+    fn literal_with_spaces_is_not_split() {
+        let r = lit_resolve("a b", false);
+        assert_eq!(r.args, vec!["a b"]);
+    }
+
+    #[test]
+    fn literal_is_still_redacted_by_transform() {
+        let r = resolve_command_with(
+            &CommandConfig::operands([
+                CommandOperand::literal("echo"),
+                CommandOperand::literal("secret"),
+            ]),
+            None,
+            None,
+            |s| Cow::Owned(s.replace("secret", "***")),
+        )
+        .unwrap();
+        assert_eq!(r.args, vec!["***"]);
+    }
+
+    #[test]
+    fn literal_display_shows_real_argv() {
+        let r = lit_resolve("$(rm -rf /)", false);
+        assert_eq!(r.to_string(), "echo '$(rm -rf /)'");
+    }
+
+    #[test]
+    fn interpolated_protects_bound_data_in_authored_expression() {
+        // C16: inferred data inside an authored expression.
+        let mut c = Context::new();
+        c.insert("other", "O");
+        let e = env(&[("HOME", "/home/u")]);
+        for v in NASTY {
+            let r = resolve_command(
+                &CommandConfig::operands([
+                    CommandOperand::literal("run"),
+                    CommandOperand::interpolated(
+                        "$HOME/{{ other }}/{{ name }}/{{ name }}",
+                        [("name", *v)],
+                    ),
+                ]),
+                Some(&c),
+                Some(&e),
+            )
+            .unwrap();
+            assert_eq!(r.args, vec![format!("/home/u/O/{v}/{v}")]);
+        }
+    }
+
+    #[test]
+    fn interpolated_value_containing_placeholder_is_not_rescanned() {
+        let r = resolve_command(
+            &CommandConfig::operands([CommandOperand::interpolated(
+                "{{ a }}{{ b }}",
+                [("a", "\u{1}1\u{1}"), ("b", "B")],
+            )]),
+            Some(&Context::new()),
+            None,
+        )
+        .unwrap();
+        assert_eq!(r.prog.as_deref(), Some("\u{1}1\u{1}B"));
     }
 }
