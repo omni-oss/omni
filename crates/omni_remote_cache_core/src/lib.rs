@@ -1,6 +1,7 @@
 #![feature(decl_macro)]
 #![allow(clippy::redundant_field_names)]
 
+pub mod caching;
 pub mod config;
 pub mod data;
 pub mod data_impl;
