@@ -38,21 +38,7 @@ pub async fn clone_repo(
         .main_worktree(Discard, &interrupt::IS_INTERRUPTED)
         .map_err(gix::Error::from_error)?;
 
-    // `rev` may resolve to an annotated tag (or a chain of tags) rather than a
-    // commit directly, so peel through any tags to the underlying commit.
-    let commit = repo
-        .rev_parse_single(rev.unwrap_or("HEAD"))
-        .map_err(gix::Error::from_error)?
-        .object()
-        .map_err(gix::Error::from_error)?
-        .peel_to_commit()
-        .map_err(gix::Error::from_error)?;
-    let oid = commit.id;
-    let tree_id = commit.tree().map_err(gix::Error::from_error)?.id();
-
-    let mut index_state =
-        index::State::from_tree(&tree_id, &repo.objects, Default::default())?;
-
+    let oid = peel_commit(&repo, rev.unwrap_or("HEAD"))?;
     repo.reference(
         "HEAD",
         oid,
@@ -64,22 +50,8 @@ pub async fn clone_repo(
     let workdir = repo
         .workdir()
         .ok_or_else(|| eyre::eyre!("repository has no workdir"))?;
-
-    let (pipeline, _) = repo.filter_pipeline(Some(oid))?;
-    let (filters, _) = pipeline.into_parts();
-
-    worktree::state::checkout(
-        &mut index_state,
-        workdir,
-        repo.objects.clone(),
-        &progress::Discard,
-        &progress::Discard,
-        &interrupt::IS_INTERRUPTED,
-        Options {
-            overwrite_existing: true, // overwrite files from the HEAD checkout
-            ..Options::new(filters)
-        },
-    )?;
+    // Overwrite the files of the HEAD checkout the clone made.
+    write_commit_tree(&repo, oid, workdir)?;
 
     Ok(CloneInfo::new(oid.to_string()))
 }
@@ -180,17 +152,24 @@ pub async fn fetch_bare(
 /// repository does not have it.
 pub fn resolve_commit(bare_dir: &Path, rev: &str) -> Option<String> {
     let repo = gix::open(bare_dir).ok()?;
-    // `rev` may resolve to an annotated tag (or a chain of tags) rather than a
-    // commit directly, so peel through any tags to the underlying commit.
-    let id = repo
+    peel_commit(&repo, rev).ok().map(|id| id.to_string())
+}
+
+/// The commit `rev` names. `rev` may resolve to an annotated tag (or a chain of
+/// tags) rather than a commit directly, so peel through any tags to the
+/// underlying commit.
+fn peel_commit(
+    repo: &gix::Repository,
+    rev: &str,
+) -> Result<gix::ObjectId, Error> {
+    Ok(repo
         .rev_parse_single(rev)
-        .ok()?
+        .map_err(gix::Error::from_error)?
         .object()
-        .ok()?
+        .map_err(gix::Error::from_error)?
         .peel_to_commit()
-        .ok()?
-        .id;
-    Some(id.to_string())
+        .map_err(gix::Error::from_error)?
+        .id)
 }
 
 /// Write the files of `commit` into `dest` as a plain directory (no `.git`),
@@ -206,8 +185,21 @@ pub async fn export_tree(
     let oid = gix::ObjectId::from_hex(commit.as_bytes()).map_err(|e| {
         Error::custom(format!("invalid commit id {commit}: {e}"))
     })?;
+    sys.fs_create_dir_all_async(dest).await?;
+    write_commit_tree(&repo, oid, dest)
+}
+
+/// Write the files of `commit` (a commit id, or a tag that peels to one) into
+/// `dest`, applying the repository's filters (line endings) like a checkout
+/// does and overwriting what is there. Shared by the full clone and the tree
+/// export so the two cannot drift.
+fn write_commit_tree(
+    repo: &gix::Repository,
+    commit: gix::ObjectId,
+    dest: &Path,
+) -> Result<(), Error> {
     let tree_id = repo
-        .find_object(oid)
+        .find_object(commit)
         .map_err(gix::Error::from_error)?
         .peel_to_commit()
         .map_err(gix::Error::from_error)?
@@ -217,7 +209,6 @@ pub async fn export_tree(
 
     let mut index_state =
         index::State::from_tree(&tree_id, &repo.objects, Default::default())?;
-    sys.fs_create_dir_all_async(dest).await?;
 
     // The filter pipeline is keyed by the tree, not the commit.
     let (pipeline, _) = repo.filter_pipeline(Some(tree_id))?;

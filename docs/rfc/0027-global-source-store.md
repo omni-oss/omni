@@ -394,13 +394,13 @@ must name what went wrong.
    unavailable. When unavailable:
    - locally: skip and print a stable marker,
      `SKIPPED[capability=reflink fs=ext4 dir=/tmp/x]`;
-   - when `OMNI_REQUIRE_CAPABILITIES` lists it (comma list, or `all`): **panic**
+   - when `OMNI_TEST_REQUIRE_CAPABILITIES` lists it (comma list, or `all`): **panic**
      with `REQUIRED CAPABILITY UNAVAILABLE: reflink fs=ext4 dir=/tmp/x`.
    The existing `OMNI_REQUIRE_OS_SANDBOX` stays as an alias for the
    `os-sandbox` capability.
 3. **Each CI lane declares what it must prove.** Implemented in
    `.github/workflows/run-omni-jobs.yaml` (the multiplatform job sets
-   `OMNI_REQUIRE_CAPABILITIES` per target):
+   `OMNI_TEST_REQUIRE_CAPABILITIES` per target):
    - Linux (x86_64): `symlink,hardlink,git,reflink`. Reflink runs on a Btrfs loop
      volume mounted at `/mnt/omni-reflink` (`OMNI_TEST_REFLINK_DIR`); default
      runner disks are ext4. aarch64 Linux tests run under `cross` in a container

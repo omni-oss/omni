@@ -83,7 +83,7 @@ fn executable_output(
 }
 
 /// Landlock is the Linux OS sandbox. A lane that lists `os-sandbox` in
-/// `OMNI_REQUIRE_CAPABILITIES` fails here instead of skipping.
+/// `OMNI_TEST_REQUIRE_CAPABILITIES` fails here instead of skipping.
 fn landlock_available() -> bool {
     omni_test_capabilities::gate(
         "os-sandbox",

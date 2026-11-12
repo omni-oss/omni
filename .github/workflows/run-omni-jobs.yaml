@@ -179,9 +179,9 @@ jobs:
                         // so reflink is not required there; the fall-back tests
                         // run on every lane.
                         if (targetName === 'x86_64-unknown-linux-gnu' || targetName.includes('apple-darwin')) {
-                            matrixMap[key].env.OMNI_REQUIRE_CAPABILITIES = 'symlink,hardlink,git,reflink';
+                            matrixMap[key].env.OMNI_TEST_REQUIRE_CAPABILITIES = 'symlink,hardlink,git,reflink';
                         } else if (targetName.includes('windows')) {
-                            matrixMap[key].env.OMNI_REQUIRE_CAPABILITIES = 'symlink,hardlink,git';
+                            matrixMap[key].env.OMNI_TEST_REQUIRE_CAPABILITIES = 'symlink,hardlink,git';
                         }
                         // aarch64 Linux tests run under `cross` in a container that
                         // does not see the host volume or these variables.
@@ -245,7 +245,7 @@ jobs:
       # Jobs without a platform matrix run on the default Linux runner. Tests
       # gated on a capability (RFC 0027, section 10) must fail there rather than
       # skip: symlinks, hard links and a `git` binary are always available.
-      OMNI_REQUIRE_CAPABILITIES: symlink,hardlink,git
+      OMNI_TEST_REQUIRE_CAPABILITIES: symlink,hardlink,git
     steps:
       - name: Expose Secrets with ENV_ Prefix
         shell: bash

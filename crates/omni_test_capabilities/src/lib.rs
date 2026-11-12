@@ -7,11 +7,11 @@
 //! - capability available: returns `true`, run the body;
 //! - unavailable and not required: prints a stable `SKIPPED[...]` marker and
 //!   returns `false`, so the test returns early;
-//! - unavailable and listed in `OMNI_REQUIRE_CAPABILITIES`: panics with
+//! - unavailable and listed in `OMNI_TEST_REQUIRE_CAPABILITIES`: panics with
 //!   `REQUIRED CAPABILITY UNAVAILABLE: ...`, so a CI lane that is supposed to
 //!   prove the capability goes red instead of green.
 //!
-//! `OMNI_REQUIRE_CAPABILITIES` is a comma-separated list of capability names,
+//! `OMNI_TEST_REQUIRE_CAPABILITIES` is a comma-separated list of capability names,
 //! or `all`. `OMNI_REQUIRE_OS_SANDBOX` (set to anything) is kept as an alias
 //! for `os-sandbox`.
 #![allow(clippy::disallowed_macros)]
@@ -23,7 +23,7 @@ use std::{
 };
 
 /// Env var naming the capabilities a CI lane must prove.
-pub const REQUIRE_ENV: &str = "OMNI_REQUIRE_CAPABILITIES";
+pub const REQUIRE_ENV: &str = "OMNI_TEST_REQUIRE_CAPABILITIES";
 /// Legacy alias for requiring `os-sandbox`.
 pub const REQUIRE_OS_SANDBOX_ENV: &str = "OMNI_REQUIRE_OS_SANDBOX";
 /// Directory (on a reflink-capable filesystem) for reflink scratch space.

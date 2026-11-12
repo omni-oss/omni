@@ -6,7 +6,7 @@
 //! Tests that need a reflink-capable filesystem or a second volume are gated
 //! with `omni_test_capabilities`: they skip with a `SKIPPED[...]` marker locally
 //! and fail on a CI lane that lists the capability in
-//! `OMNI_REQUIRE_CAPABILITIES`. The fall-back tests use the in-memory
+//! `OMNI_TEST_REQUIRE_CAPABILITIES`. The fall-back tests use the in-memory
 //! filesystem, which models a volume that cannot reflink, so they run on every
 //! lane.
 
