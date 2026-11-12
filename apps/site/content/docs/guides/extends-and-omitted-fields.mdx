@@ -8,8 +8,11 @@ a file leaves out keeps the value from the files below it. A single-value field
 a file states, even with its default value, overrides them. A plain list
 replaces the inherited list; `append`, `prepend` and `merge` combine with it. A
 plain dictionary combines with the inherited entries, so an empty `env.vars`
-does not clear inherited variables; use `replace` to clear them. Defaults apply
-once, after every file has been combined.
+does not clear inherited variables; use `replace` to clear them. The
+`only` and `except` lists under `redact` are an exception: they are always
+combined, so a child's empty `except: []` does not remove entries inherited
+from a file it extends. Defaults apply once, after every file has been
+combined.
 
 This is a behavior change from earlier versions, which filled in defaults for
 each file before combining. Three cases are affected.
