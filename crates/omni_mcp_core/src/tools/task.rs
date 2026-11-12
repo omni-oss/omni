@@ -28,6 +28,9 @@ where
         &self,
         params: TaskRunParams,
     ) -> eyre::Result<TaskRunResult> {
+        if let Some(retry) = &params.retry {
+            retry.check_layer()?;
+        }
         let include_logs = params.include_logs.unwrap_or_default();
         let filters = TaskRunFilters {
             meta: params.meta,
@@ -37,6 +40,7 @@ where
             dir: params.dir,
             dry_run: params.dry_run,
             args: params.args,
+            retry: params.retry,
             ..Default::default()
         };
         let req = TaskRunRequest {
@@ -81,11 +85,15 @@ where
         &self,
         params: ExecCommandParams,
     ) -> eyre::Result<ExecCommandResult> {
+        if let Some(retry) = &params.retry {
+            retry.check_layer()?;
+        }
         let include_logs = params.include_logs.unwrap_or_default();
         let filters = TaskRunFilters {
             project: params.project,
             dir: params.dir,
             dry_run: params.dry_run,
+            retry: params.retry,
             ..Default::default()
         };
         let req = ExecRequest {

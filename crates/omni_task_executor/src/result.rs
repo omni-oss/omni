@@ -24,7 +24,7 @@ pub enum TaskExecutionResult {
         cache_hit: bool,
         #[new(default)]
         details: Option<TaskDetails>,
-        tries: u8,
+        tries: u16,
         #[new(default)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         cache_status: Option<CacheStatus>,
@@ -34,7 +34,7 @@ pub enum TaskExecutionResult {
         error: String,
         #[new(default)]
         details: Option<TaskDetails>,
-        tries: u8,
+        tries: u16,
         #[new(default)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         cache_status: Option<CacheStatus>,

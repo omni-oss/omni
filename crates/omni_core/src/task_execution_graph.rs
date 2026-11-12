@@ -2,11 +2,11 @@ use std::{
     collections::{HashMap, HashSet},
     hash::{DefaultHasher, Hash, Hasher as _},
     path::{Path, PathBuf},
-    time::Duration,
 };
 
 use omni_command_config::CommandConfig;
 use omni_config_types::TeraExprBoolean;
+use omni_retry_config::RetryConfiguration;
 use petgraph::{
     Direction,
     algo::has_path_connecting,
@@ -42,8 +42,7 @@ pub struct TaskExecutionNode {
     enabled: TeraExprBoolean,
     interactive: bool,
     persistent: bool,
-    max_retries: Option<u8>,
-    retry_interval: Option<Duration>,
+    retry: RetryConfiguration,
 }
 
 impl TaskExecutionNode {
@@ -58,8 +57,7 @@ impl TaskExecutionNode {
         enabled: TeraExprBoolean,
         interactive: bool,
         persistent: bool,
-        max_retries: Option<u8>,
-        retry_interval: Option<Duration>,
+        retry: RetryConfiguration,
     ) -> Self {
         let project_name = project_name.into();
         let task_name = task_name.into();
@@ -74,8 +72,7 @@ impl TaskExecutionNode {
             enabled,
             interactive,
             persistent,
-            max_retries,
-            retry_interval,
+            retry,
         }
     }
 }
@@ -121,15 +118,11 @@ impl TaskExecutionNode {
         self.persistent
     }
 
-    pub fn max_retries(&self) -> Option<u8> {
-        self.max_retries
+    pub fn retry(&self) -> &RetryConfiguration {
+        &self.retry
     }
 
-    pub fn retry_interval(&self) -> Option<Duration> {
-        self.retry_interval
-    }
-
-    /// (task_name, task_command, project_name, project_dir, full_task_name, dependencies, enabled, interactive, persistent, max_retries, retry_interval)
+    /// (task_name, task_command, project_name, project_dir, full_task_name, dependencies, enabled, interactive, persistent, retry)
     #[allow(clippy::type_complexity)]
     pub fn deconstruct(
         self,
@@ -144,8 +137,7 @@ impl TaskExecutionNode {
         TeraExprBoolean,
         bool,
         bool,
-        Option<u8>,
-        Option<Duration>,
+        RetryConfiguration,
     ) {
         (
             self.task_name,
@@ -158,8 +150,7 @@ impl TaskExecutionNode {
             self.enabled,
             self.interactive,
             self.persistent,
-            self.max_retries,
-            self.retry_interval,
+            self.retry,
         )
     }
 }
@@ -226,8 +217,7 @@ impl TaskExecutionGraph {
                     task.1.enabled.clone(),
                     task.1.interactive,
                     task.1.persistent,
-                    task.1.max_retries,
-                    task.1.retry_interval,
+                    task.1.retry.clone(),
                 );
 
                 let dep_node_index =
@@ -1401,8 +1391,7 @@ mod tests {
             TeraExprBoolean::Boolean(true),
             false,
             false,
-            None,
-            None,
+            Default::default(),
         )
     }
 

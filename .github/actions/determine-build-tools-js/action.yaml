@@ -1,8 +1,8 @@
 name: "Determine Build Tools JS"
 description: "Processes build aggregation data to determine required installation."
 inputs:
-  build_data_json:
-    description: "The JSON string of the aggregated build results."
+  build_data_file:
+    description: "Path to the JSON file with the aggregated build results. A path, not the content, because the content can exceed the OS limit for one environment variable."
     required: true
 outputs:
   INSTALL_RUST_TOOLS:

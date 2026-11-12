@@ -6566,6 +6566,7 @@ dependencies = [
  "omni_remote_cache_client",
  "omni_remote_source",
  "omni_remote_source_contributors",
+ "omni_retry_config",
  "omni_scm",
  "omni_setup",
  "omni_task_context",
@@ -6794,6 +6795,7 @@ dependencies = [
  "omni_redact",
  "omni_remote_source",
  "omni_remote_source_contributors",
+ "omni_retry_config",
  "omni_scm",
  "omni_setup",
  "omni_task_context",
@@ -6956,7 +6958,9 @@ dependencies = [
  "omni_glob_config",
  "omni_projection_configurations",
  "omni_redact",
+ "omni_retry_config",
  "omni_serde_validators",
+ "omni_source_configurations",
  "omni_task_output_logs",
  "omni_types",
  "petgraph",
@@ -7048,6 +7052,7 @@ dependencies = [
  "omni_command_config",
  "omni_config_types",
  "omni_diagnostic",
+ "omni_retry_config",
  "petgraph",
  "schemars",
  "serde",
@@ -7482,6 +7487,7 @@ dependencies = [
  "omni_messages",
  "omni_notice",
  "omni_redact",
+ "omni_retry_config",
  "omni_task_executor",
  "omni_task_output_logs",
  "omni_tera",
@@ -7898,6 +7904,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "omni_retry_config"
+version = "0.1.0"
+dependencies = [
+ "config_utils",
+ "humantime-serde",
+ "merge",
+ "schemars",
+ "serde",
+ "serde_json",
+ "strum 0.28.0",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "omni_scm"
 version = "0.1.0"
 dependencies = [
@@ -7963,6 +7983,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "omni_source_configurations"
+version = "0.1.0"
+dependencies = [
+ "garde",
+ "omni_config_types",
+ "schemars",
+ "serde",
+ "serde_json",
+ "toml",
+ "url",
+]
+
+[[package]]
 name = "omni_task_context"
 version = "0.8.0"
 dependencies = [
@@ -8005,6 +8038,7 @@ dependencies = [
  "getset",
  "globset",
  "maps",
+ "merge",
  "num_cpus",
  "omni_cache",
  "omni_codes",
@@ -8023,6 +8057,7 @@ dependencies = [
  "omni_notice",
  "omni_process",
  "omni_redact",
+ "omni_retry_config",
  "omni_task_context",
  "omni_task_output_logs",
  "omni_tera",
@@ -8030,6 +8065,7 @@ dependencies = [
  "omni_tracing_subscriber",
  "omni_types",
  "omni_utils",
+ "rand 0.10.3",
  "schemars",
  "serde",
  "serde_json",

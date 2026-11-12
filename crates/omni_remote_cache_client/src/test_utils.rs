@@ -19,14 +19,19 @@ pub struct PortGuard {
 }
 
 impl PortGuard {
+    /// Reserves a free port chosen by the OS, so that other test processes
+    /// (other crates, parallel jobs) do not collide on a fixed range.
     pub fn new() -> Self {
         let mut ports = PORTS.lock().unwrap();
-        let mut port = 3010;
-        while ports.contains(&port) {
-            port += 1;
+        loop {
+            let port = std::net::TcpListener::bind(("0.0.0.0", 0))
+                .and_then(|l| l.local_addr())
+                .expect("failed to find a free port")
+                .port();
+            if ports.insert(port) {
+                return Self { port };
+            }
         }
-        ports.insert(port);
-        Self { port }
     }
 }
 
@@ -127,7 +132,7 @@ impl ChildProcessGuard {
         let mut did_connect = false;
         let mut current_try = 0;
         let mut error = None;
-        const MAX_TRIES: u32 = 10;
+        const MAX_TRIES: u32 = 100;
         // we're not trying to get a valid response, just to make sure the server is up and can respond
         while current_try < MAX_TRIES {
             match client.get(&api_base_url).send().await {

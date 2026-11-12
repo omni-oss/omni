@@ -1,0 +1,451 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SourceConfig",
+  "description": "A registered source of configuration artifacts (generator manifests, tool\nmanifests, projection inputs, or packs).\n\nThe type is generic over a [`SourceConfigProfile`] that assigns each variant\nits own flattened extra family. `P = ()` yields the plain `local`/`git`\nsource shared by generators and tools; richer profiles add sibling fields\nwithout changing the wire shape of the `source`/`path`/`uri`/`rev` keys.",
+  "oneOf": [
+    {
+      "description": "A `local` source: one or more workspace-relative paths.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "path": {
+          "$ref": "#/$defs/SingleOrMany"
+        },
+        "routes": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "default": null,
+          "items": {
+            "$ref": "#/$defs/Projection"
+          }
+        },
+        "source": {
+          "type": "string",
+          "const": "local"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "path",
+        "id"
+      ]
+    },
+    {
+      "description": "A `git` source: a repository URI pinned to a revision.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "rev": {
+          "type": "string"
+        },
+        "routes": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "default": null,
+          "items": {
+            "$ref": "#/$defs/Projection"
+          }
+        },
+        "source": {
+          "type": "string",
+          "const": "git"
+        },
+        "uri": {
+          "type": "string",
+          "format": "uri"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "uri",
+        "rev",
+        "id"
+      ]
+    }
+  ],
+  "$defs": {
+    "ExistingPolicy": {
+      "description": "What to do when a destination already exists.",
+      "type": "string",
+      "enum": [
+        "skip",
+        "overwrite",
+        "backup",
+        "error"
+      ]
+    },
+    "ExplicitRule": {
+      "description": "A rule for the `explicit` strategy: a literal source path and a required\ndestination.",
+      "type": "object",
+      "properties": {
+        "dest": {
+          "$ref": "#/$defs/OmniPath"
+        },
+        "source": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "dest"
+      ]
+    },
+    "FlattenRule": {
+      "description": "A rule for the `flatten` strategy: a glob `match`, an optional `dest`\n(defaulting to the entry's basename), and an optional `match_kind`.",
+      "type": "object",
+      "properties": {
+        "dest": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OmniPath"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "match": {
+          "description": "Globs matched against source entries. One of three forms: a single\npattern, a list of patterns, or an object with `include` and `exclude`\nlists. The single and list forms are include-only. An entry matches\nwhen it matches an `include` pattern and no `exclude` pattern; `exclude`\nalways wins regardless of order. A leading `!` is a literal character.",
+          "$ref": "#/$defs/GlobConfig"
+        },
+        "match_kind": {
+          "$ref": "#/$defs/MatchKind",
+          "default": "file"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "match"
+      ]
+    },
+    "GlobConfig": {
+      "description": "A bare pattern, a list of patterns, or an explicit include/exclude object.\n\nMerges last-writer-wins, so a later layer replaces an earlier one whole.",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        {
+          "type": "object",
+          "properties": {
+            "exclude": {
+              "$ref": "#/$defs/SingleOrMany"
+            },
+            "include": {
+              "$ref": "#/$defs/SingleOrMany"
+            }
+          },
+          "required": [
+            "include",
+            "exclude"
+          ]
+        }
+      ]
+    },
+    "LinkKind": {
+      "description": "The kind of link a projection materializes.",
+      "type": "string",
+      "enum": [
+        "auto",
+        "symlink",
+        "junction",
+        "hardlink",
+        "copy"
+      ]
+    },
+    "MatchKind": {
+      "description": "Whether a `pattern`/`flatten` rule matches files (the default) or whole\ndirectories. A directory match links the directory itself as one entry\nrather than each file beneath it.",
+      "type": "string",
+      "enum": [
+        "file",
+        "dir"
+      ]
+    },
+    "OmniPath": {
+      "description": "A path optionally anchored to a named root with `@root/...`. To use a literal leading `@` (e.g. an npm scope like `@myorg/pkg`), escape it as `\\@myorg/pkg`.",
+      "type": "string"
+    },
+    "PatternRule": {
+      "description": "A rule for the `pattern` strategy: a glob `match`, a required templated\n`dest`, and an optional directory-vs-file `match_kind`.",
+      "type": "object",
+      "properties": {
+        "dest": {
+          "$ref": "#/$defs/OmniPath"
+        },
+        "match": {
+          "description": "Globs matched against source entries. One of three forms: a single\npattern, a list of patterns, or an object with `include` and `exclude`\nlists. The single and list forms are include-only. An entry matches\nwhen it matches an `include` pattern and no `exclude` pattern; `exclude`\nalways wins regardless of order. A leading `!` is a literal character.",
+          "$ref": "#/$defs/GlobConfig"
+        },
+        "match_kind": {
+          "$ref": "#/$defs/MatchKind",
+          "default": "file"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "match",
+        "dest"
+      ]
+    },
+    "Projection": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "allow_git": {
+              "type": "boolean",
+              "default": false
+            },
+            "allow_omni_config": {
+              "type": "boolean",
+              "default": false
+            },
+            "link": {
+              "$ref": "#/$defs/LinkKind",
+              "default": "auto"
+            },
+            "on_existing": {
+              "$ref": "#/$defs/ExistingPolicy",
+              "default": "error"
+            },
+            "strategy": {
+              "const": "namespaced"
+            },
+            "target": {
+              "$ref": "#/$defs/OmniPath",
+              "default": ""
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "strategy"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "allow_git": {
+              "type": "boolean",
+              "default": false
+            },
+            "allow_omni_config": {
+              "type": "boolean",
+              "default": false
+            },
+            "link": {
+              "$ref": "#/$defs/LinkKind",
+              "default": "auto"
+            },
+            "on_existing": {
+              "$ref": "#/$defs/ExistingPolicy",
+              "default": "error"
+            },
+            "scope": {
+              "description": "Narrows the mirror to source entries matching these globs. One of three forms: a single pattern, a list of patterns, or an object with `include` and `exclude` lists. The single and list forms are include-only. An entry is mirrored when it matches an `include` pattern and no `exclude` pattern; `exclude` always wins regardless of order. A leading `!` is a literal character.",
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "exclude": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      ]
+                    },
+                    "include": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "strategy": {
+              "const": "mirror"
+            },
+            "target": {
+              "$ref": "#/$defs/OmniPath",
+              "default": ""
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "strategy"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "allow_git": {
+              "type": "boolean",
+              "default": false
+            },
+            "allow_omni_config": {
+              "type": "boolean",
+              "default": false
+            },
+            "link": {
+              "$ref": "#/$defs/LinkKind",
+              "default": "auto"
+            },
+            "on_existing": {
+              "$ref": "#/$defs/ExistingPolicy",
+              "default": "error"
+            },
+            "rules": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ExplicitRule"
+              }
+            },
+            "strategy": {
+              "const": "explicit"
+            },
+            "target": {
+              "$ref": "#/$defs/OmniPath",
+              "default": ""
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "strategy",
+            "rules"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "allow_git": {
+              "type": "boolean",
+              "default": false
+            },
+            "allow_omni_config": {
+              "type": "boolean",
+              "default": false
+            },
+            "link": {
+              "$ref": "#/$defs/LinkKind",
+              "default": "auto"
+            },
+            "on_existing": {
+              "$ref": "#/$defs/ExistingPolicy",
+              "default": "error"
+            },
+            "rules": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/PatternRule"
+              }
+            },
+            "strategy": {
+              "const": "pattern"
+            },
+            "target": {
+              "$ref": "#/$defs/OmniPath",
+              "default": ""
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "strategy",
+            "rules"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "allow_git": {
+              "type": "boolean",
+              "default": false
+            },
+            "allow_omni_config": {
+              "type": "boolean",
+              "default": false
+            },
+            "link": {
+              "$ref": "#/$defs/LinkKind",
+              "default": "auto"
+            },
+            "on_existing": {
+              "$ref": "#/$defs/ExistingPolicy",
+              "default": "error"
+            },
+            "rules": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/FlattenRule"
+              }
+            },
+            "strategy": {
+              "const": "flatten"
+            },
+            "target": {
+              "$ref": "#/$defs/OmniPath",
+              "default": ""
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "strategy"
+          ]
+        }
+      ]
+    },
+    "SingleOrMany": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      ]
+    }
+  }
+}

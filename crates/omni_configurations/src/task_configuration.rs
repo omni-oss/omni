@@ -1,11 +1,10 @@
-use std::time::Duration;
-
 use config_utils::{DictConfig, DynValue, IntoInner, ListConfig, Replace};
 use garde::Validate;
 use merge::Merge;
 use omni_command_config::CommandConfig;
 use omni_config_types::{SingleOrMany, TeraExprBoolean};
 use omni_core::Task;
+use omni_retry_config::RetryConfiguration;
 use omni_task_output_logs::OutputLogsConfiguration;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -88,54 +87,19 @@ pub struct TaskConfigurationLongForm {
     pub meta: MetaConfiguration,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_retries: Option<Replace<u8>>,
-
-    #[serde(
-        default,
-        with = "retry_interval",
-        skip_serializing_if = "Option::is_none"
-    )]
-    #[schemars(with = "Option<Replace<String>>")]
-    pub retry_interval: Option<Replace<Duration>>,
+    #[garde(custom(validate_retry))]
+    pub retry: Option<RetryConfiguration>,
 }
 
-mod retry_interval {
-    use std::time::Duration;
-
-    use config_utils::{AsInner, Replace};
-    use serde::{Deserialize as _, Deserializer, Serializer};
-
-    pub fn deserialize<'de, D>(
-        deserializer: D,
-    ) -> Result<Option<Replace<Duration>>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let string = Option::<Replace<String>>::deserialize(deserializer)?;
-
-        if let Some(string) = string {
-            let duration = humantime::parse_duration(string.as_inner())
-                .map_err(serde::de::Error::custom)?;
-            Ok(Some(Replace::new(duration)))
-        } else {
-            Ok(None)
-        }
-    }
-
-    pub fn serialize<S>(
-        value: &Option<Replace<Duration>>,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        if let Some(duration) = value {
-            serializer.serialize_str(
-                &humantime::format_duration(*duration.as_inner()).to_string(),
-            )
-        } else {
-            serializer.serialize_none()
-        }
+fn validate_retry(
+    value: &Option<RetryConfiguration>,
+    _ctx: &(),
+) -> garde::Result {
+    match value {
+        Some(r) => r
+            .check_layer()
+            .map_err(|e| garde::Error::new(e.to_string())),
+        None => Ok(()),
     }
 }
 
@@ -173,8 +137,7 @@ impl Default for TaskConfigurationLongForm {
             interactive: default_interactive(),
             persistent: default_persistent(),
             with: ListConfig::append(vec![]),
-            max_retries: None,
-            retry_interval: None,
+            retry: None,
         }
     }
 }
@@ -257,8 +220,7 @@ impl TaskConfigurationLongForm {
             interactive,
             persistent,
             with,
-            max_retries: retries,
-            retry_interval,
+            retry,
             ..
         } = self;
 
@@ -271,8 +233,7 @@ impl TaskConfigurationLongForm {
             interactive.map(|e| e.into_inner()).unwrap_or(false),
             persistent.map(|e| e.into_inner()).unwrap_or(false),
             with.iter().cloned().map(Into::into).collect(),
-            retries.map(|e| e.into_inner()),
-            retry_interval.map(|e| e.into_inner()),
+            retry.unwrap_or_default(),
         )
     }
 }
@@ -370,8 +331,7 @@ impl Merge for TaskConfigurationLongForm {
             interactive: b_interactive,
             persistent: b_persistent,
             with: b_with,
-            max_retries: b_retries,
-            retry_interval: b_retry_interval,
+            retry: b_retry,
             args: b_args,
         } = other;
 
@@ -401,8 +361,7 @@ impl Merge for TaskConfigurationLongForm {
         merge::option::recurse(&mut self.interactive, b_interactive);
         merge::option::recurse(&mut self.persistent, b_persistent);
         self.with.merge(b_with);
-        merge::option::recurse(&mut self.max_retries, b_retries);
-        merge::option::recurse(&mut self.retry_interval, b_retry_interval);
+        merge::option::recurse(&mut self.retry, b_retry);
     }
 }
 
@@ -420,6 +379,10 @@ impl Merge for TaskConfiguration {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
+    use omni_retry_config::ConfigDuration;
+
     use super::*;
 
     #[test]
@@ -609,8 +572,13 @@ mod tests {
             persistent: Some(Replace::new(true)),
             enabled: Some(true.into()),
             with: ListConfig::append(vec![]),
-            max_retries: Some(Replace::new(1)),
-            retry_interval: Some(Replace::new(Duration::from_secs(1))),
+            retry: Some(RetryConfiguration {
+                max_retries: Some(Replace::new(1)),
+                base: Some(Replace::new(ConfigDuration(Duration::from_secs(
+                    1,
+                )))),
+                ..Default::default()
+            }),
             ..Default::default()
         });
 
@@ -630,8 +598,13 @@ mod tests {
             persistent: Some(Replace::new(false)),
             enabled: None,
             with: ListConfig::append(vec![]),
-            max_retries: Some(Replace::new(3)),
-            retry_interval: Some(Replace::new(Duration::from_secs(2))),
+            retry: Some(RetryConfiguration {
+                max_retries: Some(Replace::new(3)),
+                base: Some(Replace::new(ConfigDuration(Duration::from_secs(
+                    2,
+                )))),
+                ..Default::default()
+            }),
             ..Default::default()
         });
 
@@ -656,8 +629,13 @@ mod tests {
                 persistent: Some(Replace::new(false)),
                 enabled: Some(true.into()),
                 with: ListConfig::append(vec![]),
-                max_retries: Some(Replace::new(3)),
-                retry_interval: Some(Replace::new(Duration::from_secs(2))),
+                retry: Some(RetryConfiguration {
+                    max_retries: Some(Replace::new(3)),
+                    base: Some(Replace::new(ConfigDuration(
+                        Duration::from_secs(2),
+                    ))),
+                    ..Default::default()
+                }),
                 ..Default::default()
             })
         );

@@ -1,11 +1,10 @@
-use std::time::Duration;
-
 use derive_builder::Builder;
 use getset::{CloneGetters, CopyGetters, Getters};
 use maps::UnorderedMap;
 
 use omni_configurations::RedactOverrides;
 use omni_execution_plan::{Call, MetaOnError, ScmAffectedFilter};
+use omni_retry_config::RetryConfiguration;
 use omni_task_output_logs::LogsDisplay;
 
 use crate::{Force, OnFailure};
@@ -90,12 +89,8 @@ pub struct ExecutionConfig {
     call: Call,
 
     #[builder(default)]
-    #[getset(get_copy = "pub")]
-    max_retries: Option<u8>,
-
-    #[builder(default)]
-    #[getset(get_copy = "pub")]
-    retry_interval: Option<Duration>,
+    #[getset(get = "pub")]
+    retry: Option<RetryConfiguration>,
 
     #[builder(default)]
     #[getset(get = "pub")]

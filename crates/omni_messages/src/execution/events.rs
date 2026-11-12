@@ -23,7 +23,7 @@ pub struct TaskCompletedEvent {
     pub exit_code: u32,
     pub elapsed: Duration,
     pub cache_hit: bool,
-    pub tries: u8,
+    pub tries: u16,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -32,7 +32,7 @@ pub struct TaskFailedEvent {
     pub project: String,
     pub task: String,
     pub error: String,
-    pub tries: u8,
+    pub tries: u16,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -51,7 +51,7 @@ pub struct TaskRetryingEvent {
     pub task_id: String,
     pub project: String,
     pub task: String,
-    pub attempt: u8,
+    pub attempt: u16,
     pub max_retries: u8,
     pub delay: Option<Duration>,
 }

@@ -104,13 +104,13 @@ The target commit to compare against. This will implicitly enable --scm-affected
 
 ### `-r`, `--retry`
 
-How many retries to do if the task fails before failing the whole execution, takes precedence over `max_retry` task configuration if specified
+Retry policy: COUNT[,strategy][,key=value...], e.g. 3,exponential,base=500ms,max_delay=30s,jitter=full. Merged per field over the `retry` task configuration
 
 - **Required:** No
 
-### `--retry-interval`
+### `--no-retry`
 
-How long to wait before retrying a failed task, takes precedence over `retry_interval` task configuration if specified
+Disable retries
 
 - **Required:** No
 

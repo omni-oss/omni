@@ -9,6 +9,7 @@ dependencies:
   - omni_context
   - omni_core
   - omni_task_executor
+  - omni_retry_config
   - omni_configurations
   - omni_redact
   - omni_projections
