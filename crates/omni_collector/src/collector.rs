@@ -304,17 +304,16 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
         let full_task_name =
             format!("{}#{}", hash_input.project_name, hash_input.task_name);
 
-        if let Some(command) = hash_input.task_exec {
-            if let Some(command_str) = command_hash_input("command", command) {
-                tree.insert(DefaultHasher::hash(command_str.as_bytes()));
-            }
+        if let Some(command) = hash_input.task_exec
+            && let Some(command_str) = command_hash_input("command", command)
+        {
+            tree.insert(DefaultHasher::hash(command_str.as_bytes()));
         }
-        if let Some(retry_command) = hash_input.task_retry_exec {
-            if let Some(retry_command_str) =
+        if let Some(retry_command) = hash_input.task_retry_exec
+            && let Some(retry_command_str) =
                 command_hash_input("retry_command", retry_command)
-            {
-                tree.insert(DefaultHasher::hash(retry_command_str.as_bytes()));
-            }
+        {
+            tree.insert(DefaultHasher::hash(retry_command_str.as_bytes()));
         }
 
         tree.insert(DefaultHasher::hash(full_task_name.as_bytes()));
