@@ -1,5 +1,7 @@
 export interface RunningTarget {
     apiBaseUrl: string;
+    /** Runs SQL against the target's database, when it has one. Returns JSON. */
+    sql?: ((statement: string) => Promise<string>) | undefined;
     stop: () => Promise<void>;
 }
 

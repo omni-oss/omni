@@ -89,6 +89,13 @@ pub struct ServeArgs {
 
     #[command(flatten)]
     pub routes: Option<RouterArgs>,
+
+    #[arg(
+        long,
+        env = "OMNI_REMOTE_CACHE_SERVICE_REPOSITORY_CONFIG",
+        help = "Path to a JSON file that reads ownership data and API keys from a SQL database using your own queries, instead of the configuration file"
+    )]
+    pub repository_config: Option<String>,
 }
 
 #[derive(

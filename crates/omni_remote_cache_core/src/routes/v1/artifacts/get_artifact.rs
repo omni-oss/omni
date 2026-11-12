@@ -11,7 +11,10 @@ use utoipa::IntoParams;
 use super::common::container;
 use crate::{
     extractors::{ApiKey, TenantCode},
-    routes::v1::artifacts::common::{guard, validate_ownership},
+    hooks::{ArtifactOp, OutcomeKind},
+    routes::v1::artifacts::common::{
+        after_response, before_hook, guard, validate_ownership,
+    },
     state::ServiceState,
 };
 
@@ -70,14 +73,23 @@ pub async fn get_artifact(
 
     validate_ownership!(state.provider, &tenant_code, &query);
 
-    let container = container(&query.org, &query.ws, &query.env);
+    let hook_ctx = before_hook!(
+        state,
+        ArtifactOp::Get,
+        &api_key,
+        &tenant_code,
+        &query,
+        vec![digest.clone()],
+    );
+
+    let container = container(&tenant_code, &query.org, &query.ws, &query.env);
     let x = state
         .storage_backend
         .get_stream(Some(container.as_ref()), &digest)
         .await
         .map_err(InternalServerError);
 
-    match x {
+    let response = match x {
         Ok(o) => match o {
             Some(stream) => {
                 let body = Body::from_stream(stream);
@@ -95,5 +107,7 @@ pub async fn get_artifact(
             None => (StatusCode::NOT_FOUND, "Not found").into_response(),
         },
         Err(e) => e.into_response(),
-    }
+    };
+
+    after_response(&state, hook_ctx, OutcomeKind::Hit, response).await
 }

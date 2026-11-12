@@ -4,12 +4,14 @@ pub mod args;
 mod build;
 mod init_tracing;
 pub mod local_disk_backend;
+pub mod repository;
 pub mod s3_backend;
 pub mod state;
 pub mod storage_backend;
 
 pub use omni_remote_cache_core::{
-    config, data, data_impl, providers, request, response, routes, services,
+    config, data, data_impl, hooks, providers, request, response, routes,
+    security, services,
 };
 
 use clap::Parser;

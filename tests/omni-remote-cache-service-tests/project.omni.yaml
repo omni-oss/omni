@@ -31,10 +31,20 @@ tasks:
     dependencies:
       - omni_remote_cache_worker#build
 
+  # Worker backed by a local D1 database (operator queries and hooks).
+  test:service:worker-d1:
+    extends: [test:service:base]
+    env:
+      vars:
+        REMOTE_CACHE_TEST_TARGETS: worker-d1
+    dependencies:
+      - omni_remote_cache_worker#build
+
   test:service:
     dependencies:
       - test:service:native
       - test:service:worker
+      - test:service:worker-d1
 
   test:
     dependencies:

@@ -17,3 +17,12 @@ DEFAULT_CONTAINER = "default"
 # Provide the service configuration (tenants and API keys, same JSON schema as
 # orcs.config.json) as a secret:
 #   wrangler secret put ORCS_CONFIG
+
+# Optional: read tenants, workspaces, API keys and hook data from your own D1
+# schema with your own queries. Set `ORCS_REPOSITORY_CONFIG` (JSON with
+# `queries`, and optionally `api_key_hash`, `hooks` and `caching`) and bind a
+# D1 database as `DB`. You own the schema and migrations.
+# [[d1_databases]]
+# binding = "DB"
+# database_name = "omni-remote-cache"
+# database_id = "<your-d1-database-id>"
