@@ -2,7 +2,7 @@
 //!
 //! The cache directory is shared by every concurrently running `omni`
 //! process. A handful of operations cannot be made safe by content-addressed
-//! atomic publishing alone (see [`super::hybrid`]):
+//! atomic publishing alone (see the task cache publisher):
 //!
 //! * read-modify-write of the shared last-used-timestamps database, and
 //! * pruning, which deletes cache entries that another process may be
