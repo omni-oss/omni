@@ -1,0 +1,33 @@
+[package]
+name = "omni_remote_cache_repository_sql"
+rust-version.workspace = true
+edition.workspace = true
+version = "0.1.0"
+authors.workspace = true
+repository.workspace = true
+
+[lib]
+name = "omni_remote_cache_repository_sql"
+path = "src/lib.rs"
+
+[features]
+default = ["sqlite", "postgres", "mysql"]
+sqlite = ["sqlx/sqlite"]
+postgres = ["sqlx/postgres"]
+mysql = ["sqlx/mysql"]
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+async-trait = { workspace = true }
+futures = { workspace = true }
+omni_remote_cache_repository_query = { workspace = true }
+sqlx = { version = "^0.9.0", default-features = false, features = [
+    "any",
+    "runtime-tokio",
+] }
+tokio = { workspace = true, features = ["time"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+
+[lints]
+workspace = true
