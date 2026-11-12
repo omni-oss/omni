@@ -44,7 +44,7 @@ pub enum TaskResultContext<'a> {
     Completed {
         task_context: &'a TaskContext<'a>,
         result: TaskChildProcessResult,
-        tries: u8,
+        tries: u16,
     },
     Error {
         task_context: &'a TaskContext<'a>,
@@ -52,7 +52,7 @@ pub enum TaskResultContext<'a> {
         /// operation. It outlives the task's redactor, so it is redacted
         /// before the operation ends (RFC 0026).
         message: String,
-        tries: u8,
+        tries: u16,
     },
 }
 
@@ -71,7 +71,7 @@ impl<'a> TaskResultContext<'a> {
         }
     }
 
-    pub fn tries(&self) -> u8 {
+    pub fn tries(&self) -> u16 {
         match self {
             TaskResultContext::Completed { tries: t, .. } => *t,
             TaskResultContext::Error { tries: t, .. } => *t,

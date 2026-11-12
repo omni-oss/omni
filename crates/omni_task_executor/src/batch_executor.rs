@@ -1024,9 +1024,11 @@ where
     results
 }
 
-/// Attempt number as the `u8` the events carry; saturates at 255.
-fn attempts(tries: u16) -> u8 {
-    u8::try_from(tries).unwrap_or(u8::MAX)
+/// Delay before retrying after attempt number `tries` failed, or `None` when
+/// the retries are used up.
+fn next_retry_delay(policy: &RetryPolicy, tries: u16) -> Option<Duration> {
+    (tries <= u16::from(policy.max_retries))
+        .then(|| policy.delay(tries, rand::random::<f64>()))
 }
 
 /// Executes a task and retries failed executions according to `policy`. Process errors
@@ -1072,7 +1074,7 @@ async fn run_process<'a, S: ExecutionEventSubscriber>(
                 subscriber
                     .redact(ChildProcessError::no_command().to_string())
                     .into_owned(),
-                attempts(tries),
+                tries,
             );
         };
 
@@ -1088,7 +1090,7 @@ async fn run_process<'a, S: ExecutionEventSubscriber>(
                     return TaskResultContext::new_error(
                         task_ctx,
                         subscriber.redact(e.to_string()).into_owned(),
-                        attempts(tries),
+                        tries,
                     );
                 }
             };
@@ -1148,17 +1150,17 @@ async fn run_process<'a, S: ExecutionEventSubscriber>(
 
         let result = proc.exec().await;
 
-        if (result.is_err() || result.as_ref().is_ok_and(|f| !f.success()))
-            && tries <= u16::from(policy.max_retries)
+        let failed =
+            result.is_err() || result.as_ref().is_ok_and(|f| !f.success());
+        if let Some(delay) =
+            failed.then(|| next_retry_delay(&policy, tries)).flatten()
         {
-            let delay = policy.delay(attempts(tries), rand::random::<f64>());
-
             subscriber
                 .on_task_retrying(TaskRetryingEvent {
                     task_id: task_ctx.node.full_task_name().to_string(),
                     project: task_ctx.node.project_name().to_string(),
                     task: task_ctx.node.task_name().to_string(),
-                    attempt: attempts(tries),
+                    attempt: tries,
                     max_retries: policy.max_retries,
                     delay: Some(delay),
                 })
@@ -1187,7 +1189,7 @@ async fn run_process<'a, S: ExecutionEventSubscriber>(
                         exit_code,
                         elapsed,
                         cache_hit: false,
-                        tries: attempts(tries),
+                        tries: tries,
                     })
                     .await;
             } else {
@@ -1197,11 +1199,11 @@ async fn run_process<'a, S: ExecutionEventSubscriber>(
                         project: task_ctx.node.project_name().to_string(),
                         task: task_ctx.node.task_name().to_string(),
                         error: format!("exit code '{}'", exit_code),
-                        tries: attempts(tries),
+                        tries: tries,
                     })
                     .await;
             }
-            TaskResultContext::new_completed(task_ctx, t, attempts(tries))
+            TaskResultContext::new_completed(task_ctx, t, tries)
         }
         Err(e) => {
             subscriber
@@ -1210,13 +1212,13 @@ async fn run_process<'a, S: ExecutionEventSubscriber>(
                     project: task_ctx.node.project_name().to_string(),
                     task: task_ctx.node.task_name().to_string(),
                     error: e.to_string(),
-                    tries: attempts(tries),
+                    tries: tries,
                 })
                 .await;
             TaskResultContext::new_error(
                 task_ctx,
                 subscriber.redact(e.to_string()).into_owned(),
-                attempts(tries),
+                tries,
             )
         }
     }
@@ -1306,6 +1308,9 @@ pub(crate) enum BatchExecutorErrorInner {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
+    use omni_retry_config::{Backoff, Jitter, RetryPolicy};
     use omni_task_output_logs::{
         EffectiveOutputLogs, LogsDisplay, OutputLogsConfiguration,
         OutputLogsSplit,
@@ -1327,6 +1332,42 @@ mod tests {
     // Mirrors the replay predicate in replay_cached_results.
     fn should_replay(cached: LogsDisplay, cached_failed: bool) -> bool {
         cached.should_show(cached_failed)
+    }
+
+    #[test]
+    fn retry_delay_stops_after_max_retries() {
+        let policy = RetryPolicy {
+            max_retries: 2,
+            backoff: Backoff::Fixed,
+            base: Duration::ZERO,
+            max_delay: Duration::from_secs(1),
+            jitter: Jitter::None,
+        };
+        assert_eq!(super::next_retry_delay(&policy, 1), Some(Duration::ZERO));
+        assert_eq!(super::next_retry_delay(&policy, 2), Some(Duration::ZERO));
+        assert_eq!(super::next_retry_delay(&policy, 3), None);
+    }
+
+    #[test]
+    fn retry_delay_is_none_without_retries() {
+        assert_eq!(super::next_retry_delay(&RetryPolicy::default(), 1), None);
+    }
+
+    #[test]
+    fn retry_delay_grows_with_the_attempt() {
+        let policy = RetryPolicy {
+            max_retries: 3,
+            base: Duration::from_secs(1),
+            ..RetryPolicy::default()
+        };
+        assert_eq!(
+            super::next_retry_delay(&policy, 1),
+            Some(Duration::from_secs(1))
+        );
+        assert_eq!(
+            super::next_retry_delay(&policy, 3),
+            Some(Duration::from_secs(4))
+        );
     }
 
     #[test]
