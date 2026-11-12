@@ -24,9 +24,8 @@ pub struct DatabaseConfiguration {
     /// for in-memory SQLite, which has to share one connection.
     #[serde(default = "default_hooks_max_connections")]
     pub hooks_max_connections: u32,
-    /// Remote Postgres and MySQL databases must verify the server certificate
-    /// (`sslmode=verify-full` or `verify-ca`; `ssl-mode=VERIFY_IDENTITY` or
-    /// `VERIFY_CA`). Set this to opt out, for example on a trusted private
+    /// Remote Postgres and MySQL databases must verify the server's identity
+    /// (`sslmode=verify-full`, `ssl-mode=VERIFY_IDENTITY`). Set this to opt out, for example on a trusted private
     /// network. Loopback and unix-socket databases are always allowed.
     #[serde(default)]
     pub allow_insecure_tls: bool,
@@ -78,6 +77,14 @@ impl HostRuntime for TokioRuntime {
 /// replace the url's host. `verify-ca` is not accepted because it does not
 /// check the host name.
 pub fn check_tls(url: &str) -> eyre::Result<()> {
+    check_tls_with(url, |k| std::env::var(k).ok())
+}
+
+/// `check_tls` with an explicit environment, for tests.
+fn check_tls_with(
+    url: &str,
+    env: impl Fn(&str) -> Option<String>,
+) -> eyre::Result<()> {
     let parsed = url::Url::parse(url)?;
     let verified: &[&str] = match parsed.scheme() {
         "postgres" | "postgresql" => &["verify-full"],
@@ -100,8 +107,8 @@ pub fn check_tls(url: &str) -> eyre::Result<()> {
         parsed.host_str().map(String::from).into_iter().collect();
     let mut mode = None;
     for (k, v) in parsed.query_pairs() {
-        let k = k.to_ascii_lowercase();
-        match k.as_str() {
+        // sqlx matches parameter names case-sensitively and ignores others.
+        match &*k {
             "host" | "hostaddr" => {
                 hosts.extend(v.split(',').map(|h| h.trim().to_string()))
             }
@@ -110,6 +117,15 @@ pub fn check_tls(url: &str) -> eyre::Result<()> {
         }
     }
 
+    // With no host at all, sqlx's Postgres driver falls back to PGHOST and
+    // PGHOSTADDR before using a local socket.
+    if hosts.is_empty() && parsed.scheme().starts_with("postgres") {
+        for var in ["PGHOST", "PGHOSTADDR"] {
+            if let Some(v) = env(var) {
+                hosts.extend(v.split(',').map(|h| h.trim().to_string()));
+            }
+        }
+    }
     if hosts.iter().all(|h| is_local(h)) {
         return Ok(());
     }
@@ -171,7 +187,7 @@ pub async fn build_sql_provider(
 
 #[cfg(test)]
 mod tests {
-    use super::check_tls;
+    use super::{check_tls, check_tls_with};
 
     #[test]
     fn remote_databases_must_verify_the_server_identity() {
@@ -201,8 +217,57 @@ mod tests {
             // host and hostaddr replace the url's host
             "postgres://localhost/d?host=db.example.com&sslmode=disable",
             "postgres://localhost/d?hostaddr=10.0.0.5",
+            // sqlx ignores a differently cased name, so the mode stays disable
+            "postgres://db.example.com/d?sslmode=disable&SSLMODE=verify-full",
+            "postgres://db.example.com/d?SSLMODE=verify-full",
+            // a differently cased `host` is ignored by sqlx, but `hostaddr`
+            // is not
+            "postgres://localhost/d?HOSTADDR=10.0.0.5&hostaddr=10.0.0.5",
         ] {
             assert!(check_tls(bad).is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn a_missing_host_follows_the_postgres_environment() {
+        let env = |pairs: &'static [(&'static str, &'static str)]| {
+            move |k: &str| {
+                pairs
+                    .iter()
+                    .find(|(n, _)| *n == k)
+                    .map(|(_, v)| v.to_string())
+            }
+        };
+        assert!(check_tls_with("postgres:///d", env(&[])).is_ok());
+        assert!(
+            check_tls_with("postgres:///d", env(&[("PGHOST", "localhost")]))
+                .is_ok()
+        );
+        assert!(
+            check_tls_with(
+                "postgres:///d",
+                env(&[("PGHOST", "db.example.com")])
+            )
+            .is_err()
+        );
+        assert!(
+            check_tls_with("postgres:///d", env(&[("PGHOSTADDR", "10.0.0.5")]))
+                .is_err()
+        );
+        assert!(
+            check_tls_with(
+                "postgres:///d?sslmode=verify-full",
+                env(&[("PGHOST", "db.example.com")])
+            )
+            .is_ok()
+        );
+        // an explicit host is not replaced by the environment
+        assert!(
+            check_tls_with(
+                "postgres://localhost/d",
+                env(&[("PGHOST", "db.example.com")])
+            )
+            .is_ok()
+        );
     }
 }

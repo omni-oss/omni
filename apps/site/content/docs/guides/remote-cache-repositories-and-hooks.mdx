@@ -59,8 +59,10 @@ server's identity: `sslmode=verify-full` for Postgres, `ssl-mode=VERIFY_IDENTITY
 for MySQL. `verify-ca` is not accepted because it does not check the host name.
 The service refuses to start otherwise, because the drivers fall back to
 plaintext by default. It checks what the driver will apply: the last TLS-mode
-parameter wins, and a Postgres `host` or `hostaddr` parameter replaces the
-host in the url. Set `allow_insecure_tls` to opt out, for example on a trusted
+parameter wins, parameter names are case-sensitive as in the driver, and a
+Postgres `host` or `hostaddr` parameter replaces the host in the url. A
+Postgres url with no host uses `PGHOST` and `PGHOSTADDR`, so those are checked
+too. Set `allow_insecure_tls` to opt out, for example on a trusted
 private network. Each statement is bounded by `query_timeout_ms`.
 
 `after` hooks use their own pool of `hooks_max_connections` connections
