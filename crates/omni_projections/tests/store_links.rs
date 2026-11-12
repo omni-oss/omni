@@ -305,7 +305,8 @@ async fn local_sources_keep_relative_symlinks() {
 }
 
 #[tokio::test]
-async fn an_unchanged_pin_skips_a_healthy_link_but_repairs_a_dangling_one() {
+async fn an_unchanged_pin_repoints_a_link_into_a_moved_store_and_repairs_a_dangling_one()
+ {
     let scratch = scratch_dir(Capability::Symlink);
     if !require(Capability::Symlink, scratch.path()) {
         return;
@@ -332,15 +333,8 @@ async fn an_unchanged_pin_skips_a_healthy_link_but_repairs_a_dangling_one() {
         pin_unchanged: true,
     };
 
-    // The old store still resolves, so the link is healthy and left alone.
-    let outcome = apply_link(&RealSys, &pair, &options, Some(&prior))
-        .await
-        .unwrap();
-    assert_eq!(outcome, ApplyOutcome::Skipped);
-
-    // Once the old store is deleted the link dangles and is repaired.
-    std::fs::remove_dir_all(scratch.path().join("old")).unwrap();
-    assert!(!dest.exists());
+    // The old store still resolves but the link points into it: re-point it now
+    // instead of leaving it to dangle once the old store is deleted.
     let outcome = apply_link(&RealSys, &pair, &options, Some(&prior))
         .await
         .unwrap();
@@ -349,6 +343,25 @@ async fn an_unchanged_pin_skips_a_healthy_link_but_repairs_a_dangling_one() {
         "{outcome:?}"
     );
     assert_eq!(RealSys.fs_read_link_async(&dest).await.unwrap(), new_tree);
+
+    // A link that already points at the current store is left alone.
+    let outcome = apply_link(&RealSys, &pair, &options, Some(&prior))
+        .await
+        .unwrap();
+    assert_eq!(outcome, ApplyOutcome::Skipped);
+
+    // A link whose store vanished is repaired.
+    std::fs::remove_file(&dest).unwrap();
+    std::os::unix::fs::symlink(scratch.path().join("gone/tree"), &dest)
+        .unwrap();
+    assert!(!dest.exists());
+    let outcome = apply_link(&RealSys, &pair, &options, Some(&prior))
+        .await
+        .unwrap();
+    assert!(
+        matches!(outcome, ApplyOutcome::Linked { .. }),
+        "{outcome:?}"
+    );
     assert_eq!(std::fs::read(dest.join("a.txt")).unwrap(), b"a");
 }
 

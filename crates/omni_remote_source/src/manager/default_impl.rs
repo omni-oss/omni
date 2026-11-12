@@ -38,6 +38,34 @@ fn used_marker(commit_dir: &Path) -> PathBuf {
     commit_dir.with_file_name(name)
 }
 
+/// The store directory name of a remote, derived from its full identity:
+/// scheme, host, port and path, without credentials. The encoding is injective
+/// (every character other than letters, digits, `-` and `.` becomes `_` plus its
+/// hex code, `_` included), so distinct remotes such as `host/a/b` and
+/// `host/a_b` can never share a mirror, while the same remote with different
+/// credentials does.
+fn store_slug(uri: &Url) -> String {
+    let mut identity = String::new();
+    identity.push_str(uri.scheme());
+    identity.push_str("://");
+    identity.push_str(uri.host_str().unwrap_or("local"));
+    if let Some(port) = uri.port() {
+        identity.push_str(&format!(":{port}"));
+    }
+    identity.push_str(uri.path().trim_end_matches('/'));
+    identity
+        .trim_end_matches(".git")
+        .chars()
+        .flat_map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '.' {
+                vec![c]
+            } else {
+                format!("_{:02x}", c as u32).chars().collect()
+            }
+        })
+        .collect()
+}
+
 /// `<commit>.manifest`, the sibling file listing a published tree's files. It
 /// lives outside the tree so it can never collide with a tracked file.
 fn manifest_path(commit_dir: &Path) -> PathBuf {
@@ -174,9 +202,17 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
             }
         }
 
-        self.prune_lockfile_pins(&retained_keys).await?;
+        // Work on the file as it is now, not the copy loaded when this manager
+        // opened: another process may have added pins since, and saving ours
+        // would drop them. Our own resolved pins are merged in first.
+        let disk =
+            Lockfile::load(self.lockfile_path.clone(), &self.sys).await?;
+        for (uri, rev, commit) in self.lockfile.git_pins().await {
+            disk.lock_git_commit(&uri, &rev, &commit).await?;
+        }
+        Self::prune_lockfile_pins(&disk, &retained_keys).await?;
         self.ensure_lockfile_parent().await?;
-        self.lockfile.save(&self.sys).await?;
+        disk.save(&self.sys).await?;
 
         Ok(())
     }
@@ -206,7 +242,7 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
         uri: &Url,
         rev: &str,
     ) -> Result<(PathBuf, String), Error> {
-        let slug = omni_git_utils::url_to_safe_dir_name(uri.as_str())?;
+        let slug = store_slug(uri);
         let pinned = self.lockfile.get_git_commit(uri, rev).await;
 
         // Fast path: a pinned commit whose tree is complete needs no lock and
@@ -406,10 +442,10 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
     }
 
     async fn prune_lockfile_pins(
-        &self,
+        lockfile: &Lockfile,
         retained_keys: &HashSet<(Url, String)>,
     ) -> Result<(), Error> {
-        self.lockfile
+        lockfile
             .modify(|d| {
                 match d {
                     LockfileData::V1_0_0(v1) => {
@@ -629,7 +665,7 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
                     continue;
                 };
                 let last_used = self.last_used(&dir).await;
-                let size = self.dir_size(&dir).await;
+                let size = self.dir_size(&dir).await?;
                 entries.push(StoreEntry {
                     remote: remote.clone(),
                     commit,
@@ -707,21 +743,17 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
         UNIX_EPOCH
     }
 
-    async fn dir_size(&self, dir: &Path) -> u64 {
+    async fn dir_size(&self, dir: &Path) -> Result<u64, Error> {
         let mut total = 0;
         let mut stack = vec![dir.to_path_buf()];
         while let Some(current) = stack.pop() {
-            let Ok(children) = self.sys.fs_read_dir_async(&current).await
-            else {
-                continue;
-            };
+            let children = self.sys.fs_read_dir_async(&current).await?;
             for child in children {
                 // Inspect the link itself: following a directory symlink would
-                // count its target twice, and `a -> .` would never end.
-                let Ok(meta) = self.sys.fs_symlink_metadata_async(&child).await
-                else {
-                    continue;
-                };
+                // count its target twice, and `a -> .` would never end. A
+                // failure is an error, not a silently smaller size, so
+                // `--larger-than` never skips a checkout it could not measure.
+                let meta = self.sys.fs_symlink_metadata_async(&child).await?;
                 match meta.file_type() {
                     FileType::Dir => stack.push(child),
                     FileType::Symlink => {}
@@ -729,6 +761,51 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
                 }
             }
         }
-        total
+        Ok(total)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn slug(uri: &str) -> String {
+        store_slug(&Url::parse(uri).unwrap())
+    }
+
+    #[test]
+    fn distinct_remotes_never_share_a_store_name() {
+        let all = [
+            "https://host/a/b",
+            "https://host/a_b",
+            "https://host/a/b/c",
+            "http://host/a/b",
+            "https://host:8443/a/b",
+            "https://other/a/b",
+            "ssh://git@host/a/b",
+        ];
+        let mut seen = std::collections::HashSet::new();
+        for uri in all {
+            assert!(seen.insert(slug(uri)), "collision for {uri}");
+        }
+    }
+
+    #[test]
+    fn the_same_remote_keeps_one_name_regardless_of_credentials_or_dot_git() {
+        let plain = slug("https://host/owner/repo");
+        assert_eq!(plain, slug("https://user:token@host/owner/repo"));
+        assert_eq!(plain, slug("https://host/owner/repo.git"));
+        assert_eq!(plain, slug("https://host/owner/repo/"));
+    }
+
+    #[test]
+    fn a_name_is_a_safe_single_path_segment() {
+        let name = slug("https://host:8443/a b/c?x=1#frag");
+        assert!(
+            name.chars()
+                .all(|c| c.is_ascii_alphanumeric()
+                    || matches!(c, '-' | '.' | '_')),
+            "{name}"
+        );
     }
 }

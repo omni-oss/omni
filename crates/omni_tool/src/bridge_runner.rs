@@ -227,11 +227,16 @@ where
         // workspace floor, so a confined runtime must be granted its directory.
         // The grant is fixed at spawn, so such tools are pooled per directory;
         // tools inside the workspace keep sharing one process.
+        // The entry is resolved first: a path through a symlink inside the
+        // workspace may really live elsewhere.
         let extra_read = policy
             .enforce
-            .then(|| omni_capability_enforcement::load_root(entrypoint))
-            .filter(|dir| !dir.starts_with(&self.context_dir))
-            .map(|dir| std::fs::canonicalize(&dir).unwrap_or(dir));
+            .then(|| {
+                let entry = std::fs::canonicalize(entrypoint)
+                    .unwrap_or_else(|_| entrypoint.to_path_buf());
+                omni_capability_enforcement::load_root(&entry)
+            })
+            .filter(|dir| !dir.starts_with(&self.context_dir));
         let key = (resolved, policy.fingerprint(), extra_read.clone());
 
         let runner = self

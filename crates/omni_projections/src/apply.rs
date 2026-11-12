@@ -136,6 +136,7 @@ pub async fn apply_link<S: ApplierSys>(
         // refetched) is repaired like a changed pin.
         if prior.pin_unchanged
             && sys.fs_metadata_async(&pair.dest_abs).await.is_ok()
+            && !symlink_points_elsewhere(sys, pair, opts).await
         {
             return Ok(ApplyOutcome::Skipped);
         }
@@ -168,6 +169,32 @@ pub async fn apply_link<S: ApplierSys>(
 
     let kind = materialize(sys, pair, opts).await?;
     Ok(ApplyOutcome::Linked { kind, backup })
+}
+
+/// A healthy symlink we own that does not point where a fresh link would (the
+/// store moved while the old one still exists) is re-pointed rather than left to
+/// dangle when the old store is deleted. Copies and reflinks are the workspace's
+/// own files and are never touched for this.
+async fn symlink_points_elsewhere<S: ApplierSys>(
+    sys: &S,
+    pair: &LinkPair,
+    opts: &ApplyOptions,
+) -> bool {
+    if !matches!(opts.link, LinkKind::Auto | LinkKind::Symlink) {
+        return false;
+    }
+    if !sys.fs_is_symlink_no_err_async(&pair.dest_abs).await {
+        return false;
+    }
+    let expected = if opts.from_store {
+        pair.source_abs.clone()
+    } else {
+        relative_target(&pair.dest_abs, &pair.source_abs)
+    };
+    match sys.fs_read_link_async(&pair.dest_abs).await {
+        Ok(actual) => actual != expected,
+        Err(_) => false,
+    }
 }
 
 async fn materialize<S: ApplierSys>(

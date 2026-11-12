@@ -495,7 +495,16 @@ where
             };
             let source_entry = source_dir.join(name);
             if sys.fs_is_symlink_no_err_async(&dest_entry).await {
-                continue;
+                // A symlink is compared by where it points, not followed. One
+                // that points elsewhere than the source's (or cannot be read)
+                // is the user's change.
+                match (
+                    sys.fs_read_link_async(&dest_entry).await,
+                    sys.fs_read_link_async(&source_entry).await,
+                ) {
+                    (Ok(a), Ok(b)) if a == b => continue,
+                    _ => return true,
+                }
             }
             if sys.fs_is_dir_no_err_async(&dest_entry).await {
                 stack.push((dest_entry, source_entry));
@@ -1200,5 +1209,24 @@ mod tests {
             copy_was_modified(&sys, &dst, &source).await,
             "an unverifiable copy is kept"
         );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_retargeted_symlink_inside_a_projected_directory_counts_as_modified()
+     {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("src");
+        let dst = dir.path().join("dst");
+        for root in [&src, &dst] {
+            std::fs::create_dir_all(root).unwrap();
+            std::os::unix::fs::symlink("original", root.join("link")).unwrap();
+        }
+        let source = src.to_string_lossy().into_owned();
+        assert!(!copy_was_modified(&RealSys, &dst, &source).await);
+
+        std::fs::remove_file(dst.join("link")).unwrap();
+        std::os::unix::fs::symlink("custom", dst.join("link")).unwrap();
+        assert!(copy_was_modified(&RealSys, &dst, &source).await);
     }
 }

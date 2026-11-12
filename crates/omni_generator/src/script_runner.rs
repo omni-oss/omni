@@ -410,13 +410,14 @@ impl JsScriptRunner for LazyScriptRunner {
         if policy.enforce {
             let workspace = policy.roots.base(Root::Workspace);
             for invocation in invocations {
-                let dir = omni_capability_enforcement::load_root(Path::new(
-                    &invocation.path,
-                ));
+                // Resolve the entry first: a path that passes through a symlink
+                // inside the workspace may really live elsewhere.
+                let entry = std::fs::canonicalize(&invocation.path)
+                    .unwrap_or_else(|_| PathBuf::from(&invocation.path));
+                let dir = omni_capability_enforcement::load_root(&entry);
                 if workspace.is_some_and(|ws| dir.starts_with(ws)) {
                     continue;
                 }
-                let dir = std::fs::canonicalize(&dir).unwrap_or(dir);
                 if !extra_read.contains(&dir) {
                     extra_read.push(dir);
                 }

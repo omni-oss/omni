@@ -929,3 +929,40 @@ async fn measuring_a_tree_never_follows_directory_symlinks() {
     assert_eq!(entries.len(), 1);
     assert!(entries[0].size < 1_000_000, "{:?}", entries[0]);
 }
+
+#[tokio::test]
+async fn reconcile_keeps_pins_another_manager_added_after_this_one_opened() {
+    if !omni_test_capabilities::gate(
+        "git",
+        git_available(),
+        "git binary not found on PATH",
+    ) {
+        return;
+    }
+    let (_src, url, commit) = build_repo("late\n");
+    let ws = Workspace::new();
+    let stale = ws.manager().await; // loaded before the pin exists
+
+    let source = source_of(&url, "main");
+    let other = ws.manager().await;
+    let mat = other.materialize(&source).await.expect("materialize");
+    other
+        .record_refs(
+            "generator",
+            &[RemoteSourceRef {
+                source: source.clone(),
+                pin: mat.pin.clone(),
+            }],
+        )
+        .await
+        .unwrap();
+    other.persist_pins().await.unwrap();
+
+    stale.reconcile_pins().await.expect("reconcile");
+
+    assert_eq!(
+        ws.manager().await.locked_commit(&url, "main").await,
+        Some(commit),
+        "the late pin survived"
+    );
+}
