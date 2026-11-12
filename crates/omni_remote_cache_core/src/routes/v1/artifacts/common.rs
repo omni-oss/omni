@@ -189,6 +189,55 @@ pub macro validate_ownership(
     }
 }}
 
+/// Schedules `after` from the final response and passes the response through.
+pub async fn after_response(
+    state: &crate::state::ServiceState,
+    ctx: crate::hooks::HookContext,
+    success: crate::hooks::OutcomeKind,
+    response: Response,
+) -> Response {
+    use crate::hooks::{HookOutcome, OutcomeKind, run_after};
+
+    let status = response.status();
+    let kind = if status == StatusCode::NOT_FOUND {
+        OutcomeKind::Miss
+    } else if status.is_success() {
+        success
+    } else {
+        OutcomeKind::Failed
+    };
+    run_after(state.provider.as_ref(), ctx, HookOutcome { kind }).await;
+
+    response
+}
+
+/// Builds the hook context and runs `before`. Returns early with the veto or
+/// failure response, otherwise evaluates to the context for `after`.
+pub macro before_hook(
+        $state:expr,
+        $op:expr,
+        $tenant_code:expr,
+        $query:expr,
+        $digests:expr$(,)?
+    ) {{
+    use crate::hooks::{HookContext, run_before};
+
+    let ctx = HookContext {
+        op: $op,
+        tenant: $tenant_code.to_string(),
+        org: $query.org.clone(),
+        ws: $query.ws.clone(),
+        env: $query.env.clone(),
+        digests: $digests,
+    };
+
+    if let Some(response) = run_before($state.provider.as_ref(), &ctx).await {
+        return response;
+    }
+
+    ctx
+}}
+
 #[cfg(test)]
 mod tests {
     use super::container;

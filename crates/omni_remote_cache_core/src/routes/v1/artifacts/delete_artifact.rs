@@ -10,7 +10,10 @@ use utoipa::IntoParams;
 
 use crate::{
     extractors::{ApiKey, TenantCode},
-    routes::v1::artifacts::common::{container, guard, validate_ownership},
+    hooks::{ArtifactOp, OutcomeKind},
+    routes::v1::artifacts::common::{
+        after_response, before_hook, container, guard, validate_ownership,
+    },
     state::ServiceState,
 };
 
@@ -66,6 +69,14 @@ pub async fn delete_artifact(
 
     validate_ownership!(state.provider, &tenant_code, &query);
 
+    let hook_ctx = before_hook!(
+        state,
+        ArtifactOp::Delete,
+        &tenant_code,
+        &query,
+        vec![digest.clone()],
+    );
+
     let container = container(&query.org, &query.ws, &query.env);
     let x = state
         .storage_backend
@@ -73,8 +84,10 @@ pub async fn delete_artifact(
         .await
         .map_err(InternalServerError);
 
-    match x {
+    let response = match x {
         Ok(_) => StatusCode::NO_CONTENT.into_response(),
         Err(e) => e.into_response(),
-    }
+    };
+
+    after_response(&state, hook_ctx, OutcomeKind::Deleted, response).await
 }

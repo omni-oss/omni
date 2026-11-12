@@ -9,7 +9,10 @@ use utoipa::IntoParams;
 
 use crate::{
     extractors::{ApiKey, TenantCode},
-    routes::v1::artifacts::common::{guard, validate_ownership},
+    hooks::{ArtifactOp, OutcomeKind},
+    routes::v1::artifacts::common::{
+        after_response, before_hook, guard, validate_ownership,
+    },
     state::ServiceState,
 };
 
@@ -65,5 +68,15 @@ pub async fn head_artifacts(
 
     validate_ownership!(state.provider, &tenant_code, &query);
 
-    StatusCode::NO_CONTENT.into_response()
+    let hook_ctx = before_hook!(
+        state,
+        ArtifactOp::HeadMany,
+        &tenant_code,
+        &query,
+        Vec::new(),
+    );
+
+    let response = StatusCode::NO_CONTENT.into_response();
+
+    after_response(&state, hook_ctx, OutcomeKind::Hit, response).await
 }
