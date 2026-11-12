@@ -1,0 +1,113 @@
+---
+title: "Remote cache: your own database and hooks"
+description: "Read tenants, API keys and hook data from your own SQL or D1 database, veto operations, and prune old cache entries"
+---
+
+By default the remote cache service reads tenants, organizations, workspaces,
+environments and API keys from its configuration file. You can instead point it
+at your own database. You own the schema and the migrations. You supply SQL
+queries that return the shape the service needs, and the service sends them to
+the driver verbatim.
+
+## Pick a backend
+
+| Where it runs     | Backend                                                | How to enable                                            |
+| ----------------- | ------------------------------------------------------ | -------------------------------------------------------- |
+| Native service    | Any database `sqlx` supports (SQLite, Postgres, MySQL) | `--repository-config <file.json>`                        |
+| Cloudflare Worker | D1                                                     | Bind a D1 database as `DB`, set `ORCS_REPOSITORY_CONFIG` |
+
+The native drivers are cargo features of the service and are on by default.
+
+## The configuration
+
+```json
+{
+    "database": { "url": "postgres://user:pass@host/db", "max_connections": 5 },
+    "queries": {
+        "tenant_exists": "SELECT 1 AS found FROM tenants WHERE code = $1",
+        "...": "see the table below"
+    },
+    "api_key_hash": { "algorithm": "sha256", "encoding": "hex" },
+    "hooks": {
+        "queries": {
+            "before": "SELECT reason AS veto_reason FROM vetoes WHERE tenant = $2 LIMIT 1",
+            "after": "INSERT INTO artifact_usage (...) VALUES (...)"
+        },
+        "before_timeout_ms": 2000,
+        "after_timeout_ms": 10000,
+        "before_failure_policy": "fail_closed"
+    },
+    "caching": {
+        "repositories": { "ttl_secs": 60, "max_entries": 10000 },
+        "security": { "ttl_secs": 10, "max_entries": 10000 }
+    }
+}
+```
+
+`database` applies to the native service only. On Workers the D1 binding takes
+its place, and the rest of the file is the same.
+
+## The query contract
+
+- Queries run verbatim in your driver's dialect: `$1` for Postgres, `?` for
+  MySQL, `?1` or `?` for SQLite and D1. Nothing is rewritten.
+- Parameters are bound in order, as text. They never become part of the SQL.
+- A query returns zero or one row. More than one row is an error.
+- Existence queries return a `found` column that is a boolean or an integer
+  (non-zero is true). Zero rows means false. Any other type, including NULL, is
+  an error and the request fails with a 500.
+- On D1, reference every bound parameter in the query (for example
+  `AND ?3 IS NOT NULL`). D1 rejects a query that binds more values than it uses.
+
+| Query                               | Parameters                                            |
+| ----------------------------------- | ----------------------------------------------------- |
+| `tenant_exists`                     | tenant                                                |
+| `organization_exists`               | organization                                          |
+| `organization_belongs_to_tenant`    | tenant, organization                                  |
+| `workspace_exists`                  | workspace                                             |
+| `workspace_belongs_to_organization` | organization, workspace                               |
+| `environment_exists`                | environment                                           |
+| `environment_belongs_to_workspace`  | workspace, environment                                |
+| `api_key_valid`                     | api key                                               |
+| `api_key_tenant`                    | api key, tenant                                       |
+| `api_key_organization`              | api key, tenant, organization                         |
+| `api_key_workspace`                 | api key, tenant, organization, workspace              |
+| `api_key_environment`               | api key, tenant, organization, workspace, environment |
+| `api_key_scope`                     | api key, scope (such as `read:artifacts`)             |
+
+## API key hashing
+
+The service hashes the presented key before binding it, so you can store keys
+hashed. `algorithm` is `none`, `sha256` (default), `sha512` or `hmac-sha256`
+(needs `secret`). `encoding` is `hex` (default) or `base64`. Only deterministic
+hashes are supported, because the lookup is by value. Use long random keys.
+Changing the algorithm invalidates stored values, so migrate your rows first.
+
+## Hooks
+
+Hooks run on every artifact operation: `get`, `get_many`, `head`, `head_many`,
+`put` and `delete`.
+
+- `before` can veto. A row with a text `veto_reason` blocks the operation with
+  a 403 carrying that reason. Zero rows or a NULL reason allows it.
+- `after` observes the result and cannot change it, so use it to record usage.
+  It runs after the response is sent.
+- `before` parameters: operation, tenant, organization, workspace, environment,
+  digest. `after` adds the outcome (`hit`, `miss`, `stored`, `deleted`,
+  `failed`). The digest is empty for list operations.
+- A `before` hook that errors or times out blocks the request by default
+  (`fail_closed`). Set `fail_open` to let requests through instead.
+
+### Pruning old or unused entries
+
+An external service can read the usage you record and delete cold entries.
+Usage can be slightly stale because `after` runs off the request path. Only
+prune entries idle for longer than your expected update delay, or accept that a
+wrongly pruned entry is a cache miss and a rebuild.
+
+## Caching lookups
+
+Caching is off unless you add `caching`. It trades freshness for fewer queries.
+A revoked API key or removed tenant stays valid for up to the TTL (60 seconds
+for ownership data and 10 seconds for API keys by default). Errors are never
+cached, and `false` results are cached only if you set `negative_ttl_secs`.

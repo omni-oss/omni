@@ -33,16 +33,16 @@ Done means all of these hold:
 
 ## 2. What it touches
 
-| Area | Where | Effect |
-| --- | --- | --- |
-| Repository traits | `data/{tenants,organizations,workspaces,environments}/repository.rs` | The traits stay the extension point; their shape is reviewed in step 1. |
-| Providers | `providers/{traits,config}.rs`, `DependencyProvider` | Adds backend selection and a hooks accessor. |
-| Validation | `services/validation*.rs` | Consumes the repositories; may collapse several round trips into one query. |
-| Security | `security/` (`SecurityService`) | API keys and scopes become pluggable, with the same backends and query contract as the repositories. |
-| Routes | `routes/v1/artifacts/{get_artifact,get_artifacts,head_artifact,head_artifacts,put_artifact,delete_artifact}.rs`, `common.rs` | Hook call sites and veto responses in all six handlers. |
-| Config | `config/mod.rs` | New backend and query configuration. |
-| Consumers | `services/omni_remote_cache_service`, `services/omni_remote_cache_worker` | Wire the chosen backend. The worker is wasm. |
-| Runtime constraint | wasm32 + D1 | D1 futures are not `Send`. Decided: keep the traits `Send` and wrap JS futures in the D1 backend (section 5; RFC 0019, "`Send` strategy"). |
+| Area               | Where                                                                                                                        | Effect                                                                                                                                     |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Repository traits  | `data/{tenants,organizations,workspaces,environments}/repository.rs`                                                         | The traits stay the extension point; their shape is reviewed in step 1.                                                                    |
+| Providers          | `providers/{traits,config}.rs`, `DependencyProvider`                                                                         | Adds backend selection and a hooks accessor.                                                                                               |
+| Validation         | `services/validation*.rs`                                                                                                    | Consumes the repositories; may collapse several round trips into one query.                                                                |
+| Security           | `security/` (`SecurityService`)                                                                                              | API keys and scopes become pluggable, with the same backends and query contract as the repositories.                                       |
+| Routes             | `routes/v1/artifacts/{get_artifact,get_artifacts,head_artifact,head_artifacts,put_artifact,delete_artifact}.rs`, `common.rs` | Hook call sites and veto responses in all six handlers.                                                                                    |
+| Config             | `config/mod.rs`                                                                                                              | New backend and query configuration.                                                                                                       |
+| Consumers          | `services/omni_remote_cache_service`, `services/omni_remote_cache_worker`                                                    | Wire the chosen backend. The worker is wasm.                                                                                               |
+| Runtime constraint | wasm32 + D1                                                                                                                  | D1 futures are not `Send`. Decided: keep the traits `Send` and wrap JS futures in the D1 backend (section 5; RFC 0019, "`Send` strategy"). |
 
 ## 3. Worked example
 
@@ -51,8 +51,8 @@ An operator runs the Worker with D1 and an external pruning service.
 **Happy path**
 
 1. Config points ownership lookups at D1 with these queries:
-   - `SELECT 1 AS found FROM orgs o JOIN tenants t ON t.id = o.tenant_id WHERE t.code = ?1 AND o.code = ?2`
-   - Equivalents for the workspace and environment checks.
+    - `SELECT 1 AS found FROM orgs o JOIN tenants t ON t.id = o.tenant_id WHERE t.code = ?1 AND o.code = ?2`
+    - Equivalents for the workspace and environment checks.
 2. `PUT /v1/artifacts/abc?org=o&ws=w&env=e` passes auth and ownership validation. The `before` hook allows it, the artifact is stored, and the `after` hook inserts a row in `artifact_events`.
 3. `GET` of the same artifact runs the `before` hook, which allows it, then serves it and upserts `last_read_at` in `artifact_usage`.
 4. The external pruner reads `artifact_usage`, deletes cold entries, and the next `GET` returns 404. Usage can be stale (a failed `after`, sampled or batched writes), so a recently read entry can look cold. The pruner contract: it must only delete entries idle for longer than a minimum age that exceeds the expected usage-update delay (sampling or batch interval plus `after` timeout), or accept that a wrongly pruned entry is a cache miss and a rebuild, not data loss.
@@ -85,9 +85,13 @@ Each query is declared in config with a name, the SQL text, and an ordered list 
 
 ```yaml
 repository:
-  kind: sql            # sql | d1 | in_memory
-  queries:
-    tenant_exists: { sql: "SELECT 1 AS found FROM tenants WHERE code = $1", params: [tenant_code] }
+    kind: sql # sql | d1 | in_memory
+    queries:
+        tenant_exists:
+            {
+                sql: "SELECT 1 AS found FROM tenants WHERE code = $1",
+                params: [tenant_code],
+            }
 ```
 
 - **Row shape.** Every query returns zero or one row with the documented columns. `exists` queries return a column named `found` that is a boolean or an integer. Non-zero means true. Any other type, including NULL, is a shape error. Zero rows means false.
@@ -119,10 +123,10 @@ The service transforms the presented key before it touches the database, so the 
 
 ```yaml
 security:
-  api_key_hash:
-    algorithm: sha256      # none | sha256 | sha512 | hmac-sha256
-    encoding: hex          # hex | base64
-    secret: ${KEY_PEPPER}  # only for hmac-sha256
+    api_key_hash:
+        algorithm: sha256 # none | sha256 | sha512 | hmac-sha256
+        encoding: hex # hex | base64
+        secret: ${KEY_PEPPER} # only for hmac-sha256
 ```
 
 - **Flow.** The service computes `stored = encode(hash(presented))`. It binds `stored` as the query parameter, and the query returns the `api_key` column plus scopes. The service compares the returned value with `stored` in constant time before trusting the row.
@@ -150,15 +154,15 @@ Backends never cache. A separate decorator wraps any implementation of the repos
 
 ## 5. Options considered
 
-| Decision | Options | Lean |
-| --- | --- | --- |
-| SQL layer | A: `sqlx` 0.9.0 for native. B: per-driver crates behind our own trait. | **Decided: `sqlx` 0.9.0 on native**, covering whatever it supports (SQLite, Postgres, MySQL). D1 is a separate implementation, because `sqlx` does not run on wasm32. Both sit behind the same traits and query contract. |
-| Backend crates | One `omni_remote_cache_repository_sql` crate plus one `_d1` crate, or one crate with features. | Separate crates, mirroring `omni_remote_cache_storage_*` from RFC 0019. |
-| Query contract | Free-form SQL with a fixed shape, a mini query DSL, or fixed schema with a column mapping. | Free-form SQL with a fixed shape. It meets "no matter the schema". |
-| Hook failure policy | Always fail-closed, always fail-open, or per-hook. | Per-hook, default closed for `before`. |
-| `Send` on wasm | A: keep traits `Send`, wrap JS futures in the D1 backend. B: `?Send` on wasm. C: `?Send` everywhere. | **Decided: A.** Traits and core stay `Send`. The D1 backend wraps futures in `worker::send::SendFuture` and holds handles in `SendWrapper`, as `omni_remote_cache_storage_r2` already does. B is the fallback if the spike fails. |
-| Caching | A: built into each backend. B: one decorator over the traits. | **Decided: B**, opt-in and off by default. Backends stay simple and an embedder's backend gets caching too. |
-| Hook trait | Core trait with SQL as one implementation, or SQL-only hooks. | Core trait, which keeps the REST backlog item open. |
+| Decision            | Options                                                                                              | Lean                                                                                                                                                                                                                              |
+| ------------------- | ---------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| SQL layer           | A: `sqlx` 0.9.0 for native. B: per-driver crates behind our own trait.                               | **Decided: `sqlx` 0.9.0 on native**, covering whatever it supports (SQLite, Postgres, MySQL). D1 is a separate implementation, because `sqlx` does not run on wasm32. Both sit behind the same traits and query contract.         |
+| Backend crates      | One `omni_remote_cache_repository_sql` crate plus one `_d1` crate, or one crate with features.       | Separate crates, mirroring `omni_remote_cache_storage_*` from RFC 0019.                                                                                                                                                           |
+| Query contract      | Free-form SQL with a fixed shape, a mini query DSL, or fixed schema with a column mapping.           | Free-form SQL with a fixed shape. It meets "no matter the schema".                                                                                                                                                                |
+| Hook failure policy | Always fail-closed, always fail-open, or per-hook.                                                   | Per-hook, default closed for `before`.                                                                                                                                                                                            |
+| `Send` on wasm      | A: keep traits `Send`, wrap JS futures in the D1 backend. B: `?Send` on wasm. C: `?Send` everywhere. | **Decided: A.** Traits and core stay `Send`. The D1 backend wraps futures in `worker::send::SendFuture` and holds handles in `SendWrapper`, as `omni_remote_cache_storage_r2` already does. B is the fallback if the spike fails. |
+| Caching             | A: built into each backend. B: one decorator over the traits.                                        | **Decided: B**, opt-in and off by default. Backends stay simple and an embedder's backend gets caching too.                                                                                                                       |
+| Hook trait          | Core trait with SQL as one implementation, or SQL-only hooks.                                        | Core trait, which keeps the REST backlog item open.                                                                                                                                                                               |
 
 ## 6. Plan
 
@@ -172,13 +176,13 @@ Backends never cache. A separate decorator wraps any implementation of the repos
 
 **Spike result (done, code in `/tmp/opencode/spike`, not committed).** Run against real engines: `sqlx` 0.9.0 `Any` with SQLite, Postgres 16 and MySQL 8, and D1 under `wrangler dev --local`. The wasm build also compiled for `wasm32-unknown-unknown`.
 
-| Question | Result |
-| --- | --- |
-| Query contract through `sqlx` | Works. Verbatim SQL, positional string binds, `found` column, zero rows means false. Verified for `?`, `?1` (SQLite), `$1` (Postgres) and `?` (MySQL). Injection strings are inert. |
-| Same contract on D1 | Works with `?1`. Same results as SQLite. |
-| `Send` option A | Works. `Send` traits, with `SendWrapper<D1Database>` and `SendFuture` in the D1 backend, compile and run on Workers. Core needs no change. |
-| `after` via `waitUntil` | Works. A `Background` trait (`spawn(BoxFuture + Send)`) in core, implemented by `tokio::spawn` natively and `ctx.wait_until` on Workers (context held in `SendWrapper`). The event was written after the response (0 to 1), and a veto skipped it. |
-| Veto | Works end to end. A `before` query returning `veto_reason` gave 403 with the reason and no `after` write. |
+| Question                      | Result                                                                                                                                                                                                                                             |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Query contract through `sqlx` | Works. Verbatim SQL, positional string binds, `found` column, zero rows means false. Verified for `?`, `?1` (SQLite), `$1` (Postgres) and `?` (MySQL). Injection strings are inert.                                                                |
+| Same contract on D1           | Works with `?1`. Same results as SQLite.                                                                                                                                                                                                           |
+| `Send` option A               | Works. `Send` traits, with `SendWrapper<D1Database>` and `SendFuture` in the D1 backend, compile and run on Workers. Core needs no change.                                                                                                         |
+| `after` via `waitUntil`       | Works. A `Background` trait (`spawn(BoxFuture + Send)`) in core, implemented by `tokio::spawn` natively and `ctx.wait_until` on Workers (context held in `SendWrapper`). The event was written after the response (0 to 1), and a veto skipped it. |
+| Veto                          | Works end to end. A `before` query returning `veto_reason` gave 403 with the reason and no `after` write.                                                                                                                                          |
 
 Findings that change the design:
 
@@ -244,11 +248,22 @@ Checks:
 
 ## 8. Assumptions and open questions
 
-| # | Item | Owner | Blocks |
-| --- | --- | --- | --- |
-| 1 | ~~Hook scope~~ Resolved: all operations the service has. | Product | - |
-| 2 | ~~Pluggable API keys~~ Resolved: yes, via the same backends, with **configurable key hashing** (section 4, "API key hashing"). | - | - |
-| 3 | ~~Databases~~ Resolved: whatever `sqlx` supports. Each `sqlx` driver is its own cargo feature (for example `sqlite`, `postgres`, `mysql`), **on by default**, and a consumer can turn them off with `default-features = false` and pick its own. The `sqlx` dependency is gated to non-wasm targets, so the default features never reach the worker build, which uses D1 only. Config naming a driver that was not compiled in fails at startup with a clear error. | - | - |
-| 4 | ~~Repository caching~~ Resolved: not by default, with an opt-in caching decorator (section 4). Default TTL values and the config shape are settled in step 1. | Design | Step 1 |
-| 5 | ~~Schema ownership~~ Resolved: the operator owns all tables and migrations for ownership data, API keys, and hook events and usage. We ship no migrations and no DDL that runs automatically. The operator supplies queries that return the shape the service expects, and the docs list each query, its parameters and its columns. Example DDL appears in the docs for illustration only. | - | - |
-| 6 | ~~Placeholder dialects~~ Resolved: no rewriting. The operator writes queries in their driver's dialect. Docs must show an example per driver. | - | - |
+| #   | Item                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Owner   | Blocks |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ------ |
+| 1   | ~~Hook scope~~ Resolved: all operations the service has.                                                                                                                                                                                                                                                                                                                                                                                                            | Product | -      |
+| 2   | ~~Pluggable API keys~~ Resolved: yes, via the same backends, with **configurable key hashing** (section 4, "API key hashing").                                                                                                                                                                                                                                                                                                                                      | -       | -      |
+| 3   | ~~Databases~~ Resolved: whatever `sqlx` supports. Each `sqlx` driver is its own cargo feature (for example `sqlite`, `postgres`, `mysql`), **on by default**, and a consumer can turn them off with `default-features = false` and pick its own. The `sqlx` dependency is gated to non-wasm targets, so the default features never reach the worker build, which uses D1 only. Config naming a driver that was not compiled in fails at startup with a clear error. | -       | -      |
+| 4   | ~~Repository caching~~ Resolved: not by default, with an opt-in caching decorator (section 4). Default TTL values and the config shape are settled in step 1.                                                                                                                                                                                                                                                                                                       | Design  | Step 1 |
+| 5   | ~~Schema ownership~~ Resolved: the operator owns all tables and migrations for ownership data, API keys, and hook events and usage. We ship no migrations and no DDL that runs automatically. The operator supplies queries that return the shape the service expects, and the docs list each query, its parameters and its columns. Example DDL appears in the docs for illustration only.                                                                         | -       | -      |
+| 6   | ~~Placeholder dialects~~ Resolved: no rewriting. The operator writes queries in their driver's dialect. Docs must show an example per driver.                                                                                                                                                                                                                                                                                                                       | -       | -      |
+
+## Implementation notes
+
+Where the build differs from the plan above:
+
+- **API key check.** Every key check is an `exists` query on the hashed key, so the database compares the hash and the service does not compare a returned value itself. The lookup is by a hash the caller cannot choose, so a timing attack on the comparison has nothing to exploit.
+- **Batch hooks.** `GetMany` and `HeadMany` are the list operations. They have no digests, so `before` runs once with an empty `digests` and a veto rejects the request. Single-artifact operations carry one digest.
+- **Crates.** `omni_remote_cache_repository_query` (contracts, repositories, security, hashing, hooks, config), `_sql` (`sqlx` 0.9.0, native) and `_d1` (Workers). The caching decorator is `omni_remote_cache_core::caching`.
+- **Timers.** Core has no runtime, so `Background` also provides `sleep`, used for hook timeouts. Without a `Background`, `after` runs inline and timeouts are not enforced.
+- **D1 strictness.** D1 rejects a query that binds more parameters than it references. Operators must reference every parameter. Verified under `wrangler dev --local`.
+- **Verified.** SQLite, Postgres 16 and MySQL 8 for the executor, and the whole worker under `wrangler dev --local` (auth, validation, usage recorded with `waitUntil`, veto). Postgres and MySQL tests run when `TEST_POSTGRES_URL` or `TEST_MYSQL_URL` is set.
