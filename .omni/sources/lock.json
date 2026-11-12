@@ -8,18 +8,15 @@
     },
     "https://github.com/cs-clarence/swe-skills": {
       "main": {
-        "commit": "420e6262d2a6943cb2d02e9238e7aa0e21d61007"
+        "commit": "57fdd47cc8244b24b3dcdde46d6e6cf2e4ee5b39"
       }
     },
     "https://github.com/cursor/plugins.git": {
       "main": {
-        "commit": "63912a91d52c43946f974f2aaf661334a6116a82"
+        "commit": "a5539b15a3d56e04992565aafee2b37051329ce3"
       }
     },
     "https://github.com/mattpocock/skills.git": {
-      "main": {
-        "commit": "c55ee46073ed923f86ce59a5eb3b6d895095d1b7"
-      },
       "v1.2.3": {
         "commit": "6acc160e4e0cd062dbbbd7a1b26ae92855edf07e"
       }

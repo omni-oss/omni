@@ -11,10 +11,10 @@ use crate::{
     BaseEnvSetCurrentDirAsync, BaseFsAppendAsync, BaseFsCanonicalizeAsync,
     BaseFsCopyAsync, BaseFsCreateDirAsync, BaseFsCreateJunctionAsync,
     BaseFsHardLinkAsync, BaseFsMetadataAsync, BaseFsReadAsync,
-    BaseFsReadDirAsync, BaseFsReadLinkAsync, BaseFsRemoveDirAllAsync,
-    BaseFsRemoveDirAsync, BaseFsRemoveFileAsync, BaseFsRenameAsync,
-    BaseFsSymlinkDirAsync, BaseFsSymlinkFileAsync, BaseFsWriteAsync,
-    CreateDirOptions, EnvCurrentDirAsync,
+    BaseFsReadDirAsync, BaseFsReadLinkAsync, BaseFsReflinkAsync,
+    BaseFsRemoveDirAllAsync, BaseFsRemoveDirAsync, BaseFsRemoveFileAsync,
+    BaseFsRenameAsync, BaseFsSymlinkDirAsync, BaseFsSymlinkFileAsync,
+    BaseFsWriteAsync, CreateDirOptions, EnvCurrentDirAsync,
 };
 
 // ---------------------------------------------------------------------------
@@ -39,6 +39,22 @@ impl BaseFsHardLinkAsync for InMemorySys {
         dst: &std::path::Path,
     ) -> std::io::Result<()> {
         Ok(self.fs_hard_link(src, dst)?)
+    }
+}
+
+/// The in-memory filesystem has no extents to share, so it models a volume
+/// that cannot reflink.
+#[async_trait::async_trait]
+impl BaseFsReflinkAsync for InMemorySys {
+    async fn base_fs_reflink_async(
+        &self,
+        _src: &std::path::Path,
+        _dst: &std::path::Path,
+    ) -> std::io::Result<()> {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "reflink is not supported by the in-memory filesystem",
+        ))
     }
 }
 

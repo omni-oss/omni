@@ -38,21 +38,7 @@ pub async fn clone_repo(
         .main_worktree(Discard, &interrupt::IS_INTERRUPTED)
         .map_err(gix::Error::from_error)?;
 
-    // `rev` may resolve to an annotated tag (or a chain of tags) rather than a
-    // commit directly, so peel through any tags to the underlying commit.
-    let commit = repo
-        .rev_parse_single(rev.unwrap_or("HEAD"))
-        .map_err(gix::Error::from_error)?
-        .object()
-        .map_err(gix::Error::from_error)?
-        .peel_to_commit()
-        .map_err(gix::Error::from_error)?;
-    let oid = commit.id;
-    let tree_id = commit.tree().map_err(gix::Error::from_error)?.id();
-
-    let mut index_state =
-        index::State::from_tree(&tree_id, &repo.objects, Default::default())?;
-
+    let oid = peel_commit(&repo, rev.unwrap_or("HEAD"))?;
     repo.reference(
         "HEAD",
         oid,
@@ -64,24 +50,183 @@ pub async fn clone_repo(
     let workdir = repo
         .workdir()
         .ok_or_else(|| eyre::eyre!("repository has no workdir"))?;
+    // Overwrite the files of the HEAD checkout the clone made.
+    write_commit_tree(&repo, oid, workdir)?;
 
-    let (pipeline, _) = repo.filter_pipeline(Some(oid))?;
+    Ok(CloneInfo::new(oid.to_string()))
+}
+
+/// The refspecs a bare mirror fetches: every branch and tag, kept under the
+/// same names. A bare clone configures none of its own, and a fetch without
+/// any fails, so they are always passed explicitly.
+const MIRROR_REFSPECS: [&str; 2] =
+    ["+refs/heads/*:refs/heads/*", "+refs/tags/*:refs/tags/*"];
+
+/// Bring the bare repository at `bare_dir` up to date with `uri`, creating it on
+/// the first call. Every branch and tag is fetched, so any commit a ref reaches
+/// can be exported later without the network.
+///
+/// A first clone lands in a sibling temporary directory and is renamed into
+/// place, so a failed or interrupted clone never leaves a half-built repository
+/// behind. Callers serialize calls for one `bare_dir` (concurrent fetches into
+/// one repository race on its refs).
+pub async fn fetch_bare(
+    sys: &impl GitUtilsSys,
+    uri: &str,
+    bare_dir: &Path,
+) -> Result<(), Error> {
+    if let Ok(repo) = gix::open(bare_dir) {
+        let remote = repo
+            .remote_at(uri)
+            .map_err(gix::Error::from_error)?
+            .with_refspecs(MIRROR_REFSPECS, gix::remote::Direction::Fetch)
+            .map_err(gix::Error::from_error)?;
+        remote
+            .connect(gix::remote::Direction::Fetch)
+            .map_err(gix::Error::from_error)?
+            .prepare_fetch(Discard, Default::default())
+            .map_err(gix::Error::from_error)?
+            .receive(Discard, &interrupt::IS_INTERRUPTED)
+            .map_err(gix::Error::from_error)?;
+        return Ok(());
+    }
+
+    let parent = bare_dir
+        .parent()
+        .ok_or_else(|| Error::custom("bare repository path has no parent"))?;
+    sys.fs_create_dir_all_async(parent).await?;
+    let mut name = bare_dir
+        .file_name()
+        .map(|n| n.to_os_string())
+        .unwrap_or_default();
+    name.push(format!(".clone-{}", std::process::id()));
+    let staging = parent.join(name);
+    // A leftover from a crashed attempt of this process id is not a repository
+    // we trust.
+    let _ = std::fs::remove_dir_all(&staging);
+    sys.fs_create_dir_all_async(&staging).await?;
+
+    let cloned = (|| -> Result<(), Error> {
+        let mut prepare = gix::prepare_clone_bare(uri, &staging)
+            .map_err(gix::Error::from_error)?;
+        prepare
+            .fetch_only(Discard, &interrupt::IS_INTERRUPTED)
+            .map_err(gix::Error::from_error)?;
+        Ok(())
+    })();
+    if let Err(error) = cloned {
+        let _ = std::fs::remove_dir_all(&staging);
+        return Err(error);
+    }
+    // A directory that is not a repository (its `HEAD` was deleted, say) would
+    // block the rename. Set it aside, and put it back if publishing fails so a
+    // failed attempt never loses what was there.
+    let aside = if bare_dir.exists() {
+        let mut name = bare_dir
+            .file_name()
+            .map(|n| n.to_os_string())
+            .unwrap_or_default();
+        name.push(format!(".invalid-{}", std::process::id()));
+        let aside = parent.join(name);
+        let _ = std::fs::remove_dir_all(&aside);
+        std::fs::rename(bare_dir, &aside)?;
+        Some(aside)
+    } else {
+        None
+    };
+    if let Err(error) = std::fs::rename(&staging, bare_dir) {
+        let _ = std::fs::remove_dir_all(&staging);
+        if let Some(aside) = &aside {
+            let _ = std::fs::rename(aside, bare_dir);
+        }
+        return Err(error.into());
+    }
+    if let Some(aside) = aside {
+        let _ = std::fs::remove_dir_all(aside);
+    }
+    Ok(())
+}
+
+/// The commit `rev` (a branch, tag, annotated tag or commit id) names in the
+/// bare repository at `bare_dir`, without touching the network. `None` when the
+/// repository does not have it.
+pub fn resolve_commit(bare_dir: &Path, rev: &str) -> Option<String> {
+    let repo = gix::open(bare_dir).ok()?;
+    peel_commit(&repo, rev).ok().map(|id| id.to_string())
+}
+
+/// The commit `rev` names. `rev` may resolve to an annotated tag (or a chain of
+/// tags) rather than a commit directly, so peel through any tags to the
+/// underlying commit.
+fn peel_commit(
+    repo: &gix::Repository,
+    rev: &str,
+) -> Result<gix::ObjectId, Error> {
+    Ok(repo
+        .rev_parse_single(rev)
+        .map_err(gix::Error::from_error)?
+        .object()
+        .map_err(gix::Error::from_error)?
+        .peel_to_commit()
+        .map_err(gix::Error::from_error)?
+        .id)
+}
+
+/// Write the files of `commit` into `dest` as a plain directory (no `.git`),
+/// applying the repository's filters (line endings) like a checkout does.
+/// `dest` is created and should not already exist.
+pub async fn export_tree(
+    sys: &impl GitUtilsSys,
+    bare_dir: &Path,
+    commit: &str,
+    dest: &Path,
+) -> Result<(), Error> {
+    let repo = gix::open(bare_dir).map_err(gix::Error::from_error)?;
+    let oid = gix::ObjectId::from_hex(commit.as_bytes()).map_err(|e| {
+        Error::custom(format!("invalid commit id {commit}: {e}"))
+    })?;
+    sys.fs_create_dir_all_async(dest).await?;
+    write_commit_tree(&repo, oid, dest)
+}
+
+/// Write the files of `commit` (a commit id, or a tag that peels to one) into
+/// `dest`, applying the repository's filters (line endings) like a checkout
+/// does and overwriting what is there. Shared by the full clone and the tree
+/// export so the two cannot drift.
+fn write_commit_tree(
+    repo: &gix::Repository,
+    commit: gix::ObjectId,
+    dest: &Path,
+) -> Result<(), Error> {
+    let tree_id = repo
+        .find_object(commit)
+        .map_err(gix::Error::from_error)?
+        .peel_to_commit()
+        .map_err(gix::Error::from_error)?
+        .tree_id()
+        .map_err(gix::Error::from_error)?
+        .detach();
+
+    let mut index_state =
+        index::State::from_tree(&tree_id, &repo.objects, Default::default())?;
+
+    // The filter pipeline is keyed by the tree, not the commit.
+    let (pipeline, _) = repo.filter_pipeline(Some(tree_id))?;
     let (filters, _) = pipeline.into_parts();
 
     worktree::state::checkout(
         &mut index_state,
-        workdir,
+        dest,
         repo.objects.clone(),
         &progress::Discard,
         &progress::Discard,
         &interrupt::IS_INTERRUPTED,
         Options {
-            overwrite_existing: true, // overwrite files from the HEAD checkout
+            overwrite_existing: true,
             ..Options::new(filters)
         },
     )?;
-
-    Ok(CloneInfo::new(oid.to_string()))
+    Ok(())
 }
 
 static UNALLOWED_SPEC_CHARS: LazyLock<HashSet<char>> = LazyLock::new(|| {

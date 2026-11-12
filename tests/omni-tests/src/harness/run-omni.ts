@@ -2,6 +2,9 @@
  * Spawn the `omni` binary and capture its result for assertions.
  */
 
+import { existsSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+
 import { execa, type Options } from "execa";
 
 import { resolveOmniBin } from "./binary";
@@ -47,6 +50,33 @@ export interface OmniResult {
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 
+const WORKSPACE_FILES = ["yaml", "yml", "json", "toml"].map(
+    (ext) => `workspace.omni.${ext}`,
+);
+
+/**
+ * Keep remote sources out of the developer's real per-user store: unless the
+ * caller sets `OMNI_SOURCES_DIR`, point the store at the workspace's own
+ * `.omni/sources/store`. Tests that exercise the global default set it
+ * themselves (or pass `undefined` to unset it).
+ */
+function isolatedSourcesDir(
+    cwd: string | undefined,
+    env: Record<string, string | undefined> | undefined,
+): string | undefined {
+    if (env && "OMNI_SOURCES_DIR" in env) return undefined;
+    if (process.env.OMNI_SOURCES_DIR) return undefined;
+    let dir = resolve(cwd ?? process.cwd());
+    for (;;) {
+        if (WORKSPACE_FILES.some((name) => existsSync(join(dir, name)))) {
+            return join(dir, ".omni", "sources", "store");
+        }
+        const parent = dirname(dir);
+        if (parent === dir) return undefined;
+        dir = parent;
+    }
+}
+
 /**
  * Run `omni <...args>` and resolve with its captured output and exit code.
  *
@@ -67,6 +97,11 @@ export async function runOmni(
 
     // Build options conditionally: with exactOptionalPropertyTypes enabled we
     // must not pass `undefined` for optional execa options.
+    const sourcesDir = isolatedSourcesDir(options.cwd, options.env);
+    const env =
+        sourcesDir !== undefined
+            ? { ...options.env, OMNI_SOURCES_DIR: sourcesDir }
+            : options.env;
     const execaOptions: Options = {
         extendEnv: !options.cleanEnv,
         timeout: options.timeout ?? DEFAULT_TIMEOUT_MS,
@@ -74,7 +109,7 @@ export async function runOmni(
         stripFinalNewline: false,
         all: false,
         ...(options.cwd !== undefined ? { cwd: options.cwd } : {}),
-        ...(options.env !== undefined ? { env: options.env } : {}),
+        ...(env !== undefined ? { env } : {}),
         ...(options.input !== undefined ? { input: options.input } : {}),
     };
 

@@ -72,6 +72,7 @@ pub struct OmniApiBuilder<S: OmniEventSubscriber = TracingSubscriber> {
     tracing_config: TracingConfig,
     root_dir: Option<PathBuf>,
     cache_dir: Option<PathBuf>,
+    sources_dir: Option<PathBuf>,
 }
 
 impl<S: OmniEventSubscriber> OmniApiBuilder<S> {
@@ -87,6 +88,7 @@ impl<S: OmniEventSubscriber> OmniApiBuilder<S> {
             tracing_config: self.tracing_config,
             root_dir: self.root_dir,
             cache_dir: self.cache_dir,
+            sources_dir: self.sources_dir,
         }
     }
 
@@ -132,6 +134,12 @@ impl<S: OmniEventSubscriber> OmniApiBuilder<S> {
         self
     }
 
+    /// Override the remote-source store directory location.
+    pub fn sources_dir(mut self, path: impl Into<PathBuf>) -> Self {
+        self.sources_dir = Some(path.into());
+        self
+    }
+
     /// Consumes the builder and constructs an `OmniApi<RealSysSync, S>`.
     #[allow(clippy::result_large_err)]
     pub fn build(self) -> Result<OmniApi<RealSysSync, S>, OmniApiError> {
@@ -153,6 +161,11 @@ impl<S: OmniEventSubscriber> OmniApiBuilder<S> {
             self.cache_dir
                 .clone()
                 .or_else(|| self.workspace_config.cache_dir.clone()),
+        )?
+        .with_sources_dir(
+            self.sources_dir
+                .clone()
+                .or_else(|| self.workspace_config.sources_dir.clone()),
         )?;
 
         let setup_guard = if self.with_setup {
@@ -213,6 +226,7 @@ impl OmniApi<RealSysSync, TracingSubscriber> {
             tracing_config: TracingConfig::disabled(),
             root_dir: None,
             cache_dir: None,
+            sources_dir: None,
         }
     }
 }
@@ -774,6 +788,24 @@ where
         let ctx = self.ctx.lock().await;
         let sys = ctx.as_context().sys().clone();
         crate::operations::remote_source::handle_remote_sources_install(
+            ctx.as_context(),
+            &sys,
+            req,
+        )
+        .await
+    }
+
+    /// Delete checkouts from the shared remote-source store by age or size.
+    /// The only operation that removes checkouts.
+    pub async fn remote_sources_prune(
+        &self,
+        req: crate::operations::remote_source::RemoteSourcesPruneRequest,
+    ) -> eyre::Result<
+        crate::operations::remote_source::RemoteSourcesPruneResponse,
+    > {
+        let ctx = self.ctx.lock().await;
+        let sys = ctx.as_context().sys().clone();
+        crate::operations::remote_source::handle_remote_sources_prune(
             ctx.as_context(),
             &sys,
             req,

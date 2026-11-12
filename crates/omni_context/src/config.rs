@@ -14,6 +14,8 @@ pub struct WorkspaceInitConfig {
     pub inherit_env_vars: bool,
     /// Optional override for the cache directory location.
     pub cache_dir: Option<PathBuf>,
+    /// Optional override for the remote-source store directory.
+    pub sources_dir: Option<PathBuf>,
 }
 
 impl Default for WorkspaceInitConfig {
@@ -25,6 +27,7 @@ impl Default for WorkspaceInitConfig {
                 .replace("{ext}", "yaml"),
             inherit_env_vars: false,
             cache_dir: None,
+            sources_dir: None,
         }
     }
 }

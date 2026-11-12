@@ -57,6 +57,11 @@ pub struct PlannedItem {
     pub on_existing: ExistingPolicy,
     pub link: LinkKind,
     pub pin: String,
+    /// The source is a git checkout in the shared remote-source store.
+    pub from_store: bool,
+    /// The source's root directory (its checkout), used to recognise a moved
+    /// store's tail.
+    pub source_root: PathBuf,
 }
 
 /// One source's full plan: every planned link plus the desired destination set
@@ -185,6 +190,8 @@ where
                 on_existing,
                 link,
                 pin: pin.clone(),
+                from_store: source.git_pin.is_some(),
+                source_root: source.source_root.to_path_buf(),
             });
         }
     }
@@ -213,13 +220,25 @@ where
         let opts = ApplyOptions {
             link: item.link,
             on_existing: item.on_existing,
+            from_store: item.from_store,
         };
 
         let prior = prior_ledger.links().iter().find(|l| {
             l.source_id == source.qualified_id && l.dest == item.dest_rel
         });
         let prior_link = prior.map(|l| PriorLink {
-            source_abs: Path::new(&l.target),
+            // A git checkout keeps its `<slug>/<commit>/<file>` tail wherever
+            // the store lives, so a moved store still owns its old links.
+            source_abs: if item.from_store
+                && same_store_file(
+                    Path::new(&l.target),
+                    &item.pair.source_abs,
+                    &item.source_root,
+                ) {
+                &item.pair.source_abs
+            } else {
+                Path::new(&l.target)
+            },
             pin_unchanged: !params.force && l.source_pin == item.pin,
         });
 
@@ -269,6 +288,30 @@ where
     Ok(outcome)
 }
 
+/// Whether `prior_target` is the same file as `source_abs` in a store that has
+/// since moved: both end in `<slug>/<commit>/<path inside the source>`.
+pub(crate) fn same_store_file(
+    prior_target: &Path,
+    source_abs: &Path,
+    source_root: &Path,
+) -> bool {
+    let Ok(inside) = source_abs.strip_prefix(source_root) else {
+        return false;
+    };
+    let mut tail: Vec<_> = source_root
+        .components()
+        .rev()
+        .take(2)
+        .map(|c| c.as_os_str())
+        .collect();
+    if tail.len() < 2 {
+        return false;
+    }
+    tail.reverse();
+    let tail: PathBuf = tail.into_iter().collect::<PathBuf>().join(inside);
+    prior_target.ends_with(tail)
+}
+
 /// Remove destinations recorded for this source in a prior pass that the
 /// current config no longer wants. User-edited copies are kept and warned on.
 async fn reconcile_stale<S>(
@@ -293,7 +336,7 @@ where
 
         let dest_abs = params.workspace_root.join(&link.dest);
 
-        if link.kind == ResolvedKind::Copy
+        if matches!(link.kind, ResolvedKind::Copy | ResolvedKind::Reflink)
             && copy_was_modified(sys, &dest_abs, &link.target).await
         {
             outcome.warnings.push(format!(
@@ -366,7 +409,9 @@ where
         let resolves = sys.fs_metadata_async(&dest).await.is_ok();
 
         let state = match link.kind {
-            ResolvedKind::Copy | ResolvedKind::Hardlink => {
+            ResolvedKind::Copy
+            | ResolvedKind::Reflink
+            | ResolvedKind::Hardlink => {
                 if resolves {
                     LinkState::Ok
                 } else {
@@ -490,6 +535,81 @@ mod tests {
         assert_eq!(outcome.links.len(), 1);
         assert_eq!(outcome.links[0].dest, "dst/a.txt");
         assert!(ws.join("dst/a.txt").exists());
+    }
+
+    #[test]
+    fn a_moved_store_is_recognised_by_its_slug_commit_tail() {
+        let root = Path::new("/new/git/slug/abc");
+        let abs = Path::new("/new/git/slug/abc/skills/a.md");
+        assert!(same_store_file(
+            Path::new("/old/store/git/slug/abc/skills/a.md"),
+            abs,
+            root
+        ));
+        assert!(same_store_file(abs, abs, root));
+        // Another commit, another file, or another remote is not the same.
+        for other in [
+            "/old/git/slug/def/skills/a.md",
+            "/old/git/slug/abc/skills/b.md",
+            "/old/git/other/abc/skills/a.md",
+        ] {
+            assert!(!same_store_file(Path::new(other), abs, root), "{other}");
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn sync_repairs_links_after_the_store_moves_and_the_old_one_is_deleted()
+     {
+        let dir = tempfile::tempdir().unwrap();
+        let ws = dir.path().join("ws");
+        std::fs::create_dir_all(&ws).unwrap();
+        let make_store = |name: &str| {
+            let root = dir.path().join(name).join("git/slug/abc123");
+            std::fs::create_dir_all(&root).unwrap();
+            std::fs::write(root.join("a.txt"), b"a").unwrap();
+            root
+        };
+        let projections = vec![projection(
+            r#"{"strategy":"mirror","target":"@workspace/dst","link":"symlink"}"#,
+        )];
+        let sync = |root: std::path::PathBuf, ledger: Ledger| {
+            let projections = projections.clone();
+            let ws = ws.clone();
+            async move {
+                let source = ResolvedSource {
+                    id: "pkg",
+                    qualified_id: "pkg",
+                    source_root: &root,
+                    git_pin: Some("abc123".to_string()),
+                    projections: &projections,
+                };
+                let params = SyncParams {
+                    workspace_root: &ws,
+                    env_files: &[],
+                    force: false,
+                    dry_run: false,
+                };
+                sync_source(&RealSys, &source, &params, &ledger).await
+            }
+        };
+        let old = make_store("store-old");
+        let first = sync(old, Ledger::default()).await.unwrap();
+        let ledger = Ledger::from_links(first.links.clone());
+
+        // `sources.dir` changes: the commit now lives in a new store and the
+        // old one is gone, leaving a dangling link.
+        std::fs::remove_dir_all(dir.path().join("store-old")).unwrap();
+        assert!(!ws.join("dst/a.txt").exists());
+        let new = make_store("store-new");
+        let second = sync(new.clone(), ledger).await.unwrap();
+
+        assert!(!second.applied[0].skipped, "the dangling link is repaired");
+        assert_eq!(std::fs::read(ws.join("dst/a.txt")).unwrap(), b"a");
+        assert_eq!(
+            std::fs::read_link(ws.join("dst/a.txt")).unwrap(),
+            new.join("a.txt")
+        );
     }
 
     #[tokio::test]

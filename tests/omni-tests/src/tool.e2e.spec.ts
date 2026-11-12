@@ -9,10 +9,20 @@
  */
 
 import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished } from "vitest";
 
-import { makeWorkspace, runOmni, type WorkspaceSpec } from "@/harness";
+import {
+    makeLocalGitRepoWithAnnotatedTag,
+    makeWorkspace,
+    runOmni,
+    skipUnlessGitCliAvailable,
+    type WorkspaceSpec,
+} from "@/harness";
 
 /**
  * Extract the single JSON value printed by the command, ignoring any
@@ -221,6 +231,81 @@ describe.runIf(runtimeAvailable("deno"))(
             expect(result.exitCode).not.toBe(0);
             expect(ws.exists("../escaped.txt")).toBe(false);
         });
+    },
+);
+
+// A tool fetched from a git source lives in the shared remote-source store, which
+// is outside the workspace by default. Under capability enforcement it must still
+// be able to start and read its own entrypoint (RFC 0027, section 4.5).
+describe.runIf(runtimeAvailable("deno"))(
+    "+tool @e2e (git source in a store outside the workspace)",
+    { tags: ["tool"], timeout: 120_000 },
+    () => {
+        for (const enforced of [false, true]) {
+            // KNOWN GAP (RFC 0027): on Windows the AppContainer-confined runtime
+            // dies (EPIPE) when its entrypoint lives in a store outside the
+            // workspace. Enforcement is experimental and off by default; this
+            // stays skipped until the AppContainer grant for that directory is
+            // sorted out on a Windows machine.
+            const knownWindowsGap = enforced && process.platform === "win32";
+            it.skipIf(knownWindowsGap)(
+                `runs a git-sourced js tool (capabilities ${enforced ? "enforced" : "off"})`,
+                async (ctx) => {
+                    await skipUnlessGitCliAvailable(ctx);
+                    const repo = await makeLocalGitRepoWithAnnotatedTag({
+                        files: {
+                            "tool.omni.yaml": GREET_TOOL,
+                            "index.mjs": GREET_SCRIPT,
+                        },
+                    });
+                    const store = mkdtempSync(
+                        join(tmpdir(), "omni-e2e-store-"),
+                    );
+                    onTestFinished(() =>
+                        rmSync(store, { recursive: true, force: true }),
+                    );
+                    const ws = makeWorkspace({
+                        workspace: {
+                            projects: ["**"],
+                            tools: [
+                                {
+                                    source: "git",
+                                    uri: pathToFileURL(repo.url).href,
+                                    rev: "main",
+                                },
+                            ],
+                            ...(enforced
+                                ? {
+                                      enable_experimental: {
+                                          capabilities: true,
+                                      },
+                                  }
+                                : {}),
+                        },
+                    });
+                    const result = await runOmni(
+                        [
+                            "tool",
+                            "run",
+                            "greet",
+                            "--values-json",
+                            JSON.stringify({ who: "store", times: 2 }),
+                        ],
+                        {
+                            cwd: ws.cwd,
+                            env: { OMNI_SOURCES_DIR: join(store, "sources") },
+                            timeout: 100_000,
+                        },
+                    );
+                    expect(result).toHaveSucceeded();
+                    expect(parseJsonOutput(result.stdout)).toMatchObject({
+                        greeting: "hello store",
+                        times: 2,
+                    });
+                },
+                120_000,
+            );
+        }
     },
 );
 

@@ -90,7 +90,6 @@ pub enum LinkKind {
     #[default]
     Auto,
     Symlink,
-    Junction,
     Hardlink,
     Copy,
 }

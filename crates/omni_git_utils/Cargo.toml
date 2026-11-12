@@ -20,6 +20,7 @@ system_traits = { workspace = true }
 url = { workspace = true }
 
 [dev-dependencies]
+omni_test_capabilities = { workspace = true }
 test-log = { workspace = true }
 rstest = { workspace = true }
 rstest_reuse = { workspace = true }

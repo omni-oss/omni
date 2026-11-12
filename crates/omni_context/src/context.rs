@@ -1,4 +1,7 @@
 use crate::cache_resolution::{CacheDirectorySource, CacheResolutionState};
+use crate::sources_resolution::{
+    SourcesDirectorySource, SourcesResolutionState, global_sources_dir,
+};
 use std::path::{Path, PathBuf};
 
 pub(crate) use crate::env_loader::EnvLoader;
@@ -49,6 +52,12 @@ pub struct Context<TSys: ContextSys = RealSysSync> {
     cache_dir: PathBuf,
     cache_resolution: CacheResolutionState,
     cache_source: CacheDirectorySource,
+    sources_explicit: Option<PathBuf>,
+    /// Resolved lazily-failing: an invalid `worktree.omni.*` only matters to
+    /// commands that use the store, and an explicit `--cache-dir` still bypasses
+    /// worktree configuration errors (RFC 0017).
+    sources:
+        std::sync::OnceLock<Result<(PathBuf, SourcesDirectorySource), String>>,
     tracing_config: TracingConfig,
     sys: TSys,
 }
@@ -150,8 +159,41 @@ impl<TSys: ContextSys> Context<TSys> {
             override_env_files,
             tracing_config,
             cache_resolution,
+            None,
             working_dir,
         )
+    }
+
+    /// Override the remote-source store directory (the `--sources-dir` flag or
+    /// `OMNI_SOURCES_DIR`). `None` keeps the worktree/global resolution. The
+    /// override is retained across reloads; relative paths resolve against the
+    /// invocation directory.
+    #[allow(clippy::result_large_err)]
+    pub fn with_sources_dir(
+        mut self,
+        dir: Option<PathBuf>,
+    ) -> Result<Self, ContextError> {
+        let Some(dir) = dir else {
+            return Ok(self);
+        };
+        let dir = match &self.working_dir {
+            Some(wd) if !dir.is_absolute() && !dir.as_os_str().is_empty() => {
+                wd.join(dir)
+            }
+            _ => dir,
+        };
+        // Validated now: an explicit value is the user's to get right.
+        let state = SourcesResolutionState::new(
+            &self.root_dir,
+            Some(dir.clone()),
+            global_sources_dir(),
+            &self.sys,
+            |_| unreachable!("explicit sources dir skips discovery"),
+        );
+        let resolved = state.resolve(&self.root_dir, &self.sys)?;
+        self.sources_explicit = Some(dir);
+        self.sources = std::sync::OnceLock::from(Ok(resolved));
+        Ok(self)
     }
 
     #[allow(clippy::result_large_err, clippy::too_many_arguments)]
@@ -164,11 +206,13 @@ impl<TSys: ContextSys> Context<TSys> {
         override_env_files: Option<Vec<PathBuf>>,
         tracing_config: &TracingConfig,
         cache_resolution: CacheResolutionState,
+        sources_explicit: Option<PathBuf>,
         working_dir: Option<PathBuf>,
     ) -> Result<Self, ContextError> {
         let root_dir = root_dir.to_path_buf();
         let (cache_dir, cache_source) =
             cache_resolution.resolve(&root_dir, &sys)?;
+
         let workspace = get_workspace_configuration(&env, &root_dir, &sys)?;
         let omni_dir = root_dir.join(OMNI_DIR);
         let remote_cache = get_remote_cache_configuration(&cache_dir, &sys)?;
@@ -184,6 +228,8 @@ impl<TSys: ContextSys> Context<TSys> {
             cache_dir,
             cache_resolution,
             cache_source,
+            sources_explicit,
+            sources: std::sync::OnceLock::new(),
             env_root_dir_marker: root_marker.to_string(),
             sys,
             tracing_config: tracing_config.clone(),
@@ -219,6 +265,7 @@ impl<TSys: ContextSys> Context<TSys> {
             self.override_env_files.clone(),
             &self.tracing_config,
             self.cache_resolution.clone(),
+            self.sources_explicit.clone(),
             self.working_dir.clone(),
         )
     }
@@ -557,6 +604,45 @@ impl<TSys: ContextSys> Context<TSys> {
         &self.cache_source
     }
 
+    /// The remote-source store root, resolved from `--sources-dir`, the
+    /// worktree configuration, or the per-user default.
+    /// Resolved on first use, not at construction: most commands never touch the
+    /// store, and resolving reads the worktree files, discovers the checkout and
+    /// asks the OS for the per-user directory.
+    fn resolved_sources(
+        &self,
+    ) -> &Result<(PathBuf, SourcesDirectorySource), String> {
+        self.sources.get_or_init(|| {
+            SourcesResolutionState::new(
+                &self.root_dir,
+                self.sources_explicit.clone(),
+                global_sources_dir(),
+                &self.sys,
+                omni_scm::discover_checkout,
+            )
+            .resolve(&self.root_dir, &self.sys)
+            .map_err(|error| error.to_string())
+        })
+    }
+
+    #[allow(clippy::result_large_err)]
+    pub fn sources_dir(&self) -> Result<&Path, ContextError> {
+        match self.resolved_sources() {
+            Ok((path, _)) => Ok(path),
+            Err(message) => {
+                Err(ContextErrorInner::SourcesDirectory(message.clone()).into())
+            }
+        }
+    }
+
+    /// Where the store location came from, when it resolved.
+    pub fn sources_directory_source(&self) -> Option<&SourcesDirectorySource> {
+        self.resolved_sources()
+            .as_ref()
+            .ok()
+            .map(|(_, source)| source)
+    }
+
     pub fn scratch_dir(&self) -> PathBuf {
         self.root_dir.join(SCRATCH_DIR)
     }
@@ -761,6 +847,14 @@ pub(crate) enum ContextErrorInner {
     )]
     CacheDirectory(String),
 
+    /// The remote-source store directory configuration is invalid or unsafe.
+    #[error("{0}")]
+    #[diagnostic(
+        code = "workspace.invalid_sources_directory",
+        hint = "use one worktree configuration file and a dedicated nonempty literal sources path that neither equals nor contains a workspace"
+    )]
+    SourcesDirectory(String),
+
     /// The worktree configuration file could not be loaded.
     #[error("failed to load worktree configuration: '{0}'")]
     #[diagnostic(
@@ -900,6 +994,40 @@ mod tests {
         assert_eq!(std::env::current_dir().unwrap(), cwd_before);
     }
 
+    #[test]
+    fn an_invalid_worktree_file_only_fails_commands_that_use_the_store() {
+        let (tmp, sys) = default_fixture();
+        let root = tmp.path();
+        std::fs::write(
+            root.join("worktree.omni.yaml"),
+            "sources: {dir: '~/s'}",
+        )
+        .unwrap();
+
+        // With an explicit cache directory the context still loads (RFC 0017:
+        // explicit overrides bypass worktree configuration errors) ...
+        let explicit = Context::new_with_cache_dir(
+            sys,
+            "testing",
+            root,
+            false,
+            "workspace.omni.yaml",
+            None,
+            &TracingConfig::disabled(),
+            Some(root.join("fixed")),
+        )
+        .expect("the context loads");
+        // ... and only asking for the store location reports the problem.
+        let error = explicit.sources_dir().expect_err("invalid sources.dir");
+        assert!(error.to_string().contains("sources.dir"), "{error}");
+
+        // An explicit sources directory resolves it and bypasses the file.
+        let fixed = explicit
+            .with_sources_dir(Some(root.join("store")))
+            .expect("explicit override");
+        assert!(fixed.sources_dir().unwrap().ends_with("store"));
+    }
+
     #[tokio::test]
     async fn reload_tracks_worktree_file_lifecycle_and_remote_cache_location() {
         let (tmp, sys) = default_fixture();
@@ -959,6 +1087,8 @@ mod tests {
             &TracingConfig::disabled(),
             Some(root.join("fixed")),
         )
+        .unwrap()
+        .with_sources_dir(Some(root.join("fixed-sources")))
         .unwrap();
         let fingerprint = explicit.config_fingerprint();
         std::fs::write(&policy, "invalid: true").unwrap();
