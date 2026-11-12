@@ -31,6 +31,7 @@ strum = { workspace = true }
 derive-new = { workspace = true }
 
 [dev-dependencies]
+omni_test_capabilities = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = [
     "macros",

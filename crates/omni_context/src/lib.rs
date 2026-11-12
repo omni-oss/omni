@@ -17,6 +17,7 @@ mod project_data_extractor;
 mod project_discovery;
 mod project_hasher;
 mod project_query;
+mod sources_resolution;
 mod sys;
 #[cfg(test)]
 mod test_fixture;
@@ -30,5 +31,6 @@ pub use env_loader::*;
 pub use loaded_context::*;
 pub use maybe_loaded::*;
 pub use project_config_entry::ProjectConfigEntry;
+pub use sources_resolution::SourcesDirectorySource;
 pub use sys::*;
 pub use utils::{EnvVarsMap, EnvVarsOsMap};

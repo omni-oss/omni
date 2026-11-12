@@ -6,10 +6,10 @@ use crate::{
     BaseEnvSetCurrentDirAsync, BaseFsAppendAsync, BaseFsCanonicalizeAsync,
     BaseFsCopyAsync, BaseFsCreateDirAsync, BaseFsCreateJunctionAsync,
     BaseFsHardLinkAsync, BaseFsMetadataAsync, BaseFsReadAsync,
-    BaseFsReadDirAsync, BaseFsReadLinkAsync, BaseFsRemoveDirAllAsync,
-    BaseFsRemoveDirAsync, BaseFsRemoveFileAsync, BaseFsRenameAsync,
-    BaseFsSymlinkDirAsync, BaseFsSymlinkFileAsync, BaseFsWriteAsync,
-    EnvCurrentDirAsync, auto_impl,
+    BaseFsReadDirAsync, BaseFsReadLinkAsync, BaseFsReflinkAsync,
+    BaseFsRemoveDirAllAsync, BaseFsRemoveDirAsync, BaseFsRemoveFileAsync,
+    BaseFsRenameAsync, BaseFsSymlinkDirAsync, BaseFsSymlinkFileAsync,
+    BaseFsWriteAsync, EnvCurrentDirAsync, auto_impl,
     impls::{RealFsMetadata, RealSys},
 };
 
@@ -161,6 +161,18 @@ impl BaseFsHardLinkAsync for RealSys {
         dst: &std::path::Path,
     ) -> io::Result<()> {
         tokio::fs::hard_link(src, dst).await
+    }
+}
+
+#[async_trait]
+impl BaseFsReflinkAsync for RealSys {
+    async fn base_fs_reflink_async(
+        &self,
+        src: &std::path::Path,
+        dst: &std::path::Path,
+    ) -> io::Result<()> {
+        let (src, dst) = (src.to_path_buf(), dst.to_path_buf());
+        spawn_blocking(move || reflink_copy::reflink(src, dst)).await
     }
 }
 

@@ -39,6 +39,7 @@ windows-sys = { version = "0.61", features = [
 ] }
 
 [dev-dependencies]
+omni_test_capabilities = { workspace = true }
 eyre = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }

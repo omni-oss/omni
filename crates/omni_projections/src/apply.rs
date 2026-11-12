@@ -5,8 +5,8 @@ use omni_projection_configurations::{ExistingPolicy, LinkKind};
 use system_traits::{
     FileType, FsCopyAsync, FsCreateDirAllAsync, FsCreateJunctionAsync,
     FsHardLinkAsync, FsMetadataAsync, FsMetadataValue, FsReadDirAsync,
-    FsRemoveDirAllAsync, FsRemoveFileAsync, FsRenameAsync, FsSymlinkDirAsync,
-    FsSymlinkFileAsync,
+    FsReadLinkAsync, FsReflinkAsync, FsRemoveDirAllAsync, FsRemoveFileAsync,
+    FsRenameAsync, FsSymlinkDirAsync, FsSymlinkFileAsync,
 };
 
 use crate::error::{ProjectionError, Result};
@@ -14,10 +14,19 @@ use crate::routing::LinkPair;
 
 /// The link kind that was actually materialized (after `auto` fallback).
 #[derive(
-    serde::Serialize, serde::Deserialize, Debug, Clone, Copy, PartialEq, Eq,
+    serde::Serialize,
+    serde::Deserialize,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    strum::Display,
 )]
 #[serde(rename_all = "kebab-case")]
+#[strum(serialize_all = "kebab-case")]
 pub enum ResolvedKind {
+    Reflink,
     Symlink,
     Junction,
     Hardlink,
@@ -37,6 +46,10 @@ pub enum ApplyOutcome {
 pub struct ApplyOptions {
     pub link: LinkKind,
     pub on_existing: ExistingPolicy,
+    /// The source lives in the shared remote-source store (a git source). `auto`
+    /// then prefers independent owned files (reflink) over links into a
+    /// store that can be deleted, and links into it by absolute path.
+    pub from_store: bool,
 }
 
 /// A destination omni already owns, per the ledger. Used for the idempotent
@@ -69,6 +82,8 @@ pub trait ApplierSys:
     + FsSymlinkDirAsync
     + FsCreateJunctionAsync
     + FsHardLinkAsync
+    + FsReadLinkAsync
+    + FsReflinkAsync
     + FsCopyAsync
     + FsRenameAsync
     + FsRemoveFileAsync
@@ -85,6 +100,8 @@ impl<T> ApplierSys for T where
         + FsSymlinkDirAsync
         + FsCreateJunctionAsync
         + FsHardLinkAsync
+        + FsReadLinkAsync
+        + FsReflinkAsync
         + FsCopyAsync
         + FsRenameAsync
         + FsRemoveFileAsync
@@ -114,12 +131,18 @@ pub async fn apply_link<S: ApplierSys>(
         && prior.source_abs == pair.source_abs
         && dest_exists
     {
-        if prior.pin_unchanged {
+        // An unchanged pin leaves a healthy link alone. A link that no longer
+        // resolves (its store checkout was deleted and has since been
+        // refetched) is repaired like a changed pin.
+        if prior.pin_unchanged
+            && sys.fs_metadata_async(&pair.dest_abs).await.is_ok()
+            && !symlink_points_elsewhere(sys, pair, opts).await
+        {
             return Ok(ApplyOutcome::Skipped);
         }
-        // Pin changed: re-point the link omni owns, no backup.
+        // Pin changed or link dangling: re-point the link omni owns, no backup.
         remove_existing(sys, &pair.dest_abs).await?;
-        let kind = materialize(sys, pair, opts.link).await?;
+        let kind = materialize(sys, pair, opts).await?;
         return Ok(ApplyOutcome::Linked { kind, backup: None });
     }
 
@@ -144,79 +167,321 @@ pub async fn apply_link<S: ApplierSys>(
         }
     }
 
-    let kind = materialize(sys, pair, opts.link).await?;
+    let kind = materialize(sys, pair, opts).await?;
     Ok(ApplyOutcome::Linked { kind, backup })
+}
+
+/// A healthy symlink we own that does not point where a fresh link would (the
+/// store moved while the old one still exists) is re-pointed rather than left to
+/// dangle when the old store is deleted. Copies and reflinks are the workspace's
+/// own files and are never touched for this.
+async fn symlink_points_elsewhere<S: ApplierSys>(
+    sys: &S,
+    pair: &LinkPair,
+    opts: &ApplyOptions,
+) -> bool {
+    if !matches!(opts.link, LinkKind::Auto | LinkKind::Symlink) {
+        return false;
+    }
+    if !sys.fs_is_symlink_no_err_async(&pair.dest_abs).await {
+        return false;
+    }
+    let expected = if opts.from_store {
+        pair.source_abs.clone()
+    } else {
+        relative_target(&pair.dest_abs, &pair.source_abs)
+    };
+    match sys.fs_read_link_async(&pair.dest_abs).await {
+        Ok(actual) => actual != expected,
+        Err(_) => false,
+    }
 }
 
 async fn materialize<S: ApplierSys>(
     sys: &S,
     pair: &LinkPair,
-    link: LinkKind,
+    opts: &ApplyOptions,
 ) -> Result<ResolvedKind> {
     let src_is_dir = sys.fs_is_dir_no_err_async(&pair.source_abs).await;
-    let rel = relative_target(&pair.dest_abs, &pair.source_abs);
+    // A link into the shared store is absolute: a relative one would break
+    // when the workspace moves, and the store is far from the workspace.
+    let symlink_target = if opts.from_store {
+        pair.source_abs.clone()
+    } else {
+        relative_target(&pair.dest_abs, &pair.source_abs)
+    };
 
-    match link {
-        LinkKind::Auto => {
-            if try_symlink(sys, &rel, &pair.dest_abs, src_is_dir)
-                .await
-                .is_ok()
-            {
-                return Ok(ResolvedKind::Symlink);
+    match opts.link {
+        LinkKind::Auto if opts.from_store => {
+            // The clone call reports a missing source as an invalid argument,
+            // which would read as "unsupported" and end in a dangling link.
+            if !sys.fs_exists_no_err_async(&pair.source_abs).await {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!(
+                        "projection source not found: {}",
+                        pair.source_abs.display()
+                    ),
+                )
+                .into());
             }
-            if src_is_dir {
-                if sys
-                    .fs_create_junction_async(&pair.source_abs, &pair.dest_abs)
+            // Owned, independent files first: they survive a deleted store and
+            // need no sandbox read grant. Hard links are never chosen here,
+            // because editing one in place would change the shared tree.
+            match link_files(sys, pair, src_is_dir, FileOp::Reflink).await {
+                Ok(()) => {
+                    make_owned_writable(&pair.dest_abs);
+                    return Ok(ResolvedKind::Reflink);
+                }
+                Err(error) if is_situational(&error) => {}
+                Err(error) => return Err(error.into()),
+            }
+            // A directory is never linked into the store: a directory symlink
+            // lets the workspace add or replace files in the shared tree, which
+            // read-only files cannot prevent. It is copied instead.
+            if !src_is_dir
+                && let Some(kind) =
+                    auto_symlink(sys, &symlink_target, pair, src_is_dir).await?
+            {
+                return Ok(kind);
+            }
+            let kind = copy(sys, pair, src_is_dir).await?;
+            make_owned_writable(&pair.dest_abs);
+            Ok(kind)
+        }
+        LinkKind::Auto => {
+            if let Some(kind) =
+                auto_symlink(sys, &symlink_target, pair, src_is_dir).await?
+            {
+                return Ok(kind);
+            }
+            if !src_is_dir
+                && sys
+                    .fs_hard_link_async(&pair.source_abs, &pair.dest_abs)
                     .await
                     .is_ok()
-                {
-                    return Ok(ResolvedKind::Junction);
-                }
-                copy_recursive(sys, &pair.source_abs, &pair.dest_abs).await?;
-            } else if sys
-                .fs_hard_link_async(&pair.source_abs, &pair.dest_abs)
-                .await
-                .is_ok()
             {
                 return Ok(ResolvedKind::Hardlink);
-            } else {
-                sys.fs_copy_async(&pair.source_abs, &pair.dest_abs).await?;
             }
-            Ok(ResolvedKind::Copy)
+            copy(sys, pair, src_is_dir).await
         }
         LinkKind::Symlink => {
-            try_symlink(sys, &rel, &pair.dest_abs, src_is_dir).await?;
+            try_symlink(sys, &symlink_target, &pair.dest_abs, src_is_dir)
+                .await?;
             Ok(ResolvedKind::Symlink)
         }
-        LinkKind::Junction => {
-            if !src_is_dir {
-                return Err(ProjectionError::custom(
-                    "the `junction` link kind requires a directory source",
-                ));
-            }
-            sys.fs_create_junction_async(&pair.source_abs, &pair.dest_abs)
-                .await?;
-            Ok(ResolvedKind::Junction)
-        }
         LinkKind::Hardlink => {
-            if src_is_dir {
-                return Err(ProjectionError::custom(
-                    "the `hardlink` link kind requires a file source",
-                ));
-            }
-            sys.fs_hard_link_async(&pair.source_abs, &pair.dest_abs)
-                .await?;
+            // Strict: an error when the files cannot be hard linked.
+            link_files(sys, pair, src_is_dir, FileOp::Hardlink).await?;
             Ok(ResolvedKind::Hardlink)
         }
         LinkKind::Copy => {
-            if src_is_dir {
-                copy_recursive(sys, &pair.source_abs, &pair.dest_abs).await?;
-            } else {
-                sys.fs_copy_async(&pair.source_abs, &pair.dest_abs).await?;
+            let kind = copy(sys, pair, src_is_dir).await?;
+            if opts.from_store {
+                make_owned_writable(&pair.dest_abs);
             }
-            Ok(ResolvedKind::Copy)
+            Ok(kind)
         }
     }
+}
+
+/// Store files are read-only so a hard link or symlink cannot edit the shared
+/// tree. A copy or reflink is the workspace's own file, so give it back its
+/// write permission. Best effort: a failure leaves a read-only file, never a
+/// failed projection.
+fn make_owned_writable(path: &Path) {
+    fn visit(path: &Path) {
+        let Ok(meta) = std::fs::symlink_metadata(path) else {
+            return;
+        };
+        if meta.is_symlink() {
+            return;
+        }
+        if meta.is_dir() {
+            if let Ok(entries) = std::fs::read_dir(path) {
+                for entry in entries.flatten() {
+                    visit(&entry.path());
+                }
+            }
+            return;
+        }
+        let mut permissions = meta.permissions();
+        if permissions.readonly() {
+            #[allow(clippy::permissions_set_readonly_false)]
+            permissions.set_readonly(false);
+            let _ = std::fs::set_permissions(path, permissions);
+        }
+    }
+    visit(path);
+}
+
+/// The `auto` symlink step. `Ok(None)` means symlinks are unavailable here
+/// (unsupported, or no privilege) and the caller should try the next method;
+/// any other failure is returned. A directory gets a junction as a last link
+/// before copying.
+async fn auto_symlink<S: ApplierSys>(
+    sys: &S,
+    target: &Path,
+    pair: &LinkPair,
+    is_dir: bool,
+) -> Result<Option<ResolvedKind>> {
+    match try_symlink(sys, target, &pair.dest_abs, is_dir).await {
+        Ok(()) => return Ok(Some(ResolvedKind::Symlink)),
+        Err(error) if symlink_unavailable(&error) => {}
+        Err(error) => return Err(error.into()),
+    }
+    if is_dir
+        && sys
+            .fs_create_junction_async(&pair.source_abs, &pair.dest_abs)
+            .await
+            .is_ok()
+    {
+        return Ok(Some(ResolvedKind::Junction));
+    }
+    Ok(None)
+}
+
+async fn copy<S: ApplierSys>(
+    sys: &S,
+    pair: &LinkPair,
+    src_is_dir: bool,
+) -> Result<ResolvedKind> {
+    if src_is_dir {
+        copy_recursive(sys, &pair.source_abs, &pair.dest_abs).await?;
+    } else {
+        sys.fs_copy_async(&pair.source_abs, &pair.dest_abs).await?;
+    }
+    Ok(ResolvedKind::Copy)
+}
+
+#[derive(Clone, Copy)]
+enum FileOp {
+    Reflink,
+    Hardlink,
+}
+
+impl FileOp {
+    async fn apply<S: ApplierSys>(
+        self,
+        sys: &S,
+        src: &Path,
+        dst: &Path,
+    ) -> std::io::Result<()> {
+        match self {
+            Self::Reflink => sys.fs_reflink_async(src, dst).await,
+            Self::Hardlink => sys.fs_hard_link_async(src, dst).await,
+        }
+    }
+}
+
+/// Link a file, or a directory file by file, with `op`. All or nothing: when
+/// any file fails, whatever was created is removed so no partial tree is left
+/// behind, and the error is returned for the caller to classify.
+async fn link_files<S: ApplierSys>(
+    sys: &S,
+    pair: &LinkPair,
+    src_is_dir: bool,
+    op: FileOp,
+) -> std::io::Result<()> {
+    if !src_is_dir {
+        return op.apply(sys, &pair.source_abs, &pair.dest_abs).await;
+    }
+
+    let result = link_tree(sys, &pair.source_abs, &pair.dest_abs, op).await;
+    if result.is_err() {
+        let _ = sys.fs_remove_dir_all_async(&pair.dest_abs).await;
+    }
+    result
+}
+
+async fn link_tree<S: ApplierSys>(
+    sys: &S,
+    src: &Path,
+    dst: &Path,
+    op: FileOp,
+) -> std::io::Result<()> {
+    let mut stack = vec![(src.to_path_buf(), dst.to_path_buf())];
+
+    while let Some((from, to)) = stack.pop() {
+        sys.fs_create_dir_all_async(&to).await?;
+        for entry in sys.fs_read_dir_async(&from).await? {
+            let Some(name) = entry.file_name().map(|n| n.to_owned()) else {
+                continue;
+            };
+            let child_to = to.join(&name);
+            if copy_symlink(sys, &entry, &child_to).await? {
+                continue;
+            }
+            if sys.fs_is_dir_no_err_async(&entry).await {
+                stack.push((entry, child_to));
+            } else {
+                op.apply(sys, &entry, &child_to).await?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// A symlink inside a source tree is reproduced as a symlink, never followed:
+/// following one would read (and copy or link) whatever it points at, including
+/// files outside the source root. Returns whether `entry` was a symlink.
+async fn copy_symlink<S: ApplierSys>(
+    sys: &S,
+    entry: &Path,
+    to: &Path,
+) -> std::io::Result<bool> {
+    let is_symlink = matches!(
+        sys.fs_symlink_metadata_async(entry)
+            .await
+            .map(|meta| meta.file_type()),
+        Ok(FileType::Symlink)
+    );
+    if !is_symlink {
+        return Ok(false);
+    }
+    let target = sys.fs_read_link_async(entry).await?;
+    let points_at_dir = sys.fs_is_dir_no_err_async(entry).await;
+    try_symlink(sys, &target, to, points_at_dir).await?;
+    Ok(true)
+}
+
+/// Errors that mean "this method cannot work here" (the volume, platform or
+/// privileges do not allow it), as opposed to a real failure. `auto` falls
+/// through to the next method only on these; anything else (permission denied,
+/// out of space, not found, I/O) is returned.
+pub fn is_situational(error: &std::io::Error) -> bool {
+    use std::io::ErrorKind::{CrossesDevices, InvalidInput, Unsupported};
+
+    if matches!(error.kind(), Unsupported | CrossesDevices | InvalidInput) {
+        return true;
+    }
+    match error.raw_os_error() {
+        // ENOTTY: ext4 and friends answer a clone ioctl this way.
+        #[cfg(unix)]
+        Some(25) => true,
+        // INVALID_FUNCTION, NOT_SUPPORTED, PRIVILEGE_NOT_HELD. Some Windows
+        // calls report them as an HRESULT (`0x8007xxxx`) instead of the plain
+        // code, so compare the low word of either form.
+        #[cfg(windows)]
+        Some(code) => {
+            let code = code as u32;
+            let code = if code >> 16 == 0x8007 {
+                code & 0xFFFF
+            } else {
+                code
+            };
+            matches!(code, 1 | 50 | 1314)
+        }
+        _ => false,
+    }
+}
+
+/// Like [`is_situational`], for creating a symlink. POSIX reports a filesystem
+/// that cannot hold symlinks (FAT, exFAT) as `EPERM`.
+fn symlink_unavailable(error: &std::io::Error) -> bool {
+    is_situational(error)
+        || (cfg!(unix) && error.kind() == std::io::ErrorKind::PermissionDenied)
 }
 
 async fn try_symlink<S: ApplierSys>(
@@ -224,13 +489,12 @@ async fn try_symlink<S: ApplierSys>(
     rel_target: &Path,
     dest: &Path,
     is_dir: bool,
-) -> Result<()> {
+) -> std::io::Result<()> {
     if is_dir {
-        sys.fs_symlink_dir_async(rel_target, dest).await?;
+        sys.fs_symlink_dir_async(rel_target, dest).await
     } else {
-        sys.fs_symlink_file_async(rel_target, dest).await?;
+        sys.fs_symlink_file_async(rel_target, dest).await
     }
-    Ok(())
 }
 
 /// Iteratively copy a directory tree (used only as the `auto`/`copy` fallback).
@@ -249,6 +513,12 @@ async fn copy_recursive<S: ApplierSys>(
                 None => continue,
             };
             let child_to = to.join(&name);
+            if copy_symlink(sys, &entry, &child_to)
+                .await
+                .map_err(ProjectionError::from)?
+            {
+                continue;
+            }
             if sys.fs_is_dir_no_err_async(&entry).await {
                 stack.push((entry, child_to));
             } else {
@@ -317,7 +587,46 @@ mod tests {
     use system_traits::{FsReadLinkAsync, impls::RealSys};
 
     fn opts(link: LinkKind, on_existing: ExistingPolicy) -> ApplyOptions {
-        ApplyOptions { link, on_existing }
+        ApplyOptions {
+            link,
+            on_existing,
+            from_store: false,
+        }
+    }
+
+    #[test]
+    fn only_situational_errors_let_auto_fall_through() {
+        use std::io::{Error, ErrorKind};
+
+        for kind in [
+            ErrorKind::Unsupported,
+            ErrorKind::CrossesDevices,
+            ErrorKind::InvalidInput,
+        ] {
+            assert!(is_situational(&Error::from(kind)), "{kind:?}");
+        }
+        for kind in [
+            ErrorKind::PermissionDenied,
+            ErrorKind::NotFound,
+            ErrorKind::StorageFull,
+            ErrorKind::Other,
+            ErrorKind::AlreadyExists,
+        ] {
+            assert!(!is_situational(&Error::from(kind)), "{kind:?}");
+        }
+        // POSIX reports "this filesystem has no symlinks" as EPERM.
+        let denied = Error::from(ErrorKind::PermissionDenied);
+        assert_eq!(symlink_unavailable(&denied), cfg!(unix));
+        assert!(!symlink_unavailable(&Error::from(ErrorKind::NotFound)));
+        #[cfg(windows)]
+        {
+            assert!(is_situational(&Error::from_raw_os_error(1314)));
+            // The same codes as an HRESULT (ERROR_INVALID_FUNCTION).
+            assert!(is_situational(&Error::from_raw_os_error(
+                0x8007_0001u32 as i32
+            )));
+            assert!(!is_situational(&Error::from_raw_os_error(5)));
+        }
     }
 
     #[test]

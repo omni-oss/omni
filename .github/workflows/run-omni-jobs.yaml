@@ -170,6 +170,25 @@ jobs:
                             matrixMap[key].jobs.push(job);
                         }
 
+                        // Capabilities this lane must prove (RFC 0027, section 10).
+                        // A gated test that cannot run here fails instead of
+                        // skipping, so a lane that loses a capability goes red.
+                        // Linux and macOS prove reflink (Linux on the loop volume
+                        // the "Prepare reflink test volume" step mounts; macOS on
+                        // its APFS temp dir). Windows runners have no ReFS volume,
+                        // so reflink is not required there; the fall-back tests
+                        // run on every lane.
+                        if (targetName === 'x86_64-unknown-linux-gnu' || targetName.includes('apple-darwin')) {
+                            matrixMap[key].env.OMNI_TEST_REQUIRE_CAPABILITIES = 'symlink,hardlink,git,reflink';
+                        } else if (targetName.includes('windows')) {
+                            matrixMap[key].env.OMNI_TEST_REQUIRE_CAPABILITIES = 'symlink,hardlink,git';
+                        }
+                        // aarch64 Linux tests run under `cross` in a container that
+                        // does not see the host volume or these variables.
+                        if (targetName === 'x86_64-unknown-linux-gnu') {
+                            matrixMap[key].env.OMNI_TEST_REFLINK_DIR = '/mnt/omni-reflink';
+                        }
+
                         if (typeof job.meta.language === 'string') {
                             const varName = job.meta.language.toUpperCase() + '_TARGET'
                             if (varName === "RUST_TARGET") {
@@ -222,6 +241,11 @@ jobs:
     if: ${{ needs.plan.outputs.jobs_count > 0 }}
     name: Run Jobs
     runs-on: ${{ inputs.default-runner }}
+    env:
+      # Jobs without a platform matrix run on the default Linux runner. Tests
+      # gated on a capability (RFC 0027, section 10) must fail there rather than
+      # skip: symlinks, hard links and a `git` binary are always available.
+      OMNI_TEST_REQUIRE_CAPABILITIES: symlink,hardlink,git
     steps:
       - name: Expose Secrets with ENV_ Prefix
         shell: bash
@@ -402,6 +426,21 @@ jobs:
           install-node-modules: ${{ steps.determine.outputs.INSTALL_JS_TOOLS }}
           cache-key-prefix: ${{ matrix.target }}-${{ inputs.cache-key-prefix }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # A reflink-capable filesystem for the tests that need one (RFC 0027,
+      # section 10). The default runner disk is ext4, which cannot reflink.
+      - if: ${{ format('{0}', matrix.env.OMNI_TEST_REFLINK_DIR) != '' }}
+        name: Prepare reflink test volume
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y --no-install-recommends btrfs-progs
+          truncate -s 2G "$RUNNER_TEMP/reflink.img"
+          mkfs.btrfs -q "$RUNNER_TEMP/reflink.img"
+          sudo mkdir -p "$OMNI_TEST_REFLINK_DIR"
+          sudo mount -o loop "$RUNNER_TEMP/reflink.img" "$OMNI_TEST_REFLINK_DIR"
+          sudo chown "$(id -u):$(id -g)" "$OMNI_TEST_REFLINK_DIR"
+          findmnt "$OMNI_TEST_REFLINK_DIR"
 
       - name: Run Tasks
         run: omni -i run -f=failed ${{ steps.process.outputs.TASK_ARGS }} ${{ steps.process.outputs.PROJECT_FLAGS }}

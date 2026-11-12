@@ -137,7 +137,7 @@ pub use platform::{NativeOsSandbox, install_os_sandbox};
 pub use shim::{
     SHIM_DOMAINS, ScriptShimBroker, ShimDomain, ShimLayer, ShimPolicy,
 };
-pub use spawn::{OsSandboxSpec, SpawnPolicy};
+pub use spawn::{OsSandboxSpec, SpawnPolicy, load_root};
 
 // @anchor:uses
 

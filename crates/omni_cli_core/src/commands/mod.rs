@@ -192,6 +192,14 @@ pub struct CliArgs {
         global = true
     )]
     pub cache_dir: Option<PathBuf>,
+
+    #[arg(
+        long = "sources-dir",
+        help = "The directory to use for the remote-source store",
+        env = "OMNI_SOURCES_DIR",
+        global = true
+    )]
+    pub sources_dir: Option<PathBuf>,
 }
 
 impl Default for CliArgs {
@@ -206,6 +214,7 @@ impl Default for CliArgs {
             env: None,
             inherit_env_vars: false,
             cache_dir: None,
+            sources_dir: None,
             error_format: ErrorFormat::Text,
         }
     }

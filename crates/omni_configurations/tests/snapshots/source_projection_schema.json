@@ -165,7 +165,6 @@
       "enum": [
         "auto",
         "symlink",
-        "junction",
         "hardlink",
         "copy"
       ]

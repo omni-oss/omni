@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use omni_projection_configurations::ExistingPolicy;
 
 use crate::apply::{ApplierSys, PriorLink, is_foreign_existing, symlink_meta};
-use crate::engine::PlannedItem;
+use crate::engine::{PlannedItem, same_store_file};
 use crate::error::{DuplicateDest, ExistingConflict, NestedDest, Result};
 use crate::ledger::Ledger;
 
@@ -106,7 +106,18 @@ where
             .iter()
             .find(|l| l.source_id == item.source_id && l.dest == item.dest_rel);
         let prior_link = prior.map(|l| PriorLink {
-            source_abs: Path::new(&l.target),
+            // The same ownership rule `apply_source` uses, so a store that
+            // moved does not turn omni's own link into a conflict here.
+            source_abs: if item.from_store
+                && same_store_file(
+                    Path::new(&l.target),
+                    &item.pair.source_abs,
+                    &item.source_root,
+                ) {
+                &item.pair.source_abs
+            } else {
+                Path::new(&l.target)
+            },
             pin_unchanged: true,
         });
 
@@ -137,6 +148,8 @@ mod tests {
         on_existing: ExistingPolicy,
     ) -> PlannedItem {
         PlannedItem {
+            from_store: false,
+            source_root: Default::default(),
             source_id: "src".to_string(),
             pair: LinkPair {
                 source_abs: PathBuf::from(source),
@@ -311,6 +324,8 @@ mod tests {
         let items: Vec<PlannedItem> = planned
             .into_iter()
             .map(|p| PlannedItem {
+                from_store: false,
+                source_root: Default::default(),
                 source_id: "id".to_string(),
                 dest_rel: p.pair.dest_abs.to_string_lossy().into_owned(),
                 pair: p.pair,
@@ -335,6 +350,8 @@ mod tests {
 
     fn real_item(source: &Path, dest: &Path, dest_rel: &str) -> PlannedItem {
         PlannedItem {
+            from_store: false,
+            source_root: Default::default(),
             source_id: "pkg".to_string(),
             pair: LinkPair {
                 source_abs: source.to_path_buf(),

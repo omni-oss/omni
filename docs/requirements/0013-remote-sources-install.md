@@ -76,7 +76,7 @@ REQ-17 The store must be disposable: with the committed lockfile present, any ru
 
 REQ-18 A source whose commit is already locked must materialize offline, without contacting the network.
 
-REQ-19 install must report one summary line per subsystem, covering the counts of materialized, deduplicated, and garbage-collected sources.
+REQ-19 install must report one summary line per subsystem, covering the counts of materialized and deduplicated sources. Install does not delete from the store (RFC 0027).
 
 REQ-20 Concurrent omni processes must not lose a just-added lockfile pin; a workspace-local advisory lock guards the lockfile read-modify-write.
 

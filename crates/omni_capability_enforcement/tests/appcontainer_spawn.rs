@@ -42,16 +42,14 @@ static SPAWN_GUARD: Mutex<()> = Mutex::new(());
 /// that is *supposed* to exercise real confinement (a green run there then
 /// genuinely proves the sandbox worked, not merely that it was absent).
 fn should_run_confined() -> bool {
-    if appcontainer_sandbox::is_supported() {
-        return true;
-    }
-    assert!(
-        std::env::var_os("OMNI_REQUIRE_OS_SANDBOX").is_none(),
-        "OMNI_REQUIRE_OS_SANDBOX is set but this host provides no usable \
-         AppContainer facility"
-    );
-    eprintln!("skipping: the host does not provide AppContainer");
-    false
+    omni_test_capabilities::gate(
+        "os-sandbox",
+        appcontainer_sandbox::is_supported(),
+        format!(
+            "os={} mechanism=appcontainer: the host does not provide AppContainer",
+            std::env::consts::OS
+        ),
+    )
 }
 
 /// First existing candidate path, or `None` (test then skips).

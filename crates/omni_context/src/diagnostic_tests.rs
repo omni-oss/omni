@@ -117,6 +117,12 @@ fn plain_failures_stay_uncoded() {
     assert_eq!(diagnostic.code(), "workspace.invalid_cache_directory");
     assert_eq!(diagnostic.audience(), Audience::User);
 
+    let sources = report(ContextErrorInner::SourcesDirectory("boom".into()));
+    assert_eq!(
+        find(&sources).expect("sources diagnostic").code(),
+        "workspace.invalid_sources_directory"
+    );
+
     let io = report(ContextErrorInner::Io(std::io::Error::other("x")));
     assert!(find(&io).is_none());
 
@@ -132,6 +138,7 @@ fn codes_are_registered_in_the_catalog() {
     for code in [
         "workspace.not_found",
         "workspace.invalid_cache_directory",
+        "workspace.invalid_sources_directory",
         "workspace.config_load_failed",
         "workspace.worktree_config_load_failed",
         "workspace.validation_failed",

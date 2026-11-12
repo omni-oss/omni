@@ -27,7 +27,7 @@ tasks:
     cache:
       key:
         env:
-          append: [RUST_TEST_ADDITIONAL_ARGS]
+          append: [RUST_TEST_ADDITIONAL_ARGS, OMNI_TEST_REQUIRE_CAPABILITIES]
         files:
           append: ["./tests/**/*.rs"]
 

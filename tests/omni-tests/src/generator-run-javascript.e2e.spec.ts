@@ -11,10 +11,20 @@
  */
 
 import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished } from "vitest";
 
-import { makeWorkspace, runOmni, type WorkspaceSpec } from "@/harness";
+import {
+    makeLocalGitRepoWithAnnotatedTag,
+    makeWorkspace,
+    runOmni,
+    skipUnlessGitCliAvailable,
+    type WorkspaceSpec,
+} from "@/harness";
 
 /** Whether a JS runtime binary is callable on PATH (for gating tests). */
 function runtimeAvailable(bin: string): boolean {
@@ -386,5 +396,91 @@ describe(
                     : "No such file or directory";
             expect(result).toHaveStderrContaining(fileNotFoundMsg);
         });
+    },
+);
+
+// A generator fetched from a git source lives in the shared remote-source store,
+// outside the workspace by default, so a confined runtime must still be able to
+// load its script (RFC 0027, section 4.5).
+describe(
+    "+generator @e2e (run-javascript from a git source outside the workspace)",
+    { tags: ["generator"], timeout: 120_000 },
+    () => {
+        for (const enforced of [false, true]) {
+            // KNOWN GAP (RFC 0027): on Windows the AppContainer-confined runtime
+            // dies (EPIPE) when its entrypoint lives in a store outside the
+            // workspace. Enforcement is experimental and off by default; this
+            // stays skipped until the AppContainer grant for that directory is
+            // sorted out on a Windows machine.
+            const knownWindowsGap = enforced && process.platform === "win32";
+            it.skipIf(knownWindowsGap)(
+                `runs the script (capabilities ${enforced ? "enforced" : "off"})`,
+                async (ctx) => {
+                    await skipUnlessGitCliAvailable(ctx);
+                    const repo = await makeLocalGitRepoWithAnnotatedTag({
+                        files: {
+                            "generator.omni.yaml": [
+                                "name: remote-js",
+                                "description: runs a script from a git source",
+                                "actions:",
+                                "  - type: run-javascript",
+                                "    script: gen.mjs",
+                                "    data:",
+                                "      target: from-remote.txt",
+                                "      message: hello",
+                                "",
+                            ].join("\n"),
+                            "gen.mjs": WRITE_SCRIPT,
+                        },
+                    });
+                    const store = mkdtempSync(
+                        join(tmpdir(), "omni-e2e-store-"),
+                    );
+                    onTestFinished(() =>
+                        rmSync(store, { recursive: true, force: true }),
+                    );
+                    const ws = makeWorkspace({
+                        workspace: {
+                            projects: ["**"],
+                            generators: [
+                                {
+                                    source: "git",
+                                    uri: pathToFileURL(repo.url).href,
+                                    rev: "main",
+                                },
+                            ],
+                            ...(enforced
+                                ? {
+                                      enable_experimental: {
+                                          capabilities: true,
+                                      },
+                                  }
+                                : {}),
+                        },
+                    });
+
+                    const result = await runOmni(
+                        [
+                            "generator",
+                            "run",
+                            "-n",
+                            "remote-js",
+                            "-o",
+                            "out",
+                            "--use-defaults",
+                            "--save-session=false",
+                        ],
+                        {
+                            cwd: ws.cwd,
+                            env: { OMNI_SOURCES_DIR: join(store, "sources") },
+                            timeout: 100_000,
+                        },
+                    );
+                    expect(result).toHaveSucceeded();
+                    expect(ws.read("out/from-remote.txt")).toBe("hello");
+                },
+                120_000,
+            );
+        }
     },
 );

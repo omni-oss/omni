@@ -1,9 +1,13 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, time::Duration};
+
+use bytesize::ByteSize;
 
 use omni_context::{Context, ContextSys};
 use omni_remote_source::{
     InstallOptions, RemoteSource, RemoteSourceContributor,
-    manager::{RemoteSourceManager, config::RemoteSourceConfig},
+    manager::{
+        RemoteSourceManager, StorePruneFilter, config::RemoteSourceConfig,
+    },
     sys::RemoteSourceSys,
 };
 use omni_remote_source_contributors::{
@@ -15,7 +19,9 @@ use serde::{Deserialize, Serialize};
 use system_traits::FsReadAsync;
 use url::Url;
 
-/// Open the single shared remote-source store for the workspace, rooted at
+/// Open the single shared remote-source store for the workspace. The store
+/// root is the context's resolved sources directory (a per-user location by
+/// default); the lockfile and reference sets stay per workspace under
 /// `.omni/sources/`. Every subsystem and `install` resolve remote sources
 /// through the manager this returns, so fetch, pin, and deduplication behavior
 /// is identical across them.
@@ -27,10 +33,8 @@ where
     TSys: ContextSys + RemoteSourceSys,
 {
     let sources_dir = ctx.omni_dir().join(omni_constants::SOURCES_SEGMENT);
-    let store_root = sources_dir.join(omni_constants::STORE_SEGMENT);
+    let store_root = ctx.sources_dir()?.to_path_buf();
     let lockfile_path = sources_dir.join(omni_constants::SOURCE_LOCKFILE_NAME);
-
-    sys.fs_create_dir_all_async(&store_root).await?;
 
     Ok(RemoteSourceManager::new(
         RemoteSourceConfig::builder()
@@ -40,6 +44,102 @@ where
         sys.clone(),
     )
     .await?)
+}
+
+/// Filters for [`handle_remote_sources_prune`]. At least one of `all`,
+/// `older_than` and `larger_than` is required; an entry must satisfy every
+/// filter that is set.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+pub struct RemoteSourcesPruneRequest {
+    /// Select every checkout in the store.
+    pub all: bool,
+    /// Only checkouts last used longer ago than this.
+    pub older_than: Option<Duration>,
+    /// Only checkouts larger than this.
+    #[schemars(with = "Option<u64>")]
+    pub larger_than: Option<ByteSize>,
+    /// Only report what would be deleted.
+    pub dry_run: bool,
+    /// Restrict the prune to these checkouts (as returned by an earlier dry
+    /// run). The CLI passes what the user confirmed so a checkout another
+    /// workspace adds meanwhile is never deleted unseen.
+    #[serde(default)]
+    pub only: Option<Vec<StoreCheckoutId>>,
+}
+
+/// Identity of one store checkout.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+pub struct StoreCheckoutId {
+    pub remote: String,
+    pub commit: String,
+}
+
+/// One store checkout that matched a prune.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct StoreCheckoutView {
+    /// The remote's directory name in the store.
+    pub remote: String,
+    pub commit: String,
+    pub size_bytes: u64,
+    /// Seconds since the checkout was last used.
+    pub unused_for_secs: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct RemoteSourcesPruneResponse {
+    /// The checkouts that matched; deleted unless the request was a dry run.
+    pub checkouts: Vec<StoreCheckoutView>,
+    pub deleted: bool,
+}
+
+/// Delete checkouts from the shared remote-source store. This is the only
+/// operation that does: install never deletes, because the store may be shared
+/// by many workspaces. A deleted checkout is refetched the next time it is
+/// used.
+pub async fn handle_remote_sources_prune<TSys>(
+    ctx: &Context<TSys>,
+    sys: &TSys,
+    req: RemoteSourcesPruneRequest,
+) -> eyre::Result<RemoteSourcesPruneResponse>
+where
+    TSys: ContextSys + RemoteSourceSys,
+{
+    let only: Option<Vec<(String, String)>> = req.only.as_ref().map(|ids| {
+        ids.iter()
+            .map(|id| (id.remote.clone(), id.commit.clone()))
+            .collect()
+    });
+    let filter = StorePruneFilter {
+        all: req.all,
+        older_than: req.older_than,
+        larger_than: req.larger_than.map(|size| size.as_u64()),
+        only: only.as_deref(),
+    };
+    if !filter.has_criteria() {
+        eyre::bail!(
+            "refusing to prune without a filter: pass --older-than, \
+             --larger-than or --all"
+        );
+    }
+
+    let manager = open_source_store(ctx, sys).await?;
+    let now = std::time::SystemTime::now();
+    let matched = manager.prune_store(&filter, req.dry_run).await?;
+    Ok(RemoteSourcesPruneResponse {
+        checkouts: matched
+            .into_iter()
+            .map(|entry| StoreCheckoutView {
+                remote: entry.remote,
+                commit: entry.commit,
+                size_bytes: entry.size,
+                unused_for_secs: now
+                    .duration_since(entry.last_used)
+                    .unwrap_or_default()
+                    .as_secs(),
+            })
+            .collect(),
+        deleted: !req.dry_run,
+    })
 }
 
 /// Which subsystems an install pass processes. No flag set means all of them.
@@ -87,8 +187,6 @@ pub struct SubsystemReportView {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct RemoteSourcesInstallResponse {
     pub subsystems: Vec<SubsystemReportView>,
-    /// Store checkouts reclaimed by the union garbage collection.
-    pub garbage_collected: usize,
 }
 
 /// The system capabilities `omni remote-sources install` needs: workspace
@@ -104,8 +202,8 @@ impl<T: ContextSys + RemoteSourceSys + FsReadAsync> RemoteSourceInstallSys
 }
 
 /// Prefetch and pin every remote source declared in the workspace across the
-/// selected subsystems, then reconcile the shared store with a union garbage
-/// collection. Every subsystem materializes through one shared store, so a
+/// selected subsystems, then drop lockfile pins no subsystem references (the
+/// store itself is never pruned here). Every subsystem materializes through one shared store, so a
 /// repository used by more than one subsystem is fetched once.
 pub async fn handle_remote_sources_install<TSys>(
     ctx: &Context<TSys>,
@@ -152,8 +250,8 @@ where
 }
 
 /// Drive a set of contributors against one shared store: materialize (via each
-/// contributor), persist each subsystem's reference set, reconcile with union
-/// garbage collection, and aggregate per-subsystem counts. A source shared by
+/// contributor), persist each subsystem's reference set, reconcile lockfile
+/// pins, and aggregate per-subsystem counts. A source shared by
 /// two subsystems is credited as materialized to the first and deduplicated to
 /// the rest.
 async fn run_contributors<TSys>(
@@ -192,12 +290,9 @@ where
         });
     }
 
-    let garbage_collected = manager.retain().await?;
+    manager.reconcile_pins().await?;
 
-    Ok(RemoteSourcesInstallResponse {
-        subsystems,
-        garbage_collected,
-    })
+    Ok(RemoteSourcesInstallResponse { subsystems })
 }
 
 #[cfg(test)]

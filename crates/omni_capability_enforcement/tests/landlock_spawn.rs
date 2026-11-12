@@ -82,10 +82,22 @@ fn executable_output(
     unreachable!("the last attempt returns its result")
 }
 
+/// Landlock is the Linux OS sandbox. A lane that lists `os-sandbox` in
+/// `OMNI_TEST_REQUIRE_CAPABILITIES` fails here instead of skipping.
+fn landlock_available() -> bool {
+    omni_test_capabilities::gate(
+        "os-sandbox",
+        landlock_sandbox::is_supported(),
+        format!(
+            "os=linux mechanism=landlock abi={}",
+            landlock_sandbox::abi_version()
+        ),
+    )
+}
+
 #[test]
 fn landlock_confines_reads_to_the_granted_subtree() {
-    if !landlock_sandbox::is_supported() {
-        eprintln!("skipping: the running kernel does not provide Landlock");
+    if !landlock_available() {
         return;
     }
     let Some(cat) = cat() else {
@@ -137,8 +149,7 @@ fn landlock_confines_reads_to_the_granted_subtree() {
 
 #[test]
 fn landlock_confines_writes_to_the_granted_subtree() {
-    if !landlock_sandbox::is_supported() {
-        eprintln!("skipping: the running kernel does not provide Landlock");
+    if !landlock_available() {
         return;
     }
     let Some(sh) = sh() else {
@@ -197,12 +208,17 @@ fn landlock_permits_cross_directory_rename_within_a_granted_writable_subtree() {
     // Landlock `refer` operation, which V1 denies unconditionally and V2+ can
     // grant. Skips (does not fail) on a kernel whose Landlock ABI predates the
     // `refer` access right.
-    if !landlock_sandbox::is_supported() {
-        eprintln!("skipping: the running kernel does not provide Landlock");
+    if !landlock_available() {
         return;
     }
-    if landlock_sandbox::abi_version() < 2 {
-        eprintln!("skipping: kernel Landlock ABI < 2 lacks the `refer` right");
+    if !omni_test_capabilities::gate(
+        "landlock-abi-2",
+        landlock_sandbox::abi_version() >= 2,
+        format!(
+            "os=linux landlock abi={}: kernel Landlock ABI < 2 lacks the `refer` right",
+            landlock_sandbox::abi_version()
+        ),
+    ) {
         return;
     }
     let Some(mv) = mv() else {
@@ -278,8 +294,7 @@ fn landlock_gates_execution_by_the_binary_directory_grant() {
     // it to `read_paths` (a read grant includes execute under Landlock); this
     // test proves that granting the directory is both necessary and sufficient,
     // independent of the name-resolution the runner performs.
-    if !landlock_sandbox::is_supported() {
-        eprintln!("skipping: the running kernel does not provide Landlock");
+    if !landlock_available() {
         return;
     }
     let Some(cat) = cat() else {
@@ -376,14 +391,19 @@ fn connect_cmd(bash: &Path, port: u16) -> Command {
 
 #[test]
 fn landlock_confines_tcp_connect_to_the_granted_port() {
-    if !landlock_sandbox::is_supported() {
-        eprintln!("skipping: the running kernel does not provide Landlock");
+    if !landlock_available() {
         return;
     }
     // TCP net rules are Landlock ABI V4; older kernels enforce fs only, so the
     // connect floor is a no-op there and the deny assertion would not hold.
-    if landlock_sandbox::abi_version() < 4 {
-        eprintln!("skipping: kernel Landlock ABI < 4 (no TCP net rules)");
+    if !omni_test_capabilities::gate(
+        "landlock-abi-4",
+        landlock_sandbox::abi_version() >= 4,
+        format!(
+            "os=linux landlock abi={}: kernel Landlock ABI < 4 (no TCP net rules)",
+            landlock_sandbox::abi_version()
+        ),
+    ) {
         return;
     }
     let Some(bash) = bash() else {
@@ -453,8 +473,7 @@ fn landlock_confinement_is_inherited_by_a_grandchild() {
     // *grandchild* too - otherwise a generator could escape the sandbox by
     // shelling out to a helper. Here the confined `sh` is the child and the
     // `cat` it execs is the grandchild.
-    if !landlock_sandbox::is_supported() {
-        eprintln!("skipping: the running kernel does not provide Landlock");
+    if !landlock_available() {
         return;
     }
     let (Some(sh), Some(cat)) = (sh(), cat()) else {
@@ -519,8 +538,7 @@ fn landlock_sets_no_new_privs_on_child_and_grandchild() {
     // *directly* (via `/proc/<pid>/status`) rather than inferring it from a
     // failed escalation, so a change that stops setting it fails loudly here
     // instead of leaving a silent hole a DAC-passing behavioural test would miss.
-    if !landlock_sandbox::is_supported() {
-        eprintln!("skipping: the running kernel does not provide Landlock");
+    if !landlock_available() {
         return;
     }
     let (Some(sh), Some(cat)) = (sh(), cat()) else {
