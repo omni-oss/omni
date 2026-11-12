@@ -20,16 +20,17 @@ pub struct CommonArtifactQuery {
 
 #[allow(unused)]
 #[inline(always)]
-pub fn container_common(query: &CommonArtifactQuery) -> String {
-    container(&query.org, &query.ws, &query.env)
+pub fn container_common(tenant: &str, query: &CommonArtifactQuery) -> String {
+    container(tenant, &query.org, &query.ws, &query.env)
 }
 
 #[inline(always)]
-pub fn container(org: &str, ws: &str, env: &str) -> String {
+pub fn container(tenant: &str, org: &str, ws: &str, env: &str) -> String {
+    let tenant = escape_path_component(tenant);
     let org = escape_path_component(org);
     let ws = escape_path_component(ws);
     let env = escape_path_component(env);
-    format!("{}/{}/{}", org, ws, env)
+    format!("{}/{}/{}/{}", tenant, org, ws, env)
 }
 
 #[inline(always)]
@@ -243,15 +244,30 @@ mod tests {
     use super::container;
 
     #[test]
+    fn tenants_never_share_a_container() {
+        assert_ne!(
+            container("t1", "o", "w", "e"),
+            container("t2", "o", "w", "e")
+        );
+        assert_ne!(
+            container("a/b", "c", "w", "e"),
+            container("a", "b/c", "w", "e")
+        );
+    }
+
+    #[test]
     fn container_does_not_collide_on_percent_encoded_names() {
         assert_ne!(
-            container("foo/bar", "ws", "env"),
-            container("foo%2Fbar", "ws", "env")
+            container("t", "foo/bar", "ws", "env"),
+            container("t", "foo%2Fbar", "ws", "env")
         );
-        assert_ne!(container("a", "b/c", "d"), container("a/b", "c", "d"));
         assert_ne!(
-            container("CON", "ws", "env"),
-            container("_CON", "ws", "env")
+            container("t", "a", "b/c", "d"),
+            container("t", "a/b", "c", "d")
+        );
+        assert_ne!(
+            container("t", "CON", "ws", "env"),
+            container("t", "_CON", "ws", "env")
         );
     }
 }

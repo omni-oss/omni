@@ -86,7 +86,7 @@ pub async fn get_artifacts(
         Vec::new(),
     );
 
-    let container = container(&query.org, &query.ws, &query.env);
+    let container = container(&tenant_code, &query.org, &query.ws, &query.env);
     let all_artifacts = state
         .storage_backend
         .list(Some(container.as_str()))

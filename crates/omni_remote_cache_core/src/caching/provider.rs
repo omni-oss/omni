@@ -24,7 +24,10 @@ use crate::{
     hooks::{DynArtifactHooks, HookSettings, HostRuntime},
     providers::DependencyProvider,
     security::{DynSecurityService, SecurityService, SecurityServiceError},
-    services::{DefaultValidationService, DynValidationService},
+    services::{
+        DynValidationService, ValidationResult, ValidationService,
+        ValidationServiceError,
+    },
 };
 
 /// The caches themselves. Share one across providers that are rebuilt per
@@ -35,6 +38,7 @@ pub struct CachingState {
     workspaces: Option<Arc<TtlCache>>,
     environments: Option<Arc<TtlCache>>,
     security: Option<Arc<TtlCache>>,
+    validation: Option<Arc<TtlCache<ValidationResult>>>,
 }
 
 impl CachingState {
@@ -54,15 +58,20 @@ impl CachingState {
                 .security
                 .clone()
                 .map(|c| Arc::new(TtlCache::new(c))),
+            validation: config
+                .repositories
+                .clone()
+                .map(|c| Arc::new(TtlCache::new(c))),
         }
     }
 }
 
 /// Wraps a provider and caches its repository and security lookups.
 ///
-/// Ownership validation is rebuilt from the cached repositories, so a wrapped
-/// provider that overrides `validation_service` with extra rules loses them
-/// here. Wrap providers whose validation is the default repository check.
+/// Ownership validation is delegated to the wrapped provider, so its own
+/// rules still apply, and only the result is cached (with the repositories'
+/// settings). A result with violations is cached only when a negative TTL is
+/// configured.
 pub struct CachingProvider {
     inner: Arc<dyn DependencyProvider>,
     state: Arc<CachingState>,
@@ -87,7 +96,9 @@ impl CachingProvider {
 macro_rules! cached {
     ($cache:expr, $key:expr, $call:expr) => {
         match &$cache {
-            Some(c) => c.get_or_try(cache_key(&$key), $call).await,
+            Some(c) => {
+                c.get_or_try(cache_key(&$key), $call, |v: &bool| *v).await
+            }
             None => $call.await,
         }
     };
@@ -98,6 +109,44 @@ struct CachedOrgs(DynOrganizationRepository, Option<Arc<TtlCache>>);
 struct CachedWorkspaces(DynWorkspaceRepository, Option<Arc<TtlCache>>);
 struct CachedEnvironments(DynEnvironmentRepository, Option<Arc<TtlCache>>);
 struct CachedSecurity(DynSecurityService, Option<Arc<TtlCache>>);
+struct CachedValidation(
+    DynValidationService,
+    Option<Arc<TtlCache<ValidationResult>>>,
+);
+
+#[async_trait]
+impl ValidationService for CachedValidation {
+    async fn validate_ownership(
+        &self,
+        tenant_code: &str,
+        organization_code: &str,
+        workspace_code: &str,
+        environment_code: &str,
+    ) -> Result<ValidationResult, ValidationServiceError> {
+        let call = self.0.validate_ownership(
+            tenant_code,
+            organization_code,
+            workspace_code,
+            environment_code,
+        );
+        match &self.1 {
+            Some(c) => {
+                c.get_or_try(
+                    cache_key(&[
+                        tenant_code,
+                        organization_code,
+                        workspace_code,
+                        environment_code,
+                    ]),
+                    call,
+                    |r: &ValidationResult| !r.has_violations(),
+                )
+                .await
+            }
+            None => call.await,
+        }
+    }
+}
 
 #[async_trait]
 impl TenantRepository for CachedTenants {
@@ -332,11 +381,9 @@ impl DependencyProvider for CachingProvider {
     }
 
     fn validation_service(&self) -> DynValidationService {
-        Box::new(DefaultValidationService::new(
-            self.tenant_repository(),
-            self.organization_repository(),
-            self.workspace_repository(),
-            self.environment_repository(),
+        Box::new(CachedValidation(
+            self.inner.validation_service(),
+            self.state.validation.clone(),
         ))
     }
 
@@ -447,5 +494,61 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(calls.load(Ordering::SeqCst), 2, "same list is cached");
+    }
+
+    struct FakeValidation(Arc<AtomicUsize>, bool);
+
+    #[async_trait]
+    impl ValidationService for FakeValidation {
+        async fn validate_ownership(
+            &self,
+            _: &str,
+            _: &str,
+            _: &str,
+            _: &str,
+        ) -> Result<ValidationResult, ValidationServiceError> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(ValidationResult::new(if self.1 {
+                vec![crate::services::Violation::TenantDoesNotExist]
+            } else {
+                vec![]
+            }))
+        }
+    }
+
+    fn validation_cache() -> Option<Arc<TtlCache<ValidationResult>>> {
+        Some(Arc::new(TtlCache::new(CacheConfiguration {
+            ttl_secs: 60,
+            max_entries: 100,
+            negative_ttl_secs: None,
+        })))
+    }
+
+    #[tokio::test]
+    async fn validation_delegates_to_the_wrapped_service_and_caches_valid_results()
+     {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let ok = CachedValidation(
+            Box::new(FakeValidation(calls.clone(), false)),
+            validation_cache(),
+        );
+        for _ in 0..2 {
+            let r = ok.validate_ownership("t", "o", "w", "e").await.unwrap();
+            assert!(!r.has_violations());
+        }
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+        // violations from the wrapped service's own rules are returned, and
+        // not cached without a negative TTL
+        let calls = Arc::new(AtomicUsize::new(0));
+        let bad = CachedValidation(
+            Box::new(FakeValidation(calls.clone(), true)),
+            validation_cache(),
+        );
+        for _ in 0..2 {
+            let r = bad.validate_ownership("t", "o", "w", "e").await.unwrap();
+            assert!(r.has_violations());
+        }
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
     }
 }

@@ -81,7 +81,7 @@ pub async fn get_artifact(
         vec![digest.clone()],
     );
 
-    let container = container(&query.org, &query.ws, &query.env);
+    let container = container(&tenant_code, &query.org, &query.ws, &query.env);
     let x = state
         .storage_backend
         .get_stream(Some(container.as_ref()), &digest)

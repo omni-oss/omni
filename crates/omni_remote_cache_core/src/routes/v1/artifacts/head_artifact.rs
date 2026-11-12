@@ -79,7 +79,7 @@ pub async fn head_artifact(
         vec![digest.clone()],
     );
 
-    let container = container(&query.org, &query.ws, &query.env);
+    let container = container(&tenant_code, &query.org, &query.ws, &query.env);
     let exists = state
         .storage_backend
         .exists(Some(container.as_ref()), &digest)

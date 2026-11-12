@@ -23,20 +23,20 @@ fn system_clock() -> i128 {
     OffsetDateTime::now_utc().unix_timestamp_nanos()
 }
 
-struct Entry {
-    value: bool,
+struct Entry<V> {
+    value: V,
     expires_at: i128,
 }
 
-/// A bounded TTL cache of boolean lookups. Runtime-agnostic: no timers, the
+/// A bounded TTL cache of lookups. Runtime-agnostic: no timers, the
 /// clock is only read on access.
-pub struct TtlCache {
+pub struct TtlCache<V = bool> {
     config: CacheConfiguration,
     clock: Clock,
-    entries: Mutex<HashMap<String, Entry>>,
+    entries: Mutex<HashMap<String, Entry<V>>>,
 }
 
-impl TtlCache {
+impl<V: Clone> TtlCache<V> {
     pub fn new(config: CacheConfiguration) -> Self {
         Self::with_clock(config, system_clock)
     }
@@ -57,15 +57,15 @@ impl TtlCache {
         self.len() == 0
     }
 
-    fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, Entry>> {
+    fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, Entry<V>>> {
         self.entries.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    pub fn get(&self, key: &str) -> Option<bool> {
+    pub fn get(&self, key: &str) -> Option<V> {
         let now = (self.clock)();
         let mut entries = self.lock();
         match entries.get(key) {
-            Some(e) if e.expires_at > now => Some(e.value),
+            Some(e) if e.expires_at > now => Some(e.value.clone()),
             Some(_) => {
                 entries.remove(key);
                 None
@@ -74,8 +74,10 @@ impl TtlCache {
         }
     }
 
-    pub fn put(&self, key: String, value: bool) {
-        let ttl: Duration = if value {
+    /// `positive` picks the TTL: negative results use the negative TTL, and
+    /// are not cached when none is configured.
+    pub fn put(&self, key: String, value: V, positive: bool) {
+        let ttl: Duration = if positive {
             self.config.ttl()
         } else {
             match self.config.negative_ttl() {
@@ -117,13 +119,14 @@ impl TtlCache {
     pub async fn get_or_try<E>(
         &self,
         key: String,
-        compute: impl std::future::Future<Output = Result<bool, E>>,
-    ) -> Result<bool, E> {
+        compute: impl std::future::Future<Output = Result<V, E>>,
+        positive: impl Fn(&V) -> bool,
+    ) -> Result<V, E> {
         if let Some(v) = self.get(&key) {
             return Ok(v);
         }
         let v = compute.await?;
-        self.put(key, v);
+        self.put(key, v.clone(), positive(&v));
         Ok(v)
     }
 }
@@ -169,8 +172,14 @@ mod tests {
             v
         };
 
-        assert_eq!(c.get_or_try("a".into(), call(Ok(true))).await, Ok(true));
-        assert_eq!(c.get_or_try("a".into(), call(Ok(true))).await, Ok(true));
+        assert_eq!(
+            c.get_or_try("a".into(), call(Ok(true)), |v| *v).await,
+            Ok(true)
+        );
+        assert_eq!(
+            c.get_or_try("a".into(), call(Ok(true)), |v| *v).await,
+            Ok(true)
+        );
         assert_eq!(calls.load(Ordering::SeqCst), 1);
         assert_eq!(c.len(), 1);
 
@@ -180,22 +189,25 @@ mod tests {
         assert_eq!(c.get("a"), None);
 
         // negatives not cached by default
-        c.put("n".into(), false);
+        c.put("n".into(), false, false);
         assert_eq!(c.get("n"), None);
 
         // errors never cached
-        assert_eq!(c.get_or_try("e".into(), call(Err(()))).await, Err(()));
+        assert_eq!(
+            c.get_or_try("e".into(), call(Err(())), |v| *v).await,
+            Err(())
+        );
         assert_eq!(c.get("e"), None);
 
         // max entries
-        c.put("1".into(), true);
-        c.put("2".into(), true);
-        c.put("3".into(), true);
+        c.put("1".into(), true, true);
+        c.put("2".into(), true, true);
+        c.put("3".into(), true, true);
         assert_eq!(c.len(), 2);
 
         // negative ttl
         let c = TtlCache::with_clock(cfg(10, 5, Some(1)), clock);
-        c.put("n".into(), false);
+        c.put("n".into(), false, false);
         assert_eq!(c.get("n"), Some(false));
         NOW.store(11, Ordering::SeqCst);
         assert_eq!(c.get("n"), None);

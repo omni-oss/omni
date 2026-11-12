@@ -83,7 +83,7 @@ pub async fn put_artifact(
         vec![digest.clone()],
     );
 
-    let container = container(&query.org, &query.ws, &query.env);
+    let container = container(&tenant_code, &query.org, &query.ws, &query.env);
     let stream = body.into_data_stream().filter_map(|r| {
         std::future::ready(match r {
             Ok(b) => Some(b),
