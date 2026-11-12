@@ -7,6 +7,7 @@ dependencies:
   - omni_context
   - omni_messages
   - omni_task_executor
+  - omni_retry_config
   - omni_generator
   - omni_input_provider
   - omni_tera

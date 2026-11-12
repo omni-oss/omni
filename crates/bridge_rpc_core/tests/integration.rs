@@ -907,22 +907,23 @@ async fn test_server_response_error_propagates_to_client() {
         .start()
         .await
         .expect("start");
-    let response = active
-        .end()
-        .await
-        .expect("end")
-        .wait()
-        .await
-        .expect("wait for response start");
-
-    let (status, _, mut reader) = response.into_parts();
-    assert_eq!(status, ResponseStatusCode::SUCCESS);
-
-    // The service sent a ResponseError; the client must surface it.
-    let result = reader.read_body_chunk().await;
+    // The error frame can reach the client before `end` returns, while
+    // waiting for the response start, or while reading the body. It must be
+    // surfaced at one of those points.
+    let surfaced = match active.end().await {
+        Err(_) => true,
+        Ok(pending) => match pending.wait().await {
+            Err(_) => true,
+            Ok(response) => {
+                let (status, _, mut reader) = response.into_parts();
+                assert_eq!(status, ResponseStatusCode::SUCCESS);
+                reader.read_body_chunk().await.is_err()
+            }
+        },
+    };
     assert!(
-        result.is_err(),
-        "read_body_chunk must return Err when the service sent a ResponseError"
+        surfaced,
+        "the client must surface the ResponseError the service sent"
     );
 
     close_rpcs!(rpc1, rpc2);
@@ -959,7 +960,7 @@ async fn test_service_returning_err_propagates_to_client() {
     let runner = run_rpcs!(rpc1, rpc2);
     sleep(Duration::from_millis(5)).await;
 
-    let pending_response = rpc1
+    let ended = rpc1
         .request(TEST_PATH)
         .await
         .expect("request")
@@ -967,15 +968,18 @@ async fn test_service_returning_err_propagates_to_client() {
         .await
         .expect("start")
         .end()
-        .await
-        .expect("end");
+        .await;
 
     // The service failed before producing a response, so the client must
     // observe an error rather than block forever waiting on a response
-    // start frame.
-    let result = pending_response.wait().await;
+    // start frame. The error frame can arrive before `end` returns or while
+    // waiting, so either one is correct.
+    let observed_error = match ended {
+        Err(_) => true,
+        Ok(pending_response) => pending_response.wait().await.is_err(),
+    };
     assert!(
-        result.is_err(),
+        observed_error,
         "client must observe an error when the service returns Err"
     );
 
@@ -1259,7 +1263,13 @@ macro_rules! run_rpcs {
 macro_rules! close_rpcs {
     ($($rpc:ident),+) => {{
         $(
-            $rpc.close().await.expect(concat!("Failed to close RPC ", stringify!($rpc)));
+            // Closing one side makes its peer stop, so a later close of the
+            // peer can legitimately find it already stopped.
+            match $rpc.close().await {
+                Ok(()) => {}
+                Err(e) if e.kind() == bridge_rpc_core::BridgeRpcErrorKind::NotRunning => {}
+                Err(e) => panic!(concat!("Failed to close RPC ", stringify!($rpc), ": {:?}"), e),
+            }
         )+
     }};
 }

@@ -374,7 +374,7 @@ describe("+run @e2e (on-failure)", () => {
 });
 
 describe("+run @e2e (retries & persistence)", () => {
-    it("`max_retries` retries a failing task before giving up", async () => {
+    it("`retry.max_retries` retries a failing task before giving up", async () => {
         const ws = makeWorkspace({
             workspace: { projects: ["**"] },
             projects: {
@@ -383,8 +383,11 @@ describe("+run @e2e (retries & persistence)", () => {
                     tasks: {
                         flaky: {
                             exec: "false",
-                            max_retries: 2,
-                            retry_interval: "5ms",
+                            retry: {
+                                max_retries: 2,
+                                strategy: "fixed",
+                                base: "5ms",
+                            },
                         },
                     },
                 },

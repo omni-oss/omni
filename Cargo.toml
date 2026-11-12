@@ -184,6 +184,7 @@ serde-wasm-bindgen = { version = "^0.6.5" }
 console_error_panic_hook = { version = "^0.1.7" }
 wasm-bindgen-test = { version = "^0.3.80" }
 omni_command_config = { path = "crates/omni_command_config" }
+omni_retry_config = { path = "crates/omni_retry_config" }
 omni_capabilities = { path = "crates/omni_capabilities" }
 omni_capability_enforcement = { path = "crates/omni_capability_enforcement" }
 omni_capability_sys = { path = "crates/omni_capability_sys" }

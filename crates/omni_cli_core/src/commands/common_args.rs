@@ -1,18 +1,21 @@
-use std::{path::PathBuf, time::Duration};
+use std::path::PathBuf;
 
 use clap::Args;
 use clap_utils::EnumValueAdapter;
+use config_utils::Replace;
 use maps::UnorderedMap;
 use omni_configurations::{
     RedactMode, RedactOverrides, Ui, WorkspaceConfiguration,
 };
 use omni_execution_plan::{MetaOnError, ScmAffectedFilter};
+use omni_retry_config::RetryConfiguration;
 use omni_scm::SelectScm;
 use omni_task_executor::ExecutionConfigBuilder;
 use omni_task_output_logs::LogsDisplay;
 
 use crate::commands::{
-    common_types::SerializationFormat, parser::parse_key_value,
+    common_types::SerializationFormat,
+    parser::{parse_key_value, parse_retry_spec},
 };
 
 #[derive(Args, Debug)]
@@ -95,17 +98,15 @@ pub struct RunArgs {
 
     #[arg(
         long,
-        short,
-        help = "How many retries to do if the task fails before failing the whole execution, takes precedence over `max_retry` task configuration if specified"
+        short = 'r',
+        value_name = "SPEC",
+        value_parser = parse_retry_spec,
+        help = "Retry policy: COUNT[,strategy][,key=value...], e.g. 3,exponential,base=500ms,max_delay=30s,jitter=full. Merged per field over the `retry` task configuration"
     )]
-    pub retry: Option<u8>,
+    pub retry: Option<RetryConfiguration>,
 
-    #[arg(
-        long,
-        help = "How long to wait before retrying a failed task, takes precedence over `retry_interval` task configuration if specified",
-        value_parser = humantime::parse_duration
-    )]
-    pub retry_interval: Option<Duration>,
+    #[arg(long, conflicts_with = "retry", help = "Disable retries")]
+    pub no_retry: bool,
 
     #[arg(
         long,
@@ -211,12 +212,13 @@ impl RunArgs {
 
         builder.dry_run(self.dry_run);
 
-        if let Some(retry) = self.retry {
-            builder.max_retries(retry);
-        }
-
-        if let Some(retry_interval) = self.retry_interval {
-            builder.retry_interval(retry_interval);
+        if let Some(retry) = &self.retry {
+            builder.retry(retry.clone());
+        } else if self.no_retry {
+            builder.retry(RetryConfiguration {
+                max_retries: Some(Replace::new(0)),
+                ..Default::default()
+            });
         }
 
         let mut scm = self.scm_affected.value();

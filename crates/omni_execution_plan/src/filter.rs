@@ -528,8 +528,7 @@ mod tests {
             true.into(),
             false,
             false,
-            None,
-            None,
+            Default::default(),
         );
         assert!(
             filter
@@ -550,8 +549,7 @@ mod tests {
             true.into(),
             false,
             false,
-            None,
-            None,
+            Default::default(),
         )
     }
 
@@ -765,8 +763,7 @@ mod tests {
             true.into(),
             false,
             false,
-            None,
-            None,
+            Default::default(),
         );
 
         assert!(
@@ -799,8 +796,7 @@ mod tests {
             true.into(),
             false,
             false,
-            None,
-            None,
+            Default::default(),
         );
 
         assert!(
@@ -839,8 +835,7 @@ mod tests {
             true.into(),
             false,
             false,
-            None,
-            None,
+            Default::default(),
         );
 
         assert!(

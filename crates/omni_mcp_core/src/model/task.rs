@@ -1,3 +1,4 @@
+use omni_retry_config::RetryConfiguration;
 use omni_task_executor::{Force, MetaOnError};
 
 use crate::notices::NoticePayload;
@@ -42,6 +43,10 @@ pub struct TaskRunParams {
     /// Include logs in the response.
     #[serde(default)]
     pub include_logs: Option<LogsDisplay>,
+    /// Retry settings for all selected tasks, merged per field over each
+    /// task's own `retry` configuration.
+    #[serde(default)]
+    pub retry: Option<RetryConfiguration>,
 }
 
 fn default_meta_error_samples() -> usize {
@@ -86,6 +91,10 @@ pub struct ExecCommandParams {
     /// Include logs in the response.
     #[serde(default)]
     pub include_logs: Option<LogsDisplay>,
+    /// Retry settings for all selected tasks, merged per field over each
+    /// task's own `retry` configuration.
+    #[serde(default)]
+    pub retry: Option<RetryConfiguration>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]

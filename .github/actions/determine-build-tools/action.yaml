@@ -40,14 +40,6 @@ runs:
       shell: ${{ inputs.shell }}
       run: bun run ./scripts/summarize-results/bin/index.js result.json -o result-summary.json
 
-    - name: Load Dry Run Result Into Variable
-      id: load_result
-      shell: bash
-      run: |
-        echo "build_data_json<<EOF" >> $GITHUB_OUTPUT
-        cat result-summary.json >> $GITHUB_OUTPUT
-        echo -e "\nEOF" >> $GITHUB_OUTPUT
-
     - name: Install JS Actions NPM Dependencies
       shell: bash
       run: |
@@ -58,4 +50,4 @@ runs:
       id: determine
       uses: ./.github/actions/determine-build-tools-js
       with:
-        build_data_json: ${{ steps.load_result.outputs.build_data_json }}
+        build_data_file: result-summary.json

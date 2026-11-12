@@ -1,9 +1,17 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 import { getInput, info, setFailed, setOutput } from "@actions/core";
 
 try {
     // 1. Get and parse the build data JSON input
-    const buildDataJson = getInput("build_data_json", { required: true });
-    const data = JSON.parse(buildDataJson);
+    const buildDataFile = getInput("build_data_file", { required: true });
+    const data = JSON.parse(
+        readFileSync(
+            resolve(process.env.GITHUB_WORKSPACE ?? ".", buildDataFile),
+            "utf8",
+        ),
+    );
 
     // Initialize all output variables to 'false' (default is to skip)
     let installRustTools = "false";

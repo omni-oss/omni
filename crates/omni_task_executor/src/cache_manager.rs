@@ -305,8 +305,7 @@ mod tests {
             TeraExprBoolean::Boolean(true),
             false,
             persistent,
-            None,
-            None,
+            Default::default(),
         )
     }
 

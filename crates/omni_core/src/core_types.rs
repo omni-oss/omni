@@ -1,4 +1,4 @@
-use std::{path::PathBuf, time::Duration};
+use std::path::PathBuf;
 
 use derive_new::new;
 use maps::OrderedMap;
@@ -6,6 +6,8 @@ use omni_command_config::CommandConfig;
 use omni_config_types::TeraExprBoolean;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+
+use omni_retry_config::RetryConfiguration;
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, new)]
 pub struct Project {
@@ -29,8 +31,8 @@ pub struct Task {
     pub interactive: bool,
     pub persistent: bool,
     pub siblings: Vec<TaskDependency>,
-    pub max_retries: Option<u8>,
-    pub retry_interval: Option<Duration>,
+    #[serde(default)]
+    pub retry: RetryConfiguration,
 }
 
 #[cfg(test)]
@@ -43,8 +45,7 @@ pub(crate) struct TaskBuilder {
     interactive: bool,
     persistent: bool,
     siblings: Vec<TaskDependency>,
-    max_retries: Option<u8>,
-    retry_interval: Option<Duration>,
+    retry: RetryConfiguration,
 }
 
 #[cfg(test)]
@@ -59,8 +60,7 @@ impl TaskBuilder {
             interactive: false,
             persistent: false,
             siblings: Default::default(),
-            max_retries: None,
-            retry_interval: None,
+            retry: Default::default(),
         }
     }
 
@@ -152,8 +152,7 @@ impl TaskBuilder {
             interactive: self.interactive,
             persistent: self.persistent,
             siblings: self.siblings,
-            max_retries: self.max_retries,
-            retry_interval: self.retry_interval,
+            retry: self.retry,
         }
     }
 }
@@ -212,8 +211,7 @@ mod tests {
             "interactive": false,
             "persistent": false,
             "siblings": [],
-            "max_retries": null,
-            "retry_interval": null
+            "retry": {}
         }"#;
 
         let task: Task = serde_json::from_str(json).unwrap();
