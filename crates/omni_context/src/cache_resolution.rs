@@ -167,20 +167,15 @@ pub(crate) fn mapped_workspace(
 }
 
 /// Which `worktree.omni.*` directory field a resolution reads.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, strum::IntoStaticStr)]
 pub(crate) enum WorktreeDir {
+    #[strum(serialize = "cache.dir")]
     Cache,
+    #[strum(serialize = "sources.dir")]
     Sources,
 }
 
 impl WorktreeDir {
-    fn field(self) -> &'static str {
-        match self {
-            Self::Cache => "cache.dir",
-            Self::Sources => "sources.dir",
-        }
-    }
-
     fn select(self, config: WorktreeConfiguration) -> Option<String> {
         match self {
             Self::Cache => config.cache.and_then(|c| c.dir),
@@ -241,7 +236,7 @@ pub(crate) fn configured_worktree_directory(
                 && tail.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
         }) && dir.matches('%').count() >= 2;
     if dir.trim().is_empty() || expansion {
-        return Err(ContextErrorInner::CacheDirectory(format!("invalid {} in {}: use a nonempty literal path; home/environment expansion is not supported", kind.field(), file.display())).into());
+        return Err(ContextErrorInner::CacheDirectory(format!("invalid {} in {}: use a nonempty literal path; home/environment expansion is not supported", <&'static str>::from(kind), file.display())).into());
     }
     #[cfg(windows)]
     if !std::path::Path::new(&dir).has_root()
@@ -251,7 +246,7 @@ pub(crate) fn configured_worktree_directory(
         )
     {
         return Err(ContextErrorInner::CacheDirectory(format!(
-            "invalid {} in {}: drive-relative paths are ambiguous; use a fully absolute or workspace-relative path", kind.field(), file.display()
+            "invalid {} in {}: drive-relative paths are ambiguous; use a fully absolute or workspace-relative path", <&'static str>::from(kind), file.display()
         )).into());
     }
     Ok(Some((root.join(dir), file)))

@@ -8101,6 +8101,7 @@ name = "omni_test_capabilities"
 version = "0.1.0"
 dependencies = [
  "reflink-copy",
+ "strum 0.28.0",
  "tempfile",
 ]
 

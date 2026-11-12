@@ -34,7 +34,8 @@ pub const SKIPPED_PREFIX: &str = "SKIPPED[";
 pub const REQUIRED_PREFIX: &str = "REQUIRED CAPABILITY UNAVAILABLE: ";
 
 /// A filesystem capability that can be probed on a directory.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::IntoStaticStr)]
+#[strum(serialize_all = "lowercase")]
 pub enum Capability {
     Reflink,
     Hardlink,
@@ -42,12 +43,8 @@ pub enum Capability {
 }
 
 impl Capability {
-    pub const fn name(self) -> &'static str {
-        match self {
-            Self::Reflink => "reflink",
-            Self::Hardlink => "hardlink",
-            Self::Symlink => "symlink",
-        }
+    pub fn name(self) -> &'static str {
+        self.into()
     }
 }
 
