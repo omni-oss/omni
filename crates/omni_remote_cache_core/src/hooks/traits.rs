@@ -2,7 +2,7 @@ use std::{future::Future, pin::Pin, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use strum::{Display, EnumString};
+use strum::{Display, EnumString, IntoStaticStr};
 
 #[derive(
     Debug,
@@ -46,7 +46,8 @@ pub enum HookDecision {
     Veto { reason: String },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Display, IntoStaticStr)]
+#[strum(serialize_all = "snake_case")]
 pub enum OutcomeKind {
     Hit,
     Miss,

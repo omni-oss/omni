@@ -3,7 +3,6 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use omni_remote_cache_core::hooks::{
     ArtifactHooks, HookContext, HookDecision, HookError, HookOutcome,
-    OutcomeKind,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -56,16 +55,6 @@ fn digests(ctx: &HookContext) -> Vec<&str> {
     }
 }
 
-fn outcome_name(kind: OutcomeKind) -> &'static str {
-    match kind {
-        OutcomeKind::Hit => "hit",
-        OutcomeKind::Miss => "miss",
-        OutcomeKind::Stored => "stored",
-        OutcomeKind::Deleted => "deleted",
-        OutcomeKind::Failed => "failed",
-    }
-}
-
 #[async_trait]
 impl ArtifactHooks for QueryHooks {
     async fn before(
@@ -101,7 +90,7 @@ impl ArtifactHooks for QueryHooks {
             return Ok(());
         };
         let op = ctx.op.to_string();
-        let outcome = outcome_name(outcome.kind);
+        let outcome: &'static str = outcome.kind.into();
         for digest in digests(ctx) {
             self.executor
                 .execute(
@@ -127,7 +116,7 @@ impl ArtifactHooks for QueryHooks {
 mod tests {
     use std::sync::Mutex;
 
-    use omni_remote_cache_core::hooks::ArtifactOp;
+    use omni_remote_cache_core::hooks::{ArtifactOp, OutcomeKind};
 
     use super::*;
     use crate::QueryError;
