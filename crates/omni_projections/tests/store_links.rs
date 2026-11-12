@@ -13,8 +13,10 @@
 use std::path::{Path, PathBuf};
 
 use omni_projection_configurations::{ExistingPolicy, LinkKind};
+#[cfg(unix)]
+use omni_projections::PriorLink;
 use omni_projections::{
-    ApplyOptions, ApplyOutcome, LinkPair, PriorLink, ResolvedKind, apply_link,
+    ApplyOptions, ApplyOutcome, LinkPair, ResolvedKind, apply_link,
 };
 use omni_test_capabilities::{Capability, gate, require, scratch_dir};
 use system_traits::{

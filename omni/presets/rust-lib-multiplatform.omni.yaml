@@ -1,8 +1,0 @@
-# yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/json-schemas/refs/heads/main/project.json
-name: rust-lib-multiplatform
-
-# A library whose tests depend on the OS or filesystem (links, reflink, sandbox
-# facilities) and so must run on every platform lane, not just Linux.
-extends:
-  - ./rust-lib.omni.yaml
-  - ./rust-multiplatform.omni.yaml

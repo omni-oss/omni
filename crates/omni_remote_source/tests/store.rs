@@ -637,7 +637,10 @@ async fn deleting_only_the_trees_re_exports_offline_from_the_mirror() {
     assert_eq!(again.pin, commit);
     assert_eq!(again.root, first.root);
     assert_eq!(
-        std::fs::read_to_string(again.root.join("README.md")).unwrap(),
+        // Git may convert line endings on Windows.
+        std::fs::read_to_string(again.root.join("README.md"))
+            .unwrap()
+            .replace("\r\n", "\n"),
         "offline\n"
     );
 }

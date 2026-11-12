@@ -249,6 +249,12 @@ either layout and nothing else in the store becomes readable. A path that cannot
 be passed safely in a flag (`,`, `=`, control characters) is not granted and the
 runtime fails loudly instead.
 
+**Known gap:** on Windows the AppContainer-confined Deno runtime dies with `EPIPE`
+when its entrypoint is in a store outside the workspace, so those two e2e cases
+are skipped there until the grant is worked out on a Windows machine. Capability
+enforcement is experimental and off by default; without it, tools and generators
+from the store run on Windows.
+
 Verified end to end on Linux with Deno under capability enforcement (tool and
 generator `run-javascript` from a git source in a store outside the workspace);
 the e2e tests run on the macOS and Windows lanes too, which is where the seatbelt
@@ -409,11 +415,13 @@ must name what went wrong.
      today (only `cli/omni` has per-platform test lanes). Making that crate
      multiplatform and requiring `os-sandbox` there is a follow-up that should be
      checked on real runners first.
-   Crates whose tests depend on the platform extend
-   `rust-lib-multiplatform` (new preset) so they run on every lane; the required
-   list is part of the test task's cache key. A skipped test prints a
-   `SKIPPED[...]` line in the job log; a required capability that is missing fails
-   the job.
+   Only `cli/omni` has per-platform test lanes, and its `test` task depends on the
+   `test` of every crate it uses, so a crate's gated tests run on each platform
+   lane as part of that closure; the required list is part of the test task's
+   cache key. (A dedicated multiplatform preset for `omni_projections` was tried
+   and dropped: it grew the dry-run summary past the argument-size limit of the
+   `determine-build-tools` action.) A skipped test prints a `SKIPPED[...]` line in
+   the job log; a required capability that is missing fails the job.
 4. **Fallbacks are asserted, not skipped.** Where a capability is absent the
    test asserts the fallback: on a non-reflink filesystem `auto` yields
    symlink, then copy with the expected `ResolvedKind`; a
