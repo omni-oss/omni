@@ -2,11 +2,8 @@ use std::{
     collections::HashSet,
     io::Cursor,
     path::{Path, PathBuf},
-    sync::{
-        Arc, OnceLock,
-        atomic::{AtomicU64, Ordering},
-    },
-    time::{SystemTime, UNIX_EPOCH},
+    sync::{Arc, OnceLock},
+    time::SystemTime,
 };
 
 use bytes::Bytes;
@@ -35,7 +32,7 @@ use strum::{EnumDiscriminants, EnumIs, IntoDiscriminant as _};
 use system_traits::{
     FsCopyAsync as _, FsCreateDirAllAsync, FsHardLinkAsync as _,
     FsMetadataAsync, FsReadAsync as _, FsRemoveDirAllAsync as _,
-    FsRenameAsync as _, FsWriteAsync as _, impls::RealSys,
+    FsWriteAsync as _, impls::RealSys,
 };
 use time::OffsetDateTime;
 use tokio::task::JoinSet;
@@ -49,10 +46,14 @@ use crate::{
     impls::{
         cache_archive::archive,
         last_used_db::{LocalLastUsedDb, LocalLastUsedDbError},
+    },
+    storage::{
+        STAGING_PREFIX, is_internal_entry,
         lock::{
             CacheLockGuard, LAST_USED_LOCK_FILE, PRUNE_LOCK_FILE,
             REPLACE_LOCK_FILE, lock_file_path,
         },
+        publish_staged_dir, reclaim_stale_staging_dirs, staging_dir_for,
     },
 };
 
@@ -282,66 +283,6 @@ impl HybridTaskExecutionCacheStore {
         Ok(Some(metadata.exit_code))
     }
 
-    /// Atomically publishes a fully-populated staging directory to its final
-    /// content-addressed location.
-    ///
-    /// When `replace` is `false` an entry that already exists is assumed to be
-    /// equivalent to ours (same digest, same outcome), so a publish that loses
-    /// the race is still a success. When `replace` is `true` the caller is
-    /// intentionally overwriting a non-equivalent existing entry (e.g. an
-    /// upgrade from a cached failure to a successful re-execution), so an
-    /// existing complete entry is cleared and replaced rather than kept.
-    ///
-    /// Returns once the destination holds a complete entry.
-    async fn publish_staging(
-        &self,
-        staging_dir: &Path,
-        output_dir: &Path,
-        metadata_path: &Path,
-        replace: bool,
-    ) -> Result<(), LocalTaskExecutionCacheStoreError> {
-        const MAX_ATTEMPTS: usize = 5;
-
-        for _ in 0..MAX_ATTEMPTS {
-            match self.sys.fs_rename_async(staging_dir, output_dir).await {
-                Ok(()) => return Ok(()),
-                Err(e) => {
-                    // A peer published an identical entry first. Discard our
-                    // staging copy and treat this as success. Skipped when
-                    // replacing, since there we mean to overwrite whatever
-                    // occupies the destination.
-                    if !replace
-                        && self.sys.fs_exists_async(metadata_path).await?
-                    {
-                        let _ =
-                            self.sys.fs_remove_dir_all_async(staging_dir).await;
-                        return Ok(());
-                    }
-
-                    // Either a stale/partial directory (no metadata sentinel,
-                    // e.g. left by an older omni version or a crashed run) or,
-                    // when replacing, the prior entry we intend to overwrite is
-                    // occupying the destination. Clear it and retry.
-                    if self.sys.fs_exists_async(output_dir).await? {
-                        let _ =
-                            self.sys.fs_remove_dir_all_async(output_dir).await;
-                        continue;
-                    }
-
-                    // Genuine, unrecoverable failure.
-                    let _ = self.sys.fs_remove_dir_all_async(staging_dir).await;
-                    return Err(e.into());
-                }
-            }
-        }
-
-        let _ = self.sys.fs_remove_dir_all_async(staging_dir).await;
-        Err(std::io::Error::other(
-            "failed to publish cache entry after multiple attempts",
-        )
-        .into())
-    }
-
     /// Removes the given cache entries from disk without taking the prune
     /// lock. Callers must already hold the exclusive prune lock.
     async fn force_prune_inner(
@@ -378,43 +319,14 @@ impl HybridTaskExecutionCacheStore {
     /// concurrently-publishing peer's fresh staging directory is never
     /// touched. Best-effort: individual failures are logged and skipped.
     async fn prune_stale_staging_dirs(&self, max_age: std::time::Duration) {
-        let now = SystemTime::now();
         let mut projects = match tokio::fs::read_dir(&self.cache_dir).await {
             Ok(entries) => entries,
             Err(_) => return,
         };
 
         while let Ok(Some(project)) = projects.next_entry().await {
-            let output_dir = project.path().join("output");
-            let mut entries = match tokio::fs::read_dir(&output_dir).await {
-                Ok(entries) => entries,
-                Err(_) => continue,
-            };
-
-            while let Ok(Some(entry)) = entries.next_entry().await {
-                let name = entry.file_name();
-                if !name.to_string_lossy().starts_with(STAGING_PREFIX) {
-                    continue;
-                }
-
-                let stale = entry
-                    .metadata()
-                    .await
-                    .ok()
-                    .and_then(|m| m.modified().ok())
-                    .and_then(|modified| now.duration_since(modified).ok())
-                    .is_some_and(|age| age >= max_age);
-
-                if stale
-                    && let Err(e) =
-                        tokio::fs::remove_dir_all(entry.path()).await
-                {
-                    tracing::debug!(
-                        "failed to reclaim stale staging dir {}: {e}",
-                        entry.path().display()
-                    );
-                }
-            }
+            reclaim_stale_staging_dirs(&project.path().join("output"), max_age)
+                .await;
         }
     }
 }
@@ -423,46 +335,10 @@ const LOGS_CACHE_FILE: &str = "logs.cache";
 const CACHE_OUTPUT_METADATA_FILE: &str = "cache.meta.bin";
 const LAST_USED_TIMESTAMPS_DB_FILE: &str = "last-used-timestamps.db";
 
-/// Prefix for in-progress staging directories created while publishing a
-/// cache entry. A staging directory is populated in full and then atomically
-/// renamed into its final (content-addressed) location, so readers never
-/// observe a half-written entry. Anything bearing this prefix is internal
-/// scratch state and must be ignored by readers/stats and reclaimed by prune.
-const STAGING_PREFIX: &str = ".staging-";
-
 /// Staging directories older than this are considered orphaned (left behind by
 /// a crashed process) and are reclaimed during prune.
 const STALE_STAGING_AGE: std::time::Duration =
     std::time::Duration::from_secs(60 * 60);
-
-/// Process-wide counter ensuring staging directory names are unique even when
-/// a single process publishes the same digest from multiple tasks at once.
-static STAGING_COUNTER: AtomicU64 = AtomicU64::new(0);
-
-/// Builds a unique staging directory path that is a sibling of `output_dir`
-/// (and therefore on the same filesystem, so the publishing rename is atomic).
-fn staging_dir_for(output_dir: &Path) -> PathBuf {
-    let parent = output_dir.parent().unwrap_or(output_dir);
-    let digest_name = output_dir
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_default();
-
-    let pid = std::process::id();
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    let seq = STAGING_COUNTER.fetch_add(1, Ordering::Relaxed);
-
-    parent.join(format!("{STAGING_PREFIX}{digest_name}-{pid}-{nanos}-{seq}"))
-}
-
-/// Returns whether a directory entry name denotes internal cache scratch state
-/// (staging dirs or the lock folder) rather than a real cache entry.
-fn is_internal_cache_entry(name: &str) -> bool {
-    name.starts_with('.')
-}
 
 #[async_trait::async_trait]
 impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
@@ -689,7 +565,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                     return Err(e);
                 }
 
-                self.publish_staging(
+                publish_staged_dir(
                     &staging_dir,
                     output_dir,
                     &metadata_path,
@@ -930,7 +806,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
 
             // Skip internal scratch state (the `.locks` folder, staging dirs,
             // etc.); it is never a bs58-encoded project directory.
-            if is_internal_cache_entry(&enc_project_name) {
+            if is_internal_entry(&enc_project_name) {
                 continue;
             }
 
@@ -1973,6 +1849,199 @@ mod tests {
         assert_eq!(
             cached.exit_code, 0,
             "a cached success must never be downgraded to a failure"
+        );
+    }
+
+    /// Returns every path under `root` relative to it, sorted, with `/`
+    /// separators.
+    fn list_tree(root: &Path) -> Vec<String> {
+        fn walk(dir: &Path, root: &Path, out: &mut Vec<String>) {
+            for e in std::fs::read_dir(dir).expect("read_dir") {
+                let p = e.expect("entry").path();
+                let rel = p.strip_prefix(root).expect("prefix");
+                out.push(rel.to_string_lossy().replace('\\', "/"));
+                if p.is_dir() {
+                    walk(&p, root, out);
+                }
+            }
+        }
+        let mut out = vec![];
+        walk(root, root, &mut out);
+        out.sort();
+        out
+    }
+
+    /// Pins the on-disk layout of a task cache entry. A change here is a
+    /// cache format change and must be deliberate.
+    #[tokio::test]
+    async fn test_golden_on_disk_layout() {
+        let temp = fixture(&["project1"]).await;
+        let dir = temp.path();
+        let cache = cache_store(dir);
+        let task = task("task", "project1", dir);
+
+        cache
+            .cache(&new_cache_info(Some(&LOGS_CONTENT), *task.get()))
+            .await
+            .expect("failed to cache");
+        let cached = cache.get(task.get()).await.expect("get").expect("cached");
+
+        let cache_dir = dir.join(".omni/cache");
+        let pdir = path_safe("project1");
+        let entry = format!(
+            "{pdir}/output/{}",
+            bs58::encode(&cached.digest).into_string()
+        );
+
+        let mut expected = vec![
+            ".locks".to_string(),
+            ".locks/prune.lock".to_string(),
+            pdir.clone(),
+            format!("{pdir}/indices"),
+            format!("{pdir}/indices/<h>"),
+            format!("{pdir}/indices/<h>/partial-hashes.bin"),
+            format!("{pdir}/output"),
+            entry.clone(),
+            format!("{entry}/cache.meta.bin"),
+            format!("{entry}/logs.cache"),
+        ];
+        for f in &cached.files {
+            let name = f.cached_path.file_name().expect("name");
+            let name = name.to_string_lossy();
+            let stem = name.strip_suffix(".cache").expect(".cache suffix");
+            assert!(bs58::decode(stem).into_vec().is_ok(), "bs58 stem");
+            expected.push(format!("{entry}/{name}"));
+        }
+        let indices = format!("{pdir}/indices/");
+        let mut actual: Vec<String> = list_tree(&cache_dir)
+            .into_iter()
+            .filter(|p| {
+                p != "last-used-timestamps.db"
+                    && p != ".locks/last-used.lock"
+                    && p != ".locks/replace.lock"
+            })
+            .map(|p| match p.strip_prefix(&indices) {
+                Some(rest) => {
+                    let tail = rest.split_once('/').map(|(_, t)| t);
+                    match tail {
+                        Some(t) => format!("{indices}<h>/{t}"),
+                        None => format!("{indices}<h>"),
+                    }
+                }
+                None => p,
+            })
+            .collect();
+        actual.sort();
+        expected.sort();
+        assert_eq!(actual, expected);
+
+        assert_eq!(
+            read_bytes(&cache_dir.join(&entry).join("logs.cache")).await,
+            LOGS_CONTENT.to_vec()
+        );
+        let meta: CachedTaskExecution = rmp_serde::decode::from_slice(
+            &std::fs::read(cache_dir.join(&entry).join("cache.meta.bin"))
+                .expect("meta"),
+        )
+        .expect("metadata is msgpack CachedTaskExecution");
+        assert_eq!(meta.logs_path, Some(PathBuf::from("logs.cache")));
+        assert!(meta.files.iter().all(|f| f.cached_path.is_relative()));
+        assert_eq!(meta.digest, cached.digest);
+    }
+
+    /// An entry laid out by hand exactly as the previous version wrote it
+    /// (relative cached paths, metadata last, no extra files) must be read,
+    /// left alone by an equal-outcome re-cache and upgradable from failure.
+    #[tokio::test]
+    async fn test_reads_entry_written_by_previous_version() {
+        let temp = fixture(&["project1"]).await;
+        let dir = temp.path();
+        let cache = cache_store(dir);
+        let task = task("task", "project1", dir);
+
+        // Learn the digest and output file names, then wipe the entry.
+        cache
+            .cache(&new_cache_info(Some(&LOGS_CONTENT), *task.get()))
+            .await
+            .expect("failed to cache");
+        let learned = cache.get(task.get()).await.expect("get").expect("some");
+        let entry_dir = dir
+            .join(".omni/cache")
+            .join(path_safe("project1"))
+            .join("output")
+            .join(bs58::encode(&learned.digest).into_string());
+        tokio::fs::remove_dir_all(&entry_dir).await.expect("rm");
+        assert!(cache.get(task.get()).await.expect("get").is_none());
+
+        // Hand-build the legacy entry.
+        std::fs::create_dir_all(&entry_dir).expect("mkdir");
+        std::fs::write(entry_dir.join("logs.cache"), &LOGS_CONTENT)
+            .expect("logs");
+        let mut files = vec![];
+        for f in &learned.files {
+            let name =
+                format!("{}.cache", hashtext(&f.original_path.to_string()));
+            std::fs::write(entry_dir.join(&name), JS_CONTENT).expect("file");
+            files.push(CachedFileOutput {
+                cached_path: PathBuf::from(name),
+                original_path: f.original_path.clone(),
+            });
+        }
+        let legacy = CachedTaskExecution {
+            execution_time: OffsetDateTime::UNIX_EPOCH,
+            files,
+            logs_path: Some(PathBuf::from("logs.cache")),
+            exit_code: 1,
+            ..learned.clone()
+        };
+        let legacy_bytes = rmp_serde::encode::to_vec(&legacy).expect("enc");
+        std::fs::write(entry_dir.join("cache.meta.bin"), &legacy_bytes)
+            .expect("meta");
+
+        let got = cache
+            .get(task.get())
+            .await
+            .expect("get")
+            .expect("legacy entry must be readable");
+        assert_eq!(got.exit_code, 1);
+        assert_eq!(got.digest, learned.digest);
+        assert_eq!(
+            read_bytes(got.logs_path.as_ref().expect("logs")).await,
+            LOGS_CONTENT.to_vec()
+        );
+        for f in &got.files {
+            assert_eq!(read_bytes(&f.cached_path).await, JS_CONTENT.as_bytes());
+        }
+
+        // A repeated failure leaves the legacy entry byte-for-byte alone.
+        cache
+            .cache(&new_cache_info_with_exit_code(
+                Some(&LOGS_CONTENT),
+                *task.get(),
+                1,
+            ))
+            .await
+            .expect("recache failure");
+        assert_eq!(
+            std::fs::read(entry_dir.join("cache.meta.bin")).expect("meta"),
+            legacy_bytes
+        );
+
+        // A success upgrades it in place, with no staging leftovers.
+        cache
+            .cache(&new_cache_info_with_exit_code(
+                Some(&LOGS_CONTENT),
+                *task.get(),
+                0,
+            ))
+            .await
+            .expect("upgrade");
+        let upgraded = cache.get(task.get()).await.expect("get").expect("some");
+        assert_eq!(upgraded.exit_code, 0);
+        assert!(
+            list_tree(entry_dir.parent().expect("parent"))
+                .iter()
+                .all(|p| !p.starts_with(STAGING_PREFIX))
         );
     }
 
