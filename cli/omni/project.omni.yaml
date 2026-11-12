@@ -5,6 +5,17 @@ extends:
   - "@workspace/omni/presets/rust-cli.omni.yaml"
   - "@workspace/omni/presets/rust-multiplatform.omni.yaml"
 
+# Workspace-level inputs of the binary that no dependency project owns.
+# Crate sources reach the key through `^passthrough` on the build tasks.
+cache:
+  key:
+    files:
+      append:
+        - "@workspace/Cargo.toml"
+        - "@workspace/Cargo.lock"
+        - "@workspace/services/bridge-service/package.json"
+        - "@workspace/services/bridge-service/dist/**/*"
+
 tasks:
   # Compiling `bridge_rpc_runner` embeds `services/bridge-service/dist`.
   check:lint:

@@ -12,6 +12,13 @@ use omni_glob::GlobMatcher;
 
 use crate::error::{Error, ErrorInner};
 
+/// Walks `root_dir` for configuration files, honoring ignore files.
+///
+/// Rule: workspace ignore rules never apply inside a fetched source. Use
+/// [`with_parent_ignores(false)`](Self::with_parent_ignores) for any root in the
+/// shared source store (a git source, or a pack reached through one); the synced
+/// `/.omni/sources/**` rule would otherwise hide everything in it. Local
+/// sources and the workspace itself keep the default. See RFC 0012, decision 13.
 #[derive(Debug, Clone, new)]
 pub struct ConfigurationDiscovery<'a, G, C, I>
 where
@@ -36,6 +43,9 @@ where
 
     #[new(into)]
     config_name: &'a str,
+
+    #[new(value = "true")]
+    parent_ignores: bool,
 }
 
 impl<'a, G, C, I> ConfigurationDiscovery<'a, G, C, I>
@@ -44,6 +54,14 @@ where
     C: AsRef<str>,
     I: AsRef<str>,
 {
+    /// Whether ignore files in directories above `root_dir` apply. Disable it
+    /// when `root_dir` is a self-contained tree, such as a fetched source, so
+    /// the enclosing workspace's ignore rules do not hide its files.
+    pub fn with_parent_ignores(mut self, parent_ignores: bool) -> Self {
+        self.parent_ignores = parent_ignores;
+        self
+    }
+
     fn create_default_dir_walker(
         &self,
     ) -> Result<impl DirWalker + 'static, Error> {
@@ -51,6 +69,7 @@ where
 
         let cfg = cfg_builder
             .standard_filters(true)
+            .parents(self.parent_ignores)
             .custom_ignore_filenames(
                 self.ignore_files
                     .iter()
@@ -183,6 +202,44 @@ mod tests {
         assert!(
             !names.contains("gen"),
             "an excluded dir is dropped even though include matched it: {names:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn parent_ignores_can_be_disabled_for_self_contained_roots() {
+        let config_files = ["project.omni.yaml".to_string()];
+        let ignore_files = [".omniignore".to_string()];
+
+        let outer = tempfile::tempdir().unwrap();
+        let source = outer.path().join("store").join("source");
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::write(outer.path().join(".omniignore"), b"/store/**\n")
+            .unwrap();
+        std::fs::write(source.join("project.omni.yaml"), b"name: src\n")
+            .unwrap();
+
+        let discovery = ConfigurationDiscovery::new(
+            source.as_path(),
+            &config_files[..],
+            &[][..],
+            &config_files[..],
+            &ignore_files[..],
+            "project",
+        );
+
+        assert!(
+            discovery.clone().discover().await.unwrap().is_empty(),
+            "by default an ancestor ignore file hides the root's contents"
+        );
+        assert_eq!(
+            discovery
+                .with_parent_ignores(false)
+                .discover()
+                .await
+                .unwrap()
+                .len(),
+            1,
+            "with parent ignores disabled the root's manifest is found"
         );
     }
 
