@@ -10,7 +10,7 @@ use maps::{Map, UnorderedMap};
 use merge::Merge as _;
 use omni_config_types::MergeSingleOrMany;
 use omni_configurations::{
-    MetaConfiguration, ProjectConfiguration, RedactPolicy,
+    FinalizedProject, LoadedLayer, MetaConfiguration, RedactPolicy,
     WorkspaceConfiguration,
 };
 use omni_core::{
@@ -71,9 +71,9 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
     #[tracing::instrument(level = Level::DEBUG, skip_all)]
     pub fn extract_all(
         &mut self,
-        project_configs: &[ProjectConfiguration],
+        project_configs: &[FinalizedProject],
         project_paths: &[PathBuf],
-        extension_graph: &ExtensionGraph<ProjectConfiguration>,
+        extension_graph: &ExtensionGraph<LoadedLayer>,
     ) -> Result<ProjectDataExtractions, ProjectDataExtractorError> {
         let mut projects = vec![];
         let mut project_meta_configs = maps::unordered_map![];
@@ -104,7 +104,7 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
 
         let filtered = project_configs
             .iter()
-            .filter(|config| is_runnable_project(config, &project_paths));
+            .filter(|p| is_runnable_project(&p.config, &project_paths));
 
         let ws_extras = maps::map![
             "WORKSPACE_DIR".to_string() => root_dir.clone(),
@@ -117,7 +117,8 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
             "PLATFORM_BINARY_FORMAT".to_string() => target_lexicon::HOST.binary_format.to_string(),
         ];
 
-        for project_config in filtered {
+        for finalized in filtered {
+            let project_config = &finalized.config;
             tracing::debug!(
                 project_configuration = ?project_config,
                 "processing_project_config",
@@ -158,7 +159,6 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
                 inherit_env_vars: self.inherit_env_vars,
             })?;
 
-            let project_cache = &project_config.cache;
             let project_output_logs = &project_config.output_logs;
             let project_meta = &project_config.meta;
 
@@ -182,7 +182,6 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
                         .insert(full_task_name.clone(), vars.to_map_to_inner());
                 }
 
-                let task_cache = task.cache();
                 let task_output_logs = task.output_logs();
 
                 let output_logs = match (project_output_logs, task_output_logs)
@@ -202,13 +201,10 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
                         .insert(full_task_name.clone(), output_logs);
                 }
 
-                let cache = if let Some(cache_key) = task_cache {
-                    let mut pc = project_cache.clone();
-                    pc.merge(cache_key.clone());
-                    pc
-                } else {
-                    project_cache.clone()
-                };
+                let cache = finalized
+                    .task_cache
+                    .get(name)
+                    .expect("every task has an effective cache");
 
                 let use_defaults = cache.key.defaults.unwrap_or(true);
 
