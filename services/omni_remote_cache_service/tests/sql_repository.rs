@@ -72,10 +72,8 @@ fn repository_config(url: &str) -> serde_json::Value {
 }
 
 async fn server(url: &str) -> TestServer {
-    let path = std::env::temp_dir().join(format!(
-        "orcs-repo-{}.json",
-        url.rsplit('/').next().unwrap()
-    ));
+    let path = std::env::temp_dir()
+        .join(format!("orcs-repo-{}.json", std::process::id()));
     std::fs::write(&path, repository_config(url).to_string()).unwrap();
 
     let args = ServeArgs::new(
@@ -122,7 +120,11 @@ async fn sql_backend_authorizes_validates_vetoes_and_records_usage() {
     let file =
         std::env::temp_dir().join(format!("orcs-{}.db", std::process::id()));
     let _ = std::fs::remove_file(&file);
-    let url = format!("sqlite://{}?mode=rwc", file.display());
+    // `sqlite:` plus a forward-slash path also works with Windows drive paths.
+    let url = format!(
+        "sqlite:{}?mode=rwc",
+        file.to_string_lossy().replace('\\', "/")
+    );
     let db = seed(&url).await;
     let s = server(&url).await;
 
