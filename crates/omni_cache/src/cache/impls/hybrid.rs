@@ -1852,6 +1852,199 @@ mod tests {
         );
     }
 
+    /// Returns every path under `root` relative to it, sorted, with `/`
+    /// separators.
+    fn list_tree(root: &Path) -> Vec<String> {
+        fn walk(dir: &Path, root: &Path, out: &mut Vec<String>) {
+            for e in std::fs::read_dir(dir).expect("read_dir") {
+                let p = e.expect("entry").path();
+                let rel = p.strip_prefix(root).expect("prefix");
+                out.push(rel.to_string_lossy().replace('\\', "/"));
+                if p.is_dir() {
+                    walk(&p, root, out);
+                }
+            }
+        }
+        let mut out = vec![];
+        walk(root, root, &mut out);
+        out.sort();
+        out
+    }
+
+    /// Pins the on-disk layout of a task cache entry. A change here is a
+    /// cache format change and must be deliberate.
+    #[tokio::test]
+    async fn test_golden_on_disk_layout() {
+        let temp = fixture(&["project1"]).await;
+        let dir = temp.path();
+        let cache = cache_store(dir);
+        let task = task("task", "project1", dir);
+
+        cache
+            .cache(&new_cache_info(Some(&LOGS_CONTENT), *task.get()))
+            .await
+            .expect("failed to cache");
+        let cached = cache.get(task.get()).await.expect("get").expect("cached");
+
+        let cache_dir = dir.join(".omni/cache");
+        let pdir = path_safe("project1");
+        let entry = format!(
+            "{pdir}/output/{}",
+            bs58::encode(&cached.digest).into_string()
+        );
+
+        let mut expected = vec![
+            ".locks".to_string(),
+            ".locks/prune.lock".to_string(),
+            pdir.clone(),
+            format!("{pdir}/indices"),
+            format!("{pdir}/indices/<h>"),
+            format!("{pdir}/indices/<h>/partial-hashes.bin"),
+            format!("{pdir}/output"),
+            entry.clone(),
+            format!("{entry}/cache.meta.bin"),
+            format!("{entry}/logs.cache"),
+        ];
+        for f in &cached.files {
+            let name = f.cached_path.file_name().expect("name");
+            let name = name.to_string_lossy();
+            let stem = name.strip_suffix(".cache").expect(".cache suffix");
+            assert!(bs58::decode(stem).into_vec().is_ok(), "bs58 stem");
+            expected.push(format!("{entry}/{name}"));
+        }
+        let indices = format!("{pdir}/indices/");
+        let mut actual: Vec<String> = list_tree(&cache_dir)
+            .into_iter()
+            .filter(|p| {
+                p != "last-used-timestamps.db"
+                    && p != ".locks/last-used.lock"
+                    && p != ".locks/replace.lock"
+            })
+            .map(|p| match p.strip_prefix(&indices) {
+                Some(rest) => {
+                    let tail = rest.split_once('/').map(|(_, t)| t);
+                    match tail {
+                        Some(t) => format!("{indices}<h>/{t}"),
+                        None => format!("{indices}<h>"),
+                    }
+                }
+                None => p,
+            })
+            .collect();
+        actual.sort();
+        expected.sort();
+        assert_eq!(actual, expected);
+
+        assert_eq!(
+            read_bytes(&cache_dir.join(&entry).join("logs.cache")).await,
+            LOGS_CONTENT.to_vec()
+        );
+        let meta: CachedTaskExecution = rmp_serde::decode::from_slice(
+            &std::fs::read(cache_dir.join(&entry).join("cache.meta.bin"))
+                .expect("meta"),
+        )
+        .expect("metadata is msgpack CachedTaskExecution");
+        assert_eq!(meta.logs_path, Some(PathBuf::from("logs.cache")));
+        assert!(meta.files.iter().all(|f| f.cached_path.is_relative()));
+        assert_eq!(meta.digest, cached.digest);
+    }
+
+    /// An entry laid out by hand exactly as the previous version wrote it
+    /// (relative cached paths, metadata last, no extra files) must be read,
+    /// left alone by an equal-outcome re-cache and upgradable from failure.
+    #[tokio::test]
+    async fn test_reads_entry_written_by_previous_version() {
+        let temp = fixture(&["project1"]).await;
+        let dir = temp.path();
+        let cache = cache_store(dir);
+        let task = task("task", "project1", dir);
+
+        // Learn the digest and output file names, then wipe the entry.
+        cache
+            .cache(&new_cache_info(Some(&LOGS_CONTENT), *task.get()))
+            .await
+            .expect("failed to cache");
+        let learned = cache.get(task.get()).await.expect("get").expect("some");
+        let entry_dir = dir
+            .join(".omni/cache")
+            .join(path_safe("project1"))
+            .join("output")
+            .join(bs58::encode(&learned.digest).into_string());
+        tokio::fs::remove_dir_all(&entry_dir).await.expect("rm");
+        assert!(cache.get(task.get()).await.expect("get").is_none());
+
+        // Hand-build the legacy entry.
+        std::fs::create_dir_all(&entry_dir).expect("mkdir");
+        std::fs::write(entry_dir.join("logs.cache"), LOGS_CONTENT.to_vec())
+            .expect("logs");
+        let mut files = vec![];
+        for f in &learned.files {
+            let name =
+                format!("{}.cache", hashtext(&f.original_path.to_string()));
+            std::fs::write(entry_dir.join(&name), JS_CONTENT).expect("file");
+            files.push(CachedFileOutput {
+                cached_path: PathBuf::from(name),
+                original_path: f.original_path.clone(),
+            });
+        }
+        let legacy = CachedTaskExecution {
+            execution_time: OffsetDateTime::UNIX_EPOCH,
+            files,
+            logs_path: Some(PathBuf::from("logs.cache")),
+            exit_code: 1,
+            ..learned.clone()
+        };
+        let legacy_bytes = rmp_serde::encode::to_vec(&legacy).expect("enc");
+        std::fs::write(entry_dir.join("cache.meta.bin"), &legacy_bytes)
+            .expect("meta");
+
+        let got = cache
+            .get(task.get())
+            .await
+            .expect("get")
+            .expect("legacy entry must be readable");
+        assert_eq!(got.exit_code, 1);
+        assert_eq!(got.digest, learned.digest);
+        assert_eq!(
+            read_bytes(got.logs_path.as_ref().expect("logs")).await,
+            LOGS_CONTENT.to_vec()
+        );
+        for f in &got.files {
+            assert_eq!(read_bytes(&f.cached_path).await, JS_CONTENT.as_bytes());
+        }
+
+        // A repeated failure leaves the legacy entry byte-for-byte alone.
+        cache
+            .cache(&new_cache_info_with_exit_code(
+                Some(&LOGS_CONTENT),
+                *task.get(),
+                1,
+            ))
+            .await
+            .expect("recache failure");
+        assert_eq!(
+            std::fs::read(entry_dir.join("cache.meta.bin")).expect("meta"),
+            legacy_bytes
+        );
+
+        // A success upgrades it in place, with no staging leftovers.
+        cache
+            .cache(&new_cache_info_with_exit_code(
+                Some(&LOGS_CONTENT),
+                *task.get(),
+                0,
+            ))
+            .await
+            .expect("upgrade");
+        let upgraded = cache.get(task.get()).await.expect("get").expect("some");
+        assert_eq!(upgraded.exit_code, 0);
+        assert!(
+            list_tree(&entry_dir.parent().expect("parent").to_path_buf())
+                .iter()
+                .all(|p| !p.starts_with(STAGING_PREFIX))
+        );
+    }
+
     #[tokio::test]
     async fn test_logs_path_should_not_exist_if_no_logs() {
         let temp = fixture(&["project1"]).await;

@@ -19,14 +19,8 @@ pub async fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
             .unwrap_or(0)
     ));
 
-    if let Err(e) = tokio::fs::write(&tmp_path, bytes).await {
-        let _ = tokio::fs::remove_file(&tmp_path).await;
-        return Err(e);
-    }
-    if let Err(e) = tokio::fs::rename(&tmp_path, path).await {
-        let _ = tokio::fs::remove_file(&tmp_path).await;
-        return Err(e);
-    }
+    tokio::fs::write(&tmp_path, bytes).await?;
+    tokio::fs::rename(&tmp_path, path).await?;
     Ok(())
 }
 

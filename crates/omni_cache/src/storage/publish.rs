@@ -31,6 +31,16 @@ pub fn staging_dir_for(final_dir: &Path) -> PathBuf {
     parent.join(format!("{STAGING_PREFIX}{name}-{pid}-{nanos}-{seq}"))
 }
 
+/// Existence check that does not follow symlinks (a dangling symlink exists),
+/// matching the semantics the task cache has always used.
+async fn exists_no_follow(path: &Path) -> io::Result<bool> {
+    match tokio::fs::symlink_metadata(path).await {
+        Ok(_) => Ok(true),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(false),
+        Err(e) => Err(e),
+    }
+}
+
 /// Atomically publishes a fully-populated staging directory to `final_dir`.
 ///
 /// `sentinel_path` is the file inside `final_dir` whose presence marks an
@@ -53,12 +63,12 @@ pub async fn publish_staged_dir(
         match tokio::fs::rename(staging_dir, final_dir).await {
             Ok(()) => return Ok(()),
             Err(e) => {
-                if !replace && tokio::fs::try_exists(sentinel_path).await? {
+                if !replace && exists_no_follow(sentinel_path).await? {
                     let _ = tokio::fs::remove_dir_all(staging_dir).await;
                     return Ok(());
                 }
 
-                if tokio::fs::try_exists(final_dir).await? {
+                if exists_no_follow(final_dir).await? {
                     let _ = tokio::fs::remove_dir_all(final_dir).await;
                     continue;
                 }
