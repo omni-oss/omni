@@ -305,17 +305,14 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
             format!("{}#{}", hash_input.project_name, hash_input.task_name);
 
         if let Some(command) = hash_input.task_exec {
-            let command = command.canonical();
-            if !command.is_empty() {
-                let command_str = format!("command={command}");
+            if let Some(command_str) = command_hash_input("command", command) {
                 tree.insert(DefaultHasher::hash(command_str.as_bytes()));
             }
         }
         if let Some(retry_command) = hash_input.task_retry_exec {
-            let retry_command = retry_command.canonical();
-            if !retry_command.is_empty() {
-                let retry_command_str =
-                    format!("retry_command={retry_command}");
+            if let Some(retry_command_str) =
+                command_hash_input("retry_command", retry_command)
+            {
                 tree.insert(DefaultHasher::hash(retry_command_str.as_bytes()));
             }
         }
@@ -931,6 +928,23 @@ fn is_symlink_loop(err: &dir_walker::impls::IgnoreError) -> bool {
     }
 }
 
+/// Operands get their own label so a shell string that happens to equal an
+/// operand encoding can never share a digest with it.
+fn command_hash_input(
+    label: &str,
+    command: &omni_command_config::CommandConfig,
+) -> Option<String> {
+    let canonical = command.canonical();
+    if canonical.is_empty() {
+        return None;
+    }
+    if command.is_operands() {
+        Some(format!("operands_{label}={canonical}"))
+    } else {
+        Some(format!("{label}={canonical}"))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::{
@@ -939,6 +953,28 @@ mod tests {
     };
 
     use super::*;
+
+    #[test]
+    fn operands_never_share_a_hash_input_with_a_shell_string() {
+        use omni_command_config::{CommandConfig, CommandOperand};
+
+        let operands =
+            CommandConfig::operands([CommandOperand::literal("echo")]);
+        let shell = CommandConfig::shell(operands.canonical());
+        assert_eq!(operands.canonical(), shell.canonical());
+        assert_ne!(
+            command_hash_input("command", &operands),
+            command_hash_input("command", &shell)
+        );
+        assert_eq!(
+            command_hash_input("command", &shell),
+            Some(format!("command={}", shell.canonical()))
+        );
+        assert_eq!(
+            command_hash_input("retry_command", &operands),
+            Some(format!("operands_retry_command={}", operands.canonical()))
+        );
+    }
 
     #[derive(Default)]
     struct CountingCanonicalizer {

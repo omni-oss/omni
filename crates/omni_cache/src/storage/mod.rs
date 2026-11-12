@@ -129,6 +129,21 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_write_atomic_removes_temp_file_when_rename_fails() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dest = tmp.path().join("dest");
+        std::fs::create_dir(&dest).unwrap();
+
+        assert!(write_atomic(&dest, b"x").await.is_err());
+
+        let leftovers: Vec<_> = std::fs::read_dir(tmp.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(leftovers, vec![std::ffi::OsString::from("dest")]);
+    }
+
+    #[tokio::test]
     async fn test_write_atomic_replaces_and_leaves_no_temp_files() {
         let tmp = tempfile::tempdir().expect("tempdir");
         let p = tmp.path().join("db");

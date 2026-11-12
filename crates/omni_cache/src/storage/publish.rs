@@ -63,14 +63,33 @@ pub async fn publish_staged_dir(
         match tokio::fs::rename(staging_dir, final_dir).await {
             Ok(()) => return Ok(()),
             Err(e) => {
-                if !replace && exists_no_follow(sentinel_path).await? {
-                    let _ = tokio::fs::remove_dir_all(staging_dir).await;
-                    return Ok(());
+                let complete = if replace {
+                    Ok(false)
+                } else {
+                    exists_no_follow(sentinel_path).await
+                };
+                match complete {
+                    Ok(true) => {
+                        let _ = tokio::fs::remove_dir_all(staging_dir).await;
+                        return Ok(());
+                    }
+                    Ok(false) => {}
+                    Err(check) => {
+                        let _ = tokio::fs::remove_dir_all(staging_dir).await;
+                        return Err(check);
+                    }
                 }
 
-                if exists_no_follow(final_dir).await? {
-                    let _ = tokio::fs::remove_dir_all(final_dir).await;
-                    continue;
+                match exists_no_follow(final_dir).await {
+                    Ok(true) => {
+                        let _ = tokio::fs::remove_dir_all(final_dir).await;
+                        continue;
+                    }
+                    Ok(false) => {}
+                    Err(check) => {
+                        let _ = tokio::fs::remove_dir_all(staging_dir).await;
+                        return Err(check);
+                    }
                 }
 
                 let _ = tokio::fs::remove_dir_all(staging_dir).await;

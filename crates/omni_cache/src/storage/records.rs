@@ -19,9 +19,15 @@ pub async fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
             .unwrap_or(0)
     ));
 
-    tokio::fs::write(&tmp_path, bytes).await?;
-    tokio::fs::rename(&tmp_path, path).await?;
-    Ok(())
+    let result = async {
+        tokio::fs::write(&tmp_path, bytes).await?;
+        tokio::fs::rename(&tmp_path, path).await
+    }
+    .await;
+    if result.is_err() {
+        let _ = tokio::fs::remove_file(&tmp_path).await;
+    }
+    result
 }
 
 /// Reads a file, failing with [`io::ErrorKind::InvalidData`] when it is larger
