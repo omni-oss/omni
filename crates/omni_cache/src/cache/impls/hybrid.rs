@@ -1975,7 +1975,7 @@ mod tests {
 
         // Hand-build the legacy entry.
         std::fs::create_dir_all(&entry_dir).expect("mkdir");
-        std::fs::write(entry_dir.join("logs.cache"), LOGS_CONTENT.to_vec())
+        std::fs::write(entry_dir.join("logs.cache"), &LOGS_CONTENT)
             .expect("logs");
         let mut files = vec![];
         for f in &learned.files {
@@ -2039,7 +2039,7 @@ mod tests {
         let upgraded = cache.get(task.get()).await.expect("get").expect("some");
         assert_eq!(upgraded.exit_code, 0);
         assert!(
-            list_tree(&entry_dir.parent().expect("parent").to_path_buf())
+            list_tree(entry_dir.parent().expect("parent"))
                 .iter()
                 .all(|p| !p.starts_with(STAGING_PREFIX))
         );
