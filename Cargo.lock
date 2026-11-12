@@ -7559,6 +7559,14 @@ dependencies = [
 [[package]]
 name = "omni_path_utils"
 version = "0.1.0"
+dependencies = [
+ "omni_path_utils",
+ "regex",
+ "schemars",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+]
 
 [[package]]
 name = "omni_process"
