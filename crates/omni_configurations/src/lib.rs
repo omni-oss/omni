@@ -6,6 +6,7 @@ mod constants;
 #[cfg(test)]
 mod diagnostic_tests;
 mod ignore;
+mod layer;
 mod meta_configuration;
 mod owned_projection;
 mod pack;
@@ -26,6 +27,7 @@ mod worktree_configuration;
 pub use cache_configuration::*;
 pub use capabilities::*;
 pub use ignore::*;
+pub use layer::*;
 pub use meta_configuration::*;
 pub use omni_config_types as types;
 pub use omni_source_configurations::*;
