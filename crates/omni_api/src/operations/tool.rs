@@ -373,9 +373,12 @@ where
                     };
                     let materialized =
                         remote_sources.materialize(&source).await?;
-                    let configurations =
-                        omni_tool::discover(&materialized.root, &["**"], &sys)
-                            .await?;
+                    let configurations = omni_tool::discover_in_source(
+                        &materialized.root,
+                        &["**"],
+                        &sys,
+                    )
+                    .await?;
                     let git_ref = RemoteSourceRef {
                         source,
                         pin: materialized.pin,
@@ -419,7 +422,17 @@ where
                         SingleOrMany::Single(p) => vec![p.clone()],
                         SingleOrMany::Many(ps) => ps.clone(),
                     };
-                    omni_tool::discover(&contributed.root, &paths, sys).await?
+                    if contributed.is_local {
+                        omni_tool::discover(&contributed.root, &paths, sys)
+                            .await?
+                    } else {
+                        omni_tool::discover_in_source(
+                            &contributed.root,
+                            &paths,
+                            sys,
+                        )
+                        .await?
+                    }
                 }
                 SourceConfig::Git(git) => {
                     let source = RemoteSource::Git {
@@ -428,9 +441,12 @@ where
                     };
                     let materialized =
                         remote_sources.materialize(&source).await?;
-                    let discovered =
-                        omni_tool::discover(&materialized.root, &["**"], sys)
-                            .await?;
+                    let discovered = omni_tool::discover_in_source(
+                        &materialized.root,
+                        &["**"],
+                        sys,
+                    )
+                    .await?;
                     refs.push(RemoteSourceRef {
                         source,
                         pin: materialized.pin,

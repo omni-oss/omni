@@ -4,3 +4,5 @@ name: base
 tasks:
   passthrough:
     description: Only exists so dependents can be re-executed based on the changes of a dependees
+    dependencies:
+      - ^passthrough

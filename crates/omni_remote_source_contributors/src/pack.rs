@@ -1,10 +1,12 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     path::{Path, PathBuf},
     sync::Mutex,
 };
 
 use async_trait::async_trait;
+
+use crate::Locality;
 use omni_configurations::{
     GeneratorSourceConfiguration, GitSource, LocalSource, PackManifest,
     PackProfile, PackSourceConfiguration, PackSubsystem, ProjectionId,
@@ -26,6 +28,7 @@ use system_traits::FsReadAsync;
 /// and the three subsystem source lists from its manifest.
 struct PackLeaf {
     root: PathBuf,
+    is_local: bool,
     name: String,
     version: Option<String>,
     description: Option<String>,
@@ -44,6 +47,10 @@ pub struct ExpandedPackNode {
     pub version: Option<String>,
     pub description: Option<String>,
     pub root: PathBuf,
+    /// Whether the pack is reached from the workspace alone. False for a git
+    /// pack and for any pack nested inside one, whose files live in a fetched
+    /// checkout in the shared source store.
+    pub is_local: bool,
     pub pin: Option<String>,
     pub effective_provides: Option<Vec<PackSubsystem>>,
     pub generators: Vec<GeneratorSourceConfiguration>,
@@ -66,6 +73,10 @@ impl ExpandedPackNode {
 pub struct PackContributedSource<P: omni_configurations::SourceConfigProfile> {
     pub qualified_id: String,
     pub root: PathBuf,
+    /// Whether the contributing pack is reached from the workspace alone.
+    /// Discovery under a non-local pack must not apply the workspace's ignore
+    /// rules, which hide the source store.
+    pub is_local: bool,
     pub source: SourceConfig<P>,
 }
 
@@ -105,6 +116,7 @@ impl ExpandedPacks {
                 out.push(PackContributedSource {
                     qualified_id: node.qualified_id.clone(),
                     root: node.root.clone(),
+                    is_local: node.is_local,
                     source: source.clone(),
                 });
             }
@@ -130,6 +142,33 @@ impl ExpandedPacks {
             }
         }
         out
+    }
+}
+
+impl ExpandedPacks {
+    /// The ids of the projection sources contributed by packs that are not
+    /// local (a git pack, or one nested in it), as they appear in
+    /// [`effective_projection_sources`](Self::effective_projection_sources).
+    /// Those sources join the workspace's list as top-level entries, so nothing
+    /// about their position says they live in the store; this set carries that.
+    /// Ids are compared rather than paths so the match is platform independent.
+    pub fn non_local_projection_ids(&self) -> HashSet<String> {
+        let mut ids = HashSet::new();
+        for node in &self.nodes {
+            if node.is_local || !node.contributes(PackSubsystem::Projections) {
+                continue;
+            }
+            let prefix = node.qualified_id.replace("::", "/");
+            for source in &node.projections {
+                let id = match source {
+                    SourceConfig::Local(local) => &local.extra.id,
+                    SourceConfig::Git(git) => &git.extra.id,
+                    SourceConfig::Registry(_) => continue,
+                };
+                ids.insert(format!("{prefix}/{id}"));
+            }
+        }
+        ids
     }
 }
 
@@ -196,6 +235,7 @@ where
         manager,
         update,
         refs: Mutex::new(Vec::new()),
+        locality: Locality::default(),
     };
 
     let effective = expand(
@@ -224,6 +264,7 @@ where
                 version: e.leaf.version.clone(),
                 description: e.leaf.description.clone(),
                 root: e.leaf.root.clone(),
+                is_local: e.leaf.is_local,
                 pin: e.pin.clone(),
                 effective_provides,
                 generators: e.leaf.generators.clone(),
@@ -279,6 +320,7 @@ struct PackMetaExpand<'a, TSys: RemoteSourceSys> {
     manager: &'a RemoteSourceManager<TSys>,
     update: bool,
     refs: Mutex<Vec<RemoteSourceRef>>,
+    locality: Locality,
 }
 
 impl<TSys> MetaExpand for PackMetaExpand<'_, TSys>
@@ -346,6 +388,13 @@ where
         let children = manifest.packs;
         let leaf = PackLeaf {
             root: root.clone(),
+            is_local: self.locality.resolve(
+                qualified_id,
+                self.declared_id(src),
+                depth,
+                pin.is_some(),
+                false,
+            ),
             name: manifest.name,
             version: manifest.version,
             description: manifest.description,
