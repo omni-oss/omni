@@ -20,16 +20,17 @@ pub struct CommonArtifactQuery {
 
 #[allow(unused)]
 #[inline(always)]
-pub fn container_common(query: &CommonArtifactQuery) -> String {
-    container(&query.org, &query.ws, &query.env)
+pub fn container_common(tenant: &str, query: &CommonArtifactQuery) -> String {
+    container(tenant, &query.org, &query.ws, &query.env)
 }
 
 #[inline(always)]
-pub fn container(org: &str, ws: &str, env: &str) -> String {
+pub fn container(tenant: &str, org: &str, ws: &str, env: &str) -> String {
+    let tenant = escape_path_component(tenant);
     let org = escape_path_component(org);
     let ws = escape_path_component(ws);
     let env = escape_path_component(env);
-    format!("{}/{}/{}", org, ws, env)
+    format!("{}/{}/{}/{}", tenant, org, ws, env)
 }
 
 #[inline(always)]
@@ -189,20 +190,86 @@ pub macro validate_ownership(
     }
 }}
 
+/// Schedules `after` from the final response and passes the response through.
+pub async fn after_response(
+    state: &crate::state::ServiceState,
+    ctx: crate::hooks::HookContext,
+    success: crate::hooks::OutcomeKind,
+    response: Response,
+) -> Response {
+    use crate::hooks::{HookOutcome, OutcomeKind, run_after};
+
+    let status = response.status();
+    let kind = if status == StatusCode::NOT_FOUND {
+        OutcomeKind::Miss
+    } else if status.is_success() {
+        success
+    } else {
+        OutcomeKind::Failed
+    };
+    run_after(state.provider.as_ref(), ctx, HookOutcome { kind }).await;
+
+    response
+}
+
+/// Builds the hook context and runs `before`. Returns early with the veto or
+/// failure response, otherwise evaluates to the context for `after`.
+pub macro before_hook(
+        $state:expr,
+        $op:expr,
+        $api_key:expr,
+        $tenant_code:expr,
+        $query:expr,
+        $digests:expr$(,)?
+    ) {{
+    use crate::hooks::{HookContext, run_before};
+
+    let ctx = HookContext {
+        op: $op,
+        tenant: $tenant_code.to_string(),
+        org: $query.org.clone(),
+        ws: $query.ws.clone(),
+        env: $query.env.clone(),
+        digests: $digests,
+        api_key_id: $state.provider.api_key_id($api_key),
+    };
+
+    if let Some(response) = run_before($state.provider.as_ref(), &ctx).await {
+        return response;
+    }
+
+    ctx
+}}
+
 #[cfg(test)]
 mod tests {
     use super::container;
 
     #[test]
+    fn tenants_never_share_a_container() {
+        assert_ne!(
+            container("t1", "o", "w", "e"),
+            container("t2", "o", "w", "e")
+        );
+        assert_ne!(
+            container("a/b", "c", "w", "e"),
+            container("a", "b/c", "w", "e")
+        );
+    }
+
+    #[test]
     fn container_does_not_collide_on_percent_encoded_names() {
         assert_ne!(
-            container("foo/bar", "ws", "env"),
-            container("foo%2Fbar", "ws", "env")
+            container("t", "foo/bar", "ws", "env"),
+            container("t", "foo%2Fbar", "ws", "env")
         );
-        assert_ne!(container("a", "b/c", "d"), container("a/b", "c", "d"));
         assert_ne!(
-            container("CON", "ws", "env"),
-            container("_CON", "ws", "env")
+            container("t", "a", "b/c", "d"),
+            container("t", "a/b", "c", "d")
+        );
+        assert_ne!(
+            container("t", "CON", "ws", "env"),
+            container("t", "_CON", "ws", "env")
         );
     }
 }

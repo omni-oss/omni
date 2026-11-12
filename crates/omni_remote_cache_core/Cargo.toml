@@ -34,6 +34,8 @@ omni_remote_cache_storage_core = { workspace = true, features = ["utoipa"] }
 schemars = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+hmac = { version = "^0.12.1" }
+sha2 = { version = "^0.10.9" }
 sets = { workspace = true }
 strum = { workspace = true }
 thiserror = { workspace = true }
@@ -43,6 +45,9 @@ utoipa = { workspace = true }
 
 [target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
 time = { workspace = true, features = ["wasm-bindgen"] }
+
+[dev-dependencies]
+tokio = { workspace = true }
 
 [lints]
 workspace = true

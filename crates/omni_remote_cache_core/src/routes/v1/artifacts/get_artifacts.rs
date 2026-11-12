@@ -10,8 +10,11 @@ use utoipa::{IntoParams, ToSchema};
 
 use crate::{
     extractors::{ApiKey, TenantCode},
+    hooks::{ArtifactOp, OutcomeKind},
     response::data::Data,
-    routes::v1::artifacts::common::{container, guard, validate_ownership},
+    routes::v1::artifacts::common::{
+        after_response, before_hook, container, guard, validate_ownership,
+    },
     state::ServiceState,
 };
 
@@ -75,14 +78,23 @@ pub async fn get_artifacts(
 
     validate_ownership!(state.provider, &tenant_code, &query);
 
-    let container = container(&query.org, &query.ws, &query.env);
+    let hook_ctx = before_hook!(
+        state,
+        ArtifactOp::GetMany,
+        &api_key,
+        &tenant_code,
+        &query,
+        Vec::new(),
+    );
+
+    let container = container(&tenant_code, &query.org, &query.ws, &query.env);
     let all_artifacts = state
         .storage_backend
         .list(Some(container.as_str()))
         .await
         .map_err(InternalServerError);
 
-    match all_artifacts {
+    let response = match all_artifacts {
         Ok(r) => Json(Data::new(
             r.iter()
                 .map(|item| CacheItem {
@@ -93,5 +105,7 @@ pub async fn get_artifacts(
         ))
         .into_response(),
         Err(e) => e.into_response(),
-    }
+    };
+
+    after_response(&state, hook_ctx, OutcomeKind::Hit, response).await
 }

@@ -1,6 +1,8 @@
+import { createHash } from "node:crypto";
+
 import { expect, test } from "vitest";
 
-import { withTimeout } from "@/utils";
+import { sleep, withTimeout } from "@/utils";
 
 import { describeTargets } from "../test";
 
@@ -136,6 +138,36 @@ describeTargets("v1.artifacts.api", (target) => {
         expect(deleteResponse.status).toBe(204);
         expect(getResponse.status).toBe(404);
     });
+
+    // Guards the D1 and `waitUntil` hook path, which only a database-backed
+    // target has and which nothing else can run. Last, because it adds a veto.
+    test("database hooks record usage after the response and can veto", async (ctx) => {
+        if (!target.sql) ctx.skip();
+        const sql = target.sql!;
+
+        // A unique digest ties the assertion to this upload's after hook.
+        const digest = crypto.randomUUID();
+        const put = await putArtifact(target.apiBaseUrl, digest);
+        expect(put.status).toBeOneOf([200, 204]);
+
+        let usage = "";
+        for (let i = 0; i < 50 && !usage.includes("stored"); i++) {
+            usage = await sql(
+                `SELECT outcome, api_key_id FROM usage WHERE digest = '${digest}' AND op = 'put'`,
+            );
+            await sleep(100);
+        }
+        expect(usage).toContain("stored");
+        // attributed to an opaque id, never the key
+        expect(usage).toContain(
+            createHash("sha256").update(API_KEY).digest("hex").slice(0, 16),
+        );
+
+        await sql(`INSERT INTO vetoes VALUES ('${TENANT}', 'get', 'pruning')`);
+        const vetoed = await getArtifact(target.apiBaseUrl);
+        expect(vetoed.status).toBe(403);
+        expect(await vetoed.text()).toContain("pruning");
+    }, 60_000);
 });
 
 // Usage with fetch

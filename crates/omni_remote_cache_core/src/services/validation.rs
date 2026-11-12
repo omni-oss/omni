@@ -30,7 +30,6 @@ impl ValidationResult {
         &self.violations
     }
 
-    #[allow(unused)]
     pub fn has_violations(&self) -> bool {
         !self.violations.is_empty()
     }

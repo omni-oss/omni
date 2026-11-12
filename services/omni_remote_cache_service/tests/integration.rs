@@ -97,6 +97,7 @@ async fn create_server(cfg: &Configuration) -> TestServer {
         Some(100),
         BackendType::InMemory,
         Some(route_config),
+        None,
     );
     let state = build_state(&serve_args)
         .await

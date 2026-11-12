@@ -5,6 +5,8 @@ import { resolveTargets, type Target } from "./targets";
 export interface TargetContext {
     readonly name: string;
     readonly apiBaseUrl: string;
+    /** Runs SQL against the target's database, when it has one. */
+    readonly sql?: ((statement: string) => Promise<string>) | undefined;
 }
 
 const offsets = new Map<string, number>();
@@ -35,6 +37,9 @@ export function describeTargets(
 
         define({
             name: target.name,
+            get sql() {
+                return running?.sql;
+            },
             get apiBaseUrl() {
                 if (!running) throw new Error("target is not running");
                 return running.apiBaseUrl;

@@ -1,4 +1,4 @@
-mod common;
+pub(crate) mod common;
 mod delete_artifact;
 mod get_artifact;
 mod get_artifacts;
