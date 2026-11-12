@@ -4,16 +4,20 @@ use std::sync::Arc;
 
 use omni_remote_cache_core::{
     config::Configuration,
-    providers::ConfigBasedDependencyProvider,
+    providers::{ConfigBasedDependencyProvider, DependencyProvider},
     routes::root::{RouterConfig, build_router},
     state::{ServiceInfo, ServiceState},
 };
+use omni_remote_cache_repository_d1::{D1Executor, WaitUntilBackground};
+use omni_remote_cache_repository_query::RepositoryConfiguration;
 use omni_remote_cache_storage_r2::R2Backend;
 use tower_service::Service as _;
 use worker::{Context, Env, HttpRequest, Result, event};
 
 const BUCKET_BINDING: &str = "CACHE_BUCKET";
 const CONFIG_BINDING: &str = "ORCS_CONFIG";
+const REPOSITORY_CONFIG_BINDING: &str = "ORCS_REPOSITORY_CONFIG";
+const D1_BINDING: &str = "DB";
 const DEFAULT_CONTAINER: &str = "default";
 
 fn text_binding(env: &Env, name: &str) -> Option<String> {
@@ -31,15 +35,41 @@ fn internal(e: impl std::fmt::Display) -> worker::Error {
     worker::Error::RustError(e.to_string())
 }
 
-fn build_state(
+/// Reads ownership data and API keys from D1 with the operator's queries
+/// when `ORCS_REPOSITORY_CONFIG` is set, otherwise from `ORCS_CONFIG`.
+fn build_provider(
     env: &Env,
-    req: &HttpRequest,
-    api_prefix: Option<String>,
-) -> Result<ServiceState> {
+    ctx: Context,
+) -> Result<Arc<dyn DependencyProvider>> {
+    if let Some(repo) = text_binding(env, REPOSITORY_CONFIG_BINDING) {
+        let config =
+            RepositoryConfiguration::from_json(&repo).map_err(internal)?;
+        let executor = D1Executor::new(env.d1(D1_BINDING)?);
+        return config
+            .build_provider(
+                Arc::new(executor),
+                Some(Arc::new(WaitUntilBackground::new(ctx))),
+            )
+            .map_err(internal);
+    }
+
     let config = text_binding(env, CONFIG_BINDING).ok_or_else(|| {
         internal(format!("missing `{CONFIG_BINDING}` secret or variable"))
     })?;
     let config = Configuration::from_inline(config).map_err(internal)?;
+    Ok(Arc::new(ConfigBasedDependencyProvider::new(
+        Arc::new(config.to_in_memory_database()),
+        Arc::new(config.security.api_keys.clone()),
+    )))
+}
+
+fn build_state(
+    env: &Env,
+    ctx: Context,
+    req: &HttpRequest,
+    api_prefix: Option<String>,
+) -> Result<ServiceState> {
+    let provider = build_provider(env, ctx)?;
 
     let bucket = env.bucket(BUCKET_BINDING)?;
     let container = text_binding(env, "DEFAULT_CONTAINER")
@@ -57,10 +87,7 @@ fn build_state(
     Ok(ServiceState::new(
         Arc::new(R2Backend::new(bucket, container)),
         Arc::new(info),
-        Arc::new(ConfigBasedDependencyProvider::new(
-            Arc::new(config.to_in_memory_database()),
-            Arc::new(config.security.api_keys.clone()),
-        )),
+        provider,
     ))
 }
 
@@ -68,7 +95,7 @@ fn build_state(
 async fn fetch(
     req: HttpRequest,
     env: Env,
-    _ctx: Context,
+    ctx: Context,
 ) -> Result<http::Response<axum::body::Body>> {
     console_error_panic_hook::set_once();
 
@@ -77,7 +104,7 @@ async fn fetch(
         api_prefix.clone(),
         bool_binding(&env, "ENABLE_OPENAPI"),
     );
-    let state = build_state(&env, &req, api_prefix)?;
+    let state = build_state(&env, ctx, &req, api_prefix)?;
 
     let mut router = build_router(&router_config).with_state(state);
 

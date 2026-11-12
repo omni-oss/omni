@@ -203,6 +203,7 @@ omni_remote_source_contributors = { path = "crates/omni_remote_source_contributo
 omni_remote_cache_core = { path = "crates/omni_remote_cache_core" }
 omni_remote_cache_storage_r2 = { path = "crates/omni_remote_cache_storage_r2" }
 omni_remote_cache_repository_sql = { path = "crates/omni_remote_cache_repository_sql" }
+omni_remote_cache_repository_d1 = { path = "crates/omni_remote_cache_repository_d1" }
 omni_remote_cache_repository_query = { path = "crates/omni_remote_cache_repository_query" }
 omni_remote_cache_storage_s3 = { path = "crates/omni_remote_cache_storage_s3" }
 omni_remote_cache_storage_local = { path = "crates/omni_remote_cache_storage_local" }

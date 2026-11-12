@@ -7814,6 +7814,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "omni_remote_cache_repository_d1"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "omni_remote_cache_core",
+ "omni_remote_cache_repository_query",
+ "send_wrapper",
+ "serde_json",
+ "worker",
+]
+
+[[package]]
 name = "omni_remote_cache_repository_query"
 version = "0.1.0"
 dependencies = [
@@ -7967,6 +7979,8 @@ dependencies = [
  "eyre",
  "http 1.5.0",
  "omni_remote_cache_core",
+ "omni_remote_cache_repository_d1",
+ "omni_remote_cache_repository_query",
  "omni_remote_cache_storage_r2",
  "tower-service",
  "worker",
