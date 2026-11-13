@@ -8,8 +8,8 @@
 - **Affected crates:** `omni_remote_source`, `omni_lockfile`,
   `omni_remote_source_contributors`, `omni_api` (generator, projection, tool,
   remote_source operations), `omni_cli_core` (generator, `remote-sources prune`),
-  `omni_projections` (moved-store recognition, relink after upgrade),
-  `omni_meta` (`expand.rs`, pin naming only), `apps/site` docs
+  `omni_projections` (moved-store recognition), `omni_meta` (`expand.rs`, pin
+  naming only), `apps/site` docs
 - **Related:** RFC 0027 (global remote-source store), RFC 0013
   (remote-sources install)
 
@@ -18,12 +18,17 @@
 Today every layer of the remote-source store is git-shaped: the `RemoteSource`
 enum, the store layout (`git/`, `trees/<slug>/<commit>`), the lockfile
 (`git: {uri: {rev: {commit}}}`), the reference sets, prune entries, and eleven
-call sites that build `RemoteSource::Git` by hand. This RFC separates the
-kind-neutral parts (the per-remote lock, atomic publish, manifest, `.used`,
+non-test call sites that build `RemoteSource::Git` by hand. This RFC separates
+the kind-neutral parts (the per-remote lock, atomic publish, manifest, `.used`,
 prune, pins) from the kind-specific parts (resolve and fetch, then export a
 plain tree). A new kind such as an HTTP package registry then means one enum
 variant, one trait impl and one config mapping, with no change to the store
 core, the lockfile, refs or prune.
+
+omni is pre-release, and the owner allows breaking changes to the store
+layout, the lockfile and the refs files **without changing any version
+marker and without compatibility code**. Nothing in this RFC reads, converts
+or seeds from the old formats.
 
 The registry kind itself is **out of scope**. It gets its own RFC (auth,
 integrity, safe archive extraction, version ranges).
@@ -37,22 +42,21 @@ Done when:
 2. A second kind, a test-only fake in `omni_remote_source/tests`, materializes,
    locks, records refs, self-heals and prunes through the core. The core,
    lockfile, refs and prune code are unchanged to add it.
-3. The lockfile and refs use one kind-neutral shape (section 4.3). Existing
-   Files in the old shape (top-level `git` key) are read and rewritten in the
-   new shape on the next save; the `version` tag stays `1.0.0`.
+3. The lockfile and refs use one kind-neutral shape (section 4.3). A file in
+   the old shape fails to load with an error; there is no converter.
 4. Each kind has its own namespace in the store, so two kinds whose slugs are
    the same string never share a lock, mirror or tree.
 5. `SourceConfig` is mapped to `RemoteSource` in one function. No call site
    builds a variant by hand.
-6. Every existing test still passes: RFC 0027 worked examples, `remote-sources`
-   e2e, projections, prune.
+6. Every existing test still passes, updated to the new layout and shapes:
+   RFC 0027 worked examples, `remote-sources` e2e, projections, prune.
 
 ### Out of scope
 
 - The HTTP or npm registry kind (auth, metadata, tarballs, SRI, extraction).
-- Writing the old lockfile or refs shape, or bumping their version. Breaking change accepted,
-  since omni is pre-release.
-- Migrating trees from the v1 store layout in place (section 4.2).
+- Any compatibility with the current layout, lockfile or refs: no reader or
+  converter for the old shapes, no seeding from old mirrors, no recognition of
+  projection links into old trees, no version bumps.
 - Dependency resolution between sources.
 
 ## 3. Findings this plan builds on
@@ -70,25 +74,21 @@ Done when:
   sealing and publishing are kind-neutral today. Only the fill step calls git.
 - `store_slug` is an injective encoding of a URL into one path segment. It is
   reusable for any kind whose locator is a URL.
-- The lockfile and refs are serde-tagged enums (`version: "1.0.0"`). An
-  unknown version fails to parse. Unknown *fields* are ignored today, so a
-  shape change without care would silently drop pins on the next save (4.3).
-- `LockfileDataV1_0_0` and `RefSetDataV1_0_0` each have exactly one field,
-  `git`, and it is required (no `#[serde(default)]`;
-  `omni_lockfile/src/lockfile_data.rs`, `omni_remote_source/src/refs.rs`). An
-  older omni therefore fails on a new-shape file with `missing field git`
-  instead of overwriting it.
+- The lockfile and refs are serde-tagged enums (`version: "1.0.0"`). Unknown
+  *fields* are ignored today, so without `deny_unknown_fields` an old-shape
+  file would load as empty and the next save would silently drop its pins
+  (4.3).
 - `reconcile_pins` reads every `refs/*.json`, and `persist_pins` reloads and
-  saves the lockfile on every install (`manager/default_impl.rs`). So the
-  first install rewrites a tracked lockfile, and one new-shape refs file makes
-  an older omni's install fail even for subsystems it never touched.
+  saves the lockfile on every install (`manager/default_impl.rs`).
 - `StoreEntry` and `StorePruneFilter::only` identify an entry as
   `(remote, commit)` with no kind.
-- `omni_projections::engine` recognises its own links after the store moves
-  by their `<slug>/<commit>/<file>` tail (`a_moved_store_is_recognised_by_...`).
-  A tail anchored one level deeper (`<kind>/<slug>/<pin>`) keeps working.
-- This repo tracks `.omni/sources/lock.json`, so step 1 produces a one-time
-  diff here.
+- `omni_projections::engine::same_store_file` recognises its own links after
+  the store moves by comparing the last two components of the source root
+  (`<slug>/<commit>`).
+- The fetch receives the configured URL, credentials included
+  (`fetch_bare(.., uri.as_str(), ..)`), while lockfile keys are the full `Url`
+  and can contain userinfo.
+- This repo tracks `.omni/sources/lock.json`, so step 1 regenerates it.
 
 ## 4. Design
 
@@ -104,11 +104,10 @@ pub struct SourceSpec {
     pub selector: String,
     /// The address as configured, credentials included (git: the URL from
     /// the source config, userinfo intact). In memory only: never serialized,
-    /// never part of a lockfile or refs key, never used for slugs, and its
-    /// `Debug`/`Display` redact userinfo (as `omni_redact` does for git today).
+    /// never part of a lockfile or refs key, never used for slugs.
     /// `resolve` and `export` connect with this, not with `locator`.
-    /// `Connection` is a new newtype in `omni_remote_source` with no `Serialize`
-    /// and a redacting `Debug`.
+    /// `Connection` is a new newtype in `omni_remote_source` with no
+    /// `Serialize` and a redacting `Debug`/`Display`.
     pub connection: Connection,
 }
 
@@ -129,15 +128,10 @@ pub trait SourceKind<TSys: RemoteSourceSys>: Send + Sync {
     fn id(&self) -> &'static str;
 
     /// One path segment naming the place (git: `store_slug(uri)`). Must be
-    /// injective over `spec.locator`. The core turns it into the v2 slug: a
-    /// slug that is too long, not lowercase-safe, or starts with `h-` is
-    /// replaced by `h-<sha256 hex of the slug>`. Only hashed slugs start with
-    /// `h-`, so a hashed and a literal slug never collide. (No real git slug
-    /// starts with `h-`: it starts with the encoded scheme.)
-    ///
-    /// v1 seeding does **not** use this v2 slug: the git kind looks up the v1
-    /// mirror with the raw legacy `store_slug(uri)`, exactly as v1 wrote it,
-    /// even when the v2 slug was hashed.
+    /// injective over `spec.locator`. The core makes it safe: a slug that is
+    /// too long, not lowercase-safe, or starts with `h-` is replaced by
+    /// `h-<sha256 hex of the slug>`. Only hashed slugs start with `h-`, so a
+    /// hashed and a literal slug never collide.
     fn slug(&self, spec: &SourceSpec) -> String;
 
     /// Turn `spec` (and the locked pin, if any) into a pin. May fetch into the
@@ -166,13 +160,14 @@ pub trait SourceKind<TSys: RemoteSourceSys>: Send + Sync {
 
 pub struct KindContext<'a, TSys> {
     pub sys: &'a TSys,
-    /// `<store>/v2/raw/<kind>/<slug>/`, written by the kind (git: the bare
-    /// repo). Deletion belongs to the core (prune), not the kind.
+    /// `<store>/raw/<kind>/<slug>/`, written by the kind (git: the bare repo).
+    /// Deletion belongs to the core (prune), not the kind.
     pub raw_dir: PathBuf,
     /// Placeholder for the registry RFC: no network allowed.
     pub offline: bool,
     /// Placeholder for the registry RFC (credentials, scope mapping). Empty for
-    /// git. Credentials are read from here, never from the locator.
+    /// git. Credentials come from here or from `spec.connection`, never from
+    /// the locator.
     pub config: &'a KindConfig,
 }
 ```
@@ -180,19 +175,14 @@ pub struct KindContext<'a, TSys> {
 - `SourceKind`, `KindContext` and `KindConfig` are `#[doc(hidden)]` and
   unstable until the registry RFC settles credentials, offline policy and
   per-pin metadata (such as an integrity to verify on export).
-- A locator never contains credentials. **Canonical git locator**, applied
-  identically to converted old-shape keys and to every runtime `SourceSpec`
-  (one function, `canonical_git_locator(&Url) -> String`): parse with `url`
-  (lowercases scheme and host, drops a default port), remove userinfo, strip
-  one trailing `/` from the path, then `as_str()`. A `.git` suffix is not
-  removed (today's lockfile keys keep it; the store slug already ignores it).
-  Lockfile keys today are the full `Url`, which can include userinfo; step 1
-  strips it on conversion.
+- **Canonical git locator**, one function `canonical_git_locator(&Url) ->
+  String` used for every `SourceSpec`: parse with `url` (lowercases scheme and
+  host, drops a default port), remove userinfo, strip one trailing `/` from the
+  path, then `as_str()`. A `.git` suffix is kept.
 - Credentials still reach the fetch: the git kind connects with
   `spec.connection`, the configured URL with userinfo intact, exactly as
-  `fetch_bare` receives it today. It is redacted in logs and errors, and it is
-  never written anywhere. This is settled in step 1 together with the
-  lockfile change, so an authenticated fetch that works today keeps working.
+  `fetch_bare` receives it today. It is redacted in logs and errors and never
+  written anywhere.
 - `RemoteSource` stays a closed, serde enum (`Git { uri, rev }`, later
   `Registry { .. }`). It gains `fn kind_id(&self) -> &'static str` and
   `fn spec(&self) -> SourceSpec`. The manager holds the kind impls in a
@@ -201,9 +191,8 @@ pub struct KindContext<'a, TSys> {
   lockfile may contain (4.3).
 - The manager's `materialize_with(kind, spec)` is `#[doc(hidden)]` and exists
   for tests, so a fake kind can be exercised without adding a variant to
-  `RemoteSource`.
-  `materialize(&RemoteSource)` keeps its signature, so call sites don't change
-  in step 2.
+  `RemoteSource`. `materialize(&RemoteSource)` keeps its signature, so call
+  sites don't change in step 2.
 - `MaterializedSource { root, pin: String }` and `RemoteSourceRef` are
   unchanged.
 - `invalidate_git(uri, rev)` becomes `invalidate(&RemoteSource)`, and
@@ -211,9 +200,9 @@ pub struct KindContext<'a, TSys> {
 
 Core algorithm (moved out of `materialize_git` unchanged in behavior):
 
-1. Look up the locked pin and validate it as one safe segment before any
-   path join (lockfile loading also rejects unsafe pins in both the old and new shape
-   files). If the tree is complete, mark it used and return (no lock).
+1. Look up the locked pin and validate it as one safe segment before any path
+   join (lockfile loading also rejects unsafe pins). If the tree is complete,
+   mark it used and return (no lock).
 2. Take `locks/<kind>/<slug>.lock` and `check_layout`.
 3. `kind.resolve(ctx, spec, locked)`, then validate the pin as a safe segment.
    When `locked` is `Some`, the returned pin must equal it; any other pin is an
@@ -227,96 +216,45 @@ Core algorithm (moved out of `materialize_git` unchanged in behavior):
 A test asserts the core module does not import `omni_git_utils`, so DoD 1 is
 checked mechanically.
 
-### 4.2 Store layout v2
+### 4.2 Store layout
+
+The layout changes in place at the store root. `VERSION` stays `1`.
 
 ```text
 <store>/
-  VERSION                              # stays "1"; v1 omni keeps working
-  git/ trees/ locks/                   # v1, untouched, prunable
-  v2/
-    VERSION                            # "2"
-    locks/<kind>/<slug>.lock
-    raw/<kind>/<slug>/                 # kind-owned (git: bare repo)
-    trees/<kind>/<slug>/<pin>/
-    trees/<kind>/<slug>/<pin>.manifest
-    trees/<kind>/<slug>/<pin>.used
-    .pending/<pid>-<nanos>-<seq>/
+  VERSION                              # "1", unchanged
+  locks/<kind>/<slug>.lock
+  raw/<kind>/<slug>/                   # kind-written (git: bare repo)
+  trees/<kind>/<slug>/<pin>/
+  trees/<kind>/<slug>/<pin>.manifest
+  trees/<kind>/<slug>/<pin>.used
+  .pending/<pid>-<nanos>-<seq>/
 ```
 
-Decision: put v2 under `<store>/v2/` and leave v1 untouched.
+- Nothing reads the current `git/`, `trees/<slug>/` or `locks/<slug>.lock`
+  entries. They are dead cache: listing and prune walk only
+  `trees/<registered kind>/` and `raw/<registered kind>/`, so old entries are
+  neither listed nor deleted. The release note says to `rm -rf` the old
+  `git/` directory and any `trees/`/`locks/` children that are not a kind id.
+  Old and new names cannot collide: old slugs start with the encoded scheme
+  (`https_3a…`) and kind ids are short words.
+- After upgrading, every pinned source is fetched once more. A locked commit
+  the remote no longer serves (force-pushed away, garbage-collected) fails
+  with an error naming the remote and the commit and saying to run
+  `omni remote-sources install --update`, which re-locks and changes the pin.
+- An older omni using the same store is not supported (it does not
+  understand the new layout).
+- `omni remote-sources prune` removes a remote's raw dir once its last tree is
+  gone, as today.
+
+Decision:
 
 | Option | Cost | Chosen |
 | --- | --- | --- |
-| `v2/` subdirectory beside v1 | One refetch per machine (reduced by the v1 seed below). v1 data lingers until pruned or deleted. | Yes: no migration code, older omni on the same machine keeps working, matches RFC 0027's "different layout paths per version" |
-| Migrate v1 in place (rename `git/` to `raw/git/`, `trees/<slug>` to `trees/git/<slug>`) | Needs every remote lock across versions. An older omni then refuses the store | No |
-| Bump root `VERSION` to 2 and discard v1 | Breaks any older omni on the machine and races its readers | No |
+| New layout in place, `VERSION` unchanged, no compatibility code | One refetch per machine; commits the remote no longer serves need `--update` | Yes: owner allows the break; least code |
+| `v2/` subdirectory plus seeding from the old mirror | Two-lock protocol, object-closure copy, completeness markers, cleanup caveats | No: compatibility only |
 
-**Recovering pins the remote no longer serves.** A v2 store starts empty, so a
-locked commit that was force-pushed away or garbage-collected on the remote
-would be unfetchable. Whenever a locked commit is absent from
-`v2/raw/git/<slug>` (whether that mirror is missing or already exists) and the
-v1 bare mirror `<store>/git/<slug>.git` exists, the git kind copies that
-commit from v1 before any network fetch:
-
-- It transfers the closure of the **locked commit itself**, not the objects
-  reachable from v1's refs, since a force-pushed commit can stay in v1 while no
-  ref reaches it. Preferred: a local fetch with an explicit want of the commit
-  id. If the local transport refuses an unadvertised id, copy the commit's
-  reachable objects from v1's object database into v2's. No alternates file,
-  so v2 never depends on v1 surviving.
-- It records the commit as `refs/omni/pins/<commit>` in v2, so a later
-  `+refs/heads/*` fetch never leaves it unreachable. This ref is written
-  **last**, only after the whole closure is in v2, and it is the completeness
-  marker: a commit counts as present in v2 only when a ref reaches it (a
-  normal fetch updates refs after its pack lands; the copy writes the pin ref
-  after its objects). Commit presence alone never counts, so a copy
-  interrupted after the commit object but before its trees and blobs is simply
-  redone on the next run (copying an object that already exists is a no-op).
-- It runs under the v1 `locks/<slug>.lock`, taken while already holding the v2
-  per-remote lock. Invariant (code comment and review checklist): v2 lock
-  first, then v1 lock, never the reverse, and nothing else in v2 takes a v1
-  lock. A v1 omni takes only v1 locks, so no cycle is possible.
-- Before reading `git/`, it reads the root `VERSION` read-only and seeds only
-  if it is missing or `1`. v2 never creates or rewrites the root `VERSION`.
-- If `v2/raw/git/<slug>` does not exist yet, the simpler form is used: copy the
-  whole v1 bare directory (it keeps unreachable objects v1 has not collected)
-  into `v2/.pending/<unique>`, never straight into place. In the pending copy,
-  check that the locked commit's whole object closure is present (a
-  connectivity walk from the commit), write `refs/omni/pins/<commit>`, then
-  rename the directory to `v2/raw/git/<slug>`. An interrupted copy leaves only
-  a pending directory, so copied v1 refs can never make a half-copied mirror
-  look complete; the next run starts over. The closure copy is used only when
-  a v2 mirror already exists without the commit.
-
-The network fetch runs only if the commit is still missing. When neither
-mirror holds it, the error names the remote and the commit and says to run
-`omni remote-sources install --update` to re-lock, which changes the pin.
-v1 is only read, never written.
-
-`omni remote-sources prune` covers v2 only. As today, it removes a remote's
-raw dir once its last tree is gone. For git that also deletes
-`refs/omni/pins/*`, so a pin seeded from v1 that the remote no longer serves
-is lost to `prune` once v1 is gone too; the prune reference says so.
-
-**Links still pointing into v1.** A v1 link and its v2 target share the
-`<slug>/<pin>/<file>` tail, so `sync` would treat the link as current and keep
-it pointing into v1, which then breaks when v1 is deleted. `sync` therefore
-relinks whenever a link's target differs from the current `source_abs`, even
-when the tail matches and the pin is unchanged. The upgrade note says: run
-`omni projection sync` after upgrading, before deleting v1. The docs say that the v1
-directories can be deleted with `rm -rf` (the store is a cache) only when no
-omni process of any version is running on the machine: an older omni uses
-them, and a newer omni reads `git/` and `locks/` while copying a commit into
-v2, so deleting them mid-copy makes the copy fail (it then falls back to the
-network, or to re-locking). Deleting them also drops the v1 seed, so a
-locked commit that the remote no longer serves and v2 has not yet copied can
-then be recovered only by re-locking, which changes its pin. An older omni
-cannot read v2, so after deletion it cannot recover such a commit even when v2
-holds it; keep the v1 directories while any older omni is still in use. Run
-`omni remote-sources install` in each workspace first to copy what they pin. A
-`--legacy` flag is not added (nothing would be left after a release).
-
-### 4.3 Lockfile and refs: new shape, version stays `1.0.0`
+### 4.3 Lockfile and refs shape
 
 ```json
 {
@@ -330,97 +268,64 @@ holds it; keep the v1 directories while any older omni is still in use. Run
 ```
 
 Shape: `sources: Map<kind, Map<locator, Map<selector, { pin }>>>`, sorted at
-every level, for both `lock.json` and `refs/<id>.json`. The `version` tag is
-not bumped: omni is pre-release and the owner accepts the break, so
-`LockfileDataV1_0_0` and `RefSetDataV1_0_0` change shape in place.
+every level, for both `lock.json` and `refs/<id>.json`. The `version` tag
+stays `1.0.0`; `LockfileDataV1_0_0` and `RefSetDataV1_0_0` change shape in
+place.
 
-- **Mechanism** (in `omni_lockfile` and `refs.rs`): the tagged variant
-  deserializes into a private
-  `RawV1_0_0 { #[serde(default)] git: Option<OldGit>, #[serde(default)] sources: Option<Sources> }`
-  with `#[serde(deny_unknown_fields)]`, converted into the public type with
-  `#[serde(try_from = "RawV1_0_0")]`. Only `sources` is serialized. Tests run
-  whole `{"version":"1.0.0", …}` documents through the tagged enum, since
-  `deny_unknown_fields` and internally tagged enums need checking together (and
-  `flatten` is not used).
-- **Read:**
-  - new shape only: as is;
-  - old shape only (top-level `git`): converted to
-    `sources.git.<canonical locator>.<rev>.pin`, with one `info` log that the
-    file was converted;
-  - both keys (a text merge between an old and an upgraded branch, or a hand
-    edit): `git` is merged into `sources.git`;
-  - in either case, entries are merged one at a time, whichever map supplied
-    them. Two entries that land on the same `(kind, locator, selector)` (for
-    example old keys that differ only in userinfo or a trailing `/`) are fine
-    when their pins are equal and an error naming both pins when they differ.
-    Nothing is overwritten silently;
-  - neither key (a version-only file left by a merge or edit): a load error.
-    Treating it as empty would let the next install re-resolve every branch
-    and save different pins. To keep that rule simple, a written file always
-    contains `sources`, even as `{}`, and a missing file (not an empty one)
-    is what a fresh workspace has.
-  Applies to `lock.json` and every `refs/*.json`.
-- **Write:** the new shape only. Because `persist_pins` saves on every
-  install, the first install after upgrading rewrites a tracked old-shape
-  `lock.json` (expected one-time diff, called out in the release note).
-- **Unknown data:** an unknown top-level field or entry field is a load error
-  in `omni_lockfile` (`deny_unknown_fields`). The lockfile crate does **not**
-  know the set of kinds: `sources` is a plain
+- `sources` is required and always written, even as `{}`. A fresh workspace
+  has no file, not an empty one.
+- `#[serde(deny_unknown_fields)]` on the data structs and entries. An old-shape
+  file (top-level `git`) therefore fails to load (unknown field `git` or
+  missing field `sources`) instead of loading as empty and losing its pins on
+  save. There is no converter: the release note says to delete
+  `.omni/sources/lock.json` and `.omni/sources/refs/` and run
+  `omni remote-sources install`, which re-resolves every pin.
+- The lockfile crate does **not** know the set of kinds: `sources` is a plain
   `Map<String, Map<String, Map<String, Entry>>>`. The manager checks every kind
   against its `KindRegistry` after load, and an unknown kind is an error that
-  names it, never dropped (dropping would delete a newer omni's pins on save).
-  Tests register the fake kind in the registry, so adding a kind never edits
-  `omni_lockfile`.
-- **Older omni:** fails with `missing field git` on any new-shape `lock.json`
-  or `refs/*.json`. Its message cannot be changed, so the release note and the
-  lockfile reference say: "`missing field git` from omni means the file was
-  written by a newer omni; upgrade."
-- **Schema rule from now on:** changing the shape in place without a version
-  bump is allowed only before the first release. After it, any change to the
-  lockfile or refs schema, including a new per-kind entry field such as a
-  registry `integrity`, bumps `version`. A new *kind* alone needs no bump,
-  because the kind is a map key, not a field.
+  names it, never dropped (dropping would delete its pins on save). Tests
+  register the fake kind, so adding a kind never edits `omni_lockfile`.
+- Tests run whole `{"version":"1.0.0", …}` documents through the tagged enum,
+  since `deny_unknown_fields` and internally tagged enums need checking
+  together (`flatten` is not used).
 - API: `Lockfile::{pin(kind, locator, selector), lock_pin(..), pins() ->
   Vec<(kind, locator, selector, pin)>, remove(..)}`. The `git_*` methods are
-  removed.
+  removed, and `sorted_view` is rewritten for three levels.
 
-Decision (owner: breaking change allowed, no version bump):
+Decision:
 
 | Option | Cost | Chosen |
 | --- | --- | --- |
-| Change the `1.0.0` shape in place, convert the old `git` key on load | One-time diff; older omni can't read the file | Yes: no version machinery for a pre-release format; a new kind needs no format change; the converter is a few lines and avoids silently re-resolving every branch |
-| Bump to `2.0.0` and keep a `1.0.0` reader | A second tagged variant to carry for a format that has no released users | No |
-| Change the shape, no converter | Users must delete the lockfile and every pin re-resolves to the current branch head; worse, without `deny_unknown_fields` the old pins are silently dropped | No |
+| New shape in place, no converter, old files rejected | Users re-run install once; pins re-resolve | Yes: owner allows the break; no compatibility code |
+| Convert the old `git` key on load | Converter, merge and conflict rules for a format with no released users | No: compatibility only |
 
 ### 4.4 Call sites and prune
 
 - One function, `omni_remote_source_contributors::remote_source_for(&SourceConfig)
   -> Option<RemoteSource>`, returns `None` for `Local`. `Registry` stays
-  unreachable (serde-skipped) until its RFC. It replaces the 11 non-test `RemoteSource::Git
-  { .. }` constructions (match arms not counted) in `omni_api` (generator, projection, tool,
-  remote_source), `omni_remote_source_contributors` (lib, pack, projection) and
-  `omni_cli_core` (generator).
+  unreachable (serde-skipped) until its RFC. It replaces the 11 non-test
+  `RemoteSource::Git { .. }` constructions (match arms not counted) in
+  `omni_api` (generator, projection, tool, remote_source),
+  `omni_remote_source_contributors` (lib, pack, projection) and `omni_cli_core`
+  (generator).
 - `StoreEntry` gains `kind`, and `StorePruneFilter::only` takes
   `(kind, remote, pin)`. The prune output and its MCP/JSON form add a `kind`
   column.
-- `omni_projections` moved-store recognition (`same_store_file`, which
-  compares the last two components of the source root) anchors on three
-  components, `<kind>/<slug>/<pin>`. The legacy two-component form is
-  accepted only when the current kind is `git` and the component before
-  `<slug>` is `trees` (a v1 path). Without this, a `fake` and a `git` source
-  with equal slug and pin strings would match each other's links. A test
-  covers that case.
-- Every git-specific site is listed for step 3, not only constructions:
-  the dedup key `HashSet<(Url, String)>` in `omni_api` `remote_source.rs`; the
+- `omni_projections` `same_store_file` compares three components,
+  `<kind>/<slug>/<pin>`, so a `fake` and a `git` source with equal slug and pin
+  strings never match each other's links. Links into the old layout are not
+  recognised: `projection status` reports them, and the release note says to
+  delete them and run `projection sync`.
+- Every git-specific site is changed in step 4, not only constructions: the
+  dedup key `HashSet<(Url, String)>` in `omni_api` `remote_source.rs`; the
   `(Url, String)` keys in `reconcile_pins` and `prune_lockfile_pins`; the
   `git_pin`/`from_store` naming in `omni_api` `projection.rs` and
-  `omni_projections` `engine.rs`; `omni_lockfile` `sorted_view` (rewritten for
-  three levels in step 1); `omni_meta` `expand.rs` (`pin` naming).
+  `omni_projections` `engine.rs`; `omni_meta` `expand.rs` (`pin` naming).
 
 ### 4.5 Sandbox
 
 No change. The read grant is the directory a tool or generator loads from,
-which is now `v2/trees/<kind>/<slug>/<pin>`.
+which is now `trees/<kind>/<slug>/<pin>`.
 
 ## 5. Worked example (becomes the test fixture)
 
@@ -430,92 +335,66 @@ It resolves to the snapshot's content hash and exports by copying. Workspaces
 P and U share one store.
 
 Happy path:
-1. P installs R@main with an existing old-shape lockfile pinning c1. No network
-   (c1 in mirror) once `v2/raw/git/<R>` exists. Otherwise it is one fetch.
-   The tree is at `v2/trees/git/<R>/c1`. The lockfile is rewritten as
-   in the new shape (`version` still `1.0.0`) with `sources.git.<R>.main.pin = c1`, and the refs file the same.
+1. P installs R@main with no lockfile. One fetch into `raw/git/<R>`, tree at
+   `trees/git/<R>/c1`, lockfile `sources.git.<R>.main.pin = c1`, refs file the
+   same shape. A second install makes no network call.
 2. P materializes `fake:<dir>@s1` via `materialize_with`. The tree is at
-   `v2/trees/fake/<slug>/<hash>`, the lockfile gains `sources.fake...`, and
+   `trees/fake/<slug>/<hash>`, the lockfile gains `sources.fake…`, and
    `remote-sources prune --dry-run --all` lists both entries with their kinds.
 
 Complexities:
-3. P and U concurrently materialize the same fake spec: one export (the
-   fake `export` call count is 1), both succeed (same per-remote lock path `v2/locks/fake/<slug>.lock`).
-4. A git slug and a fake slug that are the same string do not collide (separate
-   `<kind>` directories and locks).
-5. A projection symlink made under the v1 layout
-   (`<store>/trees/<R>/c1/a.md`), after `rm -rf <store>/trees`: `status`
-   reports it broken. `sync` recognises it as its own and relinks to
-   `v2/trees/git/<R>/c1/a.md`.
-6. An older omni on the same machine still reads and writes `<store>/git` and
-   `<store>/trees` (v1 `VERSION` unchanged).
+3. P and U concurrently materialize the same fake spec: one export (the fake
+   `export` call count is 1), both succeed (same lock `locks/fake/<slug>.lock`).
+4. A git slug and a fake slug that are the same string do not collide
+   (separate `<kind>` directories and locks), and projection links of one are
+   not recognised as the other's.
+5. Old-layout entries (`git/<slug>.git`, `trees/<old slug>/c1`) present in the
+   store: they are not listed, not pruned, not read; install fetches into the
+   new layout.
 
 Edge cases and failure paths:
-7. The fake kind returns a pin `../x`, `a/b` or an empty string: the
-   materialize error names the kind and the pin, and nothing is written outside
-   `.pending`.
-8. The fake kind's `export` fails halfway: the pending dir is removed, no tree,
+6. The fake kind returns a pin `../x`, `a/b`, `A1` or an empty string: the
+   materialize error names the kind and the pin, and nothing is written
+   outside `.pending`.
+7. The fake kind's `export` fails halfway: the pending dir is removed, no tree,
    no lock entry.
-9. A deleted fake tree with an intact raw dir is re-exported. A failed
+8. A deleted fake tree with an intact raw dir is re-exported. A failed
    `resolve` with no raw dir gives an error that names the kind and locator.
-10. Load errors, each leaving the file bytes unchanged: (a) unknown top-level
-    field, (b) unknown entry field, (c) `sources.registry` with no `registry`
-    kind registered (error names `registry`; manager check), (d) both `git` and
-    `sources` with conflicting pins for one `(uri, rev)` (error names both).
-    Plus the accepted cases: old only, new only, both agreeing. The same set
-    for a `refs/*.json` file, and a regression test that a new-shape file fails
-    the old struct (`missing field git`).
-11. `v2/VERSION` = 3: refuse, as in RFC 0027.
-12. `--update` invalidates through `invalidate(&RemoteSource)` for both kinds.
-13. A lockfile pinning `../x` (or `a/b`): load fails naming the entry, before
+9. Load errors, each leaving the file bytes unchanged, for `lock.json` and a
+   `refs/*.json`: (a) old shape (top-level `git`), (b) unknown entry field,
+   (c) `sources.registry` with no `registry` kind registered (error names
+   `registry`; manager check), (d) version-only file with no `sources`.
+10. `VERSION` = 2: refuse, as in RFC 0027.
+11. `--update` invalidates through `invalidate(&RemoteSource)` for both kinds.
+12. A lockfile pinning `../x` (or `a/b`): load fails naming the entry, before
     the fast path joins any path.
-14. With a locked pin, the fake kind's `resolve` returns a different pin: error
+13. With a locked pin, the fake kind's `resolve` returns a different pin: error
     naming both pins; no tree exported, lockfile unchanged.
-15. Git pin c0 exists only in the v1 mirror and no v1 ref reaches it
-    (force-pushed away on the remote): the v2 install copies c0 from v1 and
-    succeeds offline, both when `v2/raw/git/<R>` is missing and when it already
-    exists without c0. Without the v1 mirror: error naming the remote and pin
-    and pointing at `--update`.
-16. The v1 copy is interrupted after c0's commit object but before its trees
-    (fault injected in the test): v2 has c0 but no `refs/omni/pins/c0`, so the
-    next install redoes the copy, writes the ref and exports c0.
-17. Old-shape keys `https://host/r.git/`, `https://HOST:443/r.git` and
-    `https://user@host/r.git` (and one with a token in userinfo, built in the
-    test rather than written in fixtures) all convert to `https://host/r.git`,
-    with no userinfo in the written file, and a runtime `SourceSpec` for any of
-    them gets the same locator. When two of them carry different pins for one
-    rev, the load fails naming both pins; when the pins agree it succeeds.
-18. A version-only file (`{"version":"1.0.0"}`) fails to load; the bytes are
-    unchanged.
-19. A git source configured with userinfo (a local test server that requires
-    it) still fetches after step 1, and neither the lockfile, the refs file,
-    the slug nor any log line contains the credential.
-20. The v1 whole-directory copy is interrupted after refs and the commit
-    object but before its trees: no `v2/raw/git/<slug>` exists afterwards, and
-    the next install redoes the copy and succeeds.
-21. A git remote whose legacy slug is not lowercase-safe (uppercase path): its
-    v2 slug is `h-…`, and seeding still finds the v1 mirror under the legacy
-    slug. A fake kind returning the literal slug `h-abc` is hashed, so it
-    cannot collide with a hashed slug.
+14. Config URLs `https://host/r.git/`, `https://HOST:443/r.git` and
+    `https://user@host/r.git` all give the locator `https://host/r.git`.
+15. A git source configured with userinfo (a local test server that requires
+    it) fetches, and neither the lockfile, the refs file, the slug nor any log
+    line contains the credential.
+16. A locked git commit the remote no longer has, with an empty store: error
+    naming the remote and commit and pointing at `--update`.
+17. A git remote whose slug is not lowercase-safe (uppercase path) gets the
+    slug `h-…`; a fake kind returning the literal slug `h-abc` is hashed too.
 
 ## 6. Steps
 
 | # | Outcome | Depends on | Check | Undo |
 | --- | --- | --- | --- | --- |
-| 1 | Lockfile and refs new shape under `1.0.0` (raw-struct conversion of the old `git` key in `lock.json` and refs, both-keys merge, write the new shape, unknown field is an error; `sources` keyed by plain strings), generic `Lockfile` API. Git callers adapted; `.omni/sources/lock.json` regenerated | none | Round-trip, conversion and unknown-field unit tests (example 10 a, b, d and the accepted cases), unsafe-pin tests (example 13), locator conversion and conflicts (examples 17, 18), credentials reach the fetch and are never persisted (example 19). All existing tests and `remote-sources` e2e pass | Revert, then restore `lock.json` from git. A new-shape file elsewhere can be deleted and reinstalled (pins re-resolve) |
-| 2a | `SourceKind` trait, `KindRegistry`, generic core (`materialize_with`), git impl, v2 layout under `<store>/v2/`, pin and slug safe-segment rule, manager-side unknown-kind check. No v1 seed | 1 | Fake kind integration tests (examples 2–4, 7–9, 10c, 11, 14), core-does-not-import-git test, `git_kind.slug == store_slug` byte-for-byte test. RFC 0027 examples. Example 6 | Revert. `v2/` is orphaned and harmless; v1 data was never touched |
-| 2b | v1 seed: spike first (gix explicit want vs object copy), then whole-dir copy when v2 is missing and closure copy plus `refs/omni/pins/<commit>` otherwise; lock order v2 then v1; root `VERSION` check | 2a | Examples 15, 16, 20 (fault injection), 21 | Revert; installs fall back to the network as in 2a |
-| 2c | Projections: three-component tail with the guarded legacy form; `sync` relinks when the target differs from `source_abs` | 2a | Example 5; cross-kind same slug and pin does not match; upgrade then sync leaves every link target under `v2/` | Revert; links keep working while v1 exists |
-| 3 | `remote_source_for` mapping replaces the 11 constructions; `invalidate`/`locked_pin`; kind-aware `StoreEntry`, prune filter and output; every git-specific site in 4.4 | 2a | `rg 'RemoteSource::Git \{' --glob '!**/tests/**'` finds only the mapping, the git impl and the `RemoteSource` dispatch arms. Prune unit and e2e tests with `kind` (example 12). CLI and MCP snapshots updated | Revert |
-| 4 | Docs: store reference (v2 layout, v1 cleanup), lockfile shape with a short format history (before 0031: `git`; after: `sources`) and the `missing field git` explanation, release note (breaking), contributor pattern "adding a source kind" in `docs/patterns/` | 1–3 | Site build. The pattern doc walks through the fake kind | Revert |
+| 1 | Lockfile and refs new shape under `1.0.0` (`sources` keyed by plain strings, `deny_unknown_fields`, no converter), canonical git locator, `Connection` carrying credentials to the fetch, generic `Lockfile` API. Git callers adapted; `.omni/sources/lock.json` regenerated | none | Round-trip and load-error unit tests (examples 9a, b, d, 12, 14), credentials reach the fetch and are never persisted (15). All tests, updated, and `remote-sources` e2e pass | Revert and restore `lock.json` from git |
+| 2 | `SourceKind` trait, `KindRegistry`, generic core (`materialize_with`), git impl, new layout in place, pin and slug safe-segment rule, manager-side unknown-kind check | 1 | Fake kind integration tests (examples 2–8, 9c, 10, 13, 16, 17), core-does-not-import-git test. RFC 0027 examples on the new layout | Revert; entries in the new layout become dead cache |
+| 3 | Projections: three-component tail | 2 | Example 4 (projection half); projection moved-store tests updated | Revert |
+| 4 | `remote_source_for` mapping replaces the 11 constructions; `invalidate`/`locked_pin`; kind-aware `StoreEntry`, prune filter and output; every git-specific site in 4.4 | 2 | `rg 'RemoteSource::Git \{' --glob '!**/tests/**'` finds only the mapping, the git impl and the `RemoteSource` dispatch arms. Prune unit and e2e tests with `kind` (example 11). CLI and MCP snapshots updated | Revert |
+| 5 | Docs: store reference (layout), lockfile shape, release note (breaking: re-run install, delete old store entries and old projection links), contributor pattern "adding a source kind" in `docs/patterns/` | 1–4 | Site build. The pattern doc walks through the fake kind | Revert |
 
 The riskiest part is step 1, which changes a git-tracked format and touches
-every git caller. It goes first so the rest builds on settled data.
-
-Step 2 is next riskiest (concurrency and caching), so it is split into 2a,
-2b and 2c, each with a second reviewer. 2a keeps `materialize(&RemoteSource)`
-stable, so 2a, 2b, 2c and 3 can each be reverted alone, and the 2b spike does
-not block the core refactor.
+every git caller. It goes first so the rest builds on settled data. Step 2 is
+next (concurrency and caching) and gets a second reviewer. Step 2 keeps
+`materialize(&RemoteSource)` stable, so steps 2, 3 and 4 can each be reverted
+alone.
 
 Steps are sequential, so this is solo work with no split. Integration is
 continuous.
@@ -524,25 +403,20 @@ continuous.
 
 | Risk | Likelihood / impact | Mitigation |
 | --- | --- | --- |
-| Old-to-new shape conversion loses or alters a pin | Low / high (silent re-resolve) | Conversion tests on real fixture files. Step 1 diff of `.omni/sources/lock.json` reviewed by hand: every pin is the same |
-| A newer omni's kind is dropped by an older omni on save | Medium / high | The manager rejects any kind missing from its `KindRegistry` right after load, before anything can save (example 10c). Unknown fields are rejected by `omni_lockfile` (10a, 10b) |
-| A text merge leaves both the old `git` key and `sources` | Medium / medium | Merged on load; conflicting pins are an error naming both (10d). Release note calls out the merge hazard |
-| An older omni in the same workspace fails with `missing field git` after a newer one writes | High / low | Expected break; the release note and lockfile reference explain the message and say to upgrade |
-| A future per-kind entry field (e.g. registry `integrity`) silently breaks older omni | Medium / medium | Schema rule in 4.3: after the first release every schema change bumps `version` |
-| A kind returns an unsafe pin or slug, escaping the store | Low / high | The core validates both as single safe segments before any path join (example 7) |
+| An old-shape lockfile loads as empty and loses its pins on save | Low / high | `deny_unknown_fields` and a required `sources` make it a load error (example 9a) |
+| An unknown kind is dropped on save | Low / high | The manager rejects any kind missing from its `KindRegistry` right after load, before anything can save (9c) |
+| Pins re-resolve after upgrading (users delete the lockfile) | High / low | Expected break; the release note says so. Users who need the old commits note them before upgrading |
+| A locked commit the remote no longer serves is lost with the old store | Low / medium | Error points at `--update` (example 16); release note |
+| Credentials leak into the lockfile, refs, slug or logs | Low / high | Locator strips userinfo; `Connection` has no `Serialize` and redacts (example 15) |
+| Authenticated fetches stop working once the locator drops userinfo | Low / high | The fetch uses `spec.connection` (example 15) |
+| A kind returns an unsafe pin or slug, escaping the store or colliding on a case-insensitive filesystem | Low / high | The core validates pins and makes slugs safe before any path join (examples 6, 12, 17) |
 | A kind writes outside `dest` and `raw_dir` | Low / medium | Documented contract. The fake kind test asserts nothing else changed. The registry RFC must cover extraction safety |
-| Refetch storm after upgrade (v2 starts empty) | High / low | One-time per machine, and skipped where the v1 mirror seeds v2. Documented in the release note |
-| Locked pin no longer served by the remote after upgrade (force-push, GC) | Low / medium | Seed from the v1 mirror (4.2, example 15); otherwise the error says to re-lock with `--update`, which changes the pin |
-| A kind returns a pin other than the locked one, so the tree and lockfile disagree | Low / high | The core rejects it (4.1 step 3, example 14) |
-| Projection links into v1 trees not recognised after v1 cleanup | Medium / low | Legacy tail accepted (example 5) |
-| v1 directories waste disk | Medium / low | Release note and store reference say `rm -rf <store>/{git,trees,locks}` is safe only when no omni process of any version is running (a newer omni reads v1 while copying into v2), and warn that a locked commit the remote no longer serves and v2 has not yet copied is then lost (recover only by `--update`, which changes the pin); advise `install` in each workspace first |
+| A kind returns a pin other than the locked one, so the tree and lockfile disagree | Low / high | The core rejects it (4.1 step 3, example 13) |
+| Old store entries waste disk | Medium / low | Release note gives the paths to delete |
 
 ## 8. Assumptions and open questions
 
 Assumptions:
-- gix can fetch an unadvertised commit id over the local file transport, or
-  copy one commit's object closure between two bare repos. Checked by a spike
-  at the start of step 2b (the spike picks between the two; both meet 4.2) and also runs example 16.
 - Every future kind can express its address as two strings (locator, selector)
   and its content as one immutable pin string. This holds for git and npm
   (selector a range, pin a version plus integrity encoded as lowercase hex).
@@ -556,17 +430,12 @@ Assumptions:
   this workspace.
 
 Decided with the owner:
-1. Breaking lockfile change accepted (pre-release). The shape changes in place
-   and the version stays `1.0.0`; the old `git` key is converted on load.
+1. Breaking changes to the store layout, lockfile and refs are allowed without
+   changing any version marker, and no compatibility code is kept.
 2. The registry kind is out of scope, and extensibility is proven with a fake
    kind.
 
 Open questions: none that block step 1.
-
-Possible follow-ups (not in this plan):
-- `omni remote-sources status` reporting v1 bytes and which v1 mirrors still
-  hold pins v2 lacks, so "safe to delete v1" can be checked.
-- `prune --dry-run` listing v1 entries read-only as `kind=git(v1)`.
 
 ## 9. Verification and review
 
@@ -580,9 +449,8 @@ Possible follow-ups (not in this plan):
 ## 10. Status
 
 - [ ] Plan review
-- [ ] Step 1: lockfile and refs new shape
-- [ ] Step 2a: `SourceKind` core, git impl, v2 layout
-- [ ] Step 2b: v1 seed
-- [ ] Step 2c: projection tail and relink
-- [ ] Step 3: single mapping, kind-aware prune
-- [ ] Step 4: docs
+- [ ] Step 1: lockfile and refs new shape, canonical locator, credentials
+- [ ] Step 2: `SourceKind` core, git impl, new layout
+- [ ] Step 3: projection tail
+- [ ] Step 4: single mapping, kind-aware prune
+- [ ] Step 5: docs
