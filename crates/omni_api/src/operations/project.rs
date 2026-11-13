@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use omni_configurations::ProjectConfiguration;
-use omni_context::{Context, ContextSys, ProjectConfigEntry};
+use omni_context::{ConfigLocation, Context, ContextSys, ProjectConfigEntry};
 use path_clean::clean;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -92,7 +92,7 @@ pub async fn handle_project_list<TSys: ContextSys>(
         .map(|entry| {
             Ok(ProjectListEntry {
                 name: entry.config.name.clone(),
-                path: workspace_relative_path(ctx.root_dir(), &entry.config)?,
+                path: workspace_relative_path(ctx.root_dir(), entry)?,
                 base: entry.config.base,
                 discovered: entry.discovered,
             })
@@ -135,7 +135,7 @@ fn select_by_name(
         .into_iter()
         .filter(|entry| entry.config.name == name)
         .map(|entry| {
-            let path = workspace_relative_path(root_dir, &entry.config)?;
+            let path = workspace_relative_path(root_dir, &entry)?;
             Ok((path, entry))
         })
         .collect::<eyre::Result<Vec<_>>>()?;
@@ -193,10 +193,8 @@ fn select_by_path<TSys: ContextSys>(
         .into_iter()
         .find(|entry| {
             entry
-                .config
-                .file
-                .path()
-                .is_ok_and(|file| canonical(file) == path)
+                .file_path()
+                .is_some_and(|file| canonical(file) == path)
         })
         .map(|entry| ProjectConfigResponse::new(entry.config))
         .ok_or_else(|| {
@@ -204,11 +202,16 @@ fn select_by_path<TSys: ContextSys>(
         })
 }
 
+/// The entry's workspace-relative location: its config file, or for a
+/// virtual project (which has no file) its root.
 fn workspace_relative_path(
     root_dir: &Path,
-    config: &ProjectConfiguration,
+    entry: &ProjectConfigEntry,
 ) -> eyre::Result<String> {
-    let file = config.file.path()?;
+    let file = match &entry.location {
+        ConfigLocation::File(file) => file,
+        ConfigLocation::Virtual(key) => return Ok(key.root().to_string()),
+    };
     let relative = file.strip_prefix(root_dir).map_err(|_| {
         eyre::eyre!(
             "project configuration {} is outside the workspace root {}",
@@ -222,4 +225,50 @@ fn workspace_relative_path(
         .map(|c| c.as_os_str().to_string_lossy())
         .collect::<Vec<_>>()
         .join("/"))
+}
+
+#[cfg(test)]
+mod tests {
+    use omni_context::LogicalProjectKey;
+    use omni_path_utils::{ProjectRootId, WorkspacePath};
+
+    use super::*;
+
+    fn virtual_entry(name: &str, root: &str) -> ProjectConfigEntry {
+        ProjectConfigEntry::new_virtual(
+            serde_json::from_value(serde_json::json!({ "name": name }))
+                .unwrap(),
+            LogicalProjectKey::new(ProjectRootId::new(
+                WorkspacePath::parse(root).unwrap(),
+            )),
+        )
+    }
+
+    #[test]
+    fn virtual_project_is_listed_by_root_not_a_file_path() {
+        let entry = virtual_entry("v", "apps/v");
+
+        let path = workspace_relative_path(Path::new("/w"), &entry).unwrap();
+
+        assert_eq!(path, "apps/v");
+        assert!(ProjectListRequest::default().includes(&entry));
+    }
+
+    #[test]
+    fn virtual_project_is_selectable_by_name_but_never_by_file_path() {
+        let by_name = select_by_name(
+            Path::new("/w"),
+            vec![virtual_entry("v", "apps/v")],
+            "v",
+        )
+        .unwrap();
+        assert_eq!(by_name.config.name, "v");
+
+        let by_path = select_by_path(
+            &system_traits::impls::RealSys,
+            vec![virtual_entry("v", "apps/v")],
+            Path::new("/w/apps/v"),
+        );
+        assert!(by_path.is_err());
+    }
 }

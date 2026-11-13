@@ -17,7 +17,7 @@ use strum::{EnumDiscriminants, EnumIs, IntoDiscriminant as _};
 use tracing::Level;
 
 use crate::{
-    ContextSys, LoadedContext,
+    ConfigLocation, ContextSys, LoadedContext,
     constants::{self, OMNI_DIR, SCRATCH_DIR, TRACE_DIR},
     extracted_data_validator::{
         ExtractedDataValidationErrors, ExtractedDataValidator,
@@ -28,7 +28,8 @@ use crate::{
     },
     project_data_extractor::{ProjectDataExtractor, ProjectDataExtractorError},
     project_discovery::{
-        DiscoveredPath, ProjectDiscovery, ProjectDiscoveryError,
+        ClassifiedPaths, DiscoveredPath, ProjectDiscovery,
+        ProjectDiscoveryError,
     },
 };
 use dir_walker::DirWalker;
@@ -396,9 +397,9 @@ impl<TSys: ContextSys> Context<TSys> {
         let entries = loaded
             .configs
             .into_iter()
-            .map(|project| ProjectConfigEntry {
-                discovered: is_discovered(&project.config, &discovered),
-                config: project.config,
+            .map(|project| {
+                let is_discovered = is_discovered(&project.config, &discovered);
+                ProjectConfigEntry::from_file(project.config, is_discovered)
             })
             .collect();
 
@@ -465,6 +466,7 @@ impl<TSys: ContextSys> Context<TSys> {
             configs: project_configs,
             discovered_paths: project_paths,
             extension_graph: xt_graph,
+            ..
         } = self.load_discovered_project_configs(project_paths).await?;
 
         let mut env_loader = self.create_env_loader();
@@ -532,20 +534,17 @@ impl<TSys: ContextSys> Context<TSys> {
             .sys
             .fs_canonicalize(&self.cache_dir)
             .unwrap_or_else(|_| self.cache_dir.clone());
-        let discovered_paths = project_paths
-            .into_iter()
-            .filter_map(|p| match p {
-                DiscoveredPath::Real { file } => {
-                    // Also enforce exclusion for caller-supplied walkers.
-                    let target = self
-                        .sys
-                        .fs_canonicalize(&file)
-                        .unwrap_or_else(|_| file.clone());
-                    (!target.starts_with(&cache_dir)).then_some(file)
-                }
-                DiscoveredPath::Virtual { .. } => None,
-            })
-            .collect::<Vec<_>>();
+        let ClassifiedPaths {
+            files: discovered_paths,
+            virtual_locations,
+        } = ClassifiedPaths::classify(project_paths, self.root_dir(), |file| {
+            // Also enforce exclusion for caller-supplied walkers.
+            let target = self
+                .sys
+                .fs_canonicalize(file)
+                .unwrap_or_else(|_| file.to_path_buf());
+            !target.starts_with(&cache_dir)
+        });
 
         let LoadedProjects {
             projects,
@@ -557,6 +556,7 @@ impl<TSys: ContextSys> Context<TSys> {
         Ok(LoadedProjectConfigs {
             configs: projects,
             discovered_paths,
+            virtual_locations,
             extension_graph,
         })
     }
@@ -789,6 +789,10 @@ fn get_remote_cache_configuration(
 struct LoadedProjectConfigs {
     configs: Vec<FinalizedProject>,
     discovered_paths: Vec<PathBuf>,
+    /// Discovered projects without a config file. Not yet turned into
+    /// project configurations: nothing produces them outside tests.
+    #[allow(unused)]
+    virtual_locations: Vec<ConfigLocation>,
     extension_graph: ExtensionGraph<LoadedLayer>,
 }
 
