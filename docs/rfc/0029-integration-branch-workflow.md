@@ -269,10 +269,17 @@ merged, its head is `integration/**` and its base is `main`:
    Open child PRs of the landed branch need a new base. If a parallel
    integration branch is open, first merge `main` into it, so the landing
    merge is in the new base and a retargeted PR does not show the landed batch
-   in its diff. Retarget the child PRs only if that sync succeeds. If it
-   fails, or no parallel branch is open, do not retarget: comment on each child
-   PR that it must be rebased onto `main` and reopened, or wait for the owner
-   to sort out the sync (`needs-sync`).
+   in its diff. Retarget the child PRs only if that sync succeeds and the
+   landing was a merge commit (the landing commit has two parents). A squash
+   landing, the owner-approved exception, does not keep the integration
+   branch's commits in `main`'s ancestry, so a child PR would still show the
+   landed batch. For a squash landing, never retarget automatically: comment
+   on each child PR with `git rebase --onto <new-base> <landed-branch-tip>
+   <child-branch>`, and retarget only after the author has rebased and the PR
+   diff contains just the child's own changes. If the sync fails or no
+   parallel branch is open, do not retarget either: comment on each child PR
+   that it must be rebased onto `main` and reopened, or wait for the owner to
+   sort out the sync (`needs-sync`).
 2. Check the parallel limit (at most two active branches). Skip creation if the
    limit is reached, and comment on the landed PR.
 3. Do **not** create the next branch yet (lazy creation, default). Remove
