@@ -275,8 +275,10 @@ merged, its head is `integration/**` and its base is `main`:
    branch's commits in `main`'s ancestry, so a child PR would still show the
    landed batch. For a squash landing, never retarget automatically: comment
    on each child PR with `git rebase --onto <new-base> <landed-branch-tip>
-   <child-branch>`, and retarget only after the author has rebased and the PR
-   diff contains just the child's own changes. If the sync fails or no
+   <child-branch>`, and retarget only after the author has rebased and
+   `git diff <new-base>...<child-branch>` (the three-dot diff against the new
+   base, not the PR's current diff, which still targets the landed branch)
+   contains just the child's own changes. If the sync fails or no
    parallel branch is open, do not retarget either: comment on each child PR
    that it must be rebased onto `main` and reopened, or wait for the owner to
    sort out the sync (`needs-sync`).
