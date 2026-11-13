@@ -59,8 +59,8 @@ the workflow, with `INTEGRATION_BOT_TOKEN`.
 
 ### Steps
 
-1. **Gate on the run:** ignore runs that are not pushes to an `integration/**`
-   branch. Ignore any run whose head SHA is not the current branch head, so an
+1. **Gate on the run:** accept only runs of `CI` on an `integration/**` branch
+   whose event is `push` or `workflow_dispatch` (the nightly path, below). Ignore any run whose head SHA is not the current branch head, so an
    older run finishing late cannot change state. For a current-head run:
    success removes `red` and lifts the freeze (see "Fix process"), and only a
    failure continues to step 2.
@@ -210,6 +210,20 @@ them as the sole reviewer.
   was green stays open, rather than guessing. If no run starts for the head
   (for example, a push that `CI` ignores), the next run on any later head, or
   the nightly run, reconciles.
+
+### Nightly run
+
+A `schedule` trigger only runs on the default branch, so it cannot run `CI` on
+an integration branch directly. A small `integration-nightly` workflow, on a
+`schedule`, lists open `integration/**` branches and starts `CI` on each one's
+current head with `gh workflow run ci.yaml --ref <branch>`. This needs a
+`workflow_dispatch` trigger on `ci.yaml`. Dispatch with `INTEGRATION_BOT_TOKEN`,
+consistent with the other bot pushes; verify during the pilot that the
+resulting `workflow_run` reaches `integration-attribute`.
+The dispatched run has event `workflow_dispatch` and the `full` gate is true
+for it, so its result is accepted by step 1 and reconciles `red` and the freeze
+for that head. It also catches a head that `CI` ignored on push.
+
 - Do not auto-revert. A revert is a suggestion for the owner.
 
 ## 6. Automation
@@ -236,6 +250,7 @@ Other workflows:
 | ----------------------- | ----------------------------- | -------------------------------------------------------------------------------------- |
 | `integration-sync`      | push to `main`, daily, manual | merge `main` into each `integration/*`; on conflict abort, comment, label `needs-sync` |
 | `integration-track`     | child PR merged               | append `- [x] #N title (@author)` under `<!-- children -->` in the integration PR body |
+| `integration-nightly`   | schedule                      | dispatch `CI` on each open `integration/**` head, as the reconcile backstop            |
 | `integration-attribute` | `workflow_run` of `CI`        | failure attribution (section 5)                                                        |
 | PR-target guard         | PR to `main`                  | fail if based on an integration branch, unless hotfix or the integration PR itself     |
 
