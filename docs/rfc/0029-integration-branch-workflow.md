@@ -193,10 +193,23 @@ them as the sole reviewer.
 - **Serialize state changes.** The head check in step 1 is not enough, because
   attribution takes time and a newer run can finish meanwhile. The `report` job
   uses a `concurrency` group per branch (`integration-state-<branch>`, without
-  cancel-in-progress) for every change to `red` or the freeze. Inside it, it
-  re-reads the branch head immediately before applying each change. If the head
-  moved, it discards the result and sets `red` from the newest completed run on
-  the new head, so a stale run cannot leave the branch frozen or unfrozen.
+  cancel-in-progress) for every change to `red` or the freeze. A push cannot be
+  serialized with these jobs, so the head is checked on both sides of the
+  change:
+    1. Re-read the branch head immediately before applying the change. If it
+       moved, discard the result and reconcile (below).
+    2. Apply the change.
+    3. Re-read the head again. If it moved during the update, reconcile.
+       Reconcile means: find the newest completed `CI` run on the new head, and set
+       `red` and the freeze from that run, repeating the before/after check. Cap the
+       loop at a few iterations; if the head is still moving, leave state unchanged
+       and let the next completed run reconcile.
+- **New head with no completed run.** Leave `red` and the freeze as they are
+  until a run on that head completes. The completion of that run triggers this
+  workflow and reconciles. A branch that was red stays frozen, and a branch that
+  was green stays open, rather than guessing. If no run starts for the head
+  (for example, a push that `CI` ignores), the next run on any later head, or
+  the nightly run, reconciles.
 - Do not auto-revert. A revert is a suggestion for the owner.
 
 ## 6. Automation
