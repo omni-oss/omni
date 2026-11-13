@@ -220,8 +220,11 @@ mirror holds it, the error names the remote and the commit and says to run
 v1 is only read, never written.
 
 `omni remote-sources prune` covers v2 only. The docs say that the v1
-directories can be deleted with `rm -rf` (the store is a cache) once no older
-omni on the machine uses them. Deleting them also drops the v1 seed, so a
+directories can be deleted with `rm -rf` (the store is a cache) only when no
+omni process of any version is running on the machine: an older omni uses
+them, and a newer omni reads `git/` and `locks/` while copying a commit into
+v2, so deleting them mid-copy makes the copy fail (it then falls back to the
+network, or to re-locking). Deleting them also drops the v1 seed, so a
 locked commit that the remote no longer serves and v2 has not yet copied can
 then be recovered only by re-locking, which changes its pin. Run
 `omni remote-sources install` in each workspace first to copy what they pin. A
@@ -366,7 +369,7 @@ continuous.
 | Locked pin no longer served by the remote after upgrade (force-push, GC) | Low / medium | Seed from the v1 mirror (4.2, example 15); otherwise the error says to re-lock with `--update`, which changes the pin |
 | A kind returns a pin other than the locked one, so the tree and lockfile disagree | Low / high | The core rejects it (4.1 step 3, example 14) |
 | Projection links into v1 trees not recognised after v1 cleanup | Medium / low | Legacy tail accepted (example 5) |
-| v1 directories waste disk | Medium / low | Release note and store reference say `rm -rf <store>/{git,trees,locks}` is safe once no older omni process on the machine still uses the v1 layout, and warn that a locked commit the remote no longer serves and v2 has not yet copied is then lost (recover only by `--update`, which changes the pin); advise `install` in each workspace first |
+| v1 directories waste disk | Medium / low | Release note and store reference say `rm -rf <store>/{git,trees,locks}` is safe only when no omni process of any version is running (a newer omni reads v1 while copying into v2), and warn that a locked commit the remote no longer serves and v2 has not yet copied is then lost (recover only by `--update`, which changes the pin); advise `install` in each workspace first |
 
 ## 8. Assumptions and open questions
 
