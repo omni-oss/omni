@@ -1,6 +1,6 @@
 # RFC 0031: Pluggable remote-source kinds
 
-- **Status:** Draft, plan review pending
+- **Status:** Accepted
 - **Owner:** TBD
 - **Date:** 2026-11-13
 - **Kind / risk:** Medium work, High risk (caching override in `AGENTS.md`;
@@ -465,7 +465,7 @@ Open questions: none that block step 1.
 
 ## 10. Status
 
-- [ ] Plan review
+- [x] Plan review
 - [ ] Step 1: lockfile and refs new shape, canonical locator, credentials
 - [ ] Step 2: `SourceDriver` core, git driver, new layout
 - [ ] Step 3: projection tail
