@@ -190,6 +190,13 @@ them as the sole reviewer.
       artifact and only parses it as data (culprit SHA, confidence, log excerpt).
       It never executes anything from the artifact or the checked-out commits.
       The rerun and labelling steps run in `report`, not in `bisect`.
+- **Serialize state changes.** The head check in step 1 is not enough, because
+  attribution takes time and a newer run can finish meanwhile. The `report` job
+  uses a `concurrency` group per branch (`integration-state-<branch>`, without
+  cancel-in-progress) for every change to `red` or the freeze. Inside it, it
+  re-reads the branch head immediately before applying each change. If the head
+  moved, it discards the result and sets `red` from the newest completed run on
+  the new head, so a stale run cannot leave the branch frozen or unfrozen.
 - Do not auto-revert. A revert is a suggestion for the owner.
 
 ## 6. Automation
