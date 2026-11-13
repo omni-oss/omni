@@ -487,9 +487,16 @@ whatever the repository says.
   from `validate_access`; if the scopes are unknown, for example remote is disabled or
   unreachable, the run is treated as trusted, the strict case). The trust tier comes
   from the credential's scopes, not from the configured `target`, because `target`
-  defaults to `isolated` and does not identify untrusted runs. Entries marked
-  `shared` were verified at restore time and are reused by any run, so local hits are
-  not lost. Unmarked entries are used as usual. This stops an unsigned isolated entry,
+  defaults to `isolated` and does not identify untrusted runs. A
+  `shared` marker also records `verified_by` (the signing key id that verified the
+  entry at restore time, written by the client after a successful verification and
+  never taken from the server, or `none` when `verify` was `off` or `warn`). On a
+  local hit, a run whose effective `verify` is `require` reuses a `shared`-marked
+  entry only if `verified_by` names a key in its effective `trusted_keys`; otherwise
+  the entry is a miss. So an entry restored under `verify: off`, or signed by a key
+  that was later narrowed away or revoked, is not reused under a stricter policy.
+  Other `shared`-marked entries are reused by any run, so verified local hits are not
+  lost. Unmarked entries are used as usual. This stops an unsigned isolated entry,
   restored earlier into a shared local cache directory (for example a CI cache
   restored between jobs), from reaching a shared publish through a local hit. When a
   run that must reject a marked entry re-executes the task, a
@@ -1127,6 +1134,30 @@ runtime, `verify: off` disables verification and `push: false` stops uploads.
    it can stay the Workers implementation, otherwise the R2 backend uses the S3 API
    (SigV4 `PutObject` with `If-None-Match: *`). Plan step 1 verifies the binding when a
    Worker can be deployed.
+
+2. **Local cache isolation: marker propagation or partitioning.** The origin marker
+   (4.4) covers entries restored from the remote cache, but a task that runs locally
+   on top of an isolated (or any remote-derived) dependency stores an *unmarked*
+   entry, and its key contains only the dependency *digests*, so it stays valid. A
+   later publishing or opted-out run can hit that unmarked entry and reuse output
+   derived from isolated bytes, which defeats the marker and the "all transitive
+   dependencies" rule of `cache.remote: false`. Two untrusted principals sharing one
+   `cache_dir` can also reuse each other's isolated entries, since the local key does
+   not include principal or scope. Options: (a) propagate a taint: every locally built
+   entry records `taint` (origin namespace, principal, scope) inherited from its
+   dependency entries, and runs apply the marker rules to the inherited taint; any
+   missed propagation silently fails open. (b) Partition the local cache by trust
+   class, so a run can only read partitions its class allows: `trusted/` (verified
+   shared entries and entries built on them), `untrusted/{principal_id}/{scope}/`,
+   and `local/` (opt-out runs: only entries built from local deps; no remote
+   influence at all). Untrusted runs read `untrusted/...` then `trusted/`, and write
+   `untrusted/...`; trusted runs read and write `trusted/`; opted-out runs read and
+   write `local/`. Reviewer recommendation: (b), because it fails closed by
+   construction and makes the per-principal binding and the dependent-derivation
+   cases structural instead of checked. Costs: the first opted-out (release) build
+   after this change is cold, some duplicate disk use, and existing local cache
+   entries (unknown provenance) are ignored once. The marker file then only needs
+   to carry `verified_by`.
 
 **Acceptance checklist (not a decision)**
 
