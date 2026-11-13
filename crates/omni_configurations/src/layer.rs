@@ -169,6 +169,16 @@ pub struct TaskLongFormLayer {
 pub enum TaskLayer {
     ShortForm(CommandConfig),
     LongForm(Box<TaskLongFormLayer>),
+    /// Another name for a canonical task, not a task of its own. It cannot be
+    /// parsed yet (the `alias` key is still rejected); it exists so
+    /// composition can already apply the atomic normal/alias rules.
+    Alias(TaskAliasLayer),
+}
+
+/// The target of a [`TaskLayer::Alias`], carrying no task settings.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct TaskAliasLayer {
+    pub alias: String,
 }
 
 impl<'a> Deserialize<'a> for TaskLayer {
@@ -194,6 +204,10 @@ impl<'a> Deserialize<'a> for TaskLayer {
     }
 }
 
+/// Nameless merge, required by `DictConfig`. A short form expands to an
+/// implicit dependency on its own name, so only long/long pairs can be
+/// composed here; use [`TaskLayer::merge_named`] (as [`ProjectLayer`] does) for
+/// every other pair.
 impl Merge for TaskLayer {
     fn merge(&mut self, other: Self) {
         match (self, other) {
@@ -201,6 +215,75 @@ impl Merge for TaskLayer {
             (this, other) => *this = other,
         }
     }
+}
+
+impl TaskLayer {
+    /// Compose a higher layer's declaration of task `name` over this one.
+    ///
+    /// Two normal tasks merge field by field whatever their written form; a
+    /// shorthand contributes only its command and implicit upstream
+    /// dependency. A change between a normal task and an alias, or between two
+    /// aliases, replaces the entry as a whole.
+    pub fn merge_named(&mut self, other: Self, name: &str) {
+        match (&mut *self, other) {
+            (TaskLayer::ShortForm(_), other @ TaskLayer::ShortForm(_)) => {
+                *self = other;
+            }
+            (_, other @ TaskLayer::Alias(_)) | (TaskLayer::Alias(_), other) => {
+                *self = other
+            }
+            (this, other) => {
+                let mut base = this
+                    .clone()
+                    .into_long_form(name)
+                    .expect("alias pairs are handled above");
+                base.merge(
+                    other
+                        .into_long_form(name)
+                        .expect("alias pairs are handled above"),
+                );
+                *this = TaskLayer::LongForm(Box::new(base));
+            }
+        }
+    }
+}
+
+/// Merge two `tasks` maps with the semantics of `DictConfig::merge` (the later
+/// layer's operator wins; `replace` drops the earlier map), but composing each
+/// task through [`TaskLayer::merge_named`].
+fn merge_tasks(
+    base: &mut Option<DictConfig<TaskLayer>>,
+    other: Option<DictConfig<TaskLayer>>,
+) {
+    let Some(other) = other else { return };
+    let Some(current) = base.take() else {
+        *base = Some(other);
+        return;
+    };
+    *base = Some(match other {
+        DictConfig::Replace { replace } => DictConfig::Replace { replace },
+        DictConfig::Value(other_map) => {
+            DictConfig::Value(merge_task_maps(current.into_map(), other_map))
+        }
+        DictConfig::Merge { merge } => DictConfig::Merge {
+            merge: merge_task_maps(current.into_map(), merge),
+        },
+    });
+}
+
+fn merge_task_maps(
+    mut base: maps::Map<String, TaskLayer>,
+    other: maps::Map<String, TaskLayer>,
+) -> maps::Map<String, TaskLayer> {
+    for (name, task) in other {
+        match base.get_mut(&name) {
+            Some(existing) => existing.merge_named(task, &name),
+            None => {
+                base.insert(name, task);
+            }
+        }
+    }
+    base
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, Merge)]
@@ -248,7 +331,7 @@ pub struct ProjectLayer {
     pub redact: Option<RedactConfiguration>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[merge(strategy = merge::option::recurse)]
+    #[merge(strategy = merge_tasks)]
     pub tasks: Option<DictConfig<TaskLayer>>,
 }
 
@@ -476,8 +559,11 @@ impl TaskLayer {
     /// [`TaskConfiguration::into_long_form`] but with every other field left
     /// absent: a short form is its command plus the implicit upstream
     /// dependency on its own name.
-    pub fn into_long_form(self, name: &str) -> TaskLongFormLayer {
-        match self {
+    ///
+    /// `None` for an alias, which is not a normal task.
+    pub fn into_long_form(self, name: &str) -> Option<TaskLongFormLayer> {
+        Some(match self {
+            TaskLayer::Alias(_) => return None,
             TaskLayer::LongForm(long_form) => *long_form,
             TaskLayer::ShortForm(command) => TaskLongFormLayer {
                 exec: Some(Replace::new(command)),
@@ -488,18 +574,20 @@ impl TaskLayer {
                 ])),
                 ..Default::default()
             },
-        }
+        })
     }
 
-    /// Finalize keeping the written form: a short form stays short.
-    pub fn finalize(self) -> TaskConfiguration {
+    /// Finalize keeping the written form: a short form stays short. An alias
+    /// has no eager task form yet and yields `None`.
+    pub fn finalize(self) -> Option<TaskConfiguration> {
         match self {
             TaskLayer::ShortForm(command) => {
-                TaskConfiguration::ShortForm(command)
+                Some(TaskConfiguration::ShortForm(command))
             }
-            TaskLayer::LongForm(long_form) => {
-                TaskConfiguration::LongForm(Box::new(long_form.finalize()))
-            }
+            TaskLayer::LongForm(long_form) => Some(
+                TaskConfiguration::LongForm(Box::new(long_form.finalize())),
+            ),
+            TaskLayer::Alias(_) => None,
         }
     }
 }
@@ -508,7 +596,9 @@ fn finalize_tasks(
     tasks: DictConfig<TaskLayer>,
 ) -> DictConfig<TaskConfiguration> {
     let finalize = |map: maps::Map<String, TaskLayer>| {
-        map.into_iter().map(|(k, v)| (k, v.finalize())).collect()
+        map.into_iter()
+            .filter_map(|(k, v)| Some((k, v.finalize()?)))
+            .collect()
     };
     match tasks {
         DictConfig::Value(m) => DictConfig::Value(finalize(m)),
@@ -882,7 +972,7 @@ mod tests {
             got.tasks.keys().collect::<Vec<_>>().len(),
             e.tasks.keys().count()
         );
-        for (name, task) in got.tasks.iter() {
+        for (name, task) in got.tasks.iter().filter(|(n, _)| *n != "s") {
             let (a, b) = (
                 task.clone().into_long_form(name),
                 e.tasks.as_map()[name].clone().into_long_form(name),
@@ -896,6 +986,18 @@ mod tests {
             );
             assert_eq!(a.cache.output.logs, b.cache.output.logs, "{name}");
         }
+        // Documented correction (RFC 0024 §17.9): a long form over a short form
+        // keeps the shorthand's implicit upstream dependency instead of
+        // replacing the whole task.
+        let s = got.tasks.as_map()["s"].clone().into_long_form("s");
+        assert_eq!(
+            s.exec,
+            Some(Replace::new(CommandConfig::Shell("z".into())))
+        );
+        assert_eq!(
+            s.dependencies.into_vec(),
+            vec![TaskDependencyConfiguration::Upstream { task: "s".into() }]
+        );
     }
 
     #[test]
