@@ -20,8 +20,7 @@ use omni_projections::{
     existing_file_conflicts, plan_source,
 };
 use omni_remote_source::{
-    RemoteSource, RemoteSourceRef, manager::RemoteSourceManager,
-    sys::RemoteSourceSys,
+    RemoteSourceRef, manager::RemoteSourceManager, sys::RemoteSourceSys,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -150,7 +149,7 @@ struct PreparedSource {
     id: String,
     qualified_id: String,
     source_root: PathBuf,
-    git_pin: Option<String>,
+    store_pin: Option<String>,
     routes: Vec<Projection>,
     plan: SourcePlan,
 }
@@ -294,7 +293,7 @@ where
                 id: &eff.id,
                 qualified_id: &eff.qualified_id,
                 source_root: &eff.root,
-                git_pin: eff.pin.clone(),
+                store_pin: eff.pin.clone(),
                 projections: &eff.leaf,
             };
             plan_source(&sys, &resolved, &params).await?
@@ -304,7 +303,7 @@ where
             id: eff.id,
             qualified_id: eff.qualified_id,
             source_root: eff.root,
-            git_pin: eff.pin,
+            store_pin: eff.pin,
             routes: eff.leaf,
             plan,
         });
@@ -367,7 +366,7 @@ where
             id: &prep.id,
             qualified_id: &prep.qualified_id,
             source_root: &prep.source_root,
-            git_pin: prep.git_pin.clone(),
+            store_pin: prep.store_pin.clone(),
             projections: &prep.routes,
         };
         let outcome =
@@ -659,13 +658,11 @@ where
                 (root, None, identity)
             }
             SourceConfig::Git(git) => {
+                let source =
+                    omni_remote_source_contributors::remote_source_for_git(git);
                 if self.update {
-                    self.remote.invalidate_git(&git.uri, &git.rev).await?;
+                    self.remote.invalidate(&source).await?;
                 }
-                let source = RemoteSource::Git {
-                    uri: git.uri.clone(),
-                    rev: git.rev.clone(),
-                };
                 let materialized = self.remote.materialize(&source).await?;
                 let pin = Some(materialized.pin.clone());
                 if let Ok(mut refs) = self.git_refs.lock() {

@@ -9,7 +9,7 @@ use omni_configurations::{
     ProjectionRoutes, SourceConfig, types::SingleOrMany,
 };
 use omni_remote_source::{
-    InstallOptions, RemoteSourceContributor,
+    InstallOptions, RemoteSource, RemoteSourceContributor,
     manager::{RemoteSourceManager, config::RemoteSourceConfig},
 };
 use omni_remote_source_contributors::{
@@ -122,7 +122,15 @@ async fn generator_contributor_materializes_git_sources() {
 
     assert_eq!(refs.len(), 1);
     assert_eq!(refs[0].pin, commit);
-    assert_eq!(manager.locked_commit(&url, "main").await, Some(commit));
+    assert_eq!(
+        manager
+            .locked_pin(&RemoteSource::Git {
+                uri: url.clone(),
+                rev: "main".to_string()
+            })
+            .await,
+        Some(commit)
+    );
 }
 
 #[tokio::test]
@@ -171,7 +179,12 @@ async fn projection_contributor_recurses_meta_bundles_to_git_children() {
     assert_eq!(refs.len(), 1, "the git child must be materialized");
     assert_eq!(refs[0].pin, child_commit);
     assert_eq!(
-        manager.locked_commit(&child_url, "main").await,
+        manager
+            .locked_pin(&RemoteSource::Git {
+                uri: child_url.clone(),
+                rev: "main".to_string()
+            })
+            .await,
         Some(child_commit)
     );
 }

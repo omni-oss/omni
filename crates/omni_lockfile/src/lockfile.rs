@@ -4,15 +4,13 @@ use std::{
 };
 
 use derive_new::new;
-use maps::map;
 use tokio::sync::Mutex;
 use tracing::Level;
-use url::Url;
 
 use crate::{
     LockfileSys,
     error::Error,
-    lockfile_data::{GitRepoLockData, LockfileData, LockfileDataV1_0_0},
+    lockfile_data::{LockfileData, LockfileDataV1_0_0, PinLockData},
 };
 
 #[derive(new)]
@@ -68,72 +66,106 @@ impl Lockfile {
         Ok(())
     }
 
+    /// Lock `pin` for `(kind, locator, selector)`, replacing any earlier pin.
     #[tracing::instrument(level = Level::DEBUG, skip_all)]
-    pub async fn lock_git_commit(
+    pub async fn lock_pin(
         &self,
-        uri: &Url,
-        rev: &str,
-        commit: &str,
+        kind: &str,
+        locator: &str,
+        selector: &str,
+        pin: &str,
     ) -> Result<(), Error> {
-        let uri = uri.clone();
-        let rev = rev.to_string();
-        let commit = commit.to_string();
-
         tracing::trace!(
-            "locking git repo: {uri}, rev: {rev}, commit: {commit}"
+            "locking {kind} source: {locator}, selector: {selector}, pin: {pin}"
         );
         self.modify(|d| {
             match d {
                 LockfileData::V1_0_0(v1) => {
-                    let repo = v1.git.get_mut(&uri);
-
-                    if let Some(repo) = repo {
-                        if let Some(rev) = repo.get_mut(&rev) {
-                            rev.commit = commit;
-                        } else {
-                            repo.insert(rev, GitRepoLockData::new(commit));
-                        }
-                    } else {
-                        v1.git.insert(
-                            uri,
-                            map! {
-                                rev => GitRepoLockData::new(commit)
-                            },
-                        );
-                    }
+                    v1.sources
+                        .entry(kind.to_string())
+                        .or_default()
+                        .entry(locator.to_string())
+                        .or_default()
+                        .insert(selector.to_string(), PinLockData::new(pin));
                 }
             }
-
             Ok(())
         })
-        .await?;
-
-        tracing::trace!("lock successful");
-
-        Ok(())
+        .await
     }
 
-    pub async fn get_git_commit(&self, uri: &Url, rev: &str) -> Option<String> {
+    /// The pin locked for `(kind, locator, selector)`, if any.
+    pub async fn pin(
+        &self,
+        kind: &str,
+        locator: &str,
+        selector: &str,
+    ) -> Option<String> {
         match &*self.data.lock().await {
             LockfileData::V1_0_0(v1) => v1
-                .git
-                .get(uri)
-                .and_then(|r| r.get(rev).map(|r| r.commit.clone())),
+                .sources
+                .get(kind)
+                .and_then(|l| l.get(locator))
+                .and_then(|s| s.get(selector))
+                .map(|e| e.pin.clone()),
         }
     }
 
-    /// A snapshot of every pinned git source as `(uri, rev, commit)` tuples.
-    pub async fn git_pins(&self) -> Vec<(Url, String, String)> {
+    /// Forget the pin for `(kind, locator, selector)`, dropping maps left
+    /// empty.
+    pub async fn remove(
+        &self,
+        kind: &str,
+        locator: &str,
+        selector: &str,
+    ) -> Result<(), Error> {
+        self.modify(|d| {
+            match d {
+                LockfileData::V1_0_0(v1) => {
+                    if let Some(locators) = v1.sources.get_mut(kind) {
+                        if let Some(selectors) = locators.get_mut(locator) {
+                            selectors.shift_remove(selector);
+                            if selectors.is_empty() {
+                                locators.shift_remove(locator);
+                            }
+                        }
+                        if locators.is_empty() {
+                            v1.sources.shift_remove(kind);
+                        }
+                    }
+                }
+            }
+            Ok(())
+        })
+        .await
+    }
+
+    /// A snapshot of every pin as `(kind, locator, selector, pin)` tuples.
+    pub async fn pins(&self) -> Vec<(String, String, String, String)> {
         match &*self.data.lock().await {
             LockfileData::V1_0_0(v1) => v1
-                .git
+                .sources
                 .iter()
-                .flat_map(|(uri, revs)| {
-                    revs.iter().map(move |(rev, data)| {
-                        (uri.clone(), rev.clone(), data.commit.clone())
+                .flat_map(|(kind, locators)| {
+                    locators.iter().flat_map(move |(locator, selectors)| {
+                        selectors.iter().map(move |(selector, data)| {
+                            (
+                                kind.clone(),
+                                locator.clone(),
+                                selector.clone(),
+                                data.pin.clone(),
+                            )
+                        })
                     })
                 })
                 .collect(),
+        }
+    }
+
+    /// Every kind named in the file, including kinds with no pins.
+    pub async fn kinds(&self) -> Vec<String> {
+        match &*self.data.lock().await {
+            LockfileData::V1_0_0(v1) => v1.sources.keys().cloned().collect(),
         }
     }
 
@@ -156,12 +188,15 @@ impl Lockfile {
 fn sorted_view(data: &LockfileData) -> LockfileData {
     match data {
         LockfileData::V1_0_0(v1) => {
-            let mut git = v1.git.clone();
-            for revs in git.values_mut() {
-                revs.sort_unstable_keys();
+            let mut sources = v1.sources.clone();
+            for locators in sources.values_mut() {
+                for selectors in locators.values_mut() {
+                    selectors.sort_unstable_keys();
+                }
+                locators.sort_unstable_keys();
             }
-            git.sort_unstable_keys();
-            LockfileData::V1_0_0(LockfileDataV1_0_0 { git })
+            sources.sort_unstable_keys();
+            LockfileData::V1_0_0(LockfileDataV1_0_0 { sources })
         }
     }
 }
@@ -169,66 +204,70 @@ fn sorted_view(data: &LockfileData) -> LockfileData {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use omni_file_data_serde::{Format, from_slice, to_vec};
 
-    fn keys_of(data: &LockfileData) -> Vec<(String, Vec<String>)> {
-        match data {
-            LockfileData::V1_0_0(v1) => v1
-                .git
-                .iter()
-                .map(|(uri, revs)| {
-                    (uri.to_string(), revs.keys().cloned().collect::<Vec<_>>())
-                })
-                .collect(),
+    fn data(entries: &[(&str, &str, &str, &str)]) -> LockfileData {
+        let mut v1 = LockfileDataV1_0_0::default();
+        for (kind, locator, selector, pin) in entries {
+            v1.sources
+                .entry(kind.to_string())
+                .or_default()
+                .entry(locator.to_string())
+                .or_default()
+                .insert(selector.to_string(), PinLockData::new(*pin));
         }
+        LockfileData::V1_0_0(v1)
+    }
+
+    fn json(data: &LockfileData) -> String {
+        String::from_utf8(to_vec(data, Format::Json).unwrap()).unwrap()
     }
 
     #[test]
     fn sorted_view_is_stable_across_insertion_orders() {
-        let a = Url::parse("https://example.com/a.git").unwrap();
-        let b = Url::parse("https://example.com/b.git").unwrap();
+        let forward = data(&[
+            ("git", "https://example.com/a.git", "main", "c1"),
+            ("git", "https://example.com/a.git", "dev", "c2"),
+            ("git", "https://example.com/b.git", "v2", "c3"),
+            ("fake", "x", "s1", "p1"),
+        ]);
+        let reversed = data(&[
+            ("fake", "x", "s1", "p1"),
+            ("git", "https://example.com/b.git", "v2", "c3"),
+            ("git", "https://example.com/a.git", "dev", "c2"),
+            ("git", "https://example.com/a.git", "main", "c1"),
+        ]);
 
-        let forward = LockfileData::V1_0_0(LockfileDataV1_0_0 {
-            git: map! {
-                a.clone() => map! {
-                    "main".to_string() => GitRepoLockData::new("c1"),
-                    "dev".to_string() => GitRepoLockData::new("c2"),
-                },
-                b.clone() => map! {
-                    "v2".to_string() => GitRepoLockData::new("c3"),
-                    "v1".to_string() => GitRepoLockData::new("c4"),
-                },
-            },
-        });
+        let a = json(&sorted_view(&forward));
+        assert_eq!(a, json(&sorted_view(&reversed)));
+        assert!(a.find("\"fake\"").unwrap() < a.find("\"git\"").unwrap());
+        assert!(a.find("\"dev\"").unwrap() < a.find("\"main\"").unwrap());
+    }
 
-        let reversed = LockfileData::V1_0_0(LockfileDataV1_0_0 {
-            git: map! {
-                b => map! {
-                    "v1".to_string() => GitRepoLockData::new("c4"),
-                    "v2".to_string() => GitRepoLockData::new("c3"),
-                },
-                a => map! {
-                    "dev".to_string() => GitRepoLockData::new("c2"),
-                    "main".to_string() => GitRepoLockData::new("c1"),
-                },
-            },
-        });
+    #[test]
+    fn the_new_shape_round_trips() {
+        let original = data(&[("git", "https://h/r.git", "main", "c1")]);
+        let back: LockfileData =
+            from_slice(json(&original).as_bytes(), Format::Json).unwrap();
+        assert_eq!(json(&back), json(&original));
+        assert!(json(&original).contains("1.0.0"));
+    }
 
-        assert_eq!(
-            keys_of(&sorted_view(&forward)),
-            keys_of(&sorted_view(&reversed))
-        );
-        assert_eq!(
-            keys_of(&sorted_view(&forward)),
-            vec![
-                (
-                    "https://example.com/a.git".to_string(),
-                    vec!["dev".to_string(), "main".to_string()]
-                ),
-                (
-                    "https://example.com/b.git".to_string(),
-                    vec!["v1".to_string(), "v2".to_string()]
-                ),
-            ]
-        );
+    #[test]
+    fn old_and_malformed_shapes_fail_to_load() {
+        for doc in [
+            // The old git-only shape.
+            r#"{"version":"1.0.0","git":{"https://h/r.git":{"main":{"commit":"c1"}}}}"#,
+            // An unknown entry field.
+            r#"{"version":"1.0.0","sources":{"git":{"https://h/r.git":{"main":{"pin":"c1","extra":1}}}}}"#,
+            // `sources` is required.
+            r#"{"version":"1.0.0"}"#,
+        ] {
+            assert!(
+                from_slice::<LockfileData>(doc.as_bytes(), Format::Json)
+                    .is_err(),
+                "{doc}"
+            );
+        }
     }
 }

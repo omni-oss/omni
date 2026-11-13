@@ -31,6 +31,6 @@ where
         manager: &RemoteSourceManager<TSys>,
         options: &InstallOptions,
     ) -> eyre::Result<Vec<RemoteSourceRef>> {
-        crate::materialize_flat_git(manager, &self.sources, options).await
+        crate::materialize_flat_remote(manager, &self.sources, options).await
     }
 }

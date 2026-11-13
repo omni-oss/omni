@@ -28,27 +28,19 @@ import {
 
 const CLONE_TIMEOUT_MS = 60_000;
 
-/** Count `store/trees/<slug>/<commit>` directories across every slug. */
-function countCommitDirs(storeGit: string): number {
-    let slugs: Dirent<string>[];
-    try {
-        slugs = readdirSync(storeGit, { withFileTypes: true });
-    } catch {
-        return 0;
-    }
-
-    let count = 0;
-    for (const slug of slugs) {
-        if (!slug.isDirectory()) continue;
+/** Count `store/trees/<kind>/<slug>/<pin>` directories across every slug. */
+function countCommitDirs(trees: string): number {
+    const dirs = (path: string): string[] => {
         try {
-            count += readdirSync(join(storeGit, slug.name), {
-                withFileTypes: true,
-            }).filter((d) => d.isDirectory()).length;
+            return readdirSync(path, { withFileTypes: true })
+                .filter((d) => d.isDirectory())
+                .map((d) => join(path, d.name));
         } catch {
-            // A non-directory entry under the slug is ignored.
+            return [];
         }
-    }
-    return count;
+    };
+
+    return dirs(trees).flatMap(dirs).flatMap(dirs).length;
 }
 
 describe(

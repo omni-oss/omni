@@ -1332,7 +1332,7 @@ describe(
 /**
  * A workspace whose `generators` config points at a real git remote. Pulling
  * is what gen-014 exercises: the repo is cloned into the shared store at
- * `.omni/sources/store/trees/<slug>/<commit>/`, locked in the shared
+ * `.omni/sources/store/trees/git/<slug>/<commit>/`, locked in the shared
  * `.omni/sources/lock.json`, and its generators become discoverable.
  */
 function gitGeneratorSourceSpec() {
@@ -1367,7 +1367,9 @@ function sshGitGeneratorSourceSpec() {
 }
 
 function parseLockfile(raw: string): {
-    git: Record<string, Record<string, { commit: string }>>;
+    sources: {
+        git?: Record<string, Record<string, { pin: string }>>;
+    };
 } {
     return JSON.parse(raw);
 }
@@ -1405,9 +1407,9 @@ describe(
                 const lockPath = ".omni/sources/lock.json";
                 expect(ws.exists(lockPath)).toBe(true);
                 const lock = parseLockfile(ws.read(lockPath));
-                const revs = lock.git[workspaceMinimalRepo.https];
+                const revs = lock.sources.git?.[workspaceMinimalRepo.https];
                 expect(revs).toBeDefined();
-                expect(revs?.[workspaceMinimalRepo.rev]?.commit).toMatch(
+                expect(revs?.[workspaceMinimalRepo.rev]?.pin).toMatch(
                     /^[0-9a-f]{40}$/,
                 );
             },
@@ -1469,10 +1471,14 @@ describe(
 
                 const lockPath = ".omni/sources/lock.json";
                 const lock = parseLockfile(ws.read(lockPath));
-                // The lockfile keys the source by its `ssh://` URI.
-                const revs = lock.git[workspaceMinimalRepo.sshUrl];
+                // The lockfile keys the source by its `ssh://` URI, without
+                // the user name.
+                const revs =
+                    lock.sources.git?.[
+                        workspaceMinimalRepo.sshUrl.replace("git@", "")
+                    ];
                 expect(revs).toBeDefined();
-                expect(revs?.[workspaceMinimalRepo.rev]?.commit).toMatch(
+                expect(revs?.[workspaceMinimalRepo.rev]?.pin).toMatch(
                     /^[0-9a-f]{40}$/,
                 );
             },

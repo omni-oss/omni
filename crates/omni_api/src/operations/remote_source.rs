@@ -4,7 +4,7 @@ use bytesize::ByteSize;
 
 use omni_context::{Context, ContextSys};
 use omni_remote_source::{
-    InstallOptions, RemoteSource, RemoteSourceContributor,
+    InstallOptions, RemoteSourceContributor,
     manager::{
         RemoteSourceManager, StorePruneFilter, config::RemoteSourceConfig,
     },
@@ -17,7 +17,6 @@ use omni_remote_source_contributors::{
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use system_traits::FsReadAsync;
-use url::Url;
 
 /// Open the single shared remote-source store for the workspace. The store
 /// root is the context's resolved sources directory (a per-user location by
@@ -70,16 +69,21 @@ pub struct RemoteSourcesPruneRequest {
 /// Identity of one store checkout.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 pub struct StoreCheckoutId {
+    /// The source kind, e.g. `git`.
+    pub kind: String,
     pub remote: String,
-    pub commit: String,
+    pub pin: String,
 }
 
 /// One store checkout that matched a prune.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct StoreCheckoutView {
+    /// The source kind, e.g. `git`.
+    pub kind: String,
     /// The remote's directory name in the store.
     pub remote: String,
-    pub commit: String,
+    /// The immutable content id (git: the commit).
+    pub pin: String,
     pub size_bytes: u64,
     /// Seconds since the checkout was last used.
     pub unused_for_secs: u64,
@@ -104,11 +108,12 @@ pub async fn handle_remote_sources_prune<TSys>(
 where
     TSys: ContextSys + RemoteSourceSys,
 {
-    let only: Option<Vec<(String, String)>> = req.only.as_ref().map(|ids| {
-        ids.iter()
-            .map(|id| (id.remote.clone(), id.commit.clone()))
-            .collect()
-    });
+    let only: Option<Vec<(String, String, String)>> =
+        req.only.as_ref().map(|ids| {
+            ids.iter()
+                .map(|id| (id.kind.clone(), id.remote.clone(), id.pin.clone()))
+                .collect()
+        });
     let filter = StorePruneFilter {
         all: req.all,
         older_than: req.older_than,
@@ -129,8 +134,9 @@ where
         checkouts: matched
             .into_iter()
             .map(|entry| StoreCheckoutView {
+                kind: entry.kind,
                 remote: entry.remote,
-                commit: entry.commit,
+                pin: entry.pin,
                 size_bytes: entry.size,
                 unused_for_secs: now
                     .duration_since(entry.last_used)
@@ -263,7 +269,7 @@ where
     TSys: RemoteSourceSys,
 {
     let mut subsystems = Vec::with_capacity(contributors.len());
-    let mut seen: HashSet<(Url, String)> = HashSet::new();
+    let mut seen: HashSet<(&'static str, String, String)> = HashSet::new();
 
     for contributor in &contributors {
         let id = contributor.id();
@@ -273,9 +279,7 @@ where
         let mut materialized = 0;
         let mut deduplicated = 0;
         for r in &refs {
-            let key = match &r.source {
-                RemoteSource::Git { uri, .. } => (uri.clone(), r.pin.clone()),
-            };
+            let key = (r.source.kind(), r.source.spec().locator, r.pin.clone());
             if seen.insert(key) {
                 materialized += 1;
             } else {
@@ -373,8 +377,8 @@ mod tests {
         commit: &str,
     ) -> omni_remote_source::RemoteSourceRef {
         omni_remote_source::RemoteSourceRef {
-            source: RemoteSource::Git {
-                uri: Url::parse(uri).unwrap(),
+            source: omni_remote_source::RemoteSource::Git {
+                uri: url::Url::parse(uri).unwrap(),
                 rev: rev.to_string(),
             },
             pin: commit.to_string(),

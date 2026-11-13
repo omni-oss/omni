@@ -230,8 +230,11 @@ async fn reconcile_keeps_every_checkout_and_drops_unreferenced_pins() {
 
     // The unreferenced pin is gone from the lockfile; the referenced one stays.
     let reopened = ws.manager().await;
-    assert_eq!(reopened.locked_commit(&url_a, "main").await, Some(commit_a));
-    assert_eq!(reopened.locked_commit(&url_b, "main").await, None);
+    assert_eq!(
+        reopened.locked_pin(&source_of(&url_a, "main")).await,
+        Some(commit_a)
+    );
+    assert_eq!(reopened.locked_pin(&source_of(&url_b, "main")).await, None);
 }
 
 #[tokio::test]
@@ -599,13 +602,17 @@ async fn a_published_tree_is_plain_sealed_and_recorded_in_the_layout() {
         readme.permissions().readonly(),
         "published files are read-only"
     );
-    // One bare mirror per remote.
-    let mirrors: Vec<_> = std::fs::read_dir(ws.store_root.join("git"))
-        .unwrap()
-        .flatten()
-        .collect();
+    assert!(
+        mat.root
+            .starts_with(ws.store_root.join("trees").join("git"))
+    );
+    // One bare mirror per remote, in the git raw cache.
+    let mirrors: Vec<_> =
+        std::fs::read_dir(ws.store_root.join("raw").join("git"))
+            .unwrap()
+            .flatten()
+            .collect();
     assert_eq!(mirrors.len(), 1);
-    assert!(mirrors[0].file_name().to_string_lossy().ends_with(".git"));
 }
 
 #[tokio::test]
@@ -745,7 +752,7 @@ async fn commits_of_one_remote_share_one_mirror_with_a_tree_each() {
     assert!(first.root.exists() && second.root.exists());
     assert!(!first.root.join("two.txt").exists());
     assert!(second.root.join("two.txt").exists());
-    let mirrors = std::fs::read_dir(ws.store_root.join("git"))
+    let mirrors = std::fs::read_dir(ws.store_root.join("raw").join("git"))
         .unwrap()
         .count();
     assert_eq!(mirrors, 1, "history is stored once, not per commit");
@@ -847,10 +854,10 @@ async fn a_confirmed_prune_deletes_only_what_was_shown() {
 
     // The user saw only A in the dry run; B arrived before they answered.
     let shown = manager.prune_store(&all, true).await.unwrap();
-    let only_a: Vec<(String, String)> = shown
+    let only_a: Vec<(String, String, String)> = shown
         .iter()
         .filter(|e| e.dir == dir_a)
-        .map(|e| (e.remote.clone(), e.commit.clone()))
+        .map(|e| (e.kind.clone(), e.remote.clone(), e.pin.clone()))
         .collect();
     assert_eq!(only_a.len(), 1);
 
@@ -964,8 +971,44 @@ async fn reconcile_keeps_pins_another_manager_added_after_this_one_opened() {
     stale.reconcile_pins().await.expect("reconcile");
 
     assert_eq!(
-        ws.manager().await.locked_commit(&url, "main").await,
+        ws.manager()
+            .await
+            .locked_pin(&source_of(&url, "main"))
+            .await,
         Some(commit),
         "the late pin survived"
     );
+}
+
+#[tokio::test]
+async fn a_locked_commit_the_remote_no_longer_serves_points_at_update() {
+    if !omni_test_capabilities::gate(
+        "git",
+        git_available(),
+        "git binary not found on PATH",
+    ) {
+        return;
+    }
+
+    let (_src, url, _commit) = build_repo("hello\n");
+    let ws = Workspace::new();
+    let gone = "0123456789abcdef0123456789abcdef01234567";
+    let locator = omni_remote_source::git::canonical_git_locator(&url);
+    std::fs::write(
+        ws.sources_root.join("lock.json"),
+        format!(
+            r#"{{"version":"1.0.0","sources":{{"git":{{"{locator}":{{"main":{{"pin":"{gone}"}}}}}}}}}}"#
+        ),
+    )
+    .unwrap();
+
+    let error = ws
+        .manager()
+        .await
+        .materialize(&source_of(&url, "main"))
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains(gone), "{error}");
+    assert!(error.contains("--update"), "{error}");
 }

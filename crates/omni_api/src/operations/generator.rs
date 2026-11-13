@@ -33,7 +33,7 @@ use omni_configurations::{SourceConfig, types::SingleOrMany};
 use omni_context::{Context, ContextSys, LoadedContext};
 use omni_generator::{GeneratorSys, RunConfig};
 use omni_messages::GeneratorEventSubscriber;
-use omni_remote_source::{RemoteSource, RemoteSourceRef, sys::RemoteSourceSys};
+use omni_remote_source::{RemoteSourceRef, sys::RemoteSourceSys};
 use sets::UnorderedSet;
 use tokio::task::JoinSet;
 use value_bag::{OwnedValueBag, ValueBag};
@@ -490,10 +490,10 @@ where
                 let sys = sys.clone();
                 let git = git.clone();
                 retrieval_tasks.spawn(async move {
-                    let source = RemoteSource::Git {
-                        uri: git.uri.clone(),
-                        rev: git.rev.clone(),
-                    };
+                    let source =
+                        omni_remote_source_contributors::remote_source_for_git(
+                            &git,
+                        );
                     let materialized =
                         remote_sources.materialize(&source).await?;
                     let configurations = omni_generator::discover_in_source(
@@ -564,10 +564,10 @@ where
                     }
                 }
                 SourceConfig::Git(git) => {
-                    let source = RemoteSource::Git {
-                        uri: git.uri.clone(),
-                        rev: git.rev.clone(),
-                    };
+                    let source =
+                        omni_remote_source_contributors::remote_source_for_git(
+                            git,
+                        );
                     let materialized =
                         remote_sources.materialize(&source).await?;
                     let discovered = omni_generator::discover_in_source(

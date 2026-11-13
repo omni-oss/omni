@@ -23,9 +23,9 @@ pub struct ResolvedSource<'a> {
     /// the top level). Used for the ledger, reconciliation, and reporting.
     pub qualified_id: &'a str,
     pub source_root: &'a Path,
-    /// The git commit pin when the source is a repository; `None` for local
-    /// sources, for which a content hash over matched files is computed.
-    pub git_pin: Option<String>,
+    /// The store pin (git: the commit) when the source lives in the store;
+    /// `None` for local sources, for which a content hash over matched files is computed.
+    pub store_pin: Option<String>,
     pub projections: &'a [Projection],
 }
 
@@ -148,7 +148,7 @@ where
         let pairs: Vec<LinkPair> =
             planned.iter().map(|p| p.pair.clone()).collect();
 
-        let pin = match &source.git_pin {
+        let pin = match &source.store_pin {
             Some(commit) => commit.clone(),
             None => {
                 let matched =
@@ -190,7 +190,7 @@ where
                 on_existing,
                 link,
                 pin: pin.clone(),
-                from_store: source.git_pin.is_some(),
+                from_store: source.store_pin.is_some(),
                 source_root: source.source_root.to_path_buf(),
             });
         }
@@ -227,8 +227,8 @@ where
             l.source_id == source.qualified_id && l.dest == item.dest_rel
         });
         let prior_link = prior.map(|l| PriorLink {
-            // A git checkout keeps its `<slug>/<commit>/<file>` tail wherever
-            // the store lives, so a moved store still owns its old links.
+            // A store checkout keeps its `<kind>/<slug>/<pin>/<file>` tail
+            // wherever the store lives, so a moved store still owns its old links.
             source_abs: if item.from_store
                 && same_store_file(
                     Path::new(&l.target),
@@ -289,7 +289,7 @@ where
 }
 
 /// Whether `prior_target` is the same file as `source_abs` in a store that has
-/// since moved: both end in `<slug>/<commit>/<path inside the source>`.
+/// since moved: both end in `<kind>/<slug>/<pin>/<path inside the source>`.
 pub(crate) fn same_store_file(
     prior_target: &Path,
     source_abs: &Path,
@@ -301,10 +301,10 @@ pub(crate) fn same_store_file(
     let mut tail: Vec<_> = source_root
         .components()
         .rev()
-        .take(2)
+        .take(3)
         .map(|c| c.as_os_str())
         .collect();
-    if tail.len() < 2 {
+    if tail.len() < 3 {
         return false;
     }
     tail.reverse();
@@ -517,7 +517,7 @@ mod tests {
             id: "pkg",
             qualified_id: "pkg",
             source_root: &src_root,
-            git_pin: None,
+            store_pin: None,
             projections: &projections,
         };
         let params = SyncParams {
@@ -538,20 +538,22 @@ mod tests {
     }
 
     #[test]
-    fn a_moved_store_is_recognised_by_its_slug_commit_tail() {
-        let root = Path::new("/new/git/slug/abc");
-        let abs = Path::new("/new/git/slug/abc/skills/a.md");
+    fn a_moved_store_is_recognised_by_its_kind_slug_pin_tail() {
+        let root = Path::new("/new/trees/git/slug/abc");
+        let abs = Path::new("/new/trees/git/slug/abc/skills/a.md");
         assert!(same_store_file(
-            Path::new("/old/store/git/slug/abc/skills/a.md"),
+            Path::new("/old/store/trees/git/slug/abc/skills/a.md"),
             abs,
             root
         ));
         assert!(same_store_file(abs, abs, root));
-        // Another commit, another file, or another remote is not the same.
+        // Another pin, file, remote or kind is not the same.
         for other in [
-            "/old/git/slug/def/skills/a.md",
-            "/old/git/slug/abc/skills/b.md",
-            "/old/git/other/abc/skills/a.md",
+            "/old/trees/git/slug/def/skills/a.md",
+            "/old/trees/git/slug/abc/skills/b.md",
+            "/old/trees/git/other/abc/skills/a.md",
+            "/old/trees/fake/slug/abc/skills/a.md",
+            "/old/slug/abc/skills/a.md",
         ] {
             assert!(!same_store_file(Path::new(other), abs, root), "{other}");
         }
@@ -565,7 +567,7 @@ mod tests {
         let ws = dir.path().join("ws");
         std::fs::create_dir_all(&ws).unwrap();
         let make_store = |name: &str| {
-            let root = dir.path().join(name).join("git/slug/abc123");
+            let root = dir.path().join(name).join("trees/git/slug/abc123");
             std::fs::create_dir_all(&root).unwrap();
             std::fs::write(root.join("a.txt"), b"a").unwrap();
             root
@@ -581,7 +583,7 @@ mod tests {
                     id: "pkg",
                     qualified_id: "pkg",
                     source_root: &root,
-                    git_pin: Some("abc123".to_string()),
+                    store_pin: Some("abc123".to_string()),
                     projections: &projections,
                 };
                 let params = SyncParams {
@@ -627,7 +629,7 @@ mod tests {
             id: "pkg",
             qualified_id: "pkg",
             source_root: &src_root,
-            git_pin: None,
+            store_pin: None,
             projections: &projections,
         };
         let params = SyncParams {
@@ -663,7 +665,7 @@ mod tests {
             id: "pkg",
             qualified_id: "pkg",
             source_root: &src_root,
-            git_pin: None,
+            store_pin: None,
             projections: &projections,
         };
         let params = SyncParams {
@@ -701,7 +703,7 @@ mod tests {
             id: "pkg",
             qualified_id: "pkg",
             source_root: &src_root,
-            git_pin: None,
+            store_pin: None,
             projections: &projections,
         };
         let params = SyncParams {
@@ -827,7 +829,7 @@ mod tests {
             id: "pkg",
             qualified_id: "pkg",
             source_root: &src_root,
-            git_pin: None,
+            store_pin: None,
             projections: &projections,
         };
         let params = SyncParams {
@@ -874,7 +876,7 @@ mod tests {
             id: "pkg",
             qualified_id: "pkg",
             source_root: &src_root,
-            git_pin: Some("deadbeef".to_string()),
+            store_pin: Some("deadbeef".to_string()),
             projections: &projections,
         };
         let params = SyncParams {
@@ -910,7 +912,7 @@ mod tests {
             id: "skills",
             qualified_id: "org::skills",
             source_root: &src_root,
-            git_pin: None,
+            store_pin: None,
             projections: &projections,
         };
         let params = SyncParams {
@@ -953,7 +955,7 @@ mod tests {
             id: "skills",
             qualified_id: "org::skills",
             source_root: &src_root,
-            git_pin: None,
+            store_pin: None,
             projections: &projections,
         };
         let params = SyncParams {

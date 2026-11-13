@@ -29,6 +29,7 @@ system_traits = { workspace = true }
 url = { workspace = true }
 tokio = { workspace = true }
 serde_json = { workspace = true }
+blake3 = { workspace = true }
 
 [dev-dependencies]
 omni_test_capabilities = { workspace = true }

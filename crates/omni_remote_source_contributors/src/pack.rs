@@ -18,7 +18,7 @@ use omni_meta::{
     SourceIdentity, expand,
 };
 use omni_remote_source::{
-    InstallOptions, RemoteSource, RemoteSourceContributor, RemoteSourceRef,
+    InstallOptions, RemoteSourceContributor, RemoteSourceRef,
     manager::RemoteSourceManager, sys::RemoteSourceSys,
 };
 use system_traits::FsReadAsync;
@@ -349,13 +349,11 @@ where
                 (root, None, identity)
             }
             SourceConfig::Git(git) => {
+                let remote = crate::remote_source_for(src)
+                    .expect("a git source is remote");
                 if self.update {
-                    self.manager.invalidate_git(&git.uri, &git.rev).await?;
+                    self.manager.invalidate(&remote).await?;
                 }
-                let remote = RemoteSource::Git {
-                    uri: git.uri.clone(),
-                    rev: git.rev.clone(),
-                };
                 let materialized = self.manager.materialize(&remote).await?;
                 let pin = materialized.pin.clone();
                 self.refs.lock().expect("refs mutex poisoned").push(
@@ -596,15 +594,19 @@ where
 
         for node in &expanded.nodes {
             refs.extend(
-                crate::materialize_flat_git(manager, &node.generators, options)
+                crate::materialize_flat_remote(
+                    manager,
+                    &node.generators,
+                    options,
+                )
+                .await?,
+            );
+            refs.extend(
+                crate::materialize_flat_remote(manager, &node.tools, options)
                     .await?,
             );
             refs.extend(
-                crate::materialize_flat_git(manager, &node.tools, options)
-                    .await?,
-            );
-            refs.extend(
-                crate::materialize_flat_git(
+                crate::materialize_flat_remote(
                     manager,
                     &node.projections,
                     options,

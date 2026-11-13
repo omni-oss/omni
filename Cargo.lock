@@ -7556,7 +7556,6 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio 1.54.1",
  "tracing",
- "url",
 ]
 
 [[package]]
@@ -8002,6 +8001,7 @@ name = "omni_remote_source"
 version = "0.3.0"
 dependencies = [
  "async-trait",
+ "blake3",
  "bon",
  "derive-new",
  "eyre",
