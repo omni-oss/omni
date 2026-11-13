@@ -130,7 +130,7 @@ pub trait SourceDriver<TSys: RemoteSourceSys>: Send + Sync {
     /// One path segment naming the place (git: `store_slug(uri)`). Must be
     /// injective over `spec.locator`. The core makes it safe: a slug that is
     /// too long, not lowercase-safe, or starts with `h-` is replaced by
-    /// `h-<sha256 hex of the slug>`. Only hashed slugs start with `h-`, so a
+    /// `h-<blake3 hex of the slug>`. Only hashed slugs start with `h-`, so a
     /// hashed and a literal slug never collide.
     fn slug(&self, spec: &SourceSpec) -> String;
 
@@ -466,8 +466,25 @@ Open questions: none that block step 1.
 ## 10. Status
 
 - [x] Plan review
-- [ ] Step 1: lockfile and refs new shape, canonical locator, credentials
-- [ ] Step 2: `SourceDriver` core, git driver, new layout
-- [ ] Step 3: projection tail
-- [ ] Step 4: single mapping, kind-aware prune
-- [ ] Step 5: docs
+- [x] Step 1: lockfile and refs new shape, canonical locator, credentials
+- [x] Step 2: `SourceDriver` core, git driver, new layout
+- [x] Step 3: projection tail
+- [x] Step 4: single mapping, kind-aware prune
+- [x] Step 5: docs
+
+### Implementation notes
+
+Built in one PR as separate commits per step. Differences from the text
+above, none changing behaviour:
+
+- `Pin` is a plain `String` in the trait, validated by the core with
+  `is_safe_segment`; a newtype added nothing the check does not already give.
+- Hashed slugs use blake3 (already a workspace dependency), not sha256.
+- `remote_source_for_git(&GitSource)` sits beside `remote_source_for` for call
+  sites that have already matched the `Git` variant; it is the only place a
+  `RemoteSource::Git` is built from config.
+- The prune views rename `commit` to `pin` alongside the new `kind` field.
+- Example 15 (an authenticated local git server) is covered by unit tests
+  instead: the locator strips userinfo, `Connection` redacts it, and refs
+  written for a URL with credentials contain none. The fetch still receives
+  the configured URL through `spec.connection`.
