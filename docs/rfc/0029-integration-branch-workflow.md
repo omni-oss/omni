@@ -59,19 +59,27 @@ the workflow, with `INTEGRATION_BOT_TOKEN`.
 
 ### Steps
 
-1. **Skip** unless the run failed on a push to an `integration/**` branch.
+1. **Gate on the run:** ignore runs that are not pushes to an `integration/**`
+   branch. Ignore any run whose head SHA is not the current branch head, so an
+   older run finishing late cannot change state. For a current-head run:
+   success removes `red` and lifts the freeze (see "Fix process"), and only a
+   failure continues to step 2.
 2. **Collect failures:** read the per-task results that each CI job uploads
    (see "Failure artifacts" below), not the GitHub job list.
 3. **Filter flakes:** re-run failed jobs once (`gh run rerun --failed`). If they
-   pass, record a flake and stop.
+   pass, record a flake and stop. A rerun completes `CI` again and fires this
+   workflow again, so guard it: only rerun when `run_attempt` is 1, and treat a
+   failed attempt 2 as final, so a persistent failure reruns at most once.
 4. **Find the range:** walk first-parent commits back to the last commit whose
    `CI` run succeeded. Squash commits are `(#PR)`, and a sync merge from `main`
    is its own entry.
 5. **Narrow:**
     - One commit in range: it is the culprit.
-    - Several: `git bisect run` over the range, running only the failing omni
-      tasks (`omni run <task> -p <project>`), not the whole suite. Cap the
-      bisect at N steps and a time budget.
+    - Several: `git bisect start --first-parent`, then `git bisect run`,
+      running only the failing omni tasks (`omni run <task> -p <project>`),
+      not the whole suite. First-parent keeps bisect on the same history as the
+      range, so it can name a sync merge but never a commit from `main`'s
+      history. Cap the bisect at N steps and a time budget.
 6. **Map to a PR:** commit subject `(#N)` gives the child PR; a sync merge
    commit maps to the integration PR instead.
 7. **Verify:** re-run the failing tasks at the suspect commit and at its
@@ -145,9 +153,16 @@ every fix is a new child PR into the integration branch.
    a reviewer.
 4. **Revert (fallback):** if no clear fix within about 24 hours, or the branch
    blocks others, the branch owner opens a `git revert <sha>` child PR. The
-   author re-lands the change later as a new PR.
+   author re-lands the change later as a new PR. This is for child squash
+   commits only. If the culprit is a `main` sync merge, do not revert it:
+   `git revert -m 1` would also undo the `main` changes, and the next sync
+   would not bring them back. Instead fix forward on the integration branch, or
+   have the owner resolve the conflict that the sync exposed in a child PR.
+   The integration branch is not rewritten, and `main` is never edited to
+   suit it.
 5. **Confirm:** full CI runs on the branch after the fix merges. When green,
-   the bot removes `red` and lifts the merge freeze.
+   the bot removes `red` and lifts the merge freeze. This applies only to a
+   run whose SHA is the current branch head.
 
 Roles: the author owns the fix; the branch owner unblocks (reassign, revert,
 fast-track approval); the bot diagnoses, tags and labels.
@@ -166,6 +181,15 @@ them as the sole reviewer.
   `unknown` rather than a wrong culprit.
 - Only the failing tasks run during bisect, on a clean checkout per step, with
   the omni cache enabled so unchanged tasks are cheap.
+- **Isolation.** Bisect runs code from merged child PRs, so it is untrusted
+  relative to `INTEGRATION_BOT_TOKEN`. Split the workflow into two jobs:
+    - A `bisect` job with `contents: read` only and no bot token or other secrets.
+      It uses its own cache key namespace, separate from privileged workflows and
+      from `main`, and never writes to a cache they restore.
+    - A privileged `report` job that downloads the `bisect` job's output as an
+      artifact and only parses it as data (culprit SHA, confidence, log excerpt).
+      It never executes anything from the artifact or the checked-out commits.
+      The rerun and labelling steps run in `report`, not in `bisect`.
 - Do not auto-revert. A revert is a suggestion for the owner.
 
 ## 6. Automation
@@ -193,7 +217,7 @@ Other workflows:
 | `integration-sync`      | push to `main`, daily, manual | merge `main` into each `integration/*`; on conflict abort, comment, label `needs-sync` |
 | `integration-track`     | child PR merged               | append `- [x] #N title (@author)` under `<!-- children -->` in the integration PR body |
 | `integration-attribute` | `workflow_run` of `CI`        | failure attribution (section 5)                                                        |
-| PR-target guard         | PR to `main`                  | fail if based on an integration branch, unless hotfix                                  |
+| PR-target guard         | PR to `main`                  | fail if based on an integration branch, unless hotfix or the integration PR itself     |
 
 Pushes made with `GITHUB_TOKEN` do not trigger workflows. Sync and tracking use
 `INTEGRATION_BOT_TOKEN` (GitHub App or PAT), which needs a branch-protection
