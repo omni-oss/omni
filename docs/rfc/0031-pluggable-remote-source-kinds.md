@@ -204,7 +204,13 @@ commit from v1 before any network fetch:
   reachable objects from v1's object database into v2's. No alternates file,
   so v2 never depends on v1 surviving.
 - It records the commit as `refs/omni/pins/<commit>` in v2, so a later
-  `+refs/heads/*` fetch never leaves it unreachable.
+  `+refs/heads/*` fetch never leaves it unreachable. This ref is written
+  **last**, only after the whole closure is in v2, and it is the completeness
+  marker: a commit counts as present in v2 only when a ref reaches it (a
+  normal fetch updates refs after its pack lands; the copy writes the pin ref
+  after its objects). Commit presence alone never counts, so a copy
+  interrupted after the commit object but before its trees and blobs is simply
+  redone on the next run (copying an object that already exists is a no-op).
 - It runs under the v1 `locks/<slug>.lock` (and the v2 per-remote lock), so it
   never reads a mirror a v1 omni is writing.
 
@@ -215,7 +221,10 @@ v1 is only read, never written.
 
 `omni remote-sources prune` covers v2 only. The docs say that the v1
 directories can be deleted with `rm -rf` (the store is a cache) once no older
-omni on the machine uses them; deleting them also drops the v1 seed. A
+omni on the machine uses them. Deleting them also drops the v1 seed, so a
+locked commit that the remote no longer serves and v2 has not yet copied can
+then be recovered only by re-locking, which changes its pin. Run
+`omni remote-sources install` in each workspace first to copy what they pin. A
 `--legacy` flag is not added (nothing would be left after a release).
 
 ### 4.3 Lockfile and refs `2.0.0`
@@ -322,13 +331,16 @@ Edge cases and failure paths:
     succeeds offline, both when `v2/raw/git/<R>` is missing and when it already
     exists without c0. Without the v1 mirror: error naming the remote and pin
     and pointing at `--update`.
+16. The v1 copy is interrupted after c0's commit object but before its trees
+    (fault injected in the test): v2 has c0 but no `refs/omni/pins/c0`, so the
+    next install redoes the copy, writes the ref and exports c0.
 
 ## 6. Steps
 
 | # | Outcome | Depends on | Check | Undo |
 | --- | --- | --- | --- | --- |
 | 1 | Lockfile and refs `2.0.0` (read `1.0.0`, write `2.0.0`, unknown kind is an error), generic `Lockfile` API. Git callers adapted; `.omni/sources/lock.json` regenerated | none | Round-trip, `1.0.0` conversion and unknown-kind and unsafe-pin unit tests (examples 10, 13). All existing tests and `remote-sources` e2e pass | Revert, then restore `lock.json` from git. A `2.0.0` file elsewhere can be deleted and reinstalled (pins re-resolve) |
-| 2 | `SourceKind` trait, `KindRegistry`, generic core (`materialize_with`), git impl, v2 layout under `<store>/v2/`, pin validation, projection tail recognition | 1 | Fake kind integration tests (examples 2–4, 7–9, 11, 14, 15). RFC 0027 examples. Example 5 and 6 tests. Projection moved-store tests | Revert. `v2/` is orphaned and harmless; v1 data was never touched |
+| 2 | `SourceKind` trait, `KindRegistry`, generic core (`materialize_with`), git impl, v2 layout under `<store>/v2/`, pin validation, projection tail recognition | 1 | Fake kind integration tests (examples 2–4, 7–9, 11, 14–16). RFC 0027 examples. Example 5 and 6 tests. Projection moved-store tests | Revert. `v2/` is orphaned and harmless; v1 data was never touched |
 | 3 | `remote_source_for` mapping replaces the 11 constructions; `invalidate`/`locked_pin`; kind-aware `StoreEntry`, prune filter and output | 2 | `rg 'RemoteSource::Git \{'` finds only the mapping and the git impl. Prune unit and e2e tests with `kind` (example 12). CLI and MCP snapshots updated | Revert |
 | 4 | Docs: store reference (v2 layout, v1 cleanup), lockfile `2.0.0`, release note (breaking), contributor pattern "adding a source kind" in `docs/patterns/` | 1–3 | Site build. The pattern doc walks through the fake kind | Revert |
 
@@ -354,14 +366,14 @@ continuous.
 | Locked pin no longer served by the remote after upgrade (force-push, GC) | Low / medium | Seed from the v1 mirror (4.2, example 15); otherwise the error says to re-lock with `--update`, which changes the pin |
 | A kind returns a pin other than the locked one, so the tree and lockfile disagree | Low / high | The core rejects it (4.1 step 3, example 14) |
 | Projection links into v1 trees not recognised after v1 cleanup | Medium / low | Legacy tail accepted (example 5) |
-| v1 directories waste disk | Medium / low | Release note and store reference say `rm -rf <store>/{git,trees,locks}` is safe once no older omni process on the machine still uses the v1 layout |
+| v1 directories waste disk | Medium / low | Release note and store reference say `rm -rf <store>/{git,trees,locks}` is safe once no older omni process on the machine still uses the v1 layout, and warn that a locked commit the remote no longer serves and v2 has not yet copied is then lost (recover only by `--update`, which changes the pin); advise `install` in each workspace first |
 
 ## 8. Assumptions and open questions
 
 Assumptions:
 - gix can fetch an unadvertised commit id over the local file transport, or
   copy one commit's object closure between two bare repos. Checked by a spike
-  at the start of step 2 (the spike picks between the two; both meet 4.2).
+  at the start of step 2 (the spike picks between the two; both meet 4.2) and also runs example 16.
 - Every future kind can express its address as two strings (locator, selector)
   and its content as one immutable pin string. This holds for git and npm
   (locator `registry-url/name`, selector a range, pin a version plus integrity
