@@ -351,15 +351,17 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
         }
         let manifest = {
             let pending = pending.clone();
-            tokio::task::spawn_blocking(move || tree::seal(&pending))
-                .await
-                .map_err(|e| Error::custom(e.to_string()))?
+            tokio::task::spawn_blocking(move || tree::seal(&pending)).await
         };
         let manifest = match manifest {
-            Ok(manifest) => manifest,
-            Err(error) => {
+            Ok(Ok(manifest)) => manifest,
+            Ok(Err(error)) => {
                 self.remove_tree(&pending).await;
                 return Err(error.into());
+            }
+            Err(error) => {
+                self.remove_tree(&pending).await;
+                return Err(Error::custom(error.to_string()));
             }
         };
 
@@ -376,7 +378,10 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
         }
         // Published last: until it exists the tree reads as incomplete.
         let staging = self.new_pending_dir();
-        self.sys.fs_write_async(&staging, &manifest).await?;
+        if let Err(error) = self.sys.fs_write_async(&staging, &manifest).await {
+            let _ = self.sys.fs_remove_file_async(&staging).await;
+            return Err(error.into());
+        }
         if let Err(error) = self
             .sys
             .fs_rename_async(&staging, manifest_path(tree))

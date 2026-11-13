@@ -13,12 +13,14 @@ use crate::{
 pub const GIT_KIND: &str = "git";
 
 /// The lockfile key of a git remote: lowercase scheme and host, no default
-/// port (both from `Url` parsing), no userinfo, no trailing `/`. A `.git`
-/// suffix is kept.
+/// port (both from `Url` parsing), no userinfo, query or fragment (they can
+/// carry tokens), no trailing `/`. A `.git` suffix is kept.
 pub fn canonical_git_locator(uri: &Url) -> String {
     let mut uri = uri.clone();
     let _ = uri.set_username("");
     let _ = uri.set_password(None);
+    uri.set_query(None);
+    uri.set_fragment(None);
     let mut locator = uri.as_str().to_string();
     if locator.ends_with('/') && uri.path() != "/" {
         locator.pop();
@@ -189,6 +191,7 @@ mod tests {
             "https://HOST:443/r.git",
             "https://user@host/r.git",
             "https://user:token@host/r.git",
+            "https://host/r.git?access_token=secret#frag",
         ] {
             assert_eq!(locator(uri), "https://host/r.git", "{uri}");
         }
