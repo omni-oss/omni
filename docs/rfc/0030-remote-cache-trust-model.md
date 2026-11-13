@@ -980,9 +980,14 @@ Why: these are the user-visible controls A, C and D.
   anything from an isolated namespace.
 - **Marker rules (4.4):** a run with `publish` treats an `isolated`-marked local entry
   as a miss and replaces it with a local success; an untrusted run (`write`, no
-  `publish`) reuses it; a `shared`-marked entry is reused by every run; an opted-out
-  run misses on every marked entry; unknown scopes (remote disabled) are treated as
-  trusted. `CachedSecurity` never serves a `Caller` built for another resource or
+  `publish`) reuses it; an opted-out run misses on every marked entry; unknown scopes
+  (remote disabled) are treated as trusted. A `shared`-marked entry is reused by any
+  run whose policy it satisfies: under `verify: require` only if `verified_by` names a
+  key in the effective `trusted_keys`. Tests: an entry restored under `verify: off` or
+  `warn` (`verified_by: none`) is a miss for a later `require` run, and is reused by an
+  `off` or `warn` run; an entry verified by key K is reused under `require` while K is
+  trusted, and is a miss after K is narrowed out locally or removed from the workspace
+  `trusted_keys` (revoked). `CachedSecurity` never serves a `Caller` built for another resource or
   wanted set. `auto` is resolved against the workspace key set before narrowing, and
   an empty local subset under `require` rejects every shared entry.
 - **Path safety:** `..`, leading-dot and encoded segments in `scope` and
