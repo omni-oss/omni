@@ -226,7 +226,9 @@ them, and a newer omni reads `git/` and `locks/` while copying a commit into
 v2, so deleting them mid-copy makes the copy fail (it then falls back to the
 network, or to re-locking). Deleting them also drops the v1 seed, so a
 locked commit that the remote no longer serves and v2 has not yet copied can
-then be recovered only by re-locking, which changes its pin. Run
+then be recovered only by re-locking, which changes its pin. An older omni
+cannot read v2, so after deletion it cannot recover such a commit even when v2
+holds it; keep the v1 directories while any older omni is still in use. Run
 `omni remote-sources install` in each workspace first to copy what they pin. A
 `--legacy` flag is not added (nothing would be left after a release).
 
