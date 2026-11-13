@@ -182,6 +182,17 @@ pub struct DriverContext<'a, TSys> {
   String` used for every `SourceSpec`: parse with `url` (lowercases scheme and
   host, drops a default port), remove userinfo, strip one trailing `/` from the
   path, then `as_str()`. A `.git` suffix is kept.
+- **A locator names one content source.** URLs that differ only in
+  userinfo are the same source: they share a lockfile entry, a slug and a
+  tree. This is today's behaviour (`store_slug` already drops credentials).
+  For git it is safe for content, since a commit id fixes the content
+  regardless of account. It does mean a pinned tree already in the store is
+  reused without a fetch, so it is not re-checked that a second account can
+  read the repository; the store is per OS user, so this only shares data
+  between workspaces of the same user. Servers that serve different content
+  per account under one URL are unsupported. A driver whose content can
+  differ per account must put a non-secret discriminator (for example an
+  account or scope name, never a token) in its locator.
 - Credentials still reach the fetch: the git kind connects with
   `spec.connection`, the configured URL with userinfo intact, exactly as
   `fetch_bare` receives it today. It is redacted in logs and errors and never
@@ -411,6 +422,7 @@ continuous.
 | Pins re-resolve after upgrading (users delete the lockfile) | High / low | Expected break; the release note says so. Users who need the old commits note them before upgrading |
 | A locked commit the remote no longer serves is lost with the old store | Low / medium | Error points at `--update` (example 16); release note |
 | Credentials leak into the lockfile, refs, slug or logs | Low / high | Locator strips userinfo; `Connection` has no `Serialize` and redacts (example 15) |
+| Two configured URLs differing only in userinfo share one entry and tree, so the second account's access is not re-checked when the pin is cached | Low / low | Same as today; one OS user's store. Documented in 4.1; per-account content is unsupported, and drivers needing it put a non-secret discriminator in the locator |
 | Authenticated fetches stop working once the locator drops userinfo | Low / high | The fetch uses `spec.connection` (example 15) |
 | A kind returns an unsafe pin or slug, escaping the store or colliding on a case-insensitive filesystem | Low / high | The core validates pins and makes slugs safe before any path join (examples 6, 12, 17) |
 | A kind writes outside `dest` and `raw_dir` | Low / medium | Documented contract. The fake kind test asserts nothing else changed. The registry RFC must cover extraction safety |
@@ -427,6 +439,8 @@ Assumptions:
   keys would differ between machines; the registry RFC defines it (for
   example the package name plus a logical registry name resolved through
   `DriverConfig`) and checks this assumption.
+- No supported git server serves different content per account under one
+  URL; a commit id fixes the content anyway.
 - `async_trait` dyn dispatch with a generic `TSys` stays object-safe, as
   `RemoteSourceContributor` already is.
 - No external crate depends on `Lockfile::git_*` or `invalidate_git` outside
