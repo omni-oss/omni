@@ -70,11 +70,17 @@ Done when:
 - `store_slug` is an injective encoding of a URL into one path segment. It is
   reusable for any kind whose locator is a URL.
 - The lockfile and refs are serde-tagged enums (`version: "1.0.0"`). An
-  unknown version fails to parse. Unknown *fields* are ignored today, which is
-why 4.3 adds `deny_unknown_fields`
-  instead of silently dropping entries it doesn't know.
+  unknown version fails to parse. Unknown *fields* are ignored today, so a
+  shape change without care would silently drop pins on the next save (4.3).
 - `LockfileDataV1_0_0` and `RefSetDataV1_0_0` each have exactly one field,
-  `git`.
+  `git`, and it is required (no `#[serde(default)]`;
+  `omni_lockfile/src/lockfile_data.rs`, `omni_remote_source/src/refs.rs`). An
+  older omni therefore fails on a new-shape file with `missing field git`
+  instead of overwriting it.
+- `reconcile_pins` reads every `refs/*.json`, and `persist_pins` reloads and
+  saves the lockfile on every install (`manager/default_impl.rs`). So the
+  first install rewrites a tracked lockfile, and one new-shape refs file makes
+  an older omni's install fail even for subsystems it never touched.
 - `StoreEntry` and `StorePruneFilter::only` identify an entry as
   `(remote, commit)` with no kind.
 - `omni_projections::engine` recognises its own links after the store moves
@@ -252,17 +258,43 @@ every level, for both `lock.json` and `refs/<id>.json`. The `version` tag is
 not bumped: omni is pre-release and the owner accepts the break, so
 `LockfileDataV1_0_0` and `RefSetDataV1_0_0` change shape in place.
 
-- **Read:** the new shape. A file that still has the old top-level
-  `git: {<uri>: {<rev>: {commit}}}` key is converted to
-  `sources.git.<uri>.<rev>.pin` on load. Without this, serde would ignore the
-  unknown `git` key and the next save would silently drop every pin.
-- **Write:** the new shape only, so the old `git` key disappears on the next
-  save.
-- Unknown fields (`#[serde(deny_unknown_fields)]`) and an unknown kind under
-  `sources` are load errors that name the field or kind, never ignored:
-  ignoring them would delete a newer omni's pins on save.
-- An older omni reading a new-shape file fails (its struct requires `git`); it
-  never silently overwrites it.
+- **Mechanism** (in `omni_lockfile` and `refs.rs`): the tagged variant
+  deserializes into a private
+  `RawV1_0_0 { #[serde(default)] git: Option<OldGit>, #[serde(default)] sources: Option<Sources> }`
+  with `#[serde(deny_unknown_fields)]`, converted into the public type with
+  `#[serde(try_from = "RawV1_0_0")]`. Only `sources` is serialized. Tests run
+  whole `{"version":"1.0.0", …}` documents through the tagged enum, since
+  `deny_unknown_fields` and internally tagged enums need checking together (and
+  `flatten` is not used).
+- **Read:**
+  - new shape only: as is;
+  - old shape only (top-level `git`): converted to `sources.git.<uri>.<rev>.pin`,
+    with one `info` log that the file was converted;
+  - both keys (a text merge between an old and an upgraded branch, or a hand
+    edit): `git` is merged into `sources.git`; the same `(uri, rev)` with
+    different pins is an error naming both pins;
+  - neither key: empty.
+  Applies to `lock.json` and every `refs/*.json`.
+- **Write:** the new shape only. Because `persist_pins` saves on every
+  install, the first install after upgrading rewrites a tracked old-shape
+  `lock.json` (expected one-time diff, called out in the release note).
+- **Unknown data:** an unknown top-level field or entry field is a load error
+  in `omni_lockfile` (`deny_unknown_fields`). The lockfile crate does **not**
+  know the set of kinds: `sources` is a plain
+  `Map<String, Map<String, Map<String, Entry>>>`. The manager checks every kind
+  against its `KindRegistry` after load, and an unknown kind is an error that
+  names it, never dropped (dropping would delete a newer omni's pins on save).
+  Tests register the fake kind in the registry, so adding a kind never edits
+  `omni_lockfile`.
+- **Older omni:** fails with `missing field git` on any new-shape `lock.json`
+  or `refs/*.json`. Its message cannot be changed, so the release note and the
+  lockfile reference say: "`missing field git` from omni means the file was
+  written by a newer omni; upgrade."
+- **Schema rule from now on:** changing the shape in place without a version
+  bump is allowed only before the first release. After it, any change to the
+  lockfile or refs schema, including a new per-kind entry field such as a
+  registry `integrity`, bumps `version`. A new *kind* alone needs no bump,
+  because the kind is a map key, not a field.
 - API: `Lockfile::{pin(kind, locator, selector), lock_pin(..), pins() ->
   Vec<(kind, locator, selector, pin)>, remove(..)}`. The `git_*` methods are
   removed.
@@ -332,9 +364,13 @@ Edge cases and failure paths:
    no lock entry.
 9. A deleted fake tree with an intact raw dir is re-exported. A failed
    `resolve` with no raw dir gives an error that names the kind and locator.
-10. A lockfile with `sources.registry` (unknown here), or with an unknown
-    top-level field: load fails with
-    an error that names `registry`, and the file is unchanged.
+10. Load errors, each leaving the file bytes unchanged: (a) unknown top-level
+    field, (b) unknown entry field, (c) `sources.registry` with no `registry`
+    kind registered (error names `registry`; manager check), (d) both `git` and
+    `sources` with conflicting pins for one `(uri, rev)` (error names both).
+    Plus the accepted cases: old only, new only, both agreeing. The same set
+    for a `refs/*.json` file, and a regression test that a new-shape file fails
+    the old struct (`missing field git`).
 11. `v2/VERSION` = 3: refuse, as in RFC 0027.
 12. `--update` invalidates through `invalidate(&RemoteSource)` for both kinds.
 13. A lockfile pinning `../x` (or `a/b`): load fails naming the entry, before
@@ -354,10 +390,10 @@ Edge cases and failure paths:
 
 | # | Outcome | Depends on | Check | Undo |
 | --- | --- | --- | --- | --- |
-| 1 | Lockfile and refs new shape under `1.0.0` (convert the old `git` key on load, write the new shape, unknown field or kind is an error), generic `Lockfile` API. Git callers adapted; `.omni/sources/lock.json` regenerated | none | Round-trip, old-shape conversion and unknown-kind and unsafe-pin unit tests (examples 10, 13). All existing tests and `remote-sources` e2e pass | Revert, then restore `lock.json` from git. A new-shape file elsewhere can be deleted and reinstalled (pins re-resolve) |
-| 2 | `SourceKind` trait, `KindRegistry`, generic core (`materialize_with`), git impl, v2 layout under `<store>/v2/`, pin validation, projection tail recognition | 1 | Fake kind integration tests (examples 2–4, 7–9, 11, 14–16). RFC 0027 examples. Example 5 and 6 tests. Projection moved-store tests | Revert. `v2/` is orphaned and harmless; v1 data was never touched |
+| 1 | Lockfile and refs new shape under `1.0.0` (raw-struct conversion of the old `git` key in `lock.json` and refs, both-keys merge, write the new shape, unknown field is an error; `sources` keyed by plain strings), generic `Lockfile` API. Git callers adapted; `.omni/sources/lock.json` regenerated | none | Round-trip, conversion and unknown-field unit tests (example 10 a, b, d and the accepted cases), unsafe-pin tests (example 13). All existing tests and `remote-sources` e2e pass | Revert, then restore `lock.json` from git. A new-shape file elsewhere can be deleted and reinstalled (pins re-resolve) |
+| 2 | `SourceKind` trait, `KindRegistry`, generic core (`materialize_with`), git impl, v2 layout under `<store>/v2/`, pin validation, manager-side unknown-kind check, projection tail recognition | 1 | Fake kind integration tests (examples 2–4, 7–9, 10c, 11, 14–16). RFC 0027 examples. Example 5 and 6 tests. Projection moved-store tests | Revert. `v2/` is orphaned and harmless; v1 data was never touched |
 | 3 | `remote_source_for` mapping replaces the 11 constructions; `invalidate`/`locked_pin`; kind-aware `StoreEntry`, prune filter and output | 2 | `rg 'RemoteSource::Git \{'` finds only the mapping and the git impl. Prune unit and e2e tests with `kind` (example 12). CLI and MCP snapshots updated | Revert |
-| 4 | Docs: store reference (v2 layout, v1 cleanup), lockfile shape, release note (breaking), contributor pattern "adding a source kind" in `docs/patterns/` | 1–3 | Site build. The pattern doc walks through the fake kind | Revert |
+| 4 | Docs: store reference (v2 layout, v1 cleanup), lockfile shape with a short format history (before 0031: `git`; after: `sources`) and the `missing field git` explanation, release note (breaking), contributor pattern "adding a source kind" in `docs/patterns/` | 1–3 | Site build. The pattern doc walks through the fake kind | Revert |
 
 The riskiest part is step 1, which changes a git-tracked format and touches
 every git caller. It goes first so the rest builds on settled data.
@@ -374,7 +410,10 @@ continuous.
 | Risk | Likelihood / impact | Mitigation |
 | --- | --- | --- |
 | Old-to-new shape conversion loses or alters a pin | Low / high (silent re-resolve) | Conversion tests on real fixture files. Step 1 diff of `.omni/sources/lock.json` reviewed by hand: every pin is the same |
-| A newer omni's kind is dropped by an older omni on save | Medium / high | An unknown kind is a load error, never ignored (example 10) |
+| A newer omni's kind is dropped by an older omni on save | Medium / high | The manager rejects any kind missing from its `KindRegistry` right after load, before anything can save (example 10c). Unknown fields are rejected by `omni_lockfile` (10a, 10b) |
+| A text merge leaves both the old `git` key and `sources` | Medium / medium | Merged on load; conflicting pins are an error naming both (10d). Release note calls out the merge hazard |
+| An older omni in the same workspace fails with `missing field git` after a newer one writes | High / low | Expected break; the release note and lockfile reference explain the message and say to upgrade |
+| A future per-kind entry field (e.g. registry `integrity`) silently breaks older omni | Medium / medium | Schema rule in 4.3: after the first release every schema change bumps `version` |
 | A kind returns an unsafe pin or slug, escaping the store | Low / high | The core validates both as single safe segments before any path join (example 7) |
 | A kind writes outside `dest` and `raw_dir` | Low / medium | Documented contract. The fake kind test asserts nothing else changed. The registry RFC must cover extraction safety |
 | Refetch storm after upgrade (v2 starts empty) | High / low | One-time per machine, and skipped where the v1 mirror seeds v2. Documented in the release note |
