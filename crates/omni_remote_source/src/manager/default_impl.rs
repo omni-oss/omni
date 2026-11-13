@@ -1,5 +1,5 @@
 use std::{
-    collections::HashSet,
+    collections::{BTreeMap, HashSet},
     ffi::OsString,
     path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
@@ -67,8 +67,15 @@ fn check_pin(kind: &str, spec: &SourceSpec, pin: &str) -> Result<(), Error> {
 /// single process publishes several checkouts at once.
 static PENDING_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+/// `(kind, locator, selector)`: one lockfile entry.
+type PinKey = (String, String, String);
+
 pub struct RemoteSourceManager<TSys: RemoteSourceSys> {
     lockfile: Lockfile,
+    /// Entries this manager locked (`Some`) or invalidated (`None`). Only these
+    /// are written back, so a pin another process changed since we loaded is
+    /// never overwritten with our stale copy.
+    changed: std::sync::Mutex<BTreeMap<PinKey, Option<String>>>,
     lockfile_path: PathBuf,
     store_root_path: PathBuf,
     drivers: DriverRegistry<TSys>,
@@ -95,6 +102,7 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
         let lockfile = Lockfile::load(lockfile_path.clone(), &sys).await?;
         let manager = RemoteSourceManager {
             lockfile,
+            changed: Default::default(),
             lockfile_path,
             sys,
             store_root_path: config.store_root_path,
@@ -141,10 +149,27 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
     }
 
     async fn merge_own_pins(&self, disk: &Lockfile) -> Result<(), Error> {
-        for (kind, locator, selector, pin) in self.lockfile.pins().await {
-            disk.lock_pin(&kind, &locator, &selector, &pin).await?;
+        let changed = self.changed.lock().expect("pins mutex poisoned").clone();
+        for ((kind, locator, selector), pin) in changed {
+            match pin {
+                Some(pin) => {
+                    disk.lock_pin(&kind, &locator, &selector, &pin).await?
+                }
+                None => disk.remove(&kind, &locator, &selector).await?,
+            }
         }
         Ok(())
+    }
+
+    fn record_change(&self, kind: &str, spec: &SourceSpec, pin: Option<&str>) {
+        self.changed.lock().expect("pins mutex poisoned").insert(
+            (
+                kind.to_string(),
+                spec.locator.clone(),
+                spec.selector.clone(),
+            ),
+            pin.map(str::to_string),
+        );
     }
 }
 
@@ -233,6 +258,7 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
             self.lockfile
                 .lock_pin(kind, &spec.locator, &spec.selector, &pin)
                 .await?;
+            self.record_change(kind, spec, Some(&pin));
         }
         Ok(MaterializedSource { root: tree, pin })
     }
@@ -521,6 +547,7 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
         self.lockfile
             .remove(source.kind(), &spec.locator, &spec.selector)
             .await?;
+        self.record_change(source.kind(), &spec, None);
         Ok(())
     }
 

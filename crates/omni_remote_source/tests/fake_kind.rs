@@ -608,3 +608,34 @@ async fn record_refs_writes_the_kind_neutral_shape() {
     );
     assert!(!refs.to_string().contains("token"));
 }
+
+#[tokio::test]
+async fn persisting_never_overwrites_a_pin_another_process_changed() {
+    let snaps = snapshots();
+    let ws = Workspace::new();
+    let driver = Arc::new(FakeDriver::default());
+    let s1 = spec(snaps.path(), "s1");
+    let s2 = spec(snaps.path(), "s2");
+    let lock = |pin: &str| {
+        serde_json::json!({
+            "version": "1.0.0",
+            "sources": {"fake": {s1.locator.clone(): {"s1": {"pin": pin}}}}
+        })
+        .to_string()
+    };
+    std::fs::write(ws.lockfile(), lock("old")).unwrap();
+
+    // This manager loads `old` and only resolves s2.
+    let manager = ws.manager(&driver).await.unwrap();
+    manager.materialize_with("fake", &s2).await.unwrap();
+
+    // Another process re-locks s1 meanwhile (e.g. `install --update`).
+    std::fs::write(ws.lockfile(), lock("new")).unwrap();
+    manager.persist_pins().await.unwrap();
+
+    let saved: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(ws.lockfile()).unwrap()).unwrap();
+    let pins = &saved["sources"]["fake"][&s1.locator];
+    assert_eq!(pins["s1"]["pin"], "new", "{saved}");
+    assert!(pins.get("s2").is_some(), "{saved}");
+}
