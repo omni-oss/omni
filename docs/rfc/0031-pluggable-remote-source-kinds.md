@@ -192,12 +192,24 @@ Decision: put v2 under `<store>/v2/` and leave v1 untouched.
 
 **Recovering pins the remote no longer serves.** A v2 store starts empty, so a
 locked commit that was force-pushed away or garbage-collected on the remote
-would be unfetchable. The git kind therefore seeds a missing
-`v2/raw/git/<slug>` from the v1 bare mirror `<store>/git/<slug>.git` when it
-exists: a local fetch of all refs and objects, taken under the v1
-`locks/<slug>.lock` so it never reads a mirror a v1 omni is writing. The
-normal network fetch runs only if the pin is still missing afterwards. When
-neither holds the pin, the error names the remote and the pin and says to run
+would be unfetchable. Whenever a locked commit is absent from
+`v2/raw/git/<slug>` (whether that mirror is missing or already exists) and the
+v1 bare mirror `<store>/git/<slug>.git` exists, the git kind copies that
+commit from v1 before any network fetch:
+
+- It transfers the closure of the **locked commit itself**, not the objects
+  reachable from v1's refs, since a force-pushed commit can stay in v1 while no
+  ref reaches it. Preferred: a local fetch with an explicit want of the commit
+  id. If the local transport refuses an unadvertised id, copy the commit's
+  reachable objects from v1's object database into v2's. No alternates file,
+  so v2 never depends on v1 surviving.
+- It records the commit as `refs/omni/pins/<commit>` in v2, so a later
+  `+refs/heads/*` fetch never leaves it unreachable.
+- It runs under the v1 `locks/<slug>.lock` (and the v2 per-remote lock), so it
+  never reads a mirror a v1 omni is writing.
+
+The network fetch runs only if the commit is still missing. When neither
+mirror holds it, the error names the remote and the commit and says to run
 `omni remote-sources install --update` to re-lock, which changes the pin.
 v1 is only read, never written.
 
@@ -305,9 +317,11 @@ Edge cases and failure paths:
     the fast path joins any path.
 14. With a locked pin, the fake kind's `resolve` returns a different pin: error
     naming both pins; no tree exported, lockfile unchanged.
-15. Git pin c0 exists only in the v1 mirror (removed from the remote): the v2
-    install seeds from v1 and succeeds offline. Without the v1 mirror: error
-    naming the remote and pin and pointing at `--update`.
+15. Git pin c0 exists only in the v1 mirror and no v1 ref reaches it
+    (force-pushed away on the remote): the v2 install copies c0 from v1 and
+    succeeds offline, both when `v2/raw/git/<R>` is missing and when it already
+    exists without c0. Without the v1 mirror: error naming the remote and pin
+    and pointing at `--update`.
 
 ## 6. Steps
 
@@ -345,6 +359,9 @@ continuous.
 ## 8. Assumptions and open questions
 
 Assumptions:
+- gix can fetch an unadvertised commit id over the local file transport, or
+  copy one commit's object closure between two bare repos. Checked by a spike
+  at the start of step 2 (the spike picks between the two; both meet 4.2).
 - Every future kind can express its address as two strings (locator, selector)
   and its content as one immutable pin string. This holds for git and npm
   (locator `registry-url/name`, selector a range, pin a version plus integrity
