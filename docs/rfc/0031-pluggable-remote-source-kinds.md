@@ -37,7 +37,8 @@ Done when:
    locks, records refs, self-heals and prunes through the core. The core,
    lockfile, refs and prune code are unchanged to add it.
 3. The lockfile and refs use one kind-neutral shape (section 4.3). Existing
-   `1.0.0` files are read and rewritten as `2.0.0` on the next save.
+   Files in the old shape (top-level `git` key) are read and rewritten in the
+   new shape on the next save; the `version` tag stays `1.0.0`.
 4. Each kind has its own namespace in the store, so two kinds whose slugs are
    the same string never share a lock, mirror or tree.
 5. `SourceConfig` is mapped to `RemoteSource` in one function. No call site
@@ -48,7 +49,7 @@ Done when:
 ### Out of scope
 
 - The HTTP or npm registry kind (auth, metadata, tarballs, SRI, extraction).
-- Writing the `1.0.0` lockfile or refs formats. Breaking change accepted,
+- Writing the old lockfile or refs shape, or bumping their version. Breaking change accepted,
   since omni is pre-release.
 - Migrating trees from the v1 store layout in place (section 4.2).
 - Dependency resolution between sources.
@@ -69,7 +70,8 @@ Done when:
 - `store_slug` is an injective encoding of a URL into one path segment. It is
   reusable for any kind whose locator is a URL.
 - The lockfile and refs are serde-tagged enums (`version: "1.0.0"`). An
-  unknown version fails to parse, so an older omni refuses a `2.0.0` file
+  unknown version fails to parse. Unknown *fields* are ignored today, which is
+why 4.3 adds `deny_unknown_fields`
   instead of silently dropping entries it doesn't know.
 - `LockfileDataV1_0_0` and `RefSetDataV1_0_0` each have exactly one field,
   `git`.
@@ -154,7 +156,7 @@ pub struct KindContext<'a, TSys> {
 Core algorithm (moved out of `materialize_git` unchanged in behavior):
 
 1. Look up the locked pin and validate it as one safe segment before any
-   path join (lockfile loading also rejects unsafe pins in `1.0.0` and `2.0.0`
+   path join (lockfile loading also rejects unsafe pins in both the old and new shape
    files). If the tree is complete, mark it used and return (no lock).
 2. Take `locks/<kind>/<slug>.lock` and `check_layout`.
 3. `kind.resolve(ctx, spec, locked)`, then validate the pin as a safe segment.
@@ -232,11 +234,11 @@ holds it; keep the v1 directories while any older omni is still in use. Run
 `omni remote-sources install` in each workspace first to copy what they pin. A
 `--legacy` flag is not added (nothing would be left after a release).
 
-### 4.3 Lockfile and refs `2.0.0`
+### 4.3 Lockfile and refs: new shape, version stays `1.0.0`
 
 ```json
 {
-  "version": "2.0.0",
+  "version": "1.0.0",
   "sources": {
     "git": {
       "https://example.com/a.git": { "main": { "pin": "c1…" } }
@@ -246,25 +248,32 @@ holds it; keep the v1 directories while any older omni is still in use. Run
 ```
 
 Shape: `sources: Map<kind, Map<locator, Map<selector, { pin }>>>`, sorted at
-every level, for both `lock.json` and `refs/<id>.json`.
+every level, for both `lock.json` and `refs/<id>.json`. The `version` tag is
+not bumped: omni is pre-release and the owner accepts the break, so
+`LockfileDataV1_0_0` and `RefSetDataV1_0_0` change shape in place.
 
-- **Read:** `2.0.0`, or `1.0.0` converted as `git.<uri>.<rev>.commit` to
-  `sources.git.<uri>.<rev>.pin`.
-- **Write:** `2.0.0` only.
-- An unknown kind in a `2.0.0` file, written by a newer omni, is an error that
-  names the kind, never dropped. Dropping it would delete the newer omni's
-  pins on save.
+- **Read:** the new shape. A file that still has the old top-level
+  `git: {<uri>: {<rev>: {commit}}}` key is converted to
+  `sources.git.<uri>.<rev>.pin` on load. Without this, serde would ignore the
+  unknown `git` key and the next save would silently drop every pin.
+- **Write:** the new shape only, so the old `git` key disappears on the next
+  save.
+- Unknown fields (`#[serde(deny_unknown_fields)]`) and an unknown kind under
+  `sources` are load errors that name the field or kind, never ignored:
+  ignoring them would delete a newer omni's pins on save.
+- An older omni reading a new-shape file fails (its struct requires `git`); it
+  never silently overwrites it.
 - API: `Lockfile::{pin(kind, locator, selector), lock_pin(..), pins() ->
   Vec<(kind, locator, selector, pin)>, remove(..)}`. The `git_*` methods are
   removed.
 
-Decision (owner: breaking change allowed):
+Decision (owner: breaking change allowed, no version bump):
 
 | Option | Cost | Chosen |
 | --- | --- | --- |
-| Generic `2.0.0`, read `1.0.0` | One-time diff, older omni can't read it | Yes: a new kind needs no format change; reading `1.0.0` is a few lines and avoids silently re-resolving every branch |
-| Additive `1.1.0`, one section per kind | Format change for every new kind | No |
-| `2.0.0` with no `1.0.0` reader | Users must delete the lockfile, and every pin re-resolves to the current branch head | No |
+| Change the `1.0.0` shape in place, convert the old `git` key on load | One-time diff; older omni can't read the file | Yes: no version machinery for a pre-release format; a new kind needs no format change; the converter is a few lines and avoids silently re-resolving every branch |
+| Bump to `2.0.0` and keep a `1.0.0` reader | A second tagged variant to carry for a format that has no released users | No |
+| Change the shape, no converter | Users must delete the lockfile and every pin re-resolves to the current branch head; worse, without `deny_unknown_fields` the old pins are silently dropped | No |
 
 ### 4.4 Call sites and prune
 
@@ -295,10 +304,10 @@ It resolves to the snapshot's content hash and exports by copying. Workspaces
 P and U share one store.
 
 Happy path:
-1. P installs R@main with an existing `1.0.0` lockfile pinning c1. No network
+1. P installs R@main with an existing old-shape lockfile pinning c1. No network
    (c1 in mirror) once `v2/raw/git/<R>` exists. Otherwise it is one fetch.
    The tree is at `v2/trees/git/<R>/c1`. The lockfile is rewritten as
-   `2.0.0` with `sources.git.<R>.main.pin = c1`, and the refs file the same.
+   in the new shape (`version` still `1.0.0`) with `sources.git.<R>.main.pin = c1`, and the refs file the same.
 2. P materializes `fake:<dir>@s1` via `materialize_with`. The tree is at
    `v2/trees/fake/<slug>/<hash>`, the lockfile gains `sources.fake...`, and
    `remote-sources prune --dry-run --all` lists both entries with their kinds.
@@ -323,7 +332,8 @@ Edge cases and failure paths:
    no lock entry.
 9. A deleted fake tree with an intact raw dir is re-exported. A failed
    `resolve` with no raw dir gives an error that names the kind and locator.
-10. A `2.0.0` lockfile with `sources.registry` (unknown here): load fails with
+10. A lockfile with `sources.registry` (unknown here), or with an unknown
+    top-level field: load fails with
     an error that names `registry`, and the file is unchanged.
 11. `v2/VERSION` = 3: refuse, as in RFC 0027.
 12. `--update` invalidates through `invalidate(&RemoteSource)` for both kinds.
@@ -344,10 +354,10 @@ Edge cases and failure paths:
 
 | # | Outcome | Depends on | Check | Undo |
 | --- | --- | --- | --- | --- |
-| 1 | Lockfile and refs `2.0.0` (read `1.0.0`, write `2.0.0`, unknown kind is an error), generic `Lockfile` API. Git callers adapted; `.omni/sources/lock.json` regenerated | none | Round-trip, `1.0.0` conversion and unknown-kind and unsafe-pin unit tests (examples 10, 13). All existing tests and `remote-sources` e2e pass | Revert, then restore `lock.json` from git. A `2.0.0` file elsewhere can be deleted and reinstalled (pins re-resolve) |
+| 1 | Lockfile and refs new shape under `1.0.0` (convert the old `git` key on load, write the new shape, unknown field or kind is an error), generic `Lockfile` API. Git callers adapted; `.omni/sources/lock.json` regenerated | none | Round-trip, old-shape conversion and unknown-kind and unsafe-pin unit tests (examples 10, 13). All existing tests and `remote-sources` e2e pass | Revert, then restore `lock.json` from git. A new-shape file elsewhere can be deleted and reinstalled (pins re-resolve) |
 | 2 | `SourceKind` trait, `KindRegistry`, generic core (`materialize_with`), git impl, v2 layout under `<store>/v2/`, pin validation, projection tail recognition | 1 | Fake kind integration tests (examples 2–4, 7–9, 11, 14–16). RFC 0027 examples. Example 5 and 6 tests. Projection moved-store tests | Revert. `v2/` is orphaned and harmless; v1 data was never touched |
 | 3 | `remote_source_for` mapping replaces the 11 constructions; `invalidate`/`locked_pin`; kind-aware `StoreEntry`, prune filter and output | 2 | `rg 'RemoteSource::Git \{'` finds only the mapping and the git impl. Prune unit and e2e tests with `kind` (example 12). CLI and MCP snapshots updated | Revert |
-| 4 | Docs: store reference (v2 layout, v1 cleanup), lockfile `2.0.0`, release note (breaking), contributor pattern "adding a source kind" in `docs/patterns/` | 1–3 | Site build. The pattern doc walks through the fake kind | Revert |
+| 4 | Docs: store reference (v2 layout, v1 cleanup), lockfile shape, release note (breaking), contributor pattern "adding a source kind" in `docs/patterns/` | 1–3 | Site build. The pattern doc walks through the fake kind | Revert |
 
 The riskiest part is step 1, which changes a git-tracked format and touches
 every git caller. It goes first so the rest builds on settled data.
@@ -363,7 +373,7 @@ continuous.
 
 | Risk | Likelihood / impact | Mitigation |
 | --- | --- | --- |
-| `1.0.0` to `2.0.0` conversion loses or alters a pin | Low / high (silent re-resolve) | Conversion tests on real fixture files. Step 1 diff of `.omni/sources/lock.json` reviewed by hand: every pin is the same |
+| Old-to-new shape conversion loses or alters a pin | Low / high (silent re-resolve) | Conversion tests on real fixture files. Step 1 diff of `.omni/sources/lock.json` reviewed by hand: every pin is the same |
 | A newer omni's kind is dropped by an older omni on save | Medium / high | An unknown kind is a load error, never ignored (example 10) |
 | A kind returns an unsafe pin or slug, escaping the store | Low / high | The core validates both as single safe segments before any path join (example 7) |
 | A kind writes outside `dest` and `raw_dir` | Low / medium | Documented contract. The fake kind test asserts nothing else changed. The registry RFC must cover extraction safety |
@@ -389,8 +399,8 @@ Assumptions:
   this workspace.
 
 Decided with the owner:
-1. Breaking lockfile change accepted (pre-release). Generic `2.0.0` with a
-   `1.0.0` reader.
+1. Breaking lockfile change accepted (pre-release). The shape changes in place
+   and the version stays `1.0.0`; the old `git` key is converted on load.
 2. The registry kind is out of scope, and extensibility is proven with a fake
    kind.
 
@@ -408,7 +418,7 @@ Open questions: none that block step 1.
 ## 10. Status
 
 - [ ] Plan review
-- [ ] Step 1: lockfile and refs `2.0.0`
+- [ ] Step 1: lockfile and refs new shape
 - [ ] Step 2: `SourceKind` core, git impl, v2 layout
 - [ ] Step 3: single mapping, kind-aware prune
 - [ ] Step 4: docs
