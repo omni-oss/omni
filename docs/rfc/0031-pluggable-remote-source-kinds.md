@@ -97,10 +97,19 @@ Done when:
 ```rust
 /// Kind-neutral address of one source: everything the core needs, as strings.
 pub struct SourceSpec {
-    /// Stable lockfile/refs key for the place the source lives (git: the URL).
+    /// Stable lockfile/refs key for the place the source lives, in canonical
+    /// form and without credentials (git: see "canonical locator" below).
     pub locator: String,
     /// What the user asked for at that place (git: a rev; registry: a range).
     pub selector: String,
+    /// The address as configured, credentials included (git: the URL from
+    /// the source config, userinfo intact). In memory only: never serialized,
+    /// never part of a lockfile or refs key, never used for slugs, and its
+    /// `Debug`/`Display` redact userinfo (as `omni_redact` does for git today).
+    /// `resolve` and `export` connect with this, not with `locator`.
+    /// `Connection` is a new newtype in `omni_remote_source` with no `Serialize`
+    /// and a redacting `Debug`.
+    pub connection: Connection,
 }
 
 /// An immutable content id produced by `resolve`, in canonical form (git: the
@@ -119,10 +128,16 @@ pub trait SourceKind<TSys: RemoteSourceSys>: Send + Sync {
     /// and a safe segment.
     fn id(&self) -> &'static str;
 
-    /// One path segment naming the place (git: exactly `store_slug(uri)`, so
-    /// v1 seeding finds the same name). Must be injective over `spec.locator`.
-    /// The core applies the safe-segment rule; a slug that is too long or not
-    /// lowercase-safe is replaced by `h-<sha256 hex of the slug>`.
+    /// One path segment naming the place (git: `store_slug(uri)`). Must be
+    /// injective over `spec.locator`. The core turns it into the v2 slug: a
+    /// slug that is too long, not lowercase-safe, or starts with `h-` is
+    /// replaced by `h-<sha256 hex of the slug>`. Only hashed slugs start with
+    /// `h-`, so a hashed and a literal slug never collide. (No real git slug
+    /// starts with `h-`: it starts with the encoded scheme.)
+    ///
+    /// v1 seeding does **not** use this v2 slug: the git kind looks up the v1
+    /// mirror with the raw legacy `store_slug(uri)`, exactly as v1 wrote it,
+    /// even when the v2 slug was hashed.
     fn slug(&self, spec: &SourceSpec) -> String;
 
     /// Turn `spec` (and the locked pin, if any) into a pin. May fetch into the
@@ -165,10 +180,19 @@ pub struct KindContext<'a, TSys> {
 - `SourceKind`, `KindContext` and `KindConfig` are `#[doc(hidden)]` and
   unstable until the registry RFC settles credentials, offline policy and
   per-pin metadata (such as an integrity to verify on export).
-- A locator never contains credentials. The git locator is `Url::as_str()` of
-  the parsed URL with userinfo removed, so old-shape keys (deserialized as
-  `Url`) and new-shape strings compare equal. Lockfile keys today are the full
-  `Url`, which can include userinfo; step 1 strips it on conversion.
+- A locator never contains credentials. **Canonical git locator**, applied
+  identically to converted old-shape keys and to every runtime `SourceSpec`
+  (one function, `canonical_git_locator(&Url) -> String`): parse with `url`
+  (lowercases scheme and host, drops a default port), remove userinfo, strip
+  one trailing `/` from the path, then `as_str()`. A `.git` suffix is not
+  removed (today's lockfile keys keep it; the store slug already ignores it).
+  Lockfile keys today are the full `Url`, which can include userinfo; step 1
+  strips it on conversion.
+- Credentials still reach the fetch: the git kind connects with
+  `spec.connection`, the configured URL with userinfo intact, exactly as
+  `fetch_bare` receives it today. It is redacted in logs and errors, and it is
+  never written anywhere. This is settled in step 1 together with the
+  lockfile change, so an authenticated fetch that works today keeps working.
 - `RemoteSource` stays a closed, serde enum (`Git { uri, rev }`, later
   `Registry { .. }`). It gains `fn kind_id(&self) -> &'static str` and
   `fn spec(&self) -> SourceSpec`. The manager holds the kind impls in a
@@ -255,9 +279,14 @@ commit from v1 before any network fetch:
 - Before reading `git/`, it reads the root `VERSION` read-only and seeds only
   if it is missing or `1`. v2 never creates or rewrites the root `VERSION`.
 - If `v2/raw/git/<slug>` does not exist yet, the simpler form is used: copy the
-  whole v1 bare directory (it keeps unreachable objects v1 has not collected),
-  then write the pin ref once the locked commit resolves. The closure copy is
-  used only when a v2 mirror already exists without the commit.
+  whole v1 bare directory (it keeps unreachable objects v1 has not collected)
+  into `v2/.pending/<unique>`, never straight into place. In the pending copy,
+  check that the locked commit's whole object closure is present (a
+  connectivity walk from the commit), write `refs/omni/pins/<commit>`, then
+  rename the directory to `v2/raw/git/<slug>`. An interrupted copy leaves only
+  a pending directory, so copied v1 refs can never make a half-copied mirror
+  look complete; the next run starts over. The closure copy is used only when
+  a v2 mirror already exists without the commit.
 
 The network fetch runs only if the commit is still missing. When neither
 mirror holds it, the error names the remote and the commit and says to run
@@ -315,12 +344,21 @@ not bumped: omni is pre-release and the owner accepts the break, so
   `flatten` is not used).
 - **Read:**
   - new shape only: as is;
-  - old shape only (top-level `git`): converted to `sources.git.<uri>.<rev>.pin`,
-    with one `info` log that the file was converted;
+  - old shape only (top-level `git`): converted to
+    `sources.git.<canonical locator>.<rev>.pin`, with one `info` log that the
+    file was converted;
   - both keys (a text merge between an old and an upgraded branch, or a hand
-    edit): `git` is merged into `sources.git`; the same `(uri, rev)` with
-    different pins is an error naming both pins;
-  - neither key: empty.
+    edit): `git` is merged into `sources.git`;
+  - in either case, entries are merged one at a time, whichever map supplied
+    them. Two entries that land on the same `(kind, locator, selector)` (for
+    example old keys that differ only in userinfo or a trailing `/`) are fine
+    when their pins are equal and an error naming both pins when they differ.
+    Nothing is overwritten silently;
+  - neither key (a version-only file left by a merge or edit): a load error.
+    Treating it as empty would let the next install re-resolve every branch
+    and save different pins. To keep that rule simple, a written file always
+    contains `sources`, even as `{}`, and a missing file (not an empty one)
+    is what a fresh workspace has.
   Applies to `lock.json` and every `refs/*.json`.
 - **Write:** the new shape only. Because `persist_pins` saves on every
   install, the first install after upgrading rewrites a tracked old-shape
@@ -441,17 +479,32 @@ Edge cases and failure paths:
 16. The v1 copy is interrupted after c0's commit object but before its trees
     (fault injected in the test): v2 has c0 but no `refs/omni/pins/c0`, so the
     next install redoes the copy, writes the ref and exports c0.
-17. Old-shape keys `https://host/r.git/`, `https://host:443/r.git` and
-    `https://user:tok@host/r.git` convert to the same locator as the parsed
-    `https://host/r.git`, with no userinfo in the written file.
+17. Old-shape keys `https://host/r.git/`, `https://HOST:443/r.git` and
+    `https://user@host/r.git` (and one with a token in userinfo, built in the
+    test rather than written in fixtures) all convert to `https://host/r.git`,
+    with no userinfo in the written file, and a runtime `SourceSpec` for any of
+    them gets the same locator. When two of them carry different pins for one
+    rev, the load fails naming both pins; when the pins agree it succeeds.
+18. A version-only file (`{"version":"1.0.0"}`) fails to load; the bytes are
+    unchanged.
+19. A git source configured with userinfo (a local test server that requires
+    it) still fetches after step 1, and neither the lockfile, the refs file,
+    the slug nor any log line contains the credential.
+20. The v1 whole-directory copy is interrupted after refs and the commit
+    object but before its trees: no `v2/raw/git/<slug>` exists afterwards, and
+    the next install redoes the copy and succeeds.
+21. A git remote whose legacy slug is not lowercase-safe (uppercase path): its
+    v2 slug is `h-…`, and seeding still finds the v1 mirror under the legacy
+    slug. A fake kind returning the literal slug `h-abc` is hashed, so it
+    cannot collide with a hashed slug.
 
 ## 6. Steps
 
 | # | Outcome | Depends on | Check | Undo |
 | --- | --- | --- | --- | --- |
-| 1 | Lockfile and refs new shape under `1.0.0` (raw-struct conversion of the old `git` key in `lock.json` and refs, both-keys merge, write the new shape, unknown field is an error; `sources` keyed by plain strings), generic `Lockfile` API. Git callers adapted; `.omni/sources/lock.json` regenerated | none | Round-trip, conversion and unknown-field unit tests (example 10 a, b, d and the accepted cases), unsafe-pin tests (example 13), locator conversion (example 17). All existing tests and `remote-sources` e2e pass | Revert, then restore `lock.json` from git. A new-shape file elsewhere can be deleted and reinstalled (pins re-resolve) |
+| 1 | Lockfile and refs new shape under `1.0.0` (raw-struct conversion of the old `git` key in `lock.json` and refs, both-keys merge, write the new shape, unknown field is an error; `sources` keyed by plain strings), generic `Lockfile` API. Git callers adapted; `.omni/sources/lock.json` regenerated | none | Round-trip, conversion and unknown-field unit tests (example 10 a, b, d and the accepted cases), unsafe-pin tests (example 13), locator conversion and conflicts (examples 17, 18), credentials reach the fetch and are never persisted (example 19). All existing tests and `remote-sources` e2e pass | Revert, then restore `lock.json` from git. A new-shape file elsewhere can be deleted and reinstalled (pins re-resolve) |
 | 2a | `SourceKind` trait, `KindRegistry`, generic core (`materialize_with`), git impl, v2 layout under `<store>/v2/`, pin and slug safe-segment rule, manager-side unknown-kind check. No v1 seed | 1 | Fake kind integration tests (examples 2–4, 7–9, 10c, 11, 14), core-does-not-import-git test, `git_kind.slug == store_slug` byte-for-byte test. RFC 0027 examples. Example 6 | Revert. `v2/` is orphaned and harmless; v1 data was never touched |
-| 2b | v1 seed: spike first (gix explicit want vs object copy), then whole-dir copy when v2 is missing and closure copy plus `refs/omni/pins/<commit>` otherwise; lock order v2 then v1; root `VERSION` check | 2a | Examples 15, 16 (fault injection) | Revert; installs fall back to the network as in 2a |
+| 2b | v1 seed: spike first (gix explicit want vs object copy), then whole-dir copy when v2 is missing and closure copy plus `refs/omni/pins/<commit>` otherwise; lock order v2 then v1; root `VERSION` check | 2a | Examples 15, 16, 20 (fault injection), 21 | Revert; installs fall back to the network as in 2a |
 | 2c | Projections: three-component tail with the guarded legacy form; `sync` relinks when the target differs from `source_abs` | 2a | Example 5; cross-kind same slug and pin does not match; upgrade then sync leaves every link target under `v2/` | Revert; links keep working while v1 exists |
 | 3 | `remote_source_for` mapping replaces the 11 constructions; `invalidate`/`locked_pin`; kind-aware `StoreEntry`, prune filter and output; every git-specific site in 4.4 | 2a | `rg 'RemoteSource::Git \{' --glob '!**/tests/**'` finds only the mapping, the git impl and the `RemoteSource` dispatch arms. Prune unit and e2e tests with `kind` (example 12). CLI and MCP snapshots updated | Revert |
 | 4 | Docs: store reference (v2 layout, v1 cleanup), lockfile shape with a short format history (before 0031: `git`; after: `sources`) and the `missing field git` explanation, release note (breaking), contributor pattern "adding a source kind" in `docs/patterns/` | 1–3 | Site build. The pattern doc walks through the fake kind | Revert |
