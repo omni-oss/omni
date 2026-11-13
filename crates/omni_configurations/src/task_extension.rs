@@ -12,24 +12,24 @@ use thiserror::Error;
 
 omni_codes::prefixes!("task_extension");
 
-use crate::{
-    ProjectConfiguration, TaskConfiguration, TaskConfigurationLongForm,
-};
+use crate::{ProjectConfiguration, TaskConfiguration, TaskLayer};
 
 #[derive(Debug, Clone)]
-struct TaskExtensionNode {
+struct TaskExtensionNode<T> {
     name: String,
     extends: Vec<String>,
-    task: TaskConfigurationLongForm,
+    task: T,
 }
 
-impl Merge for TaskExtensionNode {
+impl<T: Merge> Merge for TaskExtensionNode<T> {
     fn merge(&mut self, other: Self) {
         self.task.merge(other.task);
     }
 }
 
-impl ExtensionGraphNode for TaskExtensionNode {
+impl<T: Merge + Clone + std::fmt::Debug> ExtensionGraphNode
+    for TaskExtensionNode<T>
+{
     type Id = String;
 
     fn id(&self) -> &Self::Id {
@@ -64,6 +64,32 @@ impl ProjectConfiguration {
     }
 }
 
+/// Merge every node into the nodes it extends, in extension order.
+fn resolve_nodes<T: Merge + Clone + std::fmt::Debug>(
+    nodes: Vec<TaskExtensionNode<T>>,
+) -> Result<Vec<TaskExtensionNode<T>>, TaskExtensionError> {
+    let task_names = nodes
+        .iter()
+        .map(|node| node.name.clone())
+        .collect::<HashSet<_>>();
+
+    for node in &nodes {
+        for extendee in &node.extends {
+            if !task_names.contains(extendee) {
+                return Err(TaskExtensionErrorInner::UnknownExtendee {
+                    task: node.name.clone(),
+                    extendee: extendee.clone(),
+                }
+                .into());
+            }
+        }
+    }
+
+    let mut graph =
+        ExtensionGraph::from_nodes(nodes).map_err(map_graph_error)?;
+    graph.get_or_process_all_nodes().map_err(map_graph_error)
+}
+
 fn resolve_task_extensions(
     tasks: &mut DictConfig<TaskConfiguration>,
 ) -> Result<(), TaskExtensionError> {
@@ -96,26 +122,7 @@ fn resolve_task_extensions(
         })
         .collect::<Vec<_>>();
 
-    let task_names = nodes
-        .iter()
-        .map(|node| node.name.clone())
-        .collect::<HashSet<_>>();
-
-    for node in &nodes {
-        for extendee in &node.extends {
-            if !task_names.contains(extendee) {
-                return Err(TaskExtensionErrorInner::UnknownExtendee {
-                    task: node.name.clone(),
-                    extendee: extendee.clone(),
-                }
-                .into());
-            }
-        }
-    }
-
-    let mut graph =
-        ExtensionGraph::from_nodes(nodes).map_err(map_graph_error)?;
-    let resolved = graph.get_or_process_all_nodes().map_err(map_graph_error)?;
+    let resolved = resolve_nodes(nodes)?;
 
     let map = tasks.as_map_mut();
     map.clear();
@@ -130,6 +137,60 @@ fn resolve_task_extensions(
         task.extends = None;
 
         map.insert(node.name, TaskConfiguration::long_form(task));
+    }
+
+    Ok(())
+}
+
+/// [`resolve_task_extensions`] over presence-aware task layers, so omitted
+/// fields stay omitted through task inheritance.
+pub(crate) fn resolve_task_layer_extensions(
+    tasks: &mut DictConfig<TaskLayer>,
+) -> Result<(), TaskExtensionError> {
+    let needs_resolution = tasks.values().any(|task| match task {
+        TaskLayer::LongForm(long_form) => {
+            long_form.base == Some(true) || long_form.extends.is_some()
+        }
+        TaskLayer::ShortForm(_) => false,
+    });
+
+    if !needs_resolution {
+        return Ok(());
+    }
+
+    let nodes = tasks
+        .iter()
+        .map(|(name, task)| {
+            let task = task.clone().into_long_form(name);
+            let extends = task
+                .extends
+                .as_ref()
+                .map(SingleOrMany::to_vec)
+                .unwrap_or_default();
+
+            TaskExtensionNode {
+                name: name.clone(),
+                extends,
+                task,
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let resolved = resolve_nodes(nodes)?;
+
+    let map = tasks.as_map_mut();
+    map.clear();
+
+    for node in resolved {
+        if node.task.base == Some(true) {
+            continue;
+        }
+
+        let mut task = node.task;
+        task.base = None;
+        task.extends = None;
+
+        map.insert(node.name, TaskLayer::LongForm(Box::new(task)));
     }
 
     Ok(())
@@ -199,7 +260,7 @@ mod tests {
     use omni_command_config::CommandConfig;
 
     use super::*;
-    use crate::TaskEnvConfiguration;
+    use crate::{TaskConfigurationLongForm, TaskEnvConfiguration};
 
     fn tasks(
         items: Vec<(&str, TaskConfiguration)>,

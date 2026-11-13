@@ -23,7 +23,9 @@ use crate::{
         ExtractedDataValidationErrors, ExtractedDataValidator,
     },
     project_config_entry::{ProjectConfigEntry, is_discovered},
-    project_config_loader::{ProjectConfigLoader, ProjectConfigLoaderError},
+    project_config_loader::{
+        LoadedProjects, ProjectConfigLoader, ProjectConfigLoaderError,
+    },
     project_data_extractor::{ProjectDataExtractor, ProjectDataExtractorError},
     project_discovery::{
         DiscoveredPath, ProjectDiscovery, ProjectDiscoveryError,
@@ -34,8 +36,8 @@ use omni_core::{ExtensionGraph, ExtensionGraphError};
 use system_traits::{FsMetadataValue as _, impls::RealSys as RealSysSync};
 
 use omni_configurations::{
-    LoadConfigError, ProjectConfiguration, RemoteCacheConfiguration,
-    TaskExtensionError, WorkspaceConfiguration,
+    FinalizedProject, LoadConfigError, LoadedLayer, ProjectConfiguration,
+    RemoteCacheConfiguration, TaskExtensionError, WorkspaceConfiguration,
 };
 
 #[derive(Clone, PartialEq, Debug)]
@@ -394,9 +396,9 @@ impl<TSys: ContextSys> Context<TSys> {
         let entries = loaded
             .configs
             .into_iter()
-            .map(|config| ProjectConfigEntry {
-                discovered: is_discovered(&config, &discovered),
-                config,
+            .map(|project| ProjectConfigEntry {
+                discovered: is_discovered(&project.config, &discovered),
+                config: project.config,
             })
             .collect();
 
@@ -545,18 +547,15 @@ impl<TSys: ContextSys> Context<TSys> {
             })
             .collect::<Vec<_>>();
 
-        let project_configs =
-            ProjectConfigLoader::<TSys>::new(&self.sys, self.root_dir())
-                .load_project_configs(&discovered_paths)
-                .await?;
-
-        let mut extension_graph = ExtensionGraph::from_nodes(project_configs)?;
-        let mut configs = extension_graph.get_or_process_all_nodes()?;
-
-        resolve_task_extensions_for_projects(&mut configs)?;
+        let LoadedProjects {
+            projects,
+            extension_graph,
+        } = ProjectConfigLoader::<TSys>::new(&self.sys, self.root_dir())
+            .load_project_configs(&discovered_paths)
+            .await?;
 
         Ok(LoadedProjectConfigs {
-            configs,
+            configs: projects,
             discovered_paths,
             extension_graph,
         })
@@ -788,22 +787,9 @@ fn get_remote_cache_configuration(
 }
 
 struct LoadedProjectConfigs {
-    configs: Vec<ProjectConfiguration>,
+    configs: Vec<FinalizedProject>,
     discovered_paths: Vec<PathBuf>,
-    extension_graph: ExtensionGraph<ProjectConfiguration>,
-}
-
-#[allow(clippy::result_large_err)]
-fn resolve_task_extensions_for_projects(
-    project_configs: &mut [ProjectConfiguration],
-) -> Result<(), ContextError> {
-    for project in project_configs.iter_mut() {
-        if !project.base {
-            project.resolve_task_extensions()?;
-        }
-    }
-
-    Ok(())
+    extension_graph: ExtensionGraph<LoadedLayer>,
 }
 
 omni_codes::prefixes!("workspace");
