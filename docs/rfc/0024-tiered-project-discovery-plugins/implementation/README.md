@@ -35,29 +35,47 @@ The package-level waves further down are a coarse summary; the task graph supers
   They are written as expected results, not runnable tests; turn the relevant ones into
   real tests inside the package that owns them.
 
+## Status
+
+Bug fixes B01-B04 and refactors R01-R08 are merged. Features (F) and plugins (P)
+have not been started. This is temporary tracking: remove or fold it into the
+tables once the F/P work begins.
+
+Known gaps carried forward from the merged refactors:
+
+- Virtual projects can be represented and guarded (R07.1, R07.3) but discovery cannot
+  build one yet: `ProjectConfiguration.file` is still a required path (F07 or P05).
+- The `alias` key is not parsed, so alias transitions (R05) are only tested with
+  programmatically built aliases (F03).
+- A project's own config file is listed twice as a cache-key input
+  (`get_transitive_extendee_ids` includes the node itself). Kept so hashes stay
+  stable; de-duplicating it changes cache keys and needs a High-risk review.
+- `Interpolated` command operands apply value filters such as `upper` to the
+  placeholder, not the bound value (R03).
+
 ## Packages
 
 ### Bug fixes (existing behavior is wrong or unsafe)
 
-| ID                                                  | Title                                                     | Depends on | Size |
-| --------------------------------------------------- | --------------------------------------------------------- | ---------- | ---- |
-| [B01](bug-fixes/B01-cache-lookup-honors-enabled.md) | Cache lookup and replay ignore `cache.enabled: false`     | none       | S    |
-| [B02](bug-fixes/B02-glob-side-presence.md)          | Omitted glob include/exclude side decodes as empty replace | none       | M    |
-| [B03](bug-fixes/B03-collection-envelope-validation.md) | Dictionary/list decoding can silently drop operator siblings | none    | M    |
-| [B04](bug-fixes/B04-uncached-dependency-demotion.md) | Uncached dependencies feed a zero hash into cache keys    | B01        | M    |
+| ID                                                  | Title                                                     | Depends on | Size | Status |
+| --------------------------------------------------- | --------------------------------------------------------- | ---------- | ---- | --- |
+| [B01](bug-fixes/B01-cache-lookup-honors-enabled.md) | Cache lookup and replay ignore `cache.enabled: false`     | none       | S    | Done ([#83](https://github.com/omni-oss/omni/pull/83)) |
+| [B02](bug-fixes/B02-glob-side-presence.md)          | Omitted glob include/exclude side decodes as empty replace | none       | M    | Done ([#83](https://github.com/omni-oss/omni/pull/83)) |
+| [B03](bug-fixes/B03-collection-envelope-validation.md) | Dictionary/list decoding can silently drop operator siblings | none    | M    | Done ([#83](https://github.com/omni-oss/omni/pull/83)) |
+| [B04](bug-fixes/B04-uncached-dependency-demotion.md) | Uncached dependencies feed a zero hash into cache keys    | B01        | M    | Done ([#85](https://github.com/omni-oss/omni/pull/85)) |
 
 ### Refactoring (restructure without intended behavior change)
 
-| ID                                                       | Title                                                    | Depends on     | Size |
-| -------------------------------------------------------- | -------------------------------------------------------- | -------------- | ---- |
-| [R01](refactoring/R01-extract-source-configurations.md)  | Extract `omni_source_configurations`                     | none           | S    |
-| [R02](refactoring/R02-workspace-path-types.md)           | Shared `WorkspacePath` / `ProjectRootId` types           | none           | S    |
-| [R03](refactoring/R03-literal-command-operands.md)       | Literal command operands separate from expressions       | none           | L    |
-| [R04](refactoring/R04-presence-aware-layers.md)          | Presence-aware recursive configuration layers            | B02, B03       | XL   |
-| [R05](refactoring/R05-task-declaration-composition.md)   | Field-wise task composition and atomic alias transitions | R04            | M    |
-| [R06](refactoring/R06-explicit-pattern-inputs.md)        | Explicit exact/pattern inputs in planner and API         | none           | M    |
-| [R07](refactoring/R07-virtual-identity-and-raw-layers.md) | Virtual project identity and raw layer traversal        | R04            | L    |
-| [R08](refactoring/R08-shared-local-cache-storage.md)     | Dependency-neutral local cache storage primitives        | none           | L    |
+| ID                                                       | Title                                                    | Depends on     | Size | Status |
+| -------------------------------------------------------- | -------------------------------------------------------- | -------------- | ---- | --- |
+| [R01](refactoring/R01-extract-source-configurations.md)  | Extract `omni_source_configurations`                     | none           | S    | Done ([#88](https://github.com/omni-oss/omni/pull/88)) |
+| [R02](refactoring/R02-workspace-path-types.md)           | Shared `WorkspacePath` / `ProjectRootId` types           | none           | S    | Done ([#87](https://github.com/omni-oss/omni/pull/87)) |
+| [R03](refactoring/R03-literal-command-operands.md)       | Literal command operands separate from expressions       | none           | L    | Done ([#92](https://github.com/omni-oss/omni/pull/92)); wire/serde form for Wasm transport pending |
+| [R04](refactoring/R04-presence-aware-layers.md)          | Presence-aware recursive configuration layers            | B02, B03       | XL   | Done: R04.1 [#92](https://github.com/omni-oss/omni/pull/92), R04.2-R04.4 [#94](https://github.com/omni-oss/omni/pull/94) |
+| [R05](refactoring/R05-task-declaration-composition.md)   | Field-wise task composition and atomic alias transitions | R04            | M    | Done ([#95](https://github.com/omni-oss/omni/pull/95)); `alias` key not parsed yet (F03) |
+| [R06](refactoring/R06-explicit-pattern-inputs.md)        | Explicit exact/pattern inputs in planner and API         | none           | M    | Done ([#89](https://github.com/omni-oss/omni/pull/89)) |
+| [R07](refactoring/R07-virtual-identity-and-raw-layers.md) | Virtual project identity and raw layer traversal        | R04            | L    | R07.1 [#94](https://github.com/omni-oss/omni/pull/94), R07.2 and R07.3 [#95](https://github.com/omni-oss/omni/pull/95); virtual projects cannot be built from discovery yet (F07/P05) |
+| [R08](refactoring/R08-shared-local-cache-storage.md)     | Dependency-neutral local cache storage primitives        | none           | L    | Done ([#92](https://github.com/omni-oss/omni/pull/92)) |
 
 ### Features (new capability useful on its own)
 
