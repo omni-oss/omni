@@ -8,7 +8,8 @@
 - **Affected crates:** `omni_remote_source`, `omni_lockfile`,
   `omni_remote_source_contributors`, `omni_api` (generator, projection, tool,
   remote_source operations), `omni_cli_core` (generator, `remote-sources prune`),
-  `omni_projections` (moved-store recognition), `apps/site` docs
+  `omni_projections` (moved-store recognition, relink after upgrade),
+  `omni_meta` (`expand.rs`, pin naming only), `apps/site` docs
 - **Related:** RFC 0027 (global remote-source store), RFC 0013
   (remote-sources install)
 
@@ -102,9 +103,14 @@ pub struct SourceSpec {
     pub selector: String,
 }
 
-/// An immutable content id produced by `resolve`. It is used as a path segment
-/// and a lockfile value. The core rejects it unless it is one safe segment
-/// (no separators, not `.`/`..`, not empty).
+/// An immutable content id produced by `resolve`, in canonical form (git: the
+/// full lowercase SHA). Used as a path segment and a lockfile value, and
+/// compared byte for byte with a locked pin. The core rejects it unless it is
+/// a *safe segment*: `[a-z0-9._-]`, 1 to 128 bytes, no leading `.`, and no
+/// `.manifest` or `.used` suffix (those names belong to the sibling markers).
+/// Lowercase only, so it cannot collide on a case-insensitive filesystem.
+/// Kinds encode anything else (e.g. a registry encodes a base64 integrity as
+/// lowercase hex).
 pub struct Pin(String);
 
 #[async_trait::async_trait]
@@ -113,13 +119,17 @@ pub trait SourceKind<TSys: RemoteSourceSys>: Send + Sync {
     /// and a safe segment.
     fn id(&self) -> &'static str;
 
-    /// One path segment naming the place (git: `store_slug(uri)`). Must be
-    /// injective over `spec.locator`.
+    /// One path segment naming the place (git: exactly `store_slug(uri)`, so
+    /// v1 seeding finds the same name). Must be injective over `spec.locator`.
+    /// The core applies the safe-segment rule; a slug that is too long or not
+    /// lowercase-safe is replaced by `h-<sha256 hex of the slug>`.
     fn slug(&self, spec: &SourceSpec) -> String;
 
     /// Turn `spec` (and the locked pin, if any) into a pin. May fetch into the
     /// kind's raw cache `raw_dir`. Called with the per-remote lock held.
-    /// `locked` is `None` on first use or after `invalidate`.
+    /// `locked` is `None` on first use or after `invalidate`. When `locked` is
+    /// `Some` and the raw cache already has it, must not use the network.
+    /// When `ctx.offline`, must not use the network at all.
     async fn resolve(
         &self,
         ctx: &KindContext<'_, TSys>,
@@ -141,17 +151,33 @@ pub trait SourceKind<TSys: RemoteSourceSys>: Send + Sync {
 
 pub struct KindContext<'a, TSys> {
     pub sys: &'a TSys,
-    /// `<store>/v2/raw/<kind>/<slug>/`, owned by the kind (git: the bare repo).
+    /// `<store>/v2/raw/<kind>/<slug>/`, written by the kind (git: the bare
+    /// repo). Deletion belongs to the core (prune), not the kind.
     pub raw_dir: PathBuf,
+    /// Placeholder for the registry RFC: no network allowed.
+    pub offline: bool,
+    /// Placeholder for the registry RFC (credentials, scope mapping). Empty for
+    /// git. Credentials are read from here, never from the locator.
+    pub config: &'a KindConfig,
 }
 ```
 
+- `SourceKind`, `KindContext` and `KindConfig` are `#[doc(hidden)]` and
+  unstable until the registry RFC settles credentials, offline policy and
+  per-pin metadata (such as an integrity to verify on export).
+- A locator never contains credentials. The git locator is `Url::as_str()` of
+  the parsed URL with userinfo removed, so old-shape keys (deserialized as
+  `Url`) and new-shape strings compare equal. Lockfile keys today are the full
+  `Url`, which can include userinfo; step 1 strips it on conversion.
 - `RemoteSource` stays a closed, serde enum (`Git { uri, rev }`, later
   `Registry { .. }`). It gains `fn kind_id(&self) -> &'static str` and
   `fn spec(&self) -> SourceSpec`. The manager holds the kind impls in a
-  `KindRegistry` (a static list keyed by `id`) and dispatches through it.
-- The manager's generic `materialize_with(kind, spec)` is public for tests, so
-  a fake kind can be exercised without adding a variant to `RemoteSource`.
+  `KindRegistry` keyed by `id`; production builds register the built-in kinds,
+  and tests can register more. That registry is also the set of kinds a
+  lockfile may contain (4.3).
+- The manager's `materialize_with(kind, spec)` is `#[doc(hidden)]` and exists
+  for tests, so a fake kind can be exercised without adding a variant to
+  `RemoteSource`.
   `materialize(&RemoteSource)` keeps its signature, so call sites don't change
   in step 2.
 - `MaterializedSource { root, pin: String }` and `RemoteSourceRef` are
@@ -173,6 +199,9 @@ Core algorithm (moved out of `materialize_git` unchanged in behavior):
    `tree::seal`, rename into `trees/<kind>/<slug>/<pin>`, write the manifest
    last. On error, remove the pending dir.
 5. Mark used. If nothing was locked, lock the pin.
+
+A test asserts the core module does not import `omni_git_utils`, so DoD 1 is
+checked mechanically.
 
 ### 4.2 Store layout v2
 
@@ -219,15 +248,33 @@ commit from v1 before any network fetch:
   after its objects). Commit presence alone never counts, so a copy
   interrupted after the commit object but before its trees and blobs is simply
   redone on the next run (copying an object that already exists is a no-op).
-- It runs under the v1 `locks/<slug>.lock` (and the v2 per-remote lock), so it
-  never reads a mirror a v1 omni is writing.
+- It runs under the v1 `locks/<slug>.lock`, taken while already holding the v2
+  per-remote lock. Invariant (code comment and review checklist): v2 lock
+  first, then v1 lock, never the reverse, and nothing else in v2 takes a v1
+  lock. A v1 omni takes only v1 locks, so no cycle is possible.
+- Before reading `git/`, it reads the root `VERSION` read-only and seeds only
+  if it is missing or `1`. v2 never creates or rewrites the root `VERSION`.
+- If `v2/raw/git/<slug>` does not exist yet, the simpler form is used: copy the
+  whole v1 bare directory (it keeps unreachable objects v1 has not collected),
+  then write the pin ref once the locked commit resolves. The closure copy is
+  used only when a v2 mirror already exists without the commit.
 
 The network fetch runs only if the commit is still missing. When neither
 mirror holds it, the error names the remote and the commit and says to run
 `omni remote-sources install --update` to re-lock, which changes the pin.
 v1 is only read, never written.
 
-`omni remote-sources prune` covers v2 only. The docs say that the v1
+`omni remote-sources prune` covers v2 only. As today, it removes a remote's
+raw dir once its last tree is gone. For git that also deletes
+`refs/omni/pins/*`, so a pin seeded from v1 that the remote no longer serves
+is lost to `prune` once v1 is gone too; the prune reference says so.
+
+**Links still pointing into v1.** A v1 link and its v2 target share the
+`<slug>/<pin>/<file>` tail, so `sync` would treat the link as current and keep
+it pointing into v1, which then breaks when v1 is deleted. `sync` therefore
+relinks whenever a link's target differs from the current `source_abs`, even
+when the tail matches and the pin is unchanged. The upgrade note says: run
+`omni projection sync` after upgrading, before deleting v1. The docs say that the v1
 directories can be deleted with `rm -rf` (the store is a cache) only when no
 omni process of any version is running on the machine: an older omni uses
 them, and a newer omni reads `git/` and `locks/` while copying a commit into
@@ -311,17 +358,26 @@ Decision (owner: breaking change allowed, no version bump):
 
 - One function, `omni_remote_source_contributors::remote_source_for(&SourceConfig)
   -> Option<RemoteSource>`, returns `None` for `Local`. `Registry` stays
-  unreachable (serde-skipped) until its RFC. It replaces the 11 `RemoteSource::Git
-  { .. }` constructions in `omni_api` (generator, projection, tool,
+  unreachable (serde-skipped) until its RFC. It replaces the 11 non-test `RemoteSource::Git
+  { .. }` constructions (match arms not counted) in `omni_api` (generator, projection, tool,
   remote_source), `omni_remote_source_contributors` (lib, pack, projection) and
   `omni_cli_core` (generator).
 - `StoreEntry` gains `kind`, and `StorePruneFilter::only` takes
   `(kind, remote, pin)`. The prune output and its MCP/JSON form add a `kind`
   column.
-- `omni_projections` moved-store recognition anchors on
-  `<kind>/<slug>/<pin>/<file>`. For a link into a v1 tree, it also accepts
-  `<slug>/<commit>/<file>` with an implied kind of `git`, so `sync` repairs a
-  v1 link instead of treating it as foreign.
+- `omni_projections` moved-store recognition (`same_store_file`, which
+  compares the last two components of the source root) anchors on three
+  components, `<kind>/<slug>/<pin>`. The legacy two-component form is
+  accepted only when the current kind is `git` and the component before
+  `<slug>` is `trees` (a v1 path). Without this, a `fake` and a `git` source
+  with equal slug and pin strings would match each other's links. A test
+  covers that case.
+- Every git-specific site is listed for step 3, not only constructions:
+  the dedup key `HashSet<(Url, String)>` in `omni_api` `remote_source.rs`; the
+  `(Url, String)` keys in `reconcile_pins` and `prune_lockfile_pins`; the
+  `git_pin`/`from_store` naming in `omni_api` `projection.rs` and
+  `omni_projections` `engine.rs`; `omni_lockfile` `sorted_view` (rewritten for
+  three levels in step 1); `omni_meta` `expand.rs` (`pin` naming).
 
 ### 4.5 Sandbox
 
@@ -345,8 +401,8 @@ Happy path:
    `remote-sources prune --dry-run --all` lists both entries with their kinds.
 
 Complexities:
-3. P and U concurrently materialize the same fake spec: one export, both
-   succeed (same per-remote lock path `v2/locks/fake/<slug>.lock`).
+3. P and U concurrently materialize the same fake spec: one export (the
+   fake `export` call count is 1), both succeed (same per-remote lock path `v2/locks/fake/<slug>.lock`).
 4. A git slug and a fake slug that are the same string do not collide (separate
    `<kind>` directories and locks).
 5. A projection symlink made under the v1 layout
@@ -385,22 +441,28 @@ Edge cases and failure paths:
 16. The v1 copy is interrupted after c0's commit object but before its trees
     (fault injected in the test): v2 has c0 but no `refs/omni/pins/c0`, so the
     next install redoes the copy, writes the ref and exports c0.
+17. Old-shape keys `https://host/r.git/`, `https://host:443/r.git` and
+    `https://user:tok@host/r.git` convert to the same locator as the parsed
+    `https://host/r.git`, with no userinfo in the written file.
 
 ## 6. Steps
 
 | # | Outcome | Depends on | Check | Undo |
 | --- | --- | --- | --- | --- |
-| 1 | Lockfile and refs new shape under `1.0.0` (raw-struct conversion of the old `git` key in `lock.json` and refs, both-keys merge, write the new shape, unknown field is an error; `sources` keyed by plain strings), generic `Lockfile` API. Git callers adapted; `.omni/sources/lock.json` regenerated | none | Round-trip, conversion and unknown-field unit tests (example 10 a, b, d and the accepted cases), unsafe-pin tests (example 13). All existing tests and `remote-sources` e2e pass | Revert, then restore `lock.json` from git. A new-shape file elsewhere can be deleted and reinstalled (pins re-resolve) |
-| 2 | `SourceKind` trait, `KindRegistry`, generic core (`materialize_with`), git impl, v2 layout under `<store>/v2/`, pin validation, manager-side unknown-kind check, projection tail recognition | 1 | Fake kind integration tests (examples 2–4, 7–9, 10c, 11, 14–16). RFC 0027 examples. Example 5 and 6 tests. Projection moved-store tests | Revert. `v2/` is orphaned and harmless; v1 data was never touched |
-| 3 | `remote_source_for` mapping replaces the 11 constructions; `invalidate`/`locked_pin`; kind-aware `StoreEntry`, prune filter and output | 2 | `rg 'RemoteSource::Git \{'` finds only the mapping and the git impl. Prune unit and e2e tests with `kind` (example 12). CLI and MCP snapshots updated | Revert |
+| 1 | Lockfile and refs new shape under `1.0.0` (raw-struct conversion of the old `git` key in `lock.json` and refs, both-keys merge, write the new shape, unknown field is an error; `sources` keyed by plain strings), generic `Lockfile` API. Git callers adapted; `.omni/sources/lock.json` regenerated | none | Round-trip, conversion and unknown-field unit tests (example 10 a, b, d and the accepted cases), unsafe-pin tests (example 13), locator conversion (example 17). All existing tests and `remote-sources` e2e pass | Revert, then restore `lock.json` from git. A new-shape file elsewhere can be deleted and reinstalled (pins re-resolve) |
+| 2a | `SourceKind` trait, `KindRegistry`, generic core (`materialize_with`), git impl, v2 layout under `<store>/v2/`, pin and slug safe-segment rule, manager-side unknown-kind check. No v1 seed | 1 | Fake kind integration tests (examples 2–4, 7–9, 10c, 11, 14), core-does-not-import-git test, `git_kind.slug == store_slug` byte-for-byte test. RFC 0027 examples. Example 6 | Revert. `v2/` is orphaned and harmless; v1 data was never touched |
+| 2b | v1 seed: spike first (gix explicit want vs object copy), then whole-dir copy when v2 is missing and closure copy plus `refs/omni/pins/<commit>` otherwise; lock order v2 then v1; root `VERSION` check | 2a | Examples 15, 16 (fault injection) | Revert; installs fall back to the network as in 2a |
+| 2c | Projections: three-component tail with the guarded legacy form; `sync` relinks when the target differs from `source_abs` | 2a | Example 5; cross-kind same slug and pin does not match; upgrade then sync leaves every link target under `v2/` | Revert; links keep working while v1 exists |
+| 3 | `remote_source_for` mapping replaces the 11 constructions; `invalidate`/`locked_pin`; kind-aware `StoreEntry`, prune filter and output; every git-specific site in 4.4 | 2a | `rg 'RemoteSource::Git \{' --glob '!**/tests/**'` finds only the mapping, the git impl and the `RemoteSource` dispatch arms. Prune unit and e2e tests with `kind` (example 12). CLI and MCP snapshots updated | Revert |
 | 4 | Docs: store reference (v2 layout, v1 cleanup), lockfile shape with a short format history (before 0031: `git`; after: `sources`) and the `missing field git` explanation, release note (breaking), contributor pattern "adding a source kind" in `docs/patterns/` | 1–3 | Site build. The pattern doc walks through the fake kind | Revert |
 
 The riskiest part is step 1, which changes a git-tracked format and touches
 every git caller. It goes first so the rest builds on settled data.
 
-Step 2 is next riskiest: concurrency and caching, with a second reviewer. It
-keeps `materialize(&RemoteSource)` stable, so steps 2 and 3 can each be
-reverted alone.
+Step 2 is next riskiest (concurrency and caching), so it is split into 2a,
+2b and 2c, each with a second reviewer. 2a keeps `materialize(&RemoteSource)`
+stable, so 2a, 2b, 2c and 3 can each be reverted alone, and the 2b spike does
+not block the core refactor.
 
 Steps are sequential, so this is solo work with no split. Integration is
 continuous.
@@ -427,11 +489,14 @@ continuous.
 Assumptions:
 - gix can fetch an unadvertised commit id over the local file transport, or
   copy one commit's object closure between two bare repos. Checked by a spike
-  at the start of step 2 (the spike picks between the two; both meet 4.2) and also runs example 16.
+  at the start of step 2b (the spike picks between the two; both meet 4.2) and also runs example 16.
 - Every future kind can express its address as two strings (locator, selector)
   and its content as one immutable pin string. This holds for git and npm
-  (locator `registry-url/name`, selector a range, pin a version plus integrity
-  encoded as a segment). The registry RFC is where this assumption gets checked.
+  (selector a range, pin a version plus integrity encoded as lowercase hex).
+  The npm locator must not depend on a machine's registry mirror, or lockfile
+  keys would differ between machines; the registry RFC defines it (for
+  example the package name plus a logical registry name resolved through
+  `KindConfig`) and checks this assumption.
 - `async_trait` dyn dispatch with a generic `TSys` stays object-safe, as
   `RemoteSourceContributor` already is.
 - No external crate depends on `Lockfile::git_*` or `invalidate_git` outside
@@ -444,6 +509,11 @@ Decided with the owner:
    kind.
 
 Open questions: none that block step 1.
+
+Possible follow-ups (not in this plan):
+- `omni remote-sources status` reporting v1 bytes and which v1 mirrors still
+  hold pins v2 lacks, so "safe to delete v1" can be checked.
+- `prune --dry-run` listing v1 entries read-only as `kind=git(v1)`.
 
 ## 9. Verification and review
 
@@ -458,6 +528,8 @@ Open questions: none that block step 1.
 
 - [ ] Plan review
 - [ ] Step 1: lockfile and refs new shape
-- [ ] Step 2: `SourceKind` core, git impl, v2 layout
+- [ ] Step 2a: `SourceKind` core, git impl, v2 layout
+- [ ] Step 2b: v1 seed
+- [ ] Step 2c: projection tail and relink
 - [ ] Step 3: single mapping, kind-aware prune
 - [ ] Step 4: docs
