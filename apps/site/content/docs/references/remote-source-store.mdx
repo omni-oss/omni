@@ -15,8 +15,9 @@ and its reference sets under `.omni/sources/`. The store holds only content.
 ## Lockfile
 
 `lock.json` and each reference set under `.omni/sources/refs/` share one shape,
-keyed by source kind, then the source's location (for git, the URL in lowercase
-without credentials, a default port or a trailing `/`), then what was asked for
+keyed by source kind, then the source's location (for git, the URL with its scheme
+and host lowercased, the path's case kept, and without credentials, a query, a
+default port or a trailing `/`), then what was asked for
 (for git, the branch, tag or commit):
 
 ```json
