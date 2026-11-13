@@ -737,11 +737,13 @@ mod tests {
             graph.raw_layers_by_id(&2).unwrap().into_iter().cloned();
         let mut replayed = layers.next().unwrap();
         for layer in layers {
+            replayed.set_id(layer.id());
+            replayed.set_extendee_ids(layer.extendee_ids());
             replayed.merge(layer);
         }
         let processed = graph.process_node_by_id(&2).unwrap();
 
-        assert_eq!(replayed.items, processed.items);
+        assert_eq!(&replayed, processed);
     }
 
     #[test]
