@@ -188,6 +188,24 @@ pub struct LoadedProjects {
     pub extension_graph: ExtensionGraph<LoadedLayer>,
 }
 
+impl LoadedProjects {
+    /// The raw explicit layers of `file`'s extension closure, in the order
+    /// they are replayed to compose it, ending with `file`'s own layer.
+    ///
+    /// Layers are the unmerged parsed files: absent fields stay absent, merge
+    /// operations are kept as written, and each layer keeps its own path
+    /// origin. Nothing here is a computed or defaulted value of any root.
+    #[allow(clippy::result_large_err, unused)]
+    pub fn raw_layers(
+        &self,
+        file: &Path,
+    ) -> Result<Vec<&LoadedLayer>, ProjectConfigLoaderError> {
+        Ok(self
+            .extension_graph
+            .raw_layers_by_id(&OmniPath::from(file.to_path_buf()))?)
+    }
+}
+
 #[derive(Error, Debug, omni_diagnostic::Diagnostic)]
 #[error(transparent)]
 #[diagnostic(forward)]
@@ -281,6 +299,7 @@ pub(crate) enum ProjectConfigLoaderErrorInner {
 mod tests {
     use std::fs;
 
+    use merge::Merge as _;
     use system_traits::impls::RealSys;
 
     use super::*;
@@ -650,5 +669,151 @@ mod tests {
         let app = named(&projects, "app");
         assert!(!app.task_cache["t"].output.logs);
         assert!(!app.config.tasks.as_map().contains_key("tpl"));
+    }
+
+    async fn loaded(root: &Path, files: &[PathBuf]) -> LoadedProjects {
+        ProjectConfigLoader::new(&RealSys, root)
+            .load_project_configs(files)
+            .await
+            .unwrap()
+    }
+
+    fn names(layers: &[&LoadedLayer]) -> Vec<String> {
+        layers
+            .iter()
+            .map(|l| l.layer.name.clone().unwrap_or_default())
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn raw_layers_follow_closure_order_and_apply_a_diamond_once() {
+        let dir = tmp();
+        let root = dir.path();
+        write(root, "lib/top.yaml", "name: top\nbase: true\n");
+        write(root, "lib/l.yaml", "name: l\nextends: top.yaml\n");
+        write(root, "lib/r.yaml", "name: r\nextends: top.yaml\n");
+        let app = write(
+            root,
+            "app/project.omni.yaml",
+            "name: app\nextends: [../lib/l.yaml, ../lib/r.yaml]\n",
+        );
+
+        let projects = loaded(root, std::slice::from_ref(&app)).await;
+        let layers = projects.raw_layers(&app).unwrap();
+        let order = names(&layers);
+
+        assert_eq!(order.first().map(String::as_str), Some("top"));
+        assert_eq!(order.last().map(String::as_str), Some("app"));
+        assert_eq!(order.iter().filter(|n| *n == "top").count(), 1);
+        assert_eq!(order.len(), 4);
+    }
+
+    #[tokio::test]
+    async fn raw_layers_replay_to_the_composed_project() {
+        let dir = tmp();
+        let root = dir.path();
+        write(
+            root,
+            "lib/a.yaml",
+            "name: a\nbase: true\ndependencies: [x]\n",
+        );
+        let app = write(
+            root,
+            "app/project.omni.yaml",
+            "name: app\nextends: ../lib/a.yaml\ndependencies:\n  append: [y]\n",
+        );
+
+        let projects = loaded(root, std::slice::from_ref(&app)).await;
+        let mut iter = projects.raw_layers(&app).unwrap().into_iter().cloned();
+        let mut replayed = iter.next().unwrap();
+        for l in iter {
+            replayed.merge(l);
+        }
+        let finalized = replayed.finalize_composed().unwrap();
+
+        assert_eq!(deps(&finalized), ["x", "y"]);
+        assert_eq!(deps(named(&projects.projects, "app")), ["x", "y"]);
+    }
+
+    #[tokio::test]
+    async fn raw_layers_keep_operations_and_per_layer_origin() {
+        let dir = tmp();
+        let root = dir.path();
+        let base = write(
+            root,
+            "shared/base.yaml",
+            "name: base\nbase: true\ndependencies:\n  replace: [b]\ncache:\n  key:\n    files: ['@project/in.txt']\n",
+        );
+        let app = write(
+            root,
+            "app/project.omni.yaml",
+            "name: app\nextends: ../shared/base.yaml\ndependencies:\n  append: [c]\n",
+        );
+
+        let projects = loaded(root, std::slice::from_ref(&app)).await;
+        let layers = projects.raw_layers(&app).unwrap();
+
+        assert_eq!(layers[0].file, OmniPath::from(base));
+        assert_eq!(layers[0].dir, OmniPath::from(root.join("shared")));
+        assert_eq!(layers[1].file, OmniPath::from(app));
+        assert_eq!(layers[1].dir, OmniPath::from(root.join("app")));
+        let ops = |l: &LoadedLayer| {
+            serde_json::to_value(&l.layer.dependencies).unwrap()
+        };
+        assert_eq!(ops(layers[0]), serde_json::json!({"replace": ["b"]}));
+        assert_eq!(ops(layers[1]), serde_json::json!({"append": ["c"]}));
+        let key_files = layers[0]
+            .layer
+            .cache
+            .clone()
+            .unwrap()
+            .key
+            .unwrap()
+            .files
+            .unwrap()
+            .normalize();
+        assert_eq!(
+            key_files.include[0].path().unwrap(),
+            root.join("shared/in.txt")
+        );
+    }
+
+    #[tokio::test]
+    async fn extending_a_file_never_imports_the_extended_roots_defaults() {
+        let dir = tmp();
+        let root = dir.path();
+        // The extended root has its own effective defaults once finalized,
+        // but its raw layer holds only what the file says.
+        write(root, "lib/base.yaml", "name: base\nbase: true\n");
+        let app = write(
+            root,
+            "app/project.omni.yaml",
+            "name: app\nextends: ../lib/base.yaml\n",
+        );
+
+        let projects = loaded(root, std::slice::from_ref(&app)).await;
+        let layers = projects.raw_layers(&app).unwrap();
+
+        for layer in &layers {
+            assert!(layer.layer.cache.is_none());
+            assert!(layer.layer.tasks.is_none());
+            assert!(layer.layer.dependencies.is_none());
+            assert!(layer.layer.env.is_none());
+            assert!(layer.layer.output_logs.is_none());
+        }
+        assert_eq!(layers[0].layer.base, Some(true));
+        assert_eq!(layers[1].layer.base, None);
+        assert!(!named(&projects.projects, "app").config.base);
+    }
+
+    #[tokio::test]
+    async fn raw_layers_of_an_unknown_file_is_an_error() {
+        let dir = tmp();
+        let root = dir.path();
+        let app = write(root, "app/project.omni.yaml", "name: app\n");
+
+        let projects = loaded(root, &[app]).await;
+
+        assert!(projects.raw_layers(&root.join("nope.yaml")).is_err());
     }
 }
