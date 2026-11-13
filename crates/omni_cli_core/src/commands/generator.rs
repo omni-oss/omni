@@ -27,7 +27,7 @@ use omni_input_provider::configuration::builder::string;
 use omni_input_provider::{AllowedValue, ValidationConfig, collect_one};
 use omni_messages::NoopSubscriber;
 use omni_prompt::{CliInputProvider, builder::allowed};
-use omni_remote_source::{RemoteSource, RemoteSourceRef};
+use omni_remote_source::RemoteSourceRef;
 use owo_colors::OwoColorize;
 use sets::OrderedSet;
 use tokio::task::JoinSet;
@@ -563,10 +563,10 @@ async fn get_generators(
                 let git = git.clone();
 
                 retrieval_tasks.spawn(async move {
-                    let source = RemoteSource::Git {
-                        uri: git.uri.clone(),
-                        rev: git.rev.clone(),
-                    };
+                    let source =
+                        omni_remote_source_contributors::remote_source_for_git(
+                            &git,
+                        );
                     let materialized =
                         remote_sources.materialize(&source).await?;
                     let configurations = omni_generator::discover_in_source(
@@ -638,10 +638,10 @@ async fn get_generators(
                     }
                 }
                 SourceConfig::Git(git) => {
-                    let source = RemoteSource::Git {
-                        uri: git.uri.clone(),
-                        rev: git.rev.clone(),
-                    };
+                    let source =
+                        omni_remote_source_contributors::remote_source_for_git(
+                            git,
+                        );
                     let materialized =
                         remote_sources.materialize(&source).await?;
                     let discovered = omni_generator::discover_in_source(

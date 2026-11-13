@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
-use url::Url;
 
 /// The persisted reference set for a single subsystem, written to
 /// `refs/<id>.json`. It records every remote source the subsystem resolved on
@@ -23,14 +22,40 @@ impl Default for RefSetData {
     }
 }
 
+/// References keyed `kind -> locator -> selector`, the same shape as the
+/// lockfile.
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct RefSetDataV1_0_0 {
-    pub git: BTreeMap<Url, BTreeMap<String, GitRef>>,
+    pub sources: BTreeMap<String, BTreeMap<String, BTreeMap<String, PinRef>>>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq)]
-pub struct GitRef {
-    pub commit: String,
+#[serde(deny_unknown_fields)]
+pub struct PinRef {
+    pub pin: String,
+}
+
+impl RefSetDataV1_0_0 {
+    pub fn insert(
+        &mut self,
+        kind: &str,
+        locator: &str,
+        selector: &str,
+        pin: &str,
+    ) {
+        self.sources
+            .entry(kind.to_string())
+            .or_default()
+            .entry(locator.to_string())
+            .or_default()
+            .insert(
+                selector.to_string(),
+                PinRef {
+                    pin: pin.to_string(),
+                },
+            );
+    }
 }
 
 #[cfg(test)]
@@ -38,20 +63,12 @@ mod tests {
     use super::*;
     use omni_file_data_serde::{Format, from_slice, to_vec};
 
-    fn git_ref(commit: &str) -> GitRef {
-        GitRef {
-            commit: commit.to_string(),
-        }
-    }
-
     #[test]
     fn ref_set_round_trips_through_json() {
-        let mut git = BTreeMap::new();
-        let mut revs = BTreeMap::new();
-        revs.insert("main".to_string(), git_ref("c1"));
-        git.insert(Url::parse("https://example.com/a.git").unwrap(), revs);
+        let mut data = RefSetDataV1_0_0::default();
+        data.insert("git", "https://example.com/a.git", "main", "c1");
+        let data = RefSetData::V1_0_0(data);
 
-        let data = RefSetData::V1_0_0(RefSetDataV1_0_0 { git });
         let bytes = to_vec(&data, Format::Json).unwrap();
         let back: RefSetData = from_slice(&bytes, Format::Json).unwrap();
 
@@ -60,46 +77,35 @@ mod tests {
 
     #[test]
     fn ref_set_serializes_sorted_regardless_of_insertion_order() {
-        let a = Url::parse("https://example.com/a.git").unwrap();
-        let b = Url::parse("https://example.com/b.git").unwrap();
+        let mut forward = RefSetDataV1_0_0::default();
+        forward.insert("git", "https://example.com/a.git", "dev", "c2");
+        forward.insert("git", "https://example.com/a.git", "main", "c1");
+        forward.insert("git", "https://example.com/b.git", "v1", "c4");
+        forward.insert("fake", "x", "s1", "p1");
 
-        let mut forward = BTreeMap::new();
-        forward.insert(a.clone(), {
-            let mut m = BTreeMap::new();
-            m.insert("dev".to_string(), git_ref("c2"));
-            m.insert("main".to_string(), git_ref("c1"));
-            m
-        });
-        forward.insert(b.clone(), {
-            let mut m = BTreeMap::new();
-            m.insert("v1".to_string(), git_ref("c4"));
-            m
-        });
+        let mut reversed = RefSetDataV1_0_0::default();
+        reversed.insert("fake", "x", "s1", "p1");
+        reversed.insert("git", "https://example.com/b.git", "v1", "c4");
+        reversed.insert("git", "https://example.com/a.git", "main", "c1");
+        reversed.insert("git", "https://example.com/a.git", "dev", "c2");
 
-        let mut reversed = BTreeMap::new();
-        reversed.insert(b, {
-            let mut m = BTreeMap::new();
-            m.insert("v1".to_string(), git_ref("c4"));
-            m
-        });
-        reversed.insert(a, {
-            let mut m = BTreeMap::new();
-            m.insert("main".to_string(), git_ref("c1"));
-            m.insert("dev".to_string(), git_ref("c2"));
-            m
-        });
+        assert_eq!(
+            to_vec(&RefSetData::V1_0_0(forward), Format::Json).unwrap(),
+            to_vec(&RefSetData::V1_0_0(reversed), Format::Json).unwrap()
+        );
+    }
 
-        let forward = to_vec(
-            &RefSetData::V1_0_0(RefSetDataV1_0_0 { git: forward }),
-            Format::Json,
-        )
-        .unwrap();
-        let reversed = to_vec(
-            &RefSetData::V1_0_0(RefSetDataV1_0_0 { git: reversed }),
-            Format::Json,
-        )
-        .unwrap();
-
-        assert_eq!(forward, reversed);
+    #[test]
+    fn old_and_malformed_shapes_fail_to_load() {
+        for doc in [
+            r#"{"version":"1.0.0","git":{"https://h/r.git":{"main":{"commit":"c1"}}}}"#,
+            r#"{"version":"1.0.0","sources":{"git":{"https://h/r.git":{"main":{"pin":"c1","extra":1}}}}}"#,
+            r#"{"version":"1.0.0"}"#,
+        ] {
+            assert!(
+                from_slice::<RefSetData>(doc.as_bytes(), Format::Json).is_err(),
+                "{doc}"
+            );
+        }
     }
 }

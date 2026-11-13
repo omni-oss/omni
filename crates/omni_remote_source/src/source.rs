@@ -3,14 +3,35 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
+use crate::driver::{Connection, SourceSpec};
+
 /// An engine-neutral description of a remote source to materialize. Each variant
-/// owns its own addressing scheme; the store lays every kind out under
-/// `store/<kind>/<key>/`, where the key is an immutable post-fetch content
-/// identifier.
+/// owns its own addressing scheme and maps to a [`SourceSpec`] handled by the
+/// driver registered for its kind.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum RemoteSource {
     Git { uri: Url, rev: String },
+}
+
+impl RemoteSource {
+    /// The kind of this source: its store path segment and lockfile key.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            RemoteSource::Git { .. } => crate::git::GIT_KIND,
+        }
+    }
+
+    /// The kind-neutral address the store core works with.
+    pub fn spec(&self) -> SourceSpec {
+        match self {
+            RemoteSource::Git { uri, rev } => SourceSpec {
+                locator: crate::git::canonical_git_locator(uri),
+                selector: rev.clone(),
+                connection: Connection::new(uri.as_str()),
+            },
+        }
+    }
 }
 
 /// A materialized source: its checkout root on disk and the immutable pin that

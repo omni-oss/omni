@@ -138,9 +138,10 @@ async fn run_prune(
     let total: u64 = candidates.checkouts.iter().map(|c| c.size_bytes).sum();
     for checkout in &candidates.checkouts {
         println!(
-            "  {} {} ({}, unused for {})",
+            "  {} {} {} ({}, unused for {})",
+            checkout.kind,
             checkout.remote,
-            checkout.commit,
+            checkout.pin,
             ByteSize(checkout.size_bytes),
             humantime::format_duration(Duration::from_secs(
                 checkout.unused_for_secs
@@ -177,8 +178,9 @@ async fn run_prune(
         .checkouts
         .iter()
         .map(|c| StoreCheckoutId {
+            kind: c.kind.clone(),
             remote: c.remote.clone(),
-            commit: c.commit.clone(),
+            pin: c.pin.clone(),
         })
         .collect();
     let pruned = api

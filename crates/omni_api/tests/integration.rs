@@ -1715,18 +1715,23 @@ async fn a_source_used_by_two_subsystems_is_fetched_once() {
     );
 }
 
-/// Count `store/trees/<slug>/<commit>` directories across every slug.
-fn count_commit_dirs(store_git: &Path) -> usize {
-    let mut count = 0;
-    let Ok(slugs) = std::fs::read_dir(store_git) else {
-        return 0;
-    };
-    for slug in slugs.flatten() {
-        if let Ok(commits) = std::fs::read_dir(slug.path()) {
-            count += commits.flatten().filter(|c| c.path().is_dir()).count();
-        }
+/// Count `store/trees/<kind>/<slug>/<pin>` directories across every slug.
+fn count_commit_dirs(trees: &Path) -> usize {
+    fn dirs(path: &Path) -> Vec<std::path::PathBuf> {
+        std::fs::read_dir(path)
+            .map(|d| {
+                d.flatten()
+                    .map(|e| e.path())
+                    .filter(|p| p.is_dir())
+                    .collect()
+            })
+            .unwrap_or_default()
     }
-    count
+    dirs(trees)
+        .iter()
+        .flat_map(|k| dirs(k))
+        .flat_map(|s| dirs(&s))
+        .count()
 }
 
 /// A git source's own `projection.omni.yaml` is found even when the workspace's

@@ -17,7 +17,6 @@ strum = { workspace = true }
 tracing = { workspace = true }
 derive-new = { workspace = true }
 serde = { workspace = true }
-url = { workspace = true }
 omni_file_data_serde = { workspace = true }
 system_traits = { workspace = true }
 tokio = { workspace = true }

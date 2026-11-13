@@ -1,24 +1,26 @@
 {
   "version": "1.0.0",
-  "git": {
-    "https://github.com/cs-clarence/swe-docs": {
-      "main": {
-        "commit": "0e22c39dbc934dd54f90c99dc4a85ec30c004c69"
-      }
-    },
-    "https://github.com/cs-clarence/swe-skills": {
-      "main": {
-        "commit": "57fdd47cc8244b24b3dcdde46d6e6cf2e4ee5b39"
-      }
-    },
-    "https://github.com/cursor/plugins.git": {
-      "main": {
-        "commit": "a5539b15a3d56e04992565aafee2b37051329ce3"
-      }
-    },
-    "https://github.com/mattpocock/skills.git": {
-      "v1.2.3": {
-        "commit": "6acc160e4e0cd062dbbbd7a1b26ae92855edf07e"
+  "sources": {
+    "git": {
+      "https://github.com/cs-clarence/swe-docs": {
+        "main": {
+          "pin": "0e22c39dbc934dd54f90c99dc4a85ec30c004c69"
+        }
+      },
+      "https://github.com/cs-clarence/swe-skills": {
+        "main": {
+          "pin": "57fdd47cc8244b24b3dcdde46d6e6cf2e4ee5b39"
+        }
+      },
+      "https://github.com/cursor/plugins.git": {
+        "main": {
+          "pin": "a5539b15a3d56e04992565aafee2b37051329ce3"
+        }
+      },
+      "https://github.com/mattpocock/skills.git": {
+        "v1.2.3": {
+          "pin": "6acc160e4e0cd062dbbbd7a1b26ae92855edf07e"
+        }
       }
     }
   }

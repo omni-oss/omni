@@ -6,7 +6,7 @@ use omni_capabilities::{PathRoots, Root};
 use omni_configurations::{SourceConfig, Subsystem, types::SingleOrMany};
 use omni_context::{Context, ContextSys, LoadedContext};
 use omni_input_schema::{ValidationConfig, to_json_schema, validate};
-use omni_remote_source::{RemoteSource, RemoteSourceRef, sys::RemoteSourceSys};
+use omni_remote_source::{RemoteSourceRef, sys::RemoteSourceSys};
 use omni_tool::{LazyToolRunner, ToolEnforcement, ToolSys, run_named};
 use omni_tool_configurations::ToolConfiguration;
 use schemars::JsonSchema;
@@ -367,10 +367,10 @@ where
                 let sys = sys.clone();
                 let git = git.clone();
                 retrieval_tasks.spawn(async move {
-                    let source = RemoteSource::Git {
-                        uri: git.uri.clone(),
-                        rev: git.rev.clone(),
-                    };
+                    let source =
+                        omni_remote_source_contributors::remote_source_for_git(
+                            &git,
+                        );
                     let materialized =
                         remote_sources.materialize(&source).await?;
                     let configurations = omni_tool::discover_in_source(
@@ -435,10 +435,10 @@ where
                     }
                 }
                 SourceConfig::Git(git) => {
-                    let source = RemoteSource::Git {
-                        uri: git.uri.clone(),
-                        rev: git.rev.clone(),
-                    };
+                    let source =
+                        omni_remote_source_contributors::remote_source_for_git(
+                            git,
+                        );
                     let materialized =
                         remote_sources.materialize(&source).await?;
                     let discovered = omni_tool::discover_in_source(

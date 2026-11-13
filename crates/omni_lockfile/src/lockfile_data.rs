@@ -1,7 +1,6 @@
 use derive_new::new;
 use maps::Map;
 use serde::{Deserialize, Serialize};
-use url::Url;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "version", rename_all = "kebab-case")]
@@ -16,13 +15,17 @@ impl Default for LockfileData {
     }
 }
 
+/// Pins keyed `kind -> locator -> selector`. The lockfile does not know the
+/// set of kinds: the remote-source manager checks them after load.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct LockfileDataV1_0_0 {
-    pub git: Map<Url, Map<String, GitRepoLockData>>,
+    pub sources: Map<String, Map<String, Map<String, PinLockData>>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, new)]
-pub struct GitRepoLockData {
+#[serde(deny_unknown_fields)]
+pub struct PinLockData {
     #[new(into)]
-    pub commit: String,
+    pub pin: String,
 }

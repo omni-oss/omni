@@ -1,5 +1,5 @@
 use std::{
-    collections::HashSet,
+    collections::{BTreeMap, HashSet},
     ffi::OsString,
     path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
@@ -8,83 +8,78 @@ use std::{
 
 use omni_lockfile::{Lockfile, data::LockfileData};
 use omni_utils::lock::LockGuard;
-use url::Url;
 
 use crate::{
+    driver::{
+        DriverConfig, DriverContext, DriverRegistry, SourceDriver, SourceSpec,
+        is_safe_segment, safe_slug,
+    },
     error::Error,
     manager::config::RemoteSourceConfig,
     manager::tree,
-    refs::{GitRef, RefSetData, RefSetDataV1_0_0},
+    refs::{RefSetData, RefSetDataV1_0_0},
     source::{MaterializedSource, RemoteSource, RemoteSourceRef},
     sys::RemoteSourceSys,
 };
 use system_traits::{FileType, FsMetadataValue as _};
 
-const GIT_KIND_SEGMENT: &str = "git";
+const RAW_SEGMENT: &str = "raw";
 const TREES_SEGMENT: &str = "trees";
 const LAYOUT_VERSION_FILE: &str = "VERSION";
-/// The store layout this omni reads and writes: bare mirrors under `git/`,
-/// plain trees under `trees/`.
+/// The store layout this omni reads and writes: per-kind raw caches under
+/// `raw/`, plain trees under `trees/`, locks under `locks/`.
 const LAYOUT_VERSION: u32 = 1;
 const LOCKS_SEGMENT: &str = "locks";
 
-/// `<commit>.used`, the sibling marker whose mtime is a checkout's last use.
-fn used_marker(commit_dir: &Path) -> PathBuf {
-    let mut name = commit_dir
+/// `<pin>.used`, the sibling marker whose mtime is a checkout's last use.
+fn used_marker(pin_dir: &Path) -> PathBuf {
+    let mut name = pin_dir
         .file_name()
         .map(|n| n.to_os_string())
         .unwrap_or_default();
     name.push(".used");
-    commit_dir.with_file_name(name)
+    pin_dir.with_file_name(name)
 }
 
-/// The store directory name of a remote, derived from its full identity:
-/// scheme, host, port and path, without credentials. The encoding is injective
-/// (every character other than letters, digits, `-` and `.` becomes `_` plus its
-/// hex code, `_` included), so distinct remotes such as `host/a/b` and
-/// `host/a_b` can never share a mirror, while the same remote with different
-/// credentials does.
-fn store_slug(uri: &Url) -> String {
-    let mut identity = String::new();
-    identity.push_str(uri.scheme());
-    identity.push_str("://");
-    identity.push_str(uri.host_str().unwrap_or("local"));
-    if let Some(port) = uri.port() {
-        identity.push_str(&format!(":{port}"));
-    }
-    identity.push_str(uri.path().trim_end_matches('/'));
-    identity
-        .trim_end_matches(".git")
-        .chars()
-        .flat_map(|c| {
-            if c.is_ascii_alphanumeric() || c == '-' || c == '.' {
-                vec![c]
-            } else {
-                format!("_{:02x}", c as u32).chars().collect()
-            }
-        })
-        .collect()
-}
-
-/// `<commit>.manifest`, the sibling file listing a published tree's files. It
+/// `<pin>.manifest`, the sibling file listing a published tree's files. It
 /// lives outside the tree so it can never collide with a tracked file.
-fn manifest_path(commit_dir: &Path) -> PathBuf {
-    let mut name = commit_dir
+fn manifest_path(pin_dir: &Path) -> PathBuf {
+    let mut name = pin_dir
         .file_name()
         .map(|n| n.to_os_string())
         .unwrap_or_default();
     name.push(".manifest");
-    commit_dir.with_file_name(name)
+    pin_dir.with_file_name(name)
+}
+
+fn check_pin(kind: &str, spec: &SourceSpec, pin: &str) -> Result<(), Error> {
+    if is_safe_segment(pin) {
+        Ok(())
+    } else {
+        Err(Error::custom(format!(
+            "the {kind} driver returned an unsafe pin {pin:?} for {}; a pin must match [a-z0-9._-], be 1 to 128 bytes and not start with `.`",
+            spec.locator
+        )))
+    }
 }
 
 /// Process-wide counter making pending directory names unique even when a
 /// single process publishes several checkouts at once.
 static PENDING_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+/// `(kind, locator, selector)`: one lockfile entry.
+type PinKey = (String, String, String);
+
 pub struct RemoteSourceManager<TSys: RemoteSourceSys> {
     lockfile: Lockfile,
+    /// Entries this manager locked (`Some`) or invalidated (`None`). Only these
+    /// are written back, so a pin another process changed since we loaded is
+    /// never overwritten with our stale copy.
+    changed: std::sync::Mutex<BTreeMap<PinKey, Option<String>>>,
     lockfile_path: PathBuf,
     store_root_path: PathBuf,
+    drivers: DriverRegistry<TSys>,
+    driver_config: DriverConfig,
     sys: TSys,
 }
 
@@ -93,15 +88,105 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
         config: RemoteSourceConfig,
         sys: TSys,
     ) -> Result<RemoteSourceManager<TSys>, Error> {
+        Self::with_drivers(config, sys, DriverRegistry::builtin()).await
+    }
+
+    /// A manager with an explicit driver set, for tests that add a kind.
+    #[doc(hidden)]
+    pub async fn with_drivers(
+        config: RemoteSourceConfig,
+        sys: TSys,
+        drivers: DriverRegistry<TSys>,
+    ) -> Result<RemoteSourceManager<TSys>, Error> {
         let lockfile_path = config.lockfile_path;
         let lockfile = Lockfile::load(lockfile_path.clone(), &sys).await?;
-
-        Ok(RemoteSourceManager {
+        let manager = RemoteSourceManager {
             lockfile,
+            changed: Default::default(),
             lockfile_path,
             sys,
             store_root_path: config.store_root_path,
-        })
+            drivers,
+            driver_config: DriverConfig::default(),
+        };
+        manager.check_lockfile(&manager.lockfile).await?;
+        Ok(manager)
+    }
+
+    /// Reject a lockfile naming a kind with no driver (saving would drop its
+    /// pins) or holding a pin that is not a safe path segment.
+    async fn check_lockfile(&self, lockfile: &Lockfile) -> Result<(), Error> {
+        for kind in lockfile.kinds().await {
+            self.check_kind(&kind, &self.lockfile_path)?;
+        }
+        for (kind, locator, selector, pin) in lockfile.pins().await {
+            if !is_safe_segment(&pin) {
+                return Err(Error::custom(format!(
+                    "{} pins {kind} source {locator} `{selector}` to the unsafe pin {pin:?}",
+                    self.lockfile_path.display()
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    fn check_kind(&self, kind: &str, file: &Path) -> Result<(), Error> {
+        if self.drivers.contains(kind) {
+            Ok(())
+        } else {
+            Err(Error::custom(format!(
+                "{} names the source kind `{kind}`, which this omni does not support",
+                file.display()
+            )))
+        }
+    }
+
+    async fn load_lockfile(&self) -> Result<Lockfile, Error> {
+        let disk =
+            Lockfile::load(self.lockfile_path.clone(), &self.sys).await?;
+        self.check_lockfile(&disk).await?;
+        Ok(disk)
+    }
+
+    /// Apply this manager's unsaved changes to `disk`, returning the snapshot
+    /// applied so `forget_saved` can drop it once saved.
+    async fn merge_own_pins(
+        &self,
+        disk: &Lockfile,
+    ) -> Result<BTreeMap<PinKey, Option<String>>, Error> {
+        let changed = self.changed.lock().expect("pins mutex poisoned").clone();
+        for ((kind, locator, selector), pin) in &changed {
+            match pin {
+                Some(pin) => {
+                    disk.lock_pin(kind, locator, selector, pin).await?
+                }
+                None => disk.remove(kind, locator, selector).await?,
+            }
+        }
+        Ok(changed)
+    }
+
+    /// Drop saved changes, so a later save never replays them over a pin
+    /// another process changed since. A change recorded after the snapshot
+    /// is kept.
+    fn forget_saved(&self, saved: BTreeMap<PinKey, Option<String>>) {
+        let mut changed = self.changed.lock().expect("pins mutex poisoned");
+        for (key, pin) in saved {
+            if changed.get(&key) == Some(&pin) {
+                changed.remove(&key);
+            }
+        }
+    }
+
+    fn record_change(&self, kind: &str, spec: &SourceSpec, pin: Option<&str>) {
+        self.changed.lock().expect("pins mutex poisoned").insert(
+            (
+                kind.to_string(),
+                spec.locator.clone(),
+                spec.selector.clone(),
+            ),
+            pin.map(str::to_string),
+        );
     }
 }
 
@@ -114,43 +199,105 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
     }
 
     /// Materialize a remote source into the shared, content-addressed store,
-    /// returning its checkout root and immutable pin. The git arm honors a
-    /// locked commit (materializing offline when the checkout is already
-    /// present) and otherwise clones into a temporary directory before
-    /// atomically publishing it under the resolved commit.
+    /// returning its checkout root and immutable pin. A locked pin whose tree
+    /// is present is served without a lock or the network; anything else is
+    /// resolved and exported by the source's driver and published atomically.
     pub async fn materialize(
         &self,
         source: &RemoteSource,
     ) -> Result<MaterializedSource, Error> {
-        match source {
-            RemoteSource::Git { uri, rev } => {
-                let (root, pin) = self.materialize_git(uri, rev).await?;
-                Ok(MaterializedSource { root, pin })
+        self.materialize_with(source.kind(), &source.spec()).await
+    }
+
+    /// Materialize `spec` with the driver registered for `kind`. Exists so a
+    /// test kind can be exercised without a `RemoteSource` variant.
+    #[doc(hidden)]
+    pub async fn materialize_with(
+        &self,
+        kind: &str,
+        spec: &SourceSpec,
+    ) -> Result<MaterializedSource, Error> {
+        let driver = self.drivers.get(kind).ok_or_else(|| {
+            Error::custom(format!("no driver for source kind `{kind}`"))
+        })?;
+        let slug = safe_slug(&driver.slug(spec));
+        let locked =
+            self.lockfile.pin(kind, &spec.locator, &spec.selector).await;
+        if let Some(pin) = &locked {
+            check_pin(kind, spec, pin)?;
+        }
+
+        // Fast path: a locked pin whose tree is complete needs no lock and no
+        // network.
+        if let Some(pin) = &locked {
+            let tree = self.tree_dir(kind, &slug, pin);
+            if self.tree_is_complete(&tree).await {
+                self.mark_used(&tree).await;
+                return Ok(MaterializedSource {
+                    root: tree,
+                    pin: pin.clone(),
+                });
             }
         }
+
+        // One resolve or export per remote at a time across every workspace
+        // sharing the store; a peer that finished first leaves the tree for us.
+        let _remote_guard =
+            LockGuard::acquire_exclusive(self.remote_lock_path(kind, &slug))
+                .await?;
+        self.check_layout().await?;
+        // Another task of this manager may have locked it while we waited.
+        let locked =
+            self.lockfile.pin(kind, &spec.locator, &spec.selector).await;
+        if let Some(pin) = &locked {
+            check_pin(kind, spec, pin)?;
+        }
+
+        let ctx = DriverContext {
+            sys: &self.sys,
+            raw_dir: self.raw_dir(kind, &slug),
+            offline: false,
+            config: &self.driver_config,
+        };
+        let pin = driver.resolve(&ctx, spec, locked.as_deref()).await?;
+        check_pin(kind, spec, &pin)?;
+        if let Some(expected) = &locked
+            && *expected != pin
+        {
+            return Err(Error::custom(format!(
+                "the {kind} driver resolved {} `{}` to {pin}, but the lockfile pins {expected}; run `omni remote-sources install --update` to re-lock it",
+                spec.locator, spec.selector
+            )));
+        }
+
+        let tree = self.tree_dir(kind, &slug, &pin);
+        if !self.tree_is_complete(&tree).await {
+            self.publish_tree(driver.as_ref(), &ctx, spec, &pin, &tree)
+                .await?;
+        }
+        self.mark_used(&tree).await;
+
+        if locked.is_none() {
+            self.lockfile
+                .lock_pin(kind, &spec.locator, &spec.selector, &pin)
+                .await?;
+            self.record_change(kind, spec, Some(&pin));
+        }
+        Ok(MaterializedSource { root: tree, pin })
     }
 
     /// Persist the reference set a subsystem resolved on its last run to
     /// `refs/<id>.json`, sorted so the file has stable diffs. These files are
-    /// the garbage-collection roots unioned by [`retain`](Self::retain).
+    /// the garbage-collection roots unioned by [`reconcile_pins`](Self::reconcile_pins).
     pub async fn record_refs(
         &self,
         id: &str,
         refs: &[RemoteSourceRef],
     ) -> Result<(), Error> {
         let mut data = RefSetDataV1_0_0::default();
-
         for r in refs {
-            match &r.source {
-                RemoteSource::Git { uri, rev } => {
-                    data.git.entry(uri.clone()).or_default().insert(
-                        rev.clone(),
-                        GitRef {
-                            commit: r.pin.clone(),
-                        },
-                    );
-                }
-            }
+            let spec = r.source.spec();
+            data.insert(r.source.kind(), &spec.locator, &spec.selector, &r.pin);
         }
 
         let refs_dir = self.refs_dir();
@@ -178,7 +325,7 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
         let _guard =
             LockGuard::acquire_exclusive(self.advisory_lock_path()).await?;
 
-        let mut retained_keys: HashSet<(Url, String)> = HashSet::new();
+        let mut retained: HashSet<(String, String, String)> = HashSet::new();
 
         let refs_dir = self.refs_dir();
         if self.sys.fs_exists_no_err_async(&refs_dir).await {
@@ -189,13 +336,16 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
 
                 let data: RefSetData =
                     omni_file_data_serde::read_async(&entry, &self.sys).await?;
-
-                match data {
-                    RefSetData::V1_0_0(v1) => {
-                        for (uri, revs) in v1.git {
-                            for rev in revs.into_keys() {
-                                retained_keys.insert((uri.clone(), rev));
-                            }
+                let RefSetData::V1_0_0(v1) = data;
+                for (kind, locators) in v1.sources {
+                    self.check_kind(&kind, &entry)?;
+                    for (locator, selectors) in locators {
+                        for selector in selectors.into_keys() {
+                            retained.insert((
+                                kind.clone(),
+                                locator.clone(),
+                                selector,
+                            ));
                         }
                     }
                 }
@@ -205,14 +355,15 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
         // Work on the file as it is now, not the copy loaded when this manager
         // opened: another process may have added pins since, and saving ours
         // would drop them. Our own resolved pins are merged in first.
-        let disk =
-            Lockfile::load(self.lockfile_path.clone(), &self.sys).await?;
-        for (uri, rev, commit) in self.lockfile.git_pins().await {
-            disk.lock_git_commit(&uri, &rev, &commit).await?;
-        }
-        Self::prune_lockfile_pins(&disk, &retained_keys).await?;
+        let disk = self.load_lockfile().await?;
+        let saved = self.merge_own_pins(&disk).await?;
+        Self::prune_lockfile_pins(&disk, &retained).await?;
         self.ensure_lockfile_parent().await?;
         disk.save(&self.sys).await?;
+        self.forget_saved(saved);
+        // Drop them from memory too, so a later materialization resolves and
+        // records them again instead of trusting a pin no longer saved.
+        Self::prune_lockfile_pins(&self.lockfile, &retained).await?;
 
         Ok(())
     }
@@ -225,119 +376,46 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
         let _guard =
             LockGuard::acquire_exclusive(self.advisory_lock_path()).await?;
 
-        let disk =
-            Lockfile::load(self.lockfile_path.clone(), &self.sys).await?;
-        for (uri, rev, commit) in self.lockfile.git_pins().await {
-            disk.lock_git_commit(&uri, &rev, &commit).await?;
-        }
+        let disk = self.load_lockfile().await?;
+        let saved = self.merge_own_pins(&disk).await?;
 
         self.ensure_lockfile_parent().await?;
         disk.save(&self.sys).await?;
+        self.forget_saved(saved);
 
         Ok(())
     }
 
-    async fn materialize_git(
+    /// Export `pin` into `tree` through a pending directory so a reader never
+    /// sees a half-written tree. Replaces an incomplete tree left by a cleaner
+    /// or a crash.
+    async fn publish_tree(
         &self,
-        uri: &Url,
-        rev: &str,
-    ) -> Result<(PathBuf, String), Error> {
-        let slug = store_slug(uri);
-        let pinned = self.lockfile.get_git_commit(uri, rev).await;
-
-        // Fast path: a pinned commit whose tree is complete needs no lock and
-        // no network.
-        if let Some(commit) = &pinned {
-            let tree = self.tree_dir(&slug, commit);
-            if self.tree_is_complete(&tree).await {
-                self.mark_used(&tree).await;
-                return Ok((tree, commit.clone()));
-            }
-        }
-
-        // One fetch or export per remote at a time across every workspace
-        // sharing the store; a peer that finished first leaves the tree for us.
-        let _remote_guard =
-            LockGuard::acquire_exclusive(self.remote_lock_path(&slug)).await?;
-        self.check_layout().await?;
-
-        let bare = self.bare_dir(&slug);
-        let commit = self
-            .resolve_commit(uri, &bare, pinned.as_deref(), rev)
-            .await?;
-        let tree = self.tree_dir(&slug, &commit);
-        if !self.tree_is_complete(&tree).await {
-            self.export_tree(&bare, &commit, &tree).await?;
-        }
-        self.mark_used(&tree).await;
-
-        if pinned.is_none() {
-            self.lockfile.lock_git_commit(uri, rev, &commit).await?;
-        }
-        Ok((tree, commit))
-    }
-
-    /// The commit to materialize. A pinned commit already in the mirror needs no
-    /// network; anything else (a moving ref, a first use, a pin the mirror lacks)
-    /// fetches first so it is resolved against the remote's current state.
-    async fn resolve_commit(
-        &self,
-        uri: &Url,
-        bare: &Path,
-        pinned: Option<&str>,
-        rev: &str,
-    ) -> Result<String, Error> {
-        if let Some(commit) = pinned
-            && omni_git_utils::resolve_commit(bare, commit).as_deref()
-                == Some(commit)
-        {
-            return Ok(commit.to_string());
-        }
-
-        omni_git_utils::fetch_bare(&self.sys, uri.as_str(), bare)
-            .await
-            .map_err(|error| {
-                Error::custom(format!(
-                    "could not fetch {} (the network is needed when the local mirror does not have `{}`): {error}",
-                    omni_redact::redact_url_userinfo(uri.as_ref()),
-                    pinned.unwrap_or(rev),
-                ))
-            })?;
-        tracing::trace!(
-            "fetched git repo uri: {}",
-            omni_redact::redact_url_userinfo(uri.as_ref()),
-        );
-        let wanted = pinned.unwrap_or(rev);
-        omni_git_utils::resolve_commit(bare, wanted).ok_or_else(|| {
-            Error::custom(format!(
-                "revision `{wanted}` was not found in {}",
-                omni_redact::redact_url_userinfo(uri.as_ref())
-            ))
-        })
-    }
-
-    /// Export `commit` into `tree` through the pending directory so a reader
-    /// never sees a half-written tree. Replaces an incomplete tree left by a
-    /// cleaner or a crash.
-    async fn export_tree(
-        &self,
-        bare: &Path,
-        commit: &str,
+        driver: &dyn SourceDriver<TSys>,
+        ctx: &DriverContext<'_, TSys>,
+        spec: &SourceSpec,
+        pin: &str,
         tree: &Path,
     ) -> Result<(), Error> {
         let pending = self.new_pending_dir();
-        omni_git_utils::export_tree(&self.sys, bare, commit, &pending).await?;
+        self.sys.fs_create_dir_all_async(&pending).await?;
+        if let Err(error) = driver.export(ctx, spec, pin, &pending).await {
+            self.remove_tree(&pending).await;
+            return Err(error);
+        }
         let manifest = {
             let pending = pending.clone();
-            tokio::task::spawn_blocking(move || tree::seal(&pending))
-                .await
-                .map_err(|e| Error::custom(e.to_string()))?
+            tokio::task::spawn_blocking(move || tree::seal(&pending)).await
         };
         let manifest = match manifest {
-            Ok(manifest) => manifest,
-            Err(error) => {
+            Ok(Ok(manifest)) => manifest,
+            Ok(Err(error)) => {
                 self.remove_tree(&pending).await;
                 return Err(error.into());
+            }
+            Err(error) => {
+                self.remove_tree(&pending).await;
+                return Err(Error::custom(error.to_string()));
             }
         };
 
@@ -354,7 +432,10 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
         }
         // Published last: until it exists the tree reads as incomplete.
         let staging = self.new_pending_dir();
-        self.sys.fs_write_async(&staging, &manifest).await?;
+        if let Err(error) = self.sys.fs_write_async(&staging, &manifest).await {
+            let _ = self.sys.fs_remove_file_async(&staging).await;
+            return Err(error.into());
+        }
         if let Err(error) = self
             .sys
             .fs_rename_async(&staging, manifest_path(tree))
@@ -434,27 +515,33 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
     /// Record that a checkout was just used, for age-based pruning. The marker
     /// is a sibling `<commit>.used` file whose mtime is the last use. Failing to
     /// write it only makes the checkout look older than it is.
-    async fn mark_used(&self, commit_dir: &Path) {
-        let marker = used_marker(commit_dir);
+    async fn mark_used(&self, pin_dir: &Path) {
+        let marker = used_marker(pin_dir);
         if let Err(error) = self.sys.fs_write_async(&marker, b"").await {
-            tracing::debug!("could not mark {commit_dir:?} used: {error}");
+            tracing::debug!("could not mark {pin_dir:?} used: {error}");
         }
     }
 
     async fn prune_lockfile_pins(
         lockfile: &Lockfile,
-        retained_keys: &HashSet<(Url, String)>,
+        retained: &HashSet<(String, String, String)>,
     ) -> Result<(), Error> {
         lockfile
             .modify(|d| {
                 match d {
                     LockfileData::V1_0_0(v1) => {
-                        v1.git.retain(|uri, revs| {
-                            revs.retain(|rev, _| {
-                                retained_keys
-                                    .contains(&(uri.clone(), rev.clone()))
+                        v1.sources.retain(|kind, locators| {
+                            locators.retain(|locator, selectors| {
+                                selectors.retain(|selector, _| {
+                                    retained.contains(&(
+                                        kind.clone(),
+                                        locator.clone(),
+                                        selector.clone(),
+                                    ))
+                                });
+                                !selectors.is_empty()
                             });
-                            !revs.is_empty()
+                            !locators.is_empty()
                         });
                     }
                 }
@@ -472,53 +559,39 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
         Ok(())
     }
 
-    /// The commit currently locked for `(uri, rev)`, if any. Usable as a stable
-    /// content pin.
-    pub async fn locked_commit(&self, uri: &Url, rev: &str) -> Option<String> {
-        self.lockfile.get_git_commit(uri, rev).await
+    /// The pin currently locked for `source`, if any.
+    pub async fn locked_pin(&self, source: &RemoteSource) -> Option<String> {
+        let spec = source.spec();
+        self.lockfile
+            .pin(source.kind(), &spec.locator, &spec.selector)
+            .await
     }
 
-    /// Forget the locked commit for `(uri, rev)` so the next materialization
-    /// re-resolves the revision. Used to advance a mutable ref (e.g. a branch)
-    /// on an explicit update.
-    pub async fn invalidate_git(
-        &self,
-        uri: &Url,
-        rev: &str,
-    ) -> Result<(), Error> {
-        let uri = uri.clone();
-        let rev = rev.to_string();
+    /// Forget the locked pin for `source` so the next materialization
+    /// re-resolves it. Used to advance a mutable ref (e.g. a branch) on an
+    /// explicit update.
+    pub async fn invalidate(&self, source: &RemoteSource) -> Result<(), Error> {
+        let spec = source.spec();
         self.lockfile
-            .modify(|d| {
-                match d {
-                    LockfileData::V1_0_0(v1) => {
-                        if let Some(revs) = v1.git.get_mut(&uri) {
-                            revs.shift_remove(&rev);
-                            if revs.is_empty() {
-                                v1.git.shift_remove(&uri);
-                            }
-                        }
-                    }
-                }
-                Ok(())
-            })
+            .remove(source.kind(), &spec.locator, &spec.selector)
             .await?;
+        self.record_change(source.kind(), &spec, None);
         Ok(())
     }
 
-    /// `trees/<slug>/<commit>`: the plain export of one commit.
-    fn tree_dir(&self, slug: &str, commit: &str) -> PathBuf {
+    /// `trees/<kind>/<slug>/<pin>`: the plain export of one pin.
+    fn tree_dir(&self, kind: &str, slug: &str, pin: &str) -> PathBuf {
         self.store_root_path
             .join(TREES_SEGMENT)
+            .join(kind)
             .join(slug)
-            .join(commit)
+            .join(pin)
     }
 
-    /// `git/<slug>.git`: the bare mirror of one remote, shared by every commit.
-    fn bare_dir(&self, slug: &str) -> PathBuf {
-        self.store_root_path
-            .join(GIT_KIND_SEGMENT)
-            .join(format!("{slug}.git"))
+    /// `raw/<kind>/<slug>`: the driver's cache for one remote (git: the bare
+    /// mirror), shared by every pin.
+    fn raw_dir(&self, kind: &str, slug: &str) -> PathBuf {
+        self.store_root_path.join(RAW_SEGMENT).join(kind).join(slug)
     }
 
     fn new_pending_dir(&self) -> PathBuf {
@@ -534,9 +607,10 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
             .join(format!("{pid}-{nanos}-{seq}"))
     }
 
-    fn remote_lock_path(&self, slug: &str) -> PathBuf {
+    fn remote_lock_path(&self, kind: &str, slug: &str) -> PathBuf {
         self.store_root_path
             .join(LOCKS_SEGMENT)
+            .join(kind)
             .join(format!("{slug}.lock"))
     }
 
@@ -575,9 +649,11 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
 /// [`RemoteSourceManager::store_entries`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StoreEntry {
+    /// The source kind, e.g. `git`.
+    pub kind: String,
     /// The remote's directory name in the store.
     pub remote: String,
-    pub commit: String,
+    pub pin: String,
     pub dir: PathBuf,
     /// Total size of the files in the checkout, in bytes.
     pub size: u64,
@@ -593,10 +669,10 @@ pub struct StorePruneFilter<'a> {
     pub all: bool,
     pub older_than: Option<std::time::Duration>,
     pub larger_than: Option<u64>,
-    /// Restrict the selection to these `(remote, commit)` pairs: the checkouts a
-    /// user was shown and confirmed. A checkout added since is never deleted by
-    /// a confirmed prune.
-    pub only: Option<&'a [(String, String)]>,
+    /// Restrict the selection to these `(kind, remote, pin)` entries: the
+    /// checkouts a user was shown and confirmed. A checkout added since is
+    /// never deleted by a confirmed prune.
+    pub only: Option<&'a [(String, String, String)]>,
 }
 
 impl StorePruneFilter<'_> {
@@ -609,8 +685,10 @@ impl StorePruneFilter<'_> {
             return false;
         }
         if let Some(only) = self.only
-            && !only.iter().any(|(remote, commit)| {
-                *remote == entry.remote && *commit == entry.commit
+            && !only.iter().any(|(kind, remote, pin)| {
+                *kind == entry.kind
+                    && *remote == entry.remote
+                    && *pin == entry.pin
             })
         {
             return false;
@@ -635,44 +713,51 @@ impl StorePruneFilter<'_> {
 }
 
 impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
-    /// Every checkout in the store with its size and last use.
+    /// Every checkout in the store with its size and last use. Only the trees
+    /// of registered kinds are listed; anything else under `trees/` is not
+    /// ours to report or delete.
     pub async fn store_entries(&self) -> Result<Vec<StoreEntry>, Error> {
         self.check_layout_readonly().await?;
-        let trees_root = self.store_root_path.join(TREES_SEGMENT);
-        if !self.sys.fs_exists_no_err_async(&trees_root).await {
-            return Ok(Vec::new());
-        }
 
         let mut entries = Vec::new();
-        for remote_dir in self.sys.fs_read_dir_async(&trees_root).await? {
-            let Some(remote) = remote_dir
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-            else {
+        for kind in self.drivers.kinds() {
+            let kind_root = self.store_root_path.join(TREES_SEGMENT).join(kind);
+            if !self.sys.fs_is_dir_no_err_async(&kind_root).await {
                 continue;
-            };
-            let Ok(children) = self.sys.fs_read_dir_async(&remote_dir).await
-            else {
-                continue;
-            };
-            for dir in children {
-                if !self.sys.fs_is_dir_no_err_async(&dir).await {
-                    continue;
-                }
-                let Some(commit) =
-                    dir.file_name().map(|n| n.to_string_lossy().into_owned())
+            }
+            for remote_dir in self.sys.fs_read_dir_async(&kind_root).await? {
+                let Some(remote) = remote_dir
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
                 else {
                     continue;
                 };
-                let last_used = self.last_used(&dir).await;
-                let size = self.dir_size(&dir).await?;
-                entries.push(StoreEntry {
-                    remote: remote.clone(),
-                    commit,
-                    dir,
-                    size,
-                    last_used,
-                });
+                let Ok(children) =
+                    self.sys.fs_read_dir_async(&remote_dir).await
+                else {
+                    continue;
+                };
+                for dir in children {
+                    if !self.sys.fs_is_dir_no_err_async(&dir).await {
+                        continue;
+                    }
+                    let Some(pin) = dir
+                        .file_name()
+                        .map(|n| n.to_string_lossy().into_owned())
+                    else {
+                        continue;
+                    };
+                    let last_used = self.last_used(&dir).await;
+                    let size = self.dir_size(&dir).await?;
+                    entries.push(StoreEntry {
+                        kind: kind.to_string(),
+                        remote: remote.clone(),
+                        pin,
+                        dir,
+                        size,
+                        last_used,
+                    });
+                }
             }
         }
         entries.sort_by(|a, b| a.dir.cmp(&b.dir));
@@ -703,10 +788,7 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
 
         let mut removed = Vec::new();
         for entry in selected {
-            let lock = self
-                .store_root_path
-                .join(LOCKS_SEGMENT)
-                .join(format!("{}.lock", entry.remote));
+            let lock = self.remote_lock_path(&entry.kind, &entry.remote);
             let _guard = LockGuard::acquire_exclusive(lock).await?;
             // Another process may have removed it while we waited.
             if self.sys.fs_exists_no_err_async(&entry.dir).await {
@@ -714,8 +796,8 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
                 tracing::debug!("pruned store checkout: {:?}", entry.dir);
             }
             if let Some(parent) = entry.dir.parent() {
-                // Once a remote's last tree is gone its mirror has nothing
-                // left to serve, so drop it too.
+                // Once a remote's last tree is gone its raw cache has
+                // nothing left to serve, so drop it too.
                 if matches!(
                     self.sys.fs_read_dir_async(parent).await.map(|d| d.len()),
                     Ok(0)
@@ -723,7 +805,9 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
                     let _ = self.sys.fs_remove_dir_all_async(parent).await;
                     let _ = self
                         .sys
-                        .fs_remove_dir_all_async(self.bare_dir(&entry.remote))
+                        .fs_remove_dir_all_async(
+                            self.raw_dir(&entry.kind, &entry.remote),
+                        )
                         .await;
                 }
             }
@@ -767,45 +851,12 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
-    fn slug(uri: &str) -> String {
-        store_slug(&Url::parse(uri).unwrap())
-    }
-
     #[test]
-    fn distinct_remotes_never_share_a_store_name() {
-        let all = [
-            "https://host/a/b",
-            "https://host/a_b",
-            "https://host/a/b/c",
-            "http://host/a/b",
-            "https://host:8443/a/b",
-            "https://other/a/b",
-            "ssh://git@host/a/b",
-        ];
-        let mut seen = std::collections::HashSet::new();
-        for uri in all {
-            assert!(seen.insert(slug(uri)), "collision for {uri}");
+    fn the_store_core_does_not_depend_on_git() {
+        let core = include_str!("default_impl.rs");
+        let code = &core[..core.find("#[cfg(test)]").unwrap()];
+        for needle in ["omni_git_utils", "crate::git", "GitDriver"] {
+            assert!(!code.contains(needle), "the core mentions {needle}");
         }
-    }
-
-    #[test]
-    fn the_same_remote_keeps_one_name_regardless_of_credentials_or_dot_git() {
-        let plain = slug("https://host/owner/repo");
-        assert_eq!(plain, slug("https://user:token@host/owner/repo"));
-        assert_eq!(plain, slug("https://host/owner/repo.git"));
-        assert_eq!(plain, slug("https://host/owner/repo/"));
-    }
-
-    #[test]
-    fn a_name_is_a_safe_single_path_segment() {
-        let name = slug("https://host:8443/a b/c?x=1#frag");
-        assert!(
-            name.chars()
-                .all(|c| c.is_ascii_alphanumeric()
-                    || matches!(c, '-' | '.' | '_')),
-            "{name}"
-        );
     }
 }

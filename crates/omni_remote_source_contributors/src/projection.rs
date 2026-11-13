@@ -16,7 +16,7 @@ use omni_meta::{
     SourceIdentity, expand,
 };
 use omni_remote_source::{
-    InstallOptions, RemoteSource, RemoteSourceContributor, RemoteSourceRef,
+    InstallOptions, RemoteSourceContributor, RemoteSourceRef,
     manager::RemoteSourceManager, sys::RemoteSourceSys,
 };
 use system_traits::FsReadAsync;
@@ -112,14 +112,11 @@ where
                 (root, None, identity)
             }
             SourceConfig::Git(git) => {
+                let remote = crate::remote_source_for(src)
+                    .expect("a git source is remote");
                 if self.update {
-                    self.manager.invalidate_git(&git.uri, &git.rev).await?;
+                    self.manager.invalidate(&remote).await?;
                 }
-
-                let remote = RemoteSource::Git {
-                    uri: git.uri.clone(),
-                    rev: git.rev.clone(),
-                };
                 let materialized = self.manager.materialize(&remote).await?;
                 let pin = materialized.pin.clone();
 

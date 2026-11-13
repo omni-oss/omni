@@ -12,6 +12,31 @@ workspaces pin it.
 Each workspace still owns its **lockfile** (`.omni/sources/lock.json`, commit it)
 and its reference sets under `.omni/sources/`. The store holds only content.
 
+## Lockfile
+
+`lock.json` and each reference set under `.omni/sources/refs/` share one shape,
+keyed by source kind, then the source's location (for git, the URL with its scheme
+and host lowercased, the path's case kept, and without credentials, a query, a
+default port or a trailing `/`), then what was asked for
+(for git, the branch, tag or commit):
+
+```json
+{
+  "version": "1.0.0",
+  "sources": {
+    "git": {
+      "https://github.com/acme/skills.git": { "main": { "pin": "6acc160e…" } }
+    }
+  }
+}
+```
+
+A file in the older git-only shape (a top-level `git` key with `commit`
+entries) fails to load. Delete `.omni/sources/lock.json` and
+`.omni/sources/refs/`, then run `omni remote-sources install`, which resolves
+every source again. Note any commits you need to keep before you do. A file
+naming a kind this omni does not support is an error and is never rewritten.
+
 ## Location
 
 By default the store is `sources` inside the platform cache directory, for
@@ -61,16 +86,27 @@ omni remote-sources prune --all --dry-run
 It refuses to run without a filter. A checkout's age is when any workspace last
 used it.
 
+### Upgrading from the git-only layout
+
+Older omni versions kept mirrors in `git/<remote>.git/`, trees in
+`trees/<remote>/<commit>/` and locks in `locks/<remote>.lock`. This version
+neither reads nor deletes those entries, and `prune` does not list them. Remove
+them by hand: the `git/` directory, and every child of `trees/` and `locks/`
+that is not a kind name such as `git`. Each pinned source is fetched once more
+into the new layout.
+
 ## Layout
+
+Every path is grouped by source kind (`git` today):
 
 ```text
 <store>/
-  VERSION                         layout number
-  locks/<remote>.lock             one fetch or export per remote at a time
-  git/<remote>.git/               bare mirror of every branch and tag, shared
-  trees/<remote>/<commit>/        the files of one commit, no .git
-  trees/<remote>/<commit>.manifest  files and sizes, to detect a damaged tree
-  trees/<remote>/<commit>.used    last use, for pruning
+  VERSION                                layout number
+  locks/<kind>/<remote>.lock             one fetch or export per remote at a time
+  raw/<kind>/<remote>/                   the kind's cache (git: bare mirror of every branch and tag)
+  trees/<kind>/<remote>/<pin>/           the files of one pin (git: one commit), no .git
+  trees/<kind>/<remote>/<pin>.manifest   files and sizes, to detect a damaged tree
+  trees/<kind>/<remote>/<pin>.used       last use, for pruning
 ```
 
 History is stored once per remote, not once per pinned commit. A tree whose files
