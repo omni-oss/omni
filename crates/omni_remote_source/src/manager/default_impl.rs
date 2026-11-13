@@ -361,6 +361,9 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
         self.ensure_lockfile_parent().await?;
         disk.save(&self.sys).await?;
         self.forget_saved(saved);
+        // Drop them from memory too, so a later materialization resolves and
+        // records them again instead of trusting a pin no longer saved.
+        Self::prune_lockfile_pins(&self.lockfile, &retained).await?;
 
         Ok(())
     }
