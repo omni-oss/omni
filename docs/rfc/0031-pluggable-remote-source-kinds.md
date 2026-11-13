@@ -22,7 +22,7 @@ non-test call sites that build `RemoteSource::Git` by hand. This RFC separates
 the kind-neutral parts (the per-remote lock, atomic publish, manifest, `.used`,
 prune, pins) from the kind-specific parts (resolve and fetch, then export a
 plain tree). A new kind such as an HTTP package registry then means one enum
-variant, one trait impl and one config mapping, with no change to the store
+variant, one driver and one config mapping, with no change to the store
 core, the lockfile, refs or prune.
 
 omni is pre-release, and the owner allows breaking changes to the store
@@ -37,8 +37,8 @@ integrity, safe archive extraction, version ranges).
 
 Done when:
 
-1. A `SourceKind` trait exists, and git is implemented on it. The store core
-   does not mention git outside the git impl.
+1. A `SourceDriver` trait exists, and git is implemented on it. The store core
+   does not mention git outside the git driver.
 2. A second kind, a test-only fake in `omni_remote_source/tests`, materializes,
    locks, records refs, self-heals and prunes through the core. The core,
    lockfile, refs and prune code are unchanged to add it.
@@ -122,10 +122,10 @@ pub struct SourceSpec {
 pub struct Pin(String);
 
 #[async_trait::async_trait]
-pub trait SourceKind<TSys: RemoteSourceSys>: Send + Sync {
+pub trait SourceDriver<TSys: RemoteSourceSys>: Send + Sync {
     /// Path segment and lockfile/refs key, e.g. "git". Must be unique, stable
     /// and a safe segment.
-    fn id(&self) -> &'static str;
+    fn kind(&self) -> &'static str;
 
     /// One path segment naming the place (git: `store_slug(uri)`). Must be
     /// injective over `spec.locator`. The core makes it safe: a slug that is
@@ -141,7 +141,7 @@ pub trait SourceKind<TSys: RemoteSourceSys>: Send + Sync {
     /// When `ctx.offline`, must not use the network at all.
     async fn resolve(
         &self,
-        ctx: &KindContext<'_, TSys>,
+        ctx: &DriverContext<'_, TSys>,
         spec: &SourceSpec,
         locked: Option<&Pin>,
     ) -> Result<Pin, Error>;
@@ -151,14 +151,14 @@ pub trait SourceKind<TSys: RemoteSourceSys>: Send + Sync {
     /// anything outside `dest` and `ctx.raw_dir`.
     async fn export(
         &self,
-        ctx: &KindContext<'_, TSys>,
+        ctx: &DriverContext<'_, TSys>,
         spec: &SourceSpec,
         pin: &Pin,
         dest: &Path,
     ) -> Result<(), Error>;
 }
 
-pub struct KindContext<'a, TSys> {
+pub struct DriverContext<'a, TSys> {
     pub sys: &'a TSys,
     /// `<store>/raw/<kind>/<slug>/`, written by the kind (git: the bare repo).
     /// Deletion belongs to the core (prune), not the kind.
@@ -168,11 +168,14 @@ pub struct KindContext<'a, TSys> {
     /// Placeholder for the registry RFC (credentials, scope mapping). Empty for
     /// git. Credentials come from here or from `spec.connection`, never from
     /// the locator.
-    pub config: &'a KindConfig,
+    pub config: &'a DriverConfig,
 }
 ```
 
-- `SourceKind`, `KindContext` and `KindConfig` are `#[doc(hidden)]` and
+- Naming: a *kind* is the id string (`"git"`, `"fake"`) used as a path
+  segment and lockfile key; a *driver* is the `SourceDriver` implementation
+  for one kind.
+- `SourceDriver`, `DriverContext` and `DriverConfig` are `#[doc(hidden)]` and
   unstable until the registry RFC settles credentials, offline policy and
   per-pin metadata (such as an integrity to verify on export).
 - **Canonical git locator**, one function `canonical_git_locator(&Url) ->
@@ -184,9 +187,9 @@ pub struct KindContext<'a, TSys> {
   `fetch_bare` receives it today. It is redacted in logs and errors and never
   written anywhere.
 - `RemoteSource` stays a closed, serde enum (`Git { uri, rev }`, later
-  `Registry { .. }`). It gains `fn kind_id(&self) -> &'static str` and
-  `fn spec(&self) -> SourceSpec`. The manager holds the kind impls in a
-  `KindRegistry` keyed by `id`; production builds register the built-in kinds,
+  `Registry { .. }`). It gains `fn kind(&self) -> &'static str` and
+  `fn spec(&self) -> SourceSpec`. The manager holds the drivers in a
+  `DriverRegistry` keyed by `kind()`; production builds register the built-in kinds,
   and tests can register more. That registry is also the set of kinds a
   lockfile may contain (4.3).
 - The manager's `materialize_with(kind, spec)` is `#[doc(hidden)]` and exists
@@ -282,7 +285,7 @@ place.
   `omni remote-sources install`, which re-resolves every pin.
 - The lockfile crate does **not** know the set of kinds: `sources` is a plain
   `Map<String, Map<String, Map<String, Entry>>>`. The manager checks every kind
-  against its `KindRegistry` after load, and an unknown kind is an error that
+  against its `DriverRegistry` after load, and an unknown kind is an error that
   names it, never dropped (dropping would delete its pins on save). Tests
   register the fake kind, so adding a kind never edits `omni_lockfile`.
 - Tests run whole `{"version":"1.0.0", …}` documents through the tagged enum,
@@ -385,9 +388,9 @@ Edge cases and failure paths:
 | # | Outcome | Depends on | Check | Undo |
 | --- | --- | --- | --- | --- |
 | 1 | Lockfile and refs new shape under `1.0.0` (`sources` keyed by plain strings, `deny_unknown_fields`, no converter), canonical git locator, `Connection` carrying credentials to the fetch, generic `Lockfile` API. Git callers adapted; `.omni/sources/lock.json` regenerated | none | Round-trip and load-error unit tests (examples 9a, b, d, 12, 14), credentials reach the fetch and are never persisted (15). All tests, updated, and `remote-sources` e2e pass | Revert and restore `lock.json` from git |
-| 2 | `SourceKind` trait, `KindRegistry`, generic core (`materialize_with`), git impl, new layout in place, pin and slug safe-segment rule, manager-side unknown-kind check | 1 | Fake kind integration tests (examples 2–8, 9c, 10, 13, 16, 17), core-does-not-import-git test. RFC 0027 examples on the new layout | Revert; entries in the new layout become dead cache |
+| 2 | `SourceDriver` trait, `DriverRegistry`, generic core (`materialize_with`), git driver, new layout in place, pin and slug safe-segment rule, manager-side unknown-kind check | 1 | Fake kind integration tests (examples 2–8, 9c, 10, 13, 16, 17), core-does-not-import-git test. RFC 0027 examples on the new layout | Revert; entries in the new layout become dead cache |
 | 3 | Projections: three-component tail | 2 | Example 4 (projection half); projection moved-store tests updated | Revert |
-| 4 | `remote_source_for` mapping replaces the 11 constructions; `invalidate`/`locked_pin`; kind-aware `StoreEntry`, prune filter and output; every git-specific site in 4.4 | 2 | `rg 'RemoteSource::Git \{' --glob '!**/tests/**'` finds only the mapping, the git impl and the `RemoteSource` dispatch arms. Prune unit and e2e tests with `kind` (example 11). CLI and MCP snapshots updated | Revert |
+| 4 | `remote_source_for` mapping replaces the 11 constructions; `invalidate`/`locked_pin`; kind-aware `StoreEntry`, prune filter and output; every git-specific site in 4.4 | 2 | `rg 'RemoteSource::Git \{' --glob '!**/tests/**'` finds only the mapping, the git driver and the `RemoteSource` dispatch arms. Prune unit and e2e tests with `kind` (example 11). CLI and MCP snapshots updated | Revert |
 | 5 | Docs: store reference (layout), lockfile shape, release note (breaking: re-run install, delete old store entries and old projection links), contributor pattern "adding a source kind" in `docs/patterns/` | 1–4 | Site build. The pattern doc walks through the fake kind | Revert |
 
 The riskiest part is step 1, which changes a git-tracked format and touches
@@ -404,7 +407,7 @@ continuous.
 | Risk | Likelihood / impact | Mitigation |
 | --- | --- | --- |
 | An old-shape lockfile loads as empty and loses its pins on save | Low / high | `deny_unknown_fields` and a required `sources` make it a load error (example 9a) |
-| An unknown kind is dropped on save | Low / high | The manager rejects any kind missing from its `KindRegistry` right after load, before anything can save (9c) |
+| An unknown kind is dropped on save | Low / high | The manager rejects any kind missing from its `DriverRegistry` right after load, before anything can save (9c) |
 | Pins re-resolve after upgrading (users delete the lockfile) | High / low | Expected break; the release note says so. Users who need the old commits note them before upgrading |
 | A locked commit the remote no longer serves is lost with the old store | Low / medium | Error points at `--update` (example 16); release note |
 | Credentials leak into the lockfile, refs, slug or logs | Low / high | Locator strips userinfo; `Connection` has no `Serialize` and redacts (example 15) |
@@ -423,7 +426,7 @@ Assumptions:
   The npm locator must not depend on a machine's registry mirror, or lockfile
   keys would differ between machines; the registry RFC defines it (for
   example the package name plus a logical registry name resolved through
-  `KindConfig`) and checks this assumption.
+  `DriverConfig`) and checks this assumption.
 - `async_trait` dyn dispatch with a generic `TSys` stays object-safe, as
   `RemoteSourceContributor` already is.
 - No external crate depends on `Lockfile::git_*` or `invalidate_git` outside
@@ -450,7 +453,7 @@ Open questions: none that block step 1.
 
 - [ ] Plan review
 - [ ] Step 1: lockfile and refs new shape, canonical locator, credentials
-- [ ] Step 2: `SourceKind` core, git impl, new layout
+- [ ] Step 2: `SourceDriver` core, git driver, new layout
 - [ ] Step 3: projection tail
 - [ ] Step 4: single mapping, kind-aware prune
 - [ ] Step 5: docs
