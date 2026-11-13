@@ -111,6 +111,10 @@ immutability, asymmetric signatures and provenance. This RFC does.
 - Verifying that an isolated-namespace label belongs to the PR it names (needs VCS
   integration). The invariant held is that isolated entries never reach the shared
   namespace.
+- Defending the local cache directory against a process that can write it. A
+  writable `cache_dir` is trusted storage: any process that can write it can plant an
+  entry and a marker (a key kept beside the marker would not help). See 4.4, "Local
+  cache trust".
 - Confidentiality (encryption of artifacts) and changing the task hash.
 - Online key revocation service. Revocation is removing a key from `trusted_keys`.
 - OIDC authentication and user login. They are later RFCs. This RFC only builds the
@@ -415,7 +419,8 @@ remote cache file (`<cache_dir>/remote-cache.omni.{yaml,enc}`,
 remote_cache:
   signing:
     trusted_keys:      # public keys, safe to commit
-      - id: ci-2026-11
+      - id: 3f9a1c07d2b84e61          # must equal first 16 hex of SHA-256(public_key); checked
+        name: ci-2026-11              # optional label
         public_key: "<base64 ed25519>"
     verify: auto       # auto | off | warn | require (see 4.5)
 ```
@@ -426,7 +431,7 @@ push: false            # default. true uploads successful results on a miss
 target: isolated       # isolated | shared (shared needs publish:artifacts)
 scope: auto            # auto derives from CI env (PR number, branch); or a literal
 signing_key:           # publishers only; never committed
-  id: ci-2026-11
+  id: 3f9a1c07d2b84e61
   private_key_env: OMNI_CACHE_SIGNING_KEY
 ```
 
@@ -514,6 +519,18 @@ whatever the repository says.
   The flag stays out of `TaskExecutionInfo` serialization, which feeds hashing, so
   digests do not change.
 
+**Local cache trust.** The origin markers and `verified_by` (above) are local files,
+so they protect against remote content, not against another process writing the same
+directory. Requirement, stated for operators and the CI recipe: **runs of different
+trust tiers must not share a writable `cache_dir`**. An untrusted run (a PR job, an
+unreviewed branch) must use its own cache directory (or OS user), and a trusted run
+must never restore a cache directory that an untrusted run wrote (for example a CI
+cache action keyed so that PR jobs can write what `main` jobs restore). Omni cannot
+enforce OS permissions, but it enforces what it can: an untrusted run never writes
+anything outside its own partition (open question 2), and the docs and the CI recipe
+use separate directories. A trusted run that restores an untrusted run's cache
+directory is outside the guarantees of this RFC.
+
 ### 4.5 Asymmetric signatures (control D)
 
 **Who signs.** Only uploads with `target: shared` are signed. Isolated entries are
@@ -557,7 +574,12 @@ compromised server cannot feed them unsigned bytes through the isolated probe.
   switch to forget.
 
 **Keys.** `omni cache keygen` prints a new keypair and key id (first 16 hex chars
-of SHA-256 of the public key). The private key is read from the environment or a
+of SHA-256 of the public key). **A key id is bound to exactly one public key**: the
+client derives the id from `public_key` and rejects a `trusted_keys` entry whose `id`
+differs (an optional human `name` field carries labels such as `ci-2026-11`). Changing
+the key material therefore changes the id, and `verified_by` values (4.4) and
+signature lookups can never be satisfied by a different key under a reused id. A
+removed id is not reused. The private key is read from the environment or a
 file, never from committed config, and is registered with log redaction
 (RFC 0022 and 0026). Rotation: trust both old and new public keys, switch the
 publisher, then remove the old key. Entries signed by a removed key become misses,
@@ -1163,6 +1185,19 @@ runtime, `verify: off` disables verification and `push: false` stops uploads.
    after this change is cold, some duplicate disk use, and existing local cache
    entries (unknown provenance) are ignored once. The marker file then only needs
    to carry `verified_by`.
+
+   A related gap (review): a task built locally on top of a verified shared entry
+   stores an entry with no `verified_by`, and its key holds only dependency digests, so
+   when a signing key leaves `trusted_keys` the direct shared entry becomes a miss but
+   its dependents stay hits. Server-side `omni cache purge --signing-key` does not
+   touch local entries. Options: (i) every locally built entry inherits the set of
+   verifying key ids of its dependency entries, checked on local hits under `require`
+   (taint-style, fails open on a missed propagation); (ii) key the `trusted/`
+   partition by a *trust epoch*, a hash of the effective `trusted_keys` set, so any
+   change to the set (a key narrowed out, revoked or added) starts a fresh `trusted/`
+   partition and nothing derived under the old set is reused (fails closed, at the
+   cost of a cold local cache at each key rotation). Reviewer recommendation: (ii)
+   together with (b).
 
 **Acceptance checklist (not a decision)**
 
