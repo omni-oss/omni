@@ -148,17 +148,34 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
         Ok(disk)
     }
 
-    async fn merge_own_pins(&self, disk: &Lockfile) -> Result<(), Error> {
+    /// Apply this manager's unsaved changes to `disk`, returning the snapshot
+    /// applied so `forget_saved` can drop it once saved.
+    async fn merge_own_pins(
+        &self,
+        disk: &Lockfile,
+    ) -> Result<BTreeMap<PinKey, Option<String>>, Error> {
         let changed = self.changed.lock().expect("pins mutex poisoned").clone();
-        for ((kind, locator, selector), pin) in changed {
+        for ((kind, locator, selector), pin) in &changed {
             match pin {
                 Some(pin) => {
-                    disk.lock_pin(&kind, &locator, &selector, &pin).await?
+                    disk.lock_pin(kind, locator, selector, pin).await?
                 }
-                None => disk.remove(&kind, &locator, &selector).await?,
+                None => disk.remove(kind, locator, selector).await?,
             }
         }
-        Ok(())
+        Ok(changed)
+    }
+
+    /// Drop saved changes, so a later save never replays them over a pin
+    /// another process changed since. A change recorded after the snapshot
+    /// is kept.
+    fn forget_saved(&self, saved: BTreeMap<PinKey, Option<String>>) {
+        let mut changed = self.changed.lock().expect("pins mutex poisoned");
+        for (key, pin) in saved {
+            if changed.get(&key) == Some(&pin) {
+                changed.remove(&key);
+            }
+        }
     }
 
     fn record_change(&self, kind: &str, spec: &SourceSpec, pin: Option<&str>) {
@@ -229,6 +246,12 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
             LockGuard::acquire_exclusive(self.remote_lock_path(kind, &slug))
                 .await?;
         self.check_layout().await?;
+        // Another task of this manager may have locked it while we waited.
+        let locked =
+            self.lockfile.pin(kind, &spec.locator, &spec.selector).await;
+        if let Some(pin) = &locked {
+            check_pin(kind, spec, pin)?;
+        }
 
         let ctx = DriverContext {
             sys: &self.sys,
@@ -333,10 +356,11 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
         // opened: another process may have added pins since, and saving ours
         // would drop them. Our own resolved pins are merged in first.
         let disk = self.load_lockfile().await?;
-        self.merge_own_pins(&disk).await?;
+        let saved = self.merge_own_pins(&disk).await?;
         Self::prune_lockfile_pins(&disk, &retained).await?;
         self.ensure_lockfile_parent().await?;
         disk.save(&self.sys).await?;
+        self.forget_saved(saved);
 
         Ok(())
     }
@@ -350,10 +374,11 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
             LockGuard::acquire_exclusive(self.advisory_lock_path()).await?;
 
         let disk = self.load_lockfile().await?;
-        self.merge_own_pins(&disk).await?;
+        let saved = self.merge_own_pins(&disk).await?;
 
         self.ensure_lockfile_parent().await?;
         disk.save(&self.sys).await?;
+        self.forget_saved(saved);
 
         Ok(())
     }

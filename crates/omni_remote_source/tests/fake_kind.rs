@@ -638,4 +638,13 @@ async fn persisting_never_overwrites_a_pin_another_process_changed() {
     let pins = &saved["sources"]["fake"][&s1.locator];
     assert_eq!(pins["s1"]["pin"], "new", "{saved}");
     assert!(pins.get("s2").is_some(), "{saved}");
+
+    // A later save does not replay our already-saved s2 pin over a newer one.
+    let mut edited = saved.clone();
+    edited["sources"]["fake"][&s1.locator]["s2"]["pin"] = "later".into();
+    std::fs::write(ws.lockfile(), edited.to_string()).unwrap();
+    manager.persist_pins().await.unwrap();
+    let again: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(ws.lockfile()).unwrap()).unwrap();
+    assert_eq!(again["sources"]["fake"][&s1.locator]["s2"]["pin"], "later");
 }

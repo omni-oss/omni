@@ -44,7 +44,6 @@ pub(crate) fn store_slug(uri: &Url) -> String {
     }
     identity.push_str(uri.path().trim_end_matches('/'));
     identity
-        .trim_end_matches(".git")
         .chars()
         .flat_map(|c| {
             if c.is_ascii_alphanumeric() || c == '-' || c == '.' {
@@ -100,7 +99,7 @@ impl<TSys: RemoteSourceSys> SourceDriver<TSys> for GitDriver {
                     "could not fetch {} (the network is needed when the local mirror does not have `{}`): {}",
                     spec.connection,
                     locked.unwrap_or(&spec.selector),
-                    omni_redact::redact_url_userinfo(&error.to_string()),
+                    spec.connection.redact_in(&error.to_string()),
                 ))
             })?;
         tracing::trace!("fetched git repo uri: {}", spec.connection);
@@ -166,11 +165,12 @@ mod tests {
     }
 
     #[test]
-    fn the_same_remote_keeps_one_name_regardless_of_credentials_or_dot_git() {
+    fn the_same_remote_keeps_one_name_regardless_of_credentials() {
         let plain = slug("https://host/owner/repo");
         assert_eq!(plain, slug("https://user:token@host/owner/repo"));
-        assert_eq!(plain, slug("https://host/owner/repo.git"));
         assert_eq!(plain, slug("https://host/owner/repo/"));
+        // Distinct locators, so distinct mirrors.
+        assert_ne!(plain, slug("https://host/owner/repo.git"));
     }
 
     #[test]

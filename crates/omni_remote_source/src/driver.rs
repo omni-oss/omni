@@ -27,19 +27,41 @@ impl Connection {
     }
 }
 
+impl Connection {
+    /// The address without userinfo, query or fragment, any of which can
+    /// carry a credential.
+    pub fn redacted(&self) -> String {
+        match url::Url::parse(&self.0) {
+            Ok(mut url) => {
+                let had_userinfo =
+                    !url.username().is_empty() || url.password().is_some();
+                let _ = url.set_password(None);
+                let _ = url.set_username(if had_userinfo { "***" } else { "" });
+                url.set_query(None);
+                url.set_fragment(None);
+                url.to_string()
+            }
+            Err(_) => omni_redact::redact_url_userinfo(&self.0).into_owned(),
+        }
+    }
+
+    /// `text` with every occurrence of the raw address replaced by its
+    /// redacted form, for messages from libraries that echo the URL.
+    pub fn redact_in(&self, text: &str) -> String {
+        let text = text.replace(&self.0, &self.redacted());
+        omni_redact::redact_url_userinfo(&text).into_owned()
+    }
+}
+
 impl fmt::Debug for Connection {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "Connection({})",
-            omni_redact::redact_url_userinfo(&self.0)
-        )
+        write!(f, "Connection({})", self.redacted())
     }
 }
 
 impl fmt::Display for Connection {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&omni_redact::redact_url_userinfo(&self.0))
+        f.write_str(&self.redacted())
     }
 }
 
@@ -222,5 +244,15 @@ mod tests {
         assert!(!format!("{c:?}").contains("token"));
         assert!(!format!("{c}").contains("token"));
         assert_eq!(c.expose(), "https://user:token@host/r.git");
+
+        let q = Connection::new("https://host/r.git?access_token=secret#x");
+        assert!(!format!("{q:?}").contains("secret"));
+        assert!(!format!("{q}").contains("secret"));
+        assert!(
+            !q.redact_in(
+                "failed to fetch https://host/r.git?access_token=secret#x"
+            )
+            .contains("secret")
+        );
     }
 }
