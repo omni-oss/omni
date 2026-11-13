@@ -171,7 +171,11 @@ trait Authenticator {           // replaces the bool-returning SecurityService m
   credential identifier that reaches hooks, provenance and logs.
 - Three existing places must move with the seam: `CachedSecurity`
   (`caching/provider.rs`), which caches `bool` results per raw key and becomes a
-  cache of `Caller` keyed by a hash of the credential; the `validate_access` call
+  cache of `Caller` keyed by a hash of the credential **plus the `Resource` and the
+  `wanted` scopes** (as `CachedSecurity::can_access` already includes
+  `required_scopes` in its key), because a `Caller`'s `scopes` are only valid for the
+  one resource and scope set it was built for; a hit never serves a `Caller` built
+  for a different resource or wanted set; the `validate_access` call
   (`omni cache remote setup`), which also sends `X-API-KEY`; and the SQL/D1 key
   query contract, which gains an optional `principal` result column.
 - Nothing downstream of the authenticator mentions API keys. Hooks get
@@ -426,10 +430,15 @@ signing_key:           # publishers only; never committed
   private_key_env: OMNI_CACHE_SIGNING_KEY
 ```
 
-Local config may **tighten** the workspace policy but never loosen it: the effective
-`verify` is the stricter of the two (`off` < `warn` < `require`), and the effective
+Local config may **tighten** the workspace policy but never loosen it. Resolution
+order: first resolve the workspace `verify` (`auto` becomes `require` when the
+**workspace** `trusted_keys` is non-empty, otherwise `off`); then take the stricter of
+that and the local `verify` (`off` < `warn` < `require`); then apply any local
+narrowing of `trusted_keys`. `auto` is never re-evaluated after narrowing, so a local
+file cannot lower the policy by narrowing the key set to nothing. The effective
 `trusted_keys` is the workspace set, which a local file may only narrow to a subset
-(a release pipeline can trust only the release publisher's key). A local file cannot
+(a release pipeline can trust only the release publisher's key). An empty effective
+key set under `require` rejects every shared entry as a miss. A local file cannot
 add a key or turn verification down, so a machine nobody configured still verifies
 whatever the repository says.
 
@@ -471,13 +480,22 @@ whatever the repository says.
   dependencies in that run**, because a release that depends on a `build` restored
   from the remote cache would still ship a poisoned output. A local cache entry
   restored from the remote cache gets a marker file (`.omni-origin-remote`) in its
-  directory, and an opted-out run treats marked entries as misses, so a poisoned
-  entry restored earlier cannot leak in through the local cache. Unmarked entries
-  are used as usual. The marker is also written for restores from an isolated
-  namespace. When an opted-out run re-executes a task whose local entry is marked, a
+  directory. The marker records the origin namespace, `shared` or `isolated`. An
+  opted-out run treats **every** marked entry as a miss. Any other run treats an
+  entry marked `isolated` as a miss, unless the run is untrusted, meaning its
+  credential has `write:artifacts` but not `publish:artifacts` (the client knows this
+  from `validate_access`; if the scopes are unknown, for example remote is disabled or
+  unreachable, the run is treated as trusted, the strict case). The trust tier comes
+  from the credential's scopes, not from the configured `target`, because `target`
+  defaults to `isolated` and does not identify untrusted runs. Entries marked
+  `shared` were verified at restore time and are reused by any run, so local hits are
+  not lost. Unmarked entries are used as usual. This stops an unsigned isolated entry,
+  restored earlier into a shared local cache directory (for example a CI cache
+  restored between jobs), from reaching a shared publish through a local hit. When a
+  run that must reject a marked entry re-executes the task, a
   local success **replaces** the marked entry (`publish_staged_dir(.., replace =
   true)`), otherwise `cache_many` sees `existing_exit_code == Some(0)`, writes
-  nothing, and every opted-out run rebuilds forever. The marker is a separate file, not a field in the entry
+  nothing, and every such run rebuilds forever. The marker is a separate file, not a field in the entry
   metadata, so the metadata format and older readers are unaffected. The client
   extracts into a sibling temp directory, writes the marker first, then renames the
   directory into place. A crash can then never leave a remote entry without its
@@ -953,6 +971,13 @@ Why: these are the user-visible controls A, C and D.
   `PUT` to `shared`; the S3 backend rejects the removed bucket-per-container mode.
   The Goal 4 failure guard (3): a test fails if a publisher or read-only run restores
   anything from an isolated namespace.
+- **Marker rules (4.4):** a run with `publish` treats an `isolated`-marked local entry
+  as a miss and replaces it with a local success; an untrusted run (`write`, no
+  `publish`) reuses it; a `shared`-marked entry is reused by every run; an opted-out
+  run misses on every marked entry; unknown scopes (remote disabled) are treated as
+  trusted. `CachedSecurity` never serves a `Caller` built for another resource or
+  wanted set. `auto` is resolved against the workspace key set before narrowing, and
+  an empty local subset under `require` rejects every shared entry.
 - **Path safety:** `..`, leading-dot and encoded segments in `scope` and
   `principal_id`, malformed digests, a resolved path outside the container root, and
   a crafted cached `original_path` (absolute, `..`, outside the project root), each
@@ -985,8 +1010,10 @@ things earlier slices provide:
 
 1. Storage: create-if-absent, `get_range`, `list_prefix`, `delete_prefix`, path
    safety (digest and containment checks), server `409`, truncated-upload abort,
-   remove `replacing`, and in the same slice the client treats `409` as success and
-   upload failures as warnings (B).
+   remove `replacing`, and in the same slice the client uploads only successful
+   executions (4.2), treats `409` as success and upload failures as warnings (B).
+   The success-only gate must ship with immutability: otherwise a failed entry
+   could occupy a digest forever.
 2. Authenticated `Caller` seam (4.0): `Credential` extractor, per-request
    `Authenticator::authenticate(credential, resource, wanted)`,
    `CachedSecurity`, `validate_access`, SQL/D1 `principal` column, `X-API-KEY` to
@@ -1117,7 +1144,7 @@ backends, open question 1) and, within step 3, the sealing stream.
 
 | # | Step | Check | Undo |
 | --- | --- | --- | --- |
-| 1 | Storage primitives, path safety, `409`, abort on truncated upload, remove `replacing`, client `409`/warning handling. | Concurrency and abort contract tests per backend, path-safety tests. Spike on real R2 and S3: create-only conditional write. | Revert commit. |
+| 1 | Storage primitives, path safety, `409`, abort on truncated upload, remove `replacing`, client success-only upload gate and `409`/warning handling. | Concurrency and abort contract tests per backend, path-safety tests, a failed execution is never uploaded. Spike on real R2 and S3: create-only conditional write. | Revert commit. |
 | 2 | `Caller`/`Authenticator` seam and header move. | Seam test, existing end-to-end remote tests still pass. | Revert commit. |
 | 3 | Trailer, sealing stream, provenance, hooks and SQL hooks params. | Trailer bounds tests, mismatch leaves the key free, provenance not client-settable, suffix-range read returns the trailer, `409` logged as `AlreadyExists`. | Revert commit. |
 | 4 | Scopes, namespaces, client-driven resolution. | Authorization matrix, worked-example integration test, failure guard (1). | Revert commit. |
