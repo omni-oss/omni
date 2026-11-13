@@ -266,8 +266,13 @@ branch's copy, with `INTEGRATION_BOT_TOKEN`. It acts only when the PR was
 merged, its head is `integration/**` and its base is `main`:
 
 1. Delete the landed branch, unless it is still needed by an open child PR.
-   Retarget any open child PRs to the new default branch if one exists, and
-   otherwise comment that they must be rebased onto `main`.
+   Open child PRs of the landed branch need a new base. If a parallel
+   integration branch is open, first merge `main` into it, so the landing
+   merge is in the new base and a retargeted PR does not show the landed batch
+   in its diff. Retarget the child PRs only if that sync succeeds. If it
+   fails, or no parallel branch is open, do not retarget: comment on each child
+   PR that it must be rebased onto `main` and reopened, or wait for the owner
+   to sort out the sync (`needs-sync`).
 2. Check the parallel limit (at most two active branches). Skip creation if the
    limit is reached, and comment on the landed PR.
 3. Do **not** create the next branch yet (lazy creation, default). Remove
@@ -275,17 +280,21 @@ merged, its head is `integration/**` and its base is `main`:
    `git start` helper tell contributors to branch from `main` while there is
    no default.
 4. An owner starts the next batch with the `new-batch` workflow dispatch. It
-   creates `integration/<yyyy-mm-dd>` from the current `main` head, opens its
-   draft integration PR with the `<!-- children -->` marker, labels it
-   `default-batch` and assigns the owner. Until then, `main` is the base for
+   creates `integration/<yyyy-mm-dd>[-<suffix>]` from the current `main` head,
+   using the suffix rule from section 2 (for example `-2`) if that ref already
+   exists. A new branch has no commits beyond `main`, and GitHub cannot open a
+   PR for it, so the bot adds one empty marker commit, `chore: start
+   integration batch <name>` (a valid conventional commit, so `cog check`
+   passes when it lands). It then opens the draft integration PR with the
+   `<!-- children -->` marker, labels it `default-batch` and assigns the
+   owner. Until then, `main` is the base for
    new work.
 
 Why lazy: a branch created for a quiet week sits empty, goes stale and reaches
 the lifespan cap without any work in it. Eager creation is an option: step 3
 creates the branch immediately, and the nightly run deletes any default branch
-that has had no child PR merged for 7 days. A draft integration PR needs a
-diff, so eager creation requires a marker commit that the first child PR
-supersedes.
+that has had no child PR merged for 7 days. Eager creation uses the same marker
+commit as step 4, since the PR cannot be opened without it.
 
 Rules:
 
