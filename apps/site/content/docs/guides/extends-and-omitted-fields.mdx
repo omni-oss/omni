@@ -15,7 +15,7 @@ from a file it extends. Defaults apply once, after every file has been
 combined.
 
 This is a behavior change from earlier versions, which filled in defaults for
-each file before combining. Three cases are affected.
+each file before combining. Four cases are affected.
 
 ## `cache.output.logs` is no longer reset
 
@@ -56,6 +56,42 @@ old result.
 
 The same holds for a task that extends another task: fields the extending task
 omits come from the task it extends.
+
+## A task written two ways keeps its fields
+
+A task can be written as a bare command (`build: cargo build`) or as a block.
+Earlier versions replaced the whole task whenever the two files used different
+forms, so a block that only set `env` erased the base's command. Now a task
+combines field by field whatever form each file uses, with the same rules as
+other fields: a plain list replaces, `append`, `prepend` and `merge` combine, a
+plain dictionary combines, and a field a file leaves out is kept.
+
+A bare command stands for its command plus a dependency on the same task in
+upstream projects (`^build`). That dependency takes part in the combination
+like any other list entry.
+
+```yaml
+# base.omni.yaml
+tasks:
+    build: cargo build
+
+# app/project.omni.yaml
+name: app
+extends: ../base.omni.yaml
+tasks:
+    build:
+        env:
+            vars:
+                PROFILE: release
+```
+
+Old result: `build` has no command and no dependencies, because the block
+replaced the bare command. New result: `build` runs `cargo build`, depends on
+`^build` and sets `PROFILE`. To drop the inherited dependency, set a plain
+`dependencies` list (`dependencies: []`). Two bare commands still replace one
+another, as before. A bare command over a block replaces the block's command,
+adds the `^build` dependency to the block's `dependencies` list, and keeps the
+other fields.
 
 ## `name` can come from an extended file
 

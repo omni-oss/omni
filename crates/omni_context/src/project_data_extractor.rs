@@ -13,24 +13,38 @@ use omni_configurations::{
     FinalizedProject, LoadedLayer, MetaConfiguration, RedactPolicy,
     WorkspaceConfiguration,
 };
-use omni_core::{
-    ExtensionGraph, ExtensionGraphError, ExtensionGraphNode as _, Project, Task,
-};
+use omni_core::{ExtensionGraph, ExtensionGraphError, Project, Task};
 use omni_glob_config::MergeGlobConfig;
 use omni_task_context::CacheInfo;
 use omni_task_output_logs::OutputLogsConfiguration;
-use omni_types::OmniPathError;
+use omni_types::{OmniPath, OmniPathError};
 use serde::{Deserialize, Serialize};
 use sets::UnorderedSet;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 use tracing::Level;
 
 use crate::{
-    EnvLoader, EnvVarsMap, GetVarsArgs, build,
+    ConfigLocation, EnvLoader, EnvVarsMap, GetVarsArgs, build,
     env_loader::EnvCacheSys,
     project_config_entry::is_runnable_project,
     utils::{EnvVarsOsMap, vars_os},
 };
+
+/// Config files that seed a project's default cache key inputs: the file
+/// itself and everything it transitively extends. A virtual project has no
+/// file, so it contributes none and its logical key never becomes an input.
+fn config_file_inputs(
+    location: &ConfigLocation,
+    extension_graph: &ExtensionGraph<LoadedLayer>,
+) -> Result<Vec<OmniPath>, ExtensionGraphError> {
+    let Some(file) = location.file_path() else {
+        return Ok(vec![]);
+    };
+    let id = OmniPath::from(file.to_path_buf());
+    let mut files = extension_graph.get_transitive_extendee_ids(&id)?;
+    files.push(id);
+    Ok(files)
+}
 
 #[derive(new)]
 pub struct ProjectDataExtractor<'a, TSys: EnvCacheSys> {
@@ -210,10 +224,12 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
 
                 let key_input_files = if use_defaults {
                     let mut files = cache.key.files.clone();
-                    let mut additional_files = extension_graph
-                        .get_transitive_extendee_ids(project_config.id())?;
-
-                    additional_files.push(project_config.id().clone());
+                    let additional_files = config_file_inputs(
+                        &ConfigLocation::File(
+                            project_config.file.path()?.to_path_buf(),
+                        ),
+                        extension_graph,
+                    )?;
 
                     // The project's own config-file ids seed the include side
                     // only; defaults are always includes. The exclude side
@@ -398,4 +414,73 @@ pub(crate) enum ProjectDataExtractorErrorInner {
         #[diagnostic(detail = "reason")]
         message: String,
     },
+}
+
+#[cfg(test)]
+mod tests {
+    use omni_path_utils::{ProjectRootId, WorkspacePath};
+
+    use super::*;
+    use crate::LogicalProjectKey;
+
+    fn layer(file: &str, extends: &[&str]) -> LoadedLayer {
+        let mut l = LoadedLayer {
+            file: PathBuf::from(file).into(),
+            dir: PathBuf::from(file).parent().unwrap().to_path_buf().into(),
+            ..Default::default()
+        };
+        if !extends.is_empty() {
+            l.layer.extends =
+                Some(omni_configurations::types::SingleOrMany::Many(
+                    extends
+                        .iter()
+                        .map(|e| OmniPath::from(PathBuf::from(e)))
+                        .collect(),
+                ));
+        }
+        l
+    }
+
+    fn graph() -> ExtensionGraph<LoadedLayer> {
+        ExtensionGraph::from_nodes(vec![
+            layer("/w/lib/base.yaml", &[]),
+            layer("/w/app/project.omni.yaml", &["/w/lib/base.yaml"]),
+        ])
+        .unwrap()
+    }
+
+    #[test]
+    fn a_file_project_seeds_inputs_with_its_closure_and_itself() {
+        let inputs = config_file_inputs(
+            &ConfigLocation::File(PathBuf::from("/w/app/project.omni.yaml")),
+            &graph(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            inputs.last(),
+            Some(&OmniPath::from(PathBuf::from("/w/app/project.omni.yaml")))
+        );
+        assert!(
+            inputs.contains(&OmniPath::from(PathBuf::from("/w/lib/base.yaml")))
+        );
+        // The closure already includes the file itself; kept as before.
+        assert_eq!(inputs.len(), 3);
+    }
+
+    #[test]
+    fn a_virtual_project_contributes_no_file_inputs() {
+        let key = LogicalProjectKey::new(ProjectRootId::new(
+            WorkspacePath::parse("app").unwrap(),
+        ));
+
+        // Not even a missing graph node is consulted: no id is ever built.
+        let inputs = config_file_inputs(
+            &ConfigLocation::Virtual(key),
+            &ExtensionGraph::new(),
+        )
+        .unwrap();
+
+        assert!(inputs.is_empty());
+    }
 }

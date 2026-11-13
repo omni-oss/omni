@@ -70,6 +70,7 @@ omni_setup = { workspace = true }
 omni_task_context = { workspace = true }
 omni_remote_cache_client = { workspace = true }
 omni_tracing_subscriber = { workspace = true }
+omni_path_utils = { workspace = true }
 omni_core = { workspace = true }
 omni_tera = { workspace = true }
 omni_config_types = { workspace = true }
@@ -81,6 +82,7 @@ async-trait = { workspace = true }
 tokio = { workspace = true }
 omni_context = { workspace = true }
 omni_tracing_subscriber = { workspace = true }
+omni_path_utils = { workspace = true }
 omni_input_provider = { workspace = true, features = ["test-utils"] }
 system_traits = { workspace = true, features = [
     "real-sync",

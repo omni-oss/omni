@@ -6652,6 +6652,7 @@ dependencies = [
  "omni_input_schema",
  "omni_messages",
  "omni_meta",
+ "omni_path_utils",
  "omni_projection_configurations",
  "omni_projections",
  "omni_redact",

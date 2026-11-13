@@ -151,28 +151,32 @@ pub(crate) fn resolve_task_layer_extensions(
         TaskLayer::LongForm(long_form) => {
             long_form.base == Some(true) || long_form.extends.is_some()
         }
-        TaskLayer::ShortForm(_) => false,
+        TaskLayer::ShortForm(_) | TaskLayer::Alias(_) => false,
     });
 
     if !needs_resolution {
         return Ok(());
     }
 
+    let mut aliases = Vec::new();
     let nodes = tasks
         .iter()
-        .map(|(name, task)| {
-            let task = task.clone().into_long_form(name);
+        .filter_map(|(name, task)| {
+            let Some(task) = task.clone().into_long_form(name) else {
+                aliases.push((name.clone(), task.clone()));
+                return None;
+            };
             let extends = task
                 .extends
                 .as_ref()
                 .map(SingleOrMany::to_vec)
                 .unwrap_or_default();
 
-            TaskExtensionNode {
+            Some(TaskExtensionNode {
                 name: name.clone(),
                 extends,
                 task,
-            }
+            })
         })
         .collect::<Vec<_>>();
 
@@ -192,6 +196,7 @@ pub(crate) fn resolve_task_layer_extensions(
 
         map.insert(node.name, TaskLayer::LongForm(Box::new(task)));
     }
+    map.extend(aliases);
 
     Ok(())
 }
