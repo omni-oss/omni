@@ -73,15 +73,15 @@ like any other list entry.
 ```yaml
 # base.omni.yaml
 tasks:
-  build: cargo build
+    build: cargo build
 
 # app/project.omni.yaml
 extends: ../base.omni.yaml
 tasks:
-  build:
-    env:
-      vars:
-        PROFILE: release
+    build:
+        env:
+            vars:
+                PROFILE: release
 ```
 
 Old result: `build` has no command and no dependencies, because the block
