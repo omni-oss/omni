@@ -519,6 +519,43 @@ whatever the repository says.
   The flag stays out of `TaskExecutionInfo` serialization, which feeds hashing, so
   digests do not change.
 
+**Local cache partitions.** Local entries are keyed by project and input digest only,
+so a task built locally on top of a remote-derived dependency would otherwise be
+indistinguishable from a clean one, and its key (dependency digests) stays valid after
+the dependency is revoked. The local cache is therefore **partitioned by trust class**,
+and a run can only read the partitions its class allows. This fails closed by
+construction: no marker has to be propagated through derived entries.
+
+| Partition | Path under `cache_dir` | Written by | Read by |
+| --- | --- | --- | --- |
+| trusted | `trusted/{epoch}/` | runs that are not untrusted and not opted-out | same epoch only |
+| untrusted | `untrusted/{principal_id}/{scope}/` | untrusted runs (`write`, no `publish`) | that run, then `trusted/{epoch}/` of its own epoch |
+| local | `local/` | opted-out runs (`cache.remote: false`) | opted-out runs only |
+
+- **Trust epoch** = first 16 hex of SHA-256 over the effective `trusted_keys` ids
+  (sorted) and the effective `verify` mode. A change to either (a key added, narrowed
+  out or revoked, or `verify` moving between `off`, `warn` and `require`) starts a
+  fresh `trusted/` partition, so nothing derived under the old policy is reused. A
+  cold local cache at each rotation or policy change is the cost.
+- Everything a run writes, including dependents built on restored entries, goes into
+  that run's own partition. So an entry built on an isolated dependency lives under
+  `untrusted/...`, and one built on an entry restored under `verify: off` lives under
+  the `off` epoch. Publishing and `require` runs cannot read either.
+- **Opted-out runs** use `local/`, which holds only entries the run built from local
+  dependencies, never restored from the remote. They neither read nor write the other
+  partitions, which gives `cache.remote: false` its transitive guarantee structurally.
+- Restoring from the remote writes the entry into the run's own partition (an
+  untrusted run's isolated restore into `untrusted/...`, a verified shared restore
+  into `trusted/{epoch}/`). The origin marker still records `shared` or `isolated`
+  and `verified_by`, now as defence in depth and for diagnostics, since the partition
+  already enforces who can read it.
+- Unknown scopes (remote disabled or unreachable) are treated as trusted. Existing
+  pre-RFC local entries have unknown provenance and are ignored, so the first run after
+  the change is cold. Releases build into `local/`, so the first opted-out build is cold
+  too.
+- Cost: some duplicate disk use across partitions. `omni cache clean` removes
+  partitions the current policy can no longer read.
+
 **Local cache trust.** The origin markers and `verified_by` (above) are local files,
 so they protect against remote content, not against another process writing the same
 directory. Requirement, stated for operators and the CI recipe: **runs of different
@@ -1000,7 +1037,17 @@ Why: these are the user-visible controls A, C and D.
   `PUT` to `shared`; the S3 backend rejects the removed bucket-per-container mode.
   The Goal 4 failure guard (3): a test fails if a publisher or read-only run restores
   anything from an isolated namespace.
-- **Marker rules (4.4):** a run with `publish` treats an `isolated`-marked local entry
+- **Local cache partitions (4.4):** a task built on an isolated dependency is written to
+  `untrusted/...` and is a miss for a publishing run, a `require` run and an opted-out
+  run; a dependent built on an entry restored under `verify: off` or `warn` is written
+  to that epoch and is a miss for a `require` run; narrowing out or revoking a key (or
+  changing `verify`) changes the epoch, so a dependent of the revoked key's entry is a
+  miss; two untrusted principals, and two scopes of one principal, never read each
+  other's partitions; an opted-out run reads and writes only `local/` and never sees a
+  remote-restored entry or a dependent of one; pre-RFC entries are ignored. Failure
+  guard (4): a test fails if a locally built dependent of an isolated entry can be read
+  by a publishing run.
+- **Marker rules (4.4, defence in depth):** a run with `publish` treats an `isolated`-marked local entry
   as a miss and replaces it with a local success; an untrusted run (`write`, no
   `publish`) reuses it; an opted-out run misses on every marked entry; unknown scopes
   (remote disabled) are treated as trusted. A `shared`-marked entry is reused by any
@@ -1058,8 +1105,8 @@ things earlier slices provide:
 5. Client config and defaults: `push`, `target`, `scope: auto`, size caps, and the
    split between the committed workspace config (`trusted_keys`, `verify`) and the
    local file, with the never-loosen merge (A).
-6. Per-task `cache.remote: false`, `--no-remote-cache`, marker with staged
-   extraction, metadata path validation (E).
+6. Local cache partitions with the trust epoch, per-task `cache.remote: false`,
+   `--no-remote-cache`, marker with staged extraction, metadata path validation (E).
 7. Signing: `keygen`, sign on shared upload, verify before `unarchive`, modes (D).
 8. Operator tools: `cache provenance`, `cache purge`, isolated TTL (F, part 2).
 9. Docs: remote cache guide with a CI recipe (GitHub Actions environment-scoped
@@ -1139,6 +1186,10 @@ runtime, `verify: off` disables verification and `push: false` stops uploads.
 - **`Caller` and the SQL/D1 contract:** authenticate per request with the resource
   and wanted scopes. `scopes: all` never grants `publish` (4.0).
 
+- **Local cache isolation:** the local cache is partitioned by trust class (4.4,
+  "Local cache partitions"). Taint propagation was rejected because a missed
+  propagation fails open.
+
 **Open questions (owner TBD)**
 
 1. Does the R2 **Workers binding** (`put` with `onlyIf`) give create-only on **real**
@@ -1162,47 +1213,6 @@ runtime, `verify: off` disables verification and `push: false` stops uploads.
    (SigV4 `PutObject` with `If-None-Match: *`). Plan step 1 verifies the binding when a
    Worker can be deployed.
 
-2. **Local cache isolation: marker propagation or partitioning.** The origin marker
-   (4.4) covers entries restored from the remote cache, but a task that runs locally
-   on top of an isolated (or any remote-derived) dependency stores an *unmarked*
-   entry, and its key contains only the dependency *digests*, so it stays valid. A
-   later publishing or opted-out run can hit that unmarked entry and reuse output
-   derived from isolated bytes, which defeats the marker and the "all transitive
-   dependencies" rule of `cache.remote: false`. Two untrusted principals sharing one
-   `cache_dir` can also reuse each other's isolated entries, since the local key does
-   not include principal or scope. Options: (a) propagate a taint: every locally built
-   entry records `taint` (origin namespace, principal, scope) inherited from its
-   dependency entries, and runs apply the marker rules to the inherited taint; any
-   missed propagation silently fails open. (b) Partition the local cache by trust
-   class, so a run can only read partitions its class allows: `trusted/` (verified
-   shared entries and entries built on them), `untrusted/{principal_id}/{scope}/`,
-   and `local/` (opt-out runs: only entries built from local deps; no remote
-   influence at all). Untrusted runs read `untrusted/...` then `trusted/`, and write
-   `untrusted/...`; trusted runs read and write `trusted/`; opted-out runs read and
-   write `local/`. Reviewer recommendation: (b), because it fails closed by
-   construction and makes the per-principal binding and the dependent-derivation
-   cases structural instead of checked. Costs: the first opted-out (release) build
-   after this change is cold, some duplicate disk use, and existing local cache
-   entries (unknown provenance) are ignored once. The marker file then only needs
-   to carry `verified_by`.
-
-   A related gap (review): a task built locally on top of a verified shared entry
-   stores an entry with no `verified_by`, and its key holds only dependency digests, so
-   when a signing key leaves `trusted_keys` the direct shared entry becomes a miss but
-   its dependents stay hits. Server-side `omni cache purge --signing-key` does not
-   touch local entries. Options: (i) every locally built entry inherits the set of
-   verifying key ids of its dependency entries, checked on local hits under `require`
-   (taint-style, fails open on a missed propagation); (ii) key the `trusted/`
-   partition by a *trust epoch*, a hash of the effective `trusted_keys` set **and the
-   effective `verify` mode**, so any change to either (a key narrowed out, revoked or
-   added, or `verify` changing between `off`, `warn` and `require`) starts a fresh
-   `trusted/` partition and nothing derived under the old policy is reused (fails
-   closed, at the cost of a cold local cache at each key rotation or policy change).
-   Everything a run writes, including a dependent built on an entry restored under
-   `off` or `warn`, goes into the partition of that run's own epoch, so a `require`
-   run, which has a different epoch, never reads it. Reviewer recommendation: (ii)
-   together with (b).
-
 **Acceptance checklist (not a decision)**
 
 Before status moves to Accepted: re-verify the tool comparison in section 2 and the
@@ -1224,7 +1234,7 @@ backends, open question 1) and, within step 3, the sealing stream.
 | 3 | Trailer, sealing stream, provenance, hooks and SQL hooks params. | Trailer bounds tests, mismatch leaves the key free, provenance not client-settable, suffix-range read returns the trailer, `409` logged as `AlreadyExists`. | Revert commit. |
 | 4 | Scopes, namespaces, client-driven resolution. | Authorization matrix, worked-example integration test, failure guard (1). | Revert commit. |
 | 5 | Client `push`/`target`/`scope`, size caps. | Zero-upload test, advertised-cap test. | Revert commit. |
-| 6 | `cache.remote: false` (transitive), CLI flag, marker with staged extraction, metadata path validation. | Remote reads and writes skipped for the task and its dependencies, marked entry is a miss then replaced by a local success, a crash mid-extraction leaves no unmarked remote entry, hostile `original_path` rejected. | Revert commit. |
+| 6 | Local cache partitions and trust epoch, `cache.remote: false` (transitive via `local/`), CLI flag, marker with staged extraction, metadata path validation. | Partition tests and failure guard (4) above, remote reads and writes skipped for the task and its dependencies, a crash mid-extraction leaves no unmarked remote entry, hostile `original_path` rejected. | Revert commit. |
 | 7 | Signing: `keygen`, sign, verify before `unarchive`, modes. | Full failure list in 4.7, failure guard (2). | Revert commit. |
 | 8 | `cache provenance`, `cache purge`, isolated TTL. | Purge removes only the named writer, key or signing key; TTL touches isolated only. | Revert commit. |
 | 9 | Docs and release note. | Docs build. A reviewer follows the CI recipe against a test server. | Revert docs. |
