@@ -1193,10 +1193,14 @@ runtime, `verify: off` disables verification and `push: false` stops uploads.
    touch local entries. Options: (i) every locally built entry inherits the set of
    verifying key ids of its dependency entries, checked on local hits under `require`
    (taint-style, fails open on a missed propagation); (ii) key the `trusted/`
-   partition by a *trust epoch*, a hash of the effective `trusted_keys` set, so any
-   change to the set (a key narrowed out, revoked or added) starts a fresh `trusted/`
-   partition and nothing derived under the old set is reused (fails closed, at the
-   cost of a cold local cache at each key rotation). Reviewer recommendation: (ii)
+   partition by a *trust epoch*, a hash of the effective `trusted_keys` set **and the
+   effective `verify` mode**, so any change to either (a key narrowed out, revoked or
+   added, or `verify` changing between `off`, `warn` and `require`) starts a fresh
+   `trusted/` partition and nothing derived under the old policy is reused (fails
+   closed, at the cost of a cold local cache at each key rotation or policy change).
+   Everything a run writes, including a dependent built on an entry restored under
+   `off` or `warn`, goes into the partition of that run's own epoch, so a `require`
+   run, which has a different epoch, never reads it. Reviewer recommendation: (ii)
    together with (b).
 
 **Acceptance checklist (not a decision)**
