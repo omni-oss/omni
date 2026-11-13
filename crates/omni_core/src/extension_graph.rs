@@ -194,15 +194,7 @@ impl<T: Merge + ExtensionGraphNode> ExtensionGraph<T> {
             }
         })?;
 
-        let graph = Reversed(&self.di_graph);
-        let mut bfs = Bfs::new(graph, node);
-
-        let mut node_indices = vec![];
-        while let Some(node) = bfs.next(graph) {
-            node_indices.push(node);
-        }
-
-        node_indices.reverse();
+        let node_indices = self.closure_indices(node);
 
         if self.cache_exists_by_path(&node_indices) {
             if !self.cached_path_exists(id) {
@@ -259,6 +251,41 @@ impl<T: Merge + ExtensionGraphNode> ExtensionGraph<T> {
         Ok(self
             .get_processed_node(id)
             .expect("At this point, the resulting node should exist"))
+    }
+
+    /// The extension closure of `node` in application order: every
+    /// transitive extendee once, ending with `node` itself.
+    fn closure_indices(&self, node: NodeIndex) -> Vec<NodeIndex> {
+        let graph = Reversed(&self.di_graph);
+        let mut bfs = Bfs::new(graph, node);
+
+        let mut node_indices = vec![];
+        while let Some(node) = bfs.next(graph) {
+            node_indices.push(node);
+        }
+
+        node_indices.reverse();
+        node_indices
+    }
+
+    /// The raw, unmerged nodes of `id`'s extension closure, in the exact
+    /// order they are merged when the node is processed. Each node appears
+    /// once, so a shared (diamond) ancestor is not repeated.
+    pub fn raw_layers_by_id(
+        &self,
+        id: &T::Id,
+    ) -> ExtensionGraphResult<Vec<&T>> {
+        let node = self.get_node_index(id).ok_or_else(|| {
+            ExtensionGraphErrorInner::NodeNotFound {
+                message: format!("'{id:?}'"),
+            }
+        })?;
+
+        Ok(self
+            .closure_indices(node)
+            .into_iter()
+            .map(|ni| &self.di_graph[ni])
+            .collect())
     }
 
     fn cache_exists_by_path(&self, path_traversal: &[NodeIndex]) -> bool {
@@ -634,6 +661,102 @@ mod tests {
                 extends: vec![1, 11],
                 items: vec![1, 11, 3]
             }
+        );
+    }
+
+    fn node(id: i32, extends: &[i32]) -> TestNode {
+        TestNode {
+            id,
+            extends: extends.to_vec(),
+            items: vec![id],
+        }
+    }
+
+    fn raw_ids(graph: &ExtensionGraph<TestNode>, id: i32) -> Vec<i32> {
+        graph
+            .raw_layers_by_id(&id)
+            .expect("raw layers")
+            .into_iter()
+            .map(|n| n.id)
+            .collect()
+    }
+
+    #[test]
+    fn raw_layers_of_a_root_are_only_itself() {
+        let graph = ExtensionGraph::from_nodes(vec![node(1, &[])]).unwrap();
+
+        assert_eq!(raw_ids(&graph, 1), vec![1]);
+    }
+
+    #[test]
+    fn raw_layers_are_unmerged_and_keep_their_own_data() {
+        let graph = ExtensionGraph::from_nodes(vec![
+            node(1, &[]),
+            node(2, &[1]),
+            node(3, &[2]),
+        ])
+        .unwrap();
+
+        let layers = graph.raw_layers_by_id(&3).unwrap();
+
+        assert_eq!(
+            layers.iter().map(|n| n.items.clone()).collect::<Vec<_>>(),
+            vec![vec![1], vec![2], vec![3]]
+        );
+    }
+
+    #[test]
+    fn raw_layers_apply_a_diamond_ancestor_once() {
+        let graph = ExtensionGraph::from_nodes(vec![
+            node(1, &[]),
+            node(11, &[1]),
+            node(12, &[1]),
+            node(2, &[11, 12]),
+        ])
+        .unwrap();
+
+        let ids = raw_ids(&graph, 2);
+
+        assert_eq!(ids.iter().filter(|i| **i == 1).count(), 1);
+        assert_eq!(ids.first(), Some(&1));
+        assert_eq!(ids.last(), Some(&2));
+        assert_eq!(ids.len(), 4);
+    }
+
+    #[test]
+    fn replaying_raw_layers_equals_the_processed_node() {
+        let mut graph = ExtensionGraph::from_nodes(vec![
+            node(1, &[]),
+            node(11, &[1]),
+            node(12, &[1]),
+            node(2, &[11, 12]),
+        ])
+        .unwrap();
+
+        let mut layers =
+            graph.raw_layers_by_id(&2).unwrap().into_iter().cloned();
+        let mut replayed = layers.next().unwrap();
+        for layer in layers {
+            replayed.merge(layer);
+        }
+        let processed = graph.process_node_by_id(&2).unwrap();
+
+        assert_eq!(replayed.items, processed.items);
+    }
+
+    #[test]
+    fn raw_layers_exclude_unrelated_nodes_and_unknown_ids_error() {
+        let graph = ExtensionGraph::from_nodes(vec![
+            node(1, &[]),
+            node(2, &[1]),
+            node(9, &[]),
+        ])
+        .unwrap();
+
+        assert_eq!(raw_ids(&graph, 2), vec![1, 2]);
+        assert_eq!(
+            graph.raw_layers_by_id(&404).unwrap_err().kind(),
+            ExtensionGraphErrorKind::NodeNotFound
         );
     }
 }
