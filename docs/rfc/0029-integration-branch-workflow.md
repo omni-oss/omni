@@ -28,8 +28,14 @@ is deleted after it lands.
 2. **Develop:** child PRs squash-merge into the branch.
 3. **Sync:** merge `main` into the branch daily (merge, never rebase).
 4. **Freeze and stabilize:** stop feature merges, fix what full CI finds.
-5. **Land:** merge commit (or squash) into `main`.
-6. **Delete** the branch.
+5. **Land:** merge commit into `main`. The integration PR is not squashed, so
+   `main` keeps one commit per child PR, each with its `(#N)` reference, plus
+   the landing merge. This keeps per-PR attribution and lets one bad PR be
+   found and reverted on `main` after landing. It also matches the repo's merge
+   commit convention. Squash is an exception, only with the branch owner's
+   agreement, for a small batch whose per-PR history is not worth keeping.
+6. **Delete** the branch and **rotate**: the landed branch loses `default-batch`,
+   and an owner starts the next one on request (see "Rotation").
 
 ## 4. Rules
 
@@ -41,6 +47,10 @@ is deleted after it lands.
 - Required check: the single `CI Passed` gate (see section 6). Which jobs run
   depends on the target: child PRs run only the fast jobs; PRs to `main`, pushes
   to `integration/**` and nightly runs also run the full jobs.
+- Every commit that lands on an integration branch must pass `cog check`,
+  because `check-pr-message.yaml` runs it on `main` pushes once the batch
+  lands. Check the child PR's squash commit message at the child PR, not at
+  landing.
 - Child PRs branch from the integration branch. Exceptions branching from
   `main`: hotfixes, CI/infra changes, small unrelated work. Stacked PRs branch
   from the PR they depend on.
@@ -244,12 +254,57 @@ full: ${{ github.base_ref == 'main' || github.event_name != 'pull_request' }}
 - Concurrency: keep `cancel-in-progress` for PRs, but disable it for pushes to
   `integration/**` so each commit keeps a full-CI baseline for attribution.
 
+### Rotation
+
+"Default" means the **default integration branch**: the one open
+`integration/**` branch labelled `default-batch`. It is never the repository's
+default branch. `main` stays the default branch, and no workflow changes branch
+protection or repository settings.
+
+Workflow `integration-rotate` runs on `pull_request` closed, from the default
+branch's copy, with `INTEGRATION_BOT_TOKEN`. It acts only when the PR was
+merged, its head is `integration/**` and its base is `main`:
+
+1. Delete the landed branch, unless it is still needed by an open child PR.
+   Retarget any open child PRs to the new default branch if one exists, and
+   otherwise comment that they must be rebased onto `main`.
+2. Check the parallel limit (at most two active branches). Skip creation if the
+   limit is reached, and comment on the landed PR.
+3. Do **not** create the next branch yet (lazy creation, default). Remove
+   `default-batch` from the landed branch's PR. The PR-target guard and the
+   `git start` helper tell contributors to branch from `main` while there is
+   no default.
+4. An owner starts the next batch with the `new-batch` workflow dispatch. It
+   creates `integration/<yyyy-mm-dd>` from the current `main` head, opens its
+   draft integration PR with the `<!-- children -->` marker, labels it
+   `default-batch` and assigns the owner. Until then, `main` is the base for
+   new work.
+
+Why lazy: a branch created for a quiet week sits empty, goes stale and reaches
+the lifespan cap without any work in it. Eager creation is an option: step 3
+creates the branch immediately, and the nightly run deletes any default branch
+that has had no child PR merged for 7 days. A draft integration PR needs a
+diff, so eager creation requires a marker commit that the first child PR
+supersedes.
+
+Rules:
+
+- Only one branch is labelled `default-batch` at a time. The bot moves the label
+  and never leaves two.
+- A closed-unmerged integration PR does not rotate. The label stays where it is
+  and the owner decides.
+- A revert of a landed integration PR is a normal change to `main` and does not
+  rotate or reopen the branch.
+- The bot acts from the default branch's workflow and runs no code from any
+  PR.
+
 Other workflows:
 
 | Workflow                | Trigger                       | Purpose                                                                                |
 | ----------------------- | ----------------------------- | -------------------------------------------------------------------------------------- |
 | `integration-sync`      | push to `main`, daily, manual | merge `main` into each `integration/*`; on conflict abort, comment, label `needs-sync` |
 | `integration-track`     | child PR merged               | append `- [x] #N title (@author)` under `<!-- children -->` in the integration PR body |
+| `integration-rotate`    | integration PR merged         | delete the landed branch; create the next default branch (see "Rotation")              |
 | `integration-nightly`   | schedule                      | dispatch `CI` on each open `integration/**` head, as the reconcile backstop            |
 | `integration-attribute` | `workflow_run` of `CI`        | failure attribution (section 5)                                                        |
 | PR-target guard         | PR to `main`                  | fail if based on an integration branch, unless hotfix or the integration PR itself     |
