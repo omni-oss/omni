@@ -51,11 +51,12 @@ jobs:
       jobs_publish_generic_count: ${{ steps.plan.outputs.jobs_publish_generic_count }}
       jobs_cache_restore_key_prefixes: ${{ steps.plan.outputs.jobs_cache_restore_key_prefixes }}
     steps:
-      # Quick CI on pull requests; the full suite runs in the merge queue,
-      # on pushes (main, tags) and on manual dispatch.
+      # Default to full PR CI until an admin confirms merge-queue enforcement
+      # and sets the repository variable QUICK_CI_ENABLED to 'true'.
+      # Non-PR events always run the full suite.
       - name: Decide quick or full CI
         id: full
-        run: echo "full=${{ github.event_name != 'pull_request' }}" >> "$GITHUB_OUTPUT"
+        run: echo "full=${{ github.event_name != 'pull_request' || vars.QUICK_CI_ENABLED != 'true' }}" >> "$GITHUB_OUTPUT"
 
       - name: Checkout repository
         uses: actions/checkout@v6
