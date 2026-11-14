@@ -51,8 +51,11 @@ Since `8293d547` the remote cache code is unchanged apart from dependency bumps
 as presence-aware layers (`omni_configurations/src/layer.rs`), which affects where
 `cache.remote` is added (4.4). Every claim below still holds.
 
-- **Keys name inputs, not contents.** The client downloads by
-  `bs58(project.digest)` (`hybrid.rs`). Content cannot be checked against it.
+- **Keys name inputs, not contents.** The client downloads by the task's input
+  digest, `bs58(project.digest)` in `hybrid.rs:678`, where `project` is one collected
+  task cache entry. That digest hashes what goes into the task (input files, env and
+  dependency digests), not the artifact bytes, so content cannot be checked against
+  it. In this RFC "digest" always means this task input digest.
 - **Scopes are flat.** `read:artifacts`, `write:artifacts`, `list:artifacts`,
   `delete:artifacts`, per API key (`ApiKeyConfiguration`), alongside a per-key
   environment list. A key with `write:artifacts` writes the one shared namespace.
