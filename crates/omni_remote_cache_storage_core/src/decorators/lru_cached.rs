@@ -9,8 +9,8 @@ use bytesize::ByteSize;
 use futures::StreamExt as _;
 
 use crate::{
-    BoxStream, Container, ListItem, PageOptions, ReadStream,
-    RemoteCacheStorageBackend, error::Error,
+    Container, ListItem, PageOptions, ReadStream, RemoteCacheStorageBackend,
+    WriteStream, error::Error,
 };
 
 const DEFAULT_MAX_CACHEABLE_SIZE: ByteSize = ByteSize::mib(8);
@@ -130,7 +130,7 @@ where
         &self,
         container: &Container,
         key: &str,
-        value: BoxStream<Bytes>,
+        value: WriteStream,
     ) -> Result<(), Error> {
         // `None` means the upload exceeded the cacheable size and the
         // captured bytes were dropped.
@@ -143,6 +143,10 @@ where
             value.inspect(move |chunk| {
                 let mut guard =
                     capture.lock().unwrap_or_else(PoisonError::into_inner);
+                let Ok(chunk) = chunk else {
+                    *guard = None;
+                    return;
+                };
                 let exceeded = match guard.as_mut() {
                     Some(buf) if buf.len() + chunk.len() <= max => {
                         buf.extend_from_slice(chunk);

@@ -31,7 +31,16 @@ async fn backend(
                     header.push(socket.read_u8().await.unwrap());
                     assert!(header.len() < 32 * 1024);
                 }
-                requests.push(String::from_utf8(header).unwrap());
+                let header = String::from_utf8(header).unwrap();
+                let length = header.lines().find_map(|line| {
+                    let (name, value) = line.split_once(':')?;
+                    name.eq_ignore_ascii_case("content-length")
+                        .then(|| value.trim().parse::<usize>().unwrap())
+                }).unwrap_or(0);
+                assert!(length < 1024 * 1024);
+                let mut upload = vec![0; length];
+                socket.read_exact(&mut upload).await.unwrap();
+                requests.push(format!("{header}{}", String::from_utf8_lossy(&upload)));
                 let response = format!(
                     "HTTP/1.1 200 OK\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
                     body.len()
@@ -117,4 +126,45 @@ fn assert_request_path(request: &str, method: &str, path: &str) {
     assert_eq!(parts.next(), Some(method));
     // The SDK also supplies an operation identifier in the query string.
     assert_eq!(parts.next().unwrap().split('?').next(), Some(path));
+}
+
+#[tokio::test]
+async fn streamed_upload_flushes_the_staged_file_before_put() {
+    let (backend, requests) = backend(vec![("application/xml", "")]).await;
+    let container = Container::parse("ns/ci").unwrap();
+    let stream = tokio_stream::iter([
+        Ok(Bytes::from_static(b"arch")),
+        Ok(Bytes::from_static(b"ive")),
+    ]);
+    backend
+        .save_stream(&container, "d", Box::pin(stream))
+        .await
+        .unwrap();
+    let requests = requests.await.unwrap();
+    assert_request_path(&requests[0], "PUT", "/cache/ns/ci/d");
+    assert!(
+        requests[0]
+            .split_once("\r\n\r\n")
+            .unwrap()
+            .1
+            .contains("archive")
+    );
+}
+
+#[tokio::test]
+async fn failed_upload_stream_never_reaches_s3() {
+    let (backend, requests) = backend(Vec::new()).await;
+    let container = Container::parse("ns/ci").unwrap();
+    let stream = tokio_stream::iter([
+        Ok(Bytes::from_static(b"partial")),
+        Err(omni_remote_cache_storage_core::error::Error::custom(
+            std::io::Error::other("interrupted upload"),
+        )),
+    ]);
+    let error = backend
+        .save_stream(&container, "d", Box::pin(stream))
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("interrupted upload"));
+    assert!(requests.await.unwrap().is_empty());
 }

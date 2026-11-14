@@ -9,8 +9,8 @@ use derive_new::new;
 use futures::StreamExt as _;
 use maps::{Map, UnorderedMap};
 use omni_remote_cache_storage_core::{
-    BoxStream, Container, ListItem, PageOptions, ReadStream,
-    RemoteCacheStorageBackend, error::Error,
+    Container, ListItem, PageOptions, ReadStream, RemoteCacheStorageBackend,
+    WriteStream, error::Error,
 };
 
 #[derive(Debug, new)]
@@ -149,13 +149,13 @@ impl RemoteCacheStorageBackend for InMemoryBackend {
         &self,
         container: &Container,
         key: &str,
-        mut value: BoxStream<Bytes>,
+        mut value: WriteStream,
     ) -> Result<(), Error> {
         let container = container.as_str();
         let mut combined = BytesMut::new();
 
         while let Some(chunk) = value.next().await {
-            combined.extend_from_slice(&chunk);
+            combined.extend_from_slice(&chunk?);
         }
 
         self.lock()

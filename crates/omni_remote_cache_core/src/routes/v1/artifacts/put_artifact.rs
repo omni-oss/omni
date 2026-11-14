@@ -6,6 +6,7 @@ use axum::{
 use axum_extra::{response::InternalServerError, routing::TypedPath};
 use futures::StreamExt;
 use http::StatusCode;
+use omni_remote_cache_storage_core::error::Error;
 use serde::Deserialize;
 use utoipa::IntoParams;
 
@@ -92,15 +93,7 @@ pub async fn put_artifact(
                     .into_response();
             }
         };
-    let stream = body.into_data_stream().filter_map(|r| {
-        std::future::ready(match r {
-            Ok(b) => Some(b),
-            Err(e) => {
-                tracing::error!("Error reading from stream: {}", e);
-                None
-            }
-        })
-    });
+    let stream = body.into_data_stream().map(|r| r.map_err(Error::custom));
 
     let x = state
         .storage_backend

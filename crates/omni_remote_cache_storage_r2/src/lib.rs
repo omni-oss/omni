@@ -11,8 +11,8 @@ use bytes::{Bytes, BytesMut};
 use bytesize::ByteSize;
 use futures::{Stream, StreamExt as _};
 use omni_remote_cache_storage_core::{
-    BoxStream, Container, ListItem, PageOptions, ReadStream,
-    RemoteCacheStorageBackend, error::Error,
+    Container, ListItem, PageOptions, ReadStream, RemoteCacheStorageBackend,
+    WriteStream, error::Error,
 };
 use send_wrapper::SendWrapper;
 use worker::{Bucket, MultipartUpload, UploadedPart, send::SendFuture};
@@ -72,7 +72,7 @@ impl Stream for SendStream {
 async fn upload_multipart(
     bucket: &Bucket,
     key: &str,
-    mut value: BoxStream<Bytes>,
+    mut value: WriteStream,
 ) -> Result<(), Error> {
     let mut buf = BytesMut::new();
     let mut upload: Option<MultipartUpload> = None;
@@ -80,7 +80,7 @@ async fn upload_multipart(
 
     let result: Result<(), Error> = async {
         while let Some(chunk) = value.next().await {
-            buf.extend_from_slice(&chunk);
+            buf.extend_from_slice(&chunk?);
 
             while buf.len() >= PART_SIZE {
                 let part = buf.split_to(PART_SIZE);
@@ -314,7 +314,7 @@ impl RemoteCacheStorageBackend for R2Backend {
         &self,
         container: &Container,
         key: &str,
-        value: BoxStream<Bytes>,
+        value: WriteStream,
     ) -> Result<(), Error> {
         let key = self.object_key(container, key);
         SendFuture::new(upload_multipart(&self.bucket, &key, value)).await

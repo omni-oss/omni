@@ -17,6 +17,10 @@ pub struct PageOptions {
 pub type BoxStream<T> =
     Pin<Box<dyn futures::Stream<Item = T> + 'static + Send>>;
 
+/// Upload chunks are fallible. A backend must abort on any error and must
+/// not expose bytes until the entire stream has completed successfully.
+pub type WriteStream = BoxStream<Result<Bytes, Error>>;
+
 /// Read side of an object: items are fallible so a mid-stream failure is
 /// surfaced to the caller instead of silently truncating the data.
 pub type ReadStream =
@@ -62,7 +66,7 @@ pub trait RemoteCacheStorageBackend {
         &self,
         container: &Container,
         key: &str,
-        value: BoxStream<Bytes>,
+        value: WriteStream,
     ) -> Result<(), Error>;
 
     async fn delete(

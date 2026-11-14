@@ -39,8 +39,8 @@ async fn successful_write_invalidates_cached_reads_without_warming() {
         .save_stream(
             &container,
             "d",
-            Box::pin(futures::stream::once(std::future::ready(Bytes::from(
-                "old",
+            Box::pin(futures::stream::once(std::future::ready(Ok(
+                Bytes::from("old"),
             )))),
         )
         .await

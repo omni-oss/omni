@@ -6,17 +6,13 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use bytesize::ByteSize;
 use derive_new::new;
-use tokio::{
-    fs::{File, OpenOptions},
-    io::AsyncWriteExt as _,
-    task::JoinSet,
-};
+use tokio::{fs::File, io::AsyncWriteExt as _, task::JoinSet};
 use tokio_stream::StreamExt;
 use tokio_util::io::ReaderStream;
 
 use omni_remote_cache_storage_core::{
-    BoxStream, Container, ListItem, PageOptions, ReadStream,
-    RemoteCacheStorageBackend, error::Error,
+    Container, ListItem, PageOptions, ReadStream, RemoteCacheStorageBackend,
+    WriteStream, error::Error,
 };
 
 #[derive(Debug, new)]
@@ -165,50 +161,46 @@ impl RemoteCacheStorageBackend for LocalDiskCacheBackend {
         key: &str,
         value: bytes::Bytes,
     ) -> Result<(), Error> {
-        let path = self.path(key, container)?;
-
-        if !tokio::fs::try_exists(&path).await.map_err(Error::custom)? {
-            tokio::fs::create_dir_all(
-                &path.parent().expect("should have parent"),
-            )
-            .await
-            .map_err(Error::custom)?;
-        }
-
-        tokio::fs::write(&path, value.as_ref())
-            .await
-            .map_err(Error::custom)?;
-
-        Ok(())
+        self.save_stream(
+            container,
+            key,
+            Box::pin(tokio_stream::once(Ok(value))),
+        )
+        .await
     }
 
     async fn save_stream(
         &self,
         container: &Container,
         key: &str,
-        mut value: BoxStream<Bytes>,
+        mut value: WriteStream,
     ) -> Result<(), Error> {
         let path = self.path(key, container)?;
 
-        if !tokio::fs::try_exists(&path).await.map_err(Error::custom)? {
-            tokio::fs::create_dir_all(
-                &path.parent().expect("should have parent"),
-            )
+        tokio::fs::create_dir_all(path.parent().expect("should have parent"))
             .await
             .map_err(Error::custom)?;
-        }
 
-        let mut file = OpenOptions::new()
-            .create(true)
-            .write(true)
-            .truncate(true)
-            .open(&path)
-            .await
+        // Stage outside the container so list/get cannot observe a partial
+        // upload. TempPath removes abandoned files on error or cancellation.
+        // Keeping staging on the backend filesystem permits atomic rename.
+        let temp = tempfile::NamedTempFile::new_in(&self.root)
             .map_err(Error::custom)?;
+        let (file, mut staging) = temp.into_parts();
+        let mut file = tokio::io::BufWriter::new(File::from_std(file));
 
         while let Some(chunk) = value.next().await {
-            file.write_all(&chunk).await.map_err(Error::custom)?;
+            file.write_all(&chunk?).await.map_err(Error::custom)?;
         }
+        file.flush().await.map_err(Error::custom)?;
+        file.get_mut().sync_all().await.map_err(Error::custom)?;
+        drop(file);
+        tokio::fs::rename(&staging, &path)
+            .await
+            .map_err(Error::custom)?;
+        // The old name is now free. Do not let TempPath unlink another
+        // upload if that name is reused before this guard is dropped.
+        staging.disable_cleanup(true);
         Ok(())
     }
 

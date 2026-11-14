@@ -1407,8 +1407,38 @@ at once until size caps land in slice 5. Upload requests have a 60-second
 total timeout (including body transfer); slow connections may exhaust it, in which
 case the upload warns and the local result remains usable. Revisit timeout
 configuration alongside size caps in slice 5. This request timeout does not cover
-archive construction. Atomic storage/server writes and the
-remaining slice 1 primitives are not implemented yet; slices 2–10 have not started.
+archive construction.
+
+The current review requires atomic publication to close the concurrent
+`HEAD`-404/`PUT` race, so that work is included in the client prerequisite
+follow-up rather than waiting for its green check. Upload streams now carry
+fallible chunks and the route no longer drops body errors. Local byte and streamed
+writes stage outside the container, flush and sync the file, then atomically rename; failed or
+cancelled streams remove staging files without touching the published artifact.
+S3 staged streams flush and retain their temporary file until PUT finishes;
+memory and R2 propagate upload-stream errors before publication. This is atomic
+replacement, not create-only immutability: the existence pre-check remains until
+the conditional-write batch lands. R2 cross-target/real-service validation remains
+outstanding. Conditional writes, size caps, and remaining slice 1 primitives are
+not implemented yet; slices 2–10 have not started.
+
+Atomic publication operational notes:
+
+- Local published files now retain the temporary file's owner-only permissions
+  (0600 on Unix), rather than the previous umask-derived permissions. Sidecars and
+  backup readers using another UID need an explicit operational access policy.
+- Staging files live at the backend root, outside resource containers. Errors and
+  cancellation clean them up, but SIGKILL or a machine crash can leave orphan
+  staging files. Root-level scans must exclude them; cleanup after a crash is
+  currently manual, pending the lifecycle/maintenance work.
+- File data is synced before rename. Parent-directory fsync is not implemented,
+  so rename durability across a machine crash is not guaranteed. Atomicity is not
+  a promise that a just-written entry survives power loss.
+- Open-reader replacement is tested without a platform skip. Windows and network
+  filesystem behavior still need CI/deployment validation; a failed rename reports
+  an error without deliberately truncating the old object.
+- Body-read errors currently return 500. The size-cap batch must distinguish
+  oversized requests (413) from other stream errors.
 
 Slice 1 execution order (High risk; continuing on PR #104):
 

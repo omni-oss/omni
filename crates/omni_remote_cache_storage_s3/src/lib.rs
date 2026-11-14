@@ -17,8 +17,8 @@ use tokio_stream::StreamExt;
 use tokio_util::io::ReaderStream;
 
 use omni_remote_cache_storage_core::{
-    BoxStream, Container, ListItem, PageOptions, ReadStream,
-    RemoteCacheStorageBackend, error::Error,
+    Container, ListItem, PageOptions, ReadStream, RemoteCacheStorageBackend,
+    WriteStream, error::Error,
 };
 
 // --- S3 Backend Struct ---
@@ -324,7 +324,7 @@ impl RemoteCacheStorageBackend for S3CacheBackend {
         &self,
         container: &Container,
         key: &str,
-        mut value: BoxStream<Bytes>,
+        mut value: WriteStream,
     ) -> Result<(), Error> {
         let bucket = self.default_bucket.as_str();
 
@@ -335,10 +335,13 @@ impl RemoteCacheStorageBackend for S3CacheBackend {
         let mut writer = tokio::io::BufWriter::new(File::from_std(file));
 
         while let Some(bytes) = value.next().await {
-            writer.write_all(&bytes).await.map_err(Error::custom)?;
+            writer.write_all(&bytes?).await.map_err(Error::custom)?;
         }
+        writer.flush().await.map_err(Error::custom)?;
+        drop(writer);
 
-        let body = ByteStream::from_path(path).await.map_err(Error::custom)?;
+        // Keep TempPath alive until the SDK has finished consuming the file.
+        let body = ByteStream::from_path(&path).await.map_err(Error::custom)?;
 
         self.client
             .put_object()

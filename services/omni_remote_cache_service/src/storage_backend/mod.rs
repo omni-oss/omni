@@ -4,8 +4,8 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use derive_new::new;
 use omni_remote_cache_storage_core::{
-    BoxStream, Container, ListItem, PageOptions, ReadStream,
-    RemoteCacheStorageBackend,
+    Container, ListItem, PageOptions, ReadStream, RemoteCacheStorageBackend,
+    WriteStream,
     decorators::LruCached,
     error::{self, Error},
 };
@@ -218,7 +218,7 @@ impl RemoteCacheStorageBackend for StorageBackend {
         &self,
         container: &Container,
         key: &str,
-        value: BoxStream<Bytes>,
+        value: WriteStream,
     ) -> Result<(), Error> {
         match self {
             StorageBackend::LruCachedLocalDisk(inner) => {

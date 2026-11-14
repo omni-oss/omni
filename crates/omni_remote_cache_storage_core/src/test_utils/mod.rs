@@ -197,7 +197,7 @@ macro_rules! decl_remote_cache_storage_backend_tests {
             ));
 
             backend
-                .save_stream(&c("default"), "key3", Box::pin(stream))
+                .save_stream(&c("default"), "key3", Box::pin(stream.map(Ok)))
                 .await
                 .unwrap();
 
@@ -222,7 +222,7 @@ macro_rules! decl_remote_cache_storage_backend_tests {
             ));
 
             backend
-                .save_stream(&c("container2"), "key1", Box::pin(stream))
+                .save_stream(&c("container2"), "key1", Box::pin(stream.map(Ok)))
                 .await
                 .expect("should have no error");
 
@@ -257,6 +257,44 @@ macro_rules! decl_remote_cache_storage_backend_tests {
 
             let list = backend.list(&c("container1")).await.unwrap();
             assert_eq!(list.len(), 0);
+        }
+
+        #[tokio::test]
+        async fn test_failed_upload_preserves_existing_entry_and_does_not_create_new_entry() {
+            let backend = backend().await;
+            for key in ["key1", "failed-upload"] {
+                let stream = futures::stream::iter([
+                    Ok(Bytes::from_static(b"partial")),
+                    Err($crate::error::Error::custom(std::io::Error::other("interrupted upload"))),
+                ]);
+                assert!(backend.save_stream(&c("default"), key, Box::pin(stream)).await.is_err());
+            }
+            assert_eq!(backend.get(&c("default"), "key1").await.unwrap(), Some(Bytes::from("value1")));
+            assert!(backend.get(&c("default"), "failed-upload").await.unwrap().is_none());
+        }
+
+        #[tokio::test]
+        async fn test_readers_keep_complete_entry_during_upload_and_cancellation() {
+            let backend = std::sync::Arc::new(backend().await);
+            let (started, waiting) = tokio::sync::oneshot::channel();
+            let (release, gate) = tokio::sync::oneshot::channel::<Result<Bytes, $crate::error::Error>>();
+            let stream = futures::stream::once(std::future::ready(Ok(Bytes::from_static(b"partial"))))
+                .chain(futures::stream::once(async move {
+                    started.send(()).unwrap();
+                    gate.await.unwrap()
+                }));
+            let writer = backend.clone();
+            let upload = tokio::spawn(async move {
+                writer.save_stream(&c("default"), "key1", Box::pin(stream)).await
+            });
+            tokio::time::timeout(std::time::Duration::from_secs(10), waiting).await.unwrap().unwrap();
+            assert_eq!(backend.get(&c("default"), "key1").await.unwrap(), Some(Bytes::from("value1")));
+            let list = backend.list(&c("default")).await.unwrap();
+            assert_eq!(list.len(), 2, "staging uploads must not appear in listings");
+            upload.abort();
+            assert!(upload.await.unwrap_err().is_cancelled());
+            drop(release);
+            assert_eq!(backend.get(&c("default"), "key1").await.unwrap(), Some(Bytes::from("value1")));
         }
 
         #[tokio::test]
