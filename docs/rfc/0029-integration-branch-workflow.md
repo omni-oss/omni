@@ -535,8 +535,11 @@ volume is modest.
    Actions variable `QUICK_CI_ENABLED` to `true`. If queue support is unavailable,
    leave the variable unset and keep full PR CI.
 6. Verify PRs run quick CI only after activation and queue runs still require
-   Rust builds and tests. To roll back, unset `QUICK_CI_ENABLED` or set it to
-   `false` before disabling queue enforcement.
+   Rust builds and tests. To roll back, pause merges, unset `QUICK_CI_ENABLED`
+   or set it to `false`, and push a new commit to every open PR. Changing the
+   variable does not invalidate existing quick-CI results. Keep queue enforcement
+   enabled until full PR CI succeeds with `CI Passed` on each new head commit.
+   Only then disable queue enforcement and resume merges.
 7. Run for a few weeks and compare against the baseline (exit criteria in
    section 1.1).
 
