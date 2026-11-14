@@ -14,6 +14,7 @@ struct PausedStreamBackend {
     inner: Arc<InMemoryBackend>,
     committed: Arc<Notify>,
     resume: Arc<Notify>,
+    delete_pause: Option<(Arc<Notify>, Arc<Notify>)>,
 }
 
 #[async_trait]
@@ -65,6 +66,10 @@ impl RemoteCacheStorageBackend for PausedStreamBackend {
         Ok(())
     }
     async fn delete(&self, c: &Container, k: &str) -> Result<(), Error> {
+        if let Some((submitted, release)) = &self.delete_pause {
+            submitted.notify_one();
+            release.notified().await;
+        }
         self.inner.delete(c, k).await
     }
     async fn size(
@@ -87,6 +92,7 @@ async fn obsolete_stream_cannot_repopulate_after_a_byte_write_or_delete() {
                 inner: inner.clone(),
                 committed: committed.clone(),
                 resume: resume.clone(),
+                delete_pause: None,
             },
             NonZeroUsize::new(10).unwrap(),
         ));
@@ -158,6 +164,7 @@ async fn uncontested_stream_still_populates_the_lru() {
             inner: inner.clone(),
             committed,
             resume,
+            delete_pause: None,
         },
         NonZeroUsize::new(10).unwrap(),
     );
@@ -174,5 +181,62 @@ async fn uncontested_stream_still_populates_the_lru() {
     assert_eq!(
         cache.get(&container, "d").await.unwrap(),
         Some(Bytes::from("old"))
+    );
+}
+
+#[tokio::test]
+async fn cancelled_delete_keeps_the_lock_until_backend_removal_finishes() {
+    let inner = Arc::new(InMemoryBackend::new());
+    let submitted = Arc::new(Notify::new());
+    let release = Arc::new(Notify::new());
+    let resume = Arc::new(Notify::new());
+    resume.notify_one();
+    let cache = Arc::new(LruCached::new(
+        PausedStreamBackend {
+            inner: inner.clone(),
+            committed: Arc::new(Notify::new()),
+            resume,
+            delete_pause: Some((submitted.clone(), release.clone())),
+        },
+        NonZeroUsize::new(10).unwrap(),
+    ));
+    let container = Container::parse("ns/ci").unwrap();
+    cache
+        .save(&container, "d", Bytes::from("old"))
+        .await
+        .unwrap();
+    let deleting = cache.clone();
+    let c = container.clone();
+    let caller = tokio::spawn(async move { deleting.delete(&c, "d").await });
+    tokio::time::timeout(Duration::from_secs(5), submitted.notified())
+        .await
+        .unwrap();
+    caller.abort();
+    assert!(caller.await.unwrap_err().is_cancelled());
+    let replacement = cache.save_stream(
+        &container,
+        "d",
+        Box::pin(futures::stream::iter([Ok(Bytes::from("new"))])),
+    );
+    tokio::pin!(replacement);
+    assert!(futures::poll!(&mut replacement).is_pending());
+    release.notify_one();
+    tokio::time::timeout(Duration::from_secs(5), replacement)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        inner.get(&container, "d").await.unwrap(),
+        Some(Bytes::from("new"))
+    );
+    assert_eq!(
+        cache.get(&container, "d").await.unwrap(),
+        Some(Bytes::from("new"))
+    );
+    inner.delete(&container, "d").await.unwrap();
+    assert_eq!(
+        cache.get(&container, "d").await.unwrap(),
+        Some(Bytes::from("new")),
+        "replacement should be cached"
     );
 }

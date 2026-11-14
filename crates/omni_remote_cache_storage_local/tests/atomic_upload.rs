@@ -6,6 +6,25 @@ use omni_remote_cache_storage_core::{Container, RemoteCacheStorageBackend};
 use omni_remote_cache_storage_local::LocalDiskCacheBackend;
 
 #[tokio::test]
+async fn drive_qualified_containers_are_rejected_only_by_local_storage() {
+    let root = tempfile::tempdir().unwrap();
+    let backend = LocalDiskCacheBackend::new(root.path());
+    for name in ["C:/outside", "C:outside", "ns/drive:stream"] {
+        let container = Container::parse(name).unwrap();
+        assert!(backend.get(&container, "d").await.is_err());
+        assert!(
+            backend
+                .save(&container, "d", Bytes::from("bad"))
+                .await
+                .is_err()
+        );
+        assert!(backend.delete(&container, "d").await.is_err());
+        assert!(backend.list(&container).await.is_err());
+    }
+    assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 0);
+}
+
+#[tokio::test]
 async fn publication_creates_and_syncs_a_missing_backend_root() {
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path().join("new-parent").join("cache-root");

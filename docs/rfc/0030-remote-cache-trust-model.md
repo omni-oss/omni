@@ -1507,6 +1507,15 @@ Slice 0 deviations and remaining checks:
   for one another's streams. A stalled stream still blocks mutations of that same
   key until it completes or is cancelled. Coordination is within one LRU instance,
   not across separate server processes sharing storage.
+  On native servers, deletes run in an owned task retaining the per-key lock
+  through backend completion even if the requesting future is cancelled.
+  On wasm targets the decorator awaits deletes directly (no detached native
+  filesystem work); R2 runtime cancellation behavior remains unverified.
+  Cancellation during native byte/streamed publication can still detach filesystem
+  work after releasing the mutation guard; extend owned mutation lifetimes to
+  those paths with the remaining conditional-write/concurrency work.
+- Local storage additionally rejects drive-qualified/colon-containing containers
+  before filesystem joins. Shared `Container` parsing and S3 prefixes are unchanged.
 - S3 listing pagination remains incomplete: `list` stops at one service page and
   `paged_list` ignores `after_key`. Include pagination coverage in slice 1.
 - Real S3/R2 checks and the breaking-change release note remain outstanding.

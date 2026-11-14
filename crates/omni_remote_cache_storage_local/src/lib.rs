@@ -38,11 +38,19 @@ impl LocalDiskCacheBackend {
         {
             return Err(Error::custom(eyre::eyre!("invalid key {key:?}")));
         }
-        Ok(self.dir(container).join(key))
+        Ok(self.dir(container)?.join(key))
     }
 
-    fn dir(&self, container: &Container) -> PathBuf {
-        self.root.join(container.as_str())
+    fn dir(&self, container: &Container) -> Result<PathBuf, Error> {
+        let path = std::path::Path::new(container.as_str());
+        if container.as_str().contains(':')
+            || !path
+                .components()
+                .all(|part| matches!(part, std::path::Component::Normal(_)))
+        {
+            return Err(Error::custom(eyre::eyre!("invalid local container")));
+        }
+        Ok(self.root.join(path))
     }
 
     async fn initialize_root(&self) -> Result<(), Error> {
@@ -189,7 +197,7 @@ impl RemoteCacheStorageBackend for LocalDiskCacheBackend {
         &self,
         container: &Container,
     ) -> Result<Vec<ListItem>, Error> {
-        let dir = self.dir(container);
+        let dir = self.dir(container)?;
 
         if !tokio::fs::try_exists(&dir).await.map_err(Error::custom)? {
             return Ok(Vec::new());

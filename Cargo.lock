@@ -7901,6 +7901,7 @@ dependencies = [
  "serde",
  "strum 0.28.0",
  "thiserror 2.0.21",
+ "tokio 1.54.1",
  "utoipa",
 ]
 

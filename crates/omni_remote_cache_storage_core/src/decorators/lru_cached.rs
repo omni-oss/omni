@@ -20,9 +20,10 @@ type Cache = lru::LruCache<(String, String), Bytes>;
 type MutationLocks = HashMap<(String, String), Weak<futures::lock::Mutex<()>>>;
 
 #[derive(Debug)]
+/// Native deletes require a Tokio runtime and finish even if the caller cancels.
 pub struct LruCached<T: RemoteCacheStorageBackend> {
-    inner: T,
-    cached: Mutex<Cache>,
+    inner: Arc<T>,
+    cached: Arc<Mutex<Cache>>,
     max_cacheable_size: ByteSize,
     // Weak entries track only live same-key mutations. Never hold this map
     // or the cache mutex across an await.
@@ -32,8 +33,8 @@ pub struct LruCached<T: RemoteCacheStorageBackend> {
 impl<T: RemoteCacheStorageBackend> LruCached<T> {
     pub fn new(inner: T, capacity: NonZeroUsize) -> Self {
         Self {
-            inner,
-            cached: Mutex::new(lru::LruCache::new(capacity)),
+            inner: Arc::new(inner),
+            cached: Arc::new(Mutex::new(lru::LruCache::new(capacity))),
             max_cacheable_size: DEFAULT_MAX_CACHEABLE_SIZE,
             mutations: Mutex::new(HashMap::new()),
         }
@@ -81,7 +82,7 @@ impl<T: RemoteCacheStorageBackend> LruCached<T> {
 #[async_trait]
 impl<T> RemoteCacheStorageBackend for LruCached<T>
 where
-    T: RemoteCacheStorageBackend + Send + Sync,
+    T: RemoteCacheStorageBackend + Send + Sync + 'static,
 {
     async fn get(
         &self,
@@ -221,10 +222,36 @@ where
         key: &str,
     ) -> Result<(), Error> {
         let mutation = self.mutation_lock(container, key);
-        let _mutation = mutation.lock().await;
-        self.cache().pop(&self.cache_key(container, key));
-
-        self.inner.delete(container, key).await
+        let guard = mutation.lock_owned().await;
+        let inner = self.inner.clone();
+        let cached = self.cached.clone();
+        let cache_key = self.cache_key(container, key);
+        let container = container.clone();
+        let key = key.to_string();
+        let delete = async move {
+            // Own the guard through removal completion, even if the caller
+            // drops its JoinHandle while filesystem work is still running.
+            let _guard = guard;
+            cached
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .pop(&cache_key);
+            let result = inner.delete(&container, &key).await;
+            cached
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .pop(&cache_key);
+            result
+        };
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            tokio::spawn(delete).await.map_err(Error::custom)?
+        }
+        // Workers have no Tokio runtime or detached native filesystem work.
+        #[cfg(target_arch = "wasm32")]
+        {
+            delete.await
+        }
     }
 
     async fn size(
