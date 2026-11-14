@@ -57,13 +57,6 @@ export function workerTargetFor(variant: WorkerVariant): Target {
                 workerDir,
                 `wrangler.e2e-${process.pid}-${port}.toml`,
             );
-            fs.writeFileSync(
-                configFile,
-                fs
-                    .readFileSync(path.join(workerDir, "wrangler.toml"), "utf8")
-                    .replace(/^\[build\]\n(?:(?!\[).*\n?)*/m, ""),
-            );
-
             const args = [
                 "dev",
                 "-c",
@@ -74,11 +67,27 @@ export function workerTargetFor(variant: WorkerVariant): Target {
                 "--persist-to",
                 state,
             ];
-            const prepared = await variant.prepare({
-                workerDir,
-                state,
-                configFile,
-            });
+            let prepared: Awaited<ReturnType<typeof variant.prepare>>;
+            try {
+                fs.writeFileSync(
+                    configFile,
+                    fs
+                        .readFileSync(
+                            path.join(workerDir, "wrangler.toml"),
+                            "utf8",
+                        )
+                        .replace(/^\[build\]\n(?:(?!\[).*\n?)*/m, ""),
+                );
+                prepared = await variant.prepare({
+                    workerDir,
+                    state,
+                    configFile,
+                });
+            } catch (e) {
+                fs.rmSync(configFile, { force: true });
+                fs.rmSync(state, { recursive: true, force: true });
+                throw e;
+            }
             args.push(...prepared.args);
             const child = spawn("bunx", ["wrangler@latest", ...args], {
                 cwd: workerDir,
