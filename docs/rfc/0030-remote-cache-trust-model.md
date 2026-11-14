@@ -402,8 +402,8 @@ safe and explicit. Routing to several buckets is out of scope.
   so this is how a publisher learns that a stray or tampered entry occupies its
   digest. Skipped when `verify` is `off`. It also needs `read:artifacts`, which
   `publish` does not imply (4.1). A publisher whose effective scopes (from
-  `validate_access`) lack `read` skips both this check and the `artifact_exists`
-  pre-check (a `HEAD`, also a read) and does not warn: it cannot verify, and a warning
+  `validate_access`) lack `read` skips this check and does not warn:
+  it cannot verify, and a warning
   would be false. Publisher keys are expected to hold `read`, since a publishing run
   also restores shared entries.
 - **Only successful executions are stored remotely.** Remove the `replacing` path
@@ -921,9 +921,11 @@ match client.put_artifact(&config, &digest, Bytes::from(artifact), sig).await {
 }
 ```
 
-The `artifact_exists` pre-check stays as an optimization, but a hit on a **shared**
-upload runs the same existing-entry `GET` and full verification as a `409` (4.2), so
-the pre-check cannot hide an unverifiable entry. An isolated hit just skips the upload. Local replacement of a
+The upload path removes the `artifact_exists` pre-check: it requires read permission
+and could otherwise bypass existing-entry verification. Each successful execution
+sends the archive and relies on atomic create-only storage to reject an existing
+entry with `409`. This costs a full upload rather than a cheap `HEAD` on a hit;
+the shared conflict check remains in slice 7. Local replacement of a
 failed local entry by a success (`publish_staged_dir(.., replace)`) is unchanged: it
 is a local cache concern and not a trust boundary. Why: the remote only ever holds
 successes, so nothing needs replacing, and immutability has no exception.
@@ -1385,11 +1387,48 @@ CI variable table in 4.4 against current docs, since both change.
 
 ## 8. Implementation status and deviations
 
-Slice 0 is in progress on PR #104: typed containers and prefixes, removal of
+Slice 0 landed on PR #104: typed containers and prefixes, removal of
 default containers and S3 bucket-per-container mode, and local key validation
 landed in `e7288322`. Review follow-ups fix container-relative S3 listing keys,
-container-scoped deletes, and caching of rejected writes. Slices 1–10 have not
-started.
+container-scoped deletes, and caching of rejected writes. CodeRabbit is green
+through `44d12083`. Slice 1's client prerequisite batch is implemented: failed
+executions stay local, remote errors are warnings, the upload pre-check and remote
+replacement bypass are removed, and the client accepts `409` without retrying.
+At most eight archives/uploads run concurrently. Upload requests have a 60-second
+total timeout (including body transfer); slow connections may exhaust it, in which
+case the upload warns and the local result remains usable. Revisit timeout
+configuration alongside size caps in slice 5. Atomic storage/server writes and the
+remaining slice 1 primitives are not implemented yet; slices 2–10 have not started.
+
+Slice 1 execution order (High risk; continuing on PR #104):
+
+1. Client prerequisite batch: never upload failed executions, remove the remote
+   replacement bypass (keep local failure-to-success upgrades), treat upload
+   failures as warnings, and accept a server `409` without retrying. Remove the
+   existence pre-check so a key without read permission can still upload and a
+   future shared-conflict verification path cannot be bypassed by `HEAD`.
+   Check: failed results stay local with no network access; mixed batches upload
+   only successes; failed-to-success upgrades upload successful metadata; remote
+   rejection does not fail local storage; `409` is accepted. Undo: revert batch.
+   The `artifact_exists` client trait method remains available for readers; only
+   the upload pre-check is removed. Size caps and shared-conflict verification are
+   implemented with their configuration and signing dependencies in slices 5/7.
+2. Atomic storage/server batch: conditional create-only writes, fallible and
+   bounded uploads, abort cleanup, digest/path checks, server `409`, and mutation
+   coordination. The client prerequisite must already be present before activating
+   immutable writes. Check concurrent writers and truncated/oversized streams per
+   backend. The real-R2 conditional-write spike is a gate for enabling R2 writes.
+   Purge legacy failed remote entries before enabling immutable writes, otherwise
+   they can occupy a digest until operators remove them.
+   Undo: revert batch; no data migration.
+3. Range and prefix operations, complete pagination, restore `original_path`
+   validation, and remaining integration/security regression coverage. Check
+   bounded/suffix ranges, multi-page scans, scoped deletes and unsafe restore
+   misses. Undo: revert batch.
+
+Each batch gets an independent Opus 5.5 review before commit; after pushing, wait
+for CodeRabbit to be green before continuing. The shared-`409` reader verification
+remains in slice 7, where signatures and trusted-key configuration are available.
 
 Slice 0 deviations and remaining checks:
 

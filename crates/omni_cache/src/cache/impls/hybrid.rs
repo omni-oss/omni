@@ -582,12 +582,9 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
 
             cache_exec_hashes.push(execution_hash);
 
-            if self.remote_config.is_enabled() {
-                cached_results.push((
-                    execution_hash,
-                    output_dir.to_path_buf(),
-                    replacing,
-                ));
+            if self.remote_config.is_enabled() && new_cache_info.exit_code == 0
+            {
+                cached_results.push((execution_hash, output_dir.to_path_buf()));
             }
         }
 
@@ -596,12 +593,20 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
         {
             tracing::debug!("Uploading remote cache artifacts...");
             let mut tasks = JoinSet::new();
-            for (hash, output_dir, replacing) in cached_results {
+            // Bound archive buffers as well as network requests. Acquire inside
+            // each worker before building the archive, not just before PUT.
+            let upload_slots = Arc::new(tokio::sync::Semaphore::new(8));
+            for (hash, output_dir) in cached_results {
                 let client = self.client().clone();
                 let conf = conf.clone();
                 let digest = bs58::encode(hash.digest).into_string();
+                let upload_slots = upload_slots.clone();
 
                 tasks.spawn(async move {
+                    let _permit = upload_slots
+                        .acquire_owned()
+                        .await
+                        .expect("upload semaphore is never closed");
                     let config = RemoteAccessArgs {
                         api_key: &conf.api_key,
                         api_base_url: &conf.api_base_url,
@@ -614,33 +619,31 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                         ws: &conf.workspace_code,
                     };
 
-                    // A remote artifact is keyed by digest, so an existing one
-                    // would carry the superseded (failed) execution. Skip the
-                    // existence check when replacing so the successful entry
-                    // overwrites it; otherwise avoid a redundant re-upload.
-                    if !replacing
-                        && client.artifact_exists(&config, &digest).await?
-                    {
-                        return Ok::<_, LocalTaskExecutionCacheStoreError>(());
+                    let upload = async {
+                        let mut artifact = Vec::new();
+                        archive(&output_dir, Cursor::new(&mut artifact))?;
+
+                        client
+                            .put_artifact(&config, &digest, Bytes::from(artifact))
+                            .await?;
+
+                        Ok::<_, LocalTaskExecutionCacheStoreError>(())
                     }
+                    .await;
 
-                    let mut artifact = Vec::new();
-                    archive(&output_dir, Cursor::new(&mut artifact))?;
-
-                    client
-                        .put_artifact(&config, &digest, Bytes::from(artifact))
-                        .await?;
-
-                    tracing::debug!("Uploaded cache for {}", digest);
-
-                    Ok::<_, LocalTaskExecutionCacheStoreError>(())
+                    match upload {
+                        Ok(()) => tracing::debug!(%digest, "Remote cache upload accepted"),
+                        Err(e) => tracing::warn!(%digest, error = %e, "Remote cache upload failed; local result retained"),
+                    }
                 });
             }
 
-            let results = tasks.join_all().await;
-
-            for result in results {
-                result?;
+            // Join each task explicitly: join_all panics on a failed worker.
+            // Optional remote publication must not fail successful local caching.
+            while let Some(result) = tasks.join_next().await {
+                if let Err(e) = result {
+                    tracing::warn!(error = %e, "Remote cache upload worker failed; local results retained");
+                }
             }
         }
 
@@ -1666,6 +1669,245 @@ mod tests {
             execution_duration: std::time::Duration::from_millis(100),
             tries: 1,
         }
+    }
+
+    struct RemoteUploadSpy {
+        url: String,
+        requests: Arc<std::sync::Mutex<Vec<(String, Bytes)>>>,
+        server: tokio::task::JoinHandle<()>,
+    }
+
+    impl RemoteUploadSpy {
+        async fn new(put_status: u16) -> Self {
+            use tokio::io::AsyncWriteExt;
+            let listener =
+                tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let url = format!("http://{}", listener.local_addr().unwrap());
+            let requests = Arc::new(std::sync::Mutex::new(Vec::new()));
+            let captured = requests.clone();
+            let server = tokio::spawn(async move {
+                loop {
+                    let (mut socket, _) = listener.accept().await.unwrap();
+                    let mut header = Vec::new();
+                    while !header.ends_with(b"\r\n\r\n") {
+                        header.push(socket.read_u8().await.unwrap());
+                        assert!(header.len() < 32 * 1024);
+                    }
+                    let header = String::from_utf8(header).unwrap();
+                    let length = header
+                        .lines()
+                        .find_map(|line| {
+                            let (name, value) = line.split_once(':')?;
+                            name.eq_ignore_ascii_case("content-length")
+                                .then(|| value.trim().parse::<usize>().unwrap())
+                        })
+                        .unwrap_or(0);
+                    assert!(length <= 1024 * 1024);
+                    let mut body = vec![0; length];
+                    socket.read_exact(&mut body).await.unwrap();
+                    let method = header.split_whitespace().next().unwrap();
+                    let status = if method == "PUT" { put_status } else { 404 };
+                    captured
+                        .lock()
+                        .unwrap()
+                        .push((method.to_string(), Bytes::from(body)));
+                    if status == 0 {
+                        // Simulate a transport failure after receiving the body.
+                        continue;
+                    }
+                    let response = format!(
+                        "HTTP/1.1 {status} Test\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                    );
+                    socket.write_all(response.as_bytes()).await.unwrap();
+                }
+            });
+            Self {
+                url,
+                requests,
+                server,
+            }
+        }
+
+        fn cache(&self, root: &Path) -> HybridTaskExecutionCacheStore {
+            HybridTaskExecutionCacheStore::new(
+                root.join(".omni/cache"),
+                root,
+                RemoteConfig::Enabled(EnabledRemoteConfig {
+                    api_base_url: self.url.clone(),
+                    api_key: "test".to_string(),
+                    tenant_code: "t".to_string(),
+                    organization_code: "o".to_string(),
+                    workspace_code: "w".to_string(),
+                    environment_code: Some("e".to_string()),
+                }),
+            )
+        }
+    }
+
+    impl Drop for RemoteUploadSpy {
+        fn drop(&mut self) {
+            let finished = self.server.is_finished();
+            self.server.abort();
+            if !std::thread::panicking() {
+                assert!(
+                    !finished,
+                    "HTTP spy exited unexpectedly; check its task panic"
+                );
+            }
+        }
+    }
+
+    fn uploaded_exit_code(artifact: &Bytes) -> u32 {
+        let dir = tempfile::tempdir().unwrap();
+        unarchive(dir.path(), Cursor::new(artifact)).unwrap();
+        let metadata =
+            std::fs::read(dir.path().join(CACHE_OUTPUT_METADATA_FILE)).unwrap();
+        let cached: CachedTaskExecution =
+            rmp_serde::from_slice(&metadata).unwrap();
+        cached.exit_code
+    }
+
+    #[tokio::test]
+    async fn failed_execution_stays_local_without_remote_calls() {
+        let remote = RemoteUploadSpy::new(204).await;
+        let temp = fixture(&["project1"]).await;
+        let cache = remote.cache(temp.path());
+        let task = task("task", "project1", temp.path());
+        tokio::time::timeout(
+            std::time::Duration::from_secs(15),
+            cache.cache(&new_cache_info_with_exit_code(
+                Some(&LOGS_CONTENT),
+                *task.get(),
+                1,
+            )),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+
+        assert!(remote.requests.lock().unwrap().is_empty());
+        assert!(
+            cache.client.get().is_none(),
+            "failed tasks must not even construct a client"
+        );
+        assert_eq!(cache.get(task.get()).await.unwrap().unwrap().exit_code, 1);
+    }
+
+    #[tokio::test]
+    async fn mixed_batch_uploads_only_successful_metadata_without_head() {
+        let remote = RemoteUploadSpy::new(204).await;
+        let temp = fixture(&["project1"]).await;
+        let cache = remote.cache(temp.path());
+        let success = task("success", "project1", temp.path());
+        let failure = task("failure", "project1", temp.path());
+        let logs = LOGS_CONTENT;
+        let infos = [
+            new_cache_info_with_exit_code(Some(&logs), *success.get(), 0),
+            new_cache_info_with_exit_code(Some(&logs), *failure.get(), 1),
+        ];
+        tokio::time::timeout(
+            std::time::Duration::from_secs(15),
+            cache.cache_many(&infos),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        let requests = remote.requests.lock().unwrap();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].0, "PUT");
+        assert_eq!(uploaded_exit_code(&requests[0].1), 0);
+    }
+
+    #[tokio::test]
+    async fn remote_rejection_does_not_fail_local_failure_to_success_upgrade() {
+        let remote = RemoteUploadSpy::new(503).await;
+        let temp = fixture(&["project1"]).await;
+        let cache = remote.cache(temp.path());
+        let task = task("task", "project1", temp.path());
+        cache
+            .cache(&new_cache_info_with_exit_code(
+                Some(&LOGS_CONTENT),
+                *task.get(),
+                1,
+            ))
+            .await
+            .unwrap();
+        tokio::time::timeout(
+            std::time::Duration::from_secs(15),
+            cache.cache(&new_cache_info(Some(&LOGS_CONTENT), *task.get())),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(cache.get(task.get()).await.unwrap().unwrap().exit_code, 0);
+        let requests = remote.requests.lock().unwrap();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].0, "PUT");
+        assert_eq!(uploaded_exit_code(&requests[0].1), 0);
+    }
+
+    #[tokio::test]
+    async fn cached_success_can_upload_but_a_later_failure_never_does() {
+        let remote = RemoteUploadSpy::new(204).await;
+        let temp = fixture(&["project1"]).await;
+        let cache = remote.cache(temp.path());
+        let task = task("task", "project1", temp.path());
+        for exit_code in [0, 0, 1] {
+            tokio::time::timeout(
+                std::time::Duration::from_secs(15),
+                cache.cache(&new_cache_info_with_exit_code(
+                    Some(&LOGS_CONTENT),
+                    *task.get(),
+                    exit_code,
+                )),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+        }
+        assert_eq!(cache.get(task.get()).await.unwrap().unwrap().exit_code, 0);
+        let requests = remote.requests.lock().unwrap();
+        assert_eq!(requests.len(), 2);
+        for (method, archive) in requests.iter() {
+            assert_eq!(method, "PUT");
+            assert_eq!(uploaded_exit_code(archive), 0);
+        }
+    }
+
+    #[tokio::test]
+    async fn remote_transport_failure_retains_a_successful_local_result() {
+        let remote = RemoteUploadSpy::new(0).await;
+        let temp = fixture(&["project1"]).await;
+        let cache = remote.cache(temp.path());
+        let task = task("task", "project1", temp.path());
+        tokio::time::timeout(
+            std::time::Duration::from_secs(15),
+            cache.cache(&new_cache_info(Some(&LOGS_CONTENT), *task.get())),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(cache.get(task.get()).await.unwrap().unwrap().exit_code, 0);
+        assert!(!remote.requests.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn remote_conflict_is_accepted_without_retrying() {
+        let remote = RemoteUploadSpy::new(409).await;
+        let temp = fixture(&["project1"]).await;
+        let cache = remote.cache(temp.path());
+        let task = task("task", "project1", temp.path());
+        tokio::time::timeout(
+            std::time::Duration::from_secs(15),
+            cache.cache(&new_cache_info(Some(&LOGS_CONTENT), *task.get())),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(cache.get(task.get()).await.unwrap().unwrap().exit_code, 0);
+        let requests = remote.requests.lock().unwrap();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].0, "PUT");
     }
 
     #[tokio::test]

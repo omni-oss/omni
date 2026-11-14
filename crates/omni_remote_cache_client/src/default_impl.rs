@@ -68,7 +68,7 @@ impl Middleware for LogRequestMiddleware {
         );
 
         let res = next.run(req, extensions).await.inspect_err(|e| {
-            tracing::error!(error = %e, "response_error");
+            tracing::debug!(error = %e, "response_error");
         })?;
 
         tracing::trace!(
@@ -230,14 +230,17 @@ impl RemoteCacheClient for DefaultRemoteCacheClient {
             .header("X-API-KEY", remote.api_key)
             .header("X-OMNI-TENANT", remote.tenant)
             .body(artifact)
+            .timeout(Duration::from_secs(60))
             .send()
             .await
             .map_err(RemoteCacheClientError::custom)
             .inspect_err(|e| {
-                tracing::error!(error = ?e, "put_artifact_failed");
+                tracing::debug!(error = ?e, "put_artifact_failed");
             })?;
 
-        if response.status().is_success() {
+        if response.status().is_success()
+            || response.status() == StatusCode::CONFLICT
+        {
             Ok(())
         } else {
             Err(RemoteCacheClientError::custom(eyre::eyre!(

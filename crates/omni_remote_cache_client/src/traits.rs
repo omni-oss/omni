@@ -38,6 +38,9 @@ pub trait RemoteCacheClient: Send + Sync + 'static {
         digest: &str,
     ) -> Result<bool, RemoteCacheClientError>;
 
+    /// Upload an artifact. An existing immutable entry (`409 Conflict`) is
+    /// accepted as success; other rejection statuses remain errors for the
+    /// caller to report without failing task execution.
     async fn put_artifact(
         &self,
         remote: &RemoteAccessArgs,
