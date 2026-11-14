@@ -283,6 +283,26 @@ impl HybridTaskExecutionCacheStore {
         Ok(Some(metadata.exit_code))
     }
 
+    async fn can_upload_cached_result(
+        &self,
+        caller_exit_code: u32,
+        metadata_path: &Path,
+    ) -> bool {
+        // A racing first publisher can win with a failure even when this
+        // caller succeeded. Only persisted successes may cross the boundary.
+        // Published successes cannot be downgraded by another local writer.
+        if !self.remote_config.is_enabled() || caller_exit_code != 0 {
+            return false;
+        }
+        match self.read_cached_exit_code(metadata_path).await {
+            Ok(exit_code) => exit_code == Some(0),
+            Err(e) => {
+                tracing::warn!(error = %e, "Skipping remote upload; could not verify persisted outcome");
+                false
+            }
+        }
+    }
+
     /// Removes the given cache entries from disk without taking the prune
     /// lock. Callers must already hold the exclusive prune lock.
     async fn force_prune_inner(
@@ -582,7 +602,12 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
 
             cache_exec_hashes.push(execution_hash);
 
-            if self.remote_config.is_enabled() && new_cache_info.exit_code == 0
+            if self
+                .can_upload_cached_result(
+                    new_cache_info.exit_code,
+                    &metadata_path,
+                )
+                .await
             {
                 cached_results.push((execution_hash, output_dir.to_path_buf()));
             }
@@ -620,6 +645,12 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                     };
 
                     let upload = async {
+                        // Keep this pre-check until the server publishes uploads
+                        // atomically. Repeated PUTs currently truncate local
+                        // remote artifacts, exposing incomplete bytes to readers.
+                        if client.artifact_exists(&config, &digest).await? {
+                            return Ok::<_, LocalTaskExecutionCacheStoreError>(());
+                        }
                         let mut artifact = Vec::new();
                         archive(&output_dir, Cursor::new(&mut artifact))?;
 
@@ -1679,6 +1710,10 @@ mod tests {
 
     impl RemoteUploadSpy {
         async fn new(put_status: u16) -> Self {
+            Self::with_existing_artifact(put_status, false).await
+        }
+
+        async fn with_existing_artifact(put_status: u16, exists: bool) -> Self {
             use tokio::io::AsyncWriteExt;
             let listener =
                 tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -1706,7 +1741,11 @@ mod tests {
                     let mut body = vec![0; length];
                     socket.read_exact(&mut body).await.unwrap();
                     let method = header.split_whitespace().next().unwrap();
-                    let status = if method == "PUT" { put_status } else { 404 };
+                    let status = match method {
+                        "PUT" => put_status,
+                        "HEAD" if exists => 200,
+                        _ => 404,
+                    };
                     captured
                         .lock()
                         .unwrap()
@@ -1794,7 +1833,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn mixed_batch_uploads_only_successful_metadata_without_head() {
+    async fn mixed_batch_uploads_only_successful_metadata() {
         let remote = RemoteUploadSpy::new(204).await;
         let temp = fixture(&["project1"]).await;
         let cache = remote.cache(temp.path());
@@ -1813,9 +1852,10 @@ mod tests {
         .unwrap()
         .unwrap();
         let requests = remote.requests.lock().unwrap();
-        assert_eq!(requests.len(), 1);
-        assert_eq!(requests[0].0, "PUT");
-        assert_eq!(uploaded_exit_code(&requests[0].1), 0);
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[0].0, "HEAD");
+        assert_eq!(requests[1].0, "PUT");
+        assert_eq!(uploaded_exit_code(&requests[1].1), 0);
     }
 
     #[tokio::test]
@@ -1841,9 +1881,10 @@ mod tests {
         .unwrap();
         assert_eq!(cache.get(task.get()).await.unwrap().unwrap().exit_code, 0);
         let requests = remote.requests.lock().unwrap();
-        assert_eq!(requests.len(), 1);
-        assert_eq!(requests[0].0, "PUT");
-        assert_eq!(uploaded_exit_code(&requests[0].1), 0);
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[0].0, "HEAD");
+        assert_eq!(requests[1].0, "PUT");
+        assert_eq!(uploaded_exit_code(&requests[1].1), 0);
     }
 
     #[tokio::test]
@@ -1867,10 +1908,11 @@ mod tests {
         }
         assert_eq!(cache.get(task.get()).await.unwrap().unwrap().exit_code, 0);
         let requests = remote.requests.lock().unwrap();
-        assert_eq!(requests.len(), 2);
-        for (method, archive) in requests.iter() {
-            assert_eq!(method, "PUT");
-            assert_eq!(uploaded_exit_code(archive), 0);
+        assert_eq!(requests.len(), 4);
+        for pair in requests.as_chunks::<2>().0 {
+            assert_eq!(pair[0].0, "HEAD");
+            assert_eq!(pair[1].0, "PUT");
+            assert_eq!(uploaded_exit_code(&pair[1].1), 0);
         }
     }
 
@@ -1906,8 +1948,104 @@ mod tests {
         .unwrap();
         assert_eq!(cache.get(task.get()).await.unwrap().unwrap().exit_code, 0);
         let requests = remote.requests.lock().unwrap();
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[0].0, "HEAD");
+        assert_eq!(requests[1].0, "PUT");
+    }
+
+    #[tokio::test]
+    async fn existing_remote_artifact_is_not_overwritten_before_atomic_publication()
+     {
+        let remote = RemoteUploadSpy::with_existing_artifact(204, true).await;
+        let temp = fixture(&["project1"]).await;
+        let cache = remote.cache(temp.path());
+        let task = task("task", "project1", temp.path());
+        tokio::time::timeout(
+            std::time::Duration::from_secs(15),
+            cache.cache(&new_cache_info(Some(&LOGS_CONTENT), *task.get())),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        let requests = remote.requests.lock().unwrap();
         assert_eq!(requests.len(), 1);
-        assert_eq!(requests[0].0, "PUT");
+        assert_eq!(requests[0].0, "HEAD");
+    }
+
+    #[tokio::test]
+    async fn successful_caller_cannot_upload_a_failed_publication_winner() {
+        let remote = RemoteUploadSpy::new(204).await;
+        let temp = fixture(&["project1"]).await;
+        let cache = remote.cache(temp.path());
+        let task = task("task", "project1", temp.path());
+        // Model the persisted winner of a first-publication race. The losing
+        // successful publisher still receives Ok from publish_staged_dir, but
+        // it must not queue the winning failed entry for remote upload.
+        cache
+            .cache(&new_cache_info_with_exit_code(
+                Some(&LOGS_CONTENT),
+                *task.get(),
+                1,
+            ))
+            .await
+            .unwrap();
+        let collected = cache
+            .collect(
+                &[*task.get()],
+                &CollectConfig {
+                    cache_output_dirs: true,
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        let metadata = collected[0]
+            .cache_output_dir
+            .as_ref()
+            .unwrap()
+            .join(CACHE_OUTPUT_METADATA_FILE);
+        let output_dir = metadata.parent().unwrap();
+        let staging = staging_dir_for(output_dir);
+        tokio::fs::create_dir_all(&staging).await.unwrap();
+        let mut successful: CachedTaskExecution =
+            rmp_serde::from_slice(&tokio::fs::read(&metadata).await.unwrap())
+                .unwrap();
+        successful.exit_code = 0;
+        tokio::fs::write(
+            staging.join(CACHE_OUTPUT_METADATA_FILE),
+            rmp_serde::to_vec(&successful).unwrap(),
+        )
+        .await
+        .unwrap();
+        publish_staged_dir(&staging, output_dir, &metadata, false)
+            .await
+            .unwrap();
+        assert_eq!(
+            cache.read_cached_exit_code(&metadata).await.unwrap(),
+            Some(1)
+        );
+        // This is a unit-level publication/gating test, not a scheduler-driven
+        // race through cache_many. The upload queue uses this same helper.
+        assert!(!cache.can_upload_cached_result(0, &metadata).await);
+        assert!(
+            !cache
+                .can_upload_cached_result(0, &temp.path().join("missing"))
+                .await
+        );
+        assert!(remote.requests.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn unreadable_persisted_outcome_skips_remote_upload_without_error() {
+        let remote = RemoteUploadSpy::new(204).await;
+        let temp = fixture(&["project1"]).await;
+        let cache = remote.cache(temp.path());
+        let metadata = temp.path().join("corrupt-metadata");
+        tokio::fs::write(&metadata, b"not messagepack metadata")
+            .await
+            .unwrap();
+        assert!(!cache.can_upload_cached_result(0, &metadata).await);
+        assert!(remote.requests.lock().unwrap().is_empty());
     }
 
     #[tokio::test]

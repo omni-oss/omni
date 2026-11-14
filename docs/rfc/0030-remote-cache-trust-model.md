@@ -1392,34 +1392,52 @@ default containers and S3 bucket-per-container mode, and local key validation
 landed in `e7288322`. Review follow-ups fix container-relative S3 listing keys,
 container-scoped deletes, and caching of rejected writes. CodeRabbit is green
 through `44d12083`. Slice 1's client prerequisite batch is implemented: failed
-executions stay local, remote errors are warnings, the upload pre-check and remote
-replacement bypass are removed, and the client accepts `409` without retrying.
-At most eight archives/uploads run concurrently. Upload requests have a 60-second
+executions stay local, remote errors are warnings, the remote replacement bypass
+is removed, and the client accepts `409` without retrying. Review follow-ups check
+the persisted exit code as well as the caller's outcome: a losing successful
+publisher must not upload a failed first-publication winner. The upload `HEAD`
+pre-check is temporarily retained until atomic server publication lands in the
+same batch as its removal; otherwise repeated uploads truncate published local
+remote artifacts while readers use them. Until then, a write-only key denied by
+`HEAD` skips publication with a warning. Persisted-outcome read/decode failures
+also warn and skip publication rather than failing the locally stored batch.
+At most eight archives/uploads run concurrently. Each worker builds its full
+archive in memory before PUT, so up to eight uncapped archives may be resident
+at once until size caps land in slice 5. Upload requests have a 60-second
 total timeout (including body transfer); slow connections may exhaust it, in which
 case the upload warns and the local result remains usable. Revisit timeout
-configuration alongside size caps in slice 5. Atomic storage/server writes and the
+configuration alongside size caps in slice 5. This request timeout does not cover
+archive construction. Atomic storage/server writes and the
 remaining slice 1 primitives are not implemented yet; slices 2–10 have not started.
 
 Slice 1 execution order (High risk; continuing on PR #104):
 
 1. Client prerequisite batch: never upload failed executions, remove the remote
    replacement bypass (keep local failure-to-success upgrades), treat upload
-   failures as warnings, and accept a server `409` without retrying. Remove the
-   existence pre-check so a key without read permission can still upload and a
-   future shared-conflict verification path cannot be bypassed by `HEAD`.
+   failures as warnings, and accept a server `409` without retrying. Retain the
+   existence pre-check until atomic server publication is active. Queue an upload
+   only when both the caller and the persisted entry are successful.
    Check: failed results stay local with no network access; mixed batches upload
-   only successes; failed-to-success upgrades upload successful metadata; remote
+   only successes; a failed first-publication winner is not uploaded by a losing
+   successful caller; failed-to-success upgrades upload successful metadata; remote
    rejection does not fail local storage; `409` is accepted. Undo: revert batch.
-   The `artifact_exists` client trait method remains available for readers; only
-   the upload pre-check is removed. Size caps and shared-conflict verification are
+   The failed-winner regression uses the real publication primitive and eligibility
+   helper at unit level, rather than injecting a race into `cache_many` itself.
+   The `artifact_exists` client trait method remains available for readers. Until
+   the next batch, upload keys still need read access for the interim pre-check.
+   Size caps and shared-conflict verification are
    implemented with their configuration and signing dependencies in slices 5/7.
 2. Atomic storage/server batch: conditional create-only writes, fallible and
    bounded uploads, abort cleanup, digest/path checks, server `409`, and mutation
-   coordination. The client prerequisite must already be present before activating
+   coordination. Remove the existence pre-check in this batch, not before atomic
+   publication is active, so a write-only key can upload without `HEAD` and a future
+   shared-conflict verification path cannot be bypassed. The client prerequisite must already be present before activating
    immutable writes. Check concurrent writers and truncated/oversized streams per
    backend. The real-R2 conditional-write spike is a gate for enabling R2 writes.
-   Purge legacy failed remote entries before enabling immutable writes, otherwise
-   they can occupy a digest until operators remove them.
+   Block or upgrade all old clients with write access before the final purge and
+   immutable-write activation, then purge legacy failed remote entries. Otherwise
+   old clients can repopulate failed entries that occupy a digest until operators
+   remove them. Keep old writer credentials revoked throughout activation.
    Undo: revert batch; no data migration.
 3. Range and prefix operations, complete pagination, restore `original_path`
    validation, and remaining integration/security regression coverage. Check
