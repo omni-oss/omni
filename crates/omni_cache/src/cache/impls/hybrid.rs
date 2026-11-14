@@ -645,9 +645,10 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                     };
 
                     let upload = async {
-                        // Keep this pre-check until the server publishes uploads
-                        // atomically. Repeated PUTs currently truncate local
-                        // remote artifacts, exposing incomplete bytes to readers.
+                        // Keep this pre-check until create-only writes are active.
+                        // The updated local backend publishes atomically, but
+                        // successful PUTs can still replace existing entries.
+                        // Remove this guard in the conditional-write batch.
                         if client.artifact_exists(&config, &digest).await? {
                             return Ok::<_, LocalTaskExecutionCacheStoreError>(());
                         }
