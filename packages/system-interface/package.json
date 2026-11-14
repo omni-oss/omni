@@ -30,14 +30,14 @@
         "access": "public"
     },
     "dependencies": {
-        "memfs": "^4.57.2"
+        "memfs": "^4.80.1"
     },
     "devDependencies": {
         "@omni-oss/tsconfig": "catalog:",
         "@omni-oss/vite-config": "catalog:",
         "@omni-oss/vitest-config": "catalog:",
         "@types/bun": "catalog:",
-        "@types/deno": "^2.5.0",
+        "@types/deno": "^2.7.0",
         "@types/node": "catalog:",
         "typescript": "catalog:",
         "vite": "catalog:",

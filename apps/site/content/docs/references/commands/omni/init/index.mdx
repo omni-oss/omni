@@ -1,8 +1,12 @@
 ---
+
 title: "init"
 
 description: "Initialize a new workspace in the current directory"
+
 ---
+
+
 
 ## Usage
 
@@ -47,6 +51,26 @@ Use default values for inputs
 - **Default:** `false`
 
 - **Possible values:** `true`, `false`
+
+### `--redact-input`
+
+Redact the value of this input (name or glob) in logs. Repeatable
+
+- **Required:** No
+
+### `--redact-env`
+
+Redact the value of this environment variable (name or glob) in logs. Repeatable
+
+- **Required:** No
+
+### `--redact`
+
+Redaction mode: declared (apply configured policy), all, or none (prints a notice)
+
+- **Required:** No
+
+- **Possible values:** `declared`, `all`, `none`
 
 ---
 
