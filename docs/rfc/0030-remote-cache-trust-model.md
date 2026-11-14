@@ -368,7 +368,12 @@ server's claim about where a hit came from:
   points at `omni cache purge`. It never fails the run and never retries or replaces,
   because immutability has no exception. The server does not judge signatures (4.3),
   so this is how a publisher learns that a stray or tampered entry occupies its
-  digest. Skipped when `verify` is `off`.
+  digest. Skipped when `verify` is `off`. It also needs `read:artifacts`, which
+  `publish` does not imply (4.1). A publisher whose effective scopes (from
+  `validate_access`) lack `read` skips both this check and the `artifact_exists`
+  pre-check (a `HEAD`, also a read) and does not warn: it cannot verify, and a warning
+  would be false. Publisher keys are expected to hold `read`, since a publishing run
+  also restores shared entries.
 - **Only successful executions are stored remotely.** Remove the `replacing` path
   in `hybrid.rs`. Failed results stay local. Immutability then has no exception.
 
@@ -444,7 +449,8 @@ Operator tooling:
   **shared** namespace, scans: the server lists the container, reads each trailer
   with a suffix range read, and deletes matches. Scans are for incidents, and
   `--since` and `--namespace` narrow them, and `--since` always means "stored at or
-  after". An index is added only if measurements
+  after". `--digest` names exactly one entry and removes it whatever its trailer says,
+  so `--since` is rejected with `--digest` (an unreadable trailer has no `stored_at`). An index is added only if measurements
   show scans are too slow.
 
 Hooks (`HookContext`) replace `api_key_id` with `caller_id` and `credential_kind`, and gain
