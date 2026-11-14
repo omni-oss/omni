@@ -1,4 +1,5 @@
 use std::{
+    collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
     sync::LazyLock,
 };
@@ -10,6 +11,31 @@ use omni_path_utils::{ProjectRootId, WorkspacePath};
 use thiserror::Error;
 
 use crate::{ConfigLocation, LogicalProjectKey, constants};
+use crate::{ContextError, ContextSys, context::ContextErrorInner};
+
+/// Validate only selected concrete files, never the `extends` closure.
+#[allow(clippy::result_large_err)]
+pub(crate) fn validate_project_roots<TSys: ContextSys>(
+    files: &[PathBuf],
+    sys: &TSys,
+) -> Result<(), ContextError> {
+    let mut roots: BTreeMap<PathBuf, BTreeSet<PathBuf>> = BTreeMap::new();
+    for file in files {
+        if let Some(parent) = file.parent() {
+            let root = sys.fs_canonicalize(parent)?;
+            roots.entry(root).or_default().insert(file.clone());
+        }
+    }
+    let conflicts: BTreeMap<_, _> = roots
+        .into_iter()
+        .filter(|(_, files)| files.len() > 1)
+        .collect();
+    if conflicts.is_empty() {
+        Ok(())
+    } else {
+        Err(ContextErrorInner::DuplicateProjectFiles { conflicts }.into())
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct ProjectDiscovery<'a> {
@@ -127,7 +153,86 @@ pub struct ProjectDiscoveryError(
 
 #[cfg(test)]
 mod tests {
+    use omni_diagnostic::Diagnostic as _;
+    use system_traits::impls::RealSys;
+
     use super::*;
+
+    #[test]
+    fn duplicate_roots_report_all_formats_in_stable_order() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut files = vec![];
+        for project in ["a", "b"] {
+            let root = dir.path().join(project);
+            std::fs::create_dir(&root).unwrap();
+            for ext in ["yaml", "yml", "json", "toml"] {
+                files.push(root.join(format!("project.omni.{ext}")));
+            }
+        }
+        for count in [2, 3, 4, 8] {
+            let mut selected = files[..count].to_vec();
+            let error =
+                validate_project_roots(&selected, &RealSys).unwrap_err();
+            assert_eq!(error.code(), "workspace.duplicate_project_files");
+            let details = error.details().unwrap();
+            let conflicts = details["conflicts"].as_object().unwrap();
+            assert_eq!(
+                conflicts
+                    .values()
+                    .map(|v| v.as_array().unwrap().len())
+                    .sum::<usize>(),
+                count
+            );
+            for file in &selected {
+                assert!(error.to_string().contains(&format!("{file:?}")));
+            }
+            assert!(error.hints()[0].contains("projects"));
+            selected.reverse();
+            let reversed =
+                validate_project_roots(&selected, &RealSys).unwrap_err();
+            assert_eq!(error.to_string(), reversed.to_string());
+            assert_eq!(error.details(), reversed.details());
+        }
+    }
+
+    #[test]
+    fn separate_roots_and_repeated_hits_are_not_conflicts() {
+        let dir = tempfile::tempdir().unwrap();
+        let child = dir.path().join("child");
+        std::fs::create_dir(&child).unwrap();
+        let file = dir.path().join("project.omni.yaml");
+        validate_project_roots(
+            &[file.clone(), file, child.join("project.omni.json")],
+            &RealSys,
+        )
+        .unwrap();
+        validate_project_roots(&[], &RealSys).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn parent_symlinks_share_a_canonical_root() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("real");
+        let alias = dir.path().join("alias");
+        std::fs::create_dir(&root).unwrap();
+        std::os::unix::fs::symlink(&root, &alias).unwrap();
+        let error = validate_project_roots(
+            &[
+                root.join("project.omni.yaml"),
+                alias.join("project.omni.json"),
+            ],
+            &RealSys,
+        )
+        .unwrap_err();
+        let details = error.details().unwrap();
+        let canonical = std::fs::canonicalize(root).unwrap();
+        assert!(
+            details["conflicts"]
+                .get(canonical.to_str().unwrap())
+                .is_some()
+        );
+    }
 
     #[test]
     fn classification_keeps_files_and_virtual_projects_apart() {

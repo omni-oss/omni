@@ -115,6 +115,26 @@ mod tests {
     fn allows_ordinary_destinations() {
         let g = guardrails(&[]);
         assert!(check_dest(Path::new("/ws/.cursor/rules/foo.md"), &g).is_ok());
+        for name in ["package.json", "Cargo.toml", "Cargo.lock", "bun.lock"] {
+            assert!(check_dest(&Path::new("/ws").join(name), &g).is_ok());
+        }
+    }
+
+    #[test]
+    fn plugin_manifests_require_the_shared_override_in_every_format() {
+        let refused = guardrails(&[]);
+        let allowed = Guardrails {
+            allow_omni_config: true,
+            ..guardrails(&[])
+        };
+        for name in
+            omni_constants::config_file_names(omni_constants::PLUGIN_OMNI)
+        {
+            let dest = Path::new("/ws/nested").join(&name);
+            let error = check_dest(&dest, &refused).unwrap_err();
+            assert!(error.to_string().contains("allow_omni_config"));
+            assert!(check_dest(&dest, &allowed).is_ok(), "{name}");
+        }
     }
 
     #[test]

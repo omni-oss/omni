@@ -37,9 +37,10 @@ The package-level waves further down are a coarse summary; the task graph supers
 
 ## Status
 
-Bug fixes B01-B04 and refactors R01-R08 are merged. Features (F) and plugins (P)
-have not been started. This is temporary tracking: remove or fold it into the
-tables once the F/P work begins.
+Bug fixes B01-B04 and refactors R01-R08 are merged.
+F01 and F02 are implemented together in the
+[first feature batch](features/F01-F02-batch.md), pending PR review.
+The remaining features (F03-F10) and plugins (P) have not been started.
 
 Known gaps carried forward from the merged refactors:
 

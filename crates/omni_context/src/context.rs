@@ -546,6 +546,11 @@ impl<TSys: ContextSys> Context<TSys> {
             !target.starts_with(&cache_dir)
         });
 
+        crate::project_discovery::validate_project_roots(
+            &discovered_paths,
+            &self.sys,
+        )?;
+
         let LoadedProjects {
             projects,
             extension_graph,
@@ -829,6 +834,25 @@ impl<T: Into<ContextErrorInner>> From<T> for ContextError {
     derive(strum::IntoStaticStr, strum::Display, strum::EnumIs)
 )]
 pub(crate) enum ContextErrorInner {
+    /// Multiple selected explicit project files share a canonical root.
+    ///
+    /// Keep one selected `project.omni.*` file per directory. Files reached only
+    /// through `extends` do not count as additional selected project files.
+    #[error(
+        "multiple selected project configuration files at the same canonical root: {conflicts:?}"
+    )]
+    #[diagnostic(
+        code = "workspace.duplicate_project_files",
+        hint = "keep one selected `project.omni.*` file per root; remove or rename the others, or exclude them with workspace `projects` patterns and reference shared bases through `extends`"
+    )]
+    DuplicateProjectFiles {
+        #[diagnostic(detail)]
+        conflicts: std::collections::BTreeMap<
+            PathBuf,
+            std::collections::BTreeSet<PathBuf>,
+        >,
+    },
+
     /// The cache directory configuration is invalid or unsafe.
     #[error("{0}")]
     #[diagnostic(
@@ -1139,6 +1163,7 @@ mod tests {
         std::fs::create_dir_all(&cache).unwrap();
         std::fs::write(cache.join("project.omni.yaml"), "invalid: [yaml")
             .unwrap();
+        std::fs::write(cache.join("project.omni.json"), "invalid").unwrap();
         let mut context = ctx("testing", tmp.path(), sys);
         context.cache_dir = std::fs::canonicalize(cache).unwrap();
         let loaded = context.clone().into_loaded().await.unwrap();
@@ -1149,6 +1174,77 @@ mod tests {
                 .build(),
         );
         let loaded = context.into_loaded_with_walker(&walker).await.unwrap();
+        assert_eq!(loaded.projects().len(), 3);
+    }
+
+    #[tokio::test]
+    async fn duplicate_selected_files_fail_before_loading_for_both_walkers() {
+        use omni_diagnostic::Diagnostic as _;
+
+        let (tmp, sys) = default_fixture();
+        let dir = tmp.path().join("nested/project-1");
+        std::fs::write(dir.join("project.omni.json"), "invalid json").unwrap();
+        let context = ctx("testing", tmp.path(), sys);
+        let error = context.clone().into_loaded().await.unwrap_err();
+        assert_eq!(error.code(), "workspace.duplicate_project_files");
+        let walker = dir_walker::impls::IgnoreRealDirWalker::new_with_config(
+            dir_walker::impls::IgnoreRealDirWalkerConfig::builder()
+                .standard_filters(false)
+                .build(),
+        );
+        let error = context.into_loaded_with_walker(&walker).await.unwrap_err();
+        assert_eq!(error.code(), "workspace.duplicate_project_files");
+    }
+
+    #[tokio::test]
+    async fn ignored_excluded_and_unselected_files_do_not_count() {
+        let (tmp, sys) = default_fixture();
+        let dir = tmp.path().join("nested/project-1");
+        for name in
+            ["project.omni.json", "project.omni.toml", "project.omni.yml"]
+        {
+            std::fs::write(dir.join(name), "invalid").unwrap();
+        }
+        // These ecosystem markers must not count either.
+        for name in ["package.json", "Cargo.toml"] {
+            std::fs::write(dir.join(name), "invalid").unwrap();
+        }
+        std::fs::write(
+            tmp.path().join(".omniignore"),
+            "**/project.omni.json\n",
+        )
+        .unwrap();
+        std::fs::write(
+            tmp.path().join("workspace.omni.yaml"),
+            "projects:\n  include: ['nested/**/*.yaml', 'nested/**/*.json', 'nested/**/*.toml']\n  exclude: ['**/project.omni.toml']\n",
+        ).unwrap();
+        let loaded =
+            ctx("testing", tmp.path(), sys).into_loaded().await.unwrap();
+        // The default fixture also loads two shared bases through `extends`.
+        assert_eq!(loaded.projects().len(), 3);
+    }
+
+    #[tokio::test]
+    async fn extends_only_files_at_the_same_root_remain_valid() {
+        let (tmp, sys) = default_fixture();
+        let dir = tmp.path().join("nested/project-1");
+        std::fs::write(
+            dir.join("project.omni.yml"),
+            "name: shared-base\nbase: true\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("project.omni.yaml"),
+            "name: project-1\nextends: project.omni.yml\n",
+        )
+        .unwrap();
+        std::fs::write(
+            tmp.path().join("workspace.omni.yaml"),
+            "projects: ['nested/**/project.omni.yaml']\n",
+        )
+        .unwrap();
+        let loaded =
+            ctx("testing", tmp.path(), sys).into_loaded().await.unwrap();
         assert_eq!(loaded.projects().len(), 3);
     }
 

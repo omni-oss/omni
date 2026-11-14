@@ -73,14 +73,20 @@ pub fn is_worktree_configuration_name(name: &str) -> bool {
 pub const PROJECT_OMNI: &str = "project.omni.{ext}";
 pub const GENERATOR_OMNI: &str = "generator.omni.{ext}";
 pub const TOOL_OMNI: &str = "tool.omni.{ext}";
+pub const PLUGIN_OMNI: &str = "plugin.omni.{ext}";
 pub const PROJECTION_OMNI: &str = "projection.omni.{ext}";
 pub const PACK_OMNI: &str = "pack.omni.{ext}";
 pub const REMOTE_CACHE_OMNI: &str = "remote-cache.omni.{ext}";
 
 /// The manifest templates that make up omni's control plane. Projecting a
 /// source entry onto any of these is refused unless explicitly allowed.
-pub const CONTROL_PLANE_MANIFESTS: &[&str] =
-    &[WORKSPACE_OMNI, PROJECT_OMNI, TOOL_OMNI, GENERATOR_OMNI];
+pub const CONTROL_PLANE_MANIFESTS: &[&str] = &[
+    WORKSPACE_OMNI,
+    PROJECT_OMNI,
+    TOOL_OMNI,
+    GENERATOR_OMNI,
+    PLUGIN_OMNI,
+];
 
 /// Expand a `{ext}` manifest template across every supported configuration
 /// extension, yielding the concrete file names in discovery priority order.
@@ -119,6 +125,7 @@ mod tests {
             PROJECT_OMNI,
             GENERATOR_OMNI,
             TOOL_OMNI,
+            PLUGIN_OMNI,
             PROJECTION_OMNI,
             REMOTE_CACHE_OMNI,
         ] {
@@ -133,7 +140,13 @@ mod tests {
     fn control_plane_manifests_are_the_config_loading_stems() {
         assert_eq!(
             CONTROL_PLANE_MANIFESTS,
-            &[WORKSPACE_OMNI, PROJECT_OMNI, TOOL_OMNI, GENERATOR_OMNI]
+            &[
+                WORKSPACE_OMNI,
+                PROJECT_OMNI,
+                TOOL_OMNI,
+                GENERATOR_OMNI,
+                PLUGIN_OMNI
+            ]
         );
     }
 
