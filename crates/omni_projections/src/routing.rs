@@ -824,6 +824,35 @@ mod tests {
     }
 
     #[test]
+    fn directory_plugin_manifests_require_the_shared_override() {
+        for allowed in [false, true] {
+            let proj = projection(&format!(
+                r#"{{"strategy":"pattern","target":"@workspace/out","allow_omni_config":{allowed},"rules":[{{"match":"pkg","match_kind":"dir","dest":"@target/pkg"}}]}}"#
+            ));
+            for name in
+                omni_constants::config_file_names(omni_constants::PLUGIN_OMNI)
+            {
+                let entries = [
+                    ScannedEntry::dir("pkg"),
+                    ScannedEntry::dir("pkg/nested"),
+                    ScannedEntry::file(format!("pkg/nested/{name}")),
+                ];
+                assert_eq!(
+                    plan_with(&proj, "id", &entries).is_ok(),
+                    allowed,
+                    "{name}"
+                );
+            }
+            let entries = [
+                ScannedEntry::dir("pkg"),
+                ScannedEntry::file("pkg/package.json"),
+                ScannedEntry::file("pkg/Cargo.toml"),
+            ];
+            assert!(plan_with(&proj, "id", &entries).is_ok());
+        }
+    }
+
+    #[test]
     fn dir_link_git_contents_are_refused() {
         let proj = projection(
             r#"{"strategy":"pattern","target":"@workspace/out","rules":[{"match":"pkg","match_kind":"dir","dest":"@target/pkg"}]}"#,

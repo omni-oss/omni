@@ -1,0 +1,31 @@
+---
+title: "Project-file validation changes"
+description: "Pre-v1 migration notes for duplicate project files and protected plugin manifests"
+---
+
+## Changed: one selected project file per root
+
+Omni now rejects multiple selected `project.omni.*` files in the same canonical
+directory, including `yml`/`yaml` aliases and JSON/TOML variants. Previously these
+files could proceed to loading without a duplicate-root check. The diagnostic
+`workspace.duplicate_project_files` lists every conflicting selected path;
+omni does not pick a format winner or merge them implicitly.
+
+Keep one selected project file per root. Remove obsolete variants, or rename
+shared configuration to a base filename such as `base.omni.yaml` and reference
+it through `extends`. Alternatively, narrow the workspace `projects`
+include/exclude patterns so only one file at that root is selected.
+
+Selection still matches file paths, not directory paths. Ignored or excluded
+files do not count. Files reached only through `extends` do not count as
+additional selected project files, even if they are in the same directory.
+Multiple ecosystem markers such as `package.json` and `Cargo.toml` are not
+duplicate explicit project files. This validation also applies without plugins.
+
+## Security: plugin manifests are protected projection destinations
+
+Projections now protect `plugin.omni.yml`, `plugin.omni.yaml`,
+`plugin.omni.json` and `plugin.omni.toml`, including manifests nested in a
+projected directory. Intentional projections of these files require the existing
+`allow_omni_config: true` override. This does not enable plugin discovery or
+execution, and does not protect ecosystem manifests or lockfiles.

@@ -233,6 +233,7 @@ tasks:
   # ---------- Features ----------
   F01:
     {
+      owner: "OpenCode (F01/F02 batch)",
       title: "Duplicate explicit project file diagnostic",
       parent: F01,
       kind: code,
@@ -242,6 +243,7 @@ tasks:
     }
   F02:
     {
+      owner: "OpenCode (F01/F02 batch)",
       title: "Projection guardrails for plugin.omni.*",
       parent: F02,
       kind: code,
