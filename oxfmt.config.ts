@@ -40,6 +40,9 @@ export default defineConfig({
         "**/*.config.js",
         "./**/*.gen.*",
         "./**/*.generated.*",
+        // Snapshot formatting is owned by the test runner or serializer.
+        "**/snapshots/**",
+        "**/__snapshots__/**",
         "./**/bin/**/*",
         "**/render/html/template.html",
         ".omni/**/*.*",
