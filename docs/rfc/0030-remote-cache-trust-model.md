@@ -1243,8 +1243,13 @@ things earlier slices provide:
 
 0. Typed `Container` and `ContainerPrefix` across the storage trait, backends and
    routes, and removal of `multi_bucket` and `default_container()` (4.1.1). Breaking
-   for bucket-per-container deployments (`--s3.multi-bucket`); no compatibility layer.
-   Otherwise no behavior change.
+   for two kinds of S3 deployment, with no compatibility layer. Today `multi_bucket =
+true` means **one bucket with container key prefixes**, and `false` (the default,
+   although the `--s3.multi-bucket` help text says the opposite) means **one bucket per
+   container**. After this slice (a) bucket-per-container deployments no longer work,
+   and (b) single-bucket deployments that pass `--s3.multi-bucket` (or its env var)
+   fail to start, because the flag no longer exists, so the release note tells them to
+   drop it. Otherwise no behavior change.
 1. Storage: create-if-absent, `get_range`, `list_prefix`, `delete_prefix`, path
    safety (digest and containment checks, and restore validation of each cached
    `original_path`, since that hole exists today), server `409`, truncated-upload abort,
