@@ -2,6 +2,9 @@
 
 **Type:** feature · **Size:** L · **Depends on:** R05, R06 · **Unblocks:** F04
 
+Audit prerequisite: [F03.1 identity and parser inventory](F03.1-identity-parser-audit.md).
+Parser/schema and root-lowering code (F03.2/F03.3) remain unimplemented.
+
 ## Problem
 
 `TaskDependencyConfiguration` is string-only. A literal local task named `native::build`
