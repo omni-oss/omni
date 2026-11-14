@@ -104,23 +104,27 @@ impl S3CacheBackend {
     fn list_item(
         container: &Container,
         item: aws_sdk_s3::types::Object,
-    ) -> Result<ListItem, Error> {
+    ) -> Result<Option<ListItem>, Error> {
         let prefix = container.prefix();
         let key = item
             .key
             .as_deref()
             .and_then(|key| key.strip_prefix(prefix.as_str()))
-            .filter(|key| !key.is_empty())
             .ok_or_else(|| {
                 Error::custom(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
-                    "S3 listing returned an empty or out-of-container key",
+                    "S3 listing returned a missing or out-of-container key",
                 ))
             })?;
-        Ok(ListItem {
+        // The S3 console can create an object at the exact container prefix
+        // as a folder marker. It is not an artifact and has no relative key.
+        if key.is_empty() {
+            return Ok(None);
+        }
+        Ok(Some(ListItem {
             key: key.to_string(),
             size: ByteSize::b(item.size.unwrap_or_default() as u64),
-        })
+        }))
     }
 
     #[allow(clippy::result_large_err)]
@@ -260,7 +264,9 @@ impl RemoteCacheStorageBackend for S3CacheBackend {
 
         let mut items = Vec::new();
         for item in list.contents.unwrap_or_default() {
-            items.push(Self::list_item(container, item)?);
+            if let Some(item) = Self::list_item(container, item)? {
+                items.push(item);
+            }
         }
 
         Ok(items)
@@ -285,7 +291,9 @@ impl RemoteCacheStorageBackend for S3CacheBackend {
 
         let mut items = Vec::new();
         for item in list.contents.unwrap_or_default() {
-            items.push(Self::list_item(container, item)?);
+            if let Some(item) = Self::list_item(container, item)? {
+                items.push(item);
+            }
         }
 
         Ok(items)
@@ -389,21 +397,35 @@ mod tests {
         let container = Container::parse("ns/ci").unwrap();
         let item = Object::builder().key("ns/ci/ns/ci/d").size(7).build();
         assert_eq!(
-            S3CacheBackend::list_item(&container, item).unwrap().key,
+            S3CacheBackend::list_item(&container, item)
+                .unwrap()
+                .unwrap()
+                .key,
             "ns/ci/d"
         );
     }
 
     #[test]
-    fn listing_rejects_missing_empty_and_out_of_container_keys() {
+    fn listing_rejects_missing_and_out_of_container_keys() {
         let container = Container::parse("ns/ci").unwrap();
-        for key in ["ns/ci2/d", "d", "ns/ci", "ns/ci/"] {
+        for key in ["ns/ci2/d", "d", "ns/ci"] {
             let item = Object::builder().key(key).build();
             assert!(S3CacheBackend::list_item(&container, item).is_err());
         }
         assert!(
             S3CacheBackend::list_item(&container, Object::builder().build())
                 .is_err()
+        );
+    }
+
+    #[test]
+    fn listing_skips_the_exact_container_marker() {
+        let container = Container::parse("ns/ci").unwrap();
+        let marker = Object::builder().key("ns/ci/").size(0).build();
+        assert!(
+            S3CacheBackend::list_item(&container, marker)
+                .unwrap()
+                .is_none()
         );
     }
 }

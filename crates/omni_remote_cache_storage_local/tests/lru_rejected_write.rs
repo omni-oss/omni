@@ -36,7 +36,13 @@ async fn successful_write_invalidates_cached_reads_without_warming() {
     );
     let container = Container::parse("ns/ci").unwrap();
     backend
-        .save(&container, "d", Bytes::from("old"))
+        .save_stream(
+            &container,
+            "d",
+            Box::pin(futures::stream::once(std::future::ready(Bytes::from(
+                "old",
+            )))),
+        )
         .await
         .unwrap();
     assert_eq!(

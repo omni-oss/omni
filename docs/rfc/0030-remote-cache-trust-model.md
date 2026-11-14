@@ -1398,7 +1398,7 @@ Slice 0 deviations and remaining checks:
   remain to be wired in later slices.
 - Byte writes invalidate the LRU only after backend acceptance rather than warming
   it, avoiding publication of rejected or concurrently deleted values. Streamed
-  writes and read fills still have pre-existing races with deletes; address cache
+  writes still have a pre-existing race with deletes; address cache
   mutation coordination with the storage concurrency work in slice 1.
 - S3 listing pagination remains incomplete: `list` stops at one service page and
   `paged_list` ignores `after_key`. Include pagination coverage in slice 1.
