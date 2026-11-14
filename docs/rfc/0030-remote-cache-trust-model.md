@@ -1434,8 +1434,18 @@ Atomic publication operational notes:
   currently manual, pending the lifecycle/maintenance work.
 - File data is synced before rename. On Unix, publication then syncs the
   destination directory and its ancestors through the backend root (also the
-  staging parent). Newly created directories have their own parents synced during
-  creation, including directories above the backend root if it did not exist.
+  staging parent). Before the first write, each backend instance creates the root
+  if necessary and syncs its entire ancestor chain once, even if another creator
+  already made those directories visible. Initialization uses the canonical root
+  so symlinked deployments sync the target's actual ancestor chain. A cancellation-safe initialization cell
+  makes waiters retry incomplete initialization; failed sync does not mark the
+  root ready. This requires readable/syncable ancestor directories on Unix for
+  initialization. A Unix ancestor that permits traversal but denies opening for
+  sync causes writes to fail explicitly; skipping that sync would weaken the
+  acknowledged durability guarantee. Reads do not require initialization.
+  Subsequent writes do not reopen ancestors above the root.
+  Newly created container directories also have their parents synced during
+  creation and again through the root after publication.
   Sync failures propagate even if rename already made the artifact visible.
   On non-Unix platforms, portable directory sync is unavailable, so file data is
   synced but crash-durable directory names are not promised.

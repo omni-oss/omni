@@ -19,6 +19,8 @@ use omni_remote_cache_storage_core::{
 pub struct LocalDiskCacheBackend {
     #[new(into)]
     root: PathBuf,
+    #[new(default)]
+    root_ready: tokio::sync::OnceCell<()>,
 }
 
 impl LocalDiskCacheBackend {
@@ -41,6 +43,27 @@ impl LocalDiskCacheBackend {
 
     fn dir(&self, container: &Container) -> PathBuf {
         self.root.join(container.as_str())
+    }
+
+    async fn initialize_root(&self) -> Result<(), Error> {
+        self.root_ready
+            .get_or_try_init(|| async {
+                tokio::fs::create_dir_all(&self.root)
+                    .await
+                    .map_err(Error::custom)?;
+                // An existing directory may belong to a creator cancelled before
+                // fsync. Every backend instance establishes its own durable anchor
+                // once, including all ancestors above the configured root.
+                let root = tokio::fs::canonicalize(&self.root)
+                    .await
+                    .map_err(Error::custom)?;
+                for dir in root.ancestors() {
+                    Self::sync_directory(dir).await?;
+                }
+                Ok::<(), Error>(())
+            })
+            .await?;
+        Ok(())
     }
 
     async fn create_container_directories(
@@ -254,6 +277,7 @@ impl RemoteCacheStorageBackend for LocalDiskCacheBackend {
     ) -> Result<(), Error> {
         let path = self.path(key, container)?;
 
+        self.initialize_root().await?;
         self.create_container_directories(&path).await?;
 
         // Stage outside the container so list/get cannot observe a partial
@@ -319,6 +343,61 @@ mod tests {
     use omni_remote_cache_storage_core::decl_remote_cache_storage_backend_tests;
     fn temp_dir() -> tempfile::TempDir {
         tempfile::tempdir().unwrap()
+    }
+
+    #[tokio::test]
+    async fn cancelled_root_creator_cannot_leave_other_uploads_using_an_unsynced_anchor()
+     {
+        use bytes::Bytes;
+        use omni_remote_cache_storage_core::{
+            Container, RemoteCacheStorageBackend,
+        };
+        use std::{sync::Arc, time::Duration};
+        let parent = temp_dir();
+        let root = parent.path().join("new-root");
+        let backend = Arc::new(LocalDiskCacheBackend::new(&root));
+        let (created, waiting) = tokio::sync::oneshot::channel();
+        let creator = backend.clone();
+        // Pause inside the same initialization cell after mkdir but before
+        // sync, modelling a cancelled first creator deterministically.
+        let first = tokio::spawn(async move {
+            creator
+                .root_ready
+                .get_or_try_init(|| async {
+                    tokio::fs::create_dir_all(&creator.root).await.unwrap();
+                    created.send(()).unwrap();
+                    std::future::pending::<Result<(), super::Error>>().await
+                })
+                .await
+                .map(|_| ())
+        });
+        tokio::time::timeout(Duration::from_secs(5), waiting)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(root.is_dir());
+        assert!(backend.root_ready.get().is_none());
+        let container = Container::parse("ns/ci").unwrap();
+        let upload = backend.save(&container, "d", Bytes::from("complete"));
+        tokio::pin!(upload);
+        assert!(
+            futures::poll!(&mut upload).is_pending(),
+            "a visible root is not yet a durable anchor"
+        );
+        first.abort();
+        assert!(first.await.unwrap_err().is_cancelled());
+        tokio::time::timeout(Duration::from_secs(5), upload)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            backend.root_ready.get().is_some(),
+            "second upload must finish root synchronization"
+        );
+        assert_eq!(
+            backend.get(&container, "d").await.unwrap(),
+            Some(Bytes::from("complete"))
+        );
     }
 
     decl_remote_cache_storage_backend_tests!(LocalDiskCacheBackend::new(
