@@ -332,6 +332,18 @@ safe and explicit. Routing to several buckets is out of scope.
   the escaping and path-safety rules above. There is no constructor from a raw string,
   so no backend receives an unchecked path. `Option<&str>`, `default_container()` and
   the `*_default` helpers are removed.
+- **`ContainerPrefix` is the typed scope for scans and prefix deletes.** A `Container`
+  names one environment, but purge and the sweeper also work above it. `ContainerPrefix`
+  is a namespace-terminated prefix (always ends in `/`), built only by core from the
+  validated namespace and the codes it has: `isolated_workspace(t, o, w)`,
+  `isolated_env(t, o, w, e)`, `isolated_principal(t, o, w, e, principal_id)`, and the
+  `shared_*` equivalents. A `Container` converts to its `ContainerPrefix`. The new
+  storage primitives take it: `list_prefix(&ContainerPrefix)` and
+  `delete_prefix(&ContainerPrefix)`, plus `list_children(&ContainerPrefix)`, which
+  returns the next path segment only (a delimiter listing), so a scan can learn which
+  environments and principals exist without reading every entry. There is no constructor
+  from a raw string here either, and the trailing `/` means purging `ci` can never also
+  match `ci2`.
 - **The `multi_bucket` flag is removed.** An S3 backend is one bucket and one set of
   credentials, with containers as key prefixes. `BasicS3Config` loses `multi_bucket`
   and `default_container`, and the service loses `--s3.multi-bucket` and its env var.
@@ -455,9 +467,12 @@ Operator tooling:
   the trailer's `key_id`, so `--signing-key` would miss a tampered entry), and
   `--legacy` removes the pre-RFC container layout.
   Purging a **principal's isolated namespace** is a prefix delete. Because the key
-  contract cannot list what a key may access (4.0), the server runs `list_prefix`
-  on `isolated/{t}/{o}/{w}/`, matches the `{principal_id}` segment, and deletes each
-  match with `delete_prefix` (one per environment). Each environment is authorized
+  contract cannot list what a key may access (4.0), the server learns the environment
+  set from storage: `list_children(isolated_workspace(t, o, w))` returns the environment
+  segments, and each is decoded back to its code (the escaping is injective, 4.1) and
+  revalidated. For each environment it checks that `isolated_env(..)` has a
+  `{principal_id}` child, then deletes that principal's prefix with
+  `delete_prefix(isolated_principal(..))`. Each environment is authorized
   separately: the server calls `authenticate` with `delete:artifacts` for that
   `Resource` (so a key's per-key environment list applies, 4.0) and **skips** any
   environment the key cannot access, without calling `delete_prefix` for it. The
@@ -1143,8 +1158,11 @@ Why: these are the user-visible controls A, C and D.
   that suite today, so this RFC adds it against MinIO or LocalStack (the current S3
   test setup is checked first). R2 targets wasm32 and cannot run under `cargo test`,
   so it is covered by the Miniflare script plus a manual run on real R2.
-- **Containers (4.1.1):** a `Container` cannot be built from a raw string; the existing
-  contract and client tests pass with the typed trait and no `default_container()`.
+- **Containers (4.1.1):** a `Container` and a `ContainerPrefix` cannot be built from a raw
+  string; `ContainerPrefix` always ends in `/`, so a prefix op on `ci` never touches
+  `ci2`; `list_children` of a workspace prefix returns the environment segments and
+  principal purge decodes them back to their codes; the existing contract and client
+  tests pass with the typed trait and no `default_container()`.
 - **Trust boundaries (4.1, 4.4):** a publisher and a read-only run never send an
   isolated probe, even when the server would answer it; an untrusted run does; a
   local config cannot lower `verify` or add `trusted_keys`; `scopes: all` cannot
@@ -1223,8 +1241,10 @@ Why: these are the user-visible controls A, C and D.
 No compatibility layer. Land as thin slices, each releasable. Each slice only uses
 things earlier slices provide:
 
-0. Typed `Container` across the storage trait, backends and routes, and removal of
-   `multi_bucket` and `default_container()` (4.1.1). No behavior change.
+0. Typed `Container` and `ContainerPrefix` across the storage trait, backends and
+   routes, and removal of `multi_bucket` and `default_container()` (4.1.1). Breaking
+   for bucket-per-container deployments (`--s3.multi-bucket`); no compatibility layer.
+   Otherwise no behavior change.
 1. Storage: create-if-absent, `get_range`, `list_prefix`, `delete_prefix`, path
    safety (digest and containment checks, and restore validation of each cached
    `original_path`, since that hole exists today), server `409`, truncated-upload abort,
@@ -1369,7 +1389,7 @@ backends, open question 1) and, within step 3, the sealing stream.
 
 | #   | Step                                                                                                                                                                                          | Check                                                                                                                                                                                                    | Undo           |
 | --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
-| 0   | Typed `Container`, remove `multi_bucket` and `default_container()`.                                                                                                                           | Existing contract and client tests pass with no behavior change.                                                                                                                                         | Revert commit. |
+| 0   | Typed `Container`, remove `multi_bucket` and `default_container()` (breaking for bucket-per-container deployments).                                                                           | Existing contract and client tests pass for single-bucket deployments; `--s3.multi-bucket` is rejected.                                                                                                  | Revert commit. |
 | 1   | Storage primitives, path safety (incl. restore `original_path` validation), `409`, abort on truncated upload, remove `replacing`, client success-only upload gate and `409`/warning handling. | Concurrency and abort contract tests per backend, path-safety tests (a crafted `original_path` is a miss), a failed execution is never uploaded. Spike on real R2 and S3: create-only conditional write. | Revert commit. |
 | 2   | `Caller`/`Authenticator` seam and header move.                                                                                                                                                | Seam test, existing end-to-end remote tests still pass.                                                                                                                                                  | Revert commit. |
 | 3   | Trailer, sealing stream, provenance, hooks and SQL hooks params.                                                                                                                              | Trailer bounds tests, mismatch leaves the key free, provenance not client-settable, suffix-range read returns the trailer, `409` logged as `AlreadyExists`.                                              | Revert commit. |
