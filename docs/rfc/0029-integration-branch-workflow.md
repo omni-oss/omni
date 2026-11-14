@@ -10,7 +10,8 @@
 
 Full CI is slow. The plan has two phases:
 
-- **Phase 1 (do first): merge queue.** PRs run quick CI. GitHub's merge queue
+- **Phase 1 (do first): merge queue.** PRs run quick CI only after explicit
+  activation following queue enforcement. GitHub's merge queue
   runs the full suite on batches before they land on `main`. See section 1.1.
 - **Phase 2 (fallback): integration branches.** Sections 2-6 describe this
   design. Build it only if Phase 1 does not fix the problem (see "Exit
@@ -34,9 +35,13 @@ are missing, not the main path.
 
 - Add a `merge_group` trigger to `ci.yaml`. Without it, queued PRs never get a
   status.
-- `plan` computes `full: ${{ github.event_name != 'pull_request' }}`. Quick CI
-  runs on `pull_request`. `merge_group`, `push` to `main` and
-  `workflow_dispatch` are full.
+- `plan` computes
+  `full: ${{ github.event_name != 'pull_request' || vars.QUICK_CI_ENABLED != 'true' }}`.
+  PRs run full CI by default. Only the repository Actions variable
+  `QUICK_CI_ENABLED` set to `true` (case-insensitive) enables quick CI on
+  `pull_request`; unset, `false` and other values keep full PR CI. `merge_group`,
+  `push` to `main`, tag pushes and `workflow_dispatch` are always full
+  (`workflow_dispatch` still needs a trigger before it can be used).
 - Always run: `check-rust`, `check-typescript`, `build-typescript` and
   `test-typescript`. Gate `build-debug-rust` and `test-rust` together on
   `needs.plan.outputs.full == 'true'`, because `test-rust` reuses the `target`
@@ -48,6 +53,11 @@ are missing, not the main path.
 - Ruleset for `main` (admin required): enable **Require merge queue**, keep
   `CI Passed` as the required check, keep the merge commit method, start with
   a maximum group size of 3-5, and leave "merge when checks fail" off.
+- Only after confirming that enforcement, an admin sets `QUICK_CI_ENABLED`
+  to `true`. Before disabling queue enforcement, unset it or set it to `false`
+  to restore full PR CI. The pilot owner owns this activation switch; remove
+  it only if full PR CI is restored unconditionally or a replacement verifies
+  queue enforcement before allowing quick PR CI.
 - Commit messages: queued commits are still checked by `check-pr-message.yaml`.
   Keep the existing check.
 
@@ -350,11 +360,20 @@ triggers and compute one flag in `plan`:
 full: ${{ github.base_ref == 'main' || github.event_name != 'pull_request' }}
 ```
 
+This replaces the Phase 1 flag: only child PRs targeting `integration/**`
+run quick CI. PRs to `main`, including integration PRs, run full CI regardless
+of `QUICK_CI_ENABLED`.
+
 A push to an integration branch with an open integration PR triggers both a
-`push` run and a `pull_request` run, and both would be full. Avoid the double
-run: on `pull_request` with an `integration/**` head, set `full` to false and
-rely on the push run, and make the integration PR's required `CI Passed` come
-from the push run's result on the same head.
+full `push` run and a full `pull_request` run. Keep both: the push result is
+used for per-commit attribution, while the PR's required `CI Passed` waits for
+the full suite on the test merge commit. A quick PR run cannot safely rely on
+the full push check on the head SHA: GitHub uses the test merge commit's check
+when it has one ([required-check selection][required-check-selection]).
+Deduplicating these runs is deferred until a gate can validate the full result
+before reporting success on the PR.
+
+[required-check-selection]: https://docs.github.com/en/pull-requests/how-tos/merge-and-close-pull-requests/troubleshooting-required-status-checks#conflicts-between-head-commit-and-test-merge-commit
 
 ### What is fast and what is full
 
@@ -507,12 +526,18 @@ volume is modest.
 
 1. Record baseline: full-CI duration, PR time to green and PR volume.
 2. Verify the plan of the `omni-oss` organization supports merge queue.
-3. Land this RFC. Update `CONTRIBUTING.md` (quick CI on PRs, full CI in the
-   queue, merge via the queue).
+3. Land this RFC. Update `CONTRIBUTING.md` (full PR CI by default, quick PR CI
+   only after activation, full CI in the queue, merge via the queue).
 4. In `ci.yaml`: add `merge_group`, the `full` flag, the job gating,
    the concurrency change and the path filter fix.
-5. An admin enables **Require merge queue** in the `main` ruleset.
-6. Run for a few weeks and compare against the baseline (exit criteria in
+5. An admin enables **Require merge queue** in the `main` ruleset with
+   `CI Passed` required and confirms enforcement before setting the repository
+   Actions variable `QUICK_CI_ENABLED` to `true`. If queue support is unavailable,
+   leave the variable unset and keep full PR CI.
+6. Verify PRs run quick CI only after activation and queue runs still require
+   Rust builds and tests. To roll back, unset `QUICK_CI_ENABLED` or set it to
+   `false` before disabling queue enforcement.
+7. Run for a few weeks and compare against the baseline (exit criteria in
    section 1.1).
 
 ### Phase 2: integration branches (only if Phase 1 falls short)
