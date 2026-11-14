@@ -76,18 +76,10 @@ INSERT INTO key_scopes VALUES
 export const workerD1Target = workerTargetFor({
     name: "worker-d1",
     basePort: 3600,
-    async prepare({ workerDir, state }) {
-        const base = fs.readFileSync(
-            path.join(workerDir, "wrangler.toml"),
-            "utf8",
-        );
-        const configFile = path.join(
-            workerDir,
-            `wrangler.e2e-${process.pid}.toml`,
-        );
-        fs.writeFileSync(
+    async prepare({ workerDir, state, configFile }) {
+        fs.appendFileSync(
             configFile,
-            `${base}\n[[d1_databases]]\nbinding = "DB"\ndatabase_name = "${DB}"\ndatabase_id = "00000000-0000-0000-0000-0000000000e2"\n`,
+            `\n[[d1_databases]]\nbinding = "DB"\ndatabase_name = "${DB}"\ndatabase_id = "00000000-0000-0000-0000-0000000000e2"\n`,
         );
         const seedFile = path.join(state, "seed.sql");
         fs.writeFileSync(seedFile, seed);
@@ -121,8 +113,6 @@ export const workerD1Target = workerTargetFor({
 
         return {
             args: [
-                "-c",
-                configFile,
                 "--var",
                 `ORCS_REPOSITORY_CONFIG:${JSON.stringify(repositoryConfig)}`,
             ],
@@ -137,7 +127,6 @@ export const workerD1Target = workerTargetFor({
                 ]);
                 return stdout;
             },
-            cleanup: () => fs.rmSync(configFile, { force: true }),
         };
     },
 });
