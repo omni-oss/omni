@@ -431,11 +431,20 @@ Operator tooling:
   `--legacy` removes the pre-RFC container layout.
   Purging a **principal's isolated namespace** is a prefix delete. Because the key
   contract cannot list what a key may access (4.0), the server runs `list_prefix`
-  on `isolated/{t}/{o}/{w}/`, matches the `{principal_id}` segment, and
-  deletes each match with `delete_prefix` (one per environment), with no trailer scan. Purging by `--credential`, or purging the
+  on `isolated/{t}/{o}/{w}/`, matches the `{principal_id}` segment, and deletes each
+  match with `delete_prefix` (one per environment). Each environment is authorized
+  separately: the server calls `authenticate` with `delete:artifacts` for that
+  `Resource` (so a key's per-key environment list applies, 4.0) and **skips** any
+  environment the key cannot access, without calling `delete_prefix` for it. The
+  response lists the skipped environments, so an operator with a narrower key sees
+  what was not purged. With no `--since` this needs no trailer scan. With `--since`,
+  the prefix delete would remove older entries too, so the server instead reads each
+  trailer under that prefix (suffix range read) and deletes only entries whose
+  `stored_at` is at or after `--since`. Purging by `--credential`, or purging the
   **shared** namespace, scans: the server lists the container, reads each trailer
   with a suffix range read, and deletes matches. Scans are for incidents, and
-  `--since` and `--namespace` narrow them. An index is added only if measurements
+  `--since` and `--namespace` narrow them, and `--since` always means "stored at or
+  after". An index is added only if measurements
   show scans are too slow.
 
 Hooks (`HookContext`) replace `api_key_id` with `caller_id` and `credential_kind`, and gain
@@ -586,8 +595,8 @@ construction: no marker has to be propagated through derived entries.
 | local     | `local/`                                    | opted-out tasks and their dependencies (`cache.remote: false`) | those tasks; normal dependents consume their outputs |
 
 - **Trust epoch** = first 16 hex of SHA-256 over the effective `trusted_keys` ids
-  (sorted), the effective `verify` mode, and the remote endpoint, tenant and
-  environment (so switching server, for example under `verify: off`, never reuses
+  (sorted), the effective `verify` mode, and the remote endpoint and the tenant, organization,
+  workspace and environment codes (so switching server, for example under `verify: off`, never reuses
   entries restored from another). A change to any input (a key added, narrowed
   out or revoked, or `verify` moving between `off`, `warn` and `require`) starts a
   fresh `trusted/` partition, so nothing derived under the old policy is reused. A
@@ -871,7 +880,9 @@ match client.put_artifact(&config, &digest, Bytes::from(artifact), sig).await {
 }
 ```
 
-The `artifact_exists` pre-check stays only as an optimization. Local replacement of a
+The `artifact_exists` pre-check stays as an optimization, but a hit on a **shared**
+upload runs the same existing-entry `GET` and full verification as a `409` (4.2), so
+the pre-check cannot hide an unverifiable entry. An isolated hit just skips the upload. Local replacement of a
 failed local entry by a success (`publish_staged_dir(.., replace)`) is unchanged: it
 is a local cache concern and not a trust boundary. Why: the remote only ever holds
 successes, so nothing needs replacing, and immutability has no exception.
@@ -1162,7 +1173,10 @@ Why: these are the user-visible controls A, C and D.
   consumes its outputs and writes into its own partition; a remote restore never
   overwrites outputs an opted-out task reads; an untrusted run under `verify: off`
   writes its restore into `untrusted/{epoch}/...` and never `trusted/`; changing the
-  endpoint, tenant or environment changes the epoch (and the `untrusted/` path).
+  endpoint, tenant, organization, workspace or environment changes the epoch (and the
+  `untrusted/` path). Purge tests: a key whose environment list excludes an environment
+  skips it and its `delete_prefix` is never called, and `--principal --since` leaves
+  older entries.
 - **Client (`omni_cache`):** `push: false` makes zero `PUT` calls; `409` is
   success; a shared `409` whose existing entry is unsigned or fails verification warns
   with the purge hint and does not fail the run; an upload failure (`403`, `413`,
