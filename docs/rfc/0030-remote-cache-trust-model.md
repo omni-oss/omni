@@ -1385,7 +1385,24 @@ CI variable table in 4.4 against current docs, since both change.
 
 ## 8. Implementation status and deviations
 
-Not started. Update this section as work proceeds.
+Slice 0 is in progress on PR #104: typed containers and prefixes, removal of
+default containers and S3 bucket-per-container mode, and local key validation
+landed in `e7288322`. Review follow-ups fix container-relative S3 listing keys,
+container-scoped deletes, and caching of rejected writes. Slices 1–10 have not
+started.
+
+Slice 0 deviations and remaining checks:
+
+- Constructors currently parse validated paths rather than restricting construction
+  to resource-specific core builders; namespace-specific builders and scan operations
+  remain to be wired in later slices.
+- Byte writes invalidate the LRU only after backend acceptance rather than warming
+  it, avoiding publication of rejected or concurrently deleted values. Streamed
+  writes and read fills still have pre-existing races with deletes; address cache
+  mutation coordination with the storage concurrency work in slice 1.
+- S3 listing pagination remains incomplete: `list` stops at one service page and
+  `paged_list` ignores `after_key`. Include pagination coverage in slice 1.
+- Real S3/R2 checks and the breaking-change release note remain outstanding.
 
 ### Plan (steps, checks, undo)
 

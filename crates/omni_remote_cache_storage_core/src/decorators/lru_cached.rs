@@ -117,10 +117,13 @@ where
         key: &str,
         value: Bytes,
     ) -> Result<(), Error> {
-        self.cache()
-            .put(self.cache_key(container, key), value.clone());
+        self.inner.save(container, key, value).await?;
 
-        self.inner.save(container, key, value).await
+        // Invalidate rather than warm: a concurrent delete may have removed
+        // the object after the backend accepted it. Reads can fill the cache.
+        self.cache().pop(&self.cache_key(container, key));
+
+        Ok(())
     }
 
     async fn save_stream(

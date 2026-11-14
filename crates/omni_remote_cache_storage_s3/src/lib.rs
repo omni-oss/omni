@@ -101,6 +101,28 @@ impl S3CacheBackend {
         format!("{}/{}", container.as_str(), key)
     }
 
+    fn list_item(
+        container: &Container,
+        item: aws_sdk_s3::types::Object,
+    ) -> Result<ListItem, Error> {
+        let prefix = container.prefix();
+        let key = item
+            .key
+            .as_deref()
+            .and_then(|key| key.strip_prefix(prefix.as_str()))
+            .filter(|key| !key.is_empty())
+            .ok_or_else(|| {
+                Error::custom(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "S3 listing returned an empty or out-of-container key",
+                ))
+            })?;
+        Ok(ListItem {
+            key: key.to_string(),
+            size: ByteSize::b(item.size.unwrap_or_default() as u64),
+        })
+    }
+
     #[allow(clippy::result_large_err)]
     async fn head(
         &self,
@@ -238,10 +260,7 @@ impl RemoteCacheStorageBackend for S3CacheBackend {
 
         let mut items = Vec::new();
         for item in list.contents.unwrap_or_default() {
-            items.push(ListItem {
-                key: item.key.unwrap_or_default(),
-                size: ByteSize::b(item.size.unwrap_or_default() as u64),
-            });
+            items.push(Self::list_item(container, item)?);
         }
 
         Ok(items)
@@ -266,10 +285,7 @@ impl RemoteCacheStorageBackend for S3CacheBackend {
 
         let mut items = Vec::new();
         for item in list.contents.unwrap_or_default() {
-            items.push(ListItem {
-                key: item.key.unwrap_or_default(),
-                size: ByteSize::b(item.size.unwrap_or_default() as u64),
-            });
+            items.push(Self::list_item(container, item)?);
         }
 
         Ok(items)
@@ -339,7 +355,6 @@ impl RemoteCacheStorageBackend for S3CacheBackend {
             .delete_object()
             .bucket(bucket)
             .key(self.key(container, key))
-            .key(key)
             .send()
             .await
             .map_err(Error::custom)?;
@@ -361,5 +376,34 @@ impl RemoteCacheStorageBackend for S3CacheBackend {
             Err(aws_sdk_s3::Error::NotFound(_)) => Ok(None),
             Err(e) => Err(Error::custom(e)),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use aws_sdk_s3::types::Object;
+
+    #[test]
+    fn listing_strips_only_the_first_exact_prefix() {
+        let container = Container::parse("ns/ci").unwrap();
+        let item = Object::builder().key("ns/ci/ns/ci/d").size(7).build();
+        assert_eq!(
+            S3CacheBackend::list_item(&container, item).unwrap().key,
+            "ns/ci/d"
+        );
+    }
+
+    #[test]
+    fn listing_rejects_missing_empty_and_out_of_container_keys() {
+        let container = Container::parse("ns/ci").unwrap();
+        for key in ["ns/ci2/d", "d", "ns/ci", "ns/ci/"] {
+            let item = Object::builder().key(key).build();
+            assert!(S3CacheBackend::list_item(&container, item).is_err());
+        }
+        assert!(
+            S3CacheBackend::list_item(&container, Object::builder().build())
+                .is_err()
+        );
     }
 }
