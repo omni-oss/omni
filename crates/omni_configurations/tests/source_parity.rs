@@ -1,5 +1,5 @@
-//! Parity: serde and JSON-schema output of source configurations must stay
-//! byte-identical across the extraction into `omni_source_configurations`.
+//! Parity: source configurations retain their serde wire output and JSON-schema
+//! structure across extraction into `omni_source_configurations`.
 use omni_configurations::{
     GeneratorSourceConfiguration, PackSourceConfiguration,
     ProjectionSourceConfiguration,
@@ -13,6 +13,10 @@ fn check(name: &str, actual: String) {
         std::fs::write(&path, &actual).unwrap();
     }
     let expected = std::fs::read_to_string(&path).unwrap();
+    // Repository formatters may reindent snapshots without changing schemas.
+    // Compare every schema value, rather than a pretty-printer's whitespace.
+    let expected: serde_json::Value = serde_json::from_str(&expected).unwrap();
+    let actual: serde_json::Value = serde_json::from_str(&actual).unwrap();
     assert_eq!(expected, actual, "snapshot {name} drifted");
 }
 

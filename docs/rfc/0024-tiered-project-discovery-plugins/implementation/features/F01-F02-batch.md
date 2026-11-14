@@ -46,4 +46,10 @@ support is introduced.
   parent count once. Regression reproduced before the fix; lexical-parent and
   symlink-parent aliases now pass, while distinct filenames still conflict and
   retain all selected path spellings in deterministic diagnostics.
+- CI uncovered three pre-existing source-schema snapshot failures caused only
+  by JSON pretty-printing (all parsed schema values match). Reproduced locally,
+  then changed the assertion to compare complete JSON values instead of
+  whitespace; serde wire-output assertions and generated snapshots are unchanged.
+  All 184 `omni_configurations` tests, the scoped source-parity Clippy check and
+  formatting check pass.
 - Remaining F/P packages are not part of this batch.
