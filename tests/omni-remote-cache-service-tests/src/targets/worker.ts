@@ -14,7 +14,12 @@ export interface WorkerVariant {
      * Prepares the worker dir and persistence dir, and returns the extra
      * wrangler args (config and vars) plus an optional SQL runner.
      */
-    prepare: (ctx: { workerDir: string; state: string }) => Promise<{
+    prepare: (ctx: {
+        workerDir: string;
+        state: string;
+        /** Generated wrangler config (no build step); append to extend it. */
+        configFile: string;
+    }) => Promise<{
         args: string[];
         sql?: ((statement: string) => Promise<string>) | undefined;
         cleanup?: () => void;
@@ -46,15 +51,34 @@ export function workerTargetFor(variant: WorkerVariant): Target {
                 path.join(os.tmpdir(), "orcs-worker-"),
             );
 
+            // The bundle is built by the omni_remote_cache_worker#build
+            // dependency, so drop wrangler's own (slow, timeout-prone) build.
+            const configFile = path.join(
+                workerDir,
+                `wrangler.e2e-${process.pid}-${port}.toml`,
+            );
+            fs.writeFileSync(
+                configFile,
+                fs
+                    .readFileSync(path.join(workerDir, "wrangler.toml"), "utf8")
+                    .replace(/^\[build\]\n(?:(?!\[).*\n?)*/m, ""),
+            );
+
             const args = [
                 "dev",
+                "-c",
+                configFile,
                 "--local",
                 "--port",
                 String(port),
                 "--persist-to",
                 state,
             ];
-            const prepared = await variant.prepare({ workerDir, state });
+            const prepared = await variant.prepare({
+                workerDir,
+                state,
+                configFile,
+            });
             args.push(...prepared.args);
             const child = spawn("bunx", ["wrangler@latest", ...args], {
                 cwd: workerDir,
@@ -76,6 +100,7 @@ export function workerTargetFor(variant: WorkerVariant): Target {
             };
             const cleanup = () => {
                 prepared.cleanup?.();
+                fs.rmSync(configFile, { force: true });
                 fs.rmSync(state, { recursive: true, force: true });
             };
 
@@ -87,7 +112,6 @@ export function workerTargetFor(variant: WorkerVariant): Target {
 
             const apiBaseUrl = `http://localhost:${port}/api`;
             try {
-                // includes a cargo build via wrangler's custom build step
                 await waitForServer(apiBaseUrl, {
                     tries: 600,
                     delayMs: 500,
