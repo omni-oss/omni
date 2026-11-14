@@ -12,7 +12,6 @@ bucket_name = "omni-remote-cache"
 [vars]
 API_PREFIX = "/api"
 ENABLE_OPENAPI = "false"
-DEFAULT_CONTAINER = "default"
 
 # Provide the service configuration (tenants and API keys, same JSON schema as
 # orcs.config.json) as a secret:

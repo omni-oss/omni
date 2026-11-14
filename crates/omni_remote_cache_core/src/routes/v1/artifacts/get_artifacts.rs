@@ -5,6 +5,7 @@ use axum::{
 };
 use axum_extra::{response::InternalServerError, routing::TypedPath};
 use derive_new::new;
+use http::StatusCode;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
@@ -87,10 +88,17 @@ pub async fn get_artifacts(
         Vec::new(),
     );
 
-    let container = container(&tenant_code, &query.org, &query.ws, &query.env);
+    let container =
+        match container(&tenant_code, &query.org, &query.ws, &query.env) {
+            Ok(c) => c,
+            Err(_) => {
+                return (StatusCode::BAD_REQUEST, "invalid org, ws or env")
+                    .into_response();
+            }
+        };
     let all_artifacts = state
         .storage_backend
-        .list(Some(container.as_str()))
+        .list(&container)
         .await
         .map_err(InternalServerError);
 

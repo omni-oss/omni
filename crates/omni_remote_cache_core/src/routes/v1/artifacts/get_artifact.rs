@@ -82,10 +82,17 @@ pub async fn get_artifact(
         vec![digest.clone()],
     );
 
-    let container = container(&tenant_code, &query.org, &query.ws, &query.env);
+    let container =
+        match container(&tenant_code, &query.org, &query.ws, &query.env) {
+            Ok(c) => c,
+            Err(_) => {
+                return (StatusCode::BAD_REQUEST, "invalid org, ws or env")
+                    .into_response();
+            }
+        };
     let x = state
         .storage_backend
-        .get_stream(Some(container.as_ref()), &digest)
+        .get_stream(&container, &digest)
         .await
         .map_err(InternalServerError);
 

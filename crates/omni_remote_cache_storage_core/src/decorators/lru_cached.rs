@@ -9,8 +9,8 @@ use bytesize::ByteSize;
 use futures::StreamExt as _;
 
 use crate::{
-    BoxStream, ListItem, PageOptions, ReadStream, RemoteCacheStorageBackend,
-    error::Error,
+    BoxStream, Container, ListItem, PageOptions, ReadStream,
+    RemoteCacheStorageBackend, error::Error,
 };
 
 const DEFAULT_MAX_CACHEABLE_SIZE: ByteSize = ByteSize::mib(8);
@@ -42,20 +42,12 @@ impl<T: RemoteCacheStorageBackend> LruCached<T> {
 }
 
 impl<T: RemoteCacheStorageBackend> LruCached<T> {
-    fn container<'s>(&'s self, container: Option<&'s str>) -> &'s str {
-        container.unwrap_or(self.inner.default_container())
-    }
-
     fn cache(&self) -> MutexGuard<'_, Cache> {
         self.cached.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    fn cache_key(
-        &self,
-        container: Option<&str>,
-        key: &str,
-    ) -> (String, String) {
-        (self.container(container).to_string(), key.to_string())
+    fn cache_key(&self, container: &Container, key: &str) -> (String, String) {
+        (container.as_str().to_string(), key.to_string())
     }
 }
 
@@ -64,13 +56,9 @@ impl<T> RemoteCacheStorageBackend for LruCached<T>
 where
     T: RemoteCacheStorageBackend + Send + Sync,
 {
-    fn default_container(&self) -> &str {
-        self.inner.default_container()
-    }
-
     async fn get(
         &self,
-        container: Option<&str>,
+        container: &Container,
         key: &str,
     ) -> Result<Option<Bytes>, Error> {
         if let Some(cached) = self.cache().get(&self.cache_key(container, key))
@@ -83,7 +71,7 @@ where
 
     async fn exists(
         &self,
-        container: Option<&str>,
+        container: &Container,
         key: &str,
     ) -> Result<bool, Error> {
         if self.cache().get(&self.cache_key(container, key)).is_some() {
@@ -95,7 +83,7 @@ where
 
     async fn get_stream(
         &self,
-        container: Option<&str>,
+        container: &Container,
         key: &str,
     ) -> Result<Option<ReadStream>, Error> {
         let cached = self.cache().get(&self.cache_key(container, key)).cloned();
@@ -110,14 +98,14 @@ where
 
     async fn list(
         &self,
-        container: Option<&str>,
+        container: &Container,
     ) -> Result<Vec<ListItem>, Error> {
         self.inner.list(container).await
     }
 
     async fn paged_list(
         &self,
-        container: Option<&str>,
+        container: &Container,
         query: PageOptions,
     ) -> Result<Vec<ListItem>, Error> {
         self.inner.paged_list(container, query).await
@@ -125,7 +113,7 @@ where
 
     async fn save(
         &self,
-        container: Option<&str>,
+        container: &Container,
         key: &str,
         value: Bytes,
     ) -> Result<(), Error> {
@@ -137,7 +125,7 @@ where
 
     async fn save_stream(
         &self,
-        container: Option<&str>,
+        container: &Container,
         key: &str,
         value: BoxStream<Bytes>,
     ) -> Result<(), Error> {
@@ -189,7 +177,7 @@ where
 
     async fn delete(
         &self,
-        container: Option<&str>,
+        container: &Container,
         key: &str,
     ) -> Result<(), Error> {
         self.cache().pop(&self.cache_key(container, key));
@@ -199,7 +187,7 @@ where
 
     async fn size(
         &self,
-        container: Option<&str>,
+        container: &Container,
         key: &str,
     ) -> Result<Option<ByteSize>, Error> {
         if let Some(cached) = self.cache().get(&self.cache_key(container, key))

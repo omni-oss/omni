@@ -84,7 +84,14 @@ pub async fn put_artifact(
         vec![digest.clone()],
     );
 
-    let container = container(&tenant_code, &query.org, &query.ws, &query.env);
+    let container =
+        match container(&tenant_code, &query.org, &query.ws, &query.env) {
+            Ok(c) => c,
+            Err(_) => {
+                return (StatusCode::BAD_REQUEST, "invalid org, ws or env")
+                    .into_response();
+            }
+        };
     let stream = body.into_data_stream().filter_map(|r| {
         std::future::ready(match r {
             Ok(b) => Some(b),
@@ -97,7 +104,7 @@ pub async fn put_artifact(
 
     let x = state
         .storage_backend
-        .save_stream(Some(container.as_ref()), &digest, Box::pin(stream))
+        .save_stream(&container, &digest, Box::pin(stream))
         .await
         .map_err(InternalServerError);
 

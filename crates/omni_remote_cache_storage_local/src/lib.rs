@@ -15,40 +15,42 @@ use tokio_stream::StreamExt;
 use tokio_util::io::ReaderStream;
 
 use omni_remote_cache_storage_core::{
-    BoxStream, ListItem, PageOptions, ReadStream, RemoteCacheStorageBackend,
-    error::Error,
+    BoxStream, Container, ListItem, PageOptions, ReadStream,
+    RemoteCacheStorageBackend, error::Error,
 };
 
 #[derive(Debug, new)]
 pub struct LocalDiskCacheBackend {
     #[new(into)]
     root: PathBuf,
-    #[new(into)]
-    default_container: String,
 }
 
 impl LocalDiskCacheBackend {
-    fn path(&self, key: &str, container: Option<&str>) -> PathBuf {
-        if let Some(container) = container {
-            self.root.join(container).join(key)
-        } else {
-            self.root.join(&self.default_container).join(key)
+    fn path(&self, key: &str, container: &Container) -> Result<PathBuf, Error> {
+        if key.is_empty()
+            || key.contains(['/', '\\'])
+            || key == "."
+            || key == ".."
+            || key.chars().any(|c| c.is_control())
+        {
+            return Err(Error::custom(eyre::eyre!("invalid key {key:?}")));
         }
+        Ok(self.dir(container).join(key))
+    }
+
+    fn dir(&self, container: &Container) -> PathBuf {
+        self.root.join(container.as_str())
     }
 }
 
 #[async_trait]
 impl RemoteCacheStorageBackend for LocalDiskCacheBackend {
-    fn default_container(&self) -> &str {
-        &self.default_container
-    }
-
     async fn get(
         &self,
-        container: Option<&str>,
+        container: &Container,
         key: &str,
     ) -> Result<Option<bytes::Bytes>, Error> {
-        let path = self.path(key, container);
+        let path = self.path(key, container)?;
 
         if tokio::fs::try_exists(&path).await.map_err(Error::custom)? {
             let bytes = tokio::fs::read(&path).await.map_err(Error::custom)?;
@@ -61,19 +63,19 @@ impl RemoteCacheStorageBackend for LocalDiskCacheBackend {
 
     async fn exists(
         &self,
-        container: Option<&str>,
+        container: &Container,
         key: &str,
     ) -> Result<bool, Error> {
-        let path = self.path(key, container);
+        let path = self.path(key, container)?;
         Ok(tokio::fs::try_exists(&path).await.map_err(Error::custom)?)
     }
 
     async fn get_stream(
         &self,
-        container: Option<&str>,
+        container: &Container,
         key: &str,
     ) -> Result<Option<ReadStream>, Error> {
-        let path = self.path(key, container);
+        let path = self.path(key, container)?;
 
         if tokio::fs::try_exists(&path).await.map_err(Error::custom)? {
             let stream = ReaderStream::new(
@@ -89,9 +91,9 @@ impl RemoteCacheStorageBackend for LocalDiskCacheBackend {
 
     async fn list(
         &self,
-        container: Option<&str>,
+        container: &Container,
     ) -> Result<Vec<ListItem>, Error> {
-        let dir = self.path("", container);
+        let dir = self.dir(container);
 
         if !tokio::fs::try_exists(&dir).await.map_err(Error::custom)? {
             return Ok(Vec::new());
@@ -134,7 +136,7 @@ impl RemoteCacheStorageBackend for LocalDiskCacheBackend {
 
     async fn paged_list(
         &self,
-        container: Option<&str>,
+        container: &Container,
         query: PageOptions,
     ) -> Result<Vec<ListItem>, Error> {
         let all = self.list(container).await?;
@@ -159,11 +161,11 @@ impl RemoteCacheStorageBackend for LocalDiskCacheBackend {
 
     async fn save(
         &self,
-        container: Option<&str>,
+        container: &Container,
         key: &str,
         value: bytes::Bytes,
     ) -> Result<(), Error> {
-        let path = self.path(key, container);
+        let path = self.path(key, container)?;
 
         if !tokio::fs::try_exists(&path).await.map_err(Error::custom)? {
             tokio::fs::create_dir_all(
@@ -182,11 +184,11 @@ impl RemoteCacheStorageBackend for LocalDiskCacheBackend {
 
     async fn save_stream(
         &self,
-        container: Option<&str>,
+        container: &Container,
         key: &str,
         mut value: BoxStream<Bytes>,
     ) -> Result<(), Error> {
-        let path = self.path(key, container);
+        let path = self.path(key, container)?;
 
         if !tokio::fs::try_exists(&path).await.map_err(Error::custom)? {
             tokio::fs::create_dir_all(
@@ -212,10 +214,10 @@ impl RemoteCacheStorageBackend for LocalDiskCacheBackend {
 
     async fn delete(
         &self,
-        container: Option<&str>,
+        container: &Container,
         key: &str,
     ) -> Result<(), Error> {
-        let path = self.path(key, container);
+        let path = self.path(key, container)?;
 
         if !tokio::fs::try_exists(&path).await.map_err(Error::custom)? {
             return Ok(());
@@ -228,10 +230,10 @@ impl RemoteCacheStorageBackend for LocalDiskCacheBackend {
 
     async fn size(
         &self,
-        container: Option<&str>,
+        container: &Container,
         key: &str,
     ) -> Result<Option<ByteSize>, Error> {
-        let path = self.path(key, container);
+        let path = self.path(key, container)?;
 
         if !tokio::fs::try_exists(&path).await.map_err(Error::custom)? {
             return Ok(None);
@@ -252,7 +254,21 @@ mod tests {
     }
 
     decl_remote_cache_storage_backend_tests!(LocalDiskCacheBackend::new(
-        temp_dir().path(),
-        "default"
+        temp_dir().path()
     ));
+
+    #[tokio::test]
+    async fn rejects_keys_that_escape_the_container() {
+        use bytes::Bytes;
+        use omni_remote_cache_storage_core::{
+            Container, RemoteCacheStorageBackend,
+        };
+        let dir = temp_dir();
+        let b = LocalDiskCacheBackend::new(dir.path());
+        let c = Container::parse("ns/ci").unwrap();
+        for key in ["../x", "/abs", "a/b", "..", ""] {
+            assert!(b.save(&c, key, Bytes::from("x")).await.is_err(), "{key}");
+            assert!(b.get(&c, key).await.is_err(), "{key}");
+        }
+    }
 }
