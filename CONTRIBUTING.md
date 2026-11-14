@@ -29,6 +29,6 @@ Tasks run through omni and are defined in `omni/presets/*.omni.yaml`. CI runs th
 - Default branch: `main`. Work on a branch named `<type>/<short-slug>` (for example `feat/...`, `fix/...`, `chore/...`, `docs/...`, `refactor/...`, `ci/...`) and open a PR into `main`.
 - Commits mostly follow Conventional Commits (`fix: ...`, `feat!: ...`). `cog.toml` configures `cog` and defines a `commit-msg` hook that runs `cog verify` and `cog check`; installing it is optional and personal.
 - PRs are merged with merge commits (`Merge pull request #N`). `.github/workflows/check-pr-message.yaml` runs `cog check` on pushes, so commit messages (not PR titles) must pass it.
-- CI (`ci.yaml`) runs on pushes to `main` and on PRs to `main`.
+- CI (`ci.yaml`) runs on pushes to `main`, on PRs to `main` and in the merge queue. PRs run quick CI (checks and TypeScript tests); Rust build and tests run in the merge queue and on `main` (see `docs/rfc/0029-integration-branch-workflow.md`).
 - No repo-managed git hooks, PR template or CODEOWNERS.
 - Never force-push shared branches or commit secrets.

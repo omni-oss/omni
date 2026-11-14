@@ -1,19 +1,76 @@
 # RFC 0029: Integration Branch Workflow
 
-- **Status:** Draft
-- **Owner:** TBD
+- **Status:** Draft (Phase 1: merge queue; Phase 2: integration branches, deferred)
+- **Owner:** TBD (name a pilot owner before rollout)
 - **Date:** 2026-11-12
 - **Base branch:** `main`
 - **Affected areas:** `.github/workflows`, branch protection, contributor docs
 
 ## 1. Summary
 
-Full CI is slow. Batch pull requests through a short-lived `integration/*`
-branch. Child PRs merge into the branch with fast CI only (format, lint,
-typecheck, unit). The integration PR to `main` runs the full suite. The branch
-is deleted after it lands.
+Full CI is slow. The plan has two phases:
 
-## 2. Terms
+- **Phase 1 (do first): merge queue.** PRs run quick CI. GitHub's merge queue
+  runs the full suite on batches before they land on `main`. See section 1.1.
+- **Phase 2 (fallback): integration branches.** Sections 2-6 describe this
+  design. Build it only if Phase 1 does not fix the problem (see "Exit
+  criteria" in section 1.1).
+
+Phase 2 in brief:
+
+Batch pull requests through a short-lived `integration/*`
+branch. Child PRs merge into the branch with fast CI only (the `check-*` jobs
+and the TypeScript tests). The integration PR to `main` runs the full suite,
+and every push to the branch also gets its own full run. The branch is deleted
+after it lands.
+
+Per-commit full CI keeps attribution simple: the culprit of a red branch is the
+first red commit after the last green one. Bisect is a fallback for when runs
+are missing, not the main path.
+
+### 1.1 Phase 1: merge queue
+
+### Design
+
+- Add a `merge_group` trigger to `ci.yaml`. Without it, queued PRs never get a
+  status.
+- `plan` computes `full: ${{ github.event_name != 'pull_request' }}`. Quick CI
+  runs on `pull_request`. `merge_group`, `push` to `main` and
+  `workflow_dispatch` are full.
+- Always run: `check-rust`, `check-typescript`, `build-typescript` and
+  `test-typescript`. Gate `build-debug-rust` and `test-rust` together on
+  `needs.plan.outputs.full == 'true'`, because `test-rust` reuses the `target`
+  dir from the debug build and would otherwise rebuild everything.
+- `CI Passed` (`ci-gatekeeper`) already treats `skipped` as passing, so it stays
+  the only required check for both the PR run and the queue run.
+- Concurrency: apply `cancel-in-progress` to `pull_request` runs only. Queue
+  runs must not be cancelled.
+- Ruleset for `main` (admin required): enable **Require merge queue**, keep
+  `CI Passed` as the required check, keep the merge commit method, start with
+  a maximum group size of 3-5, and leave "merge when checks fail" off.
+- Commit messages: queued commits are still checked by `check-pr-message.yaml`.
+  Keep the existing check.
+
+### Caveats
+
+- Merge queue availability depends on the plan of the `omni-oss` organization.
+  Verify before starting.
+- A PR can pass quick CI and then fail in the queue. That PR is dropped and its
+  author fixes it. `main` stays green. Slow failures appear after the author
+  clicks merge. If that is painful, add a label or manual trigger that runs
+  full CI on a PR early.
+- Verify that the `ci.yaml` concurrency group does not cancel queue runs.
+- Fix the `"!./apps/site/**"` path filter (the leading `./` probably never
+  matches).
+
+### Exit criteria
+
+Measure before and after: PR time to green, queue time to land, and queue
+ejection rate. Move to Phase 2 only if the queue does not give acceptable time
+to land, or the team needs a long-lived shared branch to stabilize a group of
+changes together.
+
+## 2. Terms (Phase 2)
 
 - **Integration branch:** `integration/<yyyy-mm-dd>[-<suffix>]`, using the
   start date. The suffix is optional, for a same-day collision or a clarifying
@@ -24,18 +81,32 @@ is deleted after it lands.
 
 ## 3. Lifecycle
 
-1. **Open:** cut the branch from `main`, open a draft integration PR.
+1. **Open:** an owner starts a batch with the `new-batch` workflow dispatch,
+   which cuts the branch from `main` and opens a draft integration PR (see
+   "Rotation").
 2. **Develop:** child PRs squash-merge into the branch.
 3. **Sync:** merge `main` into the branch daily (merge, never rebase).
 4. **Freeze and stabilize:** stop feature merges, fix what full CI finds.
 5. **Land:** merge commit into `main`. The integration PR is not squashed, so
    `main` keeps one commit per child PR, each with its `(#N)` reference, plus
    the landing merge. This keeps per-PR attribution and lets one bad PR be
-   found and reverted on `main` after landing. It also matches the repo's merge
-   commit convention. Squash is an exception, only with the branch owner's
-   agreement, for a small batch whose per-PR history is not worth keeping.
+   found and reverted on `main` after landing. **An integration branch is never
+   squashed, and there is no exception.** Squash and rebase merge are disabled
+   for PRs from `integration/**` to `main`, so only a merge commit can land
+   it. This preserves per-PR history and keeps child PR retargeting correct
+   (see "Rotation"). Only child PRs into the branch are squashed; the
+   branch's own history is never rewritten or collapsed.
 6. **Delete** the branch and **rotate**: the landed branch loses `default-batch`,
    and an owner starts the next one on request (see "Rotation").
+
+### Merge method change
+
+`CONTRIBUTING.md` says PRs merge with merge commits. This RFC changes that for
+child PRs: squash is the only allowed method for PRs into `integration/**`
+(merge commit and rebase are disabled, with no exception), while PRs to `main` still
+use merge commits, and the integration PR can only use a merge commit.
+Enforce it with a ruleset that restricts allowed merge methods per target
+branch and head, and update `CONTRIBUTING.md` in the same change.
 
 ## 4. Rules
 
@@ -44,13 +115,18 @@ is deleted after it lands.
 - Cap of roughly 15-25 child PRs.
 - No force-push on integration branches.
 - Hotfixes go to `main`, then are synced into active branches.
-- Required check: the single `CI Passed` gate (see section 6). Which jobs run
-  depends on the target: child PRs run only the fast jobs; PRs to `main`, pushes
-  to `integration/**` and nightly runs also run the full jobs.
-- Every commit that lands on an integration branch must pass `cog check`,
-  because `check-pr-message.yaml` runs it on `main` pushes once the batch
-  lands. Check the child PR's squash commit message at the child PR, not at
-  landing.
+- Required check: the single `CI Passed` job in `ci.yaml` (see section 6).
+  Which jobs run depends on the target: child PRs run only the fast jobs; PRs
+  to `main`, pushes to `integration/**` and nightly runs also run the full jobs.
+- **Commit messages.** `check-pr-message.yaml` has no branch filter, so it runs
+  `cog check` on every push, including pushes to `integration/**`. `cog.toml`
+  has `from_latest_tag = false`, so it checks all history: one bad commit on an
+  integration branch, which has no force-push, keeps the check red on that
+  branch and on `main` after landing. A squash commit message is written at
+  merge time, so it cannot be checked beforehand. Instead:
+    - Set the squash commit default to "PR title".
+    - Add a required child-PR check that runs `cog verify` on the PR title.
+    - Merge commits from syncing `main` are fine (`ignore_merge_commits = true`).
 - Child PRs branch from the integration branch. Exceptions branching from
   `main`: hotfixes, CI/infra changes, small unrelated work. Stacked PRs branch
   from the PR they depend on.
@@ -65,36 +141,65 @@ description, and mark one `default-batch`.
 
 Workflow `integration-attribute`, triggered by `workflow_run` (completed) of
 `CI` on pushes to `integration/**`. It runs from the default branch's copy of
-the workflow, with `INTEGRATION_BOT_TOKEN`.
+the workflow, with `INTEGRATION_BOT_TOKEN`. It accepts a run only if
+`workflow_run.head_repository.full_name == github.repository`, its branch is
+`integration/**` and its event is `push` or `workflow_dispatch` (the nightly
+path, below).
+
+### Per-commit results
+
+Each push to `integration/**` gets its own full `CI` run (see "Concurrency" in
+section 6), so every commit on the branch has a result.
 
 ### Steps
 
-1. **Gate on the run:** accept only runs of `CI` on an `integration/**` branch
-   whose event is `push` or `workflow_dispatch` (the nightly path, below). Ignore any run whose head SHA is not the current branch head, so an
-   older run finishing late cannot change state. For a current-head run:
-   success removes `red` and lifts the freeze (see "Fix process"), and only a
-   failure continues to step 2.
+1. **Attribute every failed run.** A failed run on an older commit still
+   identifies a culprit, so attribute (comment) regardless of the current head.
+   Only the `red` label and the freeze are gated on the head (see "Serialize
+   state changes").
 2. **Collect failures:** read the per-task results that each CI job uploads
-   (see "Failure artifacts" below), not the GitHub job list.
-3. **Filter flakes:** re-run failed jobs once (`gh run rerun --failed`). If they
-   pass, record a flake and stop. A rerun completes `CI` again and fires this
-   workflow again, so guard it: only rerun when `run_attempt` is 1, and treat a
-   failed attempt 2 as final, so a persistent failure reruns at most once.
-4. **Find the range:** walk first-parent commits back to the last commit whose
-   `CI` run succeeded. Squash commits are `(#PR)`, and a sync merge from `main`
-   is its own entry.
-5. **Narrow:**
-    - One commit in range: it is the culprit.
-    - Several: `git bisect start --first-parent`, then `git bisect run`,
-      running only the failing omni tasks (`omni run <task> -p <project>`),
-      not the whole suite. First-parent keeps bisect on the same history as the
-      range, so it can name a sync merge but never a commit from `main`'s
-      history. Cap the bisect at N steps and a time budget.
-6. **Map to a PR:** commit subject `(#N)` gives the child PR; a sync merge
+   (see "Failure artifacts"), not the GitHub job list.
+3. **Flake filter by attempt.** A rerun completes `CI` again and fires this
+   workflow again, so the decision is a table on `run_attempt`:
+
+   | Attempt | Result  | Action                                       |
+   | ------- | ------- | -------------------------------------------- |
+   | 1       | failure | `gh run rerun --failed`, then exit           |
+   | 2       | success | record a flake, stop                         |
+   | 2       | failure | final: continue to step 4                    |
+
+4. **Find the culprit:** walk first-parent commits back from the failing
+   commit to the last commit whose `CI` run succeeded. Squash commits are
+   `(#PR)`, and a sync merge from `main` is its own entry.
+    - One commit in range, or the first red commit after the last green one:
+      it is the culprit.
+    - A gap in results (a run is missing, for example a push `CI` ignored): use
+      the bisect fallback below on the range.
+5. **Map to a PR:** commit subject `(#N)` gives the child PR; a sync merge
    commit maps to the integration PR instead.
-7. **Verify:** re-run the failing tasks at the suspect commit and at its
-   parent. Report "confirmed" only if it fails at the commit and passes at the
-   parent.
+6. **Verify (bisect fallback only):** re-run the failing tasks at the suspect
+   commit and at its parent. Report "confirmed" only if it fails at the commit
+   and passes at the parent.
+
+### Bisect fallback
+
+Used only when the range has more than one commit without results.
+
+- `git bisect start --first-parent`, then `git bisect run`, running only the
+  failing omni tasks (`omni run <task> -p <project>`), not the whole suite.
+  First-parent keeps bisect on the same history as the range, so it can name a
+  sync merge but never a commit from `main`'s history.
+- Cap the bisect at N steps and a time budget. If exceeded, report `suspected`
+  with the remaining range.
+- Each step needs the same toolchain as the failing job (for example Rust), so
+  it reuses `determine-build-tools` and `setup-tools`.
+- `-f=failed` is used in the CI commands, and in `determine-build-tools` via
+  `run-omni-jobs`. It must not be reused during bisect, which needs a fresh
+  result at every commit.
+- Run bisect on the failing lane's runner (`matrix.runner`) with its `TARGET`
+  env. The multiplatform matrix covers Windows, macOS and cross-compiled
+  targets, which a single Linux runner cannot reproduce. For a lane bisect
+  cannot run on, report `unknown`.
 
 ### Failure artifacts
 
@@ -114,17 +219,6 @@ code and the task command. So:
    artifact, since a failure may be target-specific.
 3. `integration-attribute` downloads these, keeps entries that failed, and
    builds one `omni run <task> -p <project>` command per failed task.
-4. Bisect runs that command with the same `TARGET` env as the failing lane.
-
-Costs and limits:
-
-- Each bisect step needs the same toolchain as the failing job (for example
-  Rust), so it reuses `determine-build-tools` and `setup-tools`. Rust steps are
-  slow; the omni cache and the run's carried `target` dir keep this bounded.
-- The step cap and time budget apply. If exceeded, report `suspected` with the
-  remaining range.
-- `-f=failed` in the CI commands must not be reused during bisect, which needs
-  a fresh result at every commit.
 
 ### Diagnostics output
 
@@ -139,13 +233,13 @@ label on the integration PR:
   `<sha>`.
 - Suggested action: fix forward within about 24 hours, or `git revert <sha>`.
 
-The `red` label is removed when a later run goes green.
+The `red` label is removed when a later run on the current head goes green.
 
 ### No automatic fixes or reverts
 
 No agent generates fixes and the bot opens no revert PRs. The bot only
 diagnoses: it points out which PR caused the failure and leaves the fix to
-people.
+people. A revert is a suggestion for the owner.
 
 ### Fix process
 
@@ -177,30 +271,38 @@ every fix is a new child PR into the integration branch.
 Roles: the author owns the fix; the branch owner unblocks (reassign, revert,
 fast-track approval); the bot diagnoses, tags and labels.
 
-While `red`, only fix and revert PRs may merge. The branch owner may approve
-them as the sole reviewer.
+### Freeze enforcement
+
+While `red`, only fix and revert PRs may merge. This is enforced by a required
+child-PR check, `integration-freeze`. It fails when the target branch's
+integration PR is labelled `red` or `frozen`, unless the child PR is labelled
+`fix` or `revert`. It re-runs on `labeled` and `unlabeled` events. The branch
+owner may approve fix and revert PRs as the sole reviewer.
 
 ### Other rules
 
-- Full CI on `integration/**` pushes does not cancel in progress, so each
-  commit has its own result.
-- While `red`, freeze non-fix merges.
 - Bisect cannot see failures caused by interaction between two children. In
   that case report `unknown`, list the range and ask the owner to triage.
 - Bisect needs deterministic tests. Flaky or order-dependent failures reach
   `unknown` rather than a wrong culprit.
-- Only the failing tasks run during bisect, on a clean checkout per step, with
-  the omni cache enabled so unchanged tasks are cheap.
+- Only the failing tasks run during bisect, on a clean checkout per step.
 - **Isolation.** Bisect runs code from merged child PRs, so it is untrusted
-  relative to `INTEGRATION_BOT_TOKEN`. Split the workflow into two jobs:
-    - A `bisect` job with `contents: read` only and no bot token or other secrets.
-      It uses its own cache key namespace, separate from privileged workflows and
-      from `main`, and never writes to a cache they restore.
-    - A privileged `report` job that downloads the `bisect` job's output as an
-      artifact and only parses it as data (culprit SHA, confidence, log excerpt).
-      It never executes anything from the artifact or the checked-out commits.
-      The rerun and labelling steps run in `report`, not in `bisect`.
-- **Serialize state changes.** The head check in step 1 is not enough, because
+  relative to `INTEGRATION_BOT_TOKEN`, and a job started by `workflow_run` runs
+  in `main`'s cache scope. A separate cache key prefix does not help: `setup-omni`
+  adds the catch-all restore key `${RUNNER_OS}-omni-`
+  (`.github/actions/setup-omni/action.yml`), so a `main` run can restore any
+  `<os>-omni-*` entry. So:
+    - `report` does not run bisect itself. It starts a separate `integration-bisect`
+      workflow with `workflow_dispatch --ref integration/<x>`, so its caches are
+      scoped to that branch, which `main` cannot restore. Alternatively, bisect
+      uses `actions/cache/restore` only and never saves.
+    - `integration-bisect` has `contents: read` only, no bot token and no other
+      secrets, and uploads its result as an artifact.
+    - The privileged `report` job downloads that artifact and only parses it as
+      data (culprit SHA, confidence, log excerpt). It never executes anything
+      from the artifact or the checked-out commits. The rerun and labelling
+      steps run in `report`.
+- **Serialize state changes.** The head check is not enough, because
   attribution takes time and a newer run can finish meanwhile. The `report` job
   uses a `concurrency` group per branch (`integration-state-<branch>`, without
   cancel-in-progress) for every change to `red` or the freeze. A push cannot be
@@ -210,10 +312,10 @@ them as the sole reviewer.
        moved, discard the result and reconcile (below).
     2. Apply the change.
     3. Re-read the head again. If it moved during the update, reconcile.
-       Reconcile means: find the newest completed `CI` run on the new head, and set
-       `red` and the freeze from that run, repeating the before/after check. Cap the
-       loop at a few iterations; if the head is still moving, leave state unchanged
-       and let the next completed run reconcile.
+       Reconcile means: find the newest completed `CI` run on the new head, and
+       set `red` and the freeze from that run, repeating the before/after
+       check. Cap the loop at a few iterations; if the head is still moving,
+       leave state unchanged and let the next completed run reconcile.
 - **New head with no completed run.** Leave `red` and the freeze as they are
   until a run on that head completes. The completion of that run triggers this
   workflow and reconciles. A branch that was red stays frozen, and a branch that
@@ -231,28 +333,81 @@ current head with `gh workflow run ci.yaml --ref <branch>`. This needs a
 consistent with the other bot pushes; verify during the pilot that the
 resulting `workflow_run` reaches `integration-attribute`.
 The dispatched run has event `workflow_dispatch` and the `full` gate is true
-for it, so its result is accepted by step 1 and reconciles `red` and the freeze
-for that head. It also catches a head that `CI` ignored on push.
-
-- Do not auto-revert. A revert is a suggestion for the owner.
+for it, so its result is accepted and reconciles `red` and the freeze for that
+head. It also catches a head that `CI` ignored on push.
 
 ## 6. Automation
 
 Do not split CI into separate `fast` and `full` workflows. Keep `ci.yaml` and
-gate each job. Add `integration/**` to the `pull_request.branches` and
-`push.branches` triggers and compute one flag in `plan`:
+gate each job.
+
+### Triggers and the `full` flag
+
+Add `integration/**` to the `pull_request.branches` and `push.branches`
+triggers and compute one flag in `plan`:
 
 ```yaml
 full: ${{ github.base_ref == 'main' || github.event_name != 'pull_request' }}
 ```
 
-- Always run: `check-*` (format, lint, typecheck) and unit tests.
-- Gate with `needs.plan.outputs.full == 'true'`: integration tests, `build-debug-rust`
-  and anything else slow.
-- `ci-gatekeeper` already treats `skipped` as passing, so `CI Passed` stays the
-  only required check on every branch.
-- Concurrency: keep `cancel-in-progress` for PRs, but disable it for pushes to
-  `integration/**` so each commit keeps a full-CI baseline for attribution.
+A push to an integration branch with an open integration PR triggers both a
+`push` run and a `pull_request` run, and both would be full. Avoid the double
+run: on `pull_request` with an `integration/**` head, set `full` to false and
+rely on the push run, and make the integration PR's required `CI Passed` come
+from the push run's result on the same head.
+
+### What is fast and what is full
+
+`ci.yaml` has no separate unit and integration test jobs. Its jobs are
+`check-rust`, `check-typescript`, `build-debug-rust`, `build-typescript`,
+`test-rust` and `test-typescript`. `test-rust` depends on `build-debug-rust`
+and reuses its `target` dir, so gating only the build job would make
+`test-rust` rebuild everything and save nothing. So define the split in terms
+of real jobs:
+
+- **Fast (always run):** `check-rust`, `check-typescript`, `build-typescript`
+  and `test-typescript`.
+- **Full (gated by `needs.plan.outputs.full == 'true'`):** `build-debug-rust`
+  and `test-rust`, together, and anything else slow.
+- Optionally split a unit-only Rust task later (`test:unit` /
+  `test:integration` omni tasks) to move fast Rust coverage into child PRs.
+
+Measure the saving before rollout (see section 8). The RFC has no CI duration
+data yet.
+
+`ci-gatekeeper` is the `CI Passed` job in `ci.yaml`. It already treats
+`skipped` as passing, so `CI Passed` stays the only required check on every
+branch.
+
+### Concurrency
+
+The current group is `${{ github.workflow }}-${{ github.ref }}`. GitHub keeps
+only one running and one pending run per group, so a third push replaces the
+pending run even with `cancel-in-progress: false`, and some commits would get
+no result. For pushes to `integration/**`, put the commit in the group:
+
+```yaml
+concurrency:
+  group: >-
+    ${{ github.workflow }}-${{ github.ref }}-${{
+      (github.event_name != 'pull_request' && startsWith(github.ref, 'refs/heads/integration/'))
+      && github.sha || '' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+```
+
+Nightly `workflow_dispatch` runs on the same head share a group with the push
+run for that SHA, which is fine.
+
+### Security of CI on integration branches
+
+`ci.yaml` has `permissions: contents: write`, and `run-omni-jobs` uses
+`secrets: inherit` plus an `ENV_*` export. Integration pushes run merged child
+code with these. Scope `contents: read` for non-tag runs, and keep secrets out
+of runs on `integration/**`.
+
+Also, the `ci.yaml` path filter `"!./apps/site/**"` probably never matches
+because of the leading `./`. Fix it, since it decides which pushes `CI`
+ignores (see "New head with no completed run").
 
 ### Rotation
 
@@ -261,49 +416,39 @@ full: ${{ github.base_ref == 'main' || github.event_name != 'pull_request' }}
 default branch. `main` stays the default branch, and no workflow changes branch
 protection or repository settings.
 
+Rotation is lazy: no branch exists between batches, and `new-batch` creates
+the next one on request.
+
 Workflow `integration-rotate` runs on `pull_request` closed, from the default
 branch's copy, with `INTEGRATION_BOT_TOKEN`. It acts only when the PR was
 merged, its head is `integration/**` and its base is `main`:
 
-1. Delete the landed branch, unless it is still needed by an open child PR.
-   Open child PRs of the landed branch need a new base. If a parallel
-   integration branch is open, first merge `main` into it, so the landing
-   merge is in the new base and a retargeted PR does not show the landed batch
-   in its diff. Retarget the child PRs only if that sync succeeds and the
-   landing was a merge commit (the landing commit has two parents). A squash
-   landing, the owner-approved exception, does not keep the integration
-   branch's commits in `main`'s ancestry, so a child PR would still show the
-   landed batch. For a squash landing, never retarget automatically: comment
-   on each child PR with `git rebase --onto <new-base> <landed-branch-tip>
-   <child-branch>`, and retarget only after the author has rebased and
-   `git diff <new-base>...<child-branch>` (the three-dot diff against the new
-   base, not the PR's current diff, which still targets the landed branch)
-   contains just the child's own changes. If the sync fails or no
-   parallel branch is open, do not retarget either: comment on each child PR
-   that it must be rebased onto `main` and reopened, or wait for the owner to
-   sort out the sync (`needs-sync`).
-2. Check the parallel limit (at most two active branches). Skip creation if the
-   limit is reached, and comment on the landed PR.
-3. Do **not** create the next branch yet (lazy creation, default). Remove
-   `default-batch` from the landed branch's PR. The PR-target guard and the
-   `git start` helper tell contributors to branch from `main` while there is
+1. Delete the landed branch. GitHub retargets open child PRs to the merged
+   PR's base (`main`) when the head branch is deleted after a merge, and
+   because the landing is a merge commit, their diff against `main` is clean
+   without any sync. Comment on each open child PR that it now targets `main`,
+   and that it can be retargeted to a parallel integration branch if one is
+   open.
+2. Remove `default-batch` from the landed branch's PR. The PR-target guard and
+   the `git start` helper tell contributors to branch from `main` while there is
    no default.
-4. An owner starts the next batch with the `new-batch` workflow dispatch. It
-   creates `integration/<yyyy-mm-dd>[-<suffix>]` from the current `main` head,
-   using the suffix rule from section 2 (for example `-2`) if that ref already
-   exists. A new branch has no commits beyond `main`, and GitHub cannot open a
-   PR for it, so the bot adds one empty marker commit, `chore: start
-   integration batch <name>` (a valid conventional commit, so `cog check`
-   passes when it lands). It then opens the draft integration PR with the
-   `<!-- children -->` marker, labels it `default-batch` and assigns the
-   owner. Until then, `main` is the base for
-   new work.
+
+The integration PR is never squashed (section 3), so no rebase handling for
+squash landings is needed.
+
+An owner starts the next batch with the `new-batch` workflow dispatch. It
+creates `integration/<yyyy-mm-dd>[-<suffix>]` from the current `main` head,
+using the suffix rule from section 2 (for example `-2`) if that ref already
+exists, and checks the parallel limit (at most two active branches), refusing
+to create a third. GitHub cannot open a PR for a branch with no commits beyond
+`main`, so the bot adds one empty marker commit, `chore: start integration
+batch <name>` (a valid conventional commit, so `cog check` passes when it
+lands). It then opens the draft integration PR with the `<!-- children -->`
+marker, labels it `default-batch` and assigns the owner. Until then, `main` is
+the base for new work.
 
 Why lazy: a branch created for a quiet week sits empty, goes stale and reaches
-the lifespan cap without any work in it. Eager creation is an option: step 3
-creates the branch immediately, and the nightly run deletes any default branch
-that has had no child PR merged for 7 days. Eager creation uses the same marker
-commit as step 4, since the PR cannot be opened without it.
+the lifespan cap without any work in it.
 
 Rules:
 
@@ -316,16 +461,25 @@ Rules:
 - The bot acts from the default branch's workflow and runs no code from any
   PR.
 
-Other workflows:
+### Other workflows
 
 | Workflow                | Trigger                       | Purpose                                                                                |
 | ----------------------- | ----------------------------- | -------------------------------------------------------------------------------------- |
+| `new-batch`             | manual (`workflow_dispatch`)  | create the next integration branch and draft PR (see "Rotation")                       |
 | `integration-sync`      | push to `main`, daily, manual | merge `main` into each `integration/*`; on conflict abort, comment, label `needs-sync` |
 | `integration-track`     | child PR merged               | append `- [x] #N title (@author)` under `<!-- children -->` in the integration PR body |
-| `integration-rotate`    | integration PR merged         | delete the landed branch; create the next default branch (see "Rotation")              |
+| `integration-rotate`    | integration PR merged         | delete the landed branch, move `default-batch` (lazy, no new branch)                   |
 | `integration-nightly`   | schedule                      | dispatch `CI` on each open `integration/**` head, as the reconcile backstop            |
 | `integration-attribute` | `workflow_run` of `CI`        | failure attribution (section 5)                                                        |
-| PR-target guard         | PR to `main`                  | fail if based on an integration branch, unless hotfix or the integration PR itself     |
+| `integration-bisect`    | `workflow_dispatch`           | bisect fallback, unprivileged (section 5)                                              |
+| `integration-freeze`    | child PR, label events        | required check: fail while the target is `red` or `frozen` (section 5)                 |
+| PR title check          | child PR                      | required check: `cog verify` on the PR title (section 4)                               |
+| PR-target guard         | PR to `main`                  | see below                                                                              |
+
+**PR-target guard.** Fails a PR to `main` if its head contains any first-parent
+commit of an open `integration/**` branch beyond `main`
+(`git merge-base --is-ancestor`). Exemptions are by label (`hotfix`), and the
+integration PR itself (head `integration/**`) is always allowed.
 
 Pushes made with `GITHUB_TOKEN` do not trigger workflows. Sync and tracking use
 `INTEGRATION_BOT_TOKEN` (GitHub App or PAT), which needs a branch-protection
@@ -333,7 +487,8 @@ bypass on `integration/**`.
 
 ## 7. Alternatives
 
-- Merge queue.
+- Merge queue. Chosen as Phase 1 (section 1.1): it gives batching and per-PR
+  attribution natively.
 - Affected-only CI.
 - Sharding and caching.
 
@@ -342,14 +497,29 @@ volume is modest.
 
 ## 8. Open questions
 
-- Actual full-CI duration and PR volume.
-- Whether to ship a `git start` helper, `frozen`/`red` label gates, and
-  rulesets as code.
+- Actual full-CI duration and PR volume. Collect these before rollout (step 1
+  below), not after.
+- Whether to ship a `git start` helper and rulesets as code.
 
 ## 9. Rollout
 
-1. Land this RFC.
-2. Add `integration/**` triggers and the `full` gate to `ci.yaml`, and the
-   result artifacts to `run-omni-jobs.yaml`, then the sync and track workflows.
-3. Add attribution bot and PR-target guard.
-4. Pilot with one integration branch.
+### Phase 1: merge queue
+
+1. Record baseline: full-CI duration, PR time to green and PR volume.
+2. Verify the plan of the `omni-oss` organization supports merge queue.
+3. Land this RFC. Update `CONTRIBUTING.md` (quick CI on PRs, full CI in the
+   queue, merge via the queue).
+4. In `ci.yaml`: add `merge_group`, the `full` flag, the job gating,
+   the concurrency change and the path filter fix.
+5. An admin enables **Require merge queue** in the `main` ruleset.
+6. Run for a few weeks and compare against the baseline (exit criteria in
+   section 1.1).
+
+### Phase 2: integration branches (only if Phase 1 falls short)
+
+1. Add `integration/**` triggers, the per-commit concurrency group and the
+   `contents: read` scoping to `ci.yaml`, and the result artifacts to
+   `run-omni-jobs.yaml`, then the sync and track workflows.
+2. Add the PR title check, `integration-freeze`, the attribution bot and the
+   PR-target guard.
+3. Pilot with one integration branch and a named owner.

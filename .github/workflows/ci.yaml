@@ -1,11 +1,12 @@
 name: CI
 
 on:
+  merge_group:
   push:
     branches: [main]
     paths:
       - "**/*"
-      - "!./apps/site/**"
+      - "!apps/site/**"
       - "!bun.lock"
     # only trigger on tags that are workspace tags (e.g. v1.2.3) and not on tags that are for specific packages (e.g. package-v1.2.3)
     tags:
@@ -19,12 +20,14 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Never cancel merge queue runs; PRs and pushes still cancel superseded runs.
+  cancel-in-progress: ${{ github.event_name != 'merge_group' }}
 
 jobs:
   plan:
     runs-on: ubuntu-latest
     outputs:
+      full: ${{ steps.full.outputs.full }}
       jobs: ${{ steps.plan.outputs.jobs }}
       jobs_check_typescript: ${{ steps.plan.outputs.jobs_check_typescript }}
       jobs_check_typescript_count: ${{ steps.plan.outputs.jobs_check_typescript_count }}
@@ -48,6 +51,12 @@ jobs:
       jobs_publish_generic_count: ${{ steps.plan.outputs.jobs_publish_generic_count }}
       jobs_cache_restore_key_prefixes: ${{ steps.plan.outputs.jobs_cache_restore_key_prefixes }}
     steps:
+      # Quick CI on pull requests; the full suite runs in the merge queue,
+      # on pushes (main, tags) and on manual dispatch.
+      - name: Decide quick or full CI
+        id: full
+        run: echo "full=${{ github.event_name != 'pull_request' }}" >> "$GITHUB_OUTPUT"
+
       - name: Checkout repository
         uses: actions/checkout@v6
 
@@ -171,7 +180,7 @@ jobs:
       - plan
       - check-rust
       - check-typescript
-    if: ${{ !cancelled() && !failure() && needs.plan.outputs.jobs_build_debug_rust_count > 0 }}
+    if: ${{ !cancelled() && !failure() && needs.plan.outputs.full == 'true' && needs.plan.outputs.jobs_build_debug_rust_count > 0 }}
     uses: ./.github/workflows/run-omni-jobs.yaml
     secrets: inherit
     with:
@@ -207,7 +216,7 @@ jobs:
       - plan
       - build-debug-rust
       - build-typescript
-    if: ${{ !cancelled() && !failure() && needs.plan.outputs.jobs_test_rust_count > 0 }}
+    if: ${{ !cancelled() && !failure() && needs.plan.outputs.full == 'true' && needs.plan.outputs.jobs_test_rust_count > 0 }}
     uses: ./.github/workflows/run-omni-jobs.yaml
     secrets: inherit
     with:
