@@ -77,10 +77,11 @@ export const workerD1Target = workerTargetFor({
     name: "worker-d1",
     basePort: 3600,
     async prepare({ workerDir, state }) {
-        const base = fs.readFileSync(
-            path.join(workerDir, "wrangler.toml"),
-            "utf8",
-        );
+        // The worker bundle is built by the omni_remote_cache_worker#build
+        // dependency, so drop wrangler's own (slow, timeout-prone) build step.
+        const base = fs
+            .readFileSync(path.join(workerDir, "wrangler.toml"), "utf8")
+            .replace(/^\[build\]\n(?:(?!\[).*\n?)*/m, "");
         const configFile = path.join(
             workerDir,
             `wrangler.e2e-${process.pid}.toml`,
