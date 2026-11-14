@@ -14,7 +14,7 @@ members = [
 [workspace.package]
 license = "MIT"
 repository = "https://github.com/omni-oss/omni"
-rust-version = "1.99.0"
+rust-version = "1.100.0"
 edition = "2024"
 version = "0.22.0"
 authors = ["Clarence Manuel <rencedm112@gmail.com>"]
