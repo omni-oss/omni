@@ -5,7 +5,7 @@
 - **Date:** 2026-11-13
 - **Base branch:** `main`
 - **Risk tier:** High (caching and security boundary; see `AGENTS.md` risk overrides)
-- **Affected crates/files:** `omni_remote_cache_core` (`ServiceState` holds a `StorageProvider`; `security` module becomes the `Authenticator` seam and `Caller`, scopes, namespaces, trailer, `put_artifact`, `get_artifact`, `head_artifact`, provenance and purge routes, hooks, config); `omni_remote_cache_storage_{core,local,memory,s3,r2}` (atomic create-if-absent, range and prefix primitives, path safety, namespace-first layout, typed `Container`, `StorageProvider` and routing, S3 key-prefix mode only); `omni_remote_cache_client` (including `validate_access`); `omni_remote_cache_repository_{query,sql,d1}` (`principal` column, hooks parameters); `omni_remote_cache_core/src/caching` (`CachedSecurity`); `omni_cache` (`cache/impls/hybrid.rs`, signing, verification, remote config, restore path validation); `omni_types` (cached path validation); `omni_configurations` (remote cache settings in the local file, `trusted_keys` and `verify` in `WorkspaceConfiguration`, task settings in `CacheConfiguration` and `CacheLayer`); `omni_cli_core` (`cache keygen`, `cache provenance`, `cache purge`); `services/omni_remote_cache_service` (storage config, `--s3.multi-bucket` removed); JSON schema; `apps/site` (remote cache guide, security page, release note)
+- **Affected crates/files:** `omni_remote_cache_core` (`security` module becomes the `Authenticator` seam and `Caller`, scopes, namespaces, trailer, `put_artifact`, `get_artifact`, `head_artifact`, provenance and purge routes, hooks, config); `omni_remote_cache_storage_{core,local,memory,s3,r2}` (atomic create-if-absent, range and prefix primitives, path safety, namespace-first layout, typed `Container`, S3 key-prefix mode only); `omni_remote_cache_client` (including `validate_access`); `omni_remote_cache_repository_{query,sql,d1}` (`principal` column, hooks parameters); `omni_remote_cache_core/src/caching` (`CachedSecurity`); `omni_cache` (`cache/impls/hybrid.rs`, signing, verification, remote config, restore path validation); `omni_types` (cached path validation); `omni_configurations` (remote cache settings in the local file, `trusted_keys` and `verify` in `WorkspaceConfiguration`, task settings in `CacheConfiguration` and `CacheLayer`); `omni_cli_core` (`cache keygen`, `cache provenance`, `cache purge`); `services/omni_remote_cache_service` (storage config, `--s3.multi-bucket` removed); JSON schema; `apps/site` (remote cache guide, security page, release note)
 - **Requirements:** none yet. Write `docs/requirements/0030-...` if this RFC is accepted.
 - **Compatibility:** none required. Omni is pre-release and the built-in client is the only client, and we can update it in lockstep with the server. This RFC changes the protocol, storage layout, configuration and defaults freely. The server still enforces every rule, because the threat is a key holder who can send raw HTTP requests, not a well-behaved omni.
 
@@ -110,9 +110,6 @@ immutability, asymmetric signatures and provenance. This RFC does.
 - An operator can tell who wrote an entry, and remove everything one key wrote
   without wiping the cache.
 - A release task never touches the remote cache.
-- An operator can put `shared` and `isolated` (and tenants or principals) behind separate
-  buckets and credentials, so IAM enforces the tier boundary, and a cache client cannot
-  tell how it was routed (4.1.1).
 - A new credential type (OIDC token, user login) can be added by writing an
   authenticator, without changing routes, namespaces, provenance or hooks.
 
@@ -128,7 +125,7 @@ immutability, asymmetric signatures and provenance. This RFC does.
   entry and a marker (a key kept beside the marker would not help). See 4.4, "Local
   cache trust".
 - Confidentiality (encryption of artifacts) and changing the task hash.
-- Client-side routing hints, and automatic data migration between buckets.
+- Routing to several buckets or credential sets.
 - Online key revocation service. Revocation is removing a key from `trusted_keys`.
 - OIDC authentication and user login. They are later RFCs. This RFC only builds the
   seam they plug into (4.0).
@@ -244,8 +241,7 @@ A container is a typed core concept and the S3 backend always maps one to a key
 prefix inside one bucket (4.1.1). Today's mode where the container is the bucket name
 cannot hold these slash-separated containers and is removed (it is the `multi_bucket
 == false` branch of `get_bucket_and_prefix`; the flag's name is inverted, since `true`
-means one bucket with key prefixes). Which bucket and credentials serve a request is
-chosen by a storage provider, not by a backend mode (4.1.1).
+means one bucket with key prefixes). There is one backend and one set of credentials (4.1.1).
 
 `principal` (in the `Caller`, 4.0) identifies the _owner_ of one or more
 credentials (a user, service account or CI pipeline), not a credential. The
@@ -323,13 +319,11 @@ server's claim about where a hit came from:
 - When the same digest exists in both namespaces, the client's own probe order
   decides (isolated first). Nothing on the server merges them.
 
-### 4.1.1 Containers and storage routing (security separation)
+### 4.1.1 Typed containers, one backend
 
-Separating storage natively is a security control, not only a deployment option: if
-`shared/` and `isolated/` can sit behind credentials that cannot touch each other,
-IAM enforces the tier boundary of C even when the server has a bug (a path-safety slip
-or a mis-scoped route cannot write the other tier). So containers and routing are part
-of this RFC.
+The service uses one storage backend with one set of credentials, as today. Containers
+are how namespaces, tenants and principals are separated inside it. This RFC makes that
+safe and explicit. Routing to several buckets is out of scope.
 
 - **`Container` is a required, typed core concept.** Today the storage trait takes
   `container: Option<&str>` and has `default_container()`, and the service hardcodes
@@ -341,83 +335,8 @@ of this RFC.
 - **The `multi_bucket` flag is removed.** An S3 backend is one bucket and one set of
   credentials, with containers as key prefixes. `BasicS3Config` loses `multi_bucket`
   and `default_container`, and the service loses `--s3.multi-bucket` and its env var.
-  A bucket per tenant is two backends and a route, not a mode.
-- **A `StorageProvider` chooses the backend per request.** `ServiceState` holds it
-  instead of one backend. Routes resolve a target after authentication and resource
-  validation:
-
-  ```rust
-  pub struct StorageTarget { backend: Arc<dyn RemoteCacheStorageBackend>, container: Container }
-
-  #[async_trait]
-  pub trait StorageProvider: Send + Sync {
-      /// Pure function of validated inputs. `principal_id` is set only for isolated.
-      async fn target(&self, res: &Resource, ns: NamespaceKind, principal_id: Option<&str>)
-          -> Result<StorageTarget, StorageError>;
-      /// Every distinct target a workspace may use, for purge and the TTL sweeper.
-      async fn targets_for(&self, tenant: &str, org: &str, ws: &str)
-          -> Result<Vec<StorageTarget>, StorageError>;
-  }
-  ```
-
-  - `SingleStorageProvider` (default) wraps one backend, which is today's behavior,
-    so an operator who wants one bucket for everything configures nothing extra.
-  - `RoutedStorageProvider` holds named backends and an ordered rule list with a
-    required default. Rules match `tenant`, `org`, `ws`, `env`, `namespace` and, for
-    `isolated` only, `principal`, by exact value or a simple glob (`ci-*`), never a
-    regex (so `targets_for` can enumerate every target). First match wins.
-
-    ```yaml
-    storage:
-      backends:
-        main: { kind: s3, bucket: omni-cache, ... }
-        acme: { kind: s3, bucket: acme-cache, access_key_id_env: ACME_KEY, ... }
-        pr-only: { kind: s3, bucket: omni-isolated, ... }
-      default: main
-      routes:
-        - { match: { tenant: acme }, backend: acme }
-        - { match: { namespace: isolated }, backend: pr-only }
-        - {
-            match: { namespace: isolated, principal: "ci-*" },
-            backend: pr-only,
-          }
-    ```
-
-    Credentials come from each backend's own config (env or secret reference), never
-    from a request. Clients are built lazily and cached per backend name. On Workers,
-    routes name a binding (bindings are static) and no client is built.
-
-  - A rule that matches `principal` with `namespace: shared` (or no namespace) is
-    rejected at config load: every caller must resolve `shared` the same way, because a
-    publisher writes it and every reader looks it up. Principal rules match the
-    encoded `principal_id` used in the path, never the raw principal.
-  - **Fail closed.** A request that resolves to no backend, or to one that cannot be
-    built, returns `503` and never falls back to the default backend, so a mis-routed
-    tenant cannot land in a shared bucket. The service validates the config before it
-    listens: every route names a defined backend, the default exists, and no rule mixes
-    `principal` with a non-isolated namespace.
-
-- **Purge and TTL.** `omni cache purge --principal X` resolves its target with X as the
-  match input, not the operator's own principal. Scans, credential purges and the
-  sweeper loop over `targets_for`. A principal route change orphans entries in the old
-  bucket, so operators treat routes as stable or purge after moving one. `LruCached`
-  wraps per backend and invalidates per backend on purge.
-- **Invariant: cache clients are not aware of routing.** Routing never changes the
-  client protocol, the signed message (4.5) or the entry trailer.
-  - No response header, body or error names a bucket, backend, endpoint or route. A
-    resolution failure is a plain `503`, and the operator log names the failing route.
-  - The client keeps sending `?namespace=` and `?target=` (a trust tier, not a
-    location), and each probe resolves independently on the server.
-  - Routing inputs are only the validated resource codes the client already sends, the
-    namespace kind, and the `Caller`'s `principal_id` (4.0). No client-chosen field
-    selects a backend.
-  - The signed message binds tenant, org, workspace, environment, namespace, digest and
-    archive hash, never a bucket, so entries can move between buckets, or a route can
-    change, without breaking verification. The trailer and hook context do not record
-    the bucket for clients. The backend name appears only in server logs.
-  - ETags used for `If-Match` (4.3) are whatever the resolved backend returns, opaque
-    to the client. `validate_access` advertises one `max_artifact_size`: the smallest
-    limit among the targets the caller could use for that resource.
+- `ServiceState` keeps one backend. Routes build the `Container` and pass it to the
+  backend.
 
 ### 4.2 Immutability (control B)
 
@@ -1224,15 +1143,8 @@ Why: these are the user-visible controls A, C and D.
   that suite today, so this RFC adds it against MinIO or LocalStack (the current S3
   test setup is checked first). R2 targets wasm32 and cannot run under `cargo test`,
   so it is covered by the Miniflare script plus a manual run on real R2.
-- **Storage provider (4.1.1):** the existing client and end-to-end remote tests pass
-  unchanged under `SingleStorageProvider` and under a `RoutedStorageProvider` with
-  several buckets, and a test fails if any response header, body or error exposes a
-  bucket, backend name or route; `shared` and `isolated` land in different backends; a
-  principal rule routes only isolated entries and is rejected for `shared`; a request
-  with no matching route returns `503` and never reaches the default backend; purge by
-  principal resolves with the target principal; `targets_for` covers every routed
-  backend; `validate_access` returns the smallest `max_artifact_size` among a
-  resource's targets; a `Container` cannot be built from a raw string.
+- **Containers (4.1.1):** a `Container` cannot be built from a raw string; the existing
+  contract and client tests pass with the typed trait and no `default_container()`.
 - **Trust boundaries (4.1, 4.4):** a publisher and a read-only run never send an
   isolated probe, even when the server would answer it; an untrusted run does; a
   local config cannot lower `verify` or add `trusted_keys`; `scopes: all` cannot
@@ -1311,11 +1223,8 @@ Why: these are the user-visible controls A, C and D.
 No compatibility layer. Land as thin slices, each releasable. Each slice only uses
 things earlier slices provide:
 
-0. Typed `Container`, the `StorageProvider` seam with `SingleStorageProvider`, and
-   removal of `multi_bucket` and `default_container()` (4.1.1). No behavior change for a
-   single bucket. The routed provider, its config validation and `targets_for` in purge
-   and the sweeper land with step 4 (namespaces), since routing by namespace needs them.
-
+0. Typed `Container` across the storage trait, backends and routes, and removal of
+   `multi_bucket` and `default_container()` (4.1.1). No behavior change.
 1. Storage: create-if-absent, `get_range`, `list_prefix`, `delete_prefix`, path
    safety (digest and containment checks, and restore validation of each cached
    `original_path`, since that hole exists today), server `409`, truncated-upload abort,
@@ -1412,8 +1321,8 @@ runtime, `verify: off` disables verification and `push: false` stops uploads.
 - **Where `trusted_keys` and `verify` live:** the committed workspace config, merged
   with the local file so the local file can only tighten (4.4).
 - **Layout and lifecycle:** namespace first, `shared/...` and `isolated/...`, one
-  lifecycle prefix, and S3 key-prefix mode only (4.1). Bucket and credential choice is a
-  server-side storage provider, invisible to clients (4.1.1).
+  lifecycle prefix, and S3 key-prefix mode only (4.1). One backend, one set of
+  credentials (4.1.1).
 - **`Caller` and the SQL/D1 contract:** authenticate per request with the resource
   and wanted scopes. `scopes: all` never grants `publish` (4.0).
 
@@ -1460,11 +1369,11 @@ backends, open question 1) and, within step 3, the sealing stream.
 
 | #   | Step                                                                                                                                                                                          | Check                                                                                                                                                                                                    | Undo           |
 | --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
-| 0   | Typed `Container`, `StorageProvider` seam with the single provider, remove `multi_bucket` and `default_container()`.                                                                          | Existing contract and client tests pass with no behavior change.                                                                                                                                         | Revert commit. |
+| 0   | Typed `Container`, remove `multi_bucket` and `default_container()`.                                                                                                                           | Existing contract and client tests pass with no behavior change.                                                                                                                                         | Revert commit. |
 | 1   | Storage primitives, path safety (incl. restore `original_path` validation), `409`, abort on truncated upload, remove `replacing`, client success-only upload gate and `409`/warning handling. | Concurrency and abort contract tests per backend, path-safety tests (a crafted `original_path` is a miss), a failed execution is never uploaded. Spike on real R2 and S3: create-only conditional write. | Revert commit. |
 | 2   | `Caller`/`Authenticator` seam and header move.                                                                                                                                                | Seam test, existing end-to-end remote tests still pass.                                                                                                                                                  | Revert commit. |
 | 3   | Trailer, sealing stream, provenance, hooks and SQL hooks params.                                                                                                                              | Trailer bounds tests, mismatch leaves the key free, provenance not client-settable, suffix-range read returns the trailer, `409` logged as `AlreadyExists`.                                              | Revert commit. |
-| 4   | Scopes, namespaces, client-driven resolution, `RoutedStorageProvider` with startup validation and `targets_for` in purge and the sweeper.                                                     | Authorization matrix, worked-example integration test, failure guard (1), routing tests and the client-transparency test with several buckets, `503` fail-closed.                                        | Revert commit. |
+| 4   | Scopes, namespaces, client-driven resolution.                                                                                                                                                 | Authorization matrix, worked-example integration test, failure guard (1).                                                                                                                                | Revert commit. |
 | 5   | Client `push`/`target`/`scope`, size caps.                                                                                                                                                    | Zero-upload test, advertised-cap test.                                                                                                                                                                   | Revert commit. |
 | 6   | Local cache partitions and trust epoch, `cache.remote: false` (transitive via `local/`), CLI flag, marker with staged extraction.                                                             | Partition tests and failure guard (4) above, remote reads and writes skipped for the task and its dependencies, a crash mid-extraction leaves no unmarked remote entry.                                  | Revert commit. |
 | 7   | Signing: `keygen`, sign, verify before `unarchive`, modes, shared-`409` existing-entry check.                                                                                                 | Full failure list in 4.7, failure guard (2).                                                                                                                                                             | Revert commit. |
