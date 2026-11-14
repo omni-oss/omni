@@ -17,16 +17,14 @@ use tokio_stream::StreamExt;
 use tokio_util::io::ReaderStream;
 
 use omni_remote_cache_storage_core::{
-    BoxStream, ListItem, PageOptions, ReadStream, RemoteCacheStorageBackend,
-    error::Error,
+    BoxStream, Container, ListItem, PageOptions, ReadStream,
+    RemoteCacheStorageBackend, error::Error,
 };
 
 // --- S3 Backend Struct ---
 #[derive(Debug)]
 pub struct S3CacheBackend {
     client: Client,
-    multi_bucket: bool,
-    default_container: String,
     default_bucket: String,
 }
 
@@ -36,8 +34,6 @@ pub struct BasicS3Config {
     pub access_key_id: String,
     pub secret_access_key: String,
     pub endpoint: String,
-    pub multi_bucket: bool,
-    pub default_container: String,
     pub default_bucket: String,
     pub region: String,
     pub force_path_style: bool,
@@ -48,14 +44,10 @@ impl S3CacheBackend {
     pub fn from_aws_sdk_config(
         config: &SdkConfig,
         default_bucket: impl Into<String>,
-        default_container: impl Into<String>,
-        multi_bucket: bool,
     ) -> Self {
         Self {
             client: Client::new(config),
-            multi_bucket,
             default_bucket: default_bucket.into(),
-            default_container: default_container.into(),
         }
     }
 
@@ -63,13 +55,9 @@ impl S3CacheBackend {
     pub fn from_aws_s3_sdk_config(
         config: aws_sdk_s3::Config,
         default_bucket: impl Into<String>,
-        default_container: impl Into<String>,
-        multi_bucket: bool,
     ) -> Self {
         Self {
             client: Client::from_conf(config),
-            multi_bucket,
-            default_container: default_container.into(),
             default_bucket: default_bucket.into(),
         }
     }
@@ -95,66 +83,37 @@ impl S3CacheBackend {
             .force_path_style(basic.force_path_style)
             .build();
 
-        Self::from_aws_s3_sdk_config(
-            s3_config,
-            basic.default_bucket.clone(),
-            basic.default_container.clone(),
-            basic.multi_bucket,
-        )
+        Self::from_aws_s3_sdk_config(s3_config, basic.default_bucket.clone())
     }
 
     #[inline(always)]
     pub async fn from_aws_config_from_env(
         default_bucket: impl Into<String>,
-        default_container: impl Into<String>,
-        multi_bucket: bool,
     ) -> Self {
         let config = aws_config::load_defaults(BehaviorVersion::latest()).await;
 
-        Self::from_aws_sdk_config(
-            &config,
-            default_bucket,
-            default_container,
-            multi_bucket,
-        )
+        Self::from_aws_sdk_config(&config, default_bucket)
     }
 }
 
 impl S3CacheBackend {
-    fn get_bucket_and_prefix<'s>(
-        &'s self,
-        container: Option<&'s str>,
-    ) -> (&'s str, Option<&'s str>) {
-        let container = container.unwrap_or(&self.default_container);
-
-        if self.multi_bucket {
-            (&self.default_bucket, Some(container))
-        } else {
-            (container, None)
-        }
-    }
-
-    fn key<'s>(&'s self, prefix: Option<&'s str>, key: &'s str) -> String {
-        if let Some(prefix) = prefix {
-            format!("{prefix}/{key}")
-        } else {
-            key.to_string()
-        }
+    fn key(&self, container: &Container, key: &str) -> String {
+        format!("{}/{}", container.as_str(), key)
     }
 
     #[allow(clippy::result_large_err)]
     async fn head(
         &self,
-        container: Option<&str>,
+        container: &Container,
         key: &str,
     ) -> Result<HeadObjectOutput, aws_sdk_s3::Error> {
-        let (bucket, prefix) = self.get_bucket_and_prefix(container);
+        let bucket = self.default_bucket.as_str();
 
         let head = self
             .client
             .head_object()
             .bucket(bucket)
-            .key(self.key(prefix, key))
+            .key(self.key(container, key))
             .send()
             .await?;
 
@@ -164,22 +123,18 @@ impl S3CacheBackend {
 
 #[async_trait]
 impl RemoteCacheStorageBackend for S3CacheBackend {
-    fn default_container(&self) -> &str {
-        &self.default_container
-    }
-
     async fn get(
         &self,
-        container: Option<&str>,
+        container: &Container,
         key: &str,
     ) -> Result<Option<Bytes>, Error> {
-        let (bucket, prefix) = self.get_bucket_and_prefix(container);
+        let bucket = self.default_bucket.as_str();
 
         let request = self
             .client
             .get_object()
             .bucket(bucket)
-            .key(self.key(prefix, key))
+            .key(self.key(container, key))
             .send()
             .await;
 
@@ -203,16 +158,16 @@ impl RemoteCacheStorageBackend for S3CacheBackend {
 
     async fn exists(
         &self,
-        container: Option<&str>,
+        container: &Container,
         key: &str,
     ) -> Result<bool, Error> {
-        let (bucket, prefix) = self.get_bucket_and_prefix(container);
+        let bucket = self.default_bucket.as_str();
 
         let head = self
             .client
             .head_object()
             .bucket(bucket)
-            .key(self.key(prefix, key))
+            .key(self.key(container, key))
             .send()
             .await;
 
@@ -232,16 +187,16 @@ impl RemoteCacheStorageBackend for S3CacheBackend {
 
     async fn get_stream(
         &self,
-        container: Option<&str>,
+        container: &Container,
         key: &str,
     ) -> Result<Option<ReadStream>, Error> {
-        let (bucket, prefix) = self.get_bucket_and_prefix(container);
+        let bucket = self.default_bucket.as_str();
 
         let request = self
             .client
             .get_object()
             .bucket(bucket)
-            .key(self.key(prefix, key))
+            .key(self.key(container, key))
             .send()
             .await;
 
@@ -268,15 +223,15 @@ impl RemoteCacheStorageBackend for S3CacheBackend {
 
     async fn list(
         &self,
-        container: Option<&str>,
+        container: &Container,
     ) -> Result<Vec<ListItem>, Error> {
-        let (bucket, prefix) = self.get_bucket_and_prefix(container);
+        let bucket = self.default_bucket.as_str();
 
         let list = self
             .client
             .list_objects()
             .bucket(bucket)
-            .prefix(prefix.unwrap_or(""))
+            .prefix(container.prefix().as_str())
             .send()
             .await
             .map_err(Error::custom)?;
@@ -294,17 +249,17 @@ impl RemoteCacheStorageBackend for S3CacheBackend {
 
     async fn paged_list(
         &self,
-        container: Option<&str>,
+        container: &Container,
         query: PageOptions,
     ) -> Result<Vec<ListItem>, Error> {
-        let (bucket, prefix) = self.get_bucket_and_prefix(container);
+        let bucket = self.default_bucket.as_str();
 
         let list = self
             .client
             .list_objects_v2()
             .max_keys(query.per_page.unwrap_or(100) as i32)
             .bucket(bucket)
-            .prefix(prefix.unwrap_or(""))
+            .prefix(container.prefix().as_str())
             .send()
             .await
             .map_err(Error::custom)?;
@@ -322,17 +277,17 @@ impl RemoteCacheStorageBackend for S3CacheBackend {
 
     async fn save(
         &self,
-        container: Option<&str>,
+        container: &Container,
         key: &str,
         value: Bytes,
     ) -> Result<(), Error> {
-        let (bucket, prefix) = self.get_bucket_and_prefix(container);
+        let bucket = self.default_bucket.as_str();
         let body = ByteStream::from(value);
 
         self.client
             .put_object()
             .bucket(bucket)
-            .key(self.key(prefix, key))
+            .key(self.key(container, key))
             .body(body)
             .send()
             .await
@@ -343,11 +298,11 @@ impl RemoteCacheStorageBackend for S3CacheBackend {
 
     async fn save_stream(
         &self,
-        container: Option<&str>,
+        container: &Container,
         key: &str,
         mut value: BoxStream<Bytes>,
     ) -> Result<(), Error> {
-        let (bucket, prefix) = self.get_bucket_and_prefix(container);
+        let bucket = self.default_bucket.as_str();
 
         let tmp = tempfile::NamedTempFile::new().map_err(Error::custom)?;
 
@@ -364,7 +319,7 @@ impl RemoteCacheStorageBackend for S3CacheBackend {
         self.client
             .put_object()
             .bucket(bucket)
-            .key(self.key(prefix, key))
+            .key(self.key(container, key))
             .body(body)
             .send()
             .await
@@ -375,15 +330,15 @@ impl RemoteCacheStorageBackend for S3CacheBackend {
 
     async fn delete(
         &self,
-        container: Option<&str>,
+        container: &Container,
         key: &str,
     ) -> Result<(), Error> {
-        let (bucket, prefix) = self.get_bucket_and_prefix(container);
+        let bucket = self.default_bucket.as_str();
 
         self.client
             .delete_object()
             .bucket(bucket)
-            .key(self.key(prefix, key))
+            .key(self.key(container, key))
             .key(key)
             .send()
             .await
@@ -394,7 +349,7 @@ impl RemoteCacheStorageBackend for S3CacheBackend {
 
     async fn size(
         &self,
-        container: Option<&str>,
+        container: &Container,
         key: &str,
     ) -> Result<Option<ByteSize>, Error> {
         let head = self.head(container, key).await;

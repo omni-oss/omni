@@ -9,16 +9,14 @@ use derive_new::new;
 use futures::StreamExt as _;
 use maps::{Map, UnorderedMap};
 use omni_remote_cache_storage_core::{
-    BoxStream, ListItem, PageOptions, ReadStream, RemoteCacheStorageBackend,
-    error::Error,
+    BoxStream, Container, ListItem, PageOptions, ReadStream,
+    RemoteCacheStorageBackend, error::Error,
 };
 
 #[derive(Debug, new)]
 pub struct InMemoryBackend {
     #[new(default)]
     containers: Mutex<UnorderedMap<String, Map<String, Vec<u8>>>>,
-    #[new(into)]
-    default_container: String,
 }
 
 impl InMemoryBackend {
@@ -29,24 +27,16 @@ impl InMemoryBackend {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
     }
-
-    fn container<'s>(&'s self, container: Option<&'s str>) -> &'s str {
-        container.unwrap_or(&self.default_container)
-    }
 }
 
 #[async_trait]
 impl RemoteCacheStorageBackend for InMemoryBackend {
-    fn default_container(&self) -> &str {
-        &self.default_container
-    }
-
     async fn get(
         &self,
-        container: Option<&str>,
+        container: &Container,
         key: &str,
     ) -> Result<Option<Bytes>, Error> {
-        let container = self.container(container);
+        let container = container.as_str();
 
         Ok(self
             .lock()
@@ -57,10 +47,10 @@ impl RemoteCacheStorageBackend for InMemoryBackend {
 
     async fn exists(
         &self,
-        container: Option<&str>,
+        container: &Container,
         key: &str,
     ) -> Result<bool, Error> {
-        let container = self.container(container);
+        let container = container.as_str();
 
         Ok(self
             .lock()
@@ -71,10 +61,10 @@ impl RemoteCacheStorageBackend for InMemoryBackend {
 
     async fn get_stream(
         &self,
-        container: Option<&str>,
+        container: &Container,
         key: &str,
     ) -> Result<Option<ReadStream>, Error> {
-        let container = self.container(container);
+        let container = container.as_str();
         let result =
             self.lock()
                 .get(container)
@@ -90,20 +80,16 @@ impl RemoteCacheStorageBackend for InMemoryBackend {
 
     async fn list(
         &self,
-        container: Option<&str>,
+        container: &Container,
     ) -> Result<Vec<ListItem>, Error> {
-        let container = self.container(container);
         let len = self
             .lock()
-            .get(container)
+            .get(container.as_str())
             .map(|m| m.len())
             .unwrap_or_default();
 
         let paged_result = self
-            .paged_list(
-                Some(container),
-                PageOptions::new(None, Some(len as u32)),
-            )
+            .paged_list(container, PageOptions::new(None, Some(len as u32)))
             .await?;
 
         Ok(paged_result)
@@ -111,10 +97,10 @@ impl RemoteCacheStorageBackend for InMemoryBackend {
 
     async fn paged_list(
         &self,
-        container: Option<&str>,
+        container: &Container,
         query: PageOptions,
     ) -> Result<Vec<ListItem>, Error> {
-        let container = self.container(container);
+        let container = container.as_str();
         let per_page = query.per_page.unwrap_or(100);
         let items = self
             .lock()
@@ -147,11 +133,11 @@ impl RemoteCacheStorageBackend for InMemoryBackend {
 
     async fn save(
         &self,
-        container: Option<&str>,
+        container: &Container,
         key: &str,
         value: Bytes,
     ) -> Result<(), Error> {
-        let container = self.container(container);
+        let container = container.as_str();
         self.lock()
             .entry(container.to_string())
             .or_default()
@@ -161,11 +147,11 @@ impl RemoteCacheStorageBackend for InMemoryBackend {
 
     async fn save_stream(
         &self,
-        container: Option<&str>,
+        container: &Container,
         key: &str,
         mut value: BoxStream<Bytes>,
     ) -> Result<(), Error> {
-        let container = self.container(container);
+        let container = container.as_str();
         let mut combined = BytesMut::new();
 
         while let Some(chunk) = value.next().await {
@@ -182,10 +168,10 @@ impl RemoteCacheStorageBackend for InMemoryBackend {
 
     async fn delete(
         &self,
-        container: Option<&str>,
+        container: &Container,
         key: &str,
     ) -> Result<(), Error> {
-        let container = self.container(container);
+        let container = container.as_str();
 
         self.lock()
             .get_mut(container)
@@ -196,10 +182,10 @@ impl RemoteCacheStorageBackend for InMemoryBackend {
 
     async fn size(
         &self,
-        container: Option<&str>,
+        container: &Container,
         key: &str,
     ) -> Result<Option<ByteSize>, Error> {
-        let container = self.container(container);
+        let container = container.as_str();
 
         Ok(self
             .lock()
@@ -213,7 +199,5 @@ impl RemoteCacheStorageBackend for InMemoryBackend {
 mod tests {
     use omni_remote_cache_storage_core::decl_remote_cache_storage_backend_tests;
 
-    decl_remote_cache_storage_backend_tests!(super::InMemoryBackend::new(
-        "default".to_string()
-    ));
+    decl_remote_cache_storage_backend_tests!(super::InMemoryBackend::new());
 }

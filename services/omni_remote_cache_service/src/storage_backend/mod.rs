@@ -4,7 +4,8 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use derive_new::new;
 use omni_remote_cache_storage_core::{
-    BoxStream, ListItem, PageOptions, ReadStream, RemoteCacheStorageBackend,
+    BoxStream, Container, ListItem, PageOptions, ReadStream,
+    RemoteCacheStorageBackend,
     decorators::LruCached,
     error::{self, Error},
 };
@@ -46,10 +47,7 @@ impl StorageBackend {
                         .clone()
                         .expect("local disk path is required");
                     StorageBackend::LruCachedLocalDisk(LruCached::new(
-                        LocalDiskCacheBackend::new(
-                            local_disk.root_dir,
-                            "default",
-                        ),
+                        LocalDiskCacheBackend::new(local_disk.root_dir),
                         NonZeroUsize::new(lru_cache_cap).unwrap(),
                     ))
                 }
@@ -78,11 +76,10 @@ impl StorageBackend {
                         .expect("local disk path is required");
                     StorageBackend::LocalDisk(LocalDiskCacheBackend::new(
                         local_disk.root_dir,
-                        local_disk.default_subdir,
                     ))
                 }
                 BackendType::InMemory => {
-                    StorageBackend::InMemory(InMemoryBackend::new("default"))
+                    StorageBackend::InMemory(InMemoryBackend::new())
                 }
             }
         }
@@ -91,21 +88,9 @@ impl StorageBackend {
 
 #[async_trait]
 impl RemoteCacheStorageBackend for StorageBackend {
-    fn default_container(&self) -> &str {
-        match self {
-            StorageBackend::LruCachedLocalDisk(inner) => {
-                inner.default_container()
-            }
-            StorageBackend::LocalDisk(inner) => inner.default_container(),
-            StorageBackend::LruCachedS3(inner) => inner.default_container(),
-            StorageBackend::S3(inner) => inner.default_container(),
-            StorageBackend::InMemory(inner) => inner.default_container(),
-        }
-    }
-
     async fn get(
         &self,
-        container: Option<&str>,
+        container: &Container,
         key: &str,
     ) -> Result<Option<Bytes>, error::Error> {
         match self {
@@ -123,7 +108,7 @@ impl RemoteCacheStorageBackend for StorageBackend {
 
     async fn exists(
         &self,
-        container: Option<&str>,
+        container: &Container,
         key: &str,
     ) -> Result<bool, error::Error> {
         match self {
@@ -145,7 +130,7 @@ impl RemoteCacheStorageBackend for StorageBackend {
 
     async fn get_stream(
         &self,
-        container: Option<&str>,
+        container: &Container,
         key: &str,
     ) -> Result<Option<ReadStream>, Error> {
         match self {
@@ -167,7 +152,7 @@ impl RemoteCacheStorageBackend for StorageBackend {
 
     async fn list(
         &self,
-        container: Option<&str>,
+        container: &Container,
     ) -> Result<Vec<ListItem>, error::Error> {
         match self {
             StorageBackend::LruCachedLocalDisk(inner) => {
@@ -182,7 +167,7 @@ impl RemoteCacheStorageBackend for StorageBackend {
 
     async fn paged_list(
         &self,
-        container: Option<&str>,
+        container: &Container,
         query: PageOptions,
     ) -> Result<Vec<ListItem>, Error> {
         match self {
@@ -206,7 +191,7 @@ impl RemoteCacheStorageBackend for StorageBackend {
 
     async fn save(
         &self,
-        container: Option<&str>,
+        container: &Container,
         key: &str,
         value: Bytes,
     ) -> Result<(), error::Error> {
@@ -231,7 +216,7 @@ impl RemoteCacheStorageBackend for StorageBackend {
 
     async fn save_stream(
         &self,
-        container: Option<&str>,
+        container: &Container,
         key: &str,
         value: BoxStream<Bytes>,
     ) -> Result<(), Error> {
@@ -256,7 +241,7 @@ impl RemoteCacheStorageBackend for StorageBackend {
 
     async fn delete(
         &self,
-        container: Option<&str>,
+        container: &Container,
         key: &str,
     ) -> Result<(), error::Error> {
         match self {
@@ -278,7 +263,7 @@ impl RemoteCacheStorageBackend for StorageBackend {
 
     async fn size(
         &self,
-        container: Option<&str>,
+        container: &Container,
         key: &str,
     ) -> Result<Option<bytesize::ByteSize>, error::Error> {
         match self {

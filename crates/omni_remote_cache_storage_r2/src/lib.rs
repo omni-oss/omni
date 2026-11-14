@@ -11,8 +11,8 @@ use bytes::{Bytes, BytesMut};
 use bytesize::ByteSize;
 use futures::{Stream, StreamExt as _};
 use omni_remote_cache_storage_core::{
-    BoxStream, ListItem, PageOptions, ReadStream, RemoteCacheStorageBackend,
-    error::Error,
+    BoxStream, Container, ListItem, PageOptions, ReadStream,
+    RemoteCacheStorageBackend, error::Error,
 };
 use send_wrapper::SendWrapper;
 use worker::{Bucket, MultipartUpload, UploadedPart, send::SendFuture};
@@ -32,22 +32,20 @@ const MAX_LIST_LIMIT: u32 = 1000;
 /// satisfy the `Send + Sync` bounds required by axum state.
 pub struct R2Backend {
     bucket: SendWrapper<Bucket>,
-    default_container: String,
 }
 
 impl R2Backend {
-    pub fn new(bucket: Bucket, default_container: impl Into<String>) -> Self {
+    pub fn new(bucket: Bucket) -> Self {
         Self {
             bucket: SendWrapper::new(bucket),
-            default_container: default_container.into(),
         }
     }
 
-    fn prefix(&self, container: Option<&str>) -> String {
-        format!("{}/", container.unwrap_or(&self.default_container))
+    fn prefix(&self, container: &Container) -> String {
+        container.prefix().as_str().to_string()
     }
 
-    fn object_key(&self, container: Option<&str>, key: &str) -> String {
+    fn object_key(&self, container: &Container, key: &str) -> String {
         format!("{}{}", self.prefix(container), key)
     }
 }
@@ -181,13 +179,9 @@ async fn list_page(
 
 #[async_trait]
 impl RemoteCacheStorageBackend for R2Backend {
-    fn default_container(&self) -> &str {
-        &self.default_container
-    }
-
     async fn get(
         &self,
-        container: Option<&str>,
+        container: &Container,
         key: &str,
     ) -> Result<Option<Bytes>, Error> {
         let key = self.object_key(container, key);
@@ -208,7 +202,7 @@ impl RemoteCacheStorageBackend for R2Backend {
 
     async fn exists(
         &self,
-        container: Option<&str>,
+        container: &Container,
         key: &str,
     ) -> Result<bool, Error> {
         let key = self.object_key(container, key);
@@ -220,7 +214,7 @@ impl RemoteCacheStorageBackend for R2Backend {
 
     async fn get_stream(
         &self,
-        container: Option<&str>,
+        container: &Container,
         key: &str,
     ) -> Result<Option<ReadStream>, Error> {
         let key = self.object_key(container, key);
@@ -247,7 +241,7 @@ impl RemoteCacheStorageBackend for R2Backend {
 
     async fn list(
         &self,
-        container: Option<&str>,
+        container: &Container,
     ) -> Result<Vec<ListItem>, Error> {
         let prefix = self.prefix(container);
         SendFuture::new(async {
@@ -276,7 +270,7 @@ impl RemoteCacheStorageBackend for R2Backend {
 
     async fn paged_list(
         &self,
-        container: Option<&str>,
+        container: &Container,
         page_options: PageOptions,
     ) -> Result<Vec<ListItem>, Error> {
         let prefix = self.prefix(container);
@@ -299,7 +293,7 @@ impl RemoteCacheStorageBackend for R2Backend {
 
     async fn save(
         &self,
-        container: Option<&str>,
+        container: &Container,
         key: &str,
         value: Bytes,
     ) -> Result<(), Error> {
@@ -318,7 +312,7 @@ impl RemoteCacheStorageBackend for R2Backend {
 
     async fn save_stream(
         &self,
-        container: Option<&str>,
+        container: &Container,
         key: &str,
         value: BoxStream<Bytes>,
     ) -> Result<(), Error> {
@@ -328,7 +322,7 @@ impl RemoteCacheStorageBackend for R2Backend {
 
     async fn delete(
         &self,
-        container: Option<&str>,
+        container: &Container,
         key: &str,
     ) -> Result<(), Error> {
         let key = self.object_key(container, key);
@@ -342,7 +336,7 @@ impl RemoteCacheStorageBackend for R2Backend {
 
     async fn size(
         &self,
-        container: Option<&str>,
+        container: &Container,
         key: &str,
     ) -> Result<Option<ByteSize>, Error> {
         let key = self.object_key(container, key);
