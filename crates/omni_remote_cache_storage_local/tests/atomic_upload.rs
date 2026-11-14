@@ -6,6 +6,23 @@ use omni_remote_cache_storage_core::{Container, RemoteCacheStorageBackend};
 use omni_remote_cache_storage_local::LocalDiskCacheBackend;
 
 #[tokio::test]
+async fn publication_creates_and_syncs_a_missing_backend_root() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("new-parent").join("cache-root");
+    let backend = LocalDiskCacheBackend::new(&root);
+    let container = Container::parse("ns/ci").unwrap();
+    backend
+        .save(&container, "d", Bytes::from("complete"))
+        .await
+        .unwrap();
+    assert_eq!(
+        backend.get(&container, "d").await.unwrap(),
+        Some(Bytes::from("complete"))
+    );
+    assert!(root.join("ns/ci/d").is_file());
+}
+
+#[tokio::test]
 async fn replacement_publishes_only_complete_bytes_and_preserves_open_readers()
 {
     let root = tempfile::tempdir().unwrap();

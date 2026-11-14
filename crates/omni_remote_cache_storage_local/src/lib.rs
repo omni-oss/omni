@@ -23,8 +23,13 @@ pub struct LocalDiskCacheBackend {
 
 impl LocalDiskCacheBackend {
     fn path(&self, key: &str, container: &Container) -> Result<PathBuf, Error> {
-        if key.is_empty()
-            || key.contains(['/', '\\'])
+        let mut parts = std::path::Path::new(key).components();
+        let single_normal = matches!(
+            (parts.next(), parts.next()),
+            (Some(std::path::Component::Normal(_)), None)
+        );
+        if !single_normal
+            || key.contains(['/', '\\', ':'])
             || key == "."
             || key == ".."
             || key.chars().any(|c| c.is_control())
@@ -36,6 +41,78 @@ impl LocalDiskCacheBackend {
 
     fn dir(&self, container: &Container) -> PathBuf {
         self.root.join(container.as_str())
+    }
+
+    async fn create_container_directories(
+        &self,
+        destination: &std::path::Path,
+    ) -> Result<(), Error> {
+        let absolute =
+            std::path::absolute(destination).map_err(Error::custom)?;
+        let mut missing = Vec::new();
+        for dir in absolute
+            .parent()
+            .expect("artifact has a parent")
+            .ancestors()
+        {
+            if tokio::fs::try_exists(dir).await.map_err(Error::custom)? {
+                break;
+            }
+            missing.push(dir.to_path_buf());
+        }
+        for dir in missing.into_iter().rev() {
+            match tokio::fs::create_dir(&dir).await {
+                Ok(()) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+                Err(e) => return Err(Error::custom(e)),
+            }
+            // Also sync when a racing creator won: it may not have synced yet.
+            Self::sync_directory(
+                dir.parent().expect("created directory has a parent"),
+            )
+            .await?;
+        }
+        Ok(())
+    }
+
+    async fn sync_publication_directories(
+        &self,
+        destination: &std::path::Path,
+    ) -> Result<(), Error> {
+        // Sync through the backend root (also the staging parent), never
+        // reopening unrelated ancestors on ordinary uploads.
+        let root = std::path::absolute(&self.root).map_err(Error::custom)?;
+        let absolute =
+            std::path::absolute(destination).map_err(Error::custom)?;
+        for dir in absolute
+            .parent()
+            .expect("artifact has a parent")
+            .ancestors()
+        {
+            Self::sync_directory(dir).await?;
+            if dir == root {
+                break;
+            }
+        }
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    async fn sync_directory(dir: &std::path::Path) -> Result<(), Error> {
+        File::open(dir)
+            .await
+            .map_err(Error::custom)?
+            .sync_all()
+            .await
+            .map_err(Error::custom)
+    }
+
+    #[cfg(not(unix))]
+    async fn sync_directory(_dir: &std::path::Path) -> Result<(), Error> {
+        // Portable Rust has no directory-fsync equivalent on Windows. The
+        // file is synced before atomic rename; crash-durable names are not
+        // promised on this platform.
+        Ok(())
     }
 }
 
@@ -177,9 +254,7 @@ impl RemoteCacheStorageBackend for LocalDiskCacheBackend {
     ) -> Result<(), Error> {
         let path = self.path(key, container)?;
 
-        tokio::fs::create_dir_all(path.parent().expect("should have parent"))
-            .await
-            .map_err(Error::custom)?;
+        self.create_container_directories(&path).await?;
 
         // Stage outside the container so list/get cannot observe a partial
         // upload. TempPath removes abandoned files on error or cancellation.
@@ -201,6 +276,7 @@ impl RemoteCacheStorageBackend for LocalDiskCacheBackend {
         // The old name is now free. Do not let TempPath unlink another
         // upload if that name is reused before this guard is dropped.
         staging.disable_cleanup(true);
+        self.sync_publication_directories(&path).await?;
         Ok(())
     }
 
@@ -258,7 +334,7 @@ mod tests {
         let dir = temp_dir();
         let b = LocalDiskCacheBackend::new(dir.path());
         let c = Container::parse("ns/ci").unwrap();
-        for key in ["../x", "/abs", "a/b", "..", ""] {
+        for key in ["../x", "/abs", "a/b", "..", "", "C:escape", "d:stream"] {
             assert!(b.save(&c, key, Bytes::from("x")).await.is_err(), "{key}");
             assert!(b.get(&c, key).await.is_err(), "{key}");
         }

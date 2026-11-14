@@ -52,6 +52,10 @@ async fn backend(
         .await
         .expect("SDK did not issue the expected requests")
     });
+    (backend_at(endpoint), requests)
+}
+
+fn backend_at(endpoint: String) -> S3CacheBackend {
     let config = aws_sdk_s3::Config::builder()
         .behavior_version(BehaviorVersion::latest())
         .region(Region::new("us-east-1"))
@@ -61,10 +65,7 @@ async fn backend(
         .endpoint_url(endpoint)
         .force_path_style(true)
         .build();
-    (
-        S3CacheBackend::from_aws_s3_sdk_config(config, "cache"),
-        requests,
-    )
+    S3CacheBackend::from_aws_s3_sdk_config(config, "cache")
 }
 
 const LIST: &str = r#"<ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Name>cache</Name><Prefix>ns/ci/</Prefix><IsTruncated>false</IsTruncated><Contents><Key>ns/ci/</Key><Size>0</Size></Contents><Contents><Key>ns/ci/d</Key><Size>7</Size></Contents></ListBucketResult>"#;
@@ -153,7 +154,34 @@ async fn streamed_upload_flushes_the_staged_file_before_put() {
 
 #[tokio::test]
 async fn failed_upload_stream_never_reaches_s3() {
-    let (backend, requests) = backend(Vec::new()).await;
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let backend =
+        backend_at(format!("http://{}", listener.local_addr().unwrap()));
+    let (stop, mut stopped) = tokio::sync::oneshot::channel();
+    let requests = tokio::spawn(async move {
+        let mut observed = Vec::new();
+        loop {
+            tokio::select! {
+                // Drain queued connections before honoring stop, so an
+                // attempted request cannot hide behind the shutdown signal.
+                biased;
+                accepted = listener.accept() => {
+                    let (mut socket, _) = accepted.unwrap();
+                    let mut header = Vec::new();
+                    timeout(Duration::from_secs(5), async {
+                        while !header.ends_with(b"\r\n\r\n") {
+                            header.push(socket.read_u8().await.unwrap());
+                            assert!(header.len() < 32 * 1024);
+                        }
+                        socket.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").await.unwrap();
+                    }).await.unwrap();
+                    observed.push(header);
+                }
+                _ = &mut stopped => break,
+            }
+        }
+        observed
+    });
     let container = Container::parse("ns/ci").unwrap();
     let stream = tokio_stream::iter([
         Ok(Bytes::from_static(b"partial")),
@@ -166,5 +194,6 @@ async fn failed_upload_stream_never_reaches_s3() {
         .await
         .unwrap_err();
     assert!(error.to_string().contains("interrupted upload"));
+    stop.send(()).unwrap();
     assert!(requests.await.unwrap().is_empty());
 }

@@ -1,6 +1,7 @@
 use std::{
+    collections::HashMap,
     num::NonZeroUsize,
-    sync::{Arc, Mutex, MutexGuard, PoisonError},
+    sync::{Arc, Mutex, MutexGuard, PoisonError, Weak},
 };
 
 use async_trait::async_trait;
@@ -16,12 +17,16 @@ use crate::{
 const DEFAULT_MAX_CACHEABLE_SIZE: ByteSize = ByteSize::mib(8);
 
 type Cache = lru::LruCache<(String, String), Bytes>;
+type MutationLocks = HashMap<(String, String), Weak<futures::lock::Mutex<()>>>;
 
 #[derive(Debug)]
 pub struct LruCached<T: RemoteCacheStorageBackend> {
     inner: T,
     cached: Mutex<Cache>,
     max_cacheable_size: ByteSize,
+    // Weak entries track only live same-key mutations. Never hold this map
+    // or the cache mutex across an await.
+    mutations: Mutex<MutationLocks>,
 }
 
 impl<T: RemoteCacheStorageBackend> LruCached<T> {
@@ -30,6 +35,7 @@ impl<T: RemoteCacheStorageBackend> LruCached<T> {
             inner,
             cached: Mutex::new(lru::LruCache::new(capacity)),
             max_cacheable_size: DEFAULT_MAX_CACHEABLE_SIZE,
+            mutations: Mutex::new(HashMap::new()),
         }
     }
 
@@ -48,6 +54,27 @@ impl<T: RemoteCacheStorageBackend> LruCached<T> {
 
     fn cache_key(&self, container: &Container, key: &str) -> (String, String) {
         (container.as_str().to_string(), key.to_string())
+    }
+
+    fn mutation_lock(
+        &self,
+        container: &Container,
+        key: &str,
+    ) -> Arc<futures::lock::Mutex<()>> {
+        let mut mutations = self
+            .mutations
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        // Reclaim completed keys instead of retaining a lock per lifetime key.
+        mutations.retain(|_, lock| lock.strong_count() > 0);
+        let entry =
+            mutations.entry(self.cache_key(container, key)).or_default();
+        if let Some(lock) = entry.upgrade() {
+            return lock;
+        }
+        let lock = Arc::new(futures::lock::Mutex::new(()));
+        *entry = Arc::downgrade(&lock);
+        lock
     }
 }
 
@@ -117,6 +144,9 @@ where
         key: &str,
         value: Bytes,
     ) -> Result<(), Error> {
+        let mutation = self.mutation_lock(container, key);
+        let _mutation = mutation.lock().await;
+        self.cache().pop(&self.cache_key(container, key));
         self.inner.save(container, key, value).await?;
 
         // Invalidate rather than warm: a concurrent delete may have removed
@@ -132,6 +162,9 @@ where
         key: &str,
         value: WriteStream,
     ) -> Result<(), Error> {
+        let mutation = self.mutation_lock(container, key);
+        let _mutation = mutation.lock().await;
+        self.cache().pop(&self.cache_key(container, key));
         // `None` means the upload exceeded the cacheable size and the
         // captured bytes were dropped.
         let capture = Arc::new(Mutex::new(Some(BytesMut::new())));
@@ -187,6 +220,8 @@ where
         container: &Container,
         key: &str,
     ) -> Result<(), Error> {
+        let mutation = self.mutation_lock(container, key);
+        let _mutation = mutation.lock().await;
         self.cache().pop(&self.cache_key(container, key));
 
         self.inner.delete(container, key).await

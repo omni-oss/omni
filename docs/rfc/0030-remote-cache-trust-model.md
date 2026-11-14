@@ -1396,14 +1396,15 @@ executions stay local, remote errors are warnings, the remote replacement bypass
 is removed, and the client accepts `409` without retrying. Review follow-ups check
 the persisted exit code as well as the caller's outcome: a losing successful
 publisher must not upload a failed first-publication winner. The upload `HEAD`
-pre-check is temporarily retained until atomic server publication lands in the
-same batch as its removal; otherwise repeated uploads truncate published local
-remote artifacts while readers use them. Until then, a write-only key denied by
+pre-check is temporarily retained until conditional (create-only) writes land in
+the same batch as its removal. Atomic replacement prevents partial reads, but
+successful uploads can still overwrite existing entries. Until then, a write-only key denied by
 `HEAD` skips publication with a warning. Persisted-outcome read/decode failures
 also warn and skip publication rather than failing the locally stored batch.
 At most eight archives/uploads run concurrently. Each worker builds its full
 archive in memory before PUT, so up to eight uncapped archives may be resident
-at once until size caps land in slice 5. Upload requests have a 60-second
+at once until size caps land in slice 5. Upload requests and their `HEAD`
+existence pre-check have a 60-second
 total timeout (including body transfer); slow connections may exhaust it, in which
 case the upload warns and the local result remains usable. Revisit timeout
 configuration alongside size caps in slice 5. This request timeout does not cover
@@ -1431,9 +1432,13 @@ Atomic publication operational notes:
   cancellation clean them up, but SIGKILL or a machine crash can leave orphan
   staging files. Root-level scans must exclude them; cleanup after a crash is
   currently manual, pending the lifecycle/maintenance work.
-- File data is synced before rename. Parent-directory fsync is not implemented,
-  so rename durability across a machine crash is not guaranteed. Atomicity is not
-  a promise that a just-written entry survives power loss.
+- File data is synced before rename. On Unix, publication then syncs the
+  destination directory and its ancestors through the backend root (also the
+  staging parent). Newly created directories have their own parents synced during
+  creation, including directories above the backend root if it did not exist.
+  Sync failures propagate even if rename already made the artifact visible.
+  On non-Unix platforms, portable directory sync is unavailable, so file data is
+  synced but crash-durable directory names are not promised.
 - Open-reader replacement is tested without a platform skip. Windows and network
   filesystem behavior still need CI/deployment validation; a failed rename reports
   an error without deliberately truncating the old object.
@@ -1483,10 +1488,15 @@ Slice 0 deviations and remaining checks:
 - Constructors currently parse validated paths rather than restricting construction
   to resource-specific core builders; namespace-specific builders and scan operations
   remain to be wired in later slices.
-- Byte writes invalidate the LRU only after backend acceptance rather than warming
-  it, avoiding publication of rejected or concurrently deleted values. Streamed
-  writes still have a pre-existing race with deletes; address cache
-  mutation coordination with the storage concurrency work in slice 1.
+- Byte writes invalidate the LRU rather than warming it. Per-key mutation locks
+  serialize each key's byte writes, streamed writes and deletes through
+  backend publication and LRU updates, so an obsolete stream cannot repopulate
+  after a later mutation. Successful uncontested streams remain cached. Weak lock
+  entries are reclaimed on subsequent mutations, rather than retaining every
+  historical key. No cache mutex is held across I/O; unrelated keys do not wait
+  for one another's streams. A stalled stream still blocks mutations of that same
+  key until it completes or is cancelled. Coordination is within one LRU instance,
+  not across separate server processes sharing storage.
 - S3 listing pagination remains incomplete: `list` stops at one service page and
   `paged_list` ignores `after_key`. Include pagination coverage in slice 1.
 - Real S3/R2 checks and the breaking-change release note remain outstanding.
