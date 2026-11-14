@@ -1,6 +1,7 @@
 use std::{future::Future, pin::Pin, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
+use hmac::KeyInit as _;
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumString, IntoStaticStr};
 

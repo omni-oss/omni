@@ -84,7 +84,7 @@ globset = { version = "^0.4" }
 shadow-rs = { version = "^2.0.0", default-features = false }
 embed-manifest = { version = "^1.5" }
 schemars = { version = "^1.2.3", features = ["indexmap2", "either1", "url2"] }
-noyalib = { version = "^0.0.58" }
+noyalib = { version = "^0.0.60" }
 ignore = { version = "^0.4.34" }
 regex = { version = "^1.13.1" }
 lazy-regex = { version = "^3.6.2" }
@@ -97,7 +97,7 @@ toml = { version = "^1.2.1" }
 uuid = { version = "^1.29.2", features = ["v4", "v7", "serde"] }
 url = { version = "^2.5.8", features = ["serde"] }
 parking_lot = { version = "^0.13.0" }
-bincode-next = { version = "^3.1.1", features = ["serde"] }
+bincode-next = { version = "^3.1.2", features = ["serde"] }
 dir_walker = { path = "./crates/dir_walker" }
 which = { version = "^8.0.6" }
 tera = { version = "2.4.0" }
@@ -120,7 +120,7 @@ mockall = { version = "^0.15.0" }
 ntest = { version = "^0.10.0" }
 bytes = { version = "^1.12.1" }
 byteorder = { version = "^1.5.0" }
-rust-embed = { version = "8.13.0", features = [
+rust-embed = { version = "8.14.0", features = [
     "compression",
     "include-exclude",
     "deterministic-timestamps",
@@ -131,7 +131,7 @@ indexmap = { version = "^2.14.2", features = ["serde", "rayon"] }
 dashmap = { version = "^6.2.1", features = ["serde", "rayon"] }
 # Must match the major version used by `ahash`: it is only depended on to enable
 # the `wasm_js` feature on ahash's getrandom for wasm32-unknown-unknown builds.
-getrandom = { version = "^0.3.4" }
+getrandom = { version = "^0.4.3" }
 ahash = { version = "^0.8.12" }
 maps = { path = "./crates/maps" }
 sets = { path = "./crates/sets" }
@@ -140,7 +140,7 @@ dhat = { version = "^0.3.3" }
 enum-map = { version = "^3.1.0", features = ["serde", "bytemuck"] }
 portable-pty = { version = "^0.9.0" }
 terminal_size = { version = "^0.4.4" }
-rmcp = { version = "^3.9.0", features = ["server", "macros", "transport-io"] }
+rmcp = { version = "^3.10.0", features = ["server", "macros", "transport-io"] }
 rs_merkle = { version = "^1.5.0" }
 omni_cache = { path = "./crates/omni_cache" }
 omni_hasher = { path = "./crates/omni_hasher" }
@@ -156,7 +156,7 @@ omni_cli_core = { path = "./crates/omni_cli_core" }
 cel = { version = "^0.15.0", features = ["chrono", "json", "regex", "bytes"] }
 omni_test_utils = { path = "./crates/omni_test_utils" }
 omni_test_capabilities = { path = "./crates/omni_test_capabilities" }
-reflink-copy = { version = "^0.1.29" }
+reflink-copy = { version = "^0.1.32" }
 crossbeam-channel = { version = "^0.5.17" }
 shlex = { version = "^2.0.1" }
 path-clean = { version = "^1.0.1" }
@@ -211,7 +211,7 @@ omni_remote_cache_repository_query = { path = "crates/omni_remote_cache_reposito
 omni_remote_cache_storage_s3 = { path = "crates/omni_remote_cache_storage_s3" }
 omni_remote_cache_storage_local = { path = "crates/omni_remote_cache_storage_local" }
 omni_remote_cache_storage_memory = { path = "crates/omni_remote_cache_storage_memory" }
-worker = { version = "^0.8.7", default-features = false, features = [
+worker = { version = "^0.9.0", default-features = false, features = [
     "http",
     "axum",
 ] }
@@ -277,8 +277,8 @@ axum-extra = { version = "^0.12.6", default-features = false, features = [
     "error-response",
 ] }
 axum-test = { version = "^21.1.0", features = ["all"] }
-aws-config = { version = "^1.13.0" }
-aws-sdk-s3 = { version = "^1.157.0" }
+aws-config = { version = "^1.13.2" }
+aws-sdk-s3 = { version = "^1.159.0" }
 aws-credential-types = { version = "^1.3.1" }
 aws-types = { version = "^1.7.0" }
 lru = { version = "^0.19.0" }
@@ -346,12 +346,14 @@ rstest = { version = "^0.28.0" }
 rstest_reuse = { version = "^0.7.1" }
 fastrand = { version = "^2.5.0" }
 directories = { version = "^6.0.0" }
-target-lexicon = { version = "^0.13.5" }
+target-lexicon = { version = "^0.13.6" }
 # nom = { version = "^8.0.0" }
 enumset = { version = "^1.1.15", features = ["serde", "proc-macro-crate"] }
 indicatif = { version = "^0.18.6" }
 comfy-table = { version = "^8.0.1", features = ["custom_styling"] }
 normalize-line-endings = { version = "^0.3.0" }
+hmac = { version = "^0.13.0" }
+sha2 = { version = "^0.11.1" }
 
 [patch.crates-io]
 # Force all dependencies asking for any version of security-framework

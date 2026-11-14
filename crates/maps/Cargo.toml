@@ -15,8 +15,10 @@ ahash = { workspace = true }
 indexmap = { workspace = true }
 dashmap = { workspace = true, optional = true }
 
+# this is only to force ahash to run on wasm, deliberately scoped in this package
+# so that the rest of the workspace can still use the latest version of it
 [target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
-getrandom = { workspace = true, features = ["wasm_js"] }
+getrandom = { version = "=0.3.4", features = ["wasm_js"] }
 
 [lints]
 workspace = true

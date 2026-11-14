@@ -14,14 +14,14 @@ path = "src/lib.rs"
 async-trait = { workspace = true }
 base64 = { workspace = true }
 eyre = { workspace = true }
-hmac = { version = "^0.12.1" }
 omni_remote_cache_core = { workspace = true }
 schemars = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-sha2 = { version = "^0.10.9" }
 thiserror = { workspace = true }
 tracing = { workspace = true }
+hmac = { workspace = true }
+sha2 = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true }
