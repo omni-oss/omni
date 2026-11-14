@@ -40,8 +40,9 @@ export default defineConfig({
         "**/*.config.js",
         "./**/*.gen.*",
         "./**/*.generated.*",
-        // source_parity tests require byte-identical serde_json output.
-        "crates/omni_configurations/tests/snapshots/source_*_schema.json",
+        // Snapshot formatting is owned by the test runner or serializer.
+        "**/snapshots/**",
+        "**/__snapshots__/**",
         "./**/bin/**/*",
         "**/render/html/template.html",
         ".omni/**/*.*",
