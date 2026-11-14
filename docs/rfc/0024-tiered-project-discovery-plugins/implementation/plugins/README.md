@@ -12,40 +12,40 @@ cache-eligibility fixes (B01, B04, F05) come before everything here.
 
 ### Phase A: contract, configuration and composition (no runtime)
 
-| ID                                                  | Title                                                        | Groundwork gate                  | Size |
-| --------------------------------------------------- | ------------------------------------------------------------ | -------------------------------- | ---- |
-| [P01](P01-contract-and-adapter-specs.md)            | Close the specification gaps (contract, fixtures, adapters)  | none (can start now, in parallel) | L    |
-| [P02](P02-plugin-configuration-crate.md)            | `omni_plugin_configurations` and `plugins` workspace config  | R01                              | M    |
-| [P03](P03-plugin-contract-crate.md)                 | `omni_plugin` runtime-neutral contract crate                 | P01, P02, R02 (P03.2 later adds P04.2) | L |
-| [P04](P04-project-inference-controls-and-apply.md)  | Project `inference` controls, `apply`, `defaults`, restricted contributions | R04, R05, F03, F05, F07, P02 | XL |
-| [P05](P05-marker-indexing-and-discovery.md)         | Marker indexing, candidate grouping, virtual-root loading    | R07, F01, P02                    | L    |
+| ID                                                 | Title                                                                       | Groundwork gate                        | Size |
+| -------------------------------------------------- | --------------------------------------------------------------------------- | -------------------------------------- | ---- |
+| [P01](P01-contract-and-adapter-specs.md)           | Close the specification gaps (contract, fixtures, adapters)                 | none (can start now, in parallel)      | L    |
+| [P02](P02-plugin-configuration-crate.md)           | `omni_plugin_configurations` and `plugins` workspace config                 | R01                                    | M    |
+| [P03](P03-plugin-contract-crate.md)                | `omni_plugin` runtime-neutral contract crate                                | P01, P02, R02 (P03.2 later adds P04.2) | L    |
+| [P04](P04-project-inference-controls-and-apply.md) | Project `inference` controls, `apply`, `defaults`, restricted contributions | R04, R05, F03, F05, F07, P02           | XL   |
+| [P05](P05-marker-indexing-and-discovery.md)        | Marker indexing, candidate grouping, virtual-root loading                   | R07, F01, P02                          | L    |
 
 ### Phase B: host and infrastructure
 
-| ID                                                  | Title                                                        | Groundwork gate                  | Size |
-| --------------------------------------------------- | ------------------------------------------------------------ | -------------------------------- | ---- |
-| [P06](P06-plugin-host.md)                           | `omni_plugin_host`: scheduling, claims, transactions, budgets | P03.2, P05, F05.2 (cache fixes)  | XL   |
-| [P07](P07-inference-cache.md)                       | Inference cache (records, indexes, publication)              | R08, P06                         | L    |
-| [P08](P08-pass-integration-and-semantic-identity.md) | Full-pass integration into `Context` and execution identity | F06, F10, P04, P06, P07          | L    |
-| [P09](P09-plugin-sources-and-artifacts.md)          | Plugin source contributor, manifests, captured artifacts     | F08, F02, P02                    | L    |
+| ID                                                   | Title                                                         | Groundwork gate                 | Size |
+| ---------------------------------------------------- | ------------------------------------------------------------- | ------------------------------- | ---- |
+| [P06](P06-plugin-host.md)                            | `omni_plugin_host`: scheduling, claims, transactions, budgets | P03.2, P05, F05.2 (cache fixes) | XL   |
+| [P07](P07-inference-cache.md)                        | Inference cache (records, indexes, publication)               | R08, P06                        | L    |
+| [P08](P08-pass-integration-and-semantic-identity.md) | Full-pass integration into `Context` and execution identity   | F06, F10, P04, P06, P07         | L    |
+| [P09](P09-plugin-sources-and-artifacts.md)           | Plugin source contributor, manifests, captured artifacts      | F08, F02, P02                   | L    |
 
 ### Phase C: native pilots
 
-| ID                                                  | Title                                                        | Gate                             | Size |
-| --------------------------------------------------- | ------------------------------------------------------------ | -------------------------------- | ---- |
-| [P10](P10-native-javascript-adapter.md)             | `@omni/javascript` (npm, Yarn, pnpm, Bun)                    | P01 adapter spec, P06, P08       | XL   |
-| [P11](P11-native-rust-adapter.md)                   | `@omni/rust` (Cargo)                                         | P01 adapter spec, P06, P08       | L    |
-| [P12](P12-plugin-inspection-cli-mcp.md)             | Plugin inspection, notices and CLI/MCP surfaces              | P08, F09                         | M    |
+| ID                                      | Title                                           | Gate                       | Size |
+| --------------------------------------- | ----------------------------------------------- | -------------------------- | ---- |
+| [P10](P10-native-javascript-adapter.md) | `@omni/javascript` (npm, Yarn, pnpm, Bun)       | P01 adapter spec, P06, P08 | XL   |
+| [P11](P11-native-rust-adapter.md)       | `@omni/rust` (Cargo)                            | P01 adapter spec, P06, P08 | L    |
+| [P12](P12-plugin-inspection-cli-mcp.md) | Plugin inspection, notices and CLI/MCP surfaces | P08, F09                   | M    |
 
 ### Phase D: Wasm runtime, features, release
 
-| ID                                                  | Title                                                        | Gate                             | Size |
-| --------------------------------------------------- | ------------------------------------------------------------ | -------------------------------- | ---- |
-| [P13](P13-wasm-runtime.md)                          | WIT package and Wasmtime adapter                             | P06, P09, F10; native conformance green | XL |
-| [P14](P14-feature-flags-and-ci-matrix.md)           | `wasm-rt` / `plugin-wasm-rt` / `plugin-native-builtins` + CI | P02 (diagnostics), P13 (full)    | M    |
-| [P15](P15-conformance-and-benchmarks.md)            | Conformance suite, budgets and benchmarks                    | P10, P11, P13                    | L    |
-| [P16](P16-stabilization-and-compat.md)              | Versioning, migration tooling, SDK docs, 1.0 freeze          | P15                              | L    |
-| P17 (deferred)                                      | JavaScript plugin runtime                                    | not part of this RFC's v1        | n/a  |
+| ID                                        | Title                                                        | Gate                                    | Size |
+| ----------------------------------------- | ------------------------------------------------------------ | --------------------------------------- | ---- |
+| [P13](P13-wasm-runtime.md)                | WIT package and Wasmtime adapter                             | P06, P09, F10; native conformance green | XL   |
+| [P14](P14-feature-flags-and-ci-matrix.md) | `wasm-rt` / `plugin-wasm-rt` / `plugin-native-builtins` + CI | P02 (diagnostics), P13 (full)           | M    |
+| [P15](P15-conformance-and-benchmarks.md)  | Conformance suite, budgets and benchmarks                    | P10, P11, P13                           | L    |
+| [P16](P16-stabilization-and-compat.md)    | Versioning, migration tooling, SDK docs, 1.0 freeze          | P15                                     | L    |
+| P17 (deferred)                            | JavaScript plugin runtime                                    | not part of this RFC's v1               | n/a  |
 
 ## Waves
 

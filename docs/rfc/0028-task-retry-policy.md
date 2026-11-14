@@ -223,15 +223,15 @@ Example:
 
 ```yaml
 tasks:
-  fetch:
-    command: curl ...
-    retry:
-      max_retries: 5
-      strategy: exponential
-      base: 500ms
-      factor: 2
-      max_delay: 30s
-      jitter: full
+    fetch:
+        command: curl ...
+        retry:
+            max_retries: 5
+            strategy: exponential
+            base: 500ms
+            factor: 2
+            max_delay: 30s
+            jitter: full
 ```
 
 The flat `max_retries` and `retry_interval` keys of the task are removed. A config
@@ -243,12 +243,12 @@ but the tag has to be optional so that a layer can set only some fields. A
 prototype of `#[serde(flatten)] backoff: Option<Backoff>` swallowed every error
 inside the flattened enum and produced `None`:
 
-| Input | Result |
-| --- | --- |
-| `{"max":3,"strategy":"expontential"}` | `backoff: None`, no error |
-| `{"max":3,"strategy":"linear","step":"abc"}` | `backoff: None`, no error |
-| `{"max":3,"factor":3.0}` | `backoff: None`, `factor` ignored |
-| `{"max":3,"strategy":"fixed","factor":3.0}` | `Fixed`, `factor` ignored |
+| Input                                        | Result                            |
+| -------------------------------------------- | --------------------------------- |
+| `{"max":3,"strategy":"expontential"}`        | `backoff: None`, no error         |
+| `{"max":3,"strategy":"linear","step":"abc"}` | `backoff: None`, no error         |
+| `{"max":3,"factor":3.0}`                     | `backoff: None`, `factor` ignored |
+| `{"max":3,"strategy":"fixed","factor":3.0}`  | `Fixed`, `factor` ignored         |
 
 Making the result safe needs a manual `Deserialize` (a raw struct plus
 `TryFrom`), a hand-written schema, and a merge rule for the enum, which is three
@@ -351,18 +351,18 @@ mentions the new order.
 
 ### 4.6 Worked example (test fixture)
 
-| Input | Expected delays |
-| --- | --- |
-| `-r 4` (defaults) | 1s, 2s, 4s, 8s |
-| `-r 8` | 1s, 2s, 4s, 8s, 16s, 32s, 60s, 60s (`max_delay`) |
-| `-r 3,fixed,base=2s` | 2s, 2s, 2s |
-| `-r 3,linear,base=1s,step=2s` | 1s, 3s, 5s |
-| `-r 3,exponential,base=1s,jitter=full` | each in `[0, d]`, `d` the un-jittered delay |
-| config `retry: {max_retries: 5, jitter: full}` plus `-r 3` | `max_retries` 3, jitter full kept |
-| `-r 3,step=1s` (exponential) | `step` ignored, delays 1s, 2s, 4s |
-| `--retry-interval 2s` | clap unknown-argument error |
-| `-r 255,factor=10` | no panic, capped by `max_delay` |
-| no `max_retries` anywhere | no retries |
+| Input                                                      | Expected delays                                  |
+| ---------------------------------------------------------- | ------------------------------------------------ |
+| `-r 4` (defaults)                                          | 1s, 2s, 4s, 8s                                   |
+| `-r 8`                                                     | 1s, 2s, 4s, 8s, 16s, 32s, 60s, 60s (`max_delay`) |
+| `-r 3,fixed,base=2s`                                       | 2s, 2s, 2s                                       |
+| `-r 3,linear,base=1s,step=2s`                              | 1s, 3s, 5s                                       |
+| `-r 3,exponential,base=1s,jitter=full`                     | each in `[0, d]`, `d` the un-jittered delay      |
+| config `retry: {max_retries: 5, jitter: full}` plus `-r 3` | `max_retries` 3, jitter full kept                |
+| `-r 3,step=1s` (exponential)                               | `step` ignored, delays 1s, 2s, 4s                |
+| `--retry-interval 2s`                                      | clap unknown-argument error                      |
+| `-r 255,factor=10`                                         | no panic, capped by `max_delay`                  |
+| no `max_retries` anywhere                                  | no retries                                       |
 
 ## 5. Test plan
 

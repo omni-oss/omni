@@ -57,40 +57,40 @@ Known gaps carried forward from the merged refactors:
 
 ### Bug fixes (existing behavior is wrong or unsafe)
 
-| ID                                                  | Title                                                     | Depends on | Size | Status |
-| --------------------------------------------------- | --------------------------------------------------------- | ---------- | ---- | --- |
-| [B01](bug-fixes/B01-cache-lookup-honors-enabled.md) | Cache lookup and replay ignore `cache.enabled: false`     | none       | S    | Done ([#83](https://github.com/omni-oss/omni/pull/83)) |
-| [B02](bug-fixes/B02-glob-side-presence.md)          | Omitted glob include/exclude side decodes as empty replace | none       | M    | Done ([#83](https://github.com/omni-oss/omni/pull/83)) |
-| [B03](bug-fixes/B03-collection-envelope-validation.md) | Dictionary/list decoding can silently drop operator siblings | none    | M    | Done ([#83](https://github.com/omni-oss/omni/pull/83)) |
-| [B04](bug-fixes/B04-uncached-dependency-demotion.md) | Uncached dependencies feed a zero hash into cache keys    | B01        | M    | Done ([#85](https://github.com/omni-oss/omni/pull/85)) |
+| ID                                                     | Title                                                        | Depends on | Size | Status                                                 |
+| ------------------------------------------------------ | ------------------------------------------------------------ | ---------- | ---- | ------------------------------------------------------ |
+| [B01](bug-fixes/B01-cache-lookup-honors-enabled.md)    | Cache lookup and replay ignore `cache.enabled: false`        | none       | S    | Done ([#83](https://github.com/omni-oss/omni/pull/83)) |
+| [B02](bug-fixes/B02-glob-side-presence.md)             | Omitted glob include/exclude side decodes as empty replace   | none       | M    | Done ([#83](https://github.com/omni-oss/omni/pull/83)) |
+| [B03](bug-fixes/B03-collection-envelope-validation.md) | Dictionary/list decoding can silently drop operator siblings | none       | M    | Done ([#83](https://github.com/omni-oss/omni/pull/83)) |
+| [B04](bug-fixes/B04-uncached-dependency-demotion.md)   | Uncached dependencies feed a zero hash into cache keys       | B01        | M    | Done ([#85](https://github.com/omni-oss/omni/pull/85)) |
 
 ### Refactoring (restructure without intended behavior change)
 
-| ID                                                       | Title                                                    | Depends on     | Size | Status |
-| -------------------------------------------------------- | -------------------------------------------------------- | -------------- | ---- | --- |
-| [R01](refactoring/R01-extract-source-configurations.md)  | Extract `omni_source_configurations`                     | none           | S    | Done ([#88](https://github.com/omni-oss/omni/pull/88)) |
-| [R02](refactoring/R02-workspace-path-types.md)           | Shared `WorkspacePath` / `ProjectRootId` types           | none           | S    | Done ([#87](https://github.com/omni-oss/omni/pull/87)) |
-| [R03](refactoring/R03-literal-command-operands.md)       | Literal command operands separate from expressions       | none           | L    | Done ([#92](https://github.com/omni-oss/omni/pull/92)); wire/serde form for Wasm transport pending |
-| [R04](refactoring/R04-presence-aware-layers.md)          | Presence-aware recursive configuration layers            | B02, B03       | XL   | Done: R04.1 [#92](https://github.com/omni-oss/omni/pull/92), R04.2-R04.4 [#94](https://github.com/omni-oss/omni/pull/94) |
-| [R05](refactoring/R05-task-declaration-composition.md)   | Field-wise task composition and atomic alias transitions | R04            | M    | Done ([#95](https://github.com/omni-oss/omni/pull/95)); `alias` key not parsed yet (F03) |
-| [R06](refactoring/R06-explicit-pattern-inputs.md)        | Explicit exact/pattern inputs in planner and API         | none           | M    | Done ([#89](https://github.com/omni-oss/omni/pull/89)) |
-| [R07](refactoring/R07-virtual-identity-and-raw-layers.md) | Virtual project identity and raw layer traversal        | R04            | L    | R07.1 [#94](https://github.com/omni-oss/omni/pull/94), R07.2 and R07.3 [#95](https://github.com/omni-oss/omni/pull/95); virtual projects cannot be built from discovery yet (F07/P05) |
-| [R08](refactoring/R08-shared-local-cache-storage.md)     | Dependency-neutral local cache storage primitives        | none           | L    | Done ([#92](https://github.com/omni-oss/omni/pull/92)) |
+| ID                                                        | Title                                                    | Depends on | Size | Status                                                                                                                                                                                |
+| --------------------------------------------------------- | -------------------------------------------------------- | ---------- | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [R01](refactoring/R01-extract-source-configurations.md)   | Extract `omni_source_configurations`                     | none       | S    | Done ([#88](https://github.com/omni-oss/omni/pull/88))                                                                                                                                |
+| [R02](refactoring/R02-workspace-path-types.md)            | Shared `WorkspacePath` / `ProjectRootId` types           | none       | S    | Done ([#87](https://github.com/omni-oss/omni/pull/87))                                                                                                                                |
+| [R03](refactoring/R03-literal-command-operands.md)        | Literal command operands separate from expressions       | none       | L    | Done ([#92](https://github.com/omni-oss/omni/pull/92)); wire/serde form for Wasm transport pending                                                                                    |
+| [R04](refactoring/R04-presence-aware-layers.md)           | Presence-aware recursive configuration layers            | B02, B03   | XL   | Done: R04.1 [#92](https://github.com/omni-oss/omni/pull/92), R04.2-R04.4 [#94](https://github.com/omni-oss/omni/pull/94)                                                              |
+| [R05](refactoring/R05-task-declaration-composition.md)    | Field-wise task composition and atomic alias transitions | R04        | M    | Done ([#95](https://github.com/omni-oss/omni/pull/95)); `alias` key not parsed yet (F03)                                                                                              |
+| [R06](refactoring/R06-explicit-pattern-inputs.md)         | Explicit exact/pattern inputs in planner and API         | none       | M    | Done ([#89](https://github.com/omni-oss/omni/pull/89))                                                                                                                                |
+| [R07](refactoring/R07-virtual-identity-and-raw-layers.md) | Virtual project identity and raw layer traversal         | R04        | L    | R07.1 [#94](https://github.com/omni-oss/omni/pull/94), R07.2 and R07.3 [#95](https://github.com/omni-oss/omni/pull/95); virtual projects cannot be built from discovery yet (F07/P05) |
+| [R08](refactoring/R08-shared-local-cache-storage.md)      | Dependency-neutral local cache storage primitives        | none       | L    | Done ([#92](https://github.com/omni-oss/omni/pull/92))                                                                                                                                |
 
 ### Features (new capability useful on its own)
 
-| ID                                                        | Title                                               | Depends on         | Size |
-| --------------------------------------------------------- | --------------------------------------------------- | ------------------ | ---- |
-| [F01](features/F01-duplicate-explicit-file-diagnostic.md) | Reject duplicate explicit project files at one root | none               | S    |
-| [F02](features/F02-protect-plugin-control-files.md)       | Projection guardrails for `plugin.omni.*`           | none               | XS   |
-| [F03](features/F03-scoped-task-references.md)             | Structured scoped task identity and root references | R05, R06           | L    |
-| [F04](features/F04-exact-selectors-and-task-patterns.md)  | Exact positional selectors and `--task-pattern`     | R06, F03 (alias)   | M    |
-| [F05](features/F05-origin-aware-cache-tiers.md)           | Origin-aware cache enablement and activation `defaults` | R04, B04       | L    |
-| [F06](features/F06-effective-semantic-digest.md)          | Per-task effective semantic digest in cache keys    | R03, R05, B01      | XL   |
-| [F07](features/F07-conflict-detection-and-provenance.md)  | Composition conflict detection and provenance       | R04, R07           | L    |
-| [F08](features/F08-source-acquisition-leases.md)          | Remote-source acquisition leases and atomic references | none            | L    |
-| [F09](features/F09-eligibility-inspection.md)             | Cache-eligibility and provenance inspection (CLI/MCP) | B04, F05         | M    |
-| [F10](features/F10-captured-input-view.md)                | Captured, containment-checked input view            | R02                | L    |
+| ID                                                        | Title                                                   | Depends on       | Size |
+| --------------------------------------------------------- | ------------------------------------------------------- | ---------------- | ---- |
+| [F01](features/F01-duplicate-explicit-file-diagnostic.md) | Reject duplicate explicit project files at one root     | none             | S    |
+| [F02](features/F02-protect-plugin-control-files.md)       | Projection guardrails for `plugin.omni.*`               | none             | XS   |
+| [F03](features/F03-scoped-task-references.md)             | Structured scoped task identity and root references     | R05, R06         | L    |
+| [F04](features/F04-exact-selectors-and-task-patterns.md)  | Exact positional selectors and `--task-pattern`         | R06, F03 (alias) | M    |
+| [F05](features/F05-origin-aware-cache-tiers.md)           | Origin-aware cache enablement and activation `defaults` | R04, B04         | L    |
+| [F06](features/F06-effective-semantic-digest.md)          | Per-task effective semantic digest in cache keys        | R03, R05, B01    | XL   |
+| [F07](features/F07-conflict-detection-and-provenance.md)  | Composition conflict detection and provenance           | R04, R07         | L    |
+| [F08](features/F08-source-acquisition-leases.md)          | Remote-source acquisition leases and atomic references  | none             | L    |
+| [F09](features/F09-eligibility-inspection.md)             | Cache-eligibility and provenance inspection (CLI/MCP)   | B04, F05         | M    |
+| [F10](features/F10-captured-input-view.md)                | Captured, containment-checked input view                | R02              | L    |
 
 Size: XS < half a day, S ≈ 1-2 days, M ≈ 3-5 days, L ≈ 1-2 weeks, XL > 2 weeks
 (split before starting; the file suggests slices).

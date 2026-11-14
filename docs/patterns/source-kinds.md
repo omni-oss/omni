@@ -1,6 +1,6 @@
 # Remote-source kinds
 
-A remote-source *kind* (`git`) is the id string used as a store path segment and a lockfile key. Its *driver* implements `SourceDriver` (`crates/omni_remote_source/src/driver.rs`): `kind()`, `slug()`, `resolve()` and `export()`. The store core (`crates/omni_remote_source/src/manager/default_impl.rs`) owns locks, publishing, manifests, pins and prune, and must not mention any kind; a unit test checks it does not import git.
+A remote-source _kind_ (`git`) is the id string used as a store path segment and a lockfile key. Its _driver_ implements `SourceDriver` (`crates/omni_remote_source/src/driver.rs`): `kind()`, `slug()`, `resolve()` and `export()`. The store core (`crates/omni_remote_source/src/manager/default_impl.rs`) owns locks, publishing, manifests, pins and prune, and must not mention any kind; a unit test checks it does not import git.
 
 Example driver: `crates/omni_remote_source/src/git.rs`. Test-only driver exercised through the core: `crates/omni_remote_source/tests/fake_kind.rs`.
 

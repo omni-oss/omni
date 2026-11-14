@@ -19,14 +19,14 @@ it downloads.
 This RFC makes the cache a trust boundary with six layered controls, each
 covering a gap the others leave:
 
-| # | Control | Closes |
-| --- | --- | --- |
-| A | **Push off by default** (client) | Accidental and casual uploads from developer machines. |
-| B | **Immutable entries** (`409` on overwrite; only successful runs stored) | Overwriting a good entry, and the first-write race. |
-| C | **Trust tiers.** `write:artifacts` writes an isolated namespace. Only `publish:artifacts` writes the shared one. | An untrusted PR or developer key poisoning what trusted builds restore (CREEP). |
-| D | **Asymmetric signatures on shared entries**, verified by the client | A compromised or malicious cache server, storage, or a mis-scoped key. |
-| E | **Per-task remote opt-out** | Release and deploy outputs ever coming from a cache. |
-| F | **Server-authored provenance and purge** | Not knowing who wrote what, and having to wipe the whole cache after an incident. |
+| #   | Control                                                                                                          | Closes                                                                            |
+| --- | ---------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| A   | **Push off by default** (client)                                                                                 | Accidental and casual uploads from developer machines.                            |
+| B   | **Immutable entries** (`409` on overwrite; only successful runs stored)                                          | Overwriting a good entry, and the first-write race.                               |
+| C   | **Trust tiers.** `write:artifacts` writes an isolated namespace. Only `publish:artifacts` writes the shared one. | An untrusted PR or developer key poisoning what trusted builds restore (CREEP).   |
+| D   | **Asymmetric signatures on shared entries**, verified by the client                                              | A compromised or malicious cache server, storage, or a mis-scoped key.            |
+| E   | **Per-task remote opt-out**                                                                                      | Release and deploy outputs ever coming from a cache.                              |
+| F   | **Server-authored provenance and purge**                                                                         | Not knowing who wrote what, and having to wipe the whole cache after an incident. |
 
 ## 2. Motivation and current behavior
 
@@ -37,7 +37,7 @@ malicious PR build, an insider, or a compromised cache server uploads or serves 
 poisoned artifact. Other machines get a cache hit, restore the output, and run it.
 
 The sharpest form is CREEP (CVE-2025-36852). An untrusted PR build produces a
-poisoned artifact under the *same key* `main` will compute, because workflow files
+poisoned artifact under the _same key_ `main` will compute, because workflow files
 are not part of the key, and wins the race to upload. Checksums and signatures
 are valid, because the poisoning happens during construction. Only controlling
 who can write to which namespace (C) stops it. Signing (D) does not, unless the
@@ -72,15 +72,15 @@ storage compromise, not a replacement for C.
 
 ### What other tools do (current docs, checked 2026-11-13)
 
-| Tool | Approach |
-| --- | --- |
-| Nx Cloud | Read-only and read-write CI tokens. Read-only runs write to an isolated, branch-scoped cache that reads through to the shared one. Entries are immutable. OpenAPI spec requires `409` on existing keys. Optional end-to-end encryption. Its self-hosted bucket packages were deprecated (2026-05-21) as unfixable. |
-| Gradle | Remote push off by default. CI populates, developers only read. Entries are not signed. Trust is the write-side ACL. Recommends disabling cache for release tasks. |
-| Bazel | `--remote_upload_local_results=false`. Only CI should write. No way to tell which build wrote an entry, so recovery is wiping the cache. |
-| moon | `localReadOnly`. Read-only and read-write tokens. |
-| Turborepo | Opt-in HMAC-SHA256 signing with a shared secret. Failed verification is a miss. No write tiers. |
-| Pants | `remote_cache_read`/`write` switches, no trust guidance. |
-| Develocity | Trusted-writer isolation and provenance are on its roadmap. |
+| Tool       | Approach                                                                                                                                                                                                                                                                                                           |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Nx Cloud   | Read-only and read-write CI tokens. Read-only runs write to an isolated, branch-scoped cache that reads through to the shared one. Entries are immutable. OpenAPI spec requires `409` on existing keys. Optional end-to-end encryption. Its self-hosted bucket packages were deprecated (2026-05-21) as unfixable. |
+| Gradle     | Remote push off by default. CI populates, developers only read. Entries are not signed. Trust is the write-side ACL. Recommends disabling cache for release tasks.                                                                                                                                                 |
+| Bazel      | `--remote_upload_local_results=false`. Only CI should write. No way to tell which build wrote an entry, so recovery is wiping the cache.                                                                                                                                                                           |
+| moon       | `localReadOnly`. Read-only and read-write tokens.                                                                                                                                                                                                                                                                  |
+| Turborepo  | Opt-in HMAC-SHA256 signing with a shared secret. Failed verification is a miss. No write tiers.                                                                                                                                                                                                                    |
+| Pants      | `remote_cache_read`/`write` switches, no trust guidance.                                                                                                                                                                                                                                                           |
+| Develocity | Trusted-writer isolation and provenance are on its roadmap.                                                                                                                                                                                                                                                        |
 
 Every tool treats the write path as the control. No surveyed tool combines tiers,
 immutability, asymmetric signatures and provenance. This RFC does.
@@ -124,7 +124,7 @@ immutability, asymmetric signatures and provenance. This RFC does.
 
 ### 4.0 Authenticated caller (the identity seam)
 
-Omni's server does not know *how* a caller proved who they are. Every route and
+Omni's server does not know _how_ a caller proved who they are. Every route and
 hook works from one authenticated value, so credentials other than API keys (OIDC
 tokens for CI workloads, or user login) can be added later without changing
 anything in this RFC:
@@ -165,7 +165,7 @@ trait Authenticator {           // replaces the bool-returning SecurityService m
 - `publish:artifacts` is never implied. `scopes: all` (which today matches every
   scope) grants everything **except** `publish`, which must be listed explicitly,
   so an existing `all` key does not silently become a publisher.
-- `scope_pin` lets a future authenticator *prove* the isolated-scope label (for
+- `scope_pin` lets a future authenticator _prove_ the isolated-scope label (for
   example a PR number from a verified CI token). When set, the server ignores the
   client's `scope`. API keys never set it.
 - `credential.id` for API keys is `api_key_id` (RFC 0027): keyed when
@@ -204,13 +204,13 @@ Both fit the seam above. The seam test in section 5 keeps that true.
 
 Scopes (replace today's four):
 
-| Scope | Allows |
-| --- | --- |
-| `read:artifacts` | `GET`/`HEAD` in the shared namespace and, if the key also has `write:artifacts`, its own isolated namespace. |
-| `write:artifacts` | `PUT` into the caller's **isolated** namespace. |
-| `publish:artifacts` | `PUT` into the **shared** namespace (implies `write`; never implied by `scopes: all`, see 4.0). |
-| `list:artifacts` | List. |
-| `delete:artifacts` | `DELETE` and purge in any namespace, for operators. |
+| Scope               | Allows                                                                                                       |
+| ------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `read:artifacts`    | `GET`/`HEAD` in the shared namespace and, if the key also has `write:artifacts`, its own isolated namespace. |
+| `write:artifacts`   | `PUT` into the caller's **isolated** namespace.                                                              |
+| `publish:artifacts` | `PUT` into the **shared** namespace (implies `write`; never implied by `scopes: all`, see 4.0).              |
+| `list:artifacts`    | List.                                                                                                        |
+| `delete:artifacts`  | `DELETE` and purge in any namespace, for operators.                                                          |
 
 A caller with only `read:artifacts` can never write.
 
@@ -227,7 +227,7 @@ containers and is removed (it is the `multi_bucket == false` branch of
 `get_bucket_and_prefix`; the flag's name is inverted, since `true` means one bucket
 with key prefixes).
 
-`principal` (in the `Caller`, 4.0) identifies the *owner* of one or more
+`principal` (in the `Caller`, 4.0) identifies the _owner_ of one or more
 credentials (a user, service account or CI pipeline), not a credential. The
 credential id is a hash of the credential, so two keys of one person would get
 different namespaces. For API keys the operator assigns a `principal` where the
@@ -298,25 +298,25 @@ server's claim about where a hit came from:
 - `PUT` to an existing entry in the target namespace returns `409 Conflict`. No
   replace exists. Storage backends add an atomic create-if-absent. A
   check-then-write race is not acceptable, because the race is the attack.
-  - local: write a temp file, then link/rename without replacing.
-  - memory: entry API.
-  - S3: single `PutObject` with `If-None-Match: *` (AWS documents `412` when the
-    key exists, and `409 ConditionalRequestConflict` on a racing delete, which the
-    server retries). `CompleteMultipartUpload` supports the same header.
-  - R2: R2's S3 API documents atomic `If-None-Match: *` on `PutObject` and
-    `CompleteMultipartUpload`. The Workers binding documents `onlyIf` on `put`
-    (returns `null` when the condition fails), but does not document `*`, and a
-    2024 report (workers-sdk #6411, Miniflare) saw `etagDoesNotMatch: "*"`
-    behave the wrong way round. The R2 backend therefore must not rely on it until
-    the spike proves create-only behavior on **real R2**, not only Miniflare. If it
-    fails, the R2 backend uses the S3 API (SigV4 `PutObject` with `If-None-Match: *`).
-  - **Size cap.** The server config `max_artifact_size` bounds an entry
-    (default 256 MiB on native servers, 32 MiB on Workers: an isolate has 128 MB of
-    memory, and the entry is buffered to hash it and append the trailer), so every backend commits with one
-    conditional single-object write. `omni_remote_cache_storage_r2` uses the
-    Workers binding (`worker` 0.8.7), whose multipart `complete` takes no
-    condition, so multipart must not be on the commit path. The client skips
-    uploading artifacts over the cap and reports a diagnostic.
+    - local: write a temp file, then link/rename without replacing.
+    - memory: entry API.
+    - S3: single `PutObject` with `If-None-Match: *` (AWS documents `412` when the
+      key exists, and `409 ConditionalRequestConflict` on a racing delete, which the
+      server retries). `CompleteMultipartUpload` supports the same header.
+    - R2: R2's S3 API documents atomic `If-None-Match: *` on `PutObject` and
+      `CompleteMultipartUpload`. The Workers binding documents `onlyIf` on `put`
+      (returns `null` when the condition fails), but does not document `*`, and a
+      2024 report (workers-sdk #6411, Miniflare) saw `etagDoesNotMatch: "*"`
+      behave the wrong way round. The R2 backend therefore must not rely on it until
+      the spike proves create-only behavior on **real R2**, not only Miniflare. If it
+      fails, the R2 backend uses the S3 API (SigV4 `PutObject` with `If-None-Match: *`).
+    - **Size cap.** The server config `max_artifact_size` bounds an entry
+      (default 256 MiB on native servers, 32 MiB on Workers: an isolate has 128 MB of
+      memory, and the entry is buffered to hash it and append the trailer), so every backend commits with one
+      conditional single-object write. `omni_remote_cache_storage_r2` uses the
+      Workers binding (`worker` 0.8.7), whose multipart `complete` takes no
+      condition, so multipart must not be on the commit path. The client skips
+      uploading artifacts over the cap and reports a diagnostic.
 - `DELETE` is operator-only (`delete:artifacts`).
 - **New storage primitives.** The trait has no range read and no prefix operation
   today (`omni_remote_cache_storage_core/src/traits.rs`), and the design needs both:
@@ -349,14 +349,14 @@ Readers find the trailer with a suffix range read (the last 64 KiB), so operator
 scans (4.3 purge) read a small tail instead of whole artifacts. Trailer
 (`trailer_len` bounded to 64 KiB):
 
-| Field | Source |
-| --- | --- |
-| `version` | server |
-| `writer_credential` (`kind`, `id`), `writer_principal` | **server** (from the authenticated `Caller`) |
-| `namespace`, `scope` | **server** (from the validated request) |
-| `stored_at` | **server** |
-| `size`, `sha256` | **server** (computed while streaming; must equal the client-declared `X-Omni-Content-Sha256` or the upload is rejected and nothing is committed) |
-| `signature` | client-supplied, opaque to the server (4.5) |
+| Field                                                  | Source                                                                                                                                           |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `version`                                              | server                                                                                                                                           |
+| `writer_credential` (`kind`, `id`), `writer_principal` | **server** (from the authenticated `Caller`)                                                                                                     |
+| `namespace`, `scope`                                   | **server** (from the validated request)                                                                                                          |
+| `stored_at`                                            | **server**                                                                                                                                       |
+| `size`, `sha256`                                       | **server** (computed while streaming; must equal the client-declared `X-Omni-Content-Sha256` or the upload is rejected and nothing is committed) |
+| `signature`                                            | client-supplied, opaque to the server (4.5)                                                                                                      |
 
 The provenance fields are never taken from the client, so a writer cannot forge
 who wrote an entry. The server commits the object only after the stream completes and
@@ -417,22 +417,22 @@ remote cache file (`<cache_dir>/remote-cache.omni.{yaml,enc}`,
 ```yaml
 # workspace.omni.yaml (committed)
 remote_cache:
-  signing:
-    trusted_keys:      # public keys, safe to commit
-      - id: 3f9a1c07d2b84e61          # must equal first 16 hex of SHA-256(public_key); checked
-        name: ci-2026-11              # optional label
-        public_key: "<base64 ed25519>"
-    verify: auto       # auto | off | warn | require (see 4.5)
+    signing:
+        trusted_keys: # public keys, safe to commit
+            - id: 3f9a1c07d2b84e61 # must equal first 16 hex of SHA-256(public_key); checked
+              name: ci-2026-11 # optional label
+              public_key: "<base64 ed25519>"
+        verify: auto # auto | off | warn | require (see 4.5)
 ```
 
 ```yaml
 # <cache_dir>/remote-cache.omni.yaml (machine-local, may be encrypted)
-push: false            # default. true uploads successful results on a miss
-target: isolated       # isolated | shared (shared needs publish:artifacts)
-scope: auto            # auto derives from CI env (PR number, branch); or a literal
-signing_key:           # publishers only; never committed
-  id: 3f9a1c07d2b84e61
-  private_key_env: OMNI_CACHE_SIGNING_KEY
+push: false # default. true uploads successful results on a miss
+target: isolated # isolated | shared (shared needs publish:artifacts)
+scope: auto # auto derives from CI env (PR number, branch); or a literal
+signing_key: # publishers only; never committed
+    id: 3f9a1c07d2b84e61
+    private_key_env: OMNI_CACHE_SIGNING_KEY
 ```
 
 Local config may **tighten** the workspace policy but never loosen it. Resolution
@@ -463,20 +463,21 @@ whatever the repository says.
   safe for `[A-Za-z0-9][A-Za-z0-9._-]{0,63}`, hashed if too long), else `default`. Detection
   (checked in this order):
 
-  | CI | Detected by | PR number | Branch |
-  | --- | --- | --- | --- |
-  | GitHub Actions | `GITHUB_ACTIONS` | `GITHUB_REF` (`refs/pull/N/merge`) | `GITHUB_HEAD_REF`, else `GITHUB_REF_NAME` |
-  | GitLab CI | `GITLAB_CI` | `CI_MERGE_REQUEST_IID` | `CI_COMMIT_REF_SLUG` |
-  | CircleCI | `CIRCLECI` | `CIRCLE_PULL_REQUEST` (trailing number) | `CIRCLE_BRANCH` |
-  | Buildkite | `BUILDKITE` | `BUILDKITE_PULL_REQUEST` (if not `false`) | `BUILDKITE_BRANCH` |
-  | Jenkins | `JENKINS_URL` | `CHANGE_ID` | `BRANCH_NAME` |
+    | CI             | Detected by      | PR number                                 | Branch                                    |
+    | -------------- | ---------------- | ----------------------------------------- | ----------------------------------------- |
+    | GitHub Actions | `GITHUB_ACTIONS` | `GITHUB_REF` (`refs/pull/N/merge`)        | `GITHUB_HEAD_REF`, else `GITHUB_REF_NAME` |
+    | GitLab CI      | `GITLAB_CI`      | `CI_MERGE_REQUEST_IID`                    | `CI_COMMIT_REF_SLUG`                      |
+    | CircleCI       | `CIRCLECI`       | `CIRCLE_PULL_REQUEST` (trailing number)   | `CIRCLE_BRANCH`                           |
+    | Buildkite      | `BUILDKITE`      | `BUILDKITE_PULL_REQUEST` (if not `false`) | `BUILDKITE_BRANCH`                        |
+    | Jenkins        | `JENKINS_URL`    | `CHANGE_ID`                               | `BRANCH_NAME`                             |
 
-  The names are from CI provider docs as I know them, to be re-checked when the
-  detector is written. Omni has no CI detection today. `scope: run` (set
-  explicitly) uses the provider's run id for a namespace no other run shares.
-  Labels are not authenticated: all PR jobs using one principal share a trust tier,
-  so one PR could write another PR's label. That cannot reach the shared
-  namespace, and operators who run fork PRs should give them a read-only key.
+    The names are from CI provider docs as I know them, to be re-checked when the
+    detector is written. Omni has no CI detection today. `scope: run` (set
+    explicitly) uses the provider's run id for a namespace no other run shares.
+    Labels are not authenticated: all PR jobs using one principal share a trust tier,
+    so one PR could write another PR's label. That cannot reach the shared
+    namespace, and operators who run fork PRs should give them a read-only key.
+
 - **Per-task opt-out (E):** a task sets `cache.remote: false` (inside the existing
   `CacheConfiguration`, not a top-level `remote_cache`, which would collide with the
   client config), and the CLI offers
@@ -526,11 +527,11 @@ the dependency is revoked. The local cache is therefore **partitioned by trust c
 and a run can only read the partitions its class allows. This fails closed by
 construction: no marker has to be propagated through derived entries.
 
-| Partition | Path under `cache_dir` | Written by | Read by |
-| --- | --- | --- | --- |
-| trusted | `trusted/{epoch}/` | runs that are not untrusted and not opted-out | same epoch only |
-| untrusted | `untrusted/{principal_id}/{scope}/` | untrusted runs (`write`, no `publish`) | that run, then `trusted/{epoch}/` of its own epoch |
-| local | `local/` | opted-out runs (`cache.remote: false`) | opted-out runs only |
+| Partition | Path under `cache_dir`              | Written by                                    | Read by                                            |
+| --------- | ----------------------------------- | --------------------------------------------- | -------------------------------------------------- |
+| trusted   | `trusted/{epoch}/`                  | runs that are not untrusted and not opted-out | same epoch only                                    |
+| untrusted | `untrusted/{principal_id}/{scope}/` | untrusted runs (`write`, no `publish`)        | that run, then `trusted/{epoch}/` of its own epoch |
+| local     | `local/`                            | opted-out runs (`cache.remote: false`)        | opted-out runs only                                |
 
 - **Trust epoch** = first 16 hex of SHA-256 over the effective `trusted_keys` ids
   (sorted) and the effective `verify` mode. A change to either (a key added, narrowed
@@ -596,8 +597,8 @@ signature>`, bounded to 256 bytes.
 `key_id` in `trusted_keys`, and verify. Any failure (unsigned, unknown key id, bad
 signature, hash mismatch) is treated as a miss, with a diagnostic naming the
 digest and reason. The task then runs locally. Isolated hits are not verified,
-because isolated entries are unsigned by design, so the rule is on *who may read
-them* (4.1): only an untrusted run (`target: isolated`, not able to publish) ever
+because isolated entries are unsigned by design, so the rule is on _who may read
+them_ (4.1): only an untrusted run (`target: isolated`, not able to publish) ever
 reads an isolated namespace. Trusted runs and read-only runs never do, so a
 compromised server cannot feed them unsigned bytes through the isolated probe.
 
@@ -1194,24 +1195,24 @@ runtime, `verify: off` disables verification and `push: false` stops uploads.
 
 1. Does the R2 **Workers binding** (`put` with `onlyIf`) give create-only on **real**
    R2? Spike results (2026-11-13):
-   - **Real R2, S3 API: confirmed.** `PutObject` with `If-None-Match: *` stored on an
-     absent key and returned `412 PreconditionFailed` on an existing one, leaving
-     the value unchanged. Five rounds of 10 concurrent `PutObject`s to one key each
-     produced exactly one winner. `CompleteMultipartUpload` with `If-None-Match: *`
-     behaved the same (stored when absent, `412` when present, original bytes kept).
-   - **Miniflare (simulator), Workers binding: confirmed** (Miniflare 4.20260730.0;
-     both `etagDoesNotMatch: "*"` and a `Headers` object; 10 concurrent: one winner).
-     This contradicts the 2024 report (workers-sdk #6411), so that simulator bug is
-     fixed.
-   - **Real R2, Workers binding: not tested.** Running a Worker (including
-     `wrangler dev --remote`) needs a `workers.dev` subdomain on the account, which is a
-     persistent account change that the spike did not make.
+    - **Real R2, S3 API: confirmed.** `PutObject` with `If-None-Match: *` stored on an
+      absent key and returned `412 PreconditionFailed` on an existing one, leaving
+      the value unchanged. Five rounds of 10 concurrent `PutObject`s to one key each
+      produced exactly one winner. `CompleteMultipartUpload` with `If-None-Match: *`
+      behaved the same (stored when absent, `412` when present, original bytes kept).
+    - **Miniflare (simulator), Workers binding: confirmed** (Miniflare 4.20260730.0;
+      both `etagDoesNotMatch: "*"` and a `Headers` object; 10 concurrent: one winner).
+      This contradicts the 2024 report (workers-sdk #6411), so that simulator bug is
+      fixed.
+    - **Real R2, Workers binding: not tested.** Running a Worker (including
+      `wrangler dev --remote`) needs a `workers.dev` subdomain on the account, which is a
+      persistent account change that the spike did not make.
 
-   Consequence for the design: create-only is proven on real R2 through the S3 API, so
-   the R2 backend has a working path either way. If the binding also passes on real R2
-   it can stay the Workers implementation, otherwise the R2 backend uses the S3 API
-   (SigV4 `PutObject` with `If-None-Match: *`). Plan step 1 verifies the binding when a
-   Worker can be deployed.
+    Consequence for the design: create-only is proven on real R2 through the S3 API, so
+    the R2 backend has a working path either way. If the binding also passes on real R2
+    it can stay the Workers implementation, otherwise the R2 backend uses the S3 API
+    (SigV4 `PutObject` with `If-None-Match: *`). Plan step 1 verifies the binding when a
+    Worker can be deployed.
 
 **Acceptance checklist (not a decision)**
 
@@ -1227,18 +1228,18 @@ Not started. Update this section as work proceeds.
 Riskiest parts first: step 1 (atomic create-if-absent and path safety across
 backends, open question 1) and, within step 3, the sealing stream.
 
-| # | Step | Check | Undo |
-| --- | --- | --- | --- |
-| 1 | Storage primitives, path safety, `409`, abort on truncated upload, remove `replacing`, client success-only upload gate and `409`/warning handling. | Concurrency and abort contract tests per backend, path-safety tests, a failed execution is never uploaded. Spike on real R2 and S3: create-only conditional write. | Revert commit. |
-| 2 | `Caller`/`Authenticator` seam and header move. | Seam test, existing end-to-end remote tests still pass. | Revert commit. |
-| 3 | Trailer, sealing stream, provenance, hooks and SQL hooks params. | Trailer bounds tests, mismatch leaves the key free, provenance not client-settable, suffix-range read returns the trailer, `409` logged as `AlreadyExists`. | Revert commit. |
-| 4 | Scopes, namespaces, client-driven resolution. | Authorization matrix, worked-example integration test, failure guard (1). | Revert commit. |
-| 5 | Client `push`/`target`/`scope`, size caps. | Zero-upload test, advertised-cap test. | Revert commit. |
-| 6 | Local cache partitions and trust epoch, `cache.remote: false` (transitive via `local/`), CLI flag, marker with staged extraction, metadata path validation. | Partition tests and failure guard (4) above, remote reads and writes skipped for the task and its dependencies, a crash mid-extraction leaves no unmarked remote entry, hostile `original_path` rejected. | Revert commit. |
-| 7 | Signing: `keygen`, sign, verify before `unarchive`, modes. | Full failure list in 4.7, failure guard (2). | Revert commit. |
-| 8 | `cache provenance`, `cache purge`, isolated TTL. | Purge removes only the named writer, key or signing key; TTL touches isolated only. | Revert commit. |
-| 9 | Docs and release note. | Docs build. A reviewer follows the CI recipe against a test server. | Revert docs. |
-| 10 | End-to-end CREEP and server-compromise tests. | Both fail if the matching guard is removed. | n/a |
+| #   | Step                                                                                                                                                        | Check                                                                                                                                                                                                     | Undo           |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| 1   | Storage primitives, path safety, `409`, abort on truncated upload, remove `replacing`, client success-only upload gate and `409`/warning handling.          | Concurrency and abort contract tests per backend, path-safety tests, a failed execution is never uploaded. Spike on real R2 and S3: create-only conditional write.                                        | Revert commit. |
+| 2   | `Caller`/`Authenticator` seam and header move.                                                                                                              | Seam test, existing end-to-end remote tests still pass.                                                                                                                                                   | Revert commit. |
+| 3   | Trailer, sealing stream, provenance, hooks and SQL hooks params.                                                                                            | Trailer bounds tests, mismatch leaves the key free, provenance not client-settable, suffix-range read returns the trailer, `409` logged as `AlreadyExists`.                                               | Revert commit. |
+| 4   | Scopes, namespaces, client-driven resolution.                                                                                                               | Authorization matrix, worked-example integration test, failure guard (1).                                                                                                                                 | Revert commit. |
+| 5   | Client `push`/`target`/`scope`, size caps.                                                                                                                  | Zero-upload test, advertised-cap test.                                                                                                                                                                    | Revert commit. |
+| 6   | Local cache partitions and trust epoch, `cache.remote: false` (transitive via `local/`), CLI flag, marker with staged extraction, metadata path validation. | Partition tests and failure guard (4) above, remote reads and writes skipped for the task and its dependencies, a crash mid-extraction leaves no unmarked remote entry, hostile `original_path` rejected. | Revert commit. |
+| 7   | Signing: `keygen`, sign, verify before `unarchive`, modes.                                                                                                  | Full failure list in 4.7, failure guard (2).                                                                                                                                                              | Revert commit. |
+| 8   | `cache provenance`, `cache purge`, isolated TTL.                                                                                                            | Purge removes only the named writer, key or signing key; TTL touches isolated only.                                                                                                                       | Revert commit. |
+| 9   | Docs and release note.                                                                                                                                      | Docs build. A reviewer follows the CI recipe against a test server.                                                                                                                                       | Revert docs.   |
+| 10  | End-to-end CREEP and server-compromise tests.                                                                                                               | Both fail if the matching guard is removed.                                                                                                                                                               | n/a            |
 
 Because this is High risk, a second reviewer reads the RFC before step 1 and the
 diff for steps 1, 2, 3, 4, 7 and 10.

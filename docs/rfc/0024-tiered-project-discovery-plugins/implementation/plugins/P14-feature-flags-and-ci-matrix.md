@@ -6,11 +6,11 @@
 
 Compile-time features, default-on, that cost **nothing** when compiled out.
 
-| Feature                  | Where                       | Effect                                                    |
-| ------------------------ | --------------------------- | --------------------------------------------------------- |
-| `wasm-rt`                | Wasm runtime crate          | Compiles Wasmtime; nothing else depends on Wasmtime       |
-| `plugin-wasm-rt`         | host/CLI/MCP/packaging      | Enables Wasm-backed plugins and turns on `wasm-rt`        |
-| `plugin-native-builtins` | adapter + top-level crates  | Compiles `@omni/javascript`, `@omni/rust` and registration |
+| Feature                  | Where                      | Effect                                                     |
+| ------------------------ | -------------------------- | ---------------------------------------------------------- |
+| `wasm-rt`                | Wasm runtime crate         | Compiles Wasmtime; nothing else depends on Wasmtime        |
+| `plugin-wasm-rt`         | host/CLI/MCP/packaging     | Enables Wasm-backed plugins and turns on `wasm-rt`         |
+| `plugin-native-builtins` | adapter + top-level crates | Compiles `@omni/javascript`, `@omni/rust` and registration |
 
 ## RFC references
 

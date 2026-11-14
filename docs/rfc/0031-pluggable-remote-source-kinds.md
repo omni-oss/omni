@@ -75,7 +75,7 @@ Done when:
 - `store_slug` is an injective encoding of a URL into one path segment. It is
   reusable for any kind whose locator is a URL.
 - The lockfile and refs are serde-tagged enums (`version: "1.0.0"`). Unknown
-  *fields* are ignored today, so without `deny_unknown_fields` an old-shape
+  _fields_ are ignored today, so without `deny_unknown_fields` an old-shape
   file would load as empty and the next save would silently drop its pins
   (4.3).
 - `reconcile_pins` reads every `refs/*.json`, and `persist_pins` reloads and
@@ -172,8 +172,8 @@ pub struct DriverContext<'a, TSys> {
 }
 ```
 
-- Naming: a *kind* is the id string (`"git"`, `"fake"`) used as a path
-  segment and lockfile key; a *driver* is the `SourceDriver` implementation
+- Naming: a _kind_ is the id string (`"git"`, `"fake"`) used as a path
+  segment and lockfile key; a _driver_ is the `SourceDriver` implementation
   for one kind.
 - `SourceDriver`, `DriverContext` and `DriverConfig` are `#[doc(hidden)]` and
   unstable until the registry RFC settles credentials, offline policy and
@@ -263,21 +263,21 @@ The layout changes in place at the store root. `VERSION` stays `1`.
 
 Decision:
 
-| Option | Cost | Chosen |
-| --- | --- | --- |
-| New layout in place, `VERSION` unchanged, no compatibility code | One refetch per machine; commits the remote no longer serves need `--update` | Yes: owner allows the break; least code |
-| `v2/` subdirectory plus seeding from the old mirror | Two-lock protocol, object-closure copy, completeness markers, cleanup caveats | No: compatibility only |
+| Option                                                          | Cost                                                                          | Chosen                                  |
+| --------------------------------------------------------------- | ----------------------------------------------------------------------------- | --------------------------------------- |
+| New layout in place, `VERSION` unchanged, no compatibility code | One refetch per machine; commits the remote no longer serves need `--update`  | Yes: owner allows the break; least code |
+| `v2/` subdirectory plus seeding from the old mirror             | Two-lock protocol, object-closure copy, completeness markers, cleanup caveats | No: compatibility only                  |
 
 ### 4.3 Lockfile and refs shape
 
 ```json
 {
-  "version": "1.0.0",
-  "sources": {
-    "git": {
-      "https://example.com/a.git": { "main": { "pin": "c1…" } }
+    "version": "1.0.0",
+    "sources": {
+        "git": {
+            "https://example.com/a.git": { "main": { "pin": "c1…" } }
+        }
     }
-  }
 }
 ```
 
@@ -308,10 +308,10 @@ place.
 
 Decision:
 
-| Option | Cost | Chosen |
-| --- | --- | --- |
-| New shape in place, no converter, old files rejected | Users re-run install once; pins re-resolve | Yes: owner allows the break; no compatibility code |
-| Convert the old `git` key on load | Converter, merge and conflict rules for a format with no released users | No: compatibility only |
+| Option                                               | Cost                                                                    | Chosen                                             |
+| ---------------------------------------------------- | ----------------------------------------------------------------------- | -------------------------------------------------- |
+| New shape in place, no converter, old files rejected | Users re-run install once; pins re-resolve                              | Yes: owner allows the break; no compatibility code |
+| Convert the old `git` key on load                    | Converter, merge and conflict rules for a format with no released users | No: compatibility only                             |
 
 ### 4.4 Call sites and prune
 
@@ -349,6 +349,7 @@ It resolves to the snapshot's content hash and exports by copying. Workspaces
 P and U share one store.
 
 Happy path:
+
 1. P installs R@main with no lockfile. One fetch into `raw/git/<R>`, tree at
    `trees/git/<R>/c1`, lockfile `sources.git.<R>.main.pin = c1`, refs file the
    same shape. A second install makes no network call.
@@ -356,53 +357,38 @@ Happy path:
    `trees/fake/<slug>/<hash>`, the lockfile gains `sources.fake…`, and
    `remote-sources prune --dry-run --all` lists both entries with their kinds.
 
-Complexities:
-3. P and U concurrently materialize the same fake spec: one export (the fake
-   `export` call count is 1), both succeed (same lock `locks/fake/<slug>.lock`).
-4. A git slug and a fake slug that are the same string do not collide
-   (separate `<kind>` directories and locks), and projection links of one are
-   not recognised as the other's.
-5. Old-layout entries (`git/<slug>.git`, `trees/<old slug>/c1`) present in the
-   store: they are not listed, not pruned, not read; install fetches into the
-   new layout.
+Complexities: 3. P and U concurrently materialize the same fake spec: one export (the fake
+`export` call count is 1), both succeed (same lock `locks/fake/<slug>.lock`). 4. A git slug and a fake slug that are the same string do not collide
+(separate `<kind>` directories and locks), and projection links of one are
+not recognised as the other's. 5. Old-layout entries (`git/<slug>.git`, `trees/<old slug>/c1`) present in the
+store: they are not listed, not pruned, not read; install fetches into the
+new layout.
 
-Edge cases and failure paths:
-6. The fake kind returns a pin `../x`, `a/b`, `A1` or an empty string: the
-   materialize error names the kind and the pin, and nothing is written
-   outside `.pending`.
-7. The fake kind's `export` fails halfway: the pending dir is removed, no tree,
-   no lock entry.
-8. A deleted fake tree with an intact raw dir is re-exported. A failed
-   `resolve` with no raw dir gives an error that names the kind and locator.
-9. Load errors, each leaving the file bytes unchanged, for `lock.json` and a
-   `refs/*.json`: (a) old shape (top-level `git`), (b) unknown entry field,
-   (c) `sources.registry` with no `registry` kind registered (error names
-   `registry`; manager check), (d) version-only file with no `sources`.
-10. `VERSION` = 2: refuse, as in RFC 0027.
-11. `--update` invalidates through `invalidate(&RemoteSource)` for both kinds.
-12. A lockfile pinning `../x` (or `a/b`): load fails naming the entry, before
-    the fast path joins any path.
-13. With a locked pin, the fake kind's `resolve` returns a different pin: error
-    naming both pins; no tree exported, lockfile unchanged.
-14. Config URLs `https://host/r.git/`, `https://HOST:443/r.git` and
-    `https://user@host/r.git` all give the locator `https://host/r.git`.
-15. A git source configured with userinfo (a local test server that requires
-    it) fetches, and neither the lockfile, the refs file, the slug nor any log
-    line contains the credential.
-16. A locked git commit the remote no longer has, with an empty store: error
-    naming the remote and commit and pointing at `--update`.
-17. A git remote whose slug is not lowercase-safe (uppercase path) gets the
-    slug `h-…`; a fake kind returning the literal slug `h-abc` is hashed too.
+Edge cases and failure paths: 6. The fake kind returns a pin `../x`, `a/b`, `A1` or an empty string: the
+materialize error names the kind and the pin, and nothing is written
+outside `.pending`. 7. The fake kind's `export` fails halfway: the pending dir is removed, no tree,
+no lock entry. 8. A deleted fake tree with an intact raw dir is re-exported. A failed
+`resolve` with no raw dir gives an error that names the kind and locator. 9. Load errors, each leaving the file bytes unchanged, for `lock.json` and a
+`refs/*.json`: (a) old shape (top-level `git`), (b) unknown entry field,
+(c) `sources.registry` with no `registry` kind registered (error names
+`registry`; manager check), (d) version-only file with no `sources`. 10. `VERSION` = 2: refuse, as in RFC 0027. 11. `--update` invalidates through `invalidate(&RemoteSource)` for both kinds. 12. A lockfile pinning `../x` (or `a/b`): load fails naming the entry, before
+the fast path joins any path. 13. With a locked pin, the fake kind's `resolve` returns a different pin: error
+naming both pins; no tree exported, lockfile unchanged. 14. Config URLs `https://host/r.git/`, `https://HOST:443/r.git` and
+`https://user@host/r.git` all give the locator `https://host/r.git`. 15. A git source configured with userinfo (a local test server that requires
+it) fetches, and neither the lockfile, the refs file, the slug nor any log
+line contains the credential. 16. A locked git commit the remote no longer has, with an empty store: error
+naming the remote and commit and pointing at `--update`. 17. A git remote whose slug is not lowercase-safe (uppercase path) gets the
+slug `h-…`; a fake kind returning the literal slug `h-abc` is hashed too.
 
 ## 6. Steps
 
-| # | Outcome | Depends on | Check | Undo |
-| --- | --- | --- | --- | --- |
-| 1 | Lockfile and refs new shape under `1.0.0` (`sources` keyed by plain strings, `deny_unknown_fields`, no converter), canonical git locator, `Connection` carrying credentials to the fetch, generic `Lockfile` API. Git callers adapted; `.omni/sources/lock.json` regenerated | none | Round-trip and load-error unit tests (examples 9a, b, d, 12, 14), credentials reach the fetch and are never persisted (15). All tests, updated, and `remote-sources` e2e pass | Revert and restore `lock.json` from git |
-| 2 | `SourceDriver` trait, `DriverRegistry`, generic core (`materialize_with`), git driver, new layout in place, pin and slug safe-segment rule, manager-side unknown-kind check | 1 | Fake kind integration tests (examples 2–8, 9c, 10, 13, 16, 17), core-does-not-import-git test. RFC 0027 examples on the new layout | Revert; entries in the new layout become dead cache |
-| 3 | Projections: three-component tail | 2 | Example 4 (projection half); projection moved-store tests updated | Revert |
-| 4 | `remote_source_for` mapping replaces the 11 constructions; `invalidate`/`locked_pin`; kind-aware `StoreEntry`, prune filter and output; every git-specific site in 4.4 | 2 | `rg 'RemoteSource::Git \{' --glob '!**/tests/**'` finds only the mapping, the git driver and the `RemoteSource` dispatch arms. Prune unit and e2e tests with `kind` (example 11). CLI and MCP snapshots updated | Revert |
-| 5 | Docs: store reference (layout), lockfile shape, release note (breaking: re-run install, delete old store entries and old projection links), contributor pattern "adding a source kind" in `docs/patterns/` | 1–4 | Site build. The pattern doc walks through the fake kind | Revert |
+| #   | Outcome                                                                                                                                                                                                                                                                      | Depends on | Check                                                                                                                                                                                                           | Undo                                                |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| 1   | Lockfile and refs new shape under `1.0.0` (`sources` keyed by plain strings, `deny_unknown_fields`, no converter), canonical git locator, `Connection` carrying credentials to the fetch, generic `Lockfile` API. Git callers adapted; `.omni/sources/lock.json` regenerated | none       | Round-trip and load-error unit tests (examples 9a, b, d, 12, 14), credentials reach the fetch and are never persisted (15). All tests, updated, and `remote-sources` e2e pass                                   | Revert and restore `lock.json` from git             |
+| 2   | `SourceDriver` trait, `DriverRegistry`, generic core (`materialize_with`), git driver, new layout in place, pin and slug safe-segment rule, manager-side unknown-kind check                                                                                                  | 1          | Fake kind integration tests (examples 2–8, 9c, 10, 13, 16, 17), core-does-not-import-git test. RFC 0027 examples on the new layout                                                                              | Revert; entries in the new layout become dead cache |
+| 3   | Projections: three-component tail                                                                                                                                                                                                                                            | 2          | Example 4 (projection half); projection moved-store tests updated                                                                                                                                               | Revert                                              |
+| 4   | `remote_source_for` mapping replaces the 11 constructions; `invalidate`/`locked_pin`; kind-aware `StoreEntry`, prune filter and output; every git-specific site in 4.4                                                                                                       | 2          | `rg 'RemoteSource::Git \{' --glob '!**/tests/**'` finds only the mapping, the git driver and the `RemoteSource` dispatch arms. Prune unit and e2e tests with `kind` (example 11). CLI and MCP snapshots updated | Revert                                              |
+| 5   | Docs: store reference (layout), lockfile shape, release note (breaking: re-run install, delete old store entries and old projection links), contributor pattern "adding a source kind" in `docs/patterns/`                                                                   | 1–4        | Site build. The pattern doc walks through the fake kind                                                                                                                                                         | Revert                                              |
 
 The riskiest part is step 1, which changes a git-tracked format and touches
 every git caller. It goes first so the rest builds on settled data. Step 2 is
@@ -415,23 +401,24 @@ continuous.
 
 ## 7. Risks
 
-| Risk | Likelihood / impact | Mitigation |
-| --- | --- | --- |
-| An old-shape lockfile loads as empty and loses its pins on save | Low / high | `deny_unknown_fields` and a required `sources` make it a load error (example 9a) |
-| An unknown kind is dropped on save | Low / high | The manager rejects any kind missing from its `DriverRegistry` right after load, before anything can save (9c) |
-| Pins re-resolve after upgrading (users delete the lockfile) | High / low | Expected break; the release note says so. Users who need the old commits note them before upgrading |
-| A locked commit the remote no longer serves is lost with the old store | Low / medium | Error points at `--update` (example 16); release note |
-| Credentials leak into the lockfile, refs, slug or logs | Low / high | Locator strips userinfo; `Connection` has no `Serialize` and redacts (example 15) |
-| Two configured URLs differing only in userinfo share one entry and tree, so the second account's access is not re-checked when the pin is cached | Low / low | Same as today; one OS user's store. Documented in 4.1; per-account content is unsupported, and drivers needing it put a non-secret discriminator in the locator |
-| Authenticated fetches stop working once the locator drops userinfo | Low / high | The fetch uses `spec.connection` (example 15) |
-| A kind returns an unsafe pin or slug, escaping the store or colliding on a case-insensitive filesystem | Low / high | The core validates pins and makes slugs safe before any path join (examples 6, 12, 17) |
-| A kind writes outside `dest` and `raw_dir` | Low / medium | Documented contract. The fake kind test asserts nothing else changed. The registry RFC must cover extraction safety |
-| A kind returns a pin other than the locked one, so the tree and lockfile disagree | Low / high | The core rejects it (4.1 step 3, example 13) |
-| Old store entries waste disk | Medium / low | Release note gives the paths to delete |
+| Risk                                                                                                                                             | Likelihood / impact | Mitigation                                                                                                                                                      |
+| ------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| An old-shape lockfile loads as empty and loses its pins on save                                                                                  | Low / high          | `deny_unknown_fields` and a required `sources` make it a load error (example 9a)                                                                                |
+| An unknown kind is dropped on save                                                                                                               | Low / high          | The manager rejects any kind missing from its `DriverRegistry` right after load, before anything can save (9c)                                                  |
+| Pins re-resolve after upgrading (users delete the lockfile)                                                                                      | High / low          | Expected break; the release note says so. Users who need the old commits note them before upgrading                                                             |
+| A locked commit the remote no longer serves is lost with the old store                                                                           | Low / medium        | Error points at `--update` (example 16); release note                                                                                                           |
+| Credentials leak into the lockfile, refs, slug or logs                                                                                           | Low / high          | Locator strips userinfo; `Connection` has no `Serialize` and redacts (example 15)                                                                               |
+| Two configured URLs differing only in userinfo share one entry and tree, so the second account's access is not re-checked when the pin is cached | Low / low           | Same as today; one OS user's store. Documented in 4.1; per-account content is unsupported, and drivers needing it put a non-secret discriminator in the locator |
+| Authenticated fetches stop working once the locator drops userinfo                                                                               | Low / high          | The fetch uses `spec.connection` (example 15)                                                                                                                   |
+| A kind returns an unsafe pin or slug, escaping the store or colliding on a case-insensitive filesystem                                           | Low / high          | The core validates pins and makes slugs safe before any path join (examples 6, 12, 17)                                                                          |
+| A kind writes outside `dest` and `raw_dir`                                                                                                       | Low / medium        | Documented contract. The fake kind test asserts nothing else changed. The registry RFC must cover extraction safety                                             |
+| A kind returns a pin other than the locked one, so the tree and lockfile disagree                                                                | Low / high          | The core rejects it (4.1 step 3, example 13)                                                                                                                    |
+| Old store entries waste disk                                                                                                                     | Medium / low        | Release note gives the paths to delete                                                                                                                          |
 
 ## 8. Assumptions and open questions
 
 Assumptions:
+
 - Every future kind can express its address as two strings (locator, selector)
   and its content as one immutable pin string. This holds for git and npm
   (selector a range, pin a version plus integrity encoded as lowercase hex).
@@ -447,6 +434,7 @@ Assumptions:
   this workspace.
 
 Decided with the owner:
+
 1. Breaking changes to the store layout, lockfile and refs are allowed without
    changing any version marker, and no compatibility code is kept.
 2. The registry kind is out of scope, and extensibility is proven with a fake

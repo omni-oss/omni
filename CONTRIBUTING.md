@@ -8,16 +8,16 @@ See also [tooling](docs/tooling.md) and [patterns](docs/patterns/README.md).
 
 Tasks run through omni and are defined in `omni/presets/*.omni.yaml`. CI runs them from `.github/workflows/ci.yaml`. Scope a run to the project you changed: `omni run <task> -p <project>`.
 
-| Task | Command | Covers |
-| --- | --- | --- |
-| `check:lint` (Rust) | `cargo clippy -p <crate> -- -D warnings` | Rust crates |
-| `check:format` (Rust) | `cargo fmt -p <crate> -- --check` | Rust crates |
-| `test` (Rust) | `cargo test -p <crate>` | Rust crates |
-| `check:format` (TS) | `bun x oxfmt --check` | TS projects |
-| `check:lint` (TS) | `bun x oxlint <project>` | TS projects |
-| `check:types` (TS) | run from the project directory: `bun x tsc --noEmit -p tsconfig.json && if [ -f tsconfig.node.json ]; then bun x tsc --noEmit -p tsconfig.node.json; fi` | TS projects |
-| `test:unit`, `test:integration` (TS) | `bun run test:unit`, `bun run test:integration` | TS projects |
-| `build` | `bun run build` (TS), cargo build (Rust) | Per project |
+| Task                                 | Command                                                                                                                                                  | Covers      |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| `check:lint` (Rust)                  | `cargo clippy -p <crate> -- -D warnings`                                                                                                                 | Rust crates |
+| `check:format` (Rust)                | `cargo fmt -p <crate> -- --check`                                                                                                                        | Rust crates |
+| `test` (Rust)                        | `cargo test -p <crate>`                                                                                                                                  | Rust crates |
+| `check:format` (TS)                  | `bun x oxfmt --check`                                                                                                                                    | TS projects |
+| `check:lint` (TS)                    | `bun x oxlint <project>`                                                                                                                                 | TS projects |
+| `check:types` (TS)                   | run from the project directory: `bun x tsc --noEmit -p tsconfig.json && if [ -f tsconfig.node.json ]; then bun x tsc --noEmit -p tsconfig.node.json; fi` | TS projects |
+| `test:unit`, `test:integration` (TS) | `bun run test:unit`, `bun run test:integration`                                                                                                          | TS projects |
+| `build`                              | `bun run build` (TS), cargo build (Rust)                                                                                                                 | Per project |
 
 - Vite projects (for example `@omni-oss/channels`) have no `test:unit` or `build` package scripts; their presets run `vitest` and `bun x vite build` directly. Prefer the scoped omni task (`omni run <task> -p <project>`) for TS projects.
 - `cli/omni` lint needs `@omni-oss/bridge-service#build` first.

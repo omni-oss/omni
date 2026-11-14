@@ -162,11 +162,11 @@ section 6), so every commit on the branch has a result.
 3. **Flake filter by attempt.** A rerun completes `CI` again and fires this
    workflow again, so the decision is a table on `run_attempt`:
 
-   | Attempt | Result  | Action                                       |
-   | ------- | ------- | -------------------------------------------- |
-   | 1       | failure | `gh run rerun --failed`, then exit           |
-   | 2       | success | record a flake, stop                         |
-   | 2       | failure | final: continue to step 4                    |
+    | Attempt | Result  | Action                             |
+    | ------- | ------- | ---------------------------------- |
+    | 1       | failure | `gh run rerun --failed`, then exit |
+    | 2       | success | record a flake, stop               |
+    | 2       | failure | final: continue to step 4          |
 
 4. **Find the culprit:** walk first-parent commits back from the failing
    commit to the last commit whose `CI` run succeeded. Squash commits are
@@ -388,11 +388,11 @@ no result. For pushes to `integration/**`, put the commit in the group:
 
 ```yaml
 concurrency:
-  group: >-
-    ${{ github.workflow }}-${{ github.ref }}-${{
-      (github.event_name != 'pull_request' && startsWith(github.ref, 'refs/heads/integration/'))
-      && github.sha || '' }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+    group: >-
+        ${{ github.workflow }}-${{ github.ref }}-${{
+          (github.event_name != 'pull_request' && startsWith(github.ref, 'refs/heads/integration/'))
+          && github.sha || '' }}
+    cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 ```
 
 Nightly `workflow_dispatch` runs on the same head share a group with the push

@@ -25,7 +25,13 @@ tasks:
     cache:
       key:
         files:
-          append: ["./tests/**/*.rs", "./benches/**/*.rs", "@workspace/rustfmt.toml", "@workspace/.rustfmt.toml"]
+          append:
+            [
+              "./tests/**/*.rs",
+              "./benches/**/*.rs",
+              "@workspace/rustfmt.toml",
+              "@workspace/.rustfmt.toml",
+            ]
 
   check:
     exec: ""
