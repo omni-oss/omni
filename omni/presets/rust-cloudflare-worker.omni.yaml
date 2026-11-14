@@ -7,7 +7,7 @@ extends:
 
 env:
   vars:
-    WORKER_BUILD_VERSION: "0.8.7"
+    WORKER_BUILD_VERSION: "0.9.0"
 
 tasks:
   # Fails when native-only runtimes leak into the wasm dependency graph, e.g.
