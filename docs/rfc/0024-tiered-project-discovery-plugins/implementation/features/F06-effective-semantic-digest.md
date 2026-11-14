@@ -2,6 +2,9 @@
 
 **Type:** feature · **Size:** XL (split) · **Depends on:** R03, R05, B01 (wants F05)
 
+Audit prerequisite: [F06.1 effective-field inventory](F06.1-effective-field-audit.md).
+Digest encoding and integration (F06.2/F06.3) remain unimplemented.
+
 ## Problem
 
 The collector hashes raw command config, args, env, input files and dependency digests,
