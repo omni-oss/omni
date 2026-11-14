@@ -30,7 +30,7 @@ support is introduced.
 
 ## Progress
 
-- Implementation and regression tests complete: 205 tests pass across
+- Implementation and regression tests complete: 206 tests pass across
   `omni_constants`, `omni_context` and `omni_projections`.
 - Rust and document formatting checks pass; independent read-only review found
   no issues. The documented Clippy command passes for all three affected crates.
@@ -42,4 +42,8 @@ support is introduced.
   the existing formatter-only drift: regenerating and running oxfmt reproduces
   the checked-in schedule. No dependency or wave changes are needed here.
 - Full-workspace and cross-platform checks are left to CI.
+- PR #101 review correction: aliases of the same filename under one canonical
+  parent count once. Regression reproduced before the fix; lexical-parent and
+  symlink-parent aliases now pass, while distinct filenames still conflict and
+  retain all selected path spellings in deterministic diagnostics.
 - Remaining F/P packages are not part of this batch.

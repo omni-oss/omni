@@ -1,5 +1,6 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
+    ffi::OsString,
     path::{Path, PathBuf},
     sync::LazyLock,
 };
@@ -19,16 +20,27 @@ pub(crate) fn validate_project_roots<TSys: ContextSys>(
     files: &[PathBuf],
     sys: &TSys,
 ) -> Result<(), ContextError> {
-    let mut roots: BTreeMap<PathBuf, BTreeSet<PathBuf>> = BTreeMap::new();
+    #[derive(Default)]
+    struct RootFiles {
+        names: BTreeSet<OsString>,
+        selected_paths: BTreeSet<PathBuf>,
+    }
+
+    let mut roots: BTreeMap<PathBuf, RootFiles> = BTreeMap::new();
     for file in files {
-        if let Some(parent) = file.parent() {
+        if let (Some(parent), Some(name)) = (file.parent(), file.file_name()) {
             let root = sys.fs_canonicalize(parent)?;
-            roots.entry(root).or_default().insert(file.clone());
+            let files = roots.entry(root).or_default();
+            // Different spellings of a parent must not turn one manifest into
+            // multiple files. Retain every selected spelling for diagnostics.
+            files.names.insert(name.to_os_string());
+            files.selected_paths.insert(file.clone());
         }
     }
     let conflicts: BTreeMap<_, _> = roots
         .into_iter()
-        .filter(|(_, files)| files.len() > 1)
+        .filter(|(_, files)| files.names.len() > 1)
+        .map(|(root, files)| (root, files.selected_paths))
         .collect();
     if conflicts.is_empty() {
         Ok(())
@@ -209,6 +221,20 @@ mod tests {
         validate_project_roots(&[], &RealSys).unwrap();
     }
 
+    #[test]
+    fn aliases_of_one_selected_file_do_not_count_as_distinct_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let child = dir.path().join("child");
+        std::fs::create_dir(&child).unwrap();
+        let file = dir.path().join("project.omni.yaml");
+        std::fs::write(&file, "name: app\n").unwrap();
+        validate_project_roots(
+            &[file, child.join("../project.omni.yaml")],
+            &RealSys,
+        )
+        .unwrap();
+    }
+
     #[cfg(unix)]
     #[test]
     fn parent_symlinks_share_a_canonical_root() {
@@ -217,20 +243,30 @@ mod tests {
         let alias = dir.path().join("alias");
         std::fs::create_dir(&root).unwrap();
         std::os::unix::fs::symlink(&root, &alias).unwrap();
-        let error = validate_project_roots(
-            &[
-                root.join("project.omni.yaml"),
-                alias.join("project.omni.json"),
-            ],
-            &RealSys,
-        )
-        .unwrap_err();
+        std::fs::write(root.join("project.omni.yaml"), "name: app\n").unwrap();
+        let mut selected = vec![
+            root.join("project.omni.yaml"),
+            alias.join("project.omni.yaml"),
+        ];
+        validate_project_roots(&selected, &RealSys).unwrap();
+        selected.push(alias.join("project.omni.json"));
+        let error = validate_project_roots(&selected, &RealSys).unwrap_err();
         let details = error.details().unwrap();
         let canonical = std::fs::canonicalize(root).unwrap();
         assert!(
             details["conflicts"]
                 .get(canonical.to_str().unwrap())
                 .is_some()
+        );
+        for path in &selected {
+            assert!(error.to_string().contains(&format!("{path:?}")));
+        }
+        selected.reverse();
+        assert_eq!(
+            error.details(),
+            validate_project_roots(&selected, &RealSys)
+                .unwrap_err()
+                .details()
         );
     }
 
