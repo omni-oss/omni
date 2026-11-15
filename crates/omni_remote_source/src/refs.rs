@@ -2,10 +2,20 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+/// Whether a reference update describes the entire subsystem or only new uses.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RefUpdate {
+    /// Replace the full set. An empty update releases every previous reference.
+    ReplaceComplete,
+    /// Keep existing keys and add new ones; newly resolved pins win collisions.
+    MergeAdditive,
+}
+
 /// The persisted reference set for a single subsystem, written to
 /// `refs/<id>.json`. It records every remote source the subsystem resolved on
-/// its last run, together with the pin it resolved to. Garbage collection unions
-/// these files to decide what the store must keep.
+/// its last run, together with the pin it resolved to. Pin reconciliation unions
+/// these files to decide which lockfile entries to keep. Store pruning does not
+/// consult reference sets.
 ///
 /// Keys are kept in a [`BTreeMap`] so the serialized form is sorted regardless
 /// of the order references were added, keeping committed-adjacent diffs stable.

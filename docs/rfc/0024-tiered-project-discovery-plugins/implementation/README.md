@@ -48,8 +48,11 @@ F08.1 and F10.1 are merged in the
 [design batch](features/F08-F10-design-batch.md)
 ([PR #108](https://github.com/omni-oss/omni/pull/108)).
 F08.2's [process-held lease primitive](features/F08.2-lease-primitive.md)
-is implemented, pending PR review; materialization and GC do not use leases yet
-(F08.3). Other runtime code for F03-F10, and plugins (P), remains unimplemented.
+is merged ([PR #109](https://github.com/omni-oss/omni/pull/109)).
+F08.4's [atomic reference API and lockfile publication](features/F08.4-atomic-reference-api.md)
+is implemented, pending PR review. Materialization and GC do not use leases yet
+(F08.3), and contributor staging remains F08.5. Other runtime code for F03-F10,
+and plugins (P), remains unimplemented.
 
 Known gaps carried forward from the merged refactors:
 

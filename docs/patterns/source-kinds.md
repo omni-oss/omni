@@ -12,3 +12,19 @@ To add a kind:
 4. Map its `SourceConfig` variant in `remote_source_for` (`crates/omni_remote_source_contributors/src/lib.rs`).
 
 The lockfile, refs, prune and projection code need no change.
+
+## Reference updates
+
+Use `RemoteSourceManager::update_refs` with `RefUpdate::ReplaceComplete` only
+after resolving the subsystem's entire set; use `MergeAdditive` for genuinely
+partial work. An empty complete update releases old refs. The compatibility
+`record_refs` wrapper means complete replacement. Corrupt/unreadable existing
+sets are errors in either mode, never an excuse to discard old references.
+
+Reference updates share the workspace advisory lock with pin reconciliation.
+Refs and lockfiles publish with `omni_utils::atomic_file::write`: exclusive-create
+staging in the destination directory, flush/sync, close, replacement rename.
+The blocking publisher owns the advisory guard through commit, including after
+async cancellation. Keep staging files non-JSON so reconciliation ignores them.
+This guarantees complete-file visibility, not power-loss durability or a
+cross-file install transaction.

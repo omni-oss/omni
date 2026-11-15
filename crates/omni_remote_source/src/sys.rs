@@ -1,4 +1,4 @@
-use omni_lockfile::LockfileSys;
+use omni_lockfile::LockfileSaveSys;
 use system_traits::{
     FsCreateDirAllAsync, FsReadDirAsync, FsRemoveDirAllAsync,
     FsRemoveFileAsync, FsRenameAsync, auto_impl,
@@ -7,7 +7,7 @@ use system_traits::{
 #[auto_impl]
 pub trait RemoteSourceSys:
     Clone
-    + LockfileSys
+    + LockfileSaveSys
     + FsCreateDirAllAsync
     + FsRemoveDirAllAsync
     + FsRemoveFileAsync

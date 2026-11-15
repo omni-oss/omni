@@ -355,7 +355,7 @@ tasks:
     }
   F08.2:
     {
-      owner: "OpenCode (lease primitive; pending PR review)",
+      owner: "OpenCode (lease primitive; merged PR #109)",
       title: "Process-held lease primitive",
       parent: F08,
       kind: code,
@@ -374,6 +374,7 @@ tasks:
     }
   F08.4:
     {
+      owner: "OpenCode (atomic references; pending PR review)",
       title: "Atomic reference API (complete vs additive)",
       parent: F08,
       kind: code,
