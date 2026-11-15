@@ -41,10 +41,12 @@ Bug fixes B01-B04 and refactors R01-R08 are merged.
 F01 and F02 are merged in the
 [first feature batch](features/F01-F02-batch.md)
 ([PR #101](https://github.com/omni-oss/omni/pull/101)).
-F03.1 and F06.1 are documented in the
-[prerequisite audit batch](features/F03-F06-audit-batch.md), pending PR review.
-Their runtime features, the remaining features (F04-F10 except that audit), and
-plugins (P) remain unimplemented.
+F03.1 and F06.1 are merged in the
+[prerequisite audit batch](features/F03-F06-audit-batch.md)
+([PR #103](https://github.com/omni-oss/omni/pull/103)).
+F08.1 and F10.1 are documented in the
+[design batch](features/F08-F10-design-batch.md), pending PR review.
+Runtime code for F03-F10, and plugins (P), remains unimplemented.
 
 Known gaps carried forward from the merged refactors:
 
