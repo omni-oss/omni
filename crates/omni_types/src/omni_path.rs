@@ -504,7 +504,7 @@ mod tests {
         };
         for ok in [
             ("../shared/x", Root::Project),
-            ("../shared/*.txt", Root::Project),
+            ("../shared/out.txt", Root::Project),
             ("dist/../out/x", Root::Project),
             ("shared/x", Root::Workspace),
         ] {
