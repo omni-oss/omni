@@ -52,10 +52,10 @@ export default defineConfig({
                 // Per-request SSR preparation: builds this request's TanStack
                 // router + Query cache and runs the loaders (see src/setup.tsx).
                 // Ignored when `ssr` is false.
-                setup: "./src/setup.tsx",
+                serverRenderSetup: "./src/setup.tsx",
                 // Emit dist/server/node.js: a ready-to-run Node server (static
                 // assets + the handler). Other platforms import dist/server/server.js.
-                node: true,
+                nodeServer: true,
                 // Typed env is on by convention: ./env.ts is probed automatically.
                 // (Set `env: false` here to opt out.)
             },
@@ -66,7 +66,7 @@ export default defineConfig({
             diagnostics: true,
             // The configure module runs in the handler graph before any dispatch —
             // it registers the Query single-flight collector.
-            serverFunctions: { configure: "./src/server-config.ts" },
+            serverFunctions: { serverSetup: "./src/server-functions-setup.ts" },
         }),
         prerender({ mode: "static", integrations: [serverFunctions()] }),
         // API routes only — TanStack owns src/routes, so the file-system router

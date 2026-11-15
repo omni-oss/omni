@@ -1,8 +1,12 @@
 ---
+
 title: "prune"
 
 description: "Delete checkouts from the remote-source store by age or size. They are refetched when next used"
+
 ---
+
+
 
 ## Usage
 
@@ -10,35 +14,27 @@ description: "Delete checkouts from the remote-source store by age or size. They
 omni remote-sources prune [OPTIONS]
 ```
 
-At least one of `--older-than`, `--larger-than` or `--all` is required.
-`--older-than` and `--larger-than` combine (a checkout must match both);
-`--all` cannot be combined with them. The checkouts listed are the ones deleted:
-newer ones added while you confirm are left alone. See the
-[remote-source store](/docs/references/remote-source-store).
-
 ---
 
 ## Options
 
 ### `-o`, `--older-than`
 
-Only checkouts last used longer ago than this (for example `30d`)
+Only checkouts last used longer ago than this (for example 30d)
 
 - **Required:** No
 
 ### `-l`, `--larger-than`
 
-Only checkouts larger than this (for example `100MB`)
+Only checkouts larger than this (for example 100MB)
 
 - **Required:** No
 
 ### `--all`
 
-Select every checkout in the store
+Select every checkout in the store (not combinable with --older-than or --larger-than)
 
 - **Required:** No
-
-- **Default:** `false`
 
 - **Possible values:** `true`, `false`
 
@@ -48,8 +44,6 @@ Prune without prompting for confirmation
 
 - **Required:** No
 
-- **Default:** `false`
-
 - **Possible values:** `true`, `false`
 
 ### `-d`, `--dry-run`
@@ -58,8 +52,6 @@ Show the checkouts that would be deleted
 
 - **Required:** No
 
-- **Default:** `false`
-
 - **Possible values:** `true`, `false`
 
 ---
@@ -67,8 +59,7 @@ Show the checkouts that would be deleted
 ## Examples
 
 ```bash
-omni remote-sources prune --older-than 30d --dry-run
-omni remote-sources prune --all --yes
+omni remote-sources prune [OPTIONS]
 ```
 
 ---

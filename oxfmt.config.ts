@@ -48,6 +48,7 @@ export default defineConfig({
         ".omni/**/*.*",
         "**/CHANGELOG.md",
         "CHANGELOG.root.md",
+        "apps/site/content/docs/references/commands/**",
     ],
     overrides: [
         {
