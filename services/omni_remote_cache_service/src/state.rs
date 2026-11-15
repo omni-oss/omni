@@ -27,11 +27,13 @@ pub async fn build_state(args: &ServeArgs) -> eyre::Result<ServiceState> {
     if let Some(path) = args.repository_config.as_deref() {
         let info = service_info(args);
         let provider = build_sql_provider(path).await?;
-        return Ok(ServiceState::new(
+        let mut state = ServiceState::new(
             Arc::new(StorageBackend::from_cli_args(args).await),
             Arc::new(info),
             provider,
-        ));
+        );
+        state.max_artifact_size = args.max_artifact_size;
+        return Ok(state);
     }
 
     let config = args.config.as_deref().unwrap_or("orcs.config.json");
@@ -44,12 +46,14 @@ pub async fn build_state(args: &ServeArgs) -> eyre::Result<ServiceState> {
 
     let info = service_info(args);
 
-    Ok(ServiceState::new(
+    let mut state = ServiceState::new(
         Arc::new(StorageBackend::from_cli_args(args).await),
         Arc::new(info),
         Arc::new(ConfigBasedDependencyProvider::new(
             Arc::new(config.to_in_memory_database()),
             Arc::new(config.security.api_keys.clone()),
         )),
-    ))
+    );
+    state.max_artifact_size = args.max_artifact_size;
+    Ok(state)
 }

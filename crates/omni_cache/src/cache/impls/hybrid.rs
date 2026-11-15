@@ -65,7 +65,7 @@ use omni_glob::{GlobOptions, GlobPatterns, include_set};
 
 use omni_hasher::project_dir_hasher::impls::RealDirHasherError;
 
-use super::cache_archive::unarchive;
+use super::cache_archive::unarchive_bytes;
 
 #[derive(Clone, Debug)]
 pub struct HybridTaskExecutionCacheStore {
@@ -134,6 +134,29 @@ impl HybridTaskExecutionCacheStore {
         self.client
             .get_or_init(|| Arc::new(DefaultRemoteCacheClient::default()))
     }
+}
+
+/// True when every path in a decoded cache entry can only descend from the base
+/// it is later joined onto: `cached_path` and `logs_path` from the entry
+/// directory, `original_path` from its project or workspace root.
+fn restore_paths_are_confined(entry: &CachedTaskExecution) -> bool {
+    entry
+        .logs_path
+        .as_deref()
+        .is_none_or(omni_types::is_confined_relative)
+        && entry.files.iter().all(|file| {
+            omni_types::is_confined_relative(&file.cached_path)
+                && file.original_path.is_confined()
+        })
+}
+
+/// True only for a regular file. Unlike an existence check this does not follow
+/// a symlink, so a link that an entry smuggled in is a miss and never a source
+/// that restore would read from or copy.
+async fn is_regular_file(path: &Path) -> bool {
+    tokio::fs::symlink_metadata(path)
+        .await
+        .is_ok_and(|metadata| metadata.is_file())
 }
 
 fn hashtext(text: &str) -> String {
@@ -733,7 +756,22 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
 
                     if let Some(bytes) = response {
                         tracing::debug!("fetched remote cache for {}", digest);
-                        unarchive(&output_dir, Cursor::new(bytes))?;
+                        match unarchive_bytes(&output_dir, &bytes) {
+                            Ok(()) => {}
+                            // Rejected before anything was written (a link, an
+                            // escaping name, or a corrupt archive): a miss.
+                            Err(e)
+                                if e.kind()
+                                    == std::io::ErrorKind::InvalidData =>
+                            {
+                                tracing::warn!(
+                                    %digest,
+                                    error = %e,
+                                    "ignoring an unsafe or corrupt remote cache entry"
+                                );
+                            }
+                            Err(e) => return Err(e.into()),
+                        }
                     }
 
                     Ok::<_, LocalTaskExecutionCacheStoreError>(())
@@ -759,11 +797,25 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                 let mut cached_output: CachedTaskExecution =
                     rmp_serde::decode::from_slice(&bytes)?;
 
+                // An entry may come from a remote cache or a hostile writer, and
+                // its metadata is not covered by the archive layer's checks. A
+                // path that is absolute, uses `..`, or is not anchored to a
+                // root would be joined onto a base and could read or write
+                // outside it, so the whole entry is a miss.
+                if !restore_paths_are_confined(&cached_output) {
+                    tracing::warn!(
+                        project = %project.task.project_name,
+                        "ignoring a cache entry with an unsafe path in its metadata"
+                    );
+                    outputs.push(None);
+                    continue 'outer_loop;
+                }
+
                 // canonicalize the paths
                 if let Some(logs_path) = cached_output.logs_path.as_mut() {
                     let p = cache_abs(logs_path)?;
 
-                    if !self.sys.fs_exists_async(&p).await? {
+                    if !is_regular_file(&p).await {
                         outputs.push(None);
                         continue 'outer_loop;
                     }
@@ -774,7 +826,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                 for file in cached_output.files.iter_mut() {
                     let c = cache_abs(&file.cached_path)?;
 
-                    if !self.sys.fs_exists_async(&c).await? {
+                    if !is_regular_file(&c).await {
                         outputs.push(None);
                         continue 'outer_loop;
                     }
@@ -1792,7 +1844,8 @@ mod tests {
 
     fn uploaded_exit_code(artifact: &Bytes) -> u32 {
         let dir = tempfile::tempdir().unwrap();
-        unarchive(dir.path(), Cursor::new(artifact)).unwrap();
+        super::super::cache_archive::unarchive_bytes(dir.path(), artifact)
+            .unwrap();
         let metadata =
             std::fs::read(dir.path().join(CACHE_OUTPUT_METADATA_FILE)).unwrap();
         let cached: CachedTaskExecution =
@@ -2136,6 +2189,253 @@ mod tests {
         assert!(cached_output2.is_some(), "cached output should exist");
     }
 
+    async fn rewrite_entry_metadata(
+        cache: &HybridTaskExecutionCacheStore,
+        task: &TaskExecutionInfo<'_>,
+        edit: impl FnOnce(&mut CachedTaskExecution),
+    ) {
+        let collected = cache
+            .collect(
+                &[*task],
+                &CollectConfig {
+                    cache_output_dirs: true,
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        let metadata = collected[0]
+            .cache_output_dir
+            .as_ref()
+            .unwrap()
+            .join(CACHE_OUTPUT_METADATA_FILE);
+        let mut entry: CachedTaskExecution =
+            rmp_serde::from_slice(&std::fs::read(&metadata).unwrap()).unwrap();
+        edit(&mut entry);
+        std::fs::write(&metadata, rmp_serde::to_vec(&entry).unwrap()).unwrap();
+    }
+
+    #[tokio::test]
+    async fn an_entry_with_an_escaping_path_is_a_miss() {
+        use omni_types::{OmniPath, Root};
+
+        type Edit = Box<dyn Fn(&mut CachedTaskExecution)>;
+        let hostile: Vec<(&str, Edit)> = vec![
+            (
+                "original_path with ..",
+                Box::new(|e| {
+                    e.files[0].original_path =
+                        OmniPath::new_rooted("../../escape.js", Root::Project)
+                }),
+            ),
+            (
+                "original_path hidden .. segment",
+                Box::new(|e| {
+                    e.files[0].original_path = OmniPath::new_rooted(
+                        "dist/../../escape.js",
+                        Root::Workspace,
+                    )
+                }),
+            ),
+            (
+                "original_path absolute under a root",
+                Box::new(|e| {
+                    e.files[0].original_path =
+                        OmniPath::new_rooted("/tmp/escape.js", Root::Project)
+                }),
+            ),
+            (
+                "original_path unrooted absolute",
+                Box::new(|e| {
+                    e.files[0].original_path = OmniPath::new("/tmp/escape.js")
+                }),
+            ),
+            (
+                "original_path empty",
+                Box::new(|e| {
+                    e.files[0].original_path =
+                        OmniPath::new_rooted("", Root::Project)
+                }),
+            ),
+            (
+                "cached_path with ..",
+                Box::new(|e| {
+                    e.files[0].cached_path =
+                        PathBuf::from("../../../etc/passwd")
+                }),
+            ),
+            (
+                "cached_path absolute",
+                Box::new(|e| {
+                    e.files[0].cached_path = PathBuf::from("/etc/passwd")
+                }),
+            ),
+            (
+                "logs_path absolute",
+                Box::new(|e| e.logs_path = Some(PathBuf::from("/etc/passwd"))),
+            ),
+            (
+                "logs_path with ..",
+                Box::new(|e| e.logs_path = Some(PathBuf::from("../../x"))),
+            ),
+        ];
+
+        for (name, edit) in hostile {
+            let temp = fixture(&["project1"]).await;
+            let cache = cache_store(temp.path());
+            let task = task("task", "project1", temp.path());
+            cache
+                .cache(&new_cache_info(Some(&LOGS_CONTENT), *task.get()))
+                .await
+                .unwrap();
+            assert!(
+                cache.get(task.get()).await.unwrap().is_some(),
+                "control: the untouched entry must hit ({name})"
+            );
+
+            rewrite_entry_metadata(&cache, task.get(), |e| edit(e)).await;
+
+            assert!(
+                cache.get(task.get()).await.unwrap().is_none(),
+                "an entry with {name} must be a miss"
+            );
+        }
+    }
+
+    /// Serves `body` for every GET and 404 for anything else.
+    async fn serve_remote_entry(
+        body: Vec<u8>,
+    ) -> (String, tokio::task::JoinHandle<()>) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener =
+            tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            loop {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut header = Vec::new();
+                while !header.ends_with(b"\r\n\r\n") {
+                    header.push(socket.read_u8().await.unwrap());
+                }
+                let response = if header.starts_with(b"GET ") {
+                    let mut head = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                        body.len()
+                    )
+                    .into_bytes();
+                    head.extend_from_slice(&body);
+                    head
+                } else {
+                    b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_vec()
+                };
+                socket.write_all(&response).await.unwrap();
+            }
+        });
+        (url, server)
+    }
+
+    fn remote_store(root: &Path, url: &str) -> HybridTaskExecutionCacheStore {
+        HybridTaskExecutionCacheStore::new(
+            root.join(".omni/cache-restore"),
+            root,
+            RemoteConfig::Enabled(EnabledRemoteConfig {
+                api_base_url: url.to_string(),
+                api_key: "k".to_string(),
+                tenant_code: "t".to_string(),
+                organization_code: "o".to_string(),
+                workspace_code: "w".to_string(),
+                environment_code: Some("e".to_string()),
+            }),
+        )
+    }
+
+    #[tokio::test]
+    async fn a_remote_archive_with_a_link_is_a_miss_and_writes_nothing() {
+        let temp = fixture(&["project1"]).await;
+        let genuine_task = task("task", "project1", temp.path());
+
+        // Control: a genuine archive of a real entry restores from the remote.
+        let producer = cache_store(temp.path());
+        producer
+            .cache(&new_cache_info(Some(&LOGS_CONTENT), *genuine_task.get()))
+            .await
+            .unwrap();
+        let collected = producer
+            .collect(
+                &[*genuine_task.get()],
+                &CollectConfig {
+                    cache_output_dirs: true,
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        let mut genuine = Vec::new();
+        archive(
+            collected[0].cache_output_dir.as_ref().unwrap(),
+            Cursor::new(&mut genuine),
+        )
+        .unwrap();
+        let (url, server) = serve_remote_entry(genuine).await;
+        let restored = remote_store(temp.path(), &url)
+            .get(genuine_task.get())
+            .await
+            .unwrap();
+        assert!(restored.is_some(), "control: a genuine archive restores");
+        server.abort();
+
+        // Hostile: a symlink entry pointing at a directory outside the cache.
+        let canary = tempfile::tempdir().unwrap();
+        let mut hostile = Vec::new();
+        {
+            let mut tar = tar::Builder::new(flate2::write::GzEncoder::new(
+                &mut hostile,
+                flate2::Compression::default(),
+            ));
+            let mut header = tar::Header::new_gnu();
+            header.set_entry_type(tar::EntryType::Symlink);
+            header.set_size(0);
+            header.set_mode(0o777);
+            tar.append_link(&mut header, "output.js.cache", canary.path())
+                .unwrap();
+            tar.into_inner().unwrap().finish().unwrap();
+        }
+        let (url, server) = serve_remote_entry(hostile).await;
+        let victim = fixture(&["project1"]).await;
+        let victim_task = task("task", "project1", victim.path());
+        let got = remote_store(victim.path(), &url)
+            .get(victim_task.get())
+            .await
+            .unwrap();
+        server.abort();
+        assert!(got.is_none(), "a link in a remote archive must be a miss");
+        assert_eq!(
+            std::fs::read_dir(canary.path()).unwrap().count(),
+            0,
+            "nothing may be written through the link"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_confined_entry_still_restores_with_the_normal_roots() {
+        let temp = fixture(&["project1"]).await;
+        let cache = cache_store(temp.path());
+        let task = task("task", "project1", temp.path());
+        cache
+            .cache(&new_cache_info(Some(&LOGS_CONTENT), *task.get()))
+            .await
+            .unwrap();
+        let entry = cache.get(task.get()).await.unwrap().unwrap();
+        assert_eq!(entry.files.len(), 2);
+        for file in &entry.files {
+            let restored = file.original_path.path().expect("resolved");
+            assert!(
+                restored.starts_with(temp.path().join("project1")),
+                "{restored:?} must stay inside the project"
+            );
+        }
+    }
+
     #[tokio::test]
     async fn test_success_replaces_cached_failure() {
         let temp = fixture(&["project1"]).await;
@@ -2350,12 +2650,21 @@ mod tests {
             .expect("logs");
         let mut files = vec![];
         for f in &learned.files {
-            let name =
-                format!("{}.cache", hashtext(&f.original_path.to_string()));
+            // `get` resolves `original_path` to an absolute path, but the
+            // previous version stored it unresolved and anchored to a root.
+            let rooted = omni_types::OmniPath::new_rooted(
+                f.original_path
+                    .path()
+                    .expect("resolved")
+                    .strip_prefix(dir.join("project1"))
+                    .expect("inside the project"),
+                omni_types::Root::Project,
+            );
+            let name = format!("{}.cache", hashtext(&rooted.to_string()));
             std::fs::write(entry_dir.join(&name), JS_CONTENT).expect("file");
             files.push(CachedFileOutput {
                 cached_path: PathBuf::from(name),
-                original_path: f.original_path.clone(),
+                original_path: rooted,
             });
         }
         let legacy = CachedTaskExecution {

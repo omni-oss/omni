@@ -96,6 +96,15 @@ pub struct ServeArgs {
         help = "Path to a JSON file that reads ownership data and API keys from a SQL database using your own queries, instead of the configuration file"
     )]
     pub repository_config: Option<String>,
+
+    #[arg(
+        long,
+        default_value_t = omni_remote_cache_core::state::DEFAULT_MAX_ARTIFACT_SIZE,
+        env = "OMNI_REMOTE_CACHE_SERVICE_MAX_ARTIFACT_SIZE",
+        help = "The largest artifact accepted, in bytes. Larger uploads get 413 and are not stored"
+    )]
+    #[new(value = "omni_remote_cache_core::state::DEFAULT_MAX_ARTIFACT_SIZE")]
+    pub max_artifact_size: u64,
 }
 
 #[derive(

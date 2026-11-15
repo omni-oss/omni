@@ -58,6 +58,15 @@ fn config() -> Configuration {
 async fn server(
     root: &std::path::Path,
 ) -> (TestServer, Arc<LocalDiskCacheBackend>) {
+    let (router, backend) = router(root, None).await;
+    (TestServer::new(router), backend)
+}
+
+/// The router itself, optionally with a smaller `max_artifact_size`.
+async fn router(
+    root: &std::path::Path,
+    max_artifact_size: Option<u64>,
+) -> (axum::Router, Arc<LocalDiskCacheBackend>) {
     let args = ServeArgs::new(
         "".to_string(),
         Some(serde_json::to_string(&config()).unwrap()),
@@ -73,11 +82,14 @@ async fn server(
     let mut state = build_state(&args).await.unwrap();
     let backend = Arc::new(LocalDiskCacheBackend::new(root));
     state.storage_backend = backend.clone();
+    if let Some(limit) = max_artifact_size {
+        state.max_artifact_size = limit;
+    }
     let router = omni_remote_cache_service::routes::root::build_router(
         &RouterConfig::from(args.routes.clone().unwrap()),
     )
     .with_state(state);
-    (TestServer::new(router), backend)
+    (router, backend)
 }
 
 fn container() -> Container {
@@ -203,5 +215,130 @@ async fn authentication_comes_before_digest_validation() {
             || response.status_code() == StatusCode::FORBIDDEN,
         "got {}",
         response.status_code()
+    );
+}
+
+fn regular_files(root: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut found = vec![];
+    let mut pending = vec![root.to_path_buf()];
+    while let Some(dir) = pending.pop() {
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let entry = entry.unwrap();
+            if entry.file_type().unwrap().is_dir() {
+                pending.push(entry.path());
+            } else {
+                found.push(entry.path());
+            }
+        }
+    }
+    found
+}
+
+async fn put_stream(
+    router: &axum::Router,
+    digest: &str,
+    chunks: Vec<&'static str>,
+) -> StatusCode {
+    use tower::ServiceExt as _;
+    // A streamed body has no Content-Length, so only the stream bound can stop it.
+    let body = axum::body::Body::from_stream(tokio_stream::iter(
+        chunks
+            .into_iter()
+            .map(|c| Ok::<_, std::io::Error>(Bytes::from(c))),
+    ));
+    let request = http::Request::builder()
+        .method("PUT")
+        .uri(format!("/api/v1/artifacts/{digest}?{QUERY}"))
+        .header("X-API-KEY", "k")
+        .header("X-OMNI-TENANT", "t")
+        .body(body)
+        .unwrap();
+    router.clone().oneshot(request).await.unwrap().status()
+}
+
+/// A PUT that declares its length, as a real client does. The in-process
+/// `TestServer` sends no Content-Length, so build the request by hand.
+async fn put_declared(
+    router: &axum::Router,
+    digest: &str,
+    body: &'static str,
+) -> StatusCode {
+    use tower::ServiceExt as _;
+    let request = http::Request::builder()
+        .method("PUT")
+        .uri(format!("/api/v1/artifacts/{digest}?{QUERY}"))
+        .header("X-API-KEY", "k")
+        .header("X-OMNI-TENANT", "t")
+        .header(http::header::CONTENT_LENGTH, body.len().to_string())
+        .body(axum::body::Body::from(body))
+        .unwrap();
+    router.clone().oneshot(request).await.unwrap().status()
+}
+
+#[tokio::test]
+async fn an_upload_over_the_limit_is_rejected_by_content_length() {
+    let root = tempfile::tempdir().unwrap();
+    let (router, backend) = router(root.path(), Some(8)).await;
+
+    assert_eq!(
+        put_declared(&router, DIGEST, "123456789").await,
+        StatusCode::PAYLOAD_TOO_LARGE
+    );
+    assert!(backend.get(&container(), DIGEST).await.unwrap().is_none());
+    assert!(regular_files(root.path()).is_empty(), "nothing is staged");
+
+    // Exactly at the limit is accepted, declared or streamed.
+    assert_eq!(
+        put_declared(&router, DIGEST, "12345678").await,
+        StatusCode::NO_CONTENT
+    );
+}
+
+#[tokio::test]
+async fn a_streamed_upload_over_the_limit_commits_nothing() {
+    let root = tempfile::tempdir().unwrap();
+    let (router, backend) = router(root.path(), Some(8)).await;
+
+    assert_eq!(
+        put_stream(&router, DIGEST, vec!["1234", "5678", "9"]).await,
+        StatusCode::PAYLOAD_TOO_LARGE
+    );
+    assert!(
+        backend.get(&container(), DIGEST).await.unwrap().is_none(),
+        "the key must stay free after an oversized stream"
+    );
+    assert!(
+        regular_files(root.path()).is_empty(),
+        "staging is cleaned up"
+    );
+
+    // The key is still usable afterwards, and at the limit it is accepted.
+    assert_eq!(
+        put_stream(&router, DIGEST, vec!["1234", "5678"]).await,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        backend.get(&container(), DIGEST).await.unwrap(),
+        Some(Bytes::from("12345678"))
+    );
+}
+
+#[tokio::test]
+async fn an_oversized_upload_never_disturbs_an_existing_entry() {
+    let root = tempfile::tempdir().unwrap();
+    let (router, backend) = router(root.path(), Some(8)).await;
+    let server = TestServer::new(router.clone());
+
+    assert_eq!(
+        put(&server, DIGEST, "original").await,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        put_stream(&router, DIGEST, vec!["too", "much", "data"]).await,
+        StatusCode::PAYLOAD_TOO_LARGE
+    );
+    assert_eq!(
+        backend.get(&container(), DIGEST).await.unwrap(),
+        Some(Bytes::from("original"))
     );
 }

@@ -129,6 +129,13 @@ fn config() -> Configuration {
 }
 
 async fn server(hooks: Arc<Recorder>) -> TestServer {
+    TestServer::new(router(hooks, None).await)
+}
+
+async fn router(
+    hooks: Arc<Recorder>,
+    max_artifact_size: Option<u64>,
+) -> axum::Router {
     let serve_args = ServeArgs::new(
         "".to_string(),
         Some(serde_json::to_string(&config()).unwrap()),
@@ -146,11 +153,13 @@ async fn server(hooks: Arc<Recorder>) -> TestServer {
         inner: state.provider.clone(),
         hooks,
     });
-    let router = omni_remote_cache_service::routes::root::build_router(
-        &RouterConfig::from(serve_args.routes.clone().unwrap()),
-    )
-    .with_state(state);
-    TestServer::new(router)
+    if let Some(limit) = max_artifact_size {
+        state.max_artifact_size = limit;
+    }
+    omni_remote_cache_service::routes::root::build_router(&RouterConfig::from(
+        serve_args.routes.clone().unwrap(),
+    ))
+    .with_state(state)
 }
 
 const ONE: &str = "/api/v1/artifacts/abc?org=o&ws=w&env=e";
@@ -256,5 +265,77 @@ async fn a_conflicting_put_reports_already_exists_to_the_hooks() {
             omni_remote_cache_service::hooks::OutcomeKind::Stored,
             omni_remote_cache_service::hooks::OutcomeKind::AlreadyExists,
         ]
+    );
+}
+
+#[tokio::test]
+async fn a_declared_oversized_upload_never_reaches_the_hooks() {
+    use tower::ServiceExt as _;
+    let hooks = Arc::new(Recorder::default());
+    let router = router(hooks.clone(), Some(4)).await;
+    // The in-process test client sends no Content-Length of its own, so set it:
+    // this is the header path that is refused before the body is read.
+    let request = http::Request::builder()
+        .method("PUT")
+        .uri(ONE)
+        .header("X-API-KEY", "k")
+        .header("X-OMNI-TENANT", "t")
+        .header(http::header::CONTENT_LENGTH, "5")
+        .body(axum::body::Body::from("12345"))
+        .unwrap();
+    let status = router.oneshot(request).await.unwrap().status();
+    assert_eq!(status, http::StatusCode::PAYLOAD_TOO_LARGE);
+    assert_eq!(hooks.before.load(Ordering::SeqCst), 0);
+    assert_eq!(hooks.after.load(Ordering::SeqCst), 0);
+}
+
+async fn stream_put(
+    router: &axum::Router,
+    chunks: Vec<Result<&'static str, &'static str>>,
+) -> http::StatusCode {
+    use tower::ServiceExt as _;
+    // No Content-Length: only the stream bound, or a stream error, can stop it.
+    let body = axum::body::Body::from_stream(tokio_stream::iter(
+        chunks
+            .into_iter()
+            .map(|c| c.map(bytes::Bytes::from).map_err(std::io::Error::other)),
+    ));
+    let request = http::Request::builder()
+        .method("PUT")
+        .uri(ONE)
+        .header("X-API-KEY", "k")
+        .header("X-OMNI-TENANT", "t")
+        .body(body)
+        .unwrap();
+    router.clone().oneshot(request).await.unwrap().status()
+}
+
+#[tokio::test]
+async fn a_streamed_oversized_upload_is_413_and_reported_as_failed() {
+    let hooks = Arc::new(Recorder::default());
+    let router = router(hooks.clone(), Some(4)).await;
+    assert_eq!(
+        stream_put(&router, vec![Ok("123"), Ok("45")]).await,
+        http::StatusCode::PAYLOAD_TOO_LARGE
+    );
+    assert_eq!(hooks.before.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        hooks.after.load(Ordering::SeqCst),
+        1,
+        "before needs an after"
+    );
+    assert_eq!(
+        *hooks.outcomes.lock().unwrap(),
+        [omni_remote_cache_service::hooks::OutcomeKind::Failed]
+    );
+}
+
+#[tokio::test]
+async fn a_body_error_under_the_limit_is_not_mistaken_for_413() {
+    let hooks = Arc::new(Recorder::default());
+    let router = router(hooks.clone(), Some(1024)).await;
+    assert_eq!(
+        stream_put(&router, vec![Ok("12"), Err("connection reset")]).await,
+        http::StatusCode::INTERNAL_SERVER_ERROR
     );
 }

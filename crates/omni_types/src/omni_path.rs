@@ -128,6 +128,14 @@ impl<TRoot: OmniPathRoot> OmniPath<TRoot> {
         &self.path
     }
 
+    /// True when this path is anchored to a named root and can only descend
+    /// from it: non-empty, relative, and made of plain names (a `.` is
+    /// ignored). Used to check untrusted paths, such as those inside a
+    /// downloaded cache entry, before they are joined onto a root.
+    pub fn is_confined(&self) -> bool {
+        self.root.is_some() && is_confined_relative(&self.path)
+    }
+
     /// Resolves the path relative to the given base
     #[inline(always)]
     pub fn resolve<'a>(
@@ -154,6 +162,67 @@ impl<TRoot: OmniPathRoot> OmniPath<TRoot> {
             };
         }
     }
+}
+
+/// True for a non-empty relative path whose components are all plain names (or
+/// `.`). Rejects `..`, a root directory, and a Windows drive or UNC prefix, each
+/// of which would let `base.join(path)` leave `base` (a rooted or prefixed
+/// argument replaces the base outright). A name with a control character is
+/// rejected on every platform; on Windows a name that Win32 would normalize or
+/// treat specially is rejected too (see [`is_windows_unsafe_name`]).
+pub fn is_confined_relative(path: &StdPath) -> bool {
+    use std::path::Component;
+    let mut names = 0usize;
+    for component in path.components() {
+        match component {
+            Component::Normal(name) => {
+                let name = name.to_string_lossy();
+                if name.chars().any(char::is_control)
+                    || (cfg!(windows) && is_windows_unsafe_name(&name))
+                {
+                    return false;
+                }
+                names += 1;
+            }
+            Component::CurDir => {}
+            Component::ParentDir
+            | Component::RootDir
+            | Component::Prefix(_) => {
+                return false;
+            }
+        }
+    }
+    names > 0
+}
+
+/// True for a file name that Windows treats as something other than the plain
+/// file it looks like. `std::path::absolute` calls `GetFullPathNameW`, which
+/// strips trailing dots and spaces, so `".. "` or `"..."` is not a harmless name;
+/// a `:` selects an alternate data stream or a drive; some characters are
+/// wildcards; and a device name such as `CON` or `NUL.txt` opens a device.
+///
+/// Pure string logic, so it is tested on every platform.
+pub fn is_windows_unsafe_name(name: &str) -> bool {
+    if name.ends_with('.') || name.ends_with(' ') {
+        return true;
+    }
+    if name
+        .chars()
+        .any(|c| matches!(c, ':' | '<' | '>' | '"' | '|' | '?' | '*'))
+    {
+        return true;
+    }
+    // A device name is reserved with or without an extension.
+    let stem = name.split('.').next().unwrap_or(name).trim_end_matches(' ');
+    let stem = stem.to_ascii_uppercase();
+    matches!(
+        stem.as_str(),
+        "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$"
+    ) || ["COM", "LPT"].iter().any(|prefix| {
+        stem.strip_prefix(prefix).is_some_and(|rest| {
+            rest.len() == 1 && rest.as_bytes()[0].is_ascii_digit()
+        })
+    })
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -268,6 +337,110 @@ mod tests {
     use std::path::Path;
 
     use super::*;
+
+    #[test]
+    fn confined_paths_are_rooted_relative_plain_names() {
+        for ok in ["dist/a.js", "./dist/a.js", "a", "a/./b"] {
+            assert!(
+                OmniPath::<Root>::new_rooted(ok, Root::Project).is_confined(),
+                "{ok:?}"
+            );
+            assert!(
+                OmniPath::<Root>::new_rooted(ok, Root::Workspace).is_confined(),
+                "{ok:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn windows_unsafe_names_are_recognised_on_every_platform() {
+        for bad in [
+            "..",
+            "...",
+            ".. ",
+            "a.",
+            "a ",
+            "a:b",
+            "a:stream",
+            "C:",
+            "a*b",
+            "a?b",
+            "a<b",
+            "a>b",
+            "a\"b",
+            "a|b",
+            "CON",
+            "con",
+            "NUL",
+            "nul.txt",
+            "Aux.tar.gz",
+            "PRN ",
+            "COM1",
+            "lpt9",
+            "COM3.log",
+            "CONIN$",
+            "CONOUT$",
+        ] {
+            assert!(is_windows_unsafe_name(bad), "{bad:?} must be unsafe");
+        }
+        for good in [
+            "a",
+            "a.b",
+            "dist",
+            "output.js.cache",
+            "console",
+            "CONSOLE",
+            "COM10",
+            "COM",
+            "LPT0x",
+            "nulls",
+            "a b",
+            ".hidden",
+            "x..y",
+        ] {
+            assert!(!is_windows_unsafe_name(good), "{good:?} must be fine");
+        }
+    }
+
+    #[test]
+    fn control_characters_are_never_confined() {
+        for bad in ["a\0b", "a\nb", "dir/a\tb", "\u{7f}", "x/\r"] {
+            assert!(!is_confined_relative(Path::new(bad)), "{bad:?}");
+            assert!(
+                !OmniPath::<Root>::new_rooted(bad, Root::Project).is_confined(),
+                "{bad:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn escaping_or_anchorless_paths_are_not_confined() {
+        let mut bad = vec![
+            "",
+            ".",
+            "./",
+            "..",
+            "../x",
+            "a/../../x",
+            "a/..",
+            "../../etc/passwd",
+        ];
+        if cfg!(windows) {
+            bad.extend(["C:\\x", "C:x", "\\\\host\\share\\x", "\\x"]);
+        } else {
+            bad.extend(["/etc/passwd", "//x", "/"]);
+        }
+        for p in bad {
+            assert!(
+                !OmniPath::<Root>::new_rooted(p, Root::Project).is_confined(),
+                "{p:?} must not be confined"
+            );
+            assert!(!is_confined_relative(Path::new(p)), "{p:?}");
+        }
+        // Without a root there is nothing to confine the path to.
+        assert!(!OmniPath::<Root>::new("dist/a.js").is_confined());
+        assert!(!OmniPath::<Root>::new("/abs").is_confined());
+    }
 
     fn base() -> RootMap<'static> {
         if cfg!(windows) {

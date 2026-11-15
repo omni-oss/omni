@@ -68,9 +68,11 @@ as presence-aware layers (`omni_configurations/src/layer.rs`), which affects whe
   the SQL/D1 provider, and the static-config provider always uses the unkeyed
   16-hex SHA-256 prefix. Entries carry no writer information, and the client calls
   `unarchive` on whatever bytes it gets.
-- **Extraction.** `tar` 0.4.46 `unpack` skips `..` entries and validates symlink
-  destinations, so the archive layer is covered. The metadata inside the archive is
-  not: restore resolves each cached `original_path` with `base.join(path)` and
+- **Extraction.** `tar` 0.4.46 `unpack` skips `..` entries and will not write
+  _through_ a symlink, but it still creates a symlink or hard-link entry with any
+  target, and restore later follows such a link when it copies or links the cached
+  file (so the archive layer is not covered on its own; see section 8). The metadata
+  inside the archive is not covered either: restore resolves each cached `original_path` with `base.join(path)` and
   `std::path::absolute` (`omni_types/src/omni_path.rs`), which neither rejects `..`
   nor absolute paths. A hostile entry that gets past verification (or any entry
   when `verify` is `off`) could write outside the workspace on replay (4.1, path
@@ -1410,6 +1412,44 @@ path is built (`400` otherwise). The client no longer sends a `HEAD` before an
 upload, so a write-only key can publish, and it treats `409` as success. The LRU
 decorator caches a streamed write only when the outcome is `Stored`.
 
+**Landed (restore safety and size cap):**
+
+- **Restore validation.** A decoded cache entry whose paths could leave the base
+  they are joined onto is a miss, in every namespace and `verify` mode, before any
+  path is resolved. `OmniPath::is_confined` accepts only a root-anchored, non-empty,
+  relative path made of plain names; `..`, a root directory, a drive or UNC prefix and
+  an empty path are rejected. The same check covers `cached_path` and `logs_path`
+  (joined onto the entry directory, where an absolute value replaces the base outright
+  and would copy an arbitrary file into the workspace). Deviations from the RFC text:
+  the boundary is the root the path names (`@project` or `@workspace`), not strictly
+  the project root, so legitimate workspace-level outputs keep working; and an entry
+  stored with an unrooted absolute path (an output outside the workspace) is now a
+  miss, so such tasks run again instead of restoring from cache.
+- **Archive entries.** `unarchive` first reads the whole archive and accepts only
+  regular files and directories with confined relative names; a symlink, hard link,
+  device, `..` or absolute name rejects the archive before anything is written, and
+  `get_many` treats that (or a corrupt archive) as a miss. Restore also checks that
+  each cached file is a regular file without following links. Without this, a
+  hostile archive could plant a symlink at a confined name and a later entry under
+  it would write outside the workspace, or a copy would read any readable file into
+  the workspace or the log. Windows: a name that Win32 normalizes or treats specially
+  (trailing dot or space, `:`, wildcard characters, device names) is not confined; the
+  rule is unit-tested on every platform but only applied on Windows, where it has not
+  been run.
+- **Size cap.** The server rejects an upload larger than `max_artifact_size` with
+  `413` and stores nothing. An honest `Content-Length` is refused before any byte is
+  read, and a chunked body, or one that lies about its length, is bounded while
+  streaming, so the backend aborts and removes its staging file. Defaults are
+  256 MiB native (`--max-artifact-size`, `OMNI_REMOTE_CACHE_SERVICE_MAX_ARTIFACT_SIZE`,
+  bytes) and 32 MiB on Workers (`MAX_ARTIFACT_SIZE`). The client does not yet read the
+  cap or skip an oversized upload (slices 2 and 5), so an oversized upload currently
+  reaches the server and the client logs a warning for the `413`. A declared oversize
+  is refused before the hooks run (like a malformed digest), whether or not the key
+  already holds an entry (`413` takes priority over `409`); a streamed one runs the
+  hooks and is reported as `failed`. The cap bounds one upload, not total load: the
+  S3 backend spools each upload to a temporary file, so many concurrent uploads can
+  still use disk up to the cap each.
+
 **Open gates before this RFC can be Implemented:**
 
 - **R2 is not create-only, so R2 writes fail closed by default.** The Workers
@@ -1430,12 +1470,11 @@ decorator caches a streamed write only when the outcome is `Stored`.
   enforcement against each supported store (and consider a startup probe) before
   claiming immutability for it. Only AWS semantics are assumed here; the S3 tests
   are request-shape tests against a scripted server, not a real bucket.
-- **Oversized streams are not tested** per backend; they arrive with the size cap.
-  The `409` retries have no backoff (a racing delete is rare); add jitter if
+- **Oversized streams are tested at the route** (local storage), not per backend;
+  S3, memory and R2 rely on the stream error aborting them. The `409` retries have no backoff (a racing delete is rare); add jitter if
   measurements show contention.
 - Not implemented yet: `get_range`, `list_prefix`, `delete_prefix`, complete
-  pagination, restore `original_path` validation, the `max_artifact_size` cap and its
-  `413`, and slices 2-10.
+  pagination, and slices 2-10.
 - Rollout order matters: block or upgrade every old client with write access, then
   purge legacy failed remote entries, then enable immutable writes. Otherwise an old
   client can repopulate a failed entry that then holds its digest (`409`) until an
