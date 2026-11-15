@@ -3,7 +3,7 @@
     "version": "0.6.0",
     "description": "A TypeScript Package",
     "dependencies": {
-        "@cfworker/json-schema": "^4.1.1",
+        "@cfworker/json-schema": "^4.1.6",
         "@homebridge/node-pty-prebuilt-multiarch": "catalog:",
         "@modelcontextprotocol/client": "catalog:",
         "@omni-oss/log": "workspace:^",

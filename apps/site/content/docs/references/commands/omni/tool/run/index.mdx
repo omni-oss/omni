@@ -1,8 +1,12 @@
 ---
+
 title: "run"
 
 description: "Run a tool"
+
 ---
+
+
 
 ## Usage
 
@@ -32,7 +36,7 @@ Tool input values as a JSON object; merged under any --value flags
 
 ### `-v`, `--value`
 
-A single k=v input value (repeatable); overrides matching --values-json keys. The value is parsed as JSON when possible, else treated as a string. Unlike `omni generator run --value`, which always passes the value as a string
+A single k=v input value (repeatable); overrides matching --values-json keys. The value is parsed as JSON when possible, else treated as a string. Unlike `omni generator run --value`, which always passes a string
 
 - **Required:** No
 
@@ -47,6 +51,20 @@ Directory the tool operates in (relative paths resolve here); mutually exclusive
 Run the tool in this project's directory; mutually exclusive with --cwd
 
 - **Required:** No
+
+### `--redact-input`
+
+Redact the value of this input (name or glob) in error output. Repeatable
+
+- **Required:** No
+
+### `--redact`
+
+Redaction mode: declared (apply configured policy), all, or none
+
+- **Required:** No
+
+- **Possible values:** `declared`, `all`, `none`
 
 ### `--pretty`
 

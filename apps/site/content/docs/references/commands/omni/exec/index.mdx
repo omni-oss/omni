@@ -1,8 +1,12 @@
 ---
+
 title: "exec"
 
 description: "Execute an ad-hoc command in projects"
+
 ---
+
+
 
 ## Usage
 
@@ -114,6 +118,8 @@ Disable retries
 
 - **Required:** No
 
+- **Possible values:** `true`, `false`
+
 ### `--scm-affected`, `affected`
 
 Enable scm-based filtering of tasks. Optionally specify the scm to use for detecting affected tasks
@@ -129,6 +135,26 @@ Enable scm-based filtering of tasks. Optionally specify the scm to use for detec
 Pass arguments to the commands invoked
 
 - **Required:** No
+
+### `--redact-arg`
+
+Redact the value of this arg (name or glob) in logs and dry-run output. Repeatable
+
+- **Required:** No
+
+### `--redact-env`
+
+Redact the value of this environment variable (name or glob) in logs and dry-run output. Repeatable
+
+- **Required:** No
+
+### `--redact`
+
+Redaction mode: declared (apply configured policy), all, or none (prints a notice)
+
+- **Required:** No
+
+- **Possible values:** `declared`, `all`, `none`
 
 ### `-u`, `--ui`
 
