@@ -44,9 +44,12 @@ F01 and F02 are merged in the
 F03.1 and F06.1 are merged in the
 [prerequisite audit batch](features/F03-F06-audit-batch.md)
 ([PR #103](https://github.com/omni-oss/omni/pull/103)).
-F08.1 and F10.1 are documented in the
-[design batch](features/F08-F10-design-batch.md), pending PR review.
-Runtime code for F03-F10, and plugins (P), remains unimplemented.
+F08.1 and F10.1 are merged in the
+[design batch](features/F08-F10-design-batch.md)
+([PR #108](https://github.com/omni-oss/omni/pull/108)).
+F08.2's [process-held lease primitive](features/F08.2-lease-primitive.md)
+is implemented, pending PR review; materialization and GC do not use leases yet
+(F08.3). Other runtime code for F03-F10, and plugins (P), remains unimplemented.
 
 Known gaps carried forward from the merged refactors:
 

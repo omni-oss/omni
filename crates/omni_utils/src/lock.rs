@@ -18,6 +18,27 @@ pub struct LockGuard {
 }
 
 impl LockGuard {
+    /// Try an exclusive lock without waiting for existing holders.
+    ///
+    /// `None` means contention; filesystem and locking errors remain errors.
+    /// The lock file is never removed, since unlinking it could split holders
+    /// between different files at the same path.
+    pub async fn try_acquire_exclusive(
+        lock_path: impl Into<PathBuf>,
+    ) -> io::Result<Option<Self>> {
+        let lock_path = lock_path.into();
+        tokio::task::spawn_blocking(move || {
+            let file = Self::open(lock_path)?;
+            match file.try_lock() {
+                Ok(()) => Ok(Some(Self { file })),
+                Err(std::fs::TryLockError::WouldBlock) => Ok(None),
+                Err(std::fs::TryLockError::Error(error)) => Err(error),
+            }
+        })
+        .await
+        .map_err(io::Error::other)?
+    }
+
     /// Acquire an exclusive (writer) lock on `lock_path`, blocking until
     /// it is available. Only one holder may hold the exclusive lock at a
     /// time, and it excludes all shared holders.
@@ -40,17 +61,7 @@ impl LockGuard {
         // File locking is a blocking syscall; run it off the async runtime to
         // avoid stalling a worker thread while waiting on a peer process.
         tokio::task::spawn_blocking(move || {
-            if let Some(parent) = lock_path.parent() {
-                fs::create_dir_all(parent)?;
-            }
-
-            let file = fs::OpenOptions::new()
-                .read(true)
-                .write(true)
-                .create(true)
-                // We only ever lock this file, never read/write its contents.
-                .truncate(false)
-                .open(&lock_path)?;
+            let file = Self::open(lock_path)?;
 
             if exclusive {
                 file.lock()?;
@@ -62,6 +73,21 @@ impl LockGuard {
         })
         .await
         .map_err(io::Error::other)?
+    }
+
+    fn open(lock_path: PathBuf) -> io::Result<fs::File> {
+        if let Some(parent) = lock_path.parent()
+            && !parent.as_os_str().is_empty()
+        {
+            fs::create_dir_all(parent)?;
+        }
+        fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            // We only ever lock this file, never read/write its contents.
+            .truncate(false)
+            .open(lock_path)
     }
 }
 
