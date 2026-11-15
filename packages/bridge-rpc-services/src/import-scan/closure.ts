@@ -88,13 +88,13 @@ export function extractSpecifiers(source: string): ExtractResult {
     let nonLiteralDynamic = false;
     const [imports] = lexerParse(source);
     for (const imp of imports) {
-        if (imp.d === -2) continue; // import.meta, not a module fetch
-        const dynamic = imp.d >= 0;
-        if (imp.n === undefined) {
+        if (imp.type === "import-meta") continue; // not a module fetch
+        const dynamic = imp.type === "dynamic";
+        if (imp.specifier === undefined || (dynamic && imp.glob)) {
             if (dynamic) nonLiteralDynamic = true; // import(expr) — unresolvable
             continue;
         }
-        specifiers.add(imp.n);
+        specifiers.add(imp.specifier);
     }
     return { specifiers: [...specifiers], nonLiteralDynamic };
 }
