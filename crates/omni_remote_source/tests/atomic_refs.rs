@@ -7,7 +7,7 @@ use std::{
     process::Stdio,
     sync::{
         Arc, Condvar, Mutex,
-        atomic::{AtomicU8, Ordering},
+        atomic::{AtomicU8, AtomicUsize, Ordering},
     },
     time::Duration,
 };
@@ -15,6 +15,7 @@ use std::{
 use omni_lockfile::Lockfile;
 use omni_remote_source::{
     RemoteSource, RemoteSourceRef,
+    driver::{DriverContext, DriverRegistry, SourceDriver, SourceSpec},
     manager::{RemoteSourceManager, config::RemoteSourceConfig},
     refs::{RefSetData, RefUpdate},
 };
@@ -28,6 +29,40 @@ const WRITE: u8 = 2;
 const RENAME: u8 = 3;
 const READ: u8 = 4;
 const PAUSE_RENAME: u8 = 5;
+
+#[derive(Default)]
+struct CountingDriver(AtomicUsize);
+
+#[async_trait::async_trait]
+impl SourceDriver<FaultSys> for CountingDriver {
+    fn kind(&self) -> &'static str {
+        "git"
+    }
+    fn slug(&self, _spec: &SourceSpec) -> String {
+        "test-remote".into()
+    }
+
+    async fn resolve(
+        &self,
+        _ctx: &DriverContext<'_, FaultSys>,
+        _spec: &SourceSpec,
+        locked: Option<&str>,
+    ) -> Result<String, omni_remote_source::error::Error> {
+        self.0.fetch_add(1, Ordering::SeqCst);
+        Ok(locked.unwrap_or("p1").into())
+    }
+
+    async fn export(
+        &self,
+        _ctx: &DriverContext<'_, FaultSys>,
+        _spec: &SourceSpec,
+        _pin: &str,
+        dest: &Path,
+    ) -> Result<(), omni_remote_source::error::Error> {
+        std::fs::write(dest.join("file.txt"), b"source")?;
+        Ok(())
+    }
+}
 
 #[derive(Clone, Default)]
 struct FaultSys {
@@ -522,6 +557,151 @@ async fn cancelled_lockfile_save_keeps_the_workspace_lock_until_commit() {
             .as_deref(),
         Some("p2")
     );
+}
+
+#[tokio::test]
+async fn cancelled_reconcile_cleans_memory_before_the_manager_is_reused() {
+    let dir = tempfile::tempdir().unwrap();
+    let sys = FaultSys::default();
+    let driver = Arc::new(CountingDriver::default());
+    let mut drivers = DriverRegistry::default();
+    drivers.register(driver.clone());
+    let manager = Arc::new(
+        RemoteSourceManager::with_drivers(
+            config(dir.path()),
+            sys.clone(),
+            drivers,
+        )
+        .await
+        .unwrap(),
+    );
+    let source = reference("main", "p1").source;
+    manager.materialize(&source).await.unwrap();
+    manager.persist_pins().await.unwrap();
+    sys.fault.store(PAUSE_RENAME, Ordering::SeqCst);
+    let worker = Arc::clone(&manager);
+    let task = tokio::spawn(async move { worker.reconcile_pins().await });
+    timeout(WAIT, sys.entered.notified()).await.unwrap();
+    task.abort();
+    assert!(task.await.unwrap_err().is_cancelled());
+    {
+        let (mutex, ready) = &*sys.release;
+        *mutex.lock().unwrap() = true;
+        ready.notify_all();
+    }
+    let guard = timeout(
+        WAIT,
+        LockGuard::acquire_exclusive(dir.path().join("lock.json.lock")),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    let spec = source.spec();
+    assert!(
+        Lockfile::load(dir.path().join("lock.json"), &RealSys)
+            .await
+            .unwrap()
+            .pin("git", &spec.locator, &spec.selector)
+            .await
+            .is_none()
+    );
+    assert!(manager.locked_pin(&source).await.is_none());
+    drop(guard);
+    sys.fault.store(0, Ordering::SeqCst);
+    // The tree is still complete, but reconciliation must force re-resolve
+    // and re-record rather than using the removed pin's fast path.
+    manager.materialize(&source).await.unwrap();
+    assert_eq!(driver.0.load(Ordering::SeqCst), 2);
+    manager.persist_pins().await.unwrap();
+    assert_eq!(
+        Lockfile::load(dir.path().join("lock.json"), &RealSys)
+            .await
+            .unwrap()
+            .pin("git", &spec.locator, &spec.selector)
+            .await
+            .as_deref(),
+        Some("p1")
+    );
+}
+
+#[tokio::test]
+async fn cancelled_persist_does_not_replay_saved_changes_over_a_newer_pin() {
+    let dir = tempfile::tempdir().unwrap();
+    let sys = FaultSys::default();
+    let mut drivers = DriverRegistry::default();
+    drivers.register(Arc::new(CountingDriver::default()));
+    let manager = Arc::new(
+        RemoteSourceManager::with_drivers(
+            config(dir.path()),
+            sys.clone(),
+            drivers,
+        )
+        .await
+        .unwrap(),
+    );
+    let source = reference("main", "p1").source;
+    manager.materialize(&source).await.unwrap();
+    sys.fault.store(PAUSE_RENAME, Ordering::SeqCst);
+    let worker = Arc::clone(&manager);
+    let task = tokio::spawn(async move { worker.persist_pins().await });
+    timeout(WAIT, sys.entered.notified()).await.unwrap();
+    task.abort();
+    assert!(task.await.unwrap_err().is_cancelled());
+    {
+        let (mutex, ready) = &*sys.release;
+        *mutex.lock().unwrap() = true;
+        ready.notify_all();
+    }
+    let lockpath = dir.path().join("lock.json.lock");
+    let guard = timeout(WAIT, LockGuard::acquire_exclusive(lockpath))
+        .await
+        .unwrap()
+        .unwrap();
+    let path = dir.path().join("lock.json");
+    let spec = source.spec();
+    let peer = Lockfile::load(&path, &RealSys).await.unwrap();
+    peer.lock_pin("git", &spec.locator, &spec.selector, "p2")
+        .await
+        .unwrap();
+    peer.save(&RealSys).await.unwrap();
+    drop(guard);
+    sys.fault.store(0, Ordering::SeqCst);
+    manager.persist_pins().await.unwrap();
+    assert_eq!(
+        Lockfile::load(&path, &RealSys)
+            .await
+            .unwrap()
+            .pin("git", &spec.locator, &spec.selector)
+            .await
+            .as_deref(),
+        Some("p2")
+    );
+}
+
+#[tokio::test]
+async fn failed_reconcile_preserves_the_managers_pin_and_disk_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let sys = FaultSys::default();
+    let mut drivers = DriverRegistry::default();
+    drivers.register(Arc::new(CountingDriver::default()));
+    let manager = RemoteSourceManager::with_drivers(
+        config(dir.path()),
+        sys.clone(),
+        drivers,
+    )
+    .await
+    .unwrap();
+    let source = reference("main", "p1").source;
+    manager.materialize(&source).await.unwrap();
+    manager.persist_pins().await.unwrap();
+    let path = dir.path().join("lock.json");
+    let old = std::fs::read(&path).unwrap();
+    for fault in [OPEN, WRITE, RENAME] {
+        sys.fault.store(fault, Ordering::SeqCst);
+        assert!(manager.reconcile_pins().await.is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), old);
+        assert_eq!(manager.locked_pin(&source).await.as_deref(), Some("p1"));
+    }
 }
 
 #[tokio::test]

@@ -2,7 +2,10 @@ use std::{
     collections::{BTreeMap, HashSet},
     ffi::OsString,
     path::{Path, PathBuf},
-    sync::atomic::{AtomicU64, Ordering},
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -71,11 +74,11 @@ static PENDING_COUNTER: AtomicU64 = AtomicU64::new(0);
 type PinKey = (String, String, String);
 
 pub struct RemoteSourceManager<TSys: RemoteSourceSys> {
-    lockfile: Lockfile,
+    lockfile: Arc<Lockfile>,
     /// Entries this manager locked (`Some`) or invalidated (`None`). Only these
     /// are written back, so a pin another process changed since we loaded is
     /// never overwritten with our stale copy.
-    changed: std::sync::Mutex<BTreeMap<PinKey, Option<String>>>,
+    changed: Arc<std::sync::Mutex<BTreeMap<PinKey, Option<String>>>>,
     lockfile_path: PathBuf,
     store_root_path: PathBuf,
     drivers: DriverRegistry<TSys>,
@@ -101,7 +104,7 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
         let lockfile_path = config.lockfile_path;
         let lockfile = Lockfile::load(lockfile_path.clone(), &sys).await?;
         let manager = RemoteSourceManager {
-            lockfile,
+            lockfile: Arc::new(lockfile),
             changed: Default::default(),
             lockfile_path,
             sys,
@@ -169,8 +172,11 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
     /// Drop saved changes, so a later save never replays them over a pin
     /// another process changed since. A change recorded after the snapshot
     /// is kept.
-    fn forget_saved(&self, saved: BTreeMap<PinKey, Option<String>>) {
-        let mut changed = self.changed.lock().expect("pins mutex poisoned");
+    fn forget_saved(
+        changed: &std::sync::Mutex<BTreeMap<PinKey, Option<String>>>,
+        saved: BTreeMap<PinKey, Option<String>>,
+    ) {
+        let mut changed = changed.lock().expect("pins mutex poisoned");
         for (key, pin) in saved {
             if changed.get(&key) == Some(&pin) {
                 changed.remove(&key);
@@ -187,6 +193,42 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
             ),
             pin.map(str::to_string),
         );
+    }
+
+    /// Once publication starts, caller cancellation must not skip corresponding
+    /// in-memory cleanup. The owned task retains both state and the workspace
+    /// lock through the save and cleanup, not just through the disk rename.
+    async fn commit_pins(
+        &self,
+        disk: Lockfile,
+        guard: LockGuard,
+        saved: BTreeMap<PinKey, Option<String>>,
+        retained: Option<HashSet<PinKey>>,
+    ) -> Result<(), Error> {
+        let lockfile = Arc::clone(&self.lockfile);
+        let changed = Arc::clone(&self.changed);
+        let sys = self.sys.clone();
+        tokio::spawn(async move {
+            let _guard = guard;
+            let result = async {
+                disk.save(&sys).await?;
+                Self::forget_saved(&changed, saved);
+                if let Some(retained) = retained {
+                    // Force the next materialization of a removed pin to resolve
+                    // and record it, even when its complete tree still exists.
+                    Self::prune_lockfile_pins(&lockfile, &retained).await?;
+                }
+                Ok::<(), Error>(())
+            }
+            .await;
+            if let Err(error) = &result {
+                // An aborted caller cannot receive the detached commit's error.
+                tracing::warn!(%error, "source pin publication failed");
+            }
+            result
+        })
+        .await
+        .map_err(|error| Error::custom(error.to_string()))?
     }
 }
 
@@ -385,6 +427,9 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
     /// workspaces, and the reference sets here belong to one of them, so it
     /// cannot tell which checkouts another workspace still needs. Removing
     /// checkouts is the explicit prune command's job.
+    ///
+    /// Once the owned commit phase starts, cancelling the waiter does not cancel
+    /// disk publication or the matching in-memory cleanup.
     pub async fn reconcile_pins(&self) -> Result<(), Error> {
         let guard =
             LockGuard::acquire_exclusive(self.advisory_lock_path()).await?;
@@ -423,19 +468,14 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
         let saved = self.merge_own_pins(&disk).await?;
         Self::prune_lockfile_pins(&disk, &retained).await?;
         self.ensure_lockfile_parent().await?;
-        disk.save_locked(&self.sys, guard).await?;
-        self.forget_saved(saved);
-        // Drop them from memory too, so a later materialization resolves and
-        // records them again instead of trusting a pin no longer saved.
-        Self::prune_lockfile_pins(&self.lockfile, &retained).await?;
-
-        Ok(())
+        self.commit_pins(disk, guard, saved, Some(retained)).await
     }
 
     /// Merge this manager's in-memory pins onto whatever is currently on disk
     /// and save the result, under the exclusive advisory lock. Additive by
     /// design: a lazy subsystem run never drops pins a sibling subsystem or a
     /// concurrent process just added, and never prunes.
+    /// Once commit starts, cancellation does not skip saved-change cleanup.
     pub async fn persist_pins(&self) -> Result<(), Error> {
         let guard =
             LockGuard::acquire_exclusive(self.advisory_lock_path()).await?;
@@ -444,10 +484,7 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
         let saved = self.merge_own_pins(&disk).await?;
 
         self.ensure_lockfile_parent().await?;
-        disk.save_locked(&self.sys, guard).await?;
-        self.forget_saved(saved);
-
-        Ok(())
+        self.commit_pins(disk, guard, saved, None).await
     }
 
     /// Export `pin` into `tree` through a pending directory so a reader never

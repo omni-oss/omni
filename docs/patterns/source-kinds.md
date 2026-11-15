@@ -24,7 +24,10 @@ sets are errors in either mode, never an excuse to discard old references.
 Reference updates share the workspace advisory lock with pin reconciliation.
 Refs and lockfiles publish with `omni_utils::atomic_file::write`: exclusive-create
 staging in the destination directory, flush/sync, close, replacement rename.
-The blocking publisher owns the advisory guard through commit, including after
-async cancellation. Keep staging files non-JSON so reconciliation ignores them.
+Reference publishers own the advisory guard through commit, including after
+async cancellation. For pin persistence/reconciliation, an owned task keeps the
+guard through disk publication **and** saved-change/memory cleanup, so cancelling
+the waiter cannot leave a retained manager trusting a pruned pin or replaying old
+saved changes. Keep staging files non-JSON so reconciliation ignores them.
 This guarantees complete-file visibility, not power-loss durability or a
 cross-file install transaction.
