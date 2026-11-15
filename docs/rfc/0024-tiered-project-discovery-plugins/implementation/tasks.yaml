@@ -345,6 +345,7 @@ tasks:
     }
   F08.1:
     {
+      owner: "OpenCode (F08.1/F10.1 design batch)",
       title: "Lease/GC/reference protocol doc",
       parent: F08,
       kind: doc,
@@ -399,6 +400,7 @@ tasks:
     }
   F10.1:
     {
+      owner: "OpenCode (F08.1/F10.1 design batch)",
       title: "Captured input view design doc",
       parent: F10,
       kind: doc,

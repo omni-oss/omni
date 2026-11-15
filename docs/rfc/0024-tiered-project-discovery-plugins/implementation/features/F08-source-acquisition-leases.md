@@ -2,6 +2,9 @@
 
 **Type:** feature (shared infrastructure) · **Size:** L · **Depends on:** none
 
+Design prerequisite: [F08.1 lease, GC and reference protocol](F08.1-lease-gc-reference-protocol.md).
+Slices F08.2-F08.5 remain unimplemented.
+
 ## Problem
 
 `RemoteSourceManager` publishes checkouts and merges pins, but directly replaces each

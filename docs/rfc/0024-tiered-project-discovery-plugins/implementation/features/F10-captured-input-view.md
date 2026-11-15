@@ -2,6 +2,9 @@
 
 **Type:** feature (shared infrastructure) · **Size:** L · **Depends on:** R02
 
+Design prerequisite: [F10.1 captured input view design](F10.1-captured-input-view-design.md).
+Slices F10.2-F10.3 remain unimplemented.
+
 ## Problem
 
 Today file reads are checked by canonicalize-then-open, which leaves symlink-swap races,
