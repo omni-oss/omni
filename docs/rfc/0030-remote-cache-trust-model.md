@@ -1500,6 +1500,19 @@ so it no longer stops at one S3 page (1000 keys) or reads only one directory lev
 - Nothing calls these yet; the provenance and purge routes (slices 3 and 8) are the
   consumers.
 
+**Slice 2 preparation (not yet active):** the core now defines `Caller`,
+`CredentialId`, `Resource`, explicit `Scope`/`Scopes`, `Authenticator` and an ordered
+`AuthenticatorChain`. First recognition wins even without enough grants; errors
+stop the chain, and returned grants are narrowed to the wanted set. Credential kind
+is a non-exhaustive `ApiKey | Custom(String)` enum. Identity text is bounded to 256
+UTF-8 bytes and cannot be empty or contain controls; namespace resolution must still
+validate the scope pin's label grammar. Tests cover an identity from a non-API-key
+authenticator, ordering, denial, errors and resource/request-specific grants.
+This is additive only: routes and providers still use `SecurityService`, and the
+header remains `X-API-KEY`. `CachedSecurity`, SQL/D1 `principal`, Bearer headers and
+`validate_access` migration are still open; slice 2 is **not complete**.
+See [the rollout notes](0030-authentication-rollout.md) for the batch plan.
+
 **Open gates before this RFC can be Implemented:**
 
 - **R2 is not create-only, so R2 writes fail closed by default.** The Workers
