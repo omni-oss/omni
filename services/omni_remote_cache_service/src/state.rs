@@ -49,10 +49,13 @@ pub async fn build_state(args: &ServeArgs) -> eyre::Result<ServiceState> {
     let mut state = ServiceState::new(
         Arc::new(StorageBackend::from_cli_args(args).await),
         Arc::new(info),
-        Arc::new(ConfigBasedDependencyProvider::new(
-            Arc::new(config.to_in_memory_database()),
-            Arc::new(config.security.api_keys.clone()),
-        )),
+        Arc::new(
+            ConfigBasedDependencyProvider::new(
+                Arc::new(config.to_in_memory_database()),
+                Arc::new(config.security.api_keys.clone()),
+            )
+            .with_api_key_id_secret(config.security.api_key_id_secret.clone()),
+        ),
     );
     state.max_artifact_size = args.max_artifact_size;
     Ok(state)

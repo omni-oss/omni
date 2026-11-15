@@ -1508,7 +1508,13 @@ is a non-exhaustive `ApiKey | Custom(String)` enum. Identity text is bounded to 
 UTF-8 bytes and cannot be empty or contain controls; namespace resolution must still
 validate the scope pin's label grammar. Tests cover an identity from a non-API-key
 authenticator, ordering, denial, errors and resource/request-specific grants.
-This is additive only: routes and providers still use `SecurityService`, and the
+The static provider now has a resource-scoped authenticator: valid keys denied
+access to the resource remain recognized with no grants. Its optional per-key
+`principal` defaults to the credential ID; `security.api_key_id_secret` feeds both
+the new caller and existing hook IDs in native and Worker static configuration.
+Legacy `all` excludes publish in both the old and new security services; publish
+requires an explicit `publish:artifacts` grant. API keys never assert a scope pin.
+This is preparatory: routes still use `SecurityService`, and the
 header remains `X-API-KEY`. `CachedSecurity`, SQL/D1 `principal`, Bearer headers and
 `validate_access` migration are still open; slice 2 is **not complete**.
 See [the rollout notes](0030-authentication-rollout.md) for the batch plan.

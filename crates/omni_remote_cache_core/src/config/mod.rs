@@ -38,14 +38,36 @@ impl Configuration {
     pub fn from_file(path: impl AsRef<Path>) -> Result<Self, eyre::Report> {
         let config = std::fs::read_to_string(path)?;
         let config: Configuration = serde_json::from_str(&config)?;
+        config.validate()?;
 
         Ok(config)
     }
 
     pub fn from_inline(config: impl AsRef<str>) -> Result<Self, eyre::Report> {
         let config: Configuration = serde_json::from_str(config.as_ref())?;
+        config.validate()?;
 
         Ok(config)
+    }
+
+    /// Validate security settings without including credentials or secrets in
+    /// errors. Programmatic configuration users should call this before use.
+    pub fn validate(&self) -> Result<(), eyre::Report> {
+        if self.security.api_key_id_secret.as_deref() == Some("") {
+            eyre::bail!("static api_key_id_secret must not be empty");
+        }
+        for key in self.security.api_keys.values() {
+            if key
+                .principal
+                .as_deref()
+                .is_some_and(|p| !crate::security::valid_identity_text(p))
+            {
+                eyre::bail!(
+                    "invalid principal in static API-key configuration"
+                );
+            }
+        }
+        Ok(())
     }
 }
 
@@ -206,6 +228,12 @@ pub struct EnvironmentConfiguration {
 )]
 pub struct SecurityConfiguration {
     pub api_keys: UnorderedMap<String, ApiKeyConfiguration>,
+
+    /// HMAC secret for opaque credential IDs. Changing it also changes default
+    /// principals; configure explicit principals when namespace stability matters.
+    #[serde(default)]
+    #[new(default)]
+    pub api_key_id_secret: Option<String>,
 }
 
 #[derive(
@@ -221,6 +249,11 @@ pub struct SecurityConfiguration {
 )]
 #[allow(clippy::too_many_arguments)]
 pub struct ApiKeyConfiguration {
+    /// Stable namespace owner. Defaults to this credential's opaque ID.
+    #[serde(default)]
+    #[new(default)]
+    pub principal: Option<String>,
+
     #[serde(default)]
     pub description: Option<String>,
 
@@ -283,6 +316,10 @@ pub enum ScopesConfiguration {
     #[serde(rename = "delete:artifacts")]
     #[strum(serialize = "delete:artifacts")]
     DeleteArtifacts,
+
+    #[serde(rename = "publish:artifacts")]
+    #[strum(serialize = "publish:artifacts")]
+    PublishArtifacts,
 }
 
 #[derive(

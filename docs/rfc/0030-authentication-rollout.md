@@ -27,6 +27,10 @@ reassessment; OIDC itself is out of scope.
    covering resource plus wanted grants. Prove `all` does not imply publish,
    explicit publish does, and a cached identity cannot cross resources or wanted
    sets. Test revocation through TTL. Undo before activation: remove new providers.
+   Split into static provider, SQL/D1, and caching commits to keep each review
+   bounded. The static provider sub-batch adds an opt-in keyed-ID setting (also
+   used by existing hooks), explicit principal and publish config, and the
+   resource-scoped authenticator. Native/worker config wiring is included.
 3. **Request migration.** Switch routes, hooks and `validate_access` to callers;
    move client and server together from `X-API-KEY` to Bearer credentials and remove
    obsolete security code. Test unknown identity (401), insufficient grants (403),
@@ -58,3 +62,17 @@ target validation and the service TypeScript suites are left to CI. Do not run
   Eight contract tests cover batch 1.
 - **Not complete:** no routes or providers use the seam yet. Cache migration,
   SQL/D1 principal, Bearer headers and `validate_access` remain open.
+- **Static provider sub-batch:** implemented and independently reviewed by Opus;
+  no blockers. Review suggestions addressed: validate principals/empty secrets at
+  config load, avoid indexing the key map, and test legacy scope denials as well
+  as grants. Shared principals remain operator-controlled as designed by the RFC;
+  a configured principal matching another key's default ID intentionally shares
+  ownership, just like two matching configured principals. No client chooses it.
+  `ConfigBasedDependencyProvider::authenticator` exposes a one-member chain,
+  but routes still use the old service. Both services exclude publish from
+  wildcard grants; explicit publish is independent of write. Config secret
+  feeds both caller IDs and legacy hook IDs. Tests cover all four resource
+  restrictions, requested grants, disabled/expired credentials, principal
+  validation and rotation, config compatibility and native state wiring.
+  Rollback: remove the static authenticator/config additions; deployments opting
+  into a secret revert to unkeyed IDs, so correlate usage across the ID change.

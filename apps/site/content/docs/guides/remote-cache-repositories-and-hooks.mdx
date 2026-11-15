@@ -9,6 +9,28 @@ at your own database. You own the schema and the migrations. You supply SQL
 queries that return the shape the service needs, and the service sends them to
 the driver verbatim.
 
+## Static API-key identity settings
+
+When using the default configuration-file provider, you can set
+`security.api_key_id_secret` to a secret used to HMAC credential IDs. The native
+service and Worker both apply it; without it, IDs retain their legacy unkeyed
+hash. Supply it securely with the configuration, not in a committed file. Static
+configuration does not expand environment-variable placeholders.
+
+Each entry under `security.api_keys` can set an optional `principal`: a stable
+namespace owner, limited to 256 UTF-8 bytes with no control characters. If omitted,
+the new authenticator uses the credential ID. Rotating `api_key_id_secret` changes
+IDs and default principals; explicit principals stay stable. Loading configuration
+rejects invalid principals and empty secrets. Principals are operator-assigned:
+using the same principal for multiple keys deliberately shares namespace ownership,
+so only assign a shared principal to credentials with the same trust level.
+
+These identity fields prepare the RFC 0030 authentication migration. Artifact
+routes still use the legacy authorization path and do not yet select namespaces
+by principal. Likewise, `publish:artifacts` is now an accepted explicit scope,
+but publishing routes are not active yet. Legacy `scopes: "all"` grants the
+existing read/write/list/delete scopes, never publish.
+
 ## Pick a backend
 
 | Where it runs     | Backend                                                | How to enable                                            |

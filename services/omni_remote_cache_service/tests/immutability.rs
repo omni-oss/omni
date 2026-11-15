@@ -39,7 +39,9 @@ fn config() -> Configuration {
             }),
         }),
         security: SecurityConfiguration {
+            api_key_id_secret: None,
             api_keys: unordered_map!("k".to_string() => ApiKeyConfiguration {
+                principal: None,
                 description: None,
                 enabled: true,
                 expires_at: None,

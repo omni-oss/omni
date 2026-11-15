@@ -43,8 +43,10 @@ fn default_config() -> Configuration {
             }
         ),
         security: SecurityConfiguration {
+            api_key_id_secret: None,
             api_keys: unordered_map!(
                 "test-api-key".to_string() => ApiKeyConfiguration {
+                    principal: None,
                     description: None,
                     enabled: true,
                     expires_at: None,
@@ -120,6 +122,32 @@ const DEFAULT_TENANT: &str = "test-tenant";
 const DEFAULT_WORKSPACE: &str = "test-workspace";
 const DEFAULT_ENV: &str = "test-env";
 const DEFAULT_API_KEY: &str = "test-api-key";
+
+#[tokio::test]
+async fn static_config_secret_is_applied_to_provider_ids() {
+    let mut config = default_config();
+    config.security.api_key_id_secret = Some("test-id-secret".into());
+    let args = ServeArgs::new(
+        "".into(),
+        Some(serde_json::to_string(&config).unwrap()),
+        Some(ConfigType::Inline),
+        false,
+        None,
+        None,
+        None,
+        BackendType::InMemory,
+        Some(RouterArgs::new(Some("/api".into()), false)),
+        None,
+    );
+    let state = build_state(&args).await.unwrap();
+    assert_eq!(
+        state.provider.api_key_id(DEFAULT_API_KEY),
+        omni_remote_cache_core::hooks::api_key_id_keyed(
+            "test-id-secret",
+            DEFAULT_API_KEY
+        )
+    );
+}
 
 #[tokio::test]
 async fn interrupted_put_preserves_the_existing_local_artifact() {

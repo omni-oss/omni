@@ -1,3 +1,6 @@
+mod authentication;
+pub use authentication::*;
+
 use std::{str::FromStr, sync::Arc};
 
 use derive_new::new;
@@ -180,7 +183,9 @@ impl SecurityService for InMemorySecurityService {
             .expect("should be able to get api key config");
 
         Ok(match &config.scopes {
-            AllOrSpecificConfiguration::All(_) => true,
+            // Legacy wildcard keys must never silently become publishers.
+            AllOrSpecificConfiguration::All(_) => !required_scopes
+                .contains(&crate::security::Scope::Publish.as_str()),
             AllOrSpecificConfiguration::Specific(items) => {
                 for scope in required_scopes {
                     let scope = ScopesConfiguration::from_str(scope)

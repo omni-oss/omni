@@ -175,7 +175,7 @@ impl Caller {
     }
 }
 
-fn valid_identity_text(text: &str) -> bool {
+pub(crate) fn valid_identity_text(text: &str) -> bool {
     !text.is_empty() && text.len() <= 256 && !text.chars().any(char::is_control)
 }
 

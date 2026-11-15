@@ -63,10 +63,13 @@ fn build_provider(
         internal(format!("missing `{CONFIG_BINDING}` secret or variable"))
     })?;
     let config = Configuration::from_inline(config).map_err(internal)?;
-    Ok(Arc::new(ConfigBasedDependencyProvider::new(
-        Arc::new(config.to_in_memory_database()),
-        Arc::new(config.security.api_keys.clone()),
-    )))
+    Ok(Arc::new(
+        ConfigBasedDependencyProvider::new(
+            Arc::new(config.to_in_memory_database()),
+            Arc::new(config.security.api_keys.clone()),
+        )
+        .with_api_key_id_secret(config.security.api_key_id_secret.clone()),
+    ))
 }
 
 thread_local! {
