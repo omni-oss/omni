@@ -76,9 +76,13 @@ describeTargets("v1.artifacts.api", (target) => {
         const body = await response.json();
 
         expect(response.status).toBe(200);
-        expect(body.data).toHaveLength(1);
-        expect(body.data[0].digest).toBe(DIGEST);
-        expect(body.data[0].size).toBe(BODY.length);
+        // Entries are immutable and the container is shared across tests, so
+        // other tests' digests may also be listed.
+        const entry = body.data.find(
+            (item: { digest: string }) => item.digest === DIGEST,
+        );
+        expect(entry).toBeDefined();
+        expect(entry.size).toBe(BODY.length);
     });
 
     test("get artifact", async () => {
