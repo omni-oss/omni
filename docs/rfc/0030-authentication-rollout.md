@@ -97,3 +97,26 @@ target validation and the service TypeScript suites are left to CI. Do not run
   Routes and the authentication cache still use the old security service.
   Undo: remove the additive authenticator and executor method together; old
   `api_key_valid` queries remain valid, with or without a principal column.
+- **Authentication-cache sub-batch:** implemented and independently reviewed by
+  Opus; no blockers. Addressed import-layout nits and clarified the positive-TTL
+  delay for new grants after a recognized denial. Worker CI remains the gate for
+  `getrandom`'s wasm backend, which is configured by the workspace.
+  Providers now expose a required `authenticator()` method; static/query providers
+  return their chains, decorators forward/wrap it. `CachingState` retains a separate
+  bounded `Option<Caller>` cache, shared by request-scoped providers belonging to
+  the same authority. Keys are full HMAC-SHA256 over length-prefixed credential,
+  tenant/org/workspace/environment and canonical wanted scopes; no raw credential
+  is retained in the new cache's keys. Its 32-byte random pepper is generated per
+  state using `getrandom` 0.3.4 (already used by the workspace; `wasm_js` on Workers),
+  not the stable credential-ID secret. Randomness failure logs a warning and disables
+  the caller cache, never falls back to unkeyed hashing.
+  Errors are never stored. Recognized callers, including zero-grant denials, use
+  the security TTL; unrecognized credentials use the optional negative TTL. Thus
+  cached principals and removed grants remain stale until expiry. A cache hit does
+  not slide expiry forward. Never share a state between independent authorities.
+  Fake-clock tests check exact expiry and revocation, key separation, denial,
+  errors, capacity and negative results; a scripted query provider proves rebuilt
+  decorators share the state. Routes still use legacy `CachedSecurity` until the
+  header migration, when the old bool cache and raw-key paths must be removed.
+  Undo: remove the additive caller cache and provider method together; legacy
+  request authentication is unchanged. Worker randomness/runtime remains a CI gate.

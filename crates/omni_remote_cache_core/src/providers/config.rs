@@ -17,8 +17,8 @@ use crate::{
     },
     providers::DependencyProvider,
     security::{
-        AuthenticatorChain, DynSecurityService, InMemoryAuthenticator,
-        InMemorySecurityService,
+        Authenticator, AuthenticatorChain, DynSecurityService,
+        InMemoryAuthenticator, InMemorySecurityService,
     },
     services::{DefaultValidationService, DynValidationService},
 };
@@ -36,17 +36,18 @@ impl ConfigBasedDependencyProvider {
         self.api_key_id_secret = secret;
         self
     }
-
-    /// Preparatory entry point; routes migrate to it with the Bearer header.
-    pub fn authenticator(&self) -> AuthenticatorChain {
-        AuthenticatorChain::new(vec![Arc::new(InMemoryAuthenticator::new(
-            self.api_keys.clone(),
-            self.api_key_id_secret.clone(),
-        ))])
-    }
 }
 
 impl DependencyProvider for ConfigBasedDependencyProvider {
+    fn authenticator(&self) -> Arc<dyn Authenticator> {
+        Arc::new(AuthenticatorChain::new(vec![Arc::new(
+            InMemoryAuthenticator::new(
+                self.api_keys.clone(),
+                self.api_key_id_secret.clone(),
+            ),
+        )]))
+    }
+
     fn api_key_id(&self, api_key: &str) -> String {
         match &self.api_key_id_secret {
             Some(secret) => crate::hooks::api_key_id_keyed(secret, api_key),

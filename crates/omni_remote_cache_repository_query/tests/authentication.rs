@@ -5,15 +5,47 @@ use std::{
 
 use async_trait::async_trait;
 use omni_remote_cache_core::{
+    caching::{
+        CacheConfiguration, CachingConfiguration, CachingProvider, CachingState,
+    },
     hooks::api_key_id_keyed,
     providers::DependencyProvider,
-    security::{Authenticator, Resource, Scope, Scopes},
+    security::{Resource, Scope, Scopes},
 };
 use omni_remote_cache_repository_query::{
     ApiKeyHashConfiguration, ApiKeyIdentity, QueriesConfiguration,
     QueryDependencyProvider, QueryError, QueryExecutor,
 };
 
+#[tokio::test]
+async fn rebuilt_provider_wrappers_share_cached_callers() {
+    let mut steps = vec![identity(Some("query-owner"))];
+    steps.extend(resource_checks());
+    steps.push(check("api_key_scope", &["read:artifacts"], true));
+    let (provider, script) = provider(steps);
+    let inner = Arc::new(provider);
+    let config = CachingConfiguration {
+        repositories: None,
+        security: Some(CacheConfiguration {
+            ttl_secs: 60,
+            max_entries: 10,
+            negative_ttl_secs: None,
+        }),
+    };
+    let state = Arc::new(CachingState::new(&config));
+    for _ in 0..2 {
+        let wrapped = CachingProvider::with_state(inner.clone(), state.clone());
+        let caller = wrapped
+            .authenticator()
+            .authenticate("credential", &target(), Scope::Read.into())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(caller.principal(), "query-owner");
+        assert!(caller.can(Scope::Read));
+    }
+    script.done();
+}
 enum Step {
     Identity(Result<Option<ApiKeyIdentity>, QueryError>),
     Check(&'static str, Vec<String>, Result<bool, QueryError>),

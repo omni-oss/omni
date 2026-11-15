@@ -3,6 +3,7 @@
 //! Backends never cache. Wrapping a provider caches its repository and
 //! security lookups for a bounded time. Errors are never cached.
 
+mod authentication;
 mod cache;
 mod config;
 mod provider;

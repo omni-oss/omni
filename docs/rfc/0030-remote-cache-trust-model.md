@@ -1524,6 +1524,15 @@ unverified. Operators must make `api_key_scope` exclude publish from wildcard gr
 This is preparatory: routes still use `SecurityService`, and the
 header remains `X-API-KEY`. `CachedSecurity`, Bearer headers and
 `validate_access` migration are still open; slice 2 is **not complete**.
+Providers now expose `authenticator()` through the common trait, including the
+caching decorator. A separate caller cache uses full HMAC-SHA256 keys covering
+credential, resource and canonical wanted scopes, with a per-state random pepper.
+Randomness failure disables caller caching instead of using an unkeyed fallback.
+Recognized identities (including denials) use the security TTL; unknown credentials
+use optional negative caching. Tests cover state sharing across rebuilt wrappers,
+resource/scope/key separation and exact TTL expiry for grants and principals. The
+old bool-based cache remains only for the still-unmigrated request paths. Worker
+runtime validation remains open.
 See [the rollout notes](0030-authentication-rollout.md) for the batch plan.
 
 **Open gates before this RFC can be Implemented:**

@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
+use super::authentication::{AuthenticationCache, CachedAuthenticator};
 use super::{CachingConfiguration, TtlCache, cache_key};
 use crate::{
     data::{
@@ -23,7 +24,10 @@ use crate::{
     },
     hooks::{DynArtifactHooks, HookSettings, HostRuntime},
     providers::DependencyProvider,
-    security::{DynSecurityService, SecurityService, SecurityServiceError},
+    security::{
+        Authenticator, DynSecurityService, SecurityService,
+        SecurityServiceError,
+    },
     services::{
         DynValidationService, ValidationResult, ValidationService,
         ValidationServiceError,
@@ -32,12 +36,15 @@ use crate::{
 
 /// The caches themselves. Share one across providers that are rebuilt per
 /// request (as on Workers) so entries outlive a single request.
+/// A state belongs to one authority/configuration: never share it between
+/// independent providers. Policy changes take effect after the configured TTL.
 pub struct CachingState {
     tenants: Option<Arc<TtlCache>>,
     orgs: Option<Arc<TtlCache>>,
     workspaces: Option<Arc<TtlCache>>,
     environments: Option<Arc<TtlCache>>,
     security: Option<Arc<TtlCache>>,
+    authentication: Option<Arc<AuthenticationCache>>,
     validation: Option<Arc<TtlCache<ValidationResult>>>,
 }
 
@@ -58,6 +65,11 @@ impl CachingState {
                 .security
                 .clone()
                 .map(|c| Arc::new(TtlCache::new(c))),
+            authentication: config
+                .security
+                .clone()
+                .and_then(AuthenticationCache::new)
+                .map(Arc::new),
             validation: config
                 .repositories
                 .clone()
@@ -352,6 +364,13 @@ impl SecurityService for CachedSecurity {
 }
 
 impl DependencyProvider for CachingProvider {
+    fn authenticator(&self) -> Arc<dyn Authenticator> {
+        Arc::new(CachedAuthenticator::new(
+            self.inner.authenticator(),
+            self.state.authentication.clone(),
+        ))
+    }
+
     fn workspace_repository(&self) -> DynWorkspaceRepository {
         Box::new(CachedWorkspaces(
             self.inner.workspace_repository(),

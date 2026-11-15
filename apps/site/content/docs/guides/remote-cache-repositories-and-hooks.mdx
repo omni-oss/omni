@@ -105,6 +105,19 @@ entries, so they are rebuilt.
 
 ## The query contract
 
+The new authenticator's optional cache uses the existing `caching.security`
+settings. Its keys cover the credential, full target and requested scope set,
+under a random per-cache HMAC key, separate from `hooks.api_key_id_secret`.
+Recognized callers retain their principal and grants until `ttl_secs` expires:
+removing a key or scope does not invalidate an existing hit immediately. Hits do
+not extend the TTL. Recognized callers with no grants use that same TTL; unknown
+credentials use `negative_ttl_secs` only when configured. Errors are never cached.
+A newly added grant can therefore also take up to the positive TTL to appear if
+the recognized caller was previously cached with no grants.
+If secure randomness is unavailable, caller caching is disabled with a warning.
+This caller cache becomes active when routes migrate; current routes still use
+the legacy security cache.
+
 - For the new RFC 0030 authenticator, `api_key_valid` can additionally return
   `principal` as text or NULL. Omitting the column or returning NULL uses the
   credential ID as principal; an empty, control-containing or over-256-byte value

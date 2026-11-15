@@ -25,6 +25,7 @@ bytesize = { workspace = true }
 derive-new = { workspace = true }
 eyre = { workspace = true }
 futures = { workspace = true }
+getrandom = { version = "=0.3.4", features = ["wasm_js"] }
 http = { workspace = true }
 http-body = { workspace = true }
 maps = { workspace = true }

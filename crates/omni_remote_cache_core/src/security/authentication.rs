@@ -35,6 +35,18 @@ impl Scope {
 pub struct Scopes(u8);
 
 impl Scopes {
+    pub fn iter(self) -> impl Iterator<Item = Scope> {
+        [
+            Scope::Read,
+            Scope::Write,
+            Scope::List,
+            Scope::Delete,
+            Scope::Publish,
+        ]
+        .into_iter()
+        .filter(move |scope| self.contains(*scope))
+    }
+
     pub fn contains(self, scope: Scope) -> bool {
         self.0 & Self::from(scope).0 != 0
     }

@@ -24,7 +24,7 @@ use omni_remote_cache_service::{
     },
     providers::DependencyProvider,
     routes::root::RouterConfig,
-    security::DynSecurityService,
+    security::{Authenticator, DynSecurityService},
     services::DynValidationService,
     state::build_state,
 };
@@ -35,6 +35,10 @@ struct WithHooks {
 }
 
 impl DependencyProvider for WithHooks {
+    fn authenticator(&self) -> Arc<dyn Authenticator> {
+        self.inner.authenticator()
+    }
+
     fn workspace_repository(&self) -> DynWorkspaceRepository {
         self.inner.workspace_repository()
     }

@@ -11,7 +11,7 @@ use omni_remote_cache_core::{
         api_key_id_keyed,
     },
     providers::DependencyProvider,
-    security::{AuthenticatorChain, DynSecurityService},
+    security::{Authenticator, AuthenticatorChain, DynSecurityService},
     services::{DefaultValidationService, DynValidationService},
 };
 
@@ -69,18 +69,19 @@ impl QueryDependencyProvider {
         self.runtime = Some(runtime);
         self
     }
-
-    /// Preparatory entry point; routes migrate with the Bearer-header change.
-    pub fn authenticator(&self) -> AuthenticatorChain {
-        AuthenticatorChain::new(vec![Arc::new(QueryAuthenticator::new(
-            self.repos.clone(),
-            self.hash.clone(),
-            self.api_key_id_secret.clone(),
-        ))])
-    }
 }
 
 impl DependencyProvider for QueryDependencyProvider {
+    fn authenticator(&self) -> Arc<dyn Authenticator> {
+        Arc::new(AuthenticatorChain::new(vec![Arc::new(
+            QueryAuthenticator::new(
+                self.repos.clone(),
+                self.hash.clone(),
+                self.api_key_id_secret.clone(),
+            ),
+        )]))
+    }
+
     fn workspace_repository(&self) -> DynWorkspaceRepository {
         Box::new(self.repos.clone())
     }
