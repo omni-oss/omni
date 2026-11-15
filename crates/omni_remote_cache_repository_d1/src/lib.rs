@@ -6,7 +6,9 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use omni_remote_cache_core::hooks::{BoxTask, HostRuntime};
-use omni_remote_cache_repository_query::{QueryError, QueryExecutor};
+use omni_remote_cache_repository_query::{
+    ApiKeyIdentity, QueryError, QueryExecutor,
+};
 use send_wrapper::SendWrapper;
 use serde_json::Value;
 use worker::{
@@ -85,6 +87,29 @@ fn found(value: &Value) -> Result<bool, QueryError> {
 
 #[async_trait]
 impl QueryExecutor for D1Executor {
+    async fn api_key_identity(
+        &self,
+        sql: &str,
+        params: &[&str],
+    ) -> Result<Option<ApiKeyIdentity>, QueryError> {
+        let Some(row) = self.single_row(sql, params).await? else {
+            return Ok(None);
+        };
+        let principal = match row.get("principal") {
+            None | Some(Value::Null) => None,
+            Some(Value::String(value)) => Some(value.clone()),
+            Some(_) => {
+                return Err(QueryError::Shape(
+                    "`principal` must be text or NULL".into(),
+                ));
+            }
+        };
+        Ok(Some(ApiKeyIdentity {
+            found: found(&row)?,
+            principal,
+        }))
+    }
+
     async fn exists(
         &self,
         sql: &str,

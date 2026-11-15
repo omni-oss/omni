@@ -171,6 +171,14 @@ mod tests {
 
     #[async_trait]
     impl QueryExecutor for Fake {
+        async fn api_key_identity(
+            &self,
+            _: &str,
+            _: &[&str],
+        ) -> Result<Option<crate::ApiKeyIdentity>, QueryError> {
+            unreachable!("hook tests never authenticate")
+        }
+
         async fn exists(
             &self,
             _: &str,

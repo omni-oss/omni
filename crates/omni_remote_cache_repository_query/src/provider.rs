@@ -11,13 +11,13 @@ use omni_remote_cache_core::{
         api_key_id_keyed,
     },
     providers::DependencyProvider,
-    security::DynSecurityService,
+    security::{AuthenticatorChain, DynSecurityService},
     services::{DefaultValidationService, DynValidationService},
 };
 
 use crate::{
-    ApiKeyHashConfiguration, QueriesConfiguration, QueryExecutor,
-    QueryRepositories, QuerySecurityService,
+    ApiKeyHashConfiguration, QueriesConfiguration, QueryAuthenticator,
+    QueryExecutor, QueryRepositories, QuerySecurityService,
 };
 
 /// A `DependencyProvider` whose data comes from operator queries run by a
@@ -68,6 +68,15 @@ impl QueryDependencyProvider {
     pub fn with_runtime(mut self, runtime: Arc<dyn HostRuntime>) -> Self {
         self.runtime = Some(runtime);
         self
+    }
+
+    /// Preparatory entry point; routes migrate with the Bearer-header change.
+    pub fn authenticator(&self) -> AuthenticatorChain {
+        AuthenticatorChain::new(vec![Arc::new(QueryAuthenticator::new(
+            self.repos.clone(),
+            self.hash.clone(),
+            self.api_key_id_secret.clone(),
+        ))])
     }
 }
 
@@ -141,6 +150,17 @@ mod tests {
 
     #[async_trait]
     impl QueryExecutor for Recording {
+        async fn api_key_identity(
+            &self,
+            sql: &str,
+            params: &[&str],
+        ) -> Result<Option<crate::ApiKeyIdentity>, QueryError> {
+            Ok(Some(crate::ApiKeyIdentity {
+                found: self.exists(sql, params).await?,
+                principal: None,
+            }))
+        }
+
         async fn exists(
             &self,
             sql: &str,

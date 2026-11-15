@@ -105,6 +105,19 @@ entries, so they are rebuilt.
 
 ## The query contract
 
+- For the new RFC 0030 authenticator, `api_key_valid` can additionally return
+  `principal` as text or NULL. Omitting the column or returning NULL uses the
+  credential ID as principal; an empty, control-containing or over-256-byte value
+  fails authentication, as does a non-text column. The `found` column is still
+  required. Existing queries need no change. This identity path is preparatory:
+  artifact routes still use the old security service until the header migration.
+  With MySQL, use a text column (or an appropriate `CAST(... AS CHAR)`); a binary
+  value or binary-collated result may be reported as a blob by the driver and is
+  rejected rather than used as an identity.
+- `api_key_scope` must return true for `publish:artifacts` only for an explicit
+  publish grant. If your query matches a wildcard such as `scope = 'all'`, exclude
+  publish from that branch. The service cannot infer whether your SQL matched an
+  explicit or wildcard database row.
 - Queries run verbatim in your driver's dialect: `$1` for Postgres, `?` for
   MySQL, `?1` or `?` for SQLite and D1. Nothing is rewritten.
 - Parameters are bound in order, as text. They never become part of the SQL.

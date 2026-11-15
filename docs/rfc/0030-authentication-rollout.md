@@ -76,3 +76,24 @@ target validation and the service TypeScript suites are left to CI. Do not run
   validation and rotation, config compatibility and native state wiring.
   Rollback: remove the static authenticator/config additions; deployments opting
   into a secret revert to unkeyed IDs, so correlate usage across the ID change.
+- **SQL/D1 provider sub-batch:** implemented and independently reviewed by Opus;
+  no blockers. Added the suggested invalid-key/malformed-principal short-circuit
+  test and documented MySQL text decoding. The required executor method is a Rust
+  API break; include it in release notes with the route/header migration.
+  `QueryExecutor::api_key_identity` reads the existing `api_key_valid` query's
+  `found` and optional `principal` in one execution. Missing/NULL principal keeps
+  the old default; non-text or invalid identity data is an error. The new method is
+  required so a third-party executor cannot silently ignore a principal column.
+  Native SQL uses the existing bounded single-row reader and parameter binding;
+  D1 uses its existing single-row reader. No schema or new query setting is added.
+  `QueryDependencyProvider::authenticator` exposes the new one-member chain.
+  Validity runs once per request, then ordered resource checks stop on denial,
+  followed by one query per wanted scope. Scope query failures discard all grants.
+  Operator scope queries must exclude publish from wildcard matching; the query
+  provider cannot distinguish an explicit grant from an operator's wildcard SQL.
+  Scripted tests check order, hashed parameters, short circuiting and failures at
+  every query boundary; real SQLite tests check optional-column compatibility and
+  malformed rows. Postgres/MySQL identity reads and D1 runtime remain CI gates.
+  Routes and the authentication cache still use the old security service.
+  Undo: remove the additive authenticator and executor method together; old
+  `api_key_valid` queries remain valid, with or without a principal column.

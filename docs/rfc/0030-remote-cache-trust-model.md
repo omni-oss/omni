@@ -1514,8 +1514,15 @@ access to the resource remain recognized with no grants. Its optional per-key
 the new caller and existing hook IDs in native and Worker static configuration.
 Legacy `all` excludes publish in both the old and new security services; publish
 requires an explicit `publish:artifacts` grant. API keys never assert a scope pin.
+The SQL/D1 query provider also exposes an authenticator. `api_key_valid` may return
+a nullable text `principal`; missing/NULL keeps the default ID, non-text or invalid
+identity text fails closed. Native SQL and D1 implement the new required
+`QueryExecutor::api_key_identity` method. Validity is read once, resource restrictions
+are checked in order, and only wanted scope queries run. Scripted provider and real
+SQLite tests cover this path; Postgres/MySQL identity reads and D1 runtime remain
+unverified. Operators must make `api_key_scope` exclude publish from wildcard grants.
 This is preparatory: routes still use `SecurityService`, and the
-header remains `X-API-KEY`. `CachedSecurity`, SQL/D1 `principal`, Bearer headers and
+header remains `X-API-KEY`. `CachedSecurity`, Bearer headers and
 `validate_access` migration are still open; slice 2 is **not complete**.
 See [the rollout notes](0030-authentication-rollout.md) for the batch plan.
 
