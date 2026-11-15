@@ -89,6 +89,7 @@ export function extractSpecifiers(source: string): ExtractResult {
     const [imports] = lexerParse(source);
     for (const imp of imports) {
         if (imp.type === "import-meta") continue; // not a module fetch
+        if (imp.type !== "dynamic" && imp.typeOnly) continue; // erased at runtime
         const dynamic = imp.type === "dynamic";
         if (imp.specifier === undefined || (dynamic && imp.glob)) {
             if (dynamic) nonLiteralDynamic = true; // import(expr) — unresolvable
