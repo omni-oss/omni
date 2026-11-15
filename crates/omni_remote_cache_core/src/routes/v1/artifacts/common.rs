@@ -7,6 +7,8 @@ use serde::Deserialize;
 use serde_json::json;
 use utoipa::{IntoParams, ToSchema};
 
+use omni_remote_cache_storage_core::{Container, error::Error};
+
 use crate::{services::Violation, utils::path::escape_path_component};
 
 #[allow(unused)]
@@ -20,17 +22,25 @@ pub struct CommonArtifactQuery {
 
 #[allow(unused)]
 #[inline(always)]
-pub fn container_common(tenant: &str, query: &CommonArtifactQuery) -> String {
+pub fn container_common(
+    tenant: &str,
+    query: &CommonArtifactQuery,
+) -> Result<Container, Error> {
     container(tenant, &query.org, &query.ws, &query.env)
 }
 
 #[inline(always)]
-pub fn container(tenant: &str, org: &str, ws: &str, env: &str) -> String {
+pub fn container(
+    tenant: &str,
+    org: &str,
+    ws: &str,
+    env: &str,
+) -> Result<Container, Error> {
     let tenant = escape_path_component(tenant);
     let org = escape_path_component(org);
     let ws = escape_path_component(ws);
     let env = escape_path_component(env);
-    format!("{}/{}/{}/{}", tenant, org, ws, env)
+    Container::parse(format!("{}/{}/{}/{}", tenant, org, ws, env))
 }
 
 #[inline(always)]
@@ -246,30 +256,42 @@ mod tests {
     use super::container;
 
     #[test]
+    fn dot_and_empty_codes_are_escaped_into_a_valid_container() {
+        for bad in ["", ".", ".."] {
+            let c = container("t", bad, "w", "e").unwrap();
+            assert!(
+                !c.as_str()
+                    .split('/')
+                    .any(|s| s.is_empty() || s == "." || s == "..")
+            );
+        }
+    }
+
+    #[test]
     fn tenants_never_share_a_container() {
         assert_ne!(
-            container("t1", "o", "w", "e"),
-            container("t2", "o", "w", "e")
+            container("t1", "o", "w", "e").unwrap(),
+            container("t2", "o", "w", "e").unwrap()
         );
         assert_ne!(
-            container("a/b", "c", "w", "e"),
-            container("a", "b/c", "w", "e")
+            container("a/b", "c", "w", "e").unwrap(),
+            container("a", "b/c", "w", "e").unwrap()
         );
     }
 
     #[test]
     fn container_does_not_collide_on_percent_encoded_names() {
         assert_ne!(
-            container("t", "foo/bar", "ws", "env"),
-            container("t", "foo%2Fbar", "ws", "env")
+            container("t", "foo/bar", "ws", "env").unwrap(),
+            container("t", "foo%2Fbar", "ws", "env").unwrap()
         );
         assert_ne!(
-            container("t", "a", "b/c", "d"),
-            container("t", "a/b", "c", "d")
+            container("t", "a", "b/c", "d").unwrap(),
+            container("t", "a/b", "c", "d").unwrap()
         );
         assert_ne!(
-            container("t", "CON", "ws", "env"),
-            container("t", "_CON", "ws", "env")
+            container("t", "CON", "ws", "env").unwrap(),
+            container("t", "_CON", "ws", "env").unwrap()
         );
     }
 }

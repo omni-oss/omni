@@ -23,6 +23,7 @@ reqwest-middleware = { workspace = true }
 reqwest-tracing = { workspace = true }
 
 [dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
 ntest = { workspace = true }
 test-log = { workspace = true }
 

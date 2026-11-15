@@ -17,16 +17,14 @@ use tokio_stream::StreamExt;
 use tokio_util::io::ReaderStream;
 
 use omni_remote_cache_storage_core::{
-    BoxStream, ListItem, PageOptions, ReadStream, RemoteCacheStorageBackend,
-    error::Error,
+    Container, ListItem, PageOptions, ReadStream, RemoteCacheStorageBackend,
+    WriteStream, error::Error,
 };
 
 // --- S3 Backend Struct ---
 #[derive(Debug)]
 pub struct S3CacheBackend {
     client: Client,
-    multi_bucket: bool,
-    default_container: String,
     default_bucket: String,
 }
 
@@ -36,8 +34,6 @@ pub struct BasicS3Config {
     pub access_key_id: String,
     pub secret_access_key: String,
     pub endpoint: String,
-    pub multi_bucket: bool,
-    pub default_container: String,
     pub default_bucket: String,
     pub region: String,
     pub force_path_style: bool,
@@ -48,14 +44,10 @@ impl S3CacheBackend {
     pub fn from_aws_sdk_config(
         config: &SdkConfig,
         default_bucket: impl Into<String>,
-        default_container: impl Into<String>,
-        multi_bucket: bool,
     ) -> Self {
         Self {
             client: Client::new(config),
-            multi_bucket,
             default_bucket: default_bucket.into(),
-            default_container: default_container.into(),
         }
     }
 
@@ -63,13 +55,9 @@ impl S3CacheBackend {
     pub fn from_aws_s3_sdk_config(
         config: aws_sdk_s3::Config,
         default_bucket: impl Into<String>,
-        default_container: impl Into<String>,
-        multi_bucket: bool,
     ) -> Self {
         Self {
             client: Client::from_conf(config),
-            multi_bucket,
-            default_container: default_container.into(),
             default_bucket: default_bucket.into(),
         }
     }
@@ -95,66 +83,63 @@ impl S3CacheBackend {
             .force_path_style(basic.force_path_style)
             .build();
 
-        Self::from_aws_s3_sdk_config(
-            s3_config,
-            basic.default_bucket.clone(),
-            basic.default_container.clone(),
-            basic.multi_bucket,
-        )
+        Self::from_aws_s3_sdk_config(s3_config, basic.default_bucket.clone())
     }
 
     #[inline(always)]
     pub async fn from_aws_config_from_env(
         default_bucket: impl Into<String>,
-        default_container: impl Into<String>,
-        multi_bucket: bool,
     ) -> Self {
         let config = aws_config::load_defaults(BehaviorVersion::latest()).await;
 
-        Self::from_aws_sdk_config(
-            &config,
-            default_bucket,
-            default_container,
-            multi_bucket,
-        )
+        Self::from_aws_sdk_config(&config, default_bucket)
     }
 }
 
 impl S3CacheBackend {
-    fn get_bucket_and_prefix<'s>(
-        &'s self,
-        container: Option<&'s str>,
-    ) -> (&'s str, Option<&'s str>) {
-        let container = container.unwrap_or(&self.default_container);
-
-        if self.multi_bucket {
-            (&self.default_bucket, Some(container))
-        } else {
-            (container, None)
-        }
+    fn key(&self, container: &Container, key: &str) -> String {
+        format!("{}/{}", container.as_str(), key)
     }
 
-    fn key<'s>(&'s self, prefix: Option<&'s str>, key: &'s str) -> String {
-        if let Some(prefix) = prefix {
-            format!("{prefix}/{key}")
-        } else {
-            key.to_string()
+    fn list_item(
+        container: &Container,
+        item: aws_sdk_s3::types::Object,
+    ) -> Result<Option<ListItem>, Error> {
+        let prefix = container.prefix();
+        let key = item
+            .key
+            .as_deref()
+            .and_then(|key| key.strip_prefix(prefix.as_str()))
+            .ok_or_else(|| {
+                Error::custom(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "S3 listing returned a missing or out-of-container key",
+                ))
+            })?;
+        // The S3 console can create an object at the exact container prefix
+        // as a folder marker. It is not an artifact and has no relative key.
+        if key.is_empty() {
+            return Ok(None);
         }
+        Ok(Some(ListItem {
+            key: key.to_string(),
+            size: ByteSize::b(item.size.unwrap_or_default() as u64),
+        }))
     }
 
     #[allow(clippy::result_large_err)]
     async fn head(
         &self,
-        container: Option<&str>,
+        container: &Container,
         key: &str,
     ) -> Result<HeadObjectOutput, aws_sdk_s3::Error> {
-        let (bucket, prefix) = self.get_bucket_and_prefix(container);
+        let bucket = self.default_bucket.as_str();
 
         let head = self
             .client
             .head_object()
             .bucket(bucket)
-            .key(self.key(prefix, key))
+            .key(self.key(container, key))
             .send()
             .await?;
 
@@ -164,22 +149,18 @@ impl S3CacheBackend {
 
 #[async_trait]
 impl RemoteCacheStorageBackend for S3CacheBackend {
-    fn default_container(&self) -> &str {
-        &self.default_container
-    }
-
     async fn get(
         &self,
-        container: Option<&str>,
+        container: &Container,
         key: &str,
     ) -> Result<Option<Bytes>, Error> {
-        let (bucket, prefix) = self.get_bucket_and_prefix(container);
+        let bucket = self.default_bucket.as_str();
 
         let request = self
             .client
             .get_object()
             .bucket(bucket)
-            .key(self.key(prefix, key))
+            .key(self.key(container, key))
             .send()
             .await;
 
@@ -203,16 +184,16 @@ impl RemoteCacheStorageBackend for S3CacheBackend {
 
     async fn exists(
         &self,
-        container: Option<&str>,
+        container: &Container,
         key: &str,
     ) -> Result<bool, Error> {
-        let (bucket, prefix) = self.get_bucket_and_prefix(container);
+        let bucket = self.default_bucket.as_str();
 
         let head = self
             .client
             .head_object()
             .bucket(bucket)
-            .key(self.key(prefix, key))
+            .key(self.key(container, key))
             .send()
             .await;
 
@@ -232,16 +213,16 @@ impl RemoteCacheStorageBackend for S3CacheBackend {
 
     async fn get_stream(
         &self,
-        container: Option<&str>,
+        container: &Container,
         key: &str,
     ) -> Result<Option<ReadStream>, Error> {
-        let (bucket, prefix) = self.get_bucket_and_prefix(container);
+        let bucket = self.default_bucket.as_str();
 
         let request = self
             .client
             .get_object()
             .bucket(bucket)
-            .key(self.key(prefix, key))
+            .key(self.key(container, key))
             .send()
             .await;
 
@@ -268,25 +249,24 @@ impl RemoteCacheStorageBackend for S3CacheBackend {
 
     async fn list(
         &self,
-        container: Option<&str>,
+        container: &Container,
     ) -> Result<Vec<ListItem>, Error> {
-        let (bucket, prefix) = self.get_bucket_and_prefix(container);
+        let bucket = self.default_bucket.as_str();
 
         let list = self
             .client
             .list_objects()
             .bucket(bucket)
-            .prefix(prefix.unwrap_or(""))
+            .prefix(container.prefix().as_str())
             .send()
             .await
             .map_err(Error::custom)?;
 
         let mut items = Vec::new();
         for item in list.contents.unwrap_or_default() {
-            items.push(ListItem {
-                key: item.key.unwrap_or_default(),
-                size: ByteSize::b(item.size.unwrap_or_default() as u64),
-            });
+            if let Some(item) = Self::list_item(container, item)? {
+                items.push(item);
+            }
         }
 
         Ok(items)
@@ -294,27 +274,26 @@ impl RemoteCacheStorageBackend for S3CacheBackend {
 
     async fn paged_list(
         &self,
-        container: Option<&str>,
+        container: &Container,
         query: PageOptions,
     ) -> Result<Vec<ListItem>, Error> {
-        let (bucket, prefix) = self.get_bucket_and_prefix(container);
+        let bucket = self.default_bucket.as_str();
 
         let list = self
             .client
             .list_objects_v2()
             .max_keys(query.per_page.unwrap_or(100) as i32)
             .bucket(bucket)
-            .prefix(prefix.unwrap_or(""))
+            .prefix(container.prefix().as_str())
             .send()
             .await
             .map_err(Error::custom)?;
 
         let mut items = Vec::new();
         for item in list.contents.unwrap_or_default() {
-            items.push(ListItem {
-                key: item.key.unwrap_or_default(),
-                size: ByteSize::b(item.size.unwrap_or_default() as u64),
-            });
+            if let Some(item) = Self::list_item(container, item)? {
+                items.push(item);
+            }
         }
 
         Ok(items)
@@ -322,17 +301,17 @@ impl RemoteCacheStorageBackend for S3CacheBackend {
 
     async fn save(
         &self,
-        container: Option<&str>,
+        container: &Container,
         key: &str,
         value: Bytes,
     ) -> Result<(), Error> {
-        let (bucket, prefix) = self.get_bucket_and_prefix(container);
+        let bucket = self.default_bucket.as_str();
         let body = ByteStream::from(value);
 
         self.client
             .put_object()
             .bucket(bucket)
-            .key(self.key(prefix, key))
+            .key(self.key(container, key))
             .body(body)
             .send()
             .await
@@ -343,11 +322,11 @@ impl RemoteCacheStorageBackend for S3CacheBackend {
 
     async fn save_stream(
         &self,
-        container: Option<&str>,
+        container: &Container,
         key: &str,
-        mut value: BoxStream<Bytes>,
+        mut value: WriteStream,
     ) -> Result<(), Error> {
-        let (bucket, prefix) = self.get_bucket_and_prefix(container);
+        let bucket = self.default_bucket.as_str();
 
         let tmp = tempfile::NamedTempFile::new().map_err(Error::custom)?;
 
@@ -356,15 +335,18 @@ impl RemoteCacheStorageBackend for S3CacheBackend {
         let mut writer = tokio::io::BufWriter::new(File::from_std(file));
 
         while let Some(bytes) = value.next().await {
-            writer.write_all(&bytes).await.map_err(Error::custom)?;
+            writer.write_all(&bytes?).await.map_err(Error::custom)?;
         }
+        writer.flush().await.map_err(Error::custom)?;
+        drop(writer);
 
-        let body = ByteStream::from_path(path).await.map_err(Error::custom)?;
+        // Keep TempPath alive until the SDK has finished consuming the file.
+        let body = ByteStream::from_path(&path).await.map_err(Error::custom)?;
 
         self.client
             .put_object()
             .bucket(bucket)
-            .key(self.key(prefix, key))
+            .key(self.key(container, key))
             .body(body)
             .send()
             .await
@@ -375,16 +357,15 @@ impl RemoteCacheStorageBackend for S3CacheBackend {
 
     async fn delete(
         &self,
-        container: Option<&str>,
+        container: &Container,
         key: &str,
     ) -> Result<(), Error> {
-        let (bucket, prefix) = self.get_bucket_and_prefix(container);
+        let bucket = self.default_bucket.as_str();
 
         self.client
             .delete_object()
             .bucket(bucket)
-            .key(self.key(prefix, key))
-            .key(key)
+            .key(self.key(container, key))
             .send()
             .await
             .map_err(Error::custom)?;
@@ -394,7 +375,7 @@ impl RemoteCacheStorageBackend for S3CacheBackend {
 
     async fn size(
         &self,
-        container: Option<&str>,
+        container: &Container,
         key: &str,
     ) -> Result<Option<ByteSize>, Error> {
         let head = self.head(container, key).await;
@@ -406,5 +387,48 @@ impl RemoteCacheStorageBackend for S3CacheBackend {
             Err(aws_sdk_s3::Error::NotFound(_)) => Ok(None),
             Err(e) => Err(Error::custom(e)),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use aws_sdk_s3::types::Object;
+
+    #[test]
+    fn listing_strips_only_the_first_exact_prefix() {
+        let container = Container::parse("ns/ci").unwrap();
+        let item = Object::builder().key("ns/ci/ns/ci/d").size(7).build();
+        assert_eq!(
+            S3CacheBackend::list_item(&container, item)
+                .unwrap()
+                .unwrap()
+                .key,
+            "ns/ci/d"
+        );
+    }
+
+    #[test]
+    fn listing_rejects_missing_and_out_of_container_keys() {
+        let container = Container::parse("ns/ci").unwrap();
+        for key in ["ns/ci2/d", "d", "ns/ci"] {
+            let item = Object::builder().key(key).build();
+            assert!(S3CacheBackend::list_item(&container, item).is_err());
+        }
+        assert!(
+            S3CacheBackend::list_item(&container, Object::builder().build())
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn listing_skips_the_exact_container_marker() {
+        let container = Container::parse("ns/ci").unwrap();
+        let marker = Object::builder().key("ns/ci/").size(0).build();
+        assert!(
+            S3CacheBackend::list_item(&container, marker)
+                .unwrap()
+                .is_none()
+        );
     }
 }

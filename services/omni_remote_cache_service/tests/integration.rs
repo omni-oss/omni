@@ -119,6 +119,82 @@ const DEFAULT_WORKSPACE: &str = "test-workspace";
 const DEFAULT_ENV: &str = "test-env";
 const DEFAULT_API_KEY: &str = "test-api-key";
 
+#[tokio::test]
+async fn interrupted_put_preserves_the_existing_local_artifact() {
+    use axum::body::Body;
+    use omni_remote_cache_storage_core::{
+        Container, RemoteCacheStorageBackend,
+    };
+    use omni_remote_cache_storage_local::LocalDiskCacheBackend;
+    use std::sync::Arc;
+    use tower::ServiceExt;
+
+    let args = ServeArgs::new(
+        "".to_string(),
+        Some(serde_json::to_string(&default_config()).unwrap()),
+        Some(ConfigType::Inline),
+        false,
+        None,
+        None,
+        None,
+        BackendType::InMemory,
+        None,
+        None,
+    );
+    let mut state = build_state(&args).await.unwrap();
+    let root = tempfile::tempdir().unwrap();
+    let backend = Arc::new(LocalDiskCacheBackend::new(root.path()));
+    state.storage_backend = backend.clone();
+    let router = omni_remote_cache_service::routes::root::build_router(
+        &RouterConfig::from(RouterArgs::new(Some("/api".to_string()), false)),
+    )
+    .with_state(state);
+    let container = Container::parse(format!(
+        "{DEFAULT_TENANT}/{DEFAULT_ORG}/{DEFAULT_WORKSPACE}/{DEFAULT_ENV}"
+    ))
+    .unwrap();
+    backend
+        .save(&container, DEFAULT_DIGEST, Bytes::from("complete archive"))
+        .await
+        .unwrap();
+
+    for digest in [DEFAULT_DIGEST, "new-digest"] {
+        let stream = tokio_stream::iter([
+            Ok(Bytes::from("partial")),
+            Err(std::io::Error::other("interrupted request body")),
+        ]);
+        let request = http::Request::builder()
+            .method("PUT")
+            .uri(get_path(
+                DEFAULT_ORG,
+                DEFAULT_WORKSPACE,
+                DEFAULT_ENV,
+                Some(digest),
+            ))
+            .header("X-API-KEY", DEFAULT_API_KEY)
+            .header("X-OMNI-TENANT", DEFAULT_TENANT)
+            .body(Body::from_stream(stream))
+            .unwrap();
+        let response = router.clone().oneshot(request).await.unwrap();
+        assert_eq!(
+            response.status(),
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "the authorized PUT must reach storage and report the stream error"
+        );
+    }
+    assert_eq!(
+        backend.get(&container, DEFAULT_DIGEST).await.unwrap(),
+        Some(Bytes::from("complete archive"))
+    );
+    assert!(
+        backend
+            .get(&container, "new-digest")
+            .await
+            .unwrap()
+            .is_none()
+    );
+}
+
 fn get_path(
     org: &str,
     workspace: &str,

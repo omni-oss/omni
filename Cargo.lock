@@ -7878,7 +7878,9 @@ dependencies = [
  "sets",
  "shadow-rs",
  "strum 0.28.0",
+ "tempfile",
  "tokio 1.54.1",
+ "tokio-stream",
  "tower",
  "tower-http 0.7.1",
  "tracing",
@@ -7899,6 +7901,7 @@ dependencies = [
  "serde",
  "strum 0.28.0",
  "thiserror 2.0.21",
+ "tokio 1.54.1",
  "utoipa",
 ]
 

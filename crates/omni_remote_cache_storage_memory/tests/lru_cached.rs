@@ -6,6 +6,6 @@ use omni_remote_cache_storage_core::{
 use omni_remote_cache_storage_memory::InMemoryBackend;
 
 decl_remote_cache_storage_backend_tests!(LruCached::new(
-    InMemoryBackend::new("default"),
+    InMemoryBackend::new(),
     NonZeroUsize::new(100).unwrap()
 ));

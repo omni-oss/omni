@@ -1,6 +1,7 @@
 use std::{
+    collections::HashMap,
     num::NonZeroUsize,
-    sync::{Arc, Mutex, MutexGuard, PoisonError},
+    sync::{Arc, Mutex, MutexGuard, PoisonError, Weak},
 };
 
 use async_trait::async_trait;
@@ -9,27 +10,33 @@ use bytesize::ByteSize;
 use futures::StreamExt as _;
 
 use crate::{
-    BoxStream, ListItem, PageOptions, ReadStream, RemoteCacheStorageBackend,
-    error::Error,
+    Container, ListItem, PageOptions, ReadStream, RemoteCacheStorageBackend,
+    WriteStream, error::Error,
 };
 
 const DEFAULT_MAX_CACHEABLE_SIZE: ByteSize = ByteSize::mib(8);
 
 type Cache = lru::LruCache<(String, String), Bytes>;
+type MutationLocks = HashMap<(String, String), Weak<futures::lock::Mutex<()>>>;
 
 #[derive(Debug)]
+/// Native deletes require a Tokio runtime and finish even if the caller cancels.
 pub struct LruCached<T: RemoteCacheStorageBackend> {
-    inner: T,
-    cached: Mutex<Cache>,
+    inner: Arc<T>,
+    cached: Arc<Mutex<Cache>>,
     max_cacheable_size: ByteSize,
+    // Weak entries track only live same-key mutations. Never hold this map
+    // or the cache mutex across an await.
+    mutations: Mutex<MutationLocks>,
 }
 
 impl<T: RemoteCacheStorageBackend> LruCached<T> {
     pub fn new(inner: T, capacity: NonZeroUsize) -> Self {
         Self {
-            inner,
-            cached: Mutex::new(lru::LruCache::new(capacity)),
+            inner: Arc::new(inner),
+            cached: Arc::new(Mutex::new(lru::LruCache::new(capacity))),
             max_cacheable_size: DEFAULT_MAX_CACHEABLE_SIZE,
+            mutations: Mutex::new(HashMap::new()),
         }
     }
 
@@ -42,35 +49,44 @@ impl<T: RemoteCacheStorageBackend> LruCached<T> {
 }
 
 impl<T: RemoteCacheStorageBackend> LruCached<T> {
-    fn container<'s>(&'s self, container: Option<&'s str>) -> &'s str {
-        container.unwrap_or(self.inner.default_container())
-    }
-
     fn cache(&self) -> MutexGuard<'_, Cache> {
         self.cached.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    fn cache_key(
+    fn cache_key(&self, container: &Container, key: &str) -> (String, String) {
+        (container.as_str().to_string(), key.to_string())
+    }
+
+    fn mutation_lock(
         &self,
-        container: Option<&str>,
+        container: &Container,
         key: &str,
-    ) -> (String, String) {
-        (self.container(container).to_string(), key.to_string())
+    ) -> Arc<futures::lock::Mutex<()>> {
+        let mut mutations = self
+            .mutations
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        // Reclaim completed keys instead of retaining a lock per lifetime key.
+        mutations.retain(|_, lock| lock.strong_count() > 0);
+        let entry =
+            mutations.entry(self.cache_key(container, key)).or_default();
+        if let Some(lock) = entry.upgrade() {
+            return lock;
+        }
+        let lock = Arc::new(futures::lock::Mutex::new(()));
+        *entry = Arc::downgrade(&lock);
+        lock
     }
 }
 
 #[async_trait]
 impl<T> RemoteCacheStorageBackend for LruCached<T>
 where
-    T: RemoteCacheStorageBackend + Send + Sync,
+    T: RemoteCacheStorageBackend + Send + Sync + 'static,
 {
-    fn default_container(&self) -> &str {
-        self.inner.default_container()
-    }
-
     async fn get(
         &self,
-        container: Option<&str>,
+        container: &Container,
         key: &str,
     ) -> Result<Option<Bytes>, Error> {
         if let Some(cached) = self.cache().get(&self.cache_key(container, key))
@@ -83,7 +99,7 @@ where
 
     async fn exists(
         &self,
-        container: Option<&str>,
+        container: &Container,
         key: &str,
     ) -> Result<bool, Error> {
         if self.cache().get(&self.cache_key(container, key)).is_some() {
@@ -95,7 +111,7 @@ where
 
     async fn get_stream(
         &self,
-        container: Option<&str>,
+        container: &Container,
         key: &str,
     ) -> Result<Option<ReadStream>, Error> {
         let cached = self.cache().get(&self.cache_key(container, key)).cloned();
@@ -110,14 +126,14 @@ where
 
     async fn list(
         &self,
-        container: Option<&str>,
+        container: &Container,
     ) -> Result<Vec<ListItem>, Error> {
         self.inner.list(container).await
     }
 
     async fn paged_list(
         &self,
-        container: Option<&str>,
+        container: &Container,
         query: PageOptions,
     ) -> Result<Vec<ListItem>, Error> {
         self.inner.paged_list(container, query).await
@@ -125,22 +141,31 @@ where
 
     async fn save(
         &self,
-        container: Option<&str>,
+        container: &Container,
         key: &str,
         value: Bytes,
     ) -> Result<(), Error> {
-        self.cache()
-            .put(self.cache_key(container, key), value.clone());
+        let mutation = self.mutation_lock(container, key);
+        let _mutation = mutation.lock().await;
+        self.cache().pop(&self.cache_key(container, key));
+        self.inner.save(container, key, value).await?;
 
-        self.inner.save(container, key, value).await
+        // Invalidate rather than warm: a concurrent delete may have removed
+        // the object after the backend accepted it. Cache misses read the backend.
+        self.cache().pop(&self.cache_key(container, key));
+
+        Ok(())
     }
 
     async fn save_stream(
         &self,
-        container: Option<&str>,
+        container: &Container,
         key: &str,
-        value: BoxStream<Bytes>,
+        value: WriteStream,
     ) -> Result<(), Error> {
+        let mutation = self.mutation_lock(container, key);
+        let _mutation = mutation.lock().await;
+        self.cache().pop(&self.cache_key(container, key));
         // `None` means the upload exceeded the cacheable size and the
         // captured bytes were dropped.
         let capture = Arc::new(Mutex::new(Some(BytesMut::new())));
@@ -152,6 +177,10 @@ where
             value.inspect(move |chunk| {
                 let mut guard =
                     capture.lock().unwrap_or_else(PoisonError::into_inner);
+                let Ok(chunk) = chunk else {
+                    *guard = None;
+                    return;
+                };
                 let exceeded = match guard.as_mut() {
                     Some(buf) if buf.len() + chunk.len() <= max => {
                         buf.extend_from_slice(chunk);
@@ -189,17 +218,45 @@ where
 
     async fn delete(
         &self,
-        container: Option<&str>,
+        container: &Container,
         key: &str,
     ) -> Result<(), Error> {
-        self.cache().pop(&self.cache_key(container, key));
-
-        self.inner.delete(container, key).await
+        let mutation = self.mutation_lock(container, key);
+        let guard = mutation.lock_owned().await;
+        let inner = self.inner.clone();
+        let cached = self.cached.clone();
+        let cache_key = self.cache_key(container, key);
+        let container = container.clone();
+        let key = key.to_string();
+        let delete = async move {
+            // Own the guard through removal completion, even if the caller
+            // drops its JoinHandle while filesystem work is still running.
+            let _guard = guard;
+            cached
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .pop(&cache_key);
+            let result = inner.delete(&container, &key).await;
+            cached
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .pop(&cache_key);
+            result
+        };
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            tokio::spawn(delete).await.map_err(Error::custom)?
+        }
+        // Workers have no Tokio runtime or detached native filesystem work.
+        #[cfg(target_arch = "wasm32")]
+        {
+            delete.await
+        }
     }
 
     async fn size(
         &self,
-        container: Option<&str>,
+        container: &Container,
         key: &str,
     ) -> Result<Option<ByteSize>, Error> {
         if let Some(cached) = self.cache().get(&self.cache_key(container, key))

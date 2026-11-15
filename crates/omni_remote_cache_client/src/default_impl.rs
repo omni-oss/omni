@@ -15,6 +15,8 @@ use crate::{
     ValidateAccessResult,
 };
 
+const UPLOAD_REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
+
 #[derive(Debug, Clone, new)]
 pub struct DefaultRemoteCacheClient {
     client: ClientWithMiddleware,
@@ -68,7 +70,7 @@ impl Middleware for LogRequestMiddleware {
         );
 
         let res = next.run(req, extensions).await.inspect_err(|e| {
-            tracing::error!(error = %e, "response_error");
+            tracing::debug!(error = %e, "response_error");
         })?;
 
         tracing::trace!(
@@ -157,6 +159,7 @@ impl RemoteCacheClient for DefaultRemoteCacheClient {
             .head(url)
             .header("X-API-KEY", remote.api_key)
             .header("X-OMNI-TENANT", remote.tenant)
+            .timeout(UPLOAD_REQUEST_TIMEOUT)
             .send()
             .await
             .map_err(RemoteCacheClientError::custom)
@@ -196,6 +199,7 @@ impl RemoteCacheClient for DefaultRemoteCacheClient {
             .head(url)
             .header("X-API-KEY", remote.api_key)
             .header("X-OMNI-TENANT", remote.tenant)
+            .timeout(UPLOAD_REQUEST_TIMEOUT)
             .send()
             .await
             .map_err(RemoteCacheClientError::custom)
@@ -230,14 +234,17 @@ impl RemoteCacheClient for DefaultRemoteCacheClient {
             .header("X-API-KEY", remote.api_key)
             .header("X-OMNI-TENANT", remote.tenant)
             .body(artifact)
+            .timeout(UPLOAD_REQUEST_TIMEOUT)
             .send()
             .await
             .map_err(RemoteCacheClientError::custom)
             .inspect_err(|e| {
-                tracing::error!(error = ?e, "put_artifact_failed");
+                tracing::debug!(error = ?e, "put_artifact_failed");
             })?;
 
-        if response.status().is_success() {
+        if response.status().is_success()
+            || response.status() == StatusCode::CONFLICT
+        {
             Ok(())
         } else {
             Err(RemoteCacheClientError::custom(eyre::eyre!(
@@ -245,6 +252,59 @@ impl RemoteCacheClient for DefaultRemoteCacheClient {
                 response.status()
             )))
         }
+    }
+}
+
+#[cfg(test)]
+mod timeout_tests {
+    use super::*;
+    use tokio::{io::AsyncReadExt, net::TcpListener};
+
+    #[tokio::test]
+    async fn stalled_existence_check_times_out_after_connecting() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let (received, waiting) = tokio::sync::oneshot::channel();
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut headers = Vec::new();
+            while !headers.ends_with(b"\r\n\r\n") {
+                headers.push(socket.read_u8().await.unwrap());
+                assert!(headers.len() < 32 * 1024);
+            }
+            assert!(String::from_utf8(headers).unwrap().starts_with("HEAD "));
+            received.send(()).unwrap();
+            std::future::pending::<()>().await;
+        });
+        let client = DefaultRemoteCacheClient::default();
+        let request = tokio::spawn(async move {
+            client
+                .artifact_exists(
+                    &RemoteAccessArgs::new(&url, "k", "t", "o", "w", "e"),
+                    "d",
+                )
+                .await
+        });
+        tokio::time::timeout(Duration::from_secs(5), waiting)
+            .await
+            .unwrap()
+            .unwrap();
+        // The socket is connected and HEAD was received: connect_timeout
+        // cannot account for this failure. Advance only after that boundary.
+        tokio::time::pause();
+        tokio::time::advance(UPLOAD_REQUEST_TIMEOUT + Duration::from_secs(1))
+            .await;
+        let error = tokio::time::timeout(Duration::from_secs(1), request)
+            .await
+            .expect("HEAD did not honor its request timeout")
+            .unwrap()
+            .unwrap_err();
+        assert!(
+            format!("{error:?}").to_lowercase().contains("timed out"),
+            "{error:?}"
+        );
+        server.abort();
+        assert!(server.await.unwrap_err().is_cancelled());
     }
 }
 

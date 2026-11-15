@@ -19,7 +19,6 @@ const BUCKET_BINDING: &str = "CACHE_BUCKET";
 const CONFIG_BINDING: &str = "ORCS_CONFIG";
 const REPOSITORY_CONFIG_BINDING: &str = "ORCS_REPOSITORY_CONFIG";
 const D1_BINDING: &str = "DB";
-const DEFAULT_CONTAINER: &str = "default";
 
 fn text_binding(env: &Env, name: &str) -> Option<String> {
     env.secret(name)
@@ -94,8 +93,6 @@ fn build_state(
     let provider = build_provider(env, ctx)?;
 
     let bucket = env.bucket(BUCKET_BINDING)?;
-    let container = text_binding(env, "DEFAULT_CONTAINER")
-        .unwrap_or_else(|| DEFAULT_CONTAINER.to_string());
 
     let uri = req.uri();
     let info = ServiceInfo::new(
@@ -107,7 +104,7 @@ fn build_state(
     );
 
     Ok(ServiceState::new(
-        Arc::new(R2Backend::new(bucket, container)),
+        Arc::new(R2Backend::new(bucket)),
         Arc::new(info),
         provider,
     ))
