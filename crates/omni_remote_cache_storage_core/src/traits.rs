@@ -21,6 +21,14 @@ pub type BoxStream<T> =
 /// not expose bytes until the entire stream has completed successfully.
 pub type WriteStream = BoxStream<Result<Bytes, Error>>;
 
+/// Result of a create-only write. There is no replace: an existing entry is
+/// kept intact and reported, so an immutable entry cannot be overwritten.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SaveOutcome {
+    Stored,
+    AlreadyExists,
+}
+
 /// Read side of an object: items are fallible so a mid-stream failure is
 /// surfaced to the caller instead of silently truncating the data.
 pub type ReadStream =
@@ -55,19 +63,19 @@ pub trait RemoteCacheStorageBackend {
         page_options: PageOptions,
     ) -> Result<Vec<ListItem>, Error>;
 
-    async fn save(
+    async fn save_if_absent(
         &self,
         container: &Container,
         key: &str,
         value: Bytes,
-    ) -> Result<(), Error>;
+    ) -> Result<SaveOutcome, Error>;
 
-    async fn save_stream(
+    async fn save_stream_if_absent(
         &self,
         container: &Container,
         key: &str,
         value: WriteStream,
-    ) -> Result<(), Error>;
+    ) -> Result<SaveOutcome, Error>;
 
     async fn delete(
         &self,

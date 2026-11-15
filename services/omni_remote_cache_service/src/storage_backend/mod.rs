@@ -5,7 +5,7 @@ use bytes::Bytes;
 use derive_new::new;
 use omni_remote_cache_storage_core::{
     Container, ListItem, PageOptions, ReadStream, RemoteCacheStorageBackend,
-    WriteStream,
+    SaveOutcome, WriteStream,
     decorators::LruCached,
     error::{self, Error},
 };
@@ -189,52 +189,52 @@ impl RemoteCacheStorageBackend for StorageBackend {
         }
     }
 
-    async fn save(
+    async fn save_if_absent(
         &self,
         container: &Container,
         key: &str,
         value: Bytes,
-    ) -> Result<(), error::Error> {
+    ) -> Result<SaveOutcome, error::Error> {
         match self {
             StorageBackend::LruCachedLocalDisk(inner) => {
-                inner.save(container, key, value).await
+                inner.save_if_absent(container, key, value).await
             }
             StorageBackend::LocalDisk(inner) => {
-                inner.save(container, key, value).await
+                inner.save_if_absent(container, key, value).await
             }
             StorageBackend::LruCachedS3(inner) => {
-                inner.save(container, key, value).await
+                inner.save_if_absent(container, key, value).await
             }
             StorageBackend::S3(inner) => {
-                inner.save(container, key, value).await
+                inner.save_if_absent(container, key, value).await
             }
             StorageBackend::InMemory(inner) => {
-                inner.save(container, key, value).await
+                inner.save_if_absent(container, key, value).await
             }
         }
     }
 
-    async fn save_stream(
+    async fn save_stream_if_absent(
         &self,
         container: &Container,
         key: &str,
         value: WriteStream,
-    ) -> Result<(), Error> {
+    ) -> Result<SaveOutcome, Error> {
         match self {
             StorageBackend::LruCachedLocalDisk(inner) => {
-                inner.save_stream(container, key, value).await
+                inner.save_stream_if_absent(container, key, value).await
             }
             StorageBackend::LocalDisk(inner) => {
-                inner.save_stream(container, key, value).await
+                inner.save_stream_if_absent(container, key, value).await
             }
             StorageBackend::LruCachedS3(inner) => {
-                inner.save_stream(container, key, value).await
+                inner.save_stream_if_absent(container, key, value).await
             }
             StorageBackend::S3(inner) => {
-                inner.save_stream(container, key, value).await
+                inner.save_stream_if_absent(container, key, value).await
             }
             StorageBackend::InMemory(inner) => {
-                inner.save_stream(container, key, value).await
+                inner.save_stream_if_absent(container, key, value).await
             }
         }
     }

@@ -18,8 +18,10 @@ use tokio_util::io::ReaderStream;
 
 use omni_remote_cache_storage_core::{
     Container, ListItem, PageOptions, ReadStream, RemoteCacheStorageBackend,
-    WriteStream, error::Error,
+    SaveOutcome, WriteStream, error::Error,
 };
+
+const CONFLICT_RETRIES: usize = 3;
 
 // --- S3 Backend Struct ---
 #[derive(Debug)]
@@ -125,6 +127,43 @@ impl S3CacheBackend {
             key: key.to_string(),
             size: ByteSize::b(item.size.unwrap_or_default() as u64),
         }))
+    }
+
+    /// Create-only `PutObject` with `If-None-Match: *`. S3 answers `412` when
+    /// the key exists (reported as `AlreadyExists`) and `409
+    /// ConditionalRequestConflict` when it races a delete, which is retried
+    /// a bounded number of times. The body is rebuilt for every attempt.
+    async fn put_if_absent<F, Fut>(
+        &self,
+        container: &Container,
+        key: &str,
+        make_body: F,
+    ) -> Result<SaveOutcome, Error>
+    where
+        F: Fn() -> Fut,
+        Fut: std::future::Future<Output = Result<ByteStream, Error>>,
+    {
+        let object_key = self.key(container, key);
+        for attempt in 0..=CONFLICT_RETRIES {
+            let sent = self
+                .client
+                .put_object()
+                .bucket(self.default_bucket.as_str())
+                .key(&object_key)
+                .if_none_match("*")
+                .body(make_body().await?)
+                .send()
+                .await;
+            match sent {
+                Ok(_) => return Ok(SaveOutcome::Stored),
+                Err(e) => match e.raw_response().map(|r| r.status().as_u16()) {
+                    Some(412) => return Ok(SaveOutcome::AlreadyExists),
+                    Some(409) if attempt < CONFLICT_RETRIES => continue,
+                    _ => return Err(Error::custom(e)),
+                },
+            }
+        }
+        unreachable!("the final attempt always returns")
     }
 
     #[allow(clippy::result_large_err)]
@@ -299,35 +338,25 @@ impl RemoteCacheStorageBackend for S3CacheBackend {
         Ok(items)
     }
 
-    async fn save(
+    async fn save_if_absent(
         &self,
         container: &Container,
         key: &str,
         value: Bytes,
-    ) -> Result<(), Error> {
-        let bucket = self.default_bucket.as_str();
-        let body = ByteStream::from(value);
-
-        self.client
-            .put_object()
-            .bucket(bucket)
-            .key(self.key(container, key))
-            .body(body)
-            .send()
-            .await
-            .map_err(Error::custom)?;
-
-        Ok(())
+    ) -> Result<SaveOutcome, Error> {
+        self.put_if_absent(container, key, || {
+            let value = value.clone();
+            async move { Ok(ByteStream::from(value)) }
+        })
+        .await
     }
 
-    async fn save_stream(
+    async fn save_stream_if_absent(
         &self,
         container: &Container,
         key: &str,
         mut value: WriteStream,
-    ) -> Result<(), Error> {
-        let bucket = self.default_bucket.as_str();
-
+    ) -> Result<SaveOutcome, Error> {
         let tmp = tempfile::NamedTempFile::new().map_err(Error::custom)?;
 
         let (file, path) = tmp.into_parts();
@@ -340,19 +369,11 @@ impl RemoteCacheStorageBackend for S3CacheBackend {
         writer.flush().await.map_err(Error::custom)?;
         drop(writer);
 
-        // Keep TempPath alive until the SDK has finished consuming the file.
-        let body = ByteStream::from_path(&path).await.map_err(Error::custom)?;
-
-        self.client
-            .put_object()
-            .bucket(bucket)
-            .key(self.key(container, key))
-            .body(body)
-            .send()
-            .await
-            .map_err(Error::custom)?;
-
-        Ok(())
+        // Keep TempPath alive until every attempt has finished with the file.
+        self.put_if_absent(container, key, || async {
+            ByteStream::from_path(&path).await.map_err(Error::custom)
+        })
+        .await
     }
 
     async fn delete(

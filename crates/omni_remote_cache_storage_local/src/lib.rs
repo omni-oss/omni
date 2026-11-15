@@ -12,7 +12,7 @@ use tokio_util::io::ReaderStream;
 
 use omni_remote_cache_storage_core::{
     Container, ListItem, PageOptions, ReadStream, RemoteCacheStorageBackend,
-    WriteStream, error::Error,
+    SaveOutcome, WriteStream, error::Error,
 };
 
 #[derive(Debug, new)]
@@ -263,13 +263,13 @@ impl RemoteCacheStorageBackend for LocalDiskCacheBackend {
             .collect::<Vec<_>>())
     }
 
-    async fn save(
+    async fn save_if_absent(
         &self,
         container: &Container,
         key: &str,
         value: bytes::Bytes,
-    ) -> Result<(), Error> {
-        self.save_stream(
+    ) -> Result<SaveOutcome, Error> {
+        self.save_stream_if_absent(
             container,
             key,
             Box::pin(tokio_stream::once(Ok(value))),
@@ -277,12 +277,12 @@ impl RemoteCacheStorageBackend for LocalDiskCacheBackend {
         .await
     }
 
-    async fn save_stream(
+    async fn save_stream_if_absent(
         &self,
         container: &Container,
         key: &str,
         mut value: WriteStream,
-    ) -> Result<(), Error> {
+    ) -> Result<SaveOutcome, Error> {
         let path = self.path(key, container)?;
 
         self.initialize_root().await?;
@@ -293,7 +293,7 @@ impl RemoteCacheStorageBackend for LocalDiskCacheBackend {
         // Keeping staging on the backend filesystem permits atomic rename.
         let temp = tempfile::NamedTempFile::new_in(&self.root)
             .map_err(Error::custom)?;
-        let (file, mut staging) = temp.into_parts();
+        let (file, staging) = temp.into_parts();
         let mut file = tokio::io::BufWriter::new(File::from_std(file));
 
         while let Some(chunk) = value.next().await {
@@ -302,14 +302,27 @@ impl RemoteCacheStorageBackend for LocalDiskCacheBackend {
         file.flush().await.map_err(Error::custom)?;
         file.get_mut().sync_all().await.map_err(Error::custom)?;
         drop(file);
-        tokio::fs::rename(&staging, &path)
-            .await
-            .map_err(Error::custom)?;
-        // The old name is now free. Do not let TempPath unlink another
-        // upload if that name is reused before this guard is dropped.
-        staging.disable_cleanup(true);
-        self.sync_publication_directories(&path).await?;
-        Ok(())
+        // Create-only publication: link the staged file to its final name
+        // without replacing. An existing entry is left untouched and reported.
+        // This is atomic on the backend filesystem; the staged name is removed
+        // by `persist_noclobber` on success and by drop on any other outcome.
+        let target = path.clone();
+        let published = tokio::task::spawn_blocking(move || {
+            staging.persist_noclobber(&target)
+        })
+        .await
+        .map_err(Error::custom)?;
+        match published {
+            Ok(()) => {
+                self.sync_publication_directories(&path).await?;
+                Ok(SaveOutcome::Stored)
+            }
+            Err(e) if e.error.kind() == std::io::ErrorKind::AlreadyExists => {
+                // `e.path` still owns the staged file and removes it on drop.
+                Ok(SaveOutcome::AlreadyExists)
+            }
+            Err(e) => Err(Error::custom(e.error)),
+        }
     }
 
     async fn delete(
@@ -386,7 +399,8 @@ mod tests {
         assert!(root.is_dir());
         assert!(backend.root_ready.get().is_none());
         let container = Container::parse("ns/ci").unwrap();
-        let upload = backend.save(&container, "d", Bytes::from("complete"));
+        let upload =
+            backend.save_if_absent(&container, "d", Bytes::from("complete"));
         tokio::pin!(upload);
         assert!(
             futures::poll!(&mut upload).is_pending(),
@@ -422,7 +436,10 @@ mod tests {
         let b = LocalDiskCacheBackend::new(dir.path());
         let c = Container::parse("ns/ci").unwrap();
         for key in ["../x", "/abs", "a/b", "..", "", "C:escape", "d:stream"] {
-            assert!(b.save(&c, key, Bytes::from("x")).await.is_err(), "{key}");
+            assert!(
+                b.save_if_absent(&c, key, Bytes::from("x")).await.is_err(),
+                "{key}"
+            );
             assert!(b.get(&c, key).await.is_err(), "{key}");
         }
     }

@@ -11,7 +11,7 @@ use futures::StreamExt as _;
 
 use crate::{
     Container, ListItem, PageOptions, ReadStream, RemoteCacheStorageBackend,
-    WriteStream, error::Error,
+    SaveOutcome, WriteStream, error::Error,
 };
 
 const DEFAULT_MAX_CACHEABLE_SIZE: ByteSize = ByteSize::mib(8);
@@ -139,30 +139,30 @@ where
         self.inner.paged_list(container, query).await
     }
 
-    async fn save(
+    async fn save_if_absent(
         &self,
         container: &Container,
         key: &str,
         value: Bytes,
-    ) -> Result<(), Error> {
+    ) -> Result<SaveOutcome, Error> {
         let mutation = self.mutation_lock(container, key);
         let _mutation = mutation.lock().await;
         self.cache().pop(&self.cache_key(container, key));
-        self.inner.save(container, key, value).await?;
+        let outcome = self.inner.save_if_absent(container, key, value).await?;
 
         // Invalidate rather than warm: a concurrent delete may have removed
         // the object after the backend accepted it. Cache misses read the backend.
         self.cache().pop(&self.cache_key(container, key));
 
-        Ok(())
+        Ok(outcome)
     }
 
-    async fn save_stream(
+    async fn save_stream_if_absent(
         &self,
         container: &Container,
         key: &str,
         value: WriteStream,
-    ) -> Result<(), Error> {
+    ) -> Result<SaveOutcome, Error> {
         let mutation = self.mutation_lock(container, key);
         let _mutation = mutation.lock().await;
         self.cache().pop(&self.cache_key(container, key));
@@ -196,8 +196,10 @@ where
         };
 
         let cache_key = self.cache_key(container, key);
-        let result =
-            self.inner.save_stream(container, key, Box::pin(teed)).await;
+        let result = self
+            .inner
+            .save_stream_if_absent(container, key, Box::pin(teed))
+            .await;
 
         let captured = capture
             .lock()
@@ -205,7 +207,9 @@ where
             .take();
 
         match (&result, captured) {
-            (Ok(()), Some(buf)) => {
+            // Cache the captured bytes only when they are what was stored. On
+            // `AlreadyExists` the stored object is a different, earlier entry.
+            (Ok(SaveOutcome::Stored), Some(buf)) => {
                 self.cache().put(cache_key, buf.freeze());
             }
             _ => {

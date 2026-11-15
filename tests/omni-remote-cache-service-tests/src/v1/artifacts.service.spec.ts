@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomInt } from "node:crypto";
 
 import { expect, test } from "vitest";
 
@@ -6,7 +6,8 @@ import { sleep, withTimeout } from "@/utils";
 
 import { describeTargets } from "../test";
 
-const DIGEST = "12345678901234567890123456789012345678901234567890123456789012";
+const BASE58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+const DIGEST = "5RkZ7vQ2mXwYpLt3hNcFbA9dGjEsKuVoWiHaBxCqTyMn";
 const API_KEY = "key1";
 const TENANT = "tenant1";
 const ORG = "org1";
@@ -19,12 +20,53 @@ const BODY = JSON.stringify({
     },
 });
 
+function randomDigest(): string {
+    let digest = "";
+    for (let i = 0; i < 44; i++) {
+        digest += BASE58[randomInt(BASE58.length)];
+    }
+    return digest;
+}
+
 describeTargets("v1.artifacts.api", (target) => {
     test("put artifact", async () => {
         const apiBaseUrl = target.apiBaseUrl;
-        const response = await putArtifact(apiBaseUrl);
+        // A fresh digest: entries are immutable, so a shared one would answer
+        // 409 for every test after the first.
+        const response = await putArtifact(apiBaseUrl, randomDigest());
 
         expect(response.status).toBeOneOf([200, 204]);
+    });
+
+    test("an existing artifact is immutable", async () => {
+        const apiBaseUrl = target.apiBaseUrl;
+        const digest = randomDigest();
+
+        const first = await putArtifact(
+            apiBaseUrl,
+            digest,
+            TENANT,
+            ORG,
+            WS,
+            ENV,
+            "first body",
+        );
+        expect(first.status).toBeOneOf([200, 204]);
+
+        const second = await putArtifact(
+            apiBaseUrl,
+            digest,
+            TENANT,
+            ORG,
+            WS,
+            ENV,
+            "second body",
+        );
+        expect(second.status).toBe(409);
+
+        const get = await getArtifact(apiBaseUrl, digest);
+        expect(get.status).toBe(200);
+        expect(await get.text()).toBe("first body");
     });
 
     test("list artifacts", async () => {
@@ -54,7 +96,7 @@ describeTargets("v1.artifacts.api", (target) => {
 
     test("get artifact not found", async () => {
         const apiBaseUrl = target.apiBaseUrl;
-        const response = await getArtifact(apiBaseUrl, crypto.randomUUID());
+        const response = await getArtifact(apiBaseUrl, randomDigest());
 
         expect(response.status).toBe(404);
     });
@@ -70,7 +112,7 @@ describeTargets("v1.artifacts.api", (target) => {
 
     test("artifact exists not found", async () => {
         const apiBaseUrl = target.apiBaseUrl;
-        const response = await headArtifact(apiBaseUrl, crypto.randomUUID());
+        const response = await headArtifact(apiBaseUrl, randomDigest());
 
         expect(response.status).toBe(404);
     });
@@ -105,7 +147,7 @@ describeTargets("v1.artifacts.api", (target) => {
         for (let i = 0; i < big.length; i += 65536) {
             crypto.getRandomValues(big.subarray(i, i + 65536));
         }
-        const digest = crypto.randomUUID();
+        const digest = randomDigest();
 
         const put = await putArtifact(
             apiBaseUrl,
@@ -139,6 +181,17 @@ describeTargets("v1.artifacts.api", (target) => {
         expect(getResponse.status).toBe(404);
     });
 
+    test("invalid digest is rejected", async () => {
+        const apiBaseUrl = target.apiBaseUrl;
+
+        for (const digest of ["invalid-digest", "has.dot", "0abc", "lll"]) {
+            expect((await getArtifact(apiBaseUrl, digest)).status).toBe(400);
+            expect((await headArtifact(apiBaseUrl, digest)).status).toBe(400);
+            expect((await putArtifact(apiBaseUrl, digest)).status).toBe(400);
+            expect((await deleteArtifact(apiBaseUrl, digest)).status).toBe(400);
+        }
+    });
+
     // Guards the D1 and `waitUntil` hook path, which only a database-backed
     // target has and which nothing else can run. Last, because it adds a veto.
     test("database hooks record usage after the response and can veto", async (ctx) => {
@@ -146,7 +199,8 @@ describeTargets("v1.artifacts.api", (target) => {
         const sql = target.sql!;
 
         // A unique digest ties the assertion to this upload's after hook.
-        const digest = crypto.randomUUID();
+        const digest = randomDigest();
+
         const put = await putArtifact(target.apiBaseUrl, digest);
         expect(put.status).toBeOneOf([200, 204]);
 

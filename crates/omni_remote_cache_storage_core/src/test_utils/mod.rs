@@ -14,20 +14,20 @@ macro_rules! decl_remote_cache_storage_backend_tests {
             let backend = $default;
 
             backend
-                .save(&c("default"), "key1", Bytes::from("value1"))
+                .save_if_absent(&c("default"), "key1", Bytes::from("value1"))
                 .await
                 .unwrap();
             backend
-                .save(&c("default"), "key2", Bytes::from("value2"))
+                .save_if_absent(&c("default"), "key2", Bytes::from("value2"))
                 .await
                 .unwrap();
 
             backend
-                .save(&c("container1"), "key1", Bytes::from("value1"))
+                .save_if_absent(&c("container1"), "key1", Bytes::from("value1"))
                 .await
                 .unwrap();
             backend
-                .save(&c("container1"), "key2", Bytes::from("value2"))
+                .save_if_absent(&c("container1"), "key2", Bytes::from("value2"))
                 .await
                 .unwrap();
 
@@ -151,11 +151,11 @@ macro_rules! decl_remote_cache_storage_backend_tests {
         }
 
         #[tokio::test]
-        async fn test_save() {
+        async fn test_save_if_absent() {
             let backend = backend().await;
 
             backend
-                .save(&c("default"), "key3", Bytes::from("value3"))
+                .save_if_absent(&c("default"), "key3", Bytes::from("value3"))
                 .await
                 .unwrap();
 
@@ -176,7 +176,7 @@ macro_rules! decl_remote_cache_storage_backend_tests {
             let backend = backend().await;
 
             backend
-                .save(&c("container2"), "key1", Bytes::from("value3"))
+                .save_if_absent(&c("container2"), "key1", Bytes::from("value3"))
                 .await
                 .unwrap();
 
@@ -197,7 +197,7 @@ macro_rules! decl_remote_cache_storage_backend_tests {
             ));
 
             backend
-                .save_stream(&c("default"), "key3", Box::pin(stream.map(Ok)))
+                .save_stream_if_absent(&c("default"), "key3", Box::pin(stream.map(Ok)))
                 .await
                 .unwrap();
 
@@ -222,7 +222,7 @@ macro_rules! decl_remote_cache_storage_backend_tests {
             ));
 
             backend
-                .save_stream(&c("container2"), "key1", Box::pin(stream.map(Ok)))
+                .save_stream_if_absent(&c("container2"), "key1", Box::pin(stream.map(Ok)))
                 .await
                 .expect("should have no error");
 
@@ -260,6 +260,76 @@ macro_rules! decl_remote_cache_storage_backend_tests {
         }
 
         #[tokio::test]
+        async fn test_second_write_to_existing_key_is_rejected_and_keeps_original() {
+            let backend = backend().await;
+
+            assert_eq!(
+                backend
+                    .save_if_absent(&c("default"), "key1", Bytes::from("other"))
+                    .await
+                    .unwrap(),
+                $crate::SaveOutcome::AlreadyExists
+            );
+
+            let stream = futures::stream::once(std::future::ready(
+                Ok::<_, $crate::error::Error>(Bytes::from("other")),
+            ));
+            assert_eq!(
+                backend
+                    .save_stream_if_absent(&c("default"), "key1", Box::pin(stream))
+                    .await
+                    .unwrap(),
+                $crate::SaveOutcome::AlreadyExists
+            );
+
+            assert_eq!(
+                backend.get(&c("default"), "key1").await.unwrap(),
+                Some(Bytes::from("value1"))
+            );
+        }
+
+        #[tokio::test]
+        async fn test_concurrent_new_key_writers_store_exactly_one_winner() {
+            let backend = std::sync::Arc::new(backend().await);
+            let mut tasks = Vec::new();
+            for i in 0..16 {
+                let writer = backend.clone();
+                let bytes = Bytes::from(format!("writer-{i}"));
+                tasks.push(tokio::spawn(async move {
+                    let stream = futures::stream::once(std::future::ready(
+                        Ok::<_, $crate::error::Error>(bytes.clone()),
+                    ));
+                    let outcome = writer
+                        .save_stream_if_absent(
+                            &c("default"),
+                            "contended",
+                            Box::pin(stream),
+                        )
+                        .await
+                        .unwrap();
+                    (bytes, outcome)
+                }));
+            }
+
+            let mut winners = Vec::new();
+            let mut rejected = 0;
+            for task in tasks {
+                let (bytes, outcome) = task.await.unwrap();
+                match outcome {
+                    $crate::SaveOutcome::Stored => winners.push(bytes),
+                    $crate::SaveOutcome::AlreadyExists => rejected += 1,
+                }
+            }
+
+            assert_eq!(winners.len(), 1, "exactly one writer must store");
+            assert_eq!(rejected, 15, "every other writer must be rejected");
+            assert_eq!(
+                backend.get(&c("default"), "contended").await.unwrap(),
+                Some(winners.remove(0))
+            );
+        }
+
+        #[tokio::test]
         async fn test_failed_upload_preserves_existing_entry_and_does_not_create_new_entry() {
             let backend = backend().await;
             for key in ["key1", "failed-upload"] {
@@ -267,7 +337,7 @@ macro_rules! decl_remote_cache_storage_backend_tests {
                     Ok(Bytes::from_static(b"partial")),
                     Err($crate::error::Error::custom(std::io::Error::other("interrupted upload"))),
                 ]);
-                assert!(backend.save_stream(&c("default"), key, Box::pin(stream)).await.is_err());
+                assert!(backend.save_stream_if_absent(&c("default"), key, Box::pin(stream)).await.is_err());
             }
             assert_eq!(backend.get(&c("default"), "key1").await.unwrap(), Some(Bytes::from("value1")));
             assert!(backend.get(&c("default"), "failed-upload").await.unwrap().is_none());
@@ -285,7 +355,7 @@ macro_rules! decl_remote_cache_storage_backend_tests {
                 }));
             let writer = backend.clone();
             let upload = tokio::spawn(async move {
-                writer.save_stream(&c("default"), "key1", Box::pin(stream)).await
+                writer.save_stream_if_absent(&c("default"), "key1", Box::pin(stream)).await
             });
             tokio::time::timeout(std::time::Duration::from_secs(10), waiting).await.unwrap().unwrap();
             assert_eq!(backend.get(&c("default"), "key1").await.unwrap(), Some(Bytes::from("value1")));
@@ -302,11 +372,11 @@ macro_rules! decl_remote_cache_storage_backend_tests {
             let backend = backend().await;
 
             backend
-                .save(&c("ns/ci"), "a", Bytes::from("1"))
+                .save_if_absent(&c("ns/ci"), "a", Bytes::from("1"))
                 .await
                 .unwrap();
             backend
-                .save(&c("ns/ci2"), "b", Bytes::from("2"))
+                .save_if_absent(&c("ns/ci2"), "b", Bytes::from("2"))
                 .await
                 .unwrap();
 

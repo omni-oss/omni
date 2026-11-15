@@ -12,7 +12,7 @@ use bytesize::ByteSize;
 use futures::{Stream, StreamExt as _};
 use omni_remote_cache_storage_core::{
     Container, ListItem, PageOptions, ReadStream, RemoteCacheStorageBackend,
-    WriteStream, error::Error,
+    SaveOutcome, WriteStream, error::Error,
 };
 use send_wrapper::SendWrapper;
 use worker::{Bucket, MultipartUpload, UploadedPart, send::SendFuture};
@@ -69,11 +69,24 @@ impl Stream for SendStream {
     }
 }
 
+/// Best-effort create-only write. The Workers binding's conditional put is not
+/// proven to be create-only on real R2 (RFC 0030 section 4.2, open question), so
+/// this checks for an existing object first. That check is NOT atomic: two
+/// concurrent first writers can both pass it. Replace it with a conditional put
+/// once the real-R2 spike proves `If-None-Match: *` semantics, before this
+/// backend is relied on for immutability.
+async fn exists(bucket: &Bucket, key: &str) -> Result<bool, Error> {
+    Ok(bucket.head(key).await.map_err(err)?.is_some())
+}
+
 async fn upload_multipart(
     bucket: &Bucket,
     key: &str,
     mut value: WriteStream,
-) -> Result<(), Error> {
+) -> Result<SaveOutcome, Error> {
+    if exists(bucket, key).await? {
+        return Ok(SaveOutcome::AlreadyExists);
+    }
     let mut buf = BytesMut::new();
     let mut upload: Option<MultipartUpload> = None;
     let mut parts: Vec<UploadedPart> = Vec::new();
@@ -130,9 +143,9 @@ async fn upload_multipart(
     match (result, upload) {
         (Ok(()), Some(upload)) => {
             upload.complete(parts).await.map_err(err)?;
-            Ok(())
+            Ok(SaveOutcome::Stored)
         }
-        (Ok(()), None) => Ok(()),
+        (Ok(()), None) => Ok(SaveOutcome::Stored),
         (Err(e), Some(upload)) => {
             let _ = upload.abort().await;
             Err(e)
@@ -291,31 +304,34 @@ impl RemoteCacheStorageBackend for R2Backend {
         .await
     }
 
-    async fn save(
+    async fn save_if_absent(
         &self,
         container: &Container,
         key: &str,
         value: Bytes,
-    ) -> Result<(), Error> {
+    ) -> Result<SaveOutcome, Error> {
         let key = self.object_key(container, key);
         SendFuture::new(async {
+            if exists(&self.bucket, &key).await? {
+                return Ok(SaveOutcome::AlreadyExists);
+            }
             self.bucket
                 .put(key, value.to_vec())
                 .execute()
                 .await
                 .map_err(err)?;
 
-            Ok(())
+            Ok(SaveOutcome::Stored)
         })
         .await
     }
 
-    async fn save_stream(
+    async fn save_stream_if_absent(
         &self,
         container: &Container,
         key: &str,
         value: WriteStream,
-    ) -> Result<(), Error> {
+    ) -> Result<SaveOutcome, Error> {
         let key = self.object_key(container, key);
         SendFuture::new(upload_multipart(&self.bucket, &key, value)).await
     }

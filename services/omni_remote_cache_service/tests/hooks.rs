@@ -20,7 +20,7 @@ use omni_remote_cache_service::{
     },
     hooks::{
         ArtifactHooks, ArtifactOp, DynArtifactHooks, HookContext, HookDecision,
-        HookError, HookOutcome,
+        HookError, HookOutcome, OutcomeKind,
     },
     providers::DependencyProvider,
     routes::root::RouterConfig,
@@ -64,6 +64,7 @@ struct Recorder {
     before: AtomicUsize,
     after: AtomicUsize,
     key_ids: std::sync::Mutex<Vec<String>>,
+    outcomes: std::sync::Mutex<Vec<OutcomeKind>>,
 }
 
 #[async_trait]
@@ -86,9 +87,10 @@ impl ArtifactHooks for Recorder {
     async fn after(
         &self,
         _: &HookContext,
-        _: &HookOutcome,
+        outcome: &HookOutcome,
     ) -> Result<(), HookError> {
         self.after.fetch_add(1, Ordering::SeqCst);
+        self.outcomes.lock().unwrap().push(outcome.kind);
         Ok(())
     }
 }
@@ -210,4 +212,49 @@ async fn allowed_operation_runs_after() {
     assert_eq!(ids[0], omni_remote_cache_service::hooks::api_key_id("k"));
     assert_ne!(ids[0], "k");
     assert_eq!(ids[0].len(), 16);
+}
+
+#[tokio::test]
+async fn a_malformed_digest_never_reaches_the_hooks() {
+    let hooks = Arc::new(Recorder::default());
+    let s = server(hooks.clone()).await;
+    let bad = "/api/v1/artifacts/not.a.digest?org=o&ws=w&env=e";
+    let req = |r: axum_test::TestRequest| {
+        r.add_header("X-API-KEY", "k")
+            .add_header("X-OMNI-TENANT", "t")
+    };
+    for r in [
+        req(s.get(bad)),
+        req(s.method(http::Method::HEAD, bad)),
+        req(s.put(bad)).bytes("x".into()),
+        req(s.delete(bad)),
+    ] {
+        r.await.assert_status(http::StatusCode::BAD_REQUEST);
+    }
+    assert_eq!(hooks.before.load(Ordering::SeqCst), 0);
+    assert_eq!(hooks.after.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn a_conflicting_put_reports_already_exists_to_the_hooks() {
+    let hooks = Arc::new(Recorder::default());
+    let s = server(hooks.clone()).await;
+    let put = || async {
+        s.put(ONE)
+            .add_header("X-API-KEY", "k")
+            .add_header("X-OMNI-TENANT", "t")
+            .bytes("x".into())
+            .await
+            .status_code()
+    };
+    assert_eq!(put().await, http::StatusCode::NO_CONTENT);
+    assert_eq!(put().await, http::StatusCode::CONFLICT);
+    let outcomes = hooks.outcomes.lock().unwrap();
+    assert_eq!(
+        *outcomes,
+        [
+            omni_remote_cache_service::hooks::OutcomeKind::Stored,
+            omni_remote_cache_service::hooks::OutcomeKind::AlreadyExists,
+        ]
+    );
 }

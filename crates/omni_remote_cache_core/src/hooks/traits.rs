@@ -85,6 +85,7 @@ pub enum OutcomeKind {
     Hit,
     Miss,
     Stored,
+    AlreadyExists,
     Deleted,
     Failed,
 }

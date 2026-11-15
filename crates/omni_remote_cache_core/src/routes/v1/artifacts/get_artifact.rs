@@ -8,7 +8,7 @@ use http::{StatusCode, header};
 use serde::Deserialize;
 use utoipa::IntoParams;
 
-use super::common::container;
+use super::common::{container, require_valid_digest};
 use crate::{
     extractors::{ApiKey, TenantCode},
     hooks::{ArtifactOp, OutcomeKind},
@@ -70,6 +70,8 @@ pub async fn get_artifact(
         &query,
         &["read:artifacts"],
     );
+
+    require_valid_digest!(&digest);
 
     validate_ownership!(state.provider, &tenant_code, &query);
 

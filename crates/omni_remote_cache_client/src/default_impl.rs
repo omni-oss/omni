@@ -322,7 +322,7 @@ mod tests {
     };
 
     const DEFAULT_DIGEST: &str =
-        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+        "5RkZ7vQ2mXwYpLt3hNcFbA9dGjEsKuVoWiHaBxCqTyMnPrDfUkw9TzHc3pQsNbVx";
     const DEFAULT_TENANT: &str = "tenant1";
     const DEFAULT_ORG: &str = "org1";
     const DEFAULT_WS: &str = "ws1";

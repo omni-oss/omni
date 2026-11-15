@@ -20,6 +20,39 @@ pub struct CommonArtifactQuery {
     pub env: String,
 }
 
+/// Longest accepted `{digest}`. Real digests are base58 of a 32 byte hash
+/// (at most 44 characters); the margin keeps older, longer ones working.
+pub const MAX_DIGEST_LEN: usize = 64;
+
+/// A digest becomes a storage key, so it is parsed at the boundary: base58
+/// alphabet only (no `0`, `O`, `I`, `l`) and bounded. That excludes every path
+/// separator, dot and percent escape, so it cannot name another location.
+pub fn is_valid_digest(digest: &str) -> bool {
+    !digest.is_empty()
+        && digest.len() <= MAX_DIGEST_LEN
+        && digest.bytes().all(|b| {
+            matches!(
+                b,
+                b'1'..=b'9' | b'A'..=b'H' | b'J'..=b'N' | b'P'..=b'Z'
+                    | b'a'..=b'k' | b'm'..=b'z'
+            )
+        })
+}
+
+/// Rejects a malformed `{digest}` with `400` before any path is built.
+macro_rules! require_valid_digest {
+    ($digest:expr) => {
+        if !$crate::routes::v1::artifacts::common::is_valid_digest($digest) {
+            return (
+                ::http::StatusCode::BAD_REQUEST,
+                "invalid digest: expected base58 of at most 64 characters",
+            )
+                .into_response();
+        }
+    };
+}
+pub(crate) use require_valid_digest;
+
 #[allow(unused)]
 #[inline(always)]
 pub fn container_common(
@@ -200,6 +233,23 @@ pub macro validate_ownership(
     }
 }}
 
+/// Maps a response status to the outcome the `after` hook reports.
+pub fn outcome_kind(
+    status: StatusCode,
+    success: crate::hooks::OutcomeKind,
+) -> crate::hooks::OutcomeKind {
+    use crate::hooks::OutcomeKind;
+    if status == StatusCode::NOT_FOUND {
+        OutcomeKind::Miss
+    } else if status == StatusCode::CONFLICT {
+        OutcomeKind::AlreadyExists
+    } else if status.is_success() {
+        success
+    } else {
+        OutcomeKind::Failed
+    }
+}
+
 /// Schedules `after` from the final response and passes the response through.
 pub async fn after_response(
     state: &crate::state::ServiceState,
@@ -207,16 +257,9 @@ pub async fn after_response(
     success: crate::hooks::OutcomeKind,
     response: Response,
 ) -> Response {
-    use crate::hooks::{HookOutcome, OutcomeKind, run_after};
+    use crate::hooks::{HookOutcome, run_after};
 
-    let status = response.status();
-    let kind = if status == StatusCode::NOT_FOUND {
-        OutcomeKind::Miss
-    } else if status.is_success() {
-        success
-    } else {
-        OutcomeKind::Failed
-    };
+    let kind = outcome_kind(response.status(), success);
     run_after(state.provider.as_ref(), ctx, HookOutcome { kind }).await;
 
     response
@@ -254,6 +297,46 @@ pub macro before_hook(
 #[cfg(test)]
 mod tests {
     use super::container;
+
+    #[test]
+    fn outcome_kind_reports_conflicts_as_already_exists() {
+        use super::outcome_kind;
+        use crate::hooks::OutcomeKind::*;
+        use http::StatusCode as S;
+        assert_eq!(outcome_kind(S::NO_CONTENT, Stored), Stored);
+        assert_eq!(outcome_kind(S::CONFLICT, Stored), AlreadyExists);
+        assert_eq!(outcome_kind(S::NOT_FOUND, Hit), Miss);
+        assert_eq!(outcome_kind(S::BAD_REQUEST, Stored), Failed);
+        assert_eq!(outcome_kind(S::INTERNAL_SERVER_ERROR, Stored), Failed);
+    }
+
+    #[test]
+    fn digests_must_be_bounded_base58() {
+        use super::is_valid_digest as ok;
+        assert!(ok("abc"));
+        assert!(ok(
+            "1234567891234567891234567891234567891234567891234567891234567891"
+        ));
+        for bad in [
+            "",
+            "0",
+            "O",
+            "I",
+            "l",
+            "ab-c",
+            "ab.c",
+            "a/b",
+            "..",
+            "a%2Fb",
+            "a b",
+            "..%2F..%2Fshared%2FX",
+            "é",
+        ] {
+            assert!(!ok(bad), "{bad:?} must be rejected");
+        }
+        assert!(!ok(&"a".repeat(65)));
+        assert!(ok(&"a".repeat(64)));
+    }
 
     #[test]
     fn dot_and_empty_codes_are_escaped_into_a_valid_container() {

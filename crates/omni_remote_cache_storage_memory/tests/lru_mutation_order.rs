@@ -5,7 +5,7 @@ use bytes::Bytes;
 use bytesize::ByteSize;
 use omni_remote_cache_storage_core::{
     Container, ListItem, PageOptions, ReadStream, RemoteCacheStorageBackend,
-    WriteStream, decorators::LruCached, error::Error,
+    SaveOutcome, WriteStream, decorators::LruCached, error::Error,
 };
 use omni_remote_cache_storage_memory::InMemoryBackend;
 use tokio::sync::Notify;
@@ -46,24 +46,24 @@ impl RemoteCacheStorageBackend for PausedStreamBackend {
     ) -> Result<Vec<ListItem>, Error> {
         self.inner.paged_list(c, p).await
     }
-    async fn save(
+    async fn save_if_absent(
         &self,
         c: &Container,
         k: &str,
         b: Bytes,
-    ) -> Result<(), Error> {
-        self.inner.save(c, k, b).await
+    ) -> Result<SaveOutcome, Error> {
+        self.inner.save_if_absent(c, k, b).await
     }
-    async fn save_stream(
+    async fn save_stream_if_absent(
         &self,
         c: &Container,
         k: &str,
         s: WriteStream,
-    ) -> Result<(), Error> {
-        self.inner.save_stream(c, k, s).await?;
+    ) -> Result<SaveOutcome, Error> {
+        let outcome = self.inner.save_stream_if_absent(c, k, s).await?;
         self.committed.notify_one();
         self.resume.notified().await;
-        Ok(())
+        Ok(outcome)
     }
     async fn delete(&self, c: &Container, k: &str) -> Result<(), Error> {
         if let Some((submitted, release)) = &self.delete_pause {
@@ -101,7 +101,7 @@ async fn obsolete_stream_cannot_repopulate_after_a_byte_write_or_delete() {
         let c = container.clone();
         let stream = tokio::spawn(async move {
             writer
-                .save_stream(
+                .save_stream_if_absent(
                     &c,
                     "d",
                     Box::pin(futures::stream::iter([Ok(Bytes::from("old"))])),
@@ -113,7 +113,11 @@ async fn obsolete_stream_cannot_repopulate_after_a_byte_write_or_delete() {
             .unwrap();
         tokio::time::timeout(
             Duration::from_secs(5),
-            cache.save(&container, "unrelated", Bytes::from("independent")),
+            cache.save_if_absent(
+                &container,
+                "unrelated",
+                Bytes::from("independent"),
+            ),
         )
         .await
         .expect("unrelated keys must not wait for a stalled stream")
@@ -123,7 +127,12 @@ async fn obsolete_stream_cannot_repopulate_after_a_byte_write_or_delete() {
             if delete {
                 cache.delete(&container, "d").await
             } else {
-                cache.save(&container, "d", Bytes::from("new")).await
+                // Create-only: replacing an entry means deleting it first.
+                cache.delete(&container, "d").await?;
+                cache
+                    .save_if_absent(&container, "d", Bytes::from("new"))
+                    .await
+                    .map(|_| ())
             }
         };
         tokio::pin!(mutation);
@@ -170,7 +179,7 @@ async fn uncontested_stream_still_populates_the_lru() {
     );
     let container = Container::parse("ns/ci").unwrap();
     cache
-        .save_stream(
+        .save_stream_if_absent(
             &container,
             "d",
             Box::pin(futures::stream::iter([Ok(Bytes::from("old"))])),
@@ -202,7 +211,7 @@ async fn cancelled_delete_keeps_the_lock_until_backend_removal_finishes() {
     ));
     let container = Container::parse("ns/ci").unwrap();
     cache
-        .save(&container, "d", Bytes::from("old"))
+        .save_if_absent(&container, "d", Bytes::from("old"))
         .await
         .unwrap();
     let deleting = cache.clone();
@@ -213,7 +222,7 @@ async fn cancelled_delete_keeps_the_lock_until_backend_removal_finishes() {
         .unwrap();
     caller.abort();
     assert!(caller.await.unwrap_err().is_cancelled());
-    let replacement = cache.save_stream(
+    let replacement = cache.save_stream_if_absent(
         &container,
         "d",
         Box::pin(futures::stream::iter([Ok(Bytes::from("new"))])),
@@ -238,5 +247,67 @@ async fn cancelled_delete_keeps_the_lock_until_backend_removal_finishes() {
         cache.get(&container, "d").await.unwrap(),
         Some(Bytes::from("new")),
         "replacement should be cached"
+    );
+}
+
+#[tokio::test]
+async fn a_byte_write_after_a_stalled_stream_conflicts_and_is_never_cached() {
+    let committed = Arc::new(Notify::new());
+    let resume = Arc::new(Notify::new());
+    let inner = Arc::new(InMemoryBackend::new());
+    let cache = Arc::new(LruCached::new(
+        PausedStreamBackend {
+            inner: inner.clone(),
+            committed: committed.clone(),
+            resume: resume.clone(),
+            delete_pause: None,
+        },
+        NonZeroUsize::new(10).unwrap(),
+    ));
+    let container = Container::parse("ns/ci").unwrap();
+    let writer = cache.clone();
+    let c = container.clone();
+    let stream = tokio::spawn(async move {
+        writer
+            .save_stream_if_absent(
+                &c,
+                "d",
+                Box::pin(futures::stream::iter([Ok(Bytes::from("stream"))])),
+            )
+            .await
+    });
+    tokio::time::timeout(Duration::from_secs(5), committed.notified())
+        .await
+        .unwrap();
+
+    // No delete involved: a competing create of the same key must wait for the
+    // stalled stream, then lose the race.
+    let competing = cache.save_if_absent(&container, "d", Bytes::from("bytes"));
+    tokio::pin!(competing);
+    assert!(futures::poll!(&mut competing).is_pending());
+    resume.notify_one();
+    assert_eq!(
+        tokio::time::timeout(Duration::from_secs(5), stream)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap(),
+        SaveOutcome::Stored
+    );
+    assert_eq!(
+        tokio::time::timeout(Duration::from_secs(5), competing)
+            .await
+            .unwrap()
+            .unwrap(),
+        SaveOutcome::AlreadyExists
+    );
+    assert_eq!(
+        inner.get(&container, "d").await.unwrap(),
+        Some(Bytes::from("stream"))
+    );
+    assert_eq!(
+        cache.get(&container, "d").await.unwrap(),
+        Some(Bytes::from("stream")),
+        "the losing writer's bytes must never be served"
     );
 }

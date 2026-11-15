@@ -645,13 +645,10 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                     };
 
                     let upload = async {
-                        // Keep this pre-check until create-only writes are active.
-                        // The updated local backend publishes atomically, but
-                        // successful PUTs can still replace existing entries.
-                        // Remove this guard in the conditional-write batch.
-                        if client.artifact_exists(&config, &digest).await? {
-                            return Ok::<_, LocalTaskExecutionCacheStoreError>(());
-                        }
+                        // No existence pre-check: the server stores entries
+                        // create-only and answers `409` for an existing one,
+                        // which the client treats as success. A `HEAD` would
+                        // need read access and would race the write anyway.
                         let mut artifact = Vec::new();
                         archive(&output_dir, Cursor::new(&mut artifact))?;
 
@@ -1711,10 +1708,6 @@ mod tests {
 
     impl RemoteUploadSpy {
         async fn new(put_status: u16) -> Self {
-            Self::with_existing_artifact(put_status, false).await
-        }
-
-        async fn with_existing_artifact(put_status: u16, exists: bool) -> Self {
             use tokio::io::AsyncWriteExt;
             let listener =
                 tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -1744,8 +1737,8 @@ mod tests {
                     let method = header.split_whitespace().next().unwrap();
                     let status = match method {
                         "PUT" => put_status,
-                        "HEAD" if exists => 200,
-                        _ => 404,
+                        // A write-only key is denied every read request.
+                        _ => 403,
                     };
                     captured
                         .lock()
@@ -1853,10 +1846,9 @@ mod tests {
         .unwrap()
         .unwrap();
         let requests = remote.requests.lock().unwrap();
-        assert_eq!(requests.len(), 2);
-        assert_eq!(requests[0].0, "HEAD");
-        assert_eq!(requests[1].0, "PUT");
-        assert_eq!(uploaded_exit_code(&requests[1].1), 0);
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].0, "PUT");
+        assert_eq!(uploaded_exit_code(&requests[0].1), 0);
     }
 
     #[tokio::test]
@@ -1882,10 +1874,9 @@ mod tests {
         .unwrap();
         assert_eq!(cache.get(task.get()).await.unwrap().unwrap().exit_code, 0);
         let requests = remote.requests.lock().unwrap();
-        assert_eq!(requests.len(), 2);
-        assert_eq!(requests[0].0, "HEAD");
-        assert_eq!(requests[1].0, "PUT");
-        assert_eq!(uploaded_exit_code(&requests[1].1), 0);
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].0, "PUT");
+        assert_eq!(uploaded_exit_code(&requests[0].1), 0);
     }
 
     #[tokio::test]
@@ -1909,11 +1900,10 @@ mod tests {
         }
         assert_eq!(cache.get(task.get()).await.unwrap().unwrap().exit_code, 0);
         let requests = remote.requests.lock().unwrap();
-        assert_eq!(requests.len(), 4);
-        for pair in requests.as_chunks::<2>().0 {
-            assert_eq!(pair[0].0, "HEAD");
-            assert_eq!(pair[1].0, "PUT");
-            assert_eq!(uploaded_exit_code(&pair[1].1), 0);
+        assert_eq!(requests.len(), 2);
+        for (method, archive) in requests.iter() {
+            assert_eq!(method, "PUT");
+            assert_eq!(uploaded_exit_code(archive), 0);
         }
     }
 
@@ -1949,15 +1939,15 @@ mod tests {
         .unwrap();
         assert_eq!(cache.get(task.get()).await.unwrap().unwrap().exit_code, 0);
         let requests = remote.requests.lock().unwrap();
-        assert_eq!(requests.len(), 2);
-        assert_eq!(requests[0].0, "HEAD");
-        assert_eq!(requests[1].0, "PUT");
+        assert_eq!(requests.len(), 1, "409 is final: no retry and no HEAD");
+        assert_eq!(requests[0].0, "PUT");
     }
 
     #[tokio::test]
-    async fn existing_remote_artifact_is_not_overwritten_before_atomic_publication()
-     {
-        let remote = RemoteUploadSpy::with_existing_artifact(204, true).await;
+    async fn a_write_only_key_uploads_without_any_read_request() {
+        // Immutability is enforced by the server's create-only write, so the
+        // client never needs `read:artifacts` (HEAD) just to publish.
+        let remote = RemoteUploadSpy::new(204).await;
         let temp = fixture(&["project1"]).await;
         let cache = remote.cache(temp.path());
         let task = task("task", "project1", temp.path());
@@ -1969,8 +1959,8 @@ mod tests {
         .unwrap()
         .unwrap();
         let requests = remote.requests.lock().unwrap();
+        assert!(requests.iter().all(|(method, _)| method == "PUT"));
         assert_eq!(requests.len(), 1);
-        assert_eq!(requests[0].0, "HEAD");
     }
 
     #[tokio::test]

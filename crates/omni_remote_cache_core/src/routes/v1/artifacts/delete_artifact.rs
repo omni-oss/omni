@@ -12,7 +12,8 @@ use crate::{
     extractors::{ApiKey, TenantCode},
     hooks::{ArtifactOp, OutcomeKind},
     routes::v1::artifacts::common::{
-        after_response, before_hook, container, guard, validate_ownership,
+        after_response, before_hook, container, guard, require_valid_digest,
+        validate_ownership,
     },
     state::ServiceState,
 };
@@ -66,6 +67,8 @@ pub async fn delete_artifact(
         &query,
         &["delete:artifacts"]
     );
+
+    require_valid_digest!(&digest);
 
     validate_ownership!(state.provider, &tenant_code, &query);
 

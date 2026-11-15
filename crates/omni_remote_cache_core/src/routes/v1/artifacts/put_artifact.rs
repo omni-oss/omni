@@ -6,7 +6,7 @@ use axum::{
 use axum_extra::{response::InternalServerError, routing::TypedPath};
 use futures::StreamExt;
 use http::StatusCode;
-use omni_remote_cache_storage_core::error::Error;
+use omni_remote_cache_storage_core::{SaveOutcome, error::Error};
 use serde::Deserialize;
 use utoipa::IntoParams;
 
@@ -14,7 +14,8 @@ use crate::{
     extractors::{ApiKey, TenantCode},
     hooks::{ArtifactOp, OutcomeKind},
     routes::v1::artifacts::common::{
-        after_response, before_hook, container, guard, validate_ownership,
+        after_response, before_hook, container, guard, require_valid_digest,
+        validate_ownership,
     },
     state::ServiceState,
 };
@@ -52,7 +53,8 @@ pub struct PutArtifactQuery {
     ),
     request_body(content_type = "application/octet-stream", description = "Raw file streaming content", content = Vec<u8>),
     responses(
-        (status = NO_CONTENT, description = "Success"),
+        (status = NO_CONTENT, description = "Stored"),
+        (status = CONFLICT, description = "An entry already exists; entries are immutable"),
         (status = BAD_REQUEST, description = "Bad request"),
         (status = INTERNAL_SERVER_ERROR, description = "Internal server error")
     )
@@ -73,6 +75,8 @@ pub async fn put_artifact(
         &query,
         &["write:artifacts"],
     );
+
+    require_valid_digest!(&digest);
 
     validate_ownership!(state.provider, &tenant_code, &query);
 
@@ -97,12 +101,15 @@ pub async fn put_artifact(
 
     let x = state
         .storage_backend
-        .save_stream(&container, &digest, Box::pin(stream))
+        .save_stream_if_absent(&container, &digest, Box::pin(stream))
         .await
         .map_err(InternalServerError);
 
     let response = match x {
-        Ok(_) => StatusCode::NO_CONTENT.into_response(),
+        Ok(SaveOutcome::Stored) => StatusCode::NO_CONTENT.into_response(),
+        // Immutable: an existing entry is never replaced. The client treats
+        // this as "already stored", and the hook logs it as AlreadyExists.
+        Ok(SaveOutcome::AlreadyExists) => StatusCode::CONFLICT.into_response(),
         Err(e) => e.into_response(),
     };
 

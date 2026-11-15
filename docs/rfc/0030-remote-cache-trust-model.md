@@ -1387,41 +1387,56 @@ CI variable table in 4.4 against current docs, since both change.
 
 ## 8. Implementation status and deviations
 
-Slice 0 landed on PR #104: typed containers and prefixes, removal of
-default containers and S3 bucket-per-container mode, and local key validation
-landed in `e7288322`. Review follow-ups fix container-relative S3 listing keys,
-container-scoped deletes, and caching of rejected writes. CodeRabbit is green
-through `44d12083`. Slice 1's client prerequisite batch is implemented: failed
-executions stay local, remote errors are warnings, the remote replacement bypass
-is removed, and the client accepts `409` without retrying. Review follow-ups check
-the persisted exit code as well as the caller's outcome: a losing successful
-publisher must not upload a failed first-publication winner. The upload `HEAD`
-pre-check is temporarily retained until conditional (create-only) writes land in
-the same batch as its removal. Atomic replacement prevents partial reads, but
-successful uploads can still overwrite existing entries. Until then, a write-only key denied by
-`HEAD` skips publication with a warning. Persisted-outcome read/decode failures
-also warn and skip publication rather than failing the locally stored batch.
-At most eight archives/uploads run concurrently. Each worker builds its full
-archive in memory before PUT, so up to eight uncapped archives may be resident
-at once until size caps land in slice 5. Upload requests and their `HEAD`
-existence pre-check have a 60-second
-total timeout (including body transfer); slow connections may exhaust it, in which
-case the upload warns and the local result remains usable. Revisit timeout
-configuration alongside size caps in slice 5. This request timeout does not cover
-archive construction.
+**Landed (PR #104, merged):** slice 0 (typed `Container` and `ContainerPrefix`,
+no default containers, S3 key-prefix mode only, local key and container checks) and
+slice 1's client side and atomic local publication. Failed executions stay local,
+remote upload errors are warnings, local failure-to-success upgrades are kept, and
+an upload is queued only when both the caller and the persisted entry are
+successful. At most eight archives upload at once. Each worker builds its archive in
+memory, so up to eight uncapped archives can be resident until size caps land in
+slice 5. Upload requests have a 60-second total timeout (body transfer included) that
+does not cover archive construction. Upload streams carry fallible chunks end to end,
+so an interrupted body never commits.
 
-The current review requires atomic publication to close the concurrent
-`HEAD`-404/`PUT` race, so that work is included in the client prerequisite
-follow-up rather than waiting for its green check. Upload streams now carry
-fallible chunks and the route no longer drops body errors. Local byte and streamed
-writes stage outside the container, flush and sync the file, then atomically rename; failed or
-cancelled streams remove staging files without touching the published artifact.
-S3 staged streams flush and retain their temporary file until PUT finishes;
-memory and R2 propagate upload-stream errors before publication. This is atomic
-replacement, not create-only immutability: the existence pre-check remains until
-the conditional-write batch lands. R2 cross-target/real-service validation remains
-outstanding. Conditional writes, size caps, and remaining slice 1 primitives are
-not implemented yet; slices 2–10 have not started.
+**Landed (create-only writes PR):** the storage write methods are
+`save_if_absent` and `save_stream_if_absent`, returning `SaveOutcome::{Stored,
+AlreadyExists}`. There is no replace. Local storage links the staged file without
+replacing it, memory checks and inserts under one lock, S3 sends a single
+`PutObject` with `If-None-Match: *` (`412` is `AlreadyExists`, `409` is retried up
+to three times, and the body is rebuilt for every attempt). The server answers `409`
+for an existing entry and the `after` hook reports it as `already_exists`. Every
+artifact route validates `{digest}` as base58 of at most 64 characters before any
+path is built (`400` otherwise). The client no longer sends a `HEAD` before an
+upload, so a write-only key can publish, and it treats `409` as success. The LRU
+decorator caches a streamed write only when the outcome is `Stored`.
+
+**Open gates before this RFC can be Implemented:**
+
+- **R2 is not create-only.** The Workers binding's conditional put is unproven on
+  real R2, so the R2 backend checks for an existing object first. That check is not
+  atomic: two concurrent first writers can both pass it. Run the real-R2 spike and
+  switch to a conditional put (or the S3 API path) before relying on R2 for
+  immutability. The crate type-checks for `wasm32` and nothing else about it is
+  verified here.
+- **R2's streamed upload still commits through multipart `complete`, which takes
+  no condition** (4.2 says multipart must not be on the commit path). The size cap
+  (slice 5) makes every entry a single conditional write; until then the R2 gate
+  covers this path too.
+- **S3-compatible endpoints must be verified.** `--s3.endpoint` accepts non-AWS
+  stores, and one that ignores `If-None-Match: *` would silently overwrite. Verify
+  enforcement against each supported store (and consider a startup probe) before
+  claiming immutability for it. Only AWS semantics are assumed here; the S3 tests
+  are request-shape tests against a scripted server, not a real bucket.
+- **Oversized streams are not tested** per backend; they arrive with the size cap.
+  The `409` retries have no backoff (a racing delete is rare); add jitter if
+  measurements show contention.
+- Not implemented yet: `get_range`, `list_prefix`, `delete_prefix`, complete
+  pagination, restore `original_path` validation, the `max_artifact_size` cap and its
+  `413`, and slices 2-10.
+- Rollout order matters: block or upgrade every old client with write access, then
+  purge legacy failed remote entries, then enable immutable writes. Otherwise an old
+  client can repopulate a failed entry that then holds its digest (`409`) until an
+  operator removes it.
 
 Atomic publication operational notes:
 
@@ -1429,8 +1444,8 @@ Atomic publication operational notes:
   (0600 on Unix), rather than the previous umask-derived permissions. Sidecars and
   backup readers using another UID need an explicit operational access policy.
 - Staging files live at the backend root, outside resource containers. Errors and
-  cancellation clean them up, but SIGKILL or a machine crash can leave orphan
-  staging files. Root-level scans must exclude them; cleanup after a crash is
+  cancellation clean them up, but SIGKILL, a machine crash, or a failed unlink in
+  the hard-link fallback can leave orphan staging files. Root-level scans must exclude them; cleanup after a crash is
   currently manual, pending the lifecycle/maintenance work.
 - File data is synced before rename. On Unix, publication then syncs the
   destination directory and its ancestors through the backend root (also the
@@ -1449,15 +1464,23 @@ Atomic publication operational notes:
   Sync failures propagate even if rename already made the artifact visible.
   On non-Unix platforms, portable directory sync is unavailable, so file data is
   synced but crash-durable directory names are not promised.
-- Open-reader replacement is tested without a platform skip. Windows and network
-  filesystem behavior still need CI/deployment validation; a failed rename reports
-  an error without deliberately truncating the old object.
+- Local publication is create-only: the staged file is linked into place without
+  replacing (`renameat(RENAME_NOREPLACE)` on Linux and macOS with a hard-link
+  fallback, `MoveFileExW` without replace on Windows). An existing entry, and any
+  reader that has it open, is never touched, and a loser's staged file is removed.
+  Windows and network-filesystem behavior still need CI/deployment validation. A
+  loser can be told `AlreadyExists` (`409`) while the winner has not yet finished
+  its directory syncs, so a crash in that window can lose an entry that a client
+  was told exists. That is acceptable for a cache: the entry is simply a miss.
+- Existing keys written before the `{digest}` check that are not bounded base58
+  still appear in a listing but can no longer be fetched or deleted through the API.
+  Remove them through the storage backend.
 - Body-read errors currently return 500. The size-cap batch must distinguish
   oversized requests (413) from other stream errors.
 
-Slice 1 execution order (High risk; continuing on PR #104):
+Slice 1 execution order (High risk):
 
-1. Client prerequisite batch: never upload failed executions, remove the remote
+1. **Done.** Client prerequisite batch: never upload failed executions, remove the remote
    replacement bypass (keep local failure-to-success upgrades), treat upload
    failures as warnings, and accept a server `409` without retrying. Retain the
    existence pre-check until atomic server publication is active. Queue an upload
@@ -1468,11 +1491,10 @@ Slice 1 execution order (High risk; continuing on PR #104):
    rejection does not fail local storage; `409` is accepted. Undo: revert batch.
    The failed-winner regression uses the real publication primitive and eligibility
    helper at unit level, rather than injecting a race into `cache_many` itself.
-   The `artifact_exists` client trait method remains available for readers. Until
-   the next batch, upload keys still need read access for the interim pre-check.
-   Size caps and shared-conflict verification are
+   The `artifact_exists` client trait method remains available for readers; the
+   upload path no longer uses it. Size caps and shared-conflict verification are
    implemented with their configuration and signing dependencies in slices 5/7.
-2. Atomic storage/server batch: conditional create-only writes, fallible and
+2. **Done except R2 (see open gates).** Atomic storage/server batch: conditional create-only writes, fallible and
    bounded uploads, abort cleanup, digest/path checks, server `409`, and mutation
    coordination. Remove the existence pre-check in this batch, not before atomic
    publication is active, so a write-only key can upload without `HEAD` and a future

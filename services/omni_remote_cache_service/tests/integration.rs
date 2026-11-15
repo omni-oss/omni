@@ -111,7 +111,9 @@ async fn create_server(cfg: &Configuration) -> TestServer {
 }
 
 const DEFAULT_DIGEST: &str =
-    "d8e8fca2dc0f896fd7cb4cb0031ba249274155f46f29cef4e282d744";
+    "5RkZ7vQ2mXwYpLt3hNcFbA9dGjEsKuVoWiHaBxCqTyMnPrDfUgSe8JzL";
+
+const NEW_DIGEST: &str = "3vQ7mXwYpLt5hNcFbA9dGjEsKuVoWiHaBxCq";
 
 const DEFAULT_ORG: &str = "test-org";
 const DEFAULT_TENANT: &str = "test-tenant";
@@ -154,11 +156,15 @@ async fn interrupted_put_preserves_the_existing_local_artifact() {
     ))
     .unwrap();
     backend
-        .save(&container, DEFAULT_DIGEST, Bytes::from("complete archive"))
+        .save_if_absent(
+            &container,
+            DEFAULT_DIGEST,
+            Bytes::from("complete archive"),
+        )
         .await
         .unwrap();
 
-    for digest in [DEFAULT_DIGEST, "new-digest"] {
+    for digest in [DEFAULT_DIGEST, NEW_DIGEST] {
         let stream = tokio_stream::iter([
             Ok(Bytes::from("partial")),
             Err(std::io::Error::other("interrupted request body")),
@@ -186,13 +192,7 @@ async fn interrupted_put_preserves_the_existing_local_artifact() {
         backend.get(&container, DEFAULT_DIGEST).await.unwrap(),
         Some(Bytes::from("complete archive"))
     );
-    assert!(
-        backend
-            .get(&container, "new-digest")
-            .await
-            .unwrap()
-            .is_none()
-    );
+    assert!(backend.get(&container, NEW_DIGEST).await.unwrap().is_none());
 }
 
 fn get_path(
@@ -257,6 +257,23 @@ async fn get_artifact(
     let path = get_path(org, workspace, env, Some(digest));
     server
         .get(&path)
+        .add_header("X-API-KEY", api_key)
+        .add_header("X-OMNI-TENANT", tenant)
+        .await
+}
+
+async fn head_artifact(
+    server: &TestServer,
+    tenant: &str,
+    api_key: &str,
+    org: &str,
+    workspace: &str,
+    env: &str,
+    digest: &str,
+) -> TestResponse {
+    let path = get_path(org, workspace, env, Some(digest));
+    server
+        .method(http::Method::HEAD, &path)
         .add_header("X-API-KEY", api_key)
         .add_header("X-OMNI-TENANT", tenant)
         .await
@@ -548,19 +565,77 @@ async fn test_invalid_env() {
 async fn test_invalid_digest() {
     let cfg = default_config();
     let server = create_server(&cfg).await;
+    let body = default_body();
+    let too_long = "1".repeat(65);
 
-    let get_resp = get_artifact(
+    for digest in [
+        "invalid-digest",
+        "has.dot",
+        "0abc",
+        "lll",
+        too_long.as_str(),
+    ] {
+        get_artifact(
+            &server,
+            DEFAULT_TENANT,
+            DEFAULT_API_KEY,
+            DEFAULT_ORG,
+            DEFAULT_WORKSPACE,
+            DEFAULT_ENV,
+            digest,
+        )
+        .await
+        .assert_status_bad_request();
+
+        put_artifact(
+            &server,
+            DEFAULT_TENANT,
+            DEFAULT_API_KEY,
+            DEFAULT_ORG,
+            DEFAULT_WORKSPACE,
+            DEFAULT_ENV,
+            digest,
+            body.clone(),
+        )
+        .await
+        .assert_status_bad_request();
+
+        head_artifact(
+            &server,
+            DEFAULT_TENANT,
+            DEFAULT_API_KEY,
+            DEFAULT_ORG,
+            DEFAULT_WORKSPACE,
+            DEFAULT_ENV,
+            digest,
+        )
+        .await
+        .assert_status_bad_request();
+
+        delete_artifact(
+            &server,
+            DEFAULT_TENANT,
+            DEFAULT_API_KEY,
+            DEFAULT_ORG,
+            DEFAULT_WORKSPACE,
+            DEFAULT_ENV,
+            digest,
+        )
+        .await
+        .assert_status_bad_request();
+    }
+
+    get_artifact(
         &server,
         DEFAULT_TENANT,
         DEFAULT_API_KEY,
         DEFAULT_ORG,
         DEFAULT_WORKSPACE,
         DEFAULT_ENV,
-        "invalid-digest",
+        DEFAULT_DIGEST,
     )
-    .await;
-
-    get_resp.assert_status_not_found();
+    .await
+    .assert_status_not_found();
 }
 
 #[tokio::test]

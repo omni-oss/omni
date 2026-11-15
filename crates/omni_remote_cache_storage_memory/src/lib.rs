@@ -10,7 +10,7 @@ use futures::StreamExt as _;
 use maps::{Map, UnorderedMap};
 use omni_remote_cache_storage_core::{
     Container, ListItem, PageOptions, ReadStream, RemoteCacheStorageBackend,
-    WriteStream, error::Error,
+    SaveOutcome, WriteStream, error::Error,
 };
 
 #[derive(Debug, new)]
@@ -20,6 +20,23 @@ pub struct InMemoryBackend {
 }
 
 impl InMemoryBackend {
+    /// Check and insert under one lock acquisition, so concurrent creators
+    /// agree on exactly one winner.
+    fn insert_if_absent(
+        &self,
+        container: &str,
+        key: &str,
+        value: Vec<u8>,
+    ) -> SaveOutcome {
+        let mut containers = self.lock();
+        let entries = containers.entry(container.to_string()).or_default();
+        if entries.contains_key(key) {
+            return SaveOutcome::AlreadyExists;
+        }
+        entries.insert(key.to_string(), value);
+        SaveOutcome::Stored
+    }
+
     fn lock(
         &self,
     ) -> MutexGuard<'_, UnorderedMap<String, Map<String, Vec<u8>>>> {
@@ -131,39 +148,28 @@ impl RemoteCacheStorageBackend for InMemoryBackend {
         Ok(items)
     }
 
-    async fn save(
+    async fn save_if_absent(
         &self,
         container: &Container,
         key: &str,
         value: Bytes,
-    ) -> Result<(), Error> {
-        let container = container.as_str();
-        self.lock()
-            .entry(container.to_string())
-            .or_default()
-            .insert(key.to_string(), value.to_vec());
-        Ok(())
+    ) -> Result<SaveOutcome, Error> {
+        Ok(self.insert_if_absent(container.as_str(), key, value.to_vec()))
     }
 
-    async fn save_stream(
+    async fn save_stream_if_absent(
         &self,
         container: &Container,
         key: &str,
         mut value: WriteStream,
-    ) -> Result<(), Error> {
-        let container = container.as_str();
+    ) -> Result<SaveOutcome, Error> {
         let mut combined = BytesMut::new();
 
         while let Some(chunk) = value.next().await {
             combined.extend_from_slice(&chunk?);
         }
 
-        self.lock()
-            .entry(container.to_string())
-            .or_default()
-            .insert(key.to_string(), combined.to_vec());
-
-        Ok(())
+        Ok(self.insert_if_absent(container.as_str(), key, combined.to_vec()))
     }
 
     async fn delete(
