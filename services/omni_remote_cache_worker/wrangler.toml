@@ -13,6 +13,11 @@ bucket_name = "omni-remote-cache"
 API_PREFIX = "/api"
 ENABLE_OPENAPI = "false"
 
+# Artifact writes are rejected until R2 create-only publication is verified (RFC
+# 0030 section 4.2). Reads and deletes work. To accept a non-atomic existence
+# check instead (two concurrent first writers can overwrite each other), set:
+# R2_ALLOW_NON_ATOMIC_WRITES = "true"
+
 # Provide the service configuration (tenants and API keys, same JSON schema as
 # orcs.config.json) as a secret:
 #   wrangler secret put ORCS_CONFIG

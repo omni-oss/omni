@@ -159,6 +159,14 @@ export const workerTarget: Target = workerTargetFor({
         const config = fs
             .readFileSync(path.join(process.cwd(), "orcs.config.json"), "utf8")
             .replace(/\n/g, "");
-        return { args: ["--var", `ORCS_CONFIG:${config}`] };
+        return {
+            args: [
+                "--var",
+                `ORCS_CONFIG:${config}`,
+                // The suite needs uploads; accept the non-atomic R2 check here.
+                "--var",
+                "R2_ALLOW_NON_ATOMIC_WRITES:true",
+            ],
+        };
     },
 });

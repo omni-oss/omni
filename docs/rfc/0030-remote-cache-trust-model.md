@@ -1412,12 +1412,15 @@ decorator caches a streamed write only when the outcome is `Stored`.
 
 **Open gates before this RFC can be Implemented:**
 
-- **R2 is not create-only.** The Workers binding's conditional put is unproven on
-  real R2, so the R2 backend checks for an existing object first. That check is not
-  atomic: two concurrent first writers can both pass it. Run the real-R2 spike and
-  switch to a conditional put (or the S3 API path) before relying on R2 for
-  immutability. The crate type-checks for `wasm32` and nothing else about it is
-  verified here.
+- **R2 is not create-only, so R2 writes fail closed by default.** The Workers
+  binding's conditional put is unproven on real R2, and no write path there can
+  enforce absence. `R2WritePolicy::FailClosed` rejects every R2 write (reads and
+  deletes still work); the worker enables the weaker `NonAtomicCheckFirst` only when
+  `R2_ALLOW_NON_ATOMIC_WRITES=true` is set. With it, two concurrent first writers can
+  both pass the existence check and the later write replaces the earlier one. The
+  local worker test targets set it. Run the real-R2 spike and switch to a conditional
+  put (or the S3 API path) before relying on R2 for immutability. The crate and
+  worker type-check for `wasm32`; nothing about R2 at runtime is verified here.
 - **R2's streamed upload still commits through multipart `complete`, which takes
   no condition** (4.2 says multipart must not be on the commit path). The size cap
   (slice 5) makes every entry a single conditional write; until then the R2 gate

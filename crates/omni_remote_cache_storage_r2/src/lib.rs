@@ -32,12 +32,41 @@ const MAX_LIST_LIMIT: u32 = 1000;
 /// satisfy the `Send + Sync` bounds required by axum state.
 pub struct R2Backend {
     bucket: SendWrapper<Bucket>,
+    write_policy: R2WritePolicy,
+}
+
+/// How this backend treats writes while R2 create-only publication is unproven.
+///
+/// Immutability needs an atomic create-only write. The Workers binding's
+/// conditional put has not been proven create-only on real R2 (RFC 0030
+/// section 4.2), and a multipart upload completes without any condition, so
+/// neither write path can enforce it today. Writes therefore fail closed unless
+/// the operator explicitly accepts a weaker guarantee.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum R2WritePolicy {
+    /// Reject every write. Reads and deletes still work.
+    #[default]
+    FailClosed,
+    /// Check for an existing object, then write. Two concurrent first writers can
+    /// both pass the check, and the later write replaces the earlier one.
+    NonAtomicCheckFirst,
 }
 
 impl R2Backend {
-    pub fn new(bucket: Bucket) -> Self {
+    pub fn new(bucket: Bucket, write_policy: R2WritePolicy) -> Self {
         Self {
             bucket: SendWrapper::new(bucket),
+            write_policy,
+        }
+    }
+
+    fn require_writable(&self) -> Result<(), Error> {
+        match self.write_policy {
+            R2WritePolicy::NonAtomicCheckFirst => Ok(()),
+            R2WritePolicy::FailClosed => Err(Error::custom(eyre::eyre!(
+                "R2 writes are disabled: create-only publication is unverified on R2. \
+                 Set R2_ALLOW_NON_ATOMIC_WRITES=true to accept a non-atomic existence check"
+            ))),
         }
     }
 
@@ -310,6 +339,7 @@ impl RemoteCacheStorageBackend for R2Backend {
         key: &str,
         value: Bytes,
     ) -> Result<SaveOutcome, Error> {
+        self.require_writable()?;
         let key = self.object_key(container, key);
         SendFuture::new(async {
             if exists(&self.bucket, &key).await? {
@@ -332,6 +362,7 @@ impl RemoteCacheStorageBackend for R2Backend {
         key: &str,
         value: WriteStream,
     ) -> Result<SaveOutcome, Error> {
+        self.require_writable()?;
         let key = self.object_key(container, key);
         SendFuture::new(upload_multipart(&self.bucket, &key, value)).await
     }
