@@ -38,9 +38,13 @@ The package-level waves further down are a coarse summary; the task graph supers
 ## Status
 
 Bug fixes B01-B04 and refactors R01-R08 are merged.
-F01 and F02 are implemented together in the
-[first feature batch](features/F01-F02-batch.md), pending PR review.
-The remaining features (F03-F10) and plugins (P) have not been started.
+F01 and F02 are merged in the
+[first feature batch](features/F01-F02-batch.md)
+([PR #101](https://github.com/omni-oss/omni/pull/101)).
+F03.1 and F06.1 are documented in the
+[prerequisite audit batch](features/F03-F06-audit-batch.md), pending PR review.
+Their runtime features, the remaining features (F04-F10 except that audit), and
+plugins (P) remain unimplemented.
 
 Known gaps carried forward from the merged refactors:
 

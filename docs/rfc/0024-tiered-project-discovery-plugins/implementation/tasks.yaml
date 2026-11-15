@@ -253,6 +253,7 @@ tasks:
     }
   F03.1:
     {
+      owner: "OpenCode (F03.1/F06.1 audit batch)",
       title: "Identity-keyed map and parser audit",
       parent: F03,
       kind: doc,
@@ -307,6 +308,7 @@ tasks:
     }
   F06.1:
     {
+      owner: "OpenCode (F03.1/F06.1 audit batch)",
       title: "Effective-field audit note",
       parent: F06,
       kind: doc,
