@@ -25,11 +25,34 @@ rejects invalid principals and empty secrets. Principals are operator-assigned:
 using the same principal for multiple keys deliberately shares namespace ownership,
 so only assign a shared principal to credentials with the same trust level.
 
-These identity fields prepare the RFC 0030 authentication migration. Artifact
-routes still use the legacy authorization path and do not yet select namespaces
-by principal. Likewise, `publish:artifacts` is now an accepted explicit scope,
-but publishing routes are not active yet. Legacy `scopes: "all"` grants the
-existing read/write/list/delete scopes, never publish.
+Artifact routes now authenticate through this identity path. Namespaces by
+principal and the `publish:artifacts` endpoints are not active yet, so
+`publish:artifacts` is an accepted explicit scope that no route requires today.
+Legacy `scopes: "all"` grants the existing read/write/list/delete scopes, never
+publish.
+
+## Sending the credential
+
+Clients send the API key as `Authorization: Bearer <key>`. The old `X-API-KEY`
+header is no longer read, with no fallback, so update every client and script
+together with the server. The built-in `omni` client already sends the new
+header. The `X-OMNI-TENANT` header is unchanged.
+
+Any key made of visible ASCII characters (no spaces, control or non-ASCII
+characters) works. A key that contains a space or a non-ASCII character cannot be
+sent as a Bearer token and must be replaced.
+
+Authentication runs before the target is validated, so a caller without a valid
+credential cannot learn whether an organization, workspace or environment exists.
+
+| Status | Meaning                                                                                                           |
+| ------ | ----------------------------------------------------------------------------------------------------------------- |
+| 401    | Missing, malformed, unknown, disabled or expired credential                                                       |
+| 403    | A recognized credential without access to the target or the scope                                                 |
+| 400    | An authenticated request for an organization, workspace or environment that does not exist, or a malformed digest |
+| 503    | The authentication backend failed (nothing else is tried)                                                         |
+
+The hook `api_key_id` is now the authenticated credential ID.
 
 ## Pick a backend
 

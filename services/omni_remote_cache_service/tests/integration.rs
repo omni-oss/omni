@@ -205,7 +205,7 @@ async fn interrupted_put_preserves_the_existing_local_artifact() {
                 DEFAULT_ENV,
                 Some(digest),
             ))
-            .header("X-API-KEY", DEFAULT_API_KEY)
+            .header("Authorization", format!("Bearer {DEFAULT_API_KEY}"))
             .header("X-OMNI-TENANT", DEFAULT_TENANT)
             .body(Body::from_stream(stream))
             .unwrap();
@@ -247,7 +247,7 @@ async fn get_artifacts(
     let path = get_path(org, workspace, env, None);
     server
         .get(&path)
-        .add_header("X-API-KEY", api_key)
+        .add_header("Authorization", format!("Bearer {api_key}"))
         .add_header("X-OMNI-TENANT", tenant)
         .await
 }
@@ -266,7 +266,7 @@ async fn put_artifact(
     let path = get_path(org, workspace, env, Some(digest));
     server
         .put(&path)
-        .add_header("X-API-KEY", api_key)
+        .add_header("Authorization", format!("Bearer {api_key}"))
         .add_header("Content-Type", "application/octet-stream")
         .add_header("X-OMNI-TENANT", tenant)
         .bytes(body)
@@ -285,7 +285,7 @@ async fn get_artifact(
     let path = get_path(org, workspace, env, Some(digest));
     server
         .get(&path)
-        .add_header("X-API-KEY", api_key)
+        .add_header("Authorization", format!("Bearer {api_key}"))
         .add_header("X-OMNI-TENANT", tenant)
         .await
 }
@@ -302,7 +302,7 @@ async fn head_artifact(
     let path = get_path(org, workspace, env, Some(digest));
     server
         .method(http::Method::HEAD, &path)
-        .add_header("X-API-KEY", api_key)
+        .add_header("Authorization", format!("Bearer {api_key}"))
         .add_header("X-OMNI-TENANT", tenant)
         .await
 }
@@ -319,7 +319,7 @@ async fn delete_artifact(
     let path = get_path(org, workspace, env, Some(digest));
     server
         .delete(&path)
-        .add_header("X-API-KEY", api_key)
+        .add_header("Authorization", format!("Bearer {api_key}"))
         .add_header("X-OMNI-TENANT", tenant)
         .await
 }
@@ -510,7 +510,7 @@ async fn test_invalid_api_key() {
     )
     .await;
 
-    get_resp.assert_status_forbidden();
+    get_resp.assert_status_unauthorized();
 }
 
 #[tokio::test]

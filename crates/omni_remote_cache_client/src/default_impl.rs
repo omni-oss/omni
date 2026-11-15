@@ -119,7 +119,7 @@ impl RemoteCacheClient for DefaultRemoteCacheClient {
         let response = self
             .client
             .get(url)
-            .header("X-API-KEY", remote.api_key)
+            .bearer_auth(remote.api_key)
             .header("X-OMNI-TENANT", remote.tenant)
             .send()
             .await
@@ -157,7 +157,7 @@ impl RemoteCacheClient for DefaultRemoteCacheClient {
         let response = self
             .client
             .head(url)
-            .header("X-API-KEY", remote.api_key)
+            .bearer_auth(remote.api_key)
             .header("X-OMNI-TENANT", remote.tenant)
             .timeout(UPLOAD_REQUEST_TIMEOUT)
             .send()
@@ -197,7 +197,7 @@ impl RemoteCacheClient for DefaultRemoteCacheClient {
         let response = self
             .client
             .head(url)
-            .header("X-API-KEY", remote.api_key)
+            .bearer_auth(remote.api_key)
             .header("X-OMNI-TENANT", remote.tenant)
             .timeout(UPLOAD_REQUEST_TIMEOUT)
             .send()
@@ -231,7 +231,7 @@ impl RemoteCacheClient for DefaultRemoteCacheClient {
         let response = self
             .client
             .put(url)
-            .header("X-API-KEY", remote.api_key)
+            .bearer_auth(remote.api_key)
             .header("X-OMNI-TENANT", remote.tenant)
             .body(artifact)
             .timeout(UPLOAD_REQUEST_TIMEOUT)

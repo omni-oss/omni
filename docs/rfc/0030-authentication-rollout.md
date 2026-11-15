@@ -120,3 +120,25 @@ target validation and the service TypeScript suites are left to CI. Do not run
   header migration, when the old bool cache and raw-key paths must be removed.
   Undo: remove the additive caller cache and provider method together; legacy
   request authentication is unchanged. Worker randomness/runtime remains a CI gate.
+- **Request-migration sub-batch:** implemented and independently reviewed by Opus,
+  which found two blockers, both fixed. The `Credential` extractor reads exactly one
+  `Authorization: Bearer` header; `X-API-KEY` is **not** accepted as a fallback (a clean
+  break), and the built-in client sends Bearer. The token may be any visible ASCII
+  (`0x21`-`0x7E`): API keys are operator-chosen strings, and the stricter RFC 6750 grammar
+  would have locked out existing keys that contain symbols. Routes now run `authenticate!`
+  first, then digest validation, then ownership, as the old `guard!` did: validating the
+  target first would let an unauthenticated caller probe which organizations, workspaces
+  and environments exist, and would cost a database query per anonymous request. The
+  authenticator compares by value, so an unknown target yields `401`/`403`, never a grant.
+  `authenticate!` asks the provider's (cached) authenticator for the one scope the route
+  needs: unrecognized `401` with `WWW-Authenticate: Bearer`, recognized without the scope
+  `403`, backend error `503` with a fixed body (the fact is logged, never the error text).
+  Route spans skip all arguments and record only digest, org, ws and env. Hooks get the
+  authenticated credential ID in the existing `api_key_id` field until slice 3.
+  Tests use a non-API-key authenticator through all six routes, check that
+  `security_service` and `api_key_id` are never called, that hooks do not run before
+  authentication, and that a missing `X-OMNI-TENANT` is still `400` (the extractor order
+  is unchanged). Existing tests changed only in their headers and the `401` for unknown keys.
+  Left for follow-up: removing the unused `SecurityService`, `CachedSecurity` and the
+  `api_key_id` provider method, and `validate_access` returning scopes. Undo: revert
+  server and client together (a client on the old header cannot authenticate).

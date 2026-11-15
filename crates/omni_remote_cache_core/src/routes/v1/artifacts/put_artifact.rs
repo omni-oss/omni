@@ -17,12 +17,13 @@ use serde::Deserialize;
 use utoipa::IntoParams;
 
 use crate::{
-    extractors::{ApiKey, TenantCode},
+    extractors::{Credential, TenantCode},
     hooks::{ArtifactOp, OutcomeKind},
     routes::v1::artifacts::common::{
-        after_response, before_hook, container, guard, require_valid_digest,
-        validate_ownership,
+        after_response, authenticate, before_hook, container,
+        require_valid_digest, validate_ownership,
     },
+    security::Scope,
     state::ServiceState,
 };
 
@@ -65,22 +66,22 @@ pub struct PutArtifactQuery {
         (status = INTERNAL_SERVER_ERROR, description = "Internal server error")
     )
 )]
-#[tracing::instrument(skip(state, body))]
+#[tracing::instrument(skip_all, fields(digest = %digest, org = %query.org, ws = %query.ws, env = %query.env))]
 pub async fn put_artifact(
     PutArtifactPath { digest }: PutArtifactPath,
     Query(query): Query<PutArtifactQuery>,
     TenantCode(tenant_code): TenantCode,
     State(state): State<ServiceState>,
-    ApiKey(api_key): ApiKey,
+    Credential(credential): Credential,
     headers: HeaderMap,
     body: Body,
 ) -> Response {
-    guard!(
+    let caller = authenticate!(
         state.provider,
-        &api_key,
+        &credential,
         &tenant_code,
         &query,
-        &["write:artifacts"],
+        Scope::Write,
     );
 
     require_valid_digest!(&digest);
@@ -106,7 +107,7 @@ pub async fn put_artifact(
     let hook_ctx = before_hook!(
         state,
         ArtifactOp::Put,
-        &api_key,
+        &caller,
         &tenant_code,
         &query,
         vec![digest.clone()],

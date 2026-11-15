@@ -9,12 +9,13 @@ use serde::Deserialize;
 use utoipa::IntoParams;
 
 use crate::{
-    extractors::{ApiKey, TenantCode},
+    extractors::{Credential, TenantCode},
     hooks::{ArtifactOp, OutcomeKind},
     routes::v1::artifacts::common::{
-        after_response, before_hook, container, guard, require_valid_digest,
-        validate_ownership,
+        after_response, authenticate, before_hook, container,
+        require_valid_digest, validate_ownership,
     },
+    security::Scope,
     state::ServiceState,
 };
 
@@ -51,21 +52,21 @@ pub struct DeleteArtifactQuery {
         (status = INTERNAL_SERVER_ERROR, description = "Internal server error")
     )
 )]
-#[tracing::instrument(skip(state))]
+#[tracing::instrument(skip_all, fields(digest = %digest, org = %query.org, ws = %query.ws, env = %query.env))]
 #[debug_handler]
 pub async fn delete_artifact(
     DeleteArtifactPath { digest }: DeleteArtifactPath,
     Query(query): Query<DeleteArtifactQuery>,
     State(state): State<ServiceState>,
     TenantCode(tenant_code): TenantCode,
-    ApiKey(api_key): ApiKey,
+    Credential(credential): Credential,
 ) -> Response {
-    guard!(
+    let caller = authenticate!(
         state.provider,
-        &api_key,
+        &credential,
         &tenant_code,
         &query,
-        &["delete:artifacts"]
+        Scope::Delete
     );
 
     require_valid_digest!(&digest);
@@ -75,7 +76,7 @@ pub async fn delete_artifact(
     let hook_ctx = before_hook!(
         state,
         ArtifactOp::Delete,
-        &api_key,
+        &caller,
         &tenant_code,
         &query,
         vec![digest.clone()],

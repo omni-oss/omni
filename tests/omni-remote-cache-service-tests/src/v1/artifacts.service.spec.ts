@@ -141,7 +141,7 @@ describeTargets("v1.artifacts.api", (target) => {
             "invalid",
         );
 
-        expect(response.status).toBe(403);
+        expect(response.status).toBe(401);
     });
 
     test("large artifact round trip", async () => {
@@ -166,7 +166,12 @@ describeTargets("v1.artifacts.api", (target) => {
 
         const get = await fetch(
             `${apiBaseUrl}/v1/artifacts/${digest}?org=${ORG}&ws=${WS}&env=${ENV}`,
-            { headers: { "X-OMNI-TENANT": TENANT, "X-API-KEY": API_KEY } },
+            {
+                headers: {
+                    "X-OMNI-TENANT": TENANT,
+                    Authorization: `Bearer ${API_KEY}`,
+                },
+            },
         );
         expect(get.status).toBe(200);
         expect(Buffer.compare(Buffer.from(await get.arrayBuffer()), big)).toBe(
@@ -248,7 +253,7 @@ async function putArtifact(
             headers: {
                 "Content-Type": "application/octet-stream",
                 "X-OMNI-TENANT": tenant,
-                "X-API-KEY": apiKey,
+                Authorization: `Bearer ${apiKey}`,
             },
             body,
         },
@@ -271,7 +276,7 @@ async function getArtifact(
             headers: {
                 "Content-Type": "application/octet-stream",
                 "X-OMNI-TENANT": tenant,
-                "X-API-KEY": apiKey,
+                Authorization: `Bearer ${apiKey}`,
             },
         },
     );
@@ -293,7 +298,7 @@ async function headArtifact(
             headers: {
                 "Content-Type": "application/octet-stream",
                 "X-OMNI-TENANT": tenant,
-                "X-API-KEY": apiKey,
+                Authorization: `Bearer ${apiKey}`,
             },
         },
     );
@@ -315,7 +320,7 @@ async function deleteArtifact(
             headers: {
                 "Content-Type": "application/octet-stream",
                 "X-OMNI-TENANT": tenant,
-                "X-API-KEY": apiKey,
+                Authorization: `Bearer ${apiKey}`,
             },
         },
     );
@@ -335,7 +340,7 @@ async function listArtifacts(
             method: "GET",
             headers: {
                 "X-OMNI-TENANT": tenant,
-                "X-API-KEY": apiKey,
+                Authorization: `Bearer ${apiKey}`,
             },
         },
     );
@@ -355,7 +360,7 @@ async function headArtifacts(
             method: "HEAD",
             headers: {
                 "X-OMNI-TENANT": tenant,
-                "X-API-KEY": apiKey,
+                Authorization: `Bearer ${apiKey}`,
             },
         },
     );

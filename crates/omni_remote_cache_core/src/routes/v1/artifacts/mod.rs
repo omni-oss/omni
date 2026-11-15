@@ -19,7 +19,7 @@ use utoipa::{
     Modify, OpenApi,
     openapi::{
         self, ComponentsBuilder,
-        security::{ApiKey, ApiKeyValue, SecurityScheme},
+        security::{HttpAuthScheme, HttpBuilder, SecurityScheme},
     },
 };
 
@@ -51,7 +51,7 @@ pub fn build_router() -> Router<ServiceState> {
         )
     ),
     security(
-        ("api_key" = ["read:artifacts", "list:artifacts", "write:artifacts", "delete:artifacts"]),
+        ("bearer" = []),
     ),
     modifiers(&SecurityAddon),
 )]
@@ -64,10 +64,12 @@ impl Modify for SecurityAddon {
         openapi.components = Some(
             ComponentsBuilder::new()
                 .security_scheme(
-                    "api_key",
-                    SecurityScheme::ApiKey(ApiKey::Header(ApiKeyValue::new(
-                        "X-API-KEY",
-                    ))),
+                    "bearer",
+                    SecurityScheme::Http(
+                        HttpBuilder::new()
+                            .scheme(HttpAuthScheme::Bearer)
+                            .build(),
+                    ),
                 )
                 .build(),
         )

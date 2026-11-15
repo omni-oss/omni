@@ -186,7 +186,7 @@ async fn every_operation_is_vetoable_and_a_veto_skips_after() {
     });
     let s = server(hooks.clone()).await;
     let req = |r: axum_test::TestRequest| {
-        r.add_header("X-API-KEY", "k")
+        r.add_header("Authorization", "Bearer k")
             .add_header("X-OMNI-TENANT", "t")
     };
 
@@ -214,7 +214,7 @@ async fn allowed_operation_runs_after() {
     let s = server(hooks.clone()).await;
     let res = s
         .put(ONE)
-        .add_header("X-API-KEY", "k")
+        .add_header("Authorization", "Bearer k")
         .add_header("X-OMNI-TENANT", "t")
         .bytes("x".into())
         .await;
@@ -235,7 +235,7 @@ async fn a_malformed_digest_never_reaches_the_hooks() {
     let s = server(hooks.clone()).await;
     let bad = "/api/v1/artifacts/not.a.digest?org=o&ws=w&env=e";
     let req = |r: axum_test::TestRequest| {
-        r.add_header("X-API-KEY", "k")
+        r.add_header("Authorization", "Bearer k")
             .add_header("X-OMNI-TENANT", "t")
     };
     for r in [
@@ -256,7 +256,7 @@ async fn a_conflicting_put_reports_already_exists_to_the_hooks() {
     let s = server(hooks.clone()).await;
     let put = || async {
         s.put(ONE)
-            .add_header("X-API-KEY", "k")
+            .add_header("Authorization", "Bearer k")
             .add_header("X-OMNI-TENANT", "t")
             .bytes("x".into())
             .await
@@ -284,7 +284,7 @@ async fn a_declared_oversized_upload_never_reaches_the_hooks() {
     let request = http::Request::builder()
         .method("PUT")
         .uri(ONE)
-        .header("X-API-KEY", "k")
+        .header("Authorization", "Bearer k")
         .header("X-OMNI-TENANT", "t")
         .header(http::header::CONTENT_LENGTH, "5")
         .body(axum::body::Body::from("12345"))
@@ -309,7 +309,7 @@ async fn stream_put(
     let request = http::Request::builder()
         .method("PUT")
         .uri(ONE)
-        .header("X-API-KEY", "k")
+        .header("Authorization", "Bearer k")
         .header("X-OMNI-TENANT", "t")
         .body(body)
         .unwrap();

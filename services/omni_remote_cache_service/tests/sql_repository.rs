@@ -129,17 +129,24 @@ async fn sql_backend_authorizes_validates_vetoes_and_records_usage() {
     let s = server(&url).await;
 
     let call = |r: axum_test::TestRequest, key: &str, tenant: &str| {
-        r.add_header("X-API-KEY", key)
+        r.add_header("Authorization", format!("Bearer {key}"))
             .add_header("X-OMNI-TENANT", tenant)
     };
 
-    // unknown key and wrong tenant are forbidden
+    // unknown key is unauthorized; a known key with the wrong tenant is forbidden
     call(s.get(ONE), "bad-key", "t")
         .await
-        .assert_status(http::StatusCode::FORBIDDEN);
-    call(s.get(ONE), KEY, "other")
+        .assert_status(http::StatusCode::UNAUTHORIZED);
+    // Check authorization against an existing resource, not ownership failure.
+    db.execute("UPDATE api_keys SET tenant = 'other'", &[])
+        .await
+        .unwrap();
+    call(s.get(ONE), KEY, "t")
         .await
         .assert_status(http::StatusCode::FORBIDDEN);
+    db.execute("UPDATE api_keys SET tenant = 't'", &[])
+        .await
+        .unwrap();
 
     // a scope the key lacks is forbidden
     call(s.delete(ONE), KEY, "t")

@@ -10,11 +10,12 @@ use utoipa::IntoParams;
 
 use super::common::{container, require_valid_digest};
 use crate::{
-    extractors::{ApiKey, TenantCode},
+    extractors::{Credential, TenantCode},
     hooks::{ArtifactOp, OutcomeKind},
     routes::v1::artifacts::common::{
-        after_response, before_hook, guard, validate_ownership,
+        after_response, authenticate, before_hook, validate_ownership,
     },
+    security::Scope,
     state::ServiceState,
 };
 
@@ -55,20 +56,20 @@ pub struct GetArtifactQuery {
         (status = INTERNAL_SERVER_ERROR, description = "Internal server error")
     )
 )]
-#[tracing::instrument(skip(state))]
+#[tracing::instrument(skip_all, fields(digest = %digest, org = %query.org, ws = %query.ws, env = %query.env))]
 pub async fn get_artifact(
     GetArtifactPath { digest }: GetArtifactPath,
     Query(query): Query<GetArtifactQuery>,
     TenantCode(tenant_code): TenantCode,
     State(state): State<ServiceState>,
-    ApiKey(api_key): ApiKey,
+    Credential(credential): Credential,
 ) -> Response {
-    guard!(
+    let caller = authenticate!(
         state.provider,
-        &api_key,
+        &credential,
         &tenant_code,
         &query,
-        &["read:artifacts"],
+        Scope::Read,
     );
 
     require_valid_digest!(&digest);
@@ -78,7 +79,7 @@ pub async fn get_artifact(
     let hook_ctx = before_hook!(
         state,
         ArtifactOp::Get,
-        &api_key,
+        &caller,
         &tenant_code,
         &query,
         vec![digest.clone()],

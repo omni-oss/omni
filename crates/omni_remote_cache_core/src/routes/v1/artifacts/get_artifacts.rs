@@ -10,12 +10,14 @@ use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
 use crate::{
-    extractors::{ApiKey, TenantCode},
+    extractors::{Credential, TenantCode},
     hooks::{ArtifactOp, OutcomeKind},
     response::data::Data,
     routes::v1::artifacts::common::{
-        after_response, before_hook, container, guard, validate_ownership,
+        after_response, authenticate, before_hook, container,
+        validate_ownership,
     },
+    security::Scope,
     state::ServiceState,
 };
 
@@ -61,20 +63,20 @@ pub struct CacheItem {
         (status = INTERNAL_SERVER_ERROR, description = "Internal server error")
     )
 )]
-#[tracing::instrument(skip(state))]
+#[tracing::instrument(skip_all, fields(org = %query.org, ws = %query.ws, env = %query.env))]
 pub async fn get_artifacts(
     _: GetArtifactsPath,
     Query(query): Query<GetArtifactsQuery>,
     State(state): State<ServiceState>,
     TenantCode(tenant_code): TenantCode,
-    ApiKey(api_key): ApiKey,
+    Credential(credential): Credential,
 ) -> Response {
-    guard!(
+    let caller = authenticate!(
         state.provider,
-        &api_key,
+        &credential,
         &tenant_code,
         &query,
-        &["list:artifacts"],
+        Scope::List,
     );
 
     validate_ownership!(state.provider, &tenant_code, &query);
@@ -82,7 +84,7 @@ pub async fn get_artifacts(
     let hook_ctx = before_hook!(
         state,
         ArtifactOp::GetMany,
-        &api_key,
+        &caller,
         &tenant_code,
         &query,
         Vec::new(),

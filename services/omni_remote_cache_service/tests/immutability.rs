@@ -105,7 +105,7 @@ async fn put(
 ) -> StatusCode {
     server
         .put(&format!("/api/v1/artifacts/{digest}?{QUERY}"))
-        .add_header("X-API-KEY", "k")
+        .add_header("Authorization", "Bearer k")
         .add_header("X-OMNI-TENANT", "t")
         .bytes(Bytes::from(body))
         .await
@@ -203,7 +203,7 @@ async fn authentication_comes_before_digest_validation() {
     let (server, _backend) = server(root.path()).await;
     let response = server
         .put(&format!("/api/v1/artifacts/not.a.digest?{QUERY}"))
-        .add_header("X-API-KEY", "wrong-key")
+        .add_header("Authorization", "Bearer wrong-key")
         .add_header("X-OMNI-TENANT", "t")
         .bytes(Bytes::from("x"))
         .await;
@@ -212,12 +212,7 @@ async fn authentication_comes_before_digest_validation() {
         StatusCode::BAD_REQUEST,
         "an unauthenticated caller must not learn anything about digest validity"
     );
-    assert!(
-        response.status_code() == StatusCode::UNAUTHORIZED
-            || response.status_code() == StatusCode::FORBIDDEN,
-        "got {}",
-        response.status_code()
-    );
+    assert_eq!(response.status_code(), StatusCode::UNAUTHORIZED);
 }
 
 fn regular_files(root: &std::path::Path) -> Vec<std::path::PathBuf> {
@@ -251,7 +246,7 @@ async fn put_stream(
     let request = http::Request::builder()
         .method("PUT")
         .uri(format!("/api/v1/artifacts/{digest}?{QUERY}"))
-        .header("X-API-KEY", "k")
+        .header("Authorization", "Bearer k")
         .header("X-OMNI-TENANT", "t")
         .body(body)
         .unwrap();
@@ -269,7 +264,7 @@ async fn put_declared(
     let request = http::Request::builder()
         .method("PUT")
         .uri(format!("/api/v1/artifacts/{digest}?{QUERY}"))
-        .header("X-API-KEY", "k")
+        .header("Authorization", "Bearer k")
         .header("X-OMNI-TENANT", "t")
         .header(http::header::CONTENT_LENGTH, body.len().to_string())
         .body(axum::body::Body::from(body))

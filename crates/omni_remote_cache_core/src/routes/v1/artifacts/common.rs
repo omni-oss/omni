@@ -165,39 +165,42 @@ pub fn forbidden_response(message: Option<&str>) -> Response {
         .into_response()
 }
 
-pub macro guard(
+pub macro authenticate(
         $provider:expr,
-        $api_key:expr,
+        $credential:expr,
         $tenant_code:expr,
         $query:expr,
-        $scopes:expr$(,)?
+        $scope:expr$(,)?
     ) {{
     use crate::routes::v1::artifacts::common::forbidden_response;
+    use crate::security::Resource;
     use axum::response::IntoResponse as _;
-    use axum_extra::response::InternalServerError;
-
-    let security = $provider.security_service();
-
-    let security_result = security
-        .can_access(
-            $api_key,
-            $tenant_code,
-            &$query.org,
-            &$query.ws,
-            &$query.env,
-            $scopes,
-        )
+    let resource = Resource {
+        tenant: $tenant_code.to_string(),
+        org: $query.org.clone(),
+        ws: $query.ws.clone(),
+        env: $query.env.clone(),
+    };
+    match $provider
+        .authenticator()
+        .authenticate($credential, &resource, $scope.into())
         .await
-        .map_err(InternalServerError);
-
-    match security_result {
-        Ok(true) => (),
-        Ok(false) => {
+    {
+        Ok(Some(caller)) if caller.can($scope) => caller,
+        Ok(Some(_)) => {
             return forbidden_response(Some(
                 "You are not authorized to process this request",
             ));
         }
-        Err(e) => return e.into_response(),
+        Ok(None) => return crate::extractors::unauthorized_response(),
+        // Never expose or log the backend report: it may contain credentials.
+        Err(_) => {
+            return (
+                ::http::StatusCode::SERVICE_UNAVAILABLE,
+                "authentication unavailable",
+            )
+                .into_response();
+        }
     }
 }}
 
@@ -270,7 +273,7 @@ pub async fn after_response(
 pub macro before_hook(
         $state:expr,
         $op:expr,
-        $api_key:expr,
+        $caller:expr,
         $tenant_code:expr,
         $query:expr,
         $digests:expr$(,)?
@@ -284,7 +287,8 @@ pub macro before_hook(
         ws: $query.ws.clone(),
         env: $query.env.clone(),
         digests: $digests,
-        api_key_id: $state.provider.api_key_id($api_key),
+        // Legacy hook field name until the slice 3 hook-contract migration.
+        api_key_id: $caller.credential().id().to_owned(),
     };
 
     if let Some(response) = run_before($state.provider.as_ref(), &ctx).await {

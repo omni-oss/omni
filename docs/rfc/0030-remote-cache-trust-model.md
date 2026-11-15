@@ -169,7 +169,8 @@ trait Authenticator {           // replaces the bool-returning SecurityService m
   (`503`, never a fall-through to another authenticator). Today the chain has one member, the API-key
   authenticator (static config or SQL/D1 repositories, RFC 0027).
 - Authentication is **per request and scoped to the target**: the route knows the
-  resource (after `validate_ownership`) and the scopes it needs, and passes both, so
+  resource (from the request; authentication runs before ownership validation so
+  anonymous callers cannot probe for targets) and the scopes it needs, and passes both, so
   the returned `Caller` is already limited to that resource and `Caller::can(scope)`
   is a synchronous check. This fits the SQL/D1 key contract, which is a set of
   per-request `exists` queries (`api_key_valid`, `_tenant`, `_organization`,
@@ -1521,9 +1522,10 @@ identity text fails closed. Native SQL and D1 implement the new required
 are checked in order, and only wanted scope queries run. Scripted provider and real
 SQLite tests cover this path; Postgres/MySQL identity reads and D1 runtime remain
 unverified. Operators must make `api_key_scope` exclude publish from wildcard grants.
-This is preparatory: routes still use `SecurityService`, and the
-header remains `X-API-KEY`. `CachedSecurity`, Bearer headers and
-`validate_access` migration are still open; slice 2 is **not complete**.
+Routes now use the caller seam and the built-in client sends `Authorization: Bearer`;
+`X-API-KEY` is not accepted (no fallback). Still open, so slice 2 is **not complete**:
+removing the unused `SecurityService`/`CachedSecurity` code, `validate_access` returning
+scopes, principal and size cap, and the hook field rename (slice 3).
 Providers now expose `authenticator()` through the common trait, including the
 caching decorator. A separate caller cache uses full HMAC-SHA256 keys covering
 credential, resource and canonical wanted scopes, with a per-state random pepper.

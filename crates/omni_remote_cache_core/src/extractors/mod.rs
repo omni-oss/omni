@@ -1,5 +1,5 @@
-mod api_key;
+mod credential;
 mod tenant_code;
 
-pub use api_key::*;
+pub use credential::*;
 pub use tenant_code::*;

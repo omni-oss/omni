@@ -8,11 +8,12 @@ use serde::Deserialize;
 use utoipa::IntoParams;
 
 use crate::{
-    extractors::{ApiKey, TenantCode},
+    extractors::{Credential, TenantCode},
     hooks::{ArtifactOp, OutcomeKind},
     routes::v1::artifacts::common::{
-        after_response, before_hook, guard, validate_ownership,
+        after_response, authenticate, before_hook, validate_ownership,
     },
+    security::Scope,
     state::ServiceState,
 };
 
@@ -50,20 +51,20 @@ pub struct HeadArtifactsQuery {
         (status = INTERNAL_SERVER_ERROR, description = "Internal server error")
     )
 )]
-#[tracing::instrument(skip(state))]
+#[tracing::instrument(skip_all, fields(org = %query.org, ws = %query.ws, env = %query.env))]
 pub async fn head_artifacts(
     _: HeadArtifactsPath,
     Query(query): Query<HeadArtifactsQuery>,
     State(state): State<ServiceState>,
     TenantCode(tenant_code): TenantCode,
-    ApiKey(api_key): ApiKey,
+    Credential(credential): Credential,
 ) -> Response {
-    guard!(
+    let caller = authenticate!(
         state.provider,
-        &api_key,
+        &credential,
         &tenant_code,
         &query,
-        &["list:artifacts"],
+        Scope::List,
     );
 
     validate_ownership!(state.provider, &tenant_code, &query);
@@ -71,7 +72,7 @@ pub async fn head_artifacts(
     let hook_ctx = before_hook!(
         state,
         ArtifactOp::HeadMany,
-        &api_key,
+        &caller,
         &tenant_code,
         &query,
         Vec::new(),
