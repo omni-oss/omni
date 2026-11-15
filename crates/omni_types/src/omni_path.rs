@@ -164,6 +164,79 @@ impl<TRoot: OmniPathRoot> OmniPath<TRoot> {
     }
 }
 
+impl OmniPath<Root> {
+    /// True when this path is anchored to a root and, once `..` segments are
+    /// resolved lexically, still lies strictly inside the workspace root. A
+    /// sibling project directory (`@project/../shared/x`) is allowed; leaving
+    /// the workspace, an absolute or drive-prefixed path, an unrooted path, an
+    /// empty path and unsafe names (see [`is_confined_relative`]) are not.
+    ///
+    /// Lexical only: it does not look at symlinks on disk.
+    pub fn stays_within_workspace(&self, roots: &RootMap) -> bool {
+        use std::path::Component;
+        let Some(root) = self.root else {
+            return false;
+        };
+        // An empty or dot-only path names no file.
+        if !self
+            .path
+            .components()
+            .any(|c| matches!(c, Component::Normal(_)))
+        {
+            return false;
+        }
+        let mut resolved: Vec<std::ffi::OsString> = Vec::new();
+        let mut push_all = |path: &StdPath, check_names: bool| -> bool {
+            for component in path.components() {
+                match component {
+                    Component::Prefix(_) | Component::RootDir => {
+                        if check_names {
+                            return false;
+                        }
+                        resolved.clear();
+                    }
+                    Component::CurDir => {}
+                    Component::ParentDir => {
+                        if resolved.pop().is_none() {
+                            return false;
+                        }
+                    }
+                    Component::Normal(name) => {
+                        if check_names {
+                            let text = name.to_string_lossy();
+                            if text.chars().any(char::is_control)
+                                || (cfg!(windows)
+                                    && is_windows_unsafe_name(&text))
+                            {
+                                return false;
+                            }
+                        }
+                        resolved.push(name.to_os_string());
+                    }
+                }
+            }
+            true
+        };
+        // The roots are trusted absolute paths; `Prefix`/`RootDir` in them
+        // restart the accumulation.
+        if !push_all(roots[root], false) || !push_all(&self.path, true) {
+            return false;
+        }
+        let mut workspace: Vec<std::ffi::OsString> = Vec::new();
+        for component in roots[Root::Workspace].components() {
+            match component {
+                Component::Prefix(_) | Component::RootDir => workspace.clear(),
+                Component::CurDir => {}
+                Component::ParentDir => {
+                    workspace.pop();
+                }
+                Component::Normal(name) => workspace.push(name.to_os_string()),
+            }
+        }
+        resolved.len() > workspace.len() && resolved.starts_with(&workspace)
+    }
+}
+
 /// True for a non-empty relative path whose components are all plain names (or
 /// `.`). Rejects `..`, a root directory, and a Windows drive or UNC prefix, each
 /// of which would let `base.join(path)` leave `base` (a rooted or prefixed
@@ -410,6 +483,48 @@ mod tests {
                 !OmniPath::<Root>::new_rooted(bad, Root::Project).is_confined(),
                 "{bad:?}"
             );
+        }
+    }
+
+    #[test]
+    fn sibling_paths_stay_within_the_workspace_but_nothing_else() {
+        let nested: RootMap = if cfg!(windows) {
+            enum_map::enum_map! {
+                Root::Workspace => Path::new("E:\\ws"),
+                Root::Project => Path::new("E:\\ws\\app"),
+            }
+        } else {
+            enum_map::enum_map! {
+                Root::Workspace => Path::new("/ws"),
+                Root::Project => Path::new("/ws/app"),
+            }
+        };
+        let n = |p: &str, r: Root| {
+            OmniPath::<Root>::new_rooted(p, r).stays_within_workspace(&nested)
+        };
+        for ok in [
+            ("../shared/x", Root::Project),
+            ("../shared/*.txt", Root::Project),
+            ("dist/../out/x", Root::Project),
+            ("shared/x", Root::Workspace),
+        ] {
+            assert!(n(ok.0, ok.1), "{ok:?}");
+        }
+        for bad in [
+            ("../../external/x", Root::Project),
+            ("../..", Root::Project),
+            ("..", Root::Project),
+            ("../", Root::Project),
+            ("", Root::Project),
+            ("../../x", Root::Workspace),
+            ("a/../../../x", Root::Project),
+            ("a\0b", Root::Project),
+        ] {
+            assert!(!n(bad.0, bad.1), "{bad:?} must not be within");
+        }
+        assert!(!OmniPath::<Root>::new("a/b").stays_within_workspace(&nested));
+        if !cfg!(windows) {
+            assert!(!n("/etc/passwd", Root::Project));
         }
     }
 

@@ -138,15 +138,19 @@ impl HybridTaskExecutionCacheStore {
 
 /// True when every path in a decoded cache entry can only descend from the base
 /// it is later joined onto: `cached_path` and `logs_path` from the entry
-/// directory, `original_path` from its project or workspace root.
-fn restore_paths_are_confined(entry: &CachedTaskExecution) -> bool {
+/// directory; `original_path` must stay inside the workspace once `..` is
+/// resolved (an output in a sibling project directory is legitimate).
+fn restore_paths_are_confined(
+    entry: &CachedTaskExecution,
+    roots: &omni_types::RootMap,
+) -> bool {
     entry
         .logs_path
         .as_deref()
         .is_none_or(omni_types::is_confined_relative)
         && entry.files.iter().all(|file| {
             omni_types::is_confined_relative(&file.cached_path)
-                && file.original_path.is_confined()
+                && file.original_path.stays_within_workspace(roots)
         })
 }
 
@@ -802,7 +806,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                 // path that is absolute, uses `..`, or is not anchored to a
                 // root would be joined onto a base and could read or write
                 // outside it, so the whole entry is a miss.
-                if !restore_paths_are_confined(&cached_output) {
+                if !restore_paths_are_confined(&cached_output, &project.roots) {
                     tracing::warn!(
                         project = %project.task.project_name,
                         "ignoring a cache entry with an unsafe path in its metadata"

@@ -1416,15 +1416,18 @@ decorator caches a streamed write only when the outcome is `Stored`.
 
 - **Restore validation.** A decoded cache entry whose paths could leave the base
   they are joined onto is a miss, in every namespace and `verify` mode, before any
-  path is resolved. `OmniPath::is_confined` accepts only a root-anchored, non-empty,
-  relative path made of plain names; `..`, a root directory, a drive or UNC prefix and
-  an empty path are rejected. The same check covers `cached_path` and `logs_path`
-  (joined onto the entry directory, where an absolute value replaces the base outright
-  and would copy an arbitrary file into the workspace). Deviations from the RFC text:
-  the boundary is the root the path names (`@project` or `@workspace`), not strictly
-  the project root, so legitimate workspace-level outputs keep working; and an entry
-  stored with an unrooted absolute path (an output outside the workspace) is now a
-  miss, so such tasks run again instead of restoring from cache.
+  path is resolved. For `original_path`, `OmniPath::stays_within_workspace` requires
+  a root-anchored path with no root directory or drive/UNC prefix, at least one name,
+  no unsafe names, and that its lexically resolved location lies strictly inside the
+  workspace root. `cached_path`, `logs_path` and archive entry names use the stricter
+  `is_confined_relative` (plain names only, no `..`), because they are joined onto the
+  entry directory, where an absolute value replaces the base outright. Deviations from
+  the RFC text: the boundary is the workspace root, not the project root, because
+  outputs in a sibling project directory (`../shared/x`, `@project/../shared/x`) are a
+  supported feature with e2e coverage; and an entry stored with an unrooted absolute
+  path (an output outside the workspace) is a miss, so such tasks run again instead of
+  restoring from cache. The check is lexical and does not inspect symlinks on disk (an
+  existing in-workspace symlink to elsewhere is the same local-write threat as above).
 - **Archive entries.** `unarchive` first reads the whole archive and accepts only
   regular files and directories with confined relative names; a symlink, hard link,
   device, `..` or absolute name rejects the archive before anything is written, and
