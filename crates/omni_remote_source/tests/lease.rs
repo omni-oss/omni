@@ -114,7 +114,14 @@ async fn windows_allows_deleting_an_open_lease_file() {
 
 async fn helper(root: &Path, mode: &str) -> Child {
     let mut child = Command::new(std::env::current_exe().unwrap())
-        .args(["--exact", "lease_process_helper", "--nocapture"])
+        // Serial libtest output prefixes the test name without a newline.
+        // Keep this mode explicit so readiness framing is regression-tested.
+        .args([
+            "--exact",
+            "lease_process_helper",
+            "--nocapture",
+            "--test-threads=1",
+        ])
         .env("OMNI_LEASE_TEST_ROOT", root)
         .env("OMNI_LEASE_TEST_MODE", mode)
         .stdin(Stdio::piped())
@@ -210,7 +217,8 @@ async fn lease_process_helper() {
         other => panic!("unknown helper mode {other}"),
     };
     use std::io::Write;
-    writeln!(std::io::stdout(), "READY").unwrap();
+    // Start a new line even if libtest just printed its test-name prefix.
+    writeln!(std::io::stdout(), "\nREADY").unwrap();
     std::io::stdout().flush().unwrap();
     let mut byte = [0u8];
     assert_eq!(tokio::io::stdin().read(&mut byte).await.unwrap(), 0);
