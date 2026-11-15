@@ -31,7 +31,12 @@ this documentation batch; nothing to migrate.
   set (not a subset), so only a future partial caller needs `merge_additive`; and the
   proposed atomic temp-file write cannot reuse `omni_file_data_serde::write_async`
   unchanged because it infers the format from the extension. F10.1: no findings.
-- PR, CI and CodeRabbit review follow.
+- CodeRabbit review (six findings, all valid design gaps) addressed: F08.1 now requires a
+  fallible checked removal in GC, states the commit-phase guarantee precisely (all-or-nothing
+  only up to staging; re-run converges) and adds a compatible `prune_store_report`; F10.1
+  now keeps conflicting observations per path, fails closed on the fallback walk when a
+  rename-out-of-root cannot be ruled out, and authorizes every listed entry.
+- CI and a follow-up CodeRabbit review follow.
 - Open decisions are owned in each document (F08.1 D1-D8, F10.1 D1-D10). The ones that
   most affect the code slices: store `VERSION` bump (F08.1 D1), unlinking lease files
   (F08.1 D2), and symlink policy plus macOS no-follow primitives (F10.1 D2, D5).
