@@ -1,11 +1,16 @@
 #![allow(clippy::redundant_field_names)]
 
+use std::collections::BTreeSet;
+
 use async_trait::async_trait;
 use aws_config::{BehaviorVersion, Region, SdkConfig};
 use aws_credential_types::Credentials;
 use aws_sdk_s3::{
-    Client, error::SdkError, operation::head_object::HeadObjectOutput,
+    Client,
+    error::SdkError,
+    operation::head_object::HeadObjectOutput,
     primitives::ByteStream,
+    types::{Delete, ObjectIdentifier},
 };
 use bytes::Bytes;
 use bytesize::ByteSize;
@@ -17,11 +22,12 @@ use tokio_stream::StreamExt;
 use tokio_util::io::ReaderStream;
 
 use omni_remote_cache_storage_core::{
-    Container, ListItem, PageOptions, ReadStream, RemoteCacheStorageBackend,
-    SaveOutcome, WriteStream, error::Error,
+    ByteRange, Container, ContainerPrefix, ListItem, PrefixPage, ReadStream,
+    RemoteCacheStorageBackend, SaveOutcome, WriteStream, error::Error,
 };
 
 const CONFLICT_RETRIES: usize = 3;
+const S3_MAX_KEYS: u32 = 1000;
 
 // --- S3 Backend Struct ---
 #[derive(Debug)]
@@ -103,11 +109,12 @@ impl S3CacheBackend {
         format!("{}/{}", container.as_str(), key)
     }
 
-    fn list_item(
-        container: &Container,
+    /// The key of `item` relative to `prefix`, and its size. The relative key
+    /// is empty for the folder marker at the prefix itself.
+    fn relative_object(
+        prefix: &ContainerPrefix,
         item: aws_sdk_s3::types::Object,
-    ) -> Result<Option<ListItem>, Error> {
-        let prefix = container.prefix();
+    ) -> Result<(String, ByteSize), Error> {
         let key = item
             .key
             .as_deref()
@@ -118,15 +125,67 @@ impl S3CacheBackend {
                     "S3 listing returned a missing or out-of-container key",
                 ))
             })?;
-        // The S3 console can create an object at the exact container prefix
-        // as a folder marker. It is not an artifact and has no relative key.
-        if key.is_empty() {
-            return Ok(None);
+        Ok((
+            key.to_string(),
+            ByteSize::b(item.size.unwrap_or_default() as u64),
+        ))
+    }
+
+    fn missing_listing_field(field: &str) -> Error {
+        Error::custom(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("S3 listing response is missing {field}"),
+        ))
+    }
+
+    async fn exists_as_empty(
+        &self,
+        container: &Container,
+        key: &str,
+    ) -> Result<Option<Bytes>, Error> {
+        if self.exists(container, key).await? {
+            Ok(Some(Bytes::new()))
+        } else {
+            Ok(None)
         }
-        Ok(Some(ListItem {
-            key: key.to_string(),
-            size: ByteSize::b(item.size.unwrap_or_default() as u64),
-        }))
+    }
+
+    /// Deletes one batch of keys in a single `DeleteObjects` request and
+    /// returns how many were accepted. Any per-key error fails the batch.
+    async fn delete_keys(&self, keys: &[String]) -> Result<u64, Error> {
+        let objects = keys
+            .iter()
+            .map(|key| {
+                ObjectIdentifier::builder()
+                    .key(key.as_str())
+                    .build()
+                    .map_err(Error::custom)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let delete = Delete::builder()
+            .set_objects(Some(objects))
+            .quiet(true)
+            .build()
+            .map_err(Error::custom)?;
+
+        let output = self
+            .client
+            .delete_objects()
+            .bucket(self.default_bucket.as_str())
+            .delete(delete)
+            .send()
+            .await
+            .map_err(Error::custom)?;
+
+        if let Some(failed) = output.errors().first() {
+            return Err(Error::custom(std::io::Error::other(format!(
+                "S3 failed to delete {}: {} {}",
+                failed.key().unwrap_or_default(),
+                failed.code().unwrap_or_default(),
+                failed.message().unwrap_or_default(),
+            ))));
+        }
+        Ok(keys.len() as u64)
     }
 
     /// Create-only `PutObject` with `If-None-Match: *`. S3 answers `412` when
@@ -286,56 +345,177 @@ impl RemoteCacheStorageBackend for S3CacheBackend {
         }
     }
 
-    async fn list(
+    async fn get_range(
         &self,
         container: &Container,
-    ) -> Result<Vec<ListItem>, Error> {
-        let bucket = self.default_bucket.as_str();
-
-        let list = self
-            .client
-            .list_objects()
-            .bucket(bucket)
-            .prefix(container.prefix().as_str())
-            .send()
-            .await
-            .map_err(Error::custom)?;
-
-        let mut items = Vec::new();
-        for item in list.contents.unwrap_or_default() {
-            if let Some(item) = Self::list_item(container, item)? {
-                items.push(item);
+        key: &str,
+        range: ByteRange,
+    ) -> Result<Option<Bytes>, Error> {
+        let header = match range {
+            ByteRange::Suffix(0) => None,
+            ByteRange::Suffix(n) => Some(format!("bytes=-{n}")),
+            ByteRange::Bounded(start, end) if end <= start => None,
+            ByteRange::Bounded(start, end) => {
+                Some(format!("bytes={start}-{}", end - 1))
             }
-        }
+        };
+        // S3 rejects ranges that select nothing, so only existence is asked.
+        let Some(header) = header else {
+            return self.exists_as_empty(container, key).await;
+        };
 
-        Ok(items)
+        let request = self
+            .client
+            .get_object()
+            .bucket(self.default_bucket.as_str())
+            .key(self.key(container, key))
+            .range(header)
+            .send()
+            .await;
+
+        match request {
+            Ok(output) => {
+                let data =
+                    output.body.collect().await.map_err(Error::custom)?;
+                Ok(Some(data.into_bytes()))
+            }
+            Err(e) => match e.raw_response().map(|r| r.status().as_u16()) {
+                Some(404) => Ok(None),
+                // The range starts past the end of the object. The object
+                // may still exist, with nothing in the requested range.
+                Some(416) => self.exists_as_empty(container, key).await,
+                _ => Err(Error::custom(e)),
+            },
+        }
     }
 
-    async fn paged_list(
+    async fn list_prefix(
         &self,
-        container: &Container,
-        query: PageOptions,
-    ) -> Result<Vec<ListItem>, Error> {
-        let bucket = self.default_bucket.as_str();
-
-        let list = self
+        prefix: &ContainerPrefix,
+        after: Option<&str>,
+        limit: u32,
+    ) -> Result<PrefixPage, Error> {
+        let mut request = self
             .client
             .list_objects_v2()
-            .max_keys(query.per_page.unwrap_or(100) as i32)
-            .bucket(bucket)
-            .prefix(container.prefix().as_str())
-            .send()
-            .await
-            .map_err(Error::custom)?;
+            .bucket(self.default_bucket.as_str())
+            .prefix(prefix.as_str())
+            .max_keys(limit.clamp(1, S3_MAX_KEYS) as i32);
+        if let Some(after) = after {
+            request =
+                request.start_after(format!("{}{after}", prefix.as_str()));
+        }
+
+        let list = request.send().await.map_err(Error::custom)?;
+        let truncated = list.is_truncated().unwrap_or(false);
 
         let mut items = Vec::new();
-        for item in list.contents.unwrap_or_default() {
-            if let Some(item) = Self::list_item(container, item)? {
-                items.push(item);
+        let mut last = None;
+        for object in list.contents.unwrap_or_default() {
+            let (key, size) = Self::relative_object(prefix, object)?;
+            // A skipped folder marker still advances the cursor below.
+            last = Some(key.clone());
+            if !key.is_empty() {
+                items.push(ListItem { key, size });
             }
         }
 
-        Ok(items)
+        let next_after = match (truncated, last) {
+            (false, _) => None,
+            (true, Some(last)) => Some(last),
+            (true, None) => {
+                return Err(Self::missing_listing_field(
+                    "keys for a truncated page",
+                ));
+            }
+        };
+        Ok(PrefixPage { items, next_after })
+    }
+
+    async fn list_children(
+        &self,
+        prefix: &ContainerPrefix,
+    ) -> Result<Vec<String>, Error> {
+        let mut names = BTreeSet::new();
+        let mut token: Option<String> = None;
+        loop {
+            let list = self
+                .client
+                .list_objects_v2()
+                .bucket(self.default_bucket.as_str())
+                .prefix(prefix.as_str())
+                .delimiter("/")
+                .set_continuation_token(token.take())
+                .send()
+                .await
+                .map_err(Error::custom)?;
+
+            for common in list.common_prefixes() {
+                let full = common
+                    .prefix()
+                    .ok_or_else(|| Self::missing_listing_field("a prefix"))?;
+                let name = full
+                    .strip_prefix(prefix.as_str())
+                    .and_then(|rest| rest.strip_suffix('/'))
+                    .filter(|name| !name.is_empty())
+                    .ok_or_else(|| {
+                        Error::custom(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            "S3 listing returned an out-of-prefix child",
+                        ))
+                    })?;
+                names.insert(name.to_string());
+            }
+
+            if !list.is_truncated().unwrap_or(false) {
+                return Ok(names.into_iter().collect());
+            }
+            token = Some(
+                list.next_continuation_token()
+                    .ok_or_else(|| {
+                        Self::missing_listing_field("a continuation token")
+                    })?
+                    .to_string(),
+            );
+        }
+    }
+
+    async fn delete_prefix(
+        &self,
+        prefix: &ContainerPrefix,
+    ) -> Result<u64, Error> {
+        let mut removed = 0;
+        let mut token: Option<String> = None;
+        loop {
+            let list = self
+                .client
+                .list_objects_v2()
+                .bucket(self.default_bucket.as_str())
+                .prefix(prefix.as_str())
+                .set_continuation_token(token.take())
+                .send()
+                .await
+                .map_err(Error::custom)?;
+
+            let truncated = list.is_truncated().unwrap_or(false);
+            let next = list.next_continuation_token().map(str::to_string);
+
+            let mut keys = Vec::new();
+            for object in list.contents.unwrap_or_default() {
+                let (key, _) = Self::relative_object(prefix, object)?;
+                keys.push(format!("{}{key}", prefix.as_str()));
+            }
+            for batch in keys.chunks(S3_MAX_KEYS as usize) {
+                removed += self.delete_keys(batch).await?;
+            }
+
+            if !truncated {
+                return Ok(removed);
+            }
+            token = Some(next.ok_or_else(|| {
+                Self::missing_listing_field("a continuation token")
+            })?);
+        }
     }
 
     async fn save_if_absent(
@@ -418,38 +598,34 @@ mod tests {
 
     #[test]
     fn listing_strips_only_the_first_exact_prefix() {
-        let container = Container::parse("ns/ci").unwrap();
+        let prefix = Container::parse("ns/ci").unwrap().prefix();
         let item = Object::builder().key("ns/ci/ns/ci/d").size(7).build();
         assert_eq!(
-            S3CacheBackend::list_item(&container, item)
-                .unwrap()
-                .unwrap()
-                .key,
+            S3CacheBackend::relative_object(&prefix, item).unwrap().0,
             "ns/ci/d"
         );
     }
 
     #[test]
     fn listing_rejects_missing_and_out_of_container_keys() {
-        let container = Container::parse("ns/ci").unwrap();
+        let prefix = Container::parse("ns/ci").unwrap().prefix();
         for key in ["ns/ci2/d", "d", "ns/ci"] {
             let item = Object::builder().key(key).build();
-            assert!(S3CacheBackend::list_item(&container, item).is_err());
+            assert!(S3CacheBackend::relative_object(&prefix, item).is_err());
         }
         assert!(
-            S3CacheBackend::list_item(&container, Object::builder().build())
+            S3CacheBackend::relative_object(&prefix, Object::builder().build())
                 .is_err()
         );
     }
 
     #[test]
-    fn listing_skips_the_exact_container_marker() {
-        let container = Container::parse("ns/ci").unwrap();
+    fn listing_yields_an_empty_key_for_the_exact_container_marker() {
+        let prefix = Container::parse("ns/ci").unwrap().prefix();
         let marker = Object::builder().key("ns/ci/").size(0).build();
-        assert!(
-            S3CacheBackend::list_item(&container, marker)
-                .unwrap()
-                .is_none()
+        assert_eq!(
+            S3CacheBackend::relative_object(&prefix, marker).unwrap().0,
+            ""
         );
     }
 }

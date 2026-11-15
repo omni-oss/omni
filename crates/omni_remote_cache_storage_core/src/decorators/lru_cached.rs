@@ -1,7 +1,10 @@
 use std::{
     collections::HashMap,
     num::NonZeroUsize,
-    sync::{Arc, Mutex, MutexGuard, PoisonError, Weak},
+    sync::{
+        Arc, Mutex, MutexGuard, PoisonError, Weak,
+        atomic::{AtomicU64, Ordering},
+    },
 };
 
 use async_trait::async_trait;
@@ -10,8 +13,8 @@ use bytesize::ByteSize;
 use futures::StreamExt as _;
 
 use crate::{
-    Container, ListItem, PageOptions, ReadStream, RemoteCacheStorageBackend,
-    SaveOutcome, WriteStream, error::Error,
+    ByteRange, Container, ContainerPrefix, ListItem, PrefixPage, ReadStream,
+    RemoteCacheStorageBackend, SaveOutcome, WriteStream, error::Error,
 };
 
 const DEFAULT_MAX_CACHEABLE_SIZE: ByteSize = ByteSize::mib(8);
@@ -28,6 +31,9 @@ pub struct LruCached<T: RemoteCacheStorageBackend> {
     // Weak entries track only live same-key mutations. Never hold this map
     // or the cache mutex across an await.
     mutations: Mutex<MutationLocks>,
+    // Bumped around every prefix delete. A streamed write that started before
+    // a bump must not cache its bytes, or it could resurrect a purged entry.
+    purges: Arc<AtomicU64>,
 }
 
 impl<T: RemoteCacheStorageBackend> LruCached<T> {
@@ -37,6 +43,7 @@ impl<T: RemoteCacheStorageBackend> LruCached<T> {
             cached: Arc::new(Mutex::new(lru::LruCache::new(capacity))),
             max_cacheable_size: DEFAULT_MAX_CACHEABLE_SIZE,
             mutations: Mutex::new(HashMap::new()),
+            purges: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -124,6 +131,23 @@ where
         self.inner.get_stream(container, key).await
     }
 
+    async fn get_range(
+        &self,
+        container: &Container,
+        key: &str,
+        range: ByteRange,
+    ) -> Result<Option<Bytes>, Error> {
+        let cached = self.cache().get(&self.cache_key(container, key)).cloned();
+        if let Some(cached) = cached {
+            let selected = range.resolve(cached.len() as u64);
+            return Ok(Some(
+                cached.slice(selected.start as usize..selected.end as usize),
+            ));
+        }
+
+        self.inner.get_range(container, key, range).await
+    }
+
     async fn list(
         &self,
         container: &Container,
@@ -131,12 +155,51 @@ where
         self.inner.list(container).await
     }
 
-    async fn paged_list(
+    async fn list_prefix(
         &self,
-        container: &Container,
-        query: PageOptions,
-    ) -> Result<Vec<ListItem>, Error> {
-        self.inner.paged_list(container, query).await
+        prefix: &ContainerPrefix,
+        after: Option<&str>,
+        limit: u32,
+    ) -> Result<PrefixPage, Error> {
+        self.inner.list_prefix(prefix, after, limit).await
+    }
+
+    async fn list_children(
+        &self,
+        prefix: &ContainerPrefix,
+    ) -> Result<Vec<String>, Error> {
+        self.inner.list_children(prefix).await
+    }
+
+    async fn delete_prefix(
+        &self,
+        prefix: &ContainerPrefix,
+    ) -> Result<u64, Error> {
+        // Purge around the backend call so a read in between cannot serve an
+        // entry that is being deleted, and bump the generation so a streamed
+        // write already in flight does not re-cache what the purge removed.
+        // Runs detached on native so cancelling the caller cannot leave the
+        // cache half-purged.
+        let inner = self.inner.clone();
+        let cached = self.cached.clone();
+        let purges = self.purges.clone();
+        let prefix = prefix.clone();
+        let purge = async move {
+            purges.fetch_add(1, Ordering::SeqCst);
+            purge_cached(&cached, &prefix);
+            let result = inner.delete_prefix(&prefix).await;
+            purge_cached(&cached, &prefix);
+            purges.fetch_add(1, Ordering::SeqCst);
+            result
+        };
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            tokio::spawn(purge).await.map_err(Error::custom)?
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            purge.await
+        }
     }
 
     async fn save_if_absent(
@@ -196,6 +259,7 @@ where
         };
 
         let cache_key = self.cache_key(container, key);
+        let generation = self.purges.load(Ordering::SeqCst);
         let result = self
             .inner
             .save_stream_if_absent(container, key, Box::pin(teed))
@@ -209,7 +273,9 @@ where
         match (&result, captured) {
             // Cache the captured bytes only when they are what was stored. On
             // `AlreadyExists` the stored object is a different, earlier entry.
-            (Ok(SaveOutcome::Stored), Some(buf)) => {
+            (Ok(SaveOutcome::Stored), Some(buf))
+                if self.purges.load(Ordering::SeqCst) == generation =>
+            {
                 self.cache().put(cache_key, buf.freeze());
             }
             _ => {
@@ -269,5 +335,20 @@ where
         }
 
         self.inner.size(container, key).await
+    }
+}
+
+/// Drops every cached entry whose object path starts with `prefix`.
+fn purge_cached(cached: &Mutex<Cache>, prefix: &ContainerPrefix) {
+    let mut cache = cached.lock().unwrap_or_else(PoisonError::into_inner);
+    let doomed: Vec<(String, String)> = cache
+        .iter()
+        .filter(|((container, key), _)| {
+            format!("{container}/{key}").starts_with(prefix.as_str())
+        })
+        .map(|(k, _)| k.clone())
+        .collect();
+    for key in doomed {
+        cache.pop(&key);
     }
 }

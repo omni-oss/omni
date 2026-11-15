@@ -1,18 +1,21 @@
 #![allow(clippy::redundant_field_names)]
 
-use std::path::PathBuf;
+use std::{collections::BTreeSet, path::PathBuf};
 
 use async_trait::async_trait;
 use bytes::Bytes;
 use bytesize::ByteSize;
 use derive_new::new;
-use tokio::{fs::File, io::AsyncWriteExt as _, task::JoinSet};
+use tokio::{
+    fs::File,
+    io::{AsyncReadExt as _, AsyncSeekExt as _, AsyncWriteExt as _},
+};
 use tokio_stream::StreamExt;
 use tokio_util::io::ReaderStream;
 
 use omni_remote_cache_storage_core::{
-    Container, ListItem, PageOptions, ReadStream, RemoteCacheStorageBackend,
-    SaveOutcome, WriteStream, error::Error,
+    ByteRange, Container, ContainerPrefix, ListItem, PrefixPage, ReadStream,
+    RemoteCacheStorageBackend, SaveOutcome, WriteStream, error::Error,
 };
 
 #[derive(Debug, new)]
@@ -42,8 +45,12 @@ impl LocalDiskCacheBackend {
     }
 
     fn dir(&self, container: &Container) -> Result<PathBuf, Error> {
-        let path = std::path::Path::new(container.as_str());
-        if container.as_str().contains(':')
+        self.dir_named(container.as_str())
+    }
+
+    fn dir_named(&self, name: &str) -> Result<PathBuf, Error> {
+        let path = std::path::Path::new(name);
+        if name.contains(':')
             || !path
                 .components()
                 .all(|part| matches!(part, std::path::Component::Normal(_)))
@@ -51,6 +58,135 @@ impl LocalDiskCacheBackend {
             return Err(Error::custom(eyre::eyre!("invalid local container")));
         }
         Ok(self.root.join(path))
+    }
+
+    /// Whether any component of `path` below the backend root is a symlink.
+    /// Stops at the first missing component, which cannot be a symlink.
+    async fn crosses_symlink(
+        &self,
+        path: &std::path::Path,
+    ) -> Result<bool, Error> {
+        let relative = path.strip_prefix(&self.root).map_err(Error::custom)?;
+        let mut current = self.root.clone();
+        for part in relative.components() {
+            current.push(part);
+            match tokio::fs::symlink_metadata(&current).await {
+                Ok(meta) if meta.is_symlink() => return Ok(true),
+                Ok(_) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                    return Ok(false);
+                }
+                Err(e) => return Err(Error::custom(e)),
+            }
+        }
+        Ok(false)
+    }
+
+    /// The directory of a prefix, or `None` when it does not exist. A prefix
+    /// that is a symlink or any other non-directory is an error, never followed.
+    async fn prefix_root(
+        &self,
+        prefix: &ContainerPrefix,
+    ) -> Result<Option<PathBuf>, Error> {
+        let name = prefix.as_str().strip_suffix('/').ok_or_else(|| {
+            Error::custom(eyre::eyre!("container prefix must end in '/'"))
+        })?;
+        let dir = self.dir_named(name)?;
+        if self.crosses_symlink(&dir).await? {
+            return Err(Error::custom(eyre::eyre!(
+                "local prefix {name:?} crosses a symlink"
+            )));
+        }
+        match tokio::fs::symlink_metadata(&dir).await {
+            Ok(meta) if meta.is_dir() => Ok(Some(dir)),
+            Ok(_) => Err(Error::custom(eyre::eyre!(
+                "local prefix {name:?} is not a directory"
+            ))),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(Error::custom(e)),
+        }
+    }
+
+    /// Every regular file under `dir` as (key relative to `dir` with '/'
+    /// separators, size). Symlinks and other special entries are skipped
+    /// without being followed.
+    async fn regular_files(
+        dir: &std::path::Path,
+    ) -> Result<Vec<(String, u64)>, Error> {
+        let mut files = Vec::new();
+        let mut pending = vec![(dir.to_path_buf(), String::new())];
+        while let Some((current, rel)) = pending.pop() {
+            let mut entries = match tokio::fs::read_dir(&current).await {
+                Ok(entries) => entries,
+                // Removed while walking (a concurrent purge): nothing left.
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+                Err(e) => return Err(Error::custom(e)),
+            };
+            while let Some(entry) =
+                entries.next_entry().await.map_err(Error::custom)?
+            {
+                // A name that is not UTF-8 cannot be a key we wrote, so it is
+                // not listed.
+                let Ok(name) = entry.file_name().into_string() else {
+                    continue;
+                };
+                let key = if rel.is_empty() {
+                    name
+                } else {
+                    format!("{rel}/{name}")
+                };
+                let Ok(file_type) = entry.file_type().await else {
+                    continue;
+                };
+                if file_type.is_dir() {
+                    pending.push((entry.path(), key));
+                } else if file_type.is_file() {
+                    let Ok(meta) = entry.metadata().await else {
+                        continue;
+                    };
+                    files.push((key, meta.len()));
+                }
+            }
+        }
+        Ok(files)
+    }
+
+    /// Number of regular files under `dir`, whatever their names. Tolerates
+    /// entries that vanish while walking.
+    async fn count_regular_files(dir: &std::path::Path) -> u64 {
+        let mut count = 0;
+        let mut pending = vec![dir.to_path_buf()];
+        while let Some(current) = pending.pop() {
+            let Ok(mut entries) = tokio::fs::read_dir(&current).await else {
+                continue;
+            };
+            while let Ok(Some(entry)) = entries.next_entry().await {
+                match entry.file_type().await {
+                    Ok(t) if t.is_dir() => pending.push(entry.path()),
+                    Ok(t) if t.is_file() => count += 1,
+                    _ => {}
+                }
+            }
+        }
+        count
+    }
+
+    /// Whether any regular file exists under `dir`; stops at the first.
+    async fn contains_file(dir: std::path::PathBuf) -> bool {
+        let mut pending = vec![dir];
+        while let Some(current) = pending.pop() {
+            let Ok(mut entries) = tokio::fs::read_dir(&current).await else {
+                continue;
+            };
+            while let Ok(Some(entry)) = entries.next_entry().await {
+                match entry.file_type().await {
+                    Ok(t) if t.is_file() => return true,
+                    Ok(t) if t.is_dir() => pending.push(entry.path()),
+                    _ => {}
+                }
+            }
+        }
+        false
     }
 
     async fn initialize_root(&self) -> Result<(), Error> {
@@ -193,74 +329,136 @@ impl RemoteCacheStorageBackend for LocalDiskCacheBackend {
         }
     }
 
+    async fn get_range(
+        &self,
+        container: &Container,
+        key: &str,
+        range: ByteRange,
+    ) -> Result<Option<Bytes>, Error> {
+        let path = self.path(key, container)?;
+
+        if self.crosses_symlink(&path).await? {
+            return Ok(None);
+        }
+        let meta = match tokio::fs::symlink_metadata(&path).await {
+            Ok(meta) => meta,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(None);
+            }
+            Err(e) => return Err(Error::custom(e)),
+        };
+        if !meta.is_file() {
+            return Ok(None);
+        }
+
+        let mut file = File::open(&path).await.map_err(Error::custom)?;
+        let len = file.metadata().await.map_err(Error::custom)?.len();
+        let selected = range.resolve(len);
+        if selected.is_empty() {
+            return Ok(Some(Bytes::new()));
+        }
+
+        let size = usize::try_from(selected.end - selected.start)
+            .map_err(Error::custom)?;
+        file.seek(std::io::SeekFrom::Start(selected.start))
+            .await
+            .map_err(Error::custom)?;
+        let mut buf = vec![0u8; size];
+        file.read_exact(&mut buf).await.map_err(Error::custom)?;
+
+        Ok(Some(Bytes::from_owner(buf)))
+    }
+
     async fn list(
         &self,
         container: &Container,
     ) -> Result<Vec<ListItem>, Error> {
-        let dir = self.dir(container)?;
-
-        if !tokio::fs::try_exists(&dir).await.map_err(Error::custom)? {
+        // One walk, rather than a walk per page of the provided default.
+        let Some(dir) = self.prefix_root(&container.prefix()).await? else {
             return Ok(Vec::new());
-        }
-
-        let mut read_dir =
-            tokio::fs::read_dir(&dir).await.map_err(Error::custom)?;
-
-        let mut futs = JoinSet::new();
-
-        while let Some(entry) =
-            read_dir.next_entry().await.map_err(Error::custom)?
-        {
-            let path = entry.path();
-            let key = path
-                .strip_prefix(&dir)
-                .map_err(Error::custom)?
-                .to_str()
-                .ok_or_else(|| Error::custom(eyre::eyre!("invalid path")))?
-                .to_string();
-            futs.spawn(async move {
-                let metadata =
-                    tokio::fs::metadata(&path).await.map_err(Error::custom)?;
-                Ok::<_, Error>(ListItem {
-                    key,
-                    size: ByteSize::b(metadata.len()),
-                })
-            });
-        }
-
-        let results = futs.join_all().await;
-        let mut items = Vec::with_capacity(results.len());
-
-        for result in results {
-            items.push(result.map_err(Error::custom)?);
-        }
-
-        Ok(items)
+        };
+        let mut files = Self::regular_files(&dir).await?;
+        files.sort_by(|a, b| a.0.cmp(&b.0));
+        Ok(files
+            .into_iter()
+            .map(|(key, len)| ListItem {
+                key,
+                size: ByteSize::b(len),
+            })
+            .collect())
     }
 
-    async fn paged_list(
+    async fn list_prefix(
         &self,
-        container: &Container,
-        query: PageOptions,
-    ) -> Result<Vec<ListItem>, Error> {
-        let all = self.list(container).await?;
+        prefix: &ContainerPrefix,
+        after: Option<&str>,
+        limit: u32,
+    ) -> Result<PrefixPage, Error> {
+        let Some(dir) = self.prefix_root(prefix).await? else {
+            return Ok(PrefixPage::default());
+        };
+        let mut files = Self::regular_files(&dir).await?;
+        files.sort_by(|a, b| a.0.cmp(&b.0));
 
-        let position = all
-            .iter()
-            .position(|item| {
-                if let Some(after_key) = query.after_key.as_ref() {
-                    item.key == *after_key
-                } else {
-                    true
-                }
-            })
-            .unwrap_or(0);
-
-        Ok(all
+        let limit = limit.max(1) as usize;
+        let remaining: Vec<ListItem> = files
             .into_iter()
-            .skip(position)
-            .take(query.per_page.unwrap_or(100) as usize)
-            .collect::<Vec<_>>())
+            .filter(|(key, _)| after.is_none_or(|after| key.as_str() > after))
+            .map(|(key, len)| ListItem {
+                key,
+                size: ByteSize::b(len),
+            })
+            .collect();
+        let more = remaining.len() > limit;
+        let items: Vec<ListItem> = remaining.into_iter().take(limit).collect();
+        let next_after = if more {
+            items.last().map(|item| item.key.clone())
+        } else {
+            None
+        };
+
+        Ok(PrefixPage { items, next_after })
+    }
+
+    async fn list_children(
+        &self,
+        prefix: &ContainerPrefix,
+    ) -> Result<Vec<String>, Error> {
+        let Some(dir) = self.prefix_root(prefix).await? else {
+            return Ok(Vec::new());
+        };
+        let mut children = BTreeSet::new();
+        let mut entries =
+            tokio::fs::read_dir(&dir).await.map_err(Error::custom)?;
+        while let Some(entry) =
+            entries.next_entry().await.map_err(Error::custom)?
+        {
+            let Ok(name) = entry.file_name().into_string() else {
+                continue;
+            };
+            // `file_type` does not follow symlinks.
+            let is_dir = entry.file_type().await.is_ok_and(|t| t.is_dir());
+            if is_dir && Self::contains_file(entry.path()).await {
+                children.insert(name);
+            }
+        }
+
+        Ok(children.into_iter().collect())
+    }
+
+    async fn delete_prefix(
+        &self,
+        prefix: &ContainerPrefix,
+    ) -> Result<u64, Error> {
+        let Some(dir) = self.prefix_root(prefix).await? else {
+            return Ok(0);
+        };
+        let removed = Self::count_regular_files(&dir).await;
+        tokio::fs::remove_dir_all(&dir)
+            .await
+            .map_err(Error::custom)?;
+
+        Ok(removed)
     }
 
     async fn save_if_absent(

@@ -1450,6 +1450,53 @@ decorator caches a streamed write only when the outcome is `Stored`.
   S3 backend spools each upload to a temporary file, so many concurrent uploads can
   still use disk up to the cap each.
 
+**Landed (storage primitives):** the storage trait gained `get_range`,
+`list_prefix`, `list_children` and `delete_prefix`, and lost `paged_list` and
+`PageOptions`. `list` is now a provided method that follows every `list_prefix` page,
+so it no longer stops at one S3 page (1000 keys) or reads only one directory level.
+
+- `get_range(Suffix(n) | Bounded(start, end))`: `Ok(None)` only for an absent object; a
+  range that selects nothing is `Ok(Some(empty))`; a range past the end is clamped
+  (`ByteRange::resolve`).
+- `list_prefix(prefix, after, limit)`: recursive, ascending byte order of the full
+  relative key, keys relative to the prefix, an exclusive key cursor, and `next_after`
+  set exactly when more keys may follow. A key cursor (S3 and R2 `start_after`) is used
+  everywhere instead of opaque tokens, so one cursor works on every backend.
+- `list_children(prefix)`: the immediate sub-prefixes that contain at least one object
+  (a leftover empty directory is not a child), sorted. This is how a purge learns the
+  environments or principals that exist.
+- `delete_prefix(prefix)`: returns the number removed; not atomic, and calling it
+  again finishes an interrupted purge. The trailing `/` of a `ContainerPrefix` keeps `ci`
+  from touching `ci2`.
+- One contract-test macro runs for local, memory and the LRU-wrapped memory backend
+  (range clamping, recursive and sibling-safe listing, every page size, children,
+  purge scope and re-use). S3 is covered by scripted-server request tests, and R2 only
+  by a `wasm32` type-check.
+- Local storage never follows a symlink in these operations, and refuses a container
+  reached through a symlinked directory. The older `get`, `exists`, `size` and `delete`
+  still follow symlinks; that needs a link planted inside the storage root, which no
+  client request can do, so it is recorded here and not widened into this change.
+- R2 resolves a range against the object's real size (a `HEAD`) and requests exactly
+  those bytes, so it never depends on how R2 treats a range past the end. `delete_prefix`
+  stays allowed under the R2 fail-closed write policy, since it only removes.
+- The LRU decorator serves `get_range` from a cached entry, and purges the cache for the
+  prefix before and after `delete_prefix`. It takes no per-key lock for that, so a write
+  racing a purge of its own prefix may survive it.
+- **Known limits.** Local `list_prefix` loads and sorts the whole subtree for every
+  page (`list` does one walk); fine for operator scans, not for huge trees. A purge
+  racing a concurrent upload may hit `ENOENT` or `ENOTEMPTY`; rerunning finishes it.
+  The local symlink checks have a check-to-use gap (same threat model as above: it needs
+  write access inside the storage root). S3 and R2 `list_children` and `delete_prefix`
+  see folder markers, which local does not. Case-insensitive filesystems can alias
+  names that S3 keeps distinct. S3 `get_range` buffers the whole range. The LRU purge
+  uses a generation counter so a streamed write in flight during a purge is not cached.
+- **Runtime gap (open gate).** The new primitives are untested at runtime on S3 (only
+  request shape against a scripted server; the `416` fallback and `DeleteObjects`
+  behaviour are assumed, and the 1000-key delete split is not exercised) and on R2
+  (type-check only). The section 5 plan needs MinIO or LocalStack and Miniflare runs.
+- Nothing calls these yet; the provenance and purge routes (slices 3 and 8) are the
+  consumers.
+
 **Open gates before this RFC can be Implemented:**
 
 - **R2 is not create-only, so R2 writes fail closed by default.** The Workers
@@ -1473,8 +1520,7 @@ decorator caches a streamed write only when the outcome is `Stored`.
 - **Oversized streams are tested at the route** (local storage), not per backend;
   S3, memory and R2 rely on the stream error aborting them. The `409` retries have no backoff (a racing delete is rare); add jitter if
   measurements show contention.
-- Not implemented yet: `get_range`, `list_prefix`, `delete_prefix`, complete
-  pagination, and slices 2-10.
+- Not implemented yet: slices 2-10, and the client reading the size cap.
 - Rollout order matters: block or upgrade every old client with write access, then
   purge legacy failed remote entries, then enable immutable writes. Otherwise an old
   client can repopulate a failed entry that then holds its digest (`409`) until an

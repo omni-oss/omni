@@ -1,6 +1,9 @@
 #![allow(clippy::redundant_field_names)]
 
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::{
+    collections::BTreeSet,
+    sync::{Mutex, MutexGuard, PoisonError},
+};
 
 use async_trait::async_trait;
 use bytes::{Bytes, BytesMut};
@@ -9,8 +12,8 @@ use derive_new::new;
 use futures::StreamExt as _;
 use maps::{Map, UnorderedMap};
 use omni_remote_cache_storage_core::{
-    Container, ListItem, PageOptions, ReadStream, RemoteCacheStorageBackend,
-    SaveOutcome, WriteStream, error::Error,
+    ByteRange, Container, ContainerPrefix, ListItem, PrefixPage, ReadStream,
+    RemoteCacheStorageBackend, SaveOutcome, WriteStream, error::Error,
 };
 
 #[derive(Debug, new)]
@@ -20,6 +23,24 @@ pub struct InMemoryBackend {
 }
 
 impl InMemoryBackend {
+    /// Every object whose full path starts with `prefix`, as (key relative to
+    /// the prefix, size).
+    fn matching(&self, prefix: &ContainerPrefix) -> Vec<(String, u64)> {
+        let prefix = prefix.as_str();
+        let containers = self.lock();
+        let mut out = Vec::new();
+        for (container, entries) in containers.iter() {
+            for (key, value) in entries.iter() {
+                if let Some(rel) =
+                    format!("{container}/{key}").strip_prefix(prefix)
+                {
+                    out.push((rel.to_string(), value.len() as u64));
+                }
+            }
+        }
+        out
+    }
+
     /// Check and insert under one lock acquisition, so concurrent creators
     /// agree on exactly one winner.
     fn insert_if_absent(
@@ -95,57 +116,106 @@ impl RemoteCacheStorageBackend for InMemoryBackend {
         Ok(result)
     }
 
+    async fn get_range(
+        &self,
+        container: &Container,
+        key: &str,
+        range: ByteRange,
+    ) -> Result<Option<Bytes>, Error> {
+        Ok(self
+            .lock()
+            .get(container.as_str())
+            .and_then(|m| m.get(key))
+            .map(|v| {
+                let selected = range.resolve(v.len() as u64);
+                Bytes::copy_from_slice(
+                    &v[selected.start as usize..selected.end as usize],
+                )
+            }))
+    }
+
     async fn list(
         &self,
         container: &Container,
     ) -> Result<Vec<ListItem>, Error> {
-        let len = self
-            .lock()
-            .get(container.as_str())
-            .map(|m| m.len())
-            .unwrap_or_default();
-
-        let paged_result = self
-            .paged_list(container, PageOptions::new(None, Some(len as u32)))
-            .await?;
-
-        Ok(paged_result)
+        // One scan, rather than a scan per page of the provided default.
+        let mut matching = self.matching(&container.prefix());
+        matching.sort_by(|a, b| a.0.cmp(&b.0));
+        Ok(matching
+            .into_iter()
+            .map(|(key, len)| ListItem {
+                key,
+                size: ByteSize::b(len),
+            })
+            .collect())
     }
 
-    async fn paged_list(
+    async fn list_prefix(
         &self,
-        container: &Container,
-        query: PageOptions,
-    ) -> Result<Vec<ListItem>, Error> {
-        let container = container.as_str();
-        let per_page = query.per_page.unwrap_or(100);
-        let items = self
-            .lock()
-            .get(container)
-            .map(|m| {
-                let position = m
-                    .iter()
-                    .position(|(k, _)| {
-                        if let Some(after_key) = query.after_key.as_ref() {
-                            *k == *after_key
-                        } else {
-                            true
-                        }
-                    })
-                    .unwrap_or(0);
+        prefix: &ContainerPrefix,
+        after: Option<&str>,
+        limit: u32,
+    ) -> Result<PrefixPage, Error> {
+        let mut matching = self.matching(prefix);
+        matching.sort_by(|a, b| a.0.cmp(&b.0));
 
-                m.iter()
-                    .skip(position)
-                    .map(|(k, v)| ListItem {
-                        key: k.clone(),
-                        size: ByteSize::b(v.len() as u64),
-                    })
-                    .take(per_page as usize)
-                    .collect::<Vec<_>>()
+        let limit = limit.max(1) as usize;
+        let remaining: Vec<ListItem> = matching
+            .into_iter()
+            .filter(|(key, _)| after.is_none_or(|after| key.as_str() > after))
+            .map(|(key, len)| ListItem {
+                key,
+                size: ByteSize::b(len),
             })
-            .unwrap_or_default();
+            .collect();
+        let more = remaining.len() > limit;
+        let items: Vec<ListItem> = remaining.into_iter().take(limit).collect();
+        let next_after = if more {
+            items.last().map(|item| item.key.clone())
+        } else {
+            None
+        };
 
-        Ok(items)
+        Ok(PrefixPage { items, next_after })
+    }
+
+    async fn list_children(
+        &self,
+        prefix: &ContainerPrefix,
+    ) -> Result<Vec<String>, Error> {
+        let children: BTreeSet<String> = self
+            .matching(prefix)
+            .into_iter()
+            .filter_map(|(key, _)| {
+                key.split_once('/').map(|(first, _)| first.to_string())
+            })
+            .collect();
+
+        Ok(children.into_iter().collect())
+    }
+
+    async fn delete_prefix(
+        &self,
+        prefix: &ContainerPrefix,
+    ) -> Result<u64, Error> {
+        let mut containers = self.lock();
+        let mut removed = 0u64;
+        for (container, entries) in containers.iter_mut() {
+            let doomed: Vec<String> = entries
+                .keys()
+                .filter(|key| {
+                    format!("{container}/{key}").starts_with(prefix.as_str())
+                })
+                .cloned()
+                .collect();
+            for key in &doomed {
+                entries.swap_remove(key);
+            }
+            removed += doomed.len() as u64;
+        }
+        containers.retain(|_, entries| !entries.is_empty());
+
+        Ok(removed)
     }
 
     async fn save_if_absent(
