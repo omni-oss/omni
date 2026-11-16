@@ -4,11 +4,12 @@ use std::{
 };
 
 use derive_new::new;
+use omni_utils::lock::LockGuard;
 use tokio::sync::Mutex;
 use tracing::Level;
 
 use crate::{
-    LockfileSys,
+    LockfileSaveSys, LockfileSys,
     error::Error,
     lockfile_data::{LockfileData, LockfileDataV1_0_0, PinLockData},
 };
@@ -169,17 +170,44 @@ impl Lockfile {
         }
     }
 
-    pub async fn save(&self, sys: &impl LockfileSys) -> Result<(), Error> {
+    /// Publish the sorted lockfile atomically. Callers must serialize writers.
+    pub async fn save(&self, sys: &impl LockfileSaveSys) -> Result<(), Error> {
+        self.save_inner(sys, None).await
+    }
+
+    /// Save while owning the caller's workspace lock through publication.
+    ///
+    /// The blocking publisher retains the guard even if this future is dropped.
+    pub async fn save_locked(
+        &self,
+        sys: &impl LockfileSaveSys,
+        guard: LockGuard,
+    ) -> Result<(), Error> {
+        self.save_inner(sys, Some(guard)).await
+    }
+
+    async fn save_inner(
+        &self,
+        sys: &impl LockfileSaveSys,
+        guard: Option<LockGuard>,
+    ) -> Result<(), Error> {
         let is_modified = self.is_modified.load(Ordering::Relaxed);
         if is_modified {
             let data = self.data.lock().await;
             let sorted = sorted_view(&data);
-            omni_file_data_serde::write_async(
-                self.path.as_path(),
-                &sorted,
-                sys,
-            )
-            .await?;
+            let format = omni_file_data_serde::ext_to_format(
+                self.path.extension().unwrap_or_default(),
+            )?;
+            let bytes = omni_file_data_serde::to_vec(&sorted, format)?;
+            let sys = sys.clone();
+            let path = self.path.clone();
+            tokio::task::spawn_blocking(move || {
+                let _guard = guard;
+                omni_utils::atomic_file::write(&sys, &path, &bytes)
+            })
+            .await
+            .map_err(eyre::Report::from)?
+            .map_err(eyre::Report::from)?;
         }
         Ok(())
     }

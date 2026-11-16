@@ -2,7 +2,10 @@ use std::{
     collections::{BTreeMap, HashSet},
     ffi::OsString,
     path::{Path, PathBuf},
-    sync::atomic::{AtomicU64, Ordering},
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -17,7 +20,7 @@ use crate::{
     error::Error,
     manager::config::RemoteSourceConfig,
     manager::tree,
-    refs::{RefSetData, RefSetDataV1_0_0},
+    refs::{RefSetData, RefSetDataV1_0_0, RefUpdate},
     source::{MaterializedSource, RemoteSource, RemoteSourceRef},
     sys::RemoteSourceSys,
 };
@@ -71,11 +74,11 @@ static PENDING_COUNTER: AtomicU64 = AtomicU64::new(0);
 type PinKey = (String, String, String);
 
 pub struct RemoteSourceManager<TSys: RemoteSourceSys> {
-    lockfile: Lockfile,
+    lockfile: Arc<Lockfile>,
     /// Entries this manager locked (`Some`) or invalidated (`None`). Only these
     /// are written back, so a pin another process changed since we loaded is
     /// never overwritten with our stale copy.
-    changed: std::sync::Mutex<BTreeMap<PinKey, Option<String>>>,
+    changed: Arc<std::sync::Mutex<BTreeMap<PinKey, Option<String>>>>,
     lockfile_path: PathBuf,
     store_root_path: PathBuf,
     drivers: DriverRegistry<TSys>,
@@ -101,7 +104,7 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
         let lockfile_path = config.lockfile_path;
         let lockfile = Lockfile::load(lockfile_path.clone(), &sys).await?;
         let manager = RemoteSourceManager {
-            lockfile,
+            lockfile: Arc::new(lockfile),
             changed: Default::default(),
             lockfile_path,
             sys,
@@ -169,8 +172,11 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
     /// Drop saved changes, so a later save never replays them over a pin
     /// another process changed since. A change recorded after the snapshot
     /// is kept.
-    fn forget_saved(&self, saved: BTreeMap<PinKey, Option<String>>) {
-        let mut changed = self.changed.lock().expect("pins mutex poisoned");
+    fn forget_saved(
+        changed: &std::sync::Mutex<BTreeMap<PinKey, Option<String>>>,
+        saved: BTreeMap<PinKey, Option<String>>,
+    ) {
+        let mut changed = changed.lock().expect("pins mutex poisoned");
         for (key, pin) in saved {
             if changed.get(&key) == Some(&pin) {
                 changed.remove(&key);
@@ -187,6 +193,42 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
             ),
             pin.map(str::to_string),
         );
+    }
+
+    /// Once publication starts, caller cancellation must not skip corresponding
+    /// in-memory cleanup. The owned task retains both state and the workspace
+    /// lock through the save and cleanup, not just through the disk rename.
+    async fn commit_pins(
+        &self,
+        disk: Lockfile,
+        guard: LockGuard,
+        saved: BTreeMap<PinKey, Option<String>>,
+        retained: Option<HashSet<PinKey>>,
+    ) -> Result<(), Error> {
+        let lockfile = Arc::clone(&self.lockfile);
+        let changed = Arc::clone(&self.changed);
+        let sys = self.sys.clone();
+        tokio::spawn(async move {
+            let _guard = guard;
+            let result = async {
+                disk.save(&sys).await?;
+                Self::forget_saved(&changed, saved);
+                if let Some(retained) = retained {
+                    // Force the next materialization of a removed pin to resolve
+                    // and record it, even when its complete tree still exists.
+                    Self::prune_lockfile_pins(&lockfile, &retained).await?;
+                }
+                Ok::<(), Error>(())
+            }
+            .await;
+            if let Err(error) = &result {
+                // An aborted caller cannot receive the detached commit's error.
+                tracing::warn!(%error, "source pin publication failed");
+            }
+            result
+        })
+        .await
+        .map_err(|error| Error::custom(error.to_string()))?
     }
 }
 
@@ -289,27 +331,91 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
     /// Persist the reference set a subsystem resolved on its last run to
     /// `refs/<id>.json`, sorted so the file has stable diffs. These files are
     /// the garbage-collection roots unioned by [`reconcile_pins`](Self::reconcile_pins).
+    /// Compatibility wrapper for `update_refs(..., RefUpdate::ReplaceComplete, ...)`;
+    /// new callers should state the update mode explicitly.
     pub async fn record_refs(
         &self,
         id: &str,
         refs: &[RemoteSourceRef],
     ) -> Result<(), Error> {
-        let mut data = RefSetDataV1_0_0::default();
+        self.update_refs(id, RefUpdate::ReplaceComplete, refs).await
+    }
+
+    /// Atomically update one subsystem's references under the workspace lock.
+    ///
+    /// Both modes reject corrupt or unreadable existing sets. IDs and pins must
+    /// be safe path segments. Updates never modify a sibling subsystem. Once
+    /// publication starts, cancellation may still commit the complete update;
+    /// the publisher keeps the workspace lock until it finishes.
+    pub async fn update_refs(
+        &self,
+        id: &str,
+        mode: RefUpdate,
+        refs: &[RemoteSourceRef],
+    ) -> Result<(), Error> {
+        if !is_safe_segment(id) {
+            return Err(Error::custom(format!(
+                "unsafe reference set id {id:?}"
+            )));
+        }
         for r in refs {
+            check_pin(r.source.kind(), &r.source.spec(), &r.pin)?;
+        }
+        let guard =
+            LockGuard::acquire_exclusive(self.advisory_lock_path()).await?;
+        let refs_dir = self.refs_dir();
+        let path = refs_dir.join(format!("{id}.json"));
+        // Only NotFound is empty; permission/read/parse failures must never
+        // silently reset an existing set to a partial additive update.
+        let existing = match self.sys.fs_read_async(&path).await {
+            Ok(bytes) => {
+                let data: RefSetData = omni_file_data_serde::from_slice(
+                    &bytes,
+                    omni_file_data_serde::Format::Json,
+                )?;
+                let RefSetData::V1_0_0(data) = data;
+                for (kind, locators) in &data.sources {
+                    self.check_kind(kind, &path)?;
+                    for selectors in locators.values() {
+                        for value in selectors.values() {
+                            if !is_safe_segment(&value.pin) {
+                                return Err(Error::custom(format!(
+                                    "{} contains an unsafe reference pin",
+                                    path.display()
+                                )));
+                            }
+                        }
+                    }
+                }
+                data
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                RefSetDataV1_0_0::default()
+            }
+            Err(error) => return Err(error.into()),
+        };
+        let mut data = match mode {
+            RefUpdate::ReplaceComplete => RefSetDataV1_0_0::default(),
+            RefUpdate::MergeAdditive => existing,
+        };
+        for r in refs {
+            self.check_kind(r.source.kind(), &path)?;
             let spec = r.source.spec();
             data.insert(r.source.kind(), &spec.locator, &spec.selector, &r.pin);
         }
 
-        let refs_dir = self.refs_dir();
         self.sys.fs_create_dir_all_async(&refs_dir).await?;
-        let path = refs_dir.join(format!("{id}.json"));
-        omni_file_data_serde::write_async(
-            &path,
+        let bytes = omni_file_data_serde::to_vec(
             &RefSetData::V1_0_0(data),
-            &self.sys,
-        )
-        .await?;
-
+            omni_file_data_serde::Format::Json,
+        )?;
+        let sys = self.sys.clone();
+        tokio::task::spawn_blocking(move || {
+            let _guard = guard;
+            omni_utils::atomic_file::write(&sys, &path, &bytes)
+        })
+        .await
+        .map_err(|error| Error::custom(error.to_string()))??;
         Ok(())
     }
 
@@ -321,8 +427,11 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
     /// workspaces, and the reference sets here belong to one of them, so it
     /// cannot tell which checkouts another workspace still needs. Removing
     /// checkouts is the explicit prune command's job.
+    ///
+    /// Once the owned commit phase starts, cancelling the waiter does not cancel
+    /// disk publication or the matching in-memory cleanup.
     pub async fn reconcile_pins(&self) -> Result<(), Error> {
-        let _guard =
+        let guard =
             LockGuard::acquire_exclusive(self.advisory_lock_path()).await?;
 
         let mut retained: HashSet<(String, String, String)> = HashSet::new();
@@ -359,31 +468,23 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
         let saved = self.merge_own_pins(&disk).await?;
         Self::prune_lockfile_pins(&disk, &retained).await?;
         self.ensure_lockfile_parent().await?;
-        disk.save(&self.sys).await?;
-        self.forget_saved(saved);
-        // Drop them from memory too, so a later materialization resolves and
-        // records them again instead of trusting a pin no longer saved.
-        Self::prune_lockfile_pins(&self.lockfile, &retained).await?;
-
-        Ok(())
+        self.commit_pins(disk, guard, saved, Some(retained)).await
     }
 
     /// Merge this manager's in-memory pins onto whatever is currently on disk
     /// and save the result, under the exclusive advisory lock. Additive by
     /// design: a lazy subsystem run never drops pins a sibling subsystem or a
     /// concurrent process just added, and never prunes.
+    /// Once commit starts, cancellation does not skip saved-change cleanup.
     pub async fn persist_pins(&self) -> Result<(), Error> {
-        let _guard =
+        let guard =
             LockGuard::acquire_exclusive(self.advisory_lock_path()).await?;
 
         let disk = self.load_lockfile().await?;
         let saved = self.merge_own_pins(&disk).await?;
 
         self.ensure_lockfile_parent().await?;
-        disk.save(&self.sys).await?;
-        self.forget_saved(saved);
-
-        Ok(())
+        self.commit_pins(disk, guard, saved, None).await
     }
 
     /// Export `pin` into `tree` through a pending directory so a reader never
@@ -555,8 +656,7 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
 
 impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
     pub async fn lock(&self) -> Result<(), Error> {
-        self.lockfile.save(&self.sys).await?;
-        Ok(())
+        self.persist_pins().await
     }
 
     /// The pin currently locked for `source`, if any.

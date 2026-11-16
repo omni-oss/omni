@@ -15,6 +15,9 @@ use crate::{
 impl<TSys> OmniMcpServer<TSys>
 where
     TSys: ContextSys
+        + system_traits::FsOpen
+        + system_traits::FsRename
+        + system_traits::FsRemoveFile
         + GeneratorSys
         + TaskExecutorSys
         + FsSys

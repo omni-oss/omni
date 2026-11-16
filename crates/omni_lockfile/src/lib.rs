@@ -8,4 +8,4 @@ mod sys;
 pub use lockfile_data as data;
 
 pub use lockfile::Lockfile;
-pub use sys::LockfileSys;
+pub use sys::{LockfileSaveSys, LockfileSys};

@@ -1,3 +1,4 @@
+pub mod atomic_file;
 pub mod env;
 pub mod fs;
 pub mod glob;
