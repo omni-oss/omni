@@ -13,41 +13,81 @@ pub(crate) enum Origin {
     Isolated,
 }
 
-impl Origin {
-    /// One line: `v1 origin=<shared|isolated> verified_by=none`. Signature
-    /// verification (a later slice) fills `verified_by`.
-    pub(crate) fn marker_text(self) -> String {
-        let origin = match self {
-            Self::Shared => "shared",
-            Self::Isolated => "isolated",
+/// What a marker records: where the entry came from and which trusted key
+/// verified it at restore time (never taken from the server).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Marker {
+    pub origin: Origin,
+    pub verified_by: Option<String>,
+}
+
+impl Marker {
+    /// One line: `v1 origin=<shared|isolated> verified_by=<16 hex|none>`.
+    pub(crate) fn text(&self) -> String {
+        let origin = match self.origin {
+            Origin::Shared => "shared",
+            Origin::Isolated => "isolated",
         };
-        format!("v1 origin={origin} verified_by=none\n")
+        format!(
+            "v1 origin={origin} verified_by={}\n",
+            self.verified_by.as_deref().unwrap_or("none")
+        )
     }
 
-    /// Anything that is not exactly a shared marker reads as isolated, the
-    /// least trusted origin.
+    /// Strict: anything that is not exactly the line above reads as isolated
+    /// and unverified, the least trusted reading.
     fn parse(text: &str) -> Self {
-        let mut words = text.split_whitespace();
-        match (words.next(), words.next()) {
-            (Some("v1"), Some("origin=shared")) => Self::Shared,
-            _ => Self::Isolated,
+        let worst = Self {
+            origin: Origin::Isolated,
+            verified_by: None,
+        };
+        let Some(line) = text.strip_suffix('\n') else {
+            return worst;
+        };
+        let words: Vec<&str> = line.split(' ').collect();
+        let [version, origin, verified] = words[..] else {
+            return worst;
+        };
+        let origin = match (version, origin) {
+            ("v1", "origin=shared") => Origin::Shared,
+            ("v1", "origin=isolated") => Origin::Isolated,
+            _ => return worst,
+        };
+        let verified_by = match verified.strip_prefix("verified_by=") {
+            Some("none") => None,
+            Some(id) if omni_remote_cache_client::is_key_id(id) => {
+                Some(id.to_owned())
+            }
+            _ => return worst,
+        };
+        // A key id cannot vouch for an isolated entry.
+        if origin == Origin::Isolated && verified_by.is_some() {
+            return worst;
+        }
+        Self {
+            origin,
+            verified_by,
         }
     }
 }
 
-/// The origin recorded in `entry_dir`: `None` for an entry with no marker (one
-/// built locally), `Some` otherwise.
-pub(crate) async fn read_marker(entry_dir: &Path) -> Option<Origin> {
+/// The marker in `entry_dir`: `None` for an entry with no marker (one built
+/// locally), `Some` otherwise.
+pub(crate) async fn read_marker(entry_dir: &Path) -> Option<Marker> {
+    let worst = || Marker {
+        origin: Origin::Isolated,
+        verified_by: None,
+    };
     match tokio::fs::read(entry_dir.join(ORIGIN_MARKER)).await {
         Ok(bytes) => {
             // A marker is one short line; anything else is unreadable.
             if bytes.len() > 256 {
-                return Some(Origin::Isolated);
+                return Some(worst());
             }
-            Some(Origin::parse(&String::from_utf8_lossy(&bytes)))
+            Some(Marker::parse(&String::from_utf8_lossy(&bytes)))
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
-        Err(_) => Some(Origin::Isolated),
+        Err(_) => Some(worst()),
     }
 }
 
@@ -55,31 +95,52 @@ pub(crate) async fn read_marker(entry_dir: &Path) -> Option<Origin> {
 mod tests {
     use super::*;
 
+    const KEY: &str = "0123456789abcdef";
+
+    fn marker(origin: Origin, verified_by: Option<&str>) -> Marker {
+        Marker {
+            origin,
+            verified_by: verified_by.map(str::to_owned),
+        }
+    }
+
     #[tokio::test]
     async fn markers_round_trip_and_anything_odd_is_isolated() {
         let temp = tempfile::tempdir().unwrap();
         let dir = temp.path();
         assert_eq!(read_marker(dir).await, None);
-        for origin in [Origin::Shared, Origin::Isolated] {
-            tokio::fs::write(dir.join(ORIGIN_MARKER), origin.marker_text())
+        for m in [
+            marker(Origin::Shared, None),
+            marker(Origin::Shared, Some(KEY)),
+            marker(Origin::Isolated, None),
+        ] {
+            tokio::fs::write(dir.join(ORIGIN_MARKER), m.text())
                 .await
                 .unwrap();
-            assert_eq!(read_marker(dir).await, Some(origin));
+            assert_eq!(read_marker(dir).await, Some(m));
         }
-        for odd in ["", "garbage", "v2 origin=shared", "origin=shared"] {
+        let worst = Some(marker(Origin::Isolated, None));
+        for odd in [
+            "",
+            "garbage",
+            "v2 origin=shared verified_by=none\n",
+            "v1 origin=shared\n",
+            "v1 origin=shared verified_by=none",
+            "v1 origin=shared verified_by=ABCDEF0123456789\n",
+            "v1 origin=shared verified_by=0123\n",
+            "v1 origin=isolated verified_by=0123456789abcdef\n",
+            "v1 origin=shared verified_by=none extra\n",
+            "v1  origin=shared verified_by=none\n",
+        ] {
             tokio::fs::write(dir.join(ORIGIN_MARKER), odd)
                 .await
                 .unwrap();
-            assert_eq!(
-                read_marker(dir).await,
-                Some(Origin::Isolated),
-                "{odd:?}"
-            );
+            assert_eq!(read_marker(dir).await, worst, "{odd:?}");
         }
         tokio::fs::write(dir.join(ORIGIN_MARKER), "x".repeat(1000))
             .await
             .unwrap();
-        assert_eq!(read_marker(dir).await, Some(Origin::Isolated));
+        assert_eq!(read_marker(dir).await, worst);
         // A marker that is a directory cannot be read: isolated.
         tokio::fs::remove_file(dir.join(ORIGIN_MARKER))
             .await
@@ -87,6 +148,6 @@ mod tests {
         tokio::fs::create_dir(dir.join(ORIGIN_MARKER))
             .await
             .unwrap();
-        assert_eq!(read_marker(dir).await, Some(Origin::Isolated));
+        assert_eq!(read_marker(dir).await, worst);
     }
 }

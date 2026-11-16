@@ -21,7 +21,7 @@ use omni_hasher::{
     impls::{DefaultHash, DefaultHasher},
 };
 use omni_remote_cache_client::{
-    DEFAULT_MAX_ARTIFACT_SIZE, DefaultRemoteCacheClient, Placement,
+    DEFAULT_MAX_ARTIFACT_SIZE, DefaultRemoteCacheClient, Placement, PutOutcome,
     RemoteAccessArgs, RemoteCacheClient, RemoteCacheClientError,
 };
 use omni_task_context::{
@@ -67,7 +67,13 @@ use omni_glob::{GlobOptions, GlobPatterns, include_set};
 
 use omni_hasher::project_dir_hasher::impls::RealDirHasherError;
 
-use super::cache_archive::unarchive_bytes;
+use super::{
+    cache_archive::unarchive_bytes,
+    signing_policy::EffectiveVerify,
+    verify::{
+        SigningPlan, Verdict, plan_shared_uploads, sha256_of, verify_shared,
+    },
+};
 
 #[derive(Clone, Debug)]
 pub struct HybridTaskExecutionCacheStore {
@@ -242,6 +248,11 @@ impl EnabledRemoteConfig {
             )
     }
 
+    /// The environment code used in every URL and in the signed message.
+    pub(super) fn env_code(&self) -> &str {
+        self.environment_code.as_deref().unwrap_or("default")
+    }
+
     fn access<'a>(
         &'a self,
         placement: Placement,
@@ -251,13 +262,14 @@ impl EnabledRemoteConfig {
         RemoteAccessArgs {
             api_key: &self.api_key,
             api_base_url: &self.api_base_url,
-            env: self.environment_code.as_deref().unwrap_or("default"),
+            env: self.env_code(),
             org: &self.organization_code,
             tenant: &self.tenant_code,
             ws: &self.workspace_code,
             placement,
             scope: Some(label),
             max_artifact_size: Some(cap),
+            signature: None,
         }
     }
 }
@@ -370,6 +382,7 @@ impl HybridTaskExecutionCacheStore {
                     };
                 }
                 let probe = self.probe(conf).await;
+                let trusted_ids = conf.signing.trusted_ids();
                 let epoch = super::partition::trust_epoch(
                     &super::partition::EpochInputs {
                         api_base_url: &conf.api_base_url,
@@ -377,8 +390,8 @@ impl HybridTaskExecutionCacheStore {
                         org: &conf.organization_code,
                         ws: &conf.workspace_code,
                         env: conf.environment_code.as_deref(),
-                        trusted_key_ids: &[],
-                        verify_mode: "off",
+                        trusted_key_ids: &trusted_ids,
+                        verify_mode: conf.signing.verify.as_str(),
                     },
                 );
                 let untrusted = !probe.refused
@@ -487,11 +500,10 @@ impl HybridTaskExecutionCacheStore {
 /// (`InvalidData`) leaves nothing behind.
 async fn restore_staged(
     entry_dir: &Path,
-    bytes: &[u8],
-    origin: super::origin::Origin,
+    bytes: Bytes,
+    marker: super::origin::Marker,
 ) -> std::io::Result<()> {
     let staging = staging_dir_for(entry_dir);
-    let bytes = bytes.to_vec();
     let extract = {
         let staging = staging.clone();
         tokio::task::spawn_blocking(move || unarchive_bytes(&staging, &bytes))
@@ -503,7 +515,7 @@ async fn restore_staged(
         extract?;
         tokio::fs::write(
             staging.join(super::origin::ORIGIN_MARKER),
-            origin.marker_text(),
+            marker.text(),
         )
         .await?;
         publish_staged_dir(
@@ -1064,6 +1076,21 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                 return Ok(cache_exec_hashes);
             }
 
+            // A shared entry is signed when this machine has a key. A workspace
+            // that trusts keys never gets an unsigned shared upload from here.
+            let signer = if conf.target == RemoteTarget::Shared {
+                match plan_shared_uploads(&conf.signing) {
+                    SigningPlan::Unsigned => None,
+                    SigningPlan::Sign(handle) => Some(handle),
+                    SigningPlan::Refuse(reason) => {
+                        tracing::warn!(%reason, "not uploading to the shared remote cache");
+                        return Ok(cache_exec_hashes);
+                    }
+                }
+            } else {
+                None
+            };
+
             tracing::debug!("Uploading remote cache artifacts...");
             let mut tasks = JoinSet::new();
             // Bound archive buffers as well as network requests. Acquire inside
@@ -1077,6 +1104,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                 let label = label.clone();
                 let digest = bs58::encode(hash.digest).into_string();
                 let upload_slots = upload_slots.clone();
+                let signer = signer.clone();
 
                 tasks.spawn(async move {
                     let _permit = upload_slots
@@ -1087,8 +1115,6 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                         RemoteTarget::Shared => Placement::Shared,
                         RemoteTarget::Isolated => Placement::Isolated,
                     };
-                    let config = conf.access(placement, &label, cap);
-
                     let upload = async {
                         // No existence pre-check: the server stores entries
                         // create-only and answers `409` for an existing one,
@@ -1100,13 +1126,50 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                         };
                         archive(&output_dir, &mut artifact)?;
 
-                        client
-                            .put_artifact(
-                                &config,
-                                &digest,
-                                Bytes::from(artifact.buffer),
-                            )
+                        let artifact = Bytes::from(artifact.buffer);
+                        let signature = match &signer {
+                            Some(signer) => {
+                                let hash = sha256_of(artifact.clone())
+                                    .await
+                                    .map_err(std::io::Error::other)?;
+                                Some(signer.sign(&omni_remote_cache_client::signed_message(
+                                    &conf.tenant_code,
+                                    &conf.organization_code,
+                                    &conf.workspace_code,
+                                    conf.env_code(),
+                                    &digest,
+                                    &hash,
+                                )))
+                            }
+                            None => None,
+                        };
+                        let mut config = conf.access(placement, &label, cap);
+                        config.signature = signature.as_deref();
+
+                        let outcome = client
+                            .put_artifact_outcome(&config, &digest, artifact)
                             .await?;
+
+                        // Entries are immutable, so an existing shared entry
+                        // stays. A publisher checks that it is a good one and
+                        // says so if it is not, since nothing else will.
+                        if outcome == PutOutcome::AlreadyExists
+                            && placement == Placement::Shared
+                            && conf.signing.verify != EffectiveVerify::Off
+                        {
+                            let read = conf.access(Placement::Shared, &label, cap);
+                            match client.get_artifact_entry(&read, &digest).await {
+                                Ok(Some(existing)) => {
+                                    if let Verdict::Failed(reason) =
+                                        verify_shared(&conf, &digest, &existing).await
+                                    {
+                                        tracing::warn!(%digest, %reason, "the shared entry already stored for this digest does not verify; purge it so it can be published again");
+                                    }
+                                }
+                                Ok(None) => {}
+                                Err(e) => tracing::debug!(%digest, error = %e, "could not check the existing shared entry"),
+                            }
+                        }
 
                         Ok::<_, LocalTaskExecutionCacheStoreError>(())
                     }
@@ -1173,13 +1236,28 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                 // cannot be here unless a cache directory was shared against
                 // the guidance, and it is removed so the entry is rebuilt or
                 // fetched like a miss.
+                let marker = super::origin::read_marker(output_dir).await;
                 if !untrusted
-                    && super::origin::read_marker(output_dir).await
+                    && marker.as_ref().map(|m| m.origin)
                         == Some(super::origin::Origin::Isolated)
                 {
                     tracing::warn!(
                         project = %project.task.project_name,
                         "discarding a local entry restored from an isolated remote namespace"
+                    );
+                    tokio::fs::remove_dir_all(output_dir).await?;
+                } else if conf.signing.verify == EffectiveVerify::Require
+                    && let Some(m) = &marker
+                    && m.origin == super::origin::Origin::Shared
+                    && !m.verified_by.as_ref().is_some_and(|id| {
+                        conf.signing.trusted.iter().any(|k| k.id() == id)
+                    })
+                {
+                    // Restored under a weaker policy, or signed by a key that
+                    // is no longer trusted: not reusable under `require`.
+                    tracing::warn!(
+                        project = %project.task.project_name,
+                        "discarding a local remote entry that was not verified by a currently trusted key"
                     );
                     tokio::fs::remove_dir_all(output_dir).await?;
                 }
@@ -1222,9 +1300,10 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                     let mut response = None;
                     for &placement in placements {
                         let access = conf.access(placement, &label, cap);
-                        match client.get_artifact(&access, &digest).await {
-                            Ok(Some(bytes)) => {
-                                response = Some((bytes, placement));
+                        match client.get_artifact_entry(&access, &digest).await
+                        {
+                            Ok(Some(artifact)) => {
+                                response = Some((artifact, placement));
                                 break;
                             }
                             Ok(None) => {}
@@ -1239,15 +1318,47 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                         }
                     }
 
-                    if let Some((bytes, placement)) = response {
+                    if let Some((artifact, placement)) = response {
                         tracing::debug!("fetched remote cache for {}", digest);
-                        let origin = match placement {
-                            Placement::Shared => super::origin::Origin::Shared,
-                            Placement::Isolated => {
-                                super::origin::Origin::Isolated
+                        // Shared entries are checked before a single byte is
+                        // extracted. Isolated ones are unsigned by design: only
+                        // an untrusted run ever reads them.
+                        let verified_by = if placement == Placement::Shared {
+                            match verify_shared(&conf, &digest, &artifact).await {
+                                Verdict::Verified(id) => Some(id),
+                                Verdict::Skipped => None,
+                                Verdict::Failed(reason) => {
+                                    match conf.signing.verify {
+                                        EffectiveVerify::Require => {
+                                            tracing::warn!(%digest, %reason, "rejecting a remote cache entry that failed verification");
+                                            return Ok(());
+                                        }
+                                        _ => {
+                                            tracing::warn!(%digest, %reason, "restoring a remote cache entry that failed verification (verify: warn)");
+                                            None
+                                        }
+                                    }
+                                }
                             }
+                        } else {
+                            None
                         };
-                        match restore_staged(&output_dir, &bytes, origin).await
+                        // `verified_by` records only a verification that
+                        // `require` depends on; `warn` and `off` write `none`.
+                        let marker = super::origin::Marker {
+                            origin: match placement {
+                                Placement::Shared => {
+                                    super::origin::Origin::Shared
+                                }
+                                Placement::Isolated => {
+                                    super::origin::Origin::Isolated
+                                }
+                            },
+                            verified_by: verified_by
+                                .filter(|_| conf.signing.verify == EffectiveVerify::Require),
+                        };
+                        match restore_staged(&output_dir, artifact.bytes, marker)
+                            .await
                         {
                             Ok(()) => {}
                             // Rejected before anything was written (a link, an
@@ -2297,6 +2408,8 @@ mod tests {
         requests: Arc<std::sync::Mutex<Vec<(String, Bytes)>>>,
         /// The request line of every request, probe included.
         lines: Arc<std::sync::Mutex<Vec<String>>>,
+        /// The whole request head of every request, probe included.
+        heads: Arc<std::sync::Mutex<Vec<String>>>,
         server: tokio::task::JoinHandle<()>,
         push: bool,
         target: RemoteTarget,
@@ -2319,6 +2432,8 @@ mod tests {
             let captured = requests.clone();
             let lines = Arc::new(std::sync::Mutex::new(Vec::new()));
             let seen_lines = lines.clone();
+            let heads = Arc::new(std::sync::Mutex::new(Vec::new()));
+            let seen_heads = heads.clone();
             let probe_headers = Arc::new(std::sync::Mutex::new(String::new()));
             let probe_extra = probe_headers.clone();
             let server = tokio::spawn(async move {
@@ -2332,6 +2447,7 @@ mod tests {
                     let header = String::from_utf8(header).unwrap();
                     let line = header.lines().next().unwrap().to_string();
                     seen_lines.lock().unwrap().push(line.clone());
+                    seen_heads.lock().unwrap().push(header.clone());
                     if line.starts_with("HEAD /v1/artifacts?") {
                         let extra = probe_extra.lock().unwrap().clone();
                         let response = format!(
@@ -2395,6 +2511,7 @@ mod tests {
                 url,
                 requests,
                 lines,
+                heads,
                 server,
                 push: true,
                 target: RemoteTarget::Isolated,
@@ -2735,6 +2852,302 @@ mod tests {
             .unwrap();
         assert!(after.projects.iter().all(|p| p.tasks.is_empty()));
         assert_eq!(remote.lines.lock().unwrap().len(), probes_before);
+    }
+
+    #[tokio::test]
+    async fn a_shared_upload_is_signed_and_the_signature_verifies() {
+        let key = signer();
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("key");
+        let kp = omni_remote_cache_client::generate_keypair().unwrap();
+        std::fs::write(&file, format!("{}\n", *kp.private_key)).unwrap();
+        let mut remote = RemoteUploadSpy::with_scopes(
+            204,
+            "read:artifacts,write:artifacts,publish:artifacts",
+        )
+        .await;
+        remote.target = RemoteTarget::Shared;
+        let temp = fixture(&["project1"]).await;
+        let mut cache = remote.cache(temp.path());
+        if let RemoteConfig::Enabled(conf) = &mut cache.remote_config {
+            conf.signing =
+                Box::new(super::super::signing_policy::SigningPolicy {
+                    verify: EffectiveVerify::Require,
+                    trusted: vec![
+                        omni_remote_cache_client::TrustedKey::parse(
+                            &kp.id,
+                            &kp.public_key,
+                        )
+                        .unwrap(),
+                        omni_remote_cache_client::TrustedKey::parse(
+                            &key.id,
+                            &key.public_key,
+                        )
+                        .unwrap(),
+                    ],
+                    signing_key: Some(
+                        omni_configurations::SigningKeyConfiguration {
+                            id: kp.id.clone(),
+                            private_key_env: None,
+                            private_key_file: Some(file),
+                        },
+                    ),
+                });
+        }
+        let t0 = task("task", "project1", temp.path());
+        cache
+            .cache(&new_cache_info_with_exit_code(
+                Some(&LOGS_CONTENT),
+                *t0.get(),
+                0,
+            ))
+            .await
+            .unwrap();
+        let requests = remote.requests.lock().unwrap().clone();
+        let heads = remote.heads.lock().unwrap().clone();
+        let put = heads
+            .iter()
+            .find(|h| h.starts_with("PUT"))
+            .expect("an upload");
+        let body = &requests.iter().find(|r| r.0 == "PUT").unwrap().1;
+        let signature = put
+            .lines()
+            .find_map(|l| l.strip_prefix("x-omni-signature: "))
+            .expect("a signature header");
+        let digest = put
+            .split_whitespace()
+            .nth(1)
+            .unwrap()
+            .trim_start_matches("/v1/artifacts/")
+            .split('?')
+            .next()
+            .unwrap();
+        // It verifies for exactly this place, digest and archive hash.
+        use sha2::{Digest as _, Sha256};
+        let hash: [u8; 32] = Sha256::digest(body).into();
+        let message = omni_remote_cache_client::signed_message(
+            "t", "o", "w", "e", digest, &hash,
+        );
+        let trusted =
+            omni_remote_cache_client::TrustedKey::parse(&kp.id, &kp.public_key)
+                .unwrap();
+        assert_eq!(
+            omni_remote_cache_client::verify(
+                &[trusted],
+                Some(signature),
+                &message
+            ),
+            Ok(kp.id.clone())
+        );
+    }
+
+    #[tokio::test]
+    async fn a_workspace_that_trusts_keys_gets_no_unsigned_shared_upload() {
+        let key = signer();
+        let mut remote = RemoteUploadSpy::with_scopes(
+            204,
+            "read:artifacts,write:artifacts,publish:artifacts",
+        )
+        .await;
+        remote.target = RemoteTarget::Shared;
+        let temp = fixture(&["project1"]).await;
+        let mut cache = remote.cache(temp.path());
+        if let RemoteConfig::Enabled(conf) = &mut cache.remote_config {
+            conf.signing =
+                Box::new(super::super::signing_policy::SigningPolicy {
+                    verify: EffectiveVerify::Require,
+                    trusted: vec![
+                        omni_remote_cache_client::TrustedKey::parse(
+                            &key.id,
+                            &key.public_key,
+                        )
+                        .unwrap(),
+                    ],
+                    signing_key: None,
+                });
+        }
+        let t0 = task("task", "project1", temp.path());
+        cache
+            .cache(&new_cache_info_with_exit_code(
+                Some(&LOGS_CONTENT),
+                *t0.get(),
+                0,
+            ))
+            .await
+            .unwrap();
+        assert!(remote.requests.lock().unwrap().is_empty());
+        // The same machine can still publish unsigned when nothing is trusted.
+        let remote = RemoteUploadSpy::with_scopes(
+            204,
+            "read:artifacts,write:artifacts,publish:artifacts",
+        )
+        .await;
+        let mut remote = remote;
+        remote.target = RemoteTarget::Shared;
+        let temp = fixture(&["project1"]).await;
+        let cache = remote.cache(temp.path());
+        let t0 = task("task", "project1", temp.path());
+        cache
+            .cache(&new_cache_info_with_exit_code(
+                Some(&LOGS_CONTENT),
+                *t0.get(),
+                0,
+            ))
+            .await
+            .unwrap();
+        let heads = remote.heads.lock().unwrap();
+        let put = heads
+            .iter()
+            .find(|h| h.starts_with("PUT"))
+            .expect("an upload");
+        assert!(!put.to_ascii_lowercase().contains("x-omni-signature"));
+    }
+
+    #[tokio::test]
+    async fn a_run_under_require_discards_an_entry_no_trusted_key_verified() {
+        let temp = fixture(&["project1"]).await;
+        let t0 = task("task", "project1", temp.path());
+        let archive = genuine_archive(&temp, t0.get()).await;
+        let digest = digest_of(&temp, t0.get()).await;
+        let good = signer();
+        let headers = Arc::new(std::sync::Mutex::new(signed_headers(
+            &good, &archive, &digest, "e",
+        )));
+        let (url, server) = serve_with_live_headers(
+            archive.clone(),
+            "read:artifacts",
+            headers.clone(),
+        )
+        .await;
+        let store =
+            verifying_store(&temp, &url, &[&good], EffectiveVerify::Require);
+        store.get(t0.get()).await.unwrap().unwrap();
+        let found = markers(&store.cache_dir);
+        assert_eq!(found.len(), 1);
+        let marker = store.cache_dir.join(&found[0].0);
+
+        // While a trusted key vouches for it, the local entry is reused even
+        // if the server would now refuse to serve it.
+        *headers.lock().unwrap() = String::new();
+        let reuse =
+            verifying_store(&temp, &url, &[&good], EffectiveVerify::Require);
+        assert!(reuse.get(t0.get()).await.unwrap().is_some());
+        assert!(marker.exists());
+
+        // Restored under a weaker policy (`none`), it is not reusable under
+        // `require`: it is discarded, and the unsigned refetch is a miss.
+        std::fs::write(&marker, "v1 origin=shared verified_by=none\n").unwrap();
+        let strict =
+            verifying_store(&temp, &url, &[&good], EffectiveVerify::Require);
+        assert!(strict.get(t0.get()).await.unwrap().is_none());
+        assert!(!marker.exists(), "the unverified entry was kept");
+
+        // A key that is not trusted today does not vouch either.
+        let other = signer();
+        std::fs::create_dir_all(marker.parent().unwrap()).unwrap();
+        std::fs::write(
+            &marker,
+            format!("v1 origin=shared verified_by={}\n", other.id),
+        )
+        .unwrap();
+        // (The metadata file is gone with the discarded entry, so this only
+        // exercises the marker rule: the directory is removed.)
+        let again =
+            verifying_store(&temp, &url, &[&good], EffectiveVerify::Require);
+        let _ = again.get(t0.get()).await;
+        assert!(
+            !marker.exists(),
+            "an entry vouched for by an untrusted key was kept"
+        );
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn an_untrusted_run_still_verifies_the_shared_fallback() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let temp = fixture(&["project1"]).await;
+        let t0 = task("task", "project1", temp.path());
+        let archive = genuine_archive(&temp, t0.get()).await;
+        let listener =
+            tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let seen = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let log = seen.clone();
+        let body = archive.clone();
+        let server = tokio::spawn(async move {
+            loop {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut head = Vec::new();
+                while !head.ends_with(b"\r\n\r\n") {
+                    head.push(socket.read_u8().await.unwrap());
+                }
+                let head = String::from_utf8(head).unwrap();
+                let line = head.lines().next().unwrap().to_string();
+                log.lock().unwrap().push(line.clone());
+                let response = if line.starts_with("HEAD /v1/artifacts?") {
+                    b"HTTP/1.1 204 No Content\r\nx-omni-scopes: read:artifacts,write:artifacts\r\nx-omni-principal-id: ci\r\nx-omni-scope: pr-9\r\nConnection: close\r\n\r\n".to_vec()
+                } else if line.starts_with("GET ")
+                    && line.contains("namespace=isolated")
+                {
+                    b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_vec()
+                } else {
+                    // The shared entry: valid archive, but unsigned.
+                    let mut r = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nx-omni-content-sha256: {}\r\nConnection: close\r\n\r\n",
+                        body.len(),
+                        hex_of(&body)
+                    )
+                    .into_bytes();
+                    r.extend_from_slice(&body);
+                    r
+                };
+                socket.write_all(&response).await.unwrap();
+            }
+        });
+        let trusted = signer();
+        let store =
+            verifying_store(&temp, &url, &[&trusted], EffectiveVerify::Require);
+        assert!(store.get(t0.get()).await.unwrap().is_none());
+        server.abort();
+        let lines = seen.lock().unwrap().clone();
+        assert!(
+            lines.iter().any(|l| l.contains("namespace=isolated")),
+            "{lines:?}"
+        );
+        assert!(
+            lines.iter().any(
+                |l| l.starts_with("GET ") && l.contains("namespace=shared")
+            ),
+            "{lines:?}"
+        );
+        assert!(
+            markers(&store.cache_dir).is_empty(),
+            "an unsigned shared entry was restored"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_policy_selects_the_local_partition() {
+        let temp = fixture(&["project1"]).await;
+        let (url, server) =
+            serve_with_headers(vec![], "read:artifacts", String::new()).await;
+        let (a, b) = (signer(), signer());
+        let dir = |trusted: &[&Signer], mode| {
+            let store = verifying_store(&temp, &url, trusted, mode);
+            async move { store.local_partition().await.dir.clone() }
+        };
+        let base = dir(&[&a], EffectiveVerify::Require).await;
+        assert_eq!(base, dir(&[&a], EffectiveVerify::Require).await);
+        for other in [
+            dir(&[&a, &b], EffectiveVerify::Require).await,
+            dir(&[&b], EffectiveVerify::Require).await,
+            dir(&[], EffectiveVerify::Require).await,
+            dir(&[&a], EffectiveVerify::Warn).await,
+            dir(&[&a], EffectiveVerify::Off).await,
+        ] {
+            assert_ne!(base, other);
+        }
+        server.abort();
     }
 
     #[tokio::test]
@@ -3484,6 +3897,259 @@ mod tests {
             }
         });
         (url, server)
+    }
+
+    /// Like [`serve_with_probe`], with `extra` response headers (each ending in
+    /// CRLF) on every `GET`.
+    async fn serve_with_headers(
+        body: Vec<u8>,
+        scopes: &'static str,
+        extra: String,
+    ) -> (String, tokio::task::JoinHandle<()>) {
+        serve_with_live_headers(
+            body,
+            scopes,
+            Arc::new(std::sync::Mutex::new(extra)),
+        )
+        .await
+    }
+
+    /// As [`serve_with_headers`], with headers a test can change while the
+    /// server runs.
+    async fn serve_with_live_headers(
+        body: Vec<u8>,
+        scopes: &'static str,
+        extra: Arc<std::sync::Mutex<String>>,
+    ) -> (String, tokio::task::JoinHandle<()>) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener =
+            tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            loop {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut header = Vec::new();
+                while !header.ends_with(b"\r\n\r\n") {
+                    header.push(socket.read_u8().await.unwrap());
+                }
+                let response = if header.starts_with(b"HEAD /v1/artifacts?") {
+                    format!("HTTP/1.1 204 No Content\r\nx-omni-scopes: {scopes}\r\nConnection: close\r\n\r\n").into_bytes()
+                } else if header.starts_with(b"GET ") {
+                    let extra = extra.lock().unwrap().clone();
+                    let mut head = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n{extra}Connection: close\r\n\r\n",
+                        body.len()
+                    )
+                    .into_bytes();
+                    head.extend_from_slice(&body);
+                    head
+                } else {
+                    b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_vec()
+                };
+                socket.write_all(&response).await.unwrap();
+            }
+        });
+        (url, server)
+    }
+
+    fn hex_of(bytes: &[u8]) -> String {
+        use sha2::{Digest as _, Sha256};
+        Sha256::digest(bytes)
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect()
+    }
+
+    /// The digest a restore asks for, as it appears in URLs and signatures.
+    async fn digest_of(
+        temp: &tempfile::TempDir,
+        info: &TaskExecutionInfo<'_>,
+    ) -> String {
+        let store = cache_store(temp.path());
+        let collected = store
+            .collect(
+                &[*info],
+                &CollectConfig {
+                    digests: true,
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        bs58::encode(collected[0].digest.unwrap()).into_string()
+    }
+
+    struct Signer {
+        handle: omni_remote_cache_client::SigningHandle,
+        public_key: String,
+        id: String,
+    }
+
+    fn signer() -> Signer {
+        let kp = omni_remote_cache_client::generate_keypair().unwrap();
+        Signer {
+            handle: omni_remote_cache_client::SigningHandle::from_base64(
+                &kp.private_key,
+            )
+            .unwrap(),
+            public_key: kp.public_key,
+            id: kp.id,
+        }
+    }
+
+    fn signed_headers(
+        signer: &Signer,
+        archive: &[u8],
+        digest: &str,
+        env: &str,
+    ) -> String {
+        use sha2::{Digest as _, Sha256};
+        let hash: [u8; 32] = Sha256::digest(archive).into();
+        let message = omni_remote_cache_client::signed_message(
+            "t", "o", "w", env, digest, &hash,
+        );
+        format!(
+            "x-omni-content-sha256: {}\r\nx-omni-signature: {}\r\n",
+            hex_of(archive),
+            signer.handle.sign(&message)
+        )
+    }
+
+    fn verifying_store(
+        temp: &tempfile::TempDir,
+        url: &str,
+        trusted: &[&Signer],
+        mode: EffectiveVerify,
+    ) -> HybridTaskExecutionCacheStore {
+        let mut store = remote_store(temp.path(), url);
+        if let RemoteConfig::Enabled(conf) = &mut store.remote_config {
+            conf.signing =
+                Box::new(super::super::signing_policy::SigningPolicy {
+                    verify: mode,
+                    trusted: trusted
+                        .iter()
+                        .map(|s| {
+                            omni_remote_cache_client::TrustedKey::parse(
+                                &s.id,
+                                &s.public_key,
+                            )
+                            .unwrap()
+                        })
+                        .collect(),
+                    signing_key: None,
+                });
+        }
+        store
+    }
+
+    #[tokio::test]
+    async fn require_restores_only_entries_signed_by_a_trusted_key() {
+        let temp = fixture(&["project1"]).await;
+        let t0 = task("task", "project1", temp.path());
+        let archive = genuine_archive(&temp, t0.get()).await;
+        let digest = digest_of(&temp, t0.get()).await;
+        let good = signer();
+        let stranger = signer();
+
+        // Signed by the trusted key: restored, and the marker names the key.
+        let headers = signed_headers(&good, &archive, &digest, "e");
+        let (url, server) = serve_with_headers(
+            archive.clone(),
+            "read:artifacts",
+            headers.clone(),
+        )
+        .await;
+        let store =
+            verifying_store(&temp, &url, &[&good], EffectiveVerify::Require);
+        assert!(store.get(t0.get()).await.unwrap().is_some());
+        server.abort();
+        let found = markers(&store.cache_dir);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(
+            found[0].1,
+            format!("v1 origin=shared verified_by={}\n", good.id)
+        );
+
+        // Each of these must be a miss that extracts nothing.
+        let other_digest =
+            signed_headers(&good, &archive, "someotherdigest", "e");
+        let other_env = signed_headers(&good, &archive, &digest, "e2");
+        let by_stranger = signed_headers(&stranger, &archive, &digest, "e");
+        let tampered_bytes =
+            signed_headers(&good, b"different archive", &digest, "e");
+        // A correct hash header for the served bytes, but a signature made over
+        // the hash of other bytes: only the signature check can catch it.
+        let mismatched_signature = {
+            let sig_line = tampered_bytes.lines().nth(1).unwrap();
+            format!(
+                "x-omni-content-sha256: {}\r\n{sig_line}\r\n",
+                hex_of(&archive)
+            )
+        };
+        let mut no_signature = headers.clone();
+        no_signature = no_signature
+            .lines()
+            .next()
+            .map(|l| format!("{l}\r\n"))
+            .unwrap();
+        for (name, header) in [
+            ("replayed under another digest", other_digest),
+            ("replayed under another environment", other_env),
+            ("signed by an untrusted key", by_stranger),
+            (
+                "hash header and signature cover other bytes",
+                tampered_bytes,
+            ),
+            (
+                "signature covers other bytes than the hash header",
+                mismatched_signature,
+            ),
+            ("unsigned", no_signature),
+            ("no provenance at all (fails the hash check)", String::new()),
+        ] {
+            let fresh = fixture(&["project1"]).await;
+            let ft = task("task", "project1", fresh.path());
+            let (url, server) =
+                serve_with_headers(archive.clone(), "read:artifacts", header)
+                    .await;
+            let store = verifying_store(
+                &fresh,
+                &url,
+                &[&good],
+                EffectiveVerify::Require,
+            );
+            assert!(store.get(ft.get()).await.unwrap().is_none(), "{name}");
+            server.abort();
+            assert!(
+                markers(&store.cache_dir).is_empty(),
+                "{name}: extracted something"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn warn_restores_with_no_key_recorded_and_off_does_not_check() {
+        let temp = fixture(&["project1"]).await;
+        let t0 = task("task", "project1", temp.path());
+        let archive = genuine_archive(&temp, t0.get()).await;
+        for mode in [EffectiveVerify::Warn, EffectiveVerify::Off] {
+            let fresh = fixture(&["project1"]).await;
+            let ft = task("task", "project1", fresh.path());
+            let (url, server) = serve_with_headers(
+                archive.clone(),
+                "read:artifacts",
+                String::new(),
+            )
+            .await;
+            let store = verifying_store(&fresh, &url, &[], mode);
+            assert!(store.get(ft.get()).await.unwrap().is_some(), "{mode:?}");
+            server.abort();
+            let found = markers(&store.cache_dir);
+            assert_eq!(
+                found[0].1, "v1 origin=shared verified_by=none\n",
+                "{mode:?}"
+            );
+        }
     }
 
     /// Every origin marker under `dir`, with the partition it is in.

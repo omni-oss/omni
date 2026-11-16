@@ -50,6 +50,14 @@ impl<'a, TSys: TaskExecutorSys, S: ExecutionEventSubscriber>
 
         let task_count: usize = execution_plan.iter().map(|b| b.len()).sum();
 
+        // The signing key is for omni's own uploads: no task needs it.
+        if let Some(rc) = self.context.remote_cache_configuration()
+            && let Some(key) = &rc.signing_key
+            && let Some(name) = &key.private_key_env
+        {
+            omni_process::protect_env_var(name);
+        }
+
         let store_provider = ContextCacheStoreProvider::new(self.context);
         let cache_store = store_provider.get_cache_store();
 

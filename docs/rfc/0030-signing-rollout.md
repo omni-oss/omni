@@ -136,4 +136,14 @@ Checks per batch: tests for touched crates, clippy `-D warnings`, fmt, wasm32 wo
 ## Status
 
 7a implemented (signing module, policy types and resolver, setup flags, `omni cache keygen`).
-7b next.
+7b implemented: the server accepts one well formed `X-Omni-Signature` on shared uploads (400 on isolated,
+malformed or duplicate); the client sends it, reads provenance headers once (duplicates make the entry
+unverifiable), signs shared uploads (refusing them when keys are trusted and none is held), verifies
+shared hits on the in-memory bytes before extraction, applies the three modes, records `verified_by`
+only under `require`, discards unverified or untrusted-key entries under `require`, puts the resolved
+mode and key ids in the trust epoch, and checks an existing shared entry after a `409`.
+The key's environment variable is removed from every child process (`omni_process::protect_env_var`,
+registered by the pipeline). Not done (recorded in RFC section 8): registering the key with task log
+redaction; the `omni-tests` end-to-end compromise scenario. Opus's pre-commit review found that shared
+uploads were not refused when `require` left a machine with no trusted key (an invalid or narrowed
+configuration): fixed, `require` without a signing key now refuses shared uploads.

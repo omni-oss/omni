@@ -31,6 +31,7 @@ yoke = { workspace = true }
 omni_types = { workspace = true, features = ["serde"] }
 globset = { workspace = true }
 bytes = { workspace = true }
+zeroize = { workspace = true }
 tracing = { workspace = true }
 time = { workspace = true }
 omni_glob = { workspace = true }

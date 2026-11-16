@@ -12,6 +12,7 @@
 //! the authenticated caller and a validated request, so no client-supplied text
 //! reaches a path unchecked.
 
+#[cfg(test)]
 use omni_path_utils::is_safe_literal;
 pub use omni_path_utils::{MAX_SCOPE_LEN, is_valid_scope_label, segment};
 use omni_remote_cache_storage_core::{Container, ContainerPrefix};

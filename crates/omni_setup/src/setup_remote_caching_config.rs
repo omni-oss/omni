@@ -113,6 +113,7 @@ pub async fn setup_remote_caching_config_async<TClient: RemoteCacheClient>(
                 _ => None,
             },
             max_artifact_size: None,
+            signature: None,
         })
         .await?;
 

@@ -40,6 +40,9 @@ pub struct RemoteAccessArgs<'a> {
     /// [`DEFAULT_MAX_ARTIFACT_SIZE`].
     #[new(default)]
     pub max_artifact_size: Option<u64>,
+    /// `X-Omni-Signature` for a shared upload, built by the caller.
+    #[new(default)]
+    pub signature: Option<&'a str>,
 }
 
 /// The download cap when nothing else is configured (256 MiB, the server's
@@ -82,6 +85,27 @@ pub struct ValidateAccessResult {
     pub scope: Option<String>,
 }
 
+/// A downloaded artifact with the provenance the server reported. The server
+/// is not trusted for any of it: a verifier recomputes the hash itself.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RemoteArtifact {
+    pub bytes: Bytes,
+    /// `X-Omni-Content-Sha256`, when it was sent exactly once.
+    pub sha256: Option<String>,
+    /// `X-Omni-Signature`, when it was sent exactly once.
+    pub signature: Option<String>,
+    /// The server sent either header more than once: treat it as unverifiable.
+    pub ambiguous_provenance: bool,
+}
+
+/// What a `PUT` did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PutOutcome {
+    Stored,
+    /// An entry already existed and was kept (`409`): entries are immutable.
+    AlreadyExists,
+}
+
 #[async_trait]
 pub trait RemoteCacheClient: Send + Sync + 'static {
     async fn validate_access(
@@ -89,11 +113,23 @@ pub trait RemoteCacheClient: Send + Sync + 'static {
         remote: &RemoteAccessArgs,
     ) -> Result<ValidateAccessResult, RemoteCacheClientError>;
 
+    /// Download an artifact with the provenance headers the server sent.
+    async fn get_artifact_entry(
+        &self,
+        remote: &RemoteAccessArgs,
+        digest: &str,
+    ) -> Result<Option<RemoteArtifact>, RemoteCacheClientError>;
+
     async fn get_artifact(
         &self,
         remote: &RemoteAccessArgs,
         digest: &str,
-    ) -> Result<Option<Bytes>, RemoteCacheClientError>;
+    ) -> Result<Option<Bytes>, RemoteCacheClientError> {
+        Ok(self
+            .get_artifact_entry(remote, digest)
+            .await?
+            .map(|artifact| artifact.bytes))
+    }
 
     async fn artifact_exists(
         &self,
@@ -104,12 +140,23 @@ pub trait RemoteCacheClient: Send + Sync + 'static {
     /// Upload an artifact. An existing immutable entry (`409 Conflict`) is
     /// accepted as success; other rejection statuses remain errors for the
     /// caller to report without failing task execution.
+    async fn put_artifact_outcome(
+        &self,
+        remote: &RemoteAccessArgs,
+        digest: &str,
+        artifact: Bytes,
+    ) -> Result<PutOutcome, RemoteCacheClientError>;
+
     async fn put_artifact(
         &self,
         remote: &RemoteAccessArgs,
         digest: &str,
         artifact: Bytes,
-    ) -> Result<(), RemoteCacheClientError>;
+    ) -> Result<(), RemoteCacheClientError> {
+        self.put_artifact_outcome(remote, digest, artifact)
+            .await
+            .map(|_| ())
+    }
 }
 
 #[derive(Debug, thiserror::Error, new)]

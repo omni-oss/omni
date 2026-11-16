@@ -694,3 +694,73 @@ async fn the_probe_reports_the_principal_segment_and_the_effective_scope() {
         .await
         .assert_status(StatusCode::BAD_REQUEST);
 }
+
+fn signature() -> String {
+    format!("{}:{}=", "0123456789abcdef", "A".repeat(87))
+}
+
+#[tokio::test]
+async fn a_shared_entry_stores_its_signature_and_serves_it_back() {
+    let (s, backend) = server();
+    put(&s, "pub|rwp|-", "&target=shared", "d1", "x")
+        .add_header("X-Omni-Signature", signature())
+        .await
+        .assert_status(StatusCode::NO_CONTENT);
+    let got = get(&s, "reader|r|-", "", "d1").await;
+    got.assert_status_ok();
+    assert_eq!(got.header("x-omni-signature"), signature().as_str());
+    let entry = read_entry(
+        backend.as_ref(),
+        &Container::parse("shared/t/o/w/e").unwrap(),
+        "d1",
+    )
+    .await
+    .unwrap();
+    let EntryRead::Valid(entry) = entry else {
+        panic!("sealed")
+    };
+    assert_eq!(entry.parsed.trailer.signature, Some(signature()));
+
+    // Unsigned entries stay valid and report no signature.
+    put(&s, "pub|rwp|-", "&target=shared", "d2", "y")
+        .await
+        .assert_status(StatusCode::NO_CONTENT);
+    assert!(
+        get(&s, "reader|r|-", "", "d2")
+            .await
+            .maybe_header("x-omni-signature")
+            .is_none()
+    );
+}
+
+#[tokio::test]
+async fn a_signature_is_refused_on_isolated_uploads_and_when_malformed() {
+    let (s, backend) = server();
+    let isolated = put(&s, "a|rw|-", "&target=isolated", "d1", "x")
+        .add_header("X-Omni-Signature", signature())
+        .await;
+    isolated.assert_status(StatusCode::BAD_REQUEST);
+    for bad in [
+        "nope",
+        &signature().to_uppercase(),
+        &format!("{}A", signature()),
+    ] {
+        put(&s, "pub|rwp|-", "&target=shared", "d2", "x")
+            .add_header("X-Omni-Signature", bad)
+            .await
+            .assert_status(StatusCode::BAD_REQUEST);
+    }
+    put(&s, "pub|rwp|-", "&target=shared", "d3", "x")
+        .add_header("X-Omni-Signature", signature())
+        .add_header("X-Omni-Signature", signature())
+        .await
+        .assert_status(StatusCode::BAD_REQUEST);
+    // Nothing was stored by any refused upload.
+    assert!(
+        backend
+            .list(&Container::parse("shared/t/o/w/e").unwrap())
+            .await
+            .unwrap()
+            .is_empty()
+    );
+}

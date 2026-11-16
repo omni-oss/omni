@@ -90,6 +90,55 @@ Setup warns when the credential cannot do what you asked, such as `--target shar
 without `publish:artifacts`. The client asks the server once per run what the
 credential may do and uses the answer only to skip requests that cannot succeed.
 
+## Signing shared entries
+
+Anyone who can reach the server or its storage can try to serve a build that
+looks like yours. Signing lets a client check that a shared entry was produced by
+a key you trust, so it does not have to trust the server at all.
+
+1. Run `omni cache keygen` once. Commit the public key; keep the private key in the
+   secret store of the job that publishes.
+2. Trust the key in `workspace.omni.yaml`:
+
+   ```yaml
+   remote_cache:
+     signing:
+       trusted_keys:
+         - id: 3f9a1c07d2b84e61 # derived from the key; a mismatch is an error
+           name: ci-2026-11
+           public_key: "<base64>"
+       verify: auto
+   ```
+
+3. On the publishing machine, point setup at the key without storing it:
+   `omni cache remote setup ... --target shared --signing-key-id 3f9a1c07d2b84e61 --signing-key-env OMNI_SIGNING_KEY`.
+
+`verify` is `auto` by default: `require` when any key is trusted, otherwise `off`.
+`warn` checks and reports but still restores; `require` treats a failure as a miss
+and runs the task. A machine's own setup can only tighten this (`--verify`) or
+narrow the trusted keys (`--trusted-key`); it can never turn verification down.
+Shared uploads are signed over the tenant, organization, workspace, environment,
+digest and a hash of the archive, so an entry cannot be replayed under another
+digest or environment. Isolated entries are unsigned and are only ever read by
+untrusted runs with the same credential and scope. Whenever signatures are required, a machine with no signing key
+refuses to upload to the shared namespace.
+
+Verification happens before anything is extracted. An entry restored under a
+weaker policy, or signed by a key that is no longer trusted, is not reused under
+`require`. Changing the trusted keys or the mode starts a fresh local partition.
+Rotation: trust the old and new keys, switch the publisher, then remove the old
+key. Entries signed by a removed key are misses, and they cannot be published again
+until they are purged. When a publisher finds the shared entry for a digest does not
+verify, it says so in the log.
+
+A signature vouches for the publisher, not the server address, so the same key
+signing for another server with the same codes is accepted. The key id is 64
+bits: it selects a key you already trust and the signature is always checked
+against that key. Omni removes the signing key's environment variable from the
+environment of every task it runs, but expose it only to the step that signs
+regardless. A workspace file with `remote_cache` is rejected
+by omni versions that do not know the section.
+
 ## Local cache partitions
 
 With remote caching on, the local cache directory is split by how far a run trusts

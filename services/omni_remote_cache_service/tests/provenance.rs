@@ -184,6 +184,8 @@ async fn a_stored_entry_is_the_artifact_then_server_authored_provenance() {
     assert!(sealed_len > FOOTER_LEN);
 }
 
+/// A signature on an isolated upload is refused outright (see the namespaces
+/// tests), so it is not among the forged headers here.
 #[tokio::test]
 async fn nothing_the_client_sends_can_set_provenance() {
     let root = tempfile::tempdir().unwrap();
@@ -196,7 +198,6 @@ async fn nothing_the_client_sends_can_set_provenance() {
         .add_header("X-Omni-Namespace", "isolated/other")
         .add_header("X-Omni-Scope", "pr-1")
         .add_header("X-Omni-Stored-At", "1999-01-01T00:00:00Z")
-        .add_header("X-Omni-Signature", "key:AAAA")
         .add_header("X-Omni-Writer", "admin")
         .bytes(Bytes::from_static(artifact))
         .await

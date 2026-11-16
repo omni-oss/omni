@@ -134,6 +134,23 @@ pub async fn put_artifact(
         }
     };
 
+    // Only a shared entry is signed (RFC 0030, section 4.5), and the server
+    // never verifies: it stores a well formed string for readers to check.
+    let signature = match declared_signature(&headers) {
+        Ok(None) => None,
+        Ok(Some(_)) if placement.trailer_namespace() != "shared" => {
+            return (
+                StatusCode::BAD_REQUEST,
+                "only a shared entry can carry X-Omni-Signature",
+            )
+                .into_response();
+        }
+        Ok(Some(signature)) => Some(signature),
+        Err(message) => {
+            return (StatusCode::BAD_REQUEST, message).into_response();
+        }
+    };
+
     let hook_ctx = before_hook!(
         state,
         ArtifactOp::Put,
@@ -172,7 +189,7 @@ pub async fn put_artifact(
             writer_principal: caller.principal().to_owned(),
             namespace: placement.trailer_namespace().to_owned(),
             scope: placement.scope(),
-            signature: None,
+            signature,
             now: OffsetDateTime::now_utc,
         },
     );
@@ -220,6 +237,42 @@ fn declared_length(headers: &HeaderMap) -> Option<u64> {
         .ok()
 }
 
+/// An optional `X-Omni-Signature`: at most one header, `<16 lowercase hex key
+/// id>:<88 characters of padded base64>`, so whatever is stored reads back.
+fn declared_signature(
+    headers: &HeaderMap,
+) -> Result<Option<String>, &'static str> {
+    let mut values = headers.get_all("x-omni-signature").iter();
+    let Some(value) = values.next() else {
+        return Ok(None);
+    };
+    if values.next().is_some() {
+        return Err("send at most one X-Omni-Signature header");
+    }
+    match value.to_str() {
+        Ok(text) if is_well_formed_signature(text) => Ok(Some(text.to_owned())),
+        _ => Err(
+            "X-Omni-Signature must be <16 hex key id>:<88 base64 characters>",
+        ),
+    }
+}
+
+/// True for `<16 lowercase hex>:<88 characters of padded standard base64>`.
+fn is_well_formed_signature(text: &str) -> bool {
+    let Some((id, encoded)) = text.split_once(':') else {
+        return false;
+    };
+    id.len() == 16
+        && id.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+        && encoded.len() == 88
+        && encoded.ends_with('=')
+        && !encoded.ends_with("===")
+        && encoded
+            .trim_end_matches('=')
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'+' || b == b'/')
+}
+
 /// The client's SHA-256 of the artifact: exactly one `X-Omni-Content-Sha256`
 /// header holding 64 lowercase hex characters.
 fn declared_sha256(headers: &HeaderMap) -> Result<String, &'static str> {
@@ -241,6 +294,35 @@ fn declared_sha256(headers: &HeaderMap) -> Result<String, &'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_signature_grammar_is_strict_and_optional() {
+        let sig = format!("{}:{}=", "0123456789abcdef", "A".repeat(87));
+        let one = |value: &str| {
+            let mut headers = HeaderMap::new();
+            headers.insert("x-omni-signature", value.parse().unwrap());
+            declared_signature(&headers)
+        };
+        assert_eq!(declared_signature(&HeaderMap::new()), Ok(None));
+        assert_eq!(one(&sig), Ok(Some(sig.clone())));
+        for bad in [
+            sig.to_uppercase(),
+            sig.replace(':', ";"),
+            format!("{}:{}=", "0123456789abcde", "A".repeat(87)),
+            format!("{}:{}", "0123456789abcdef", "A".repeat(88)),
+            format!("{}:{}==", "0123456789abcdef", "A".repeat(86))
+                .replace("==", "==="),
+            format!("{}:{}=", "0123456789abcdef", "-".repeat(87)),
+            format!("{sig}A"),
+            String::new(),
+        ] {
+            assert!(one(&bad).is_err(), "{bad:?}");
+        }
+        let mut twice = HeaderMap::new();
+        twice.append("x-omni-signature", sig.parse().unwrap());
+        twice.append("x-omni-signature", sig.parse().unwrap());
+        assert!(declared_signature(&twice).is_err());
+    }
 
     #[test]
     fn content_length_is_read_only_when_it_is_a_number() {

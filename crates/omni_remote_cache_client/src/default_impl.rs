@@ -11,8 +11,9 @@ use reqwest_middleware::{
 use reqwest_tracing::TracingMiddleware;
 
 use crate::{
-    DEFAULT_MAX_ARTIFACT_SIZE, Placement, RemoteAccessArgs, RemoteCacheClient,
-    RemoteCacheClientError, ValidateAccessResult, is_valid_scope_label,
+    DEFAULT_MAX_ARTIFACT_SIZE, Placement, PutOutcome, RemoteAccessArgs,
+    RemoteArtifact, RemoteCacheClient, RemoteCacheClientError,
+    ValidateAccessResult, is_valid_scope_label,
 };
 
 const UPLOAD_REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
@@ -147,11 +148,11 @@ async fn sha256_hex(artifact: Bytes) -> Result<String, RemoteCacheClientError> {
 
 #[async_trait]
 impl RemoteCacheClient for DefaultRemoteCacheClient {
-    async fn get_artifact(
+    async fn get_artifact_entry(
         &self,
         remote: &RemoteAccessArgs,
         digest: &str,
-    ) -> Result<Option<Bytes>, RemoteCacheClientError> {
+    ) -> Result<Option<RemoteArtifact>, RemoteCacheClientError> {
         let url = create_url(remote, digest, "namespace");
 
         let response = self
@@ -168,6 +169,16 @@ impl RemoteCacheClient for DefaultRemoteCacheClient {
             })?;
 
         let status = response.status();
+        let single = |name: &str| -> (Option<String>, bool) {
+            let mut values = response.headers().get_all(name).iter();
+            match (values.next(), values.next()) {
+                (Some(v), None) => (v.to_str().ok().map(str::to_owned), false),
+                (None, _) => (None, false),
+                _ => (None, true),
+            }
+        };
+        let (sha256, sha_twice) = single("x-omni-content-sha256");
+        let (signature, sig_twice) = single("x-omni-signature");
 
         if status.is_success() {
             let cap = remote
@@ -198,7 +209,12 @@ impl RemoteCacheClient for DefaultRemoteCacheClient {
                 }
             }
 
-            Ok(Some(Bytes::from(body)))
+            Ok(Some(RemoteArtifact {
+                bytes: Bytes::from(body),
+                sha256,
+                signature,
+                ambiguous_provenance: sha_twice || sig_twice,
+            }))
         } else {
             match status {
                 StatusCode::NOT_FOUND => Ok(None),
@@ -318,16 +334,16 @@ impl RemoteCacheClient for DefaultRemoteCacheClient {
         }
     }
 
-    async fn put_artifact(
+    async fn put_artifact_outcome(
         &self,
         remote: &RemoteAccessArgs,
         digest: &str,
         artifact: Bytes,
-    ) -> Result<(), RemoteCacheClientError> {
+    ) -> Result<PutOutcome, RemoteCacheClientError> {
         let url = create_url(remote, digest, "target");
         let sha256 = sha256_hex(artifact.clone()).await?;
 
-        let response = self
+        let mut request = self
             .client
             .put(url)
             .bearer_auth(remote.api_key)
@@ -336,7 +352,13 @@ impl RemoteCacheClient for DefaultRemoteCacheClient {
             // corrupted or truncated upload is rejected instead of stored.
             .header("X-Omni-Content-Sha256", sha256)
             .body(artifact)
-            .timeout(UPLOAD_REQUEST_TIMEOUT)
+            .timeout(UPLOAD_REQUEST_TIMEOUT);
+        if let (Placement::Shared, Some(signature)) =
+            (remote.placement, remote.signature)
+        {
+            request = request.header("X-Omni-Signature", signature);
+        }
+        let response = request
             .send()
             .await
             .map_err(RemoteCacheClientError::custom)
@@ -344,10 +366,10 @@ impl RemoteCacheClient for DefaultRemoteCacheClient {
                 tracing::debug!(error = ?e, "put_artifact_failed");
             })?;
 
-        if response.status().is_success()
-            || response.status() == StatusCode::CONFLICT
-        {
-            Ok(())
+        if response.status() == StatusCode::CONFLICT {
+            Ok(PutOutcome::AlreadyExists)
+        } else if response.status().is_success() {
+            Ok(PutOutcome::Stored)
         } else {
             Err(RemoteCacheClientError::custom(eyre::eyre!(
                 "put artifact failed: status code {}",
@@ -455,6 +477,7 @@ mod tests {
             placement: Default::default(),
             scope: None,
             max_artifact_size: None,
+            signature: None,
         }
     }
 

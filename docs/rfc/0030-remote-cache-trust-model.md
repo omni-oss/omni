@@ -1627,6 +1627,14 @@ closure, routed through a second, remote-free store over `.partitions/local` ins
 in the store trait (no digest or trait change). `omni_cache` and the executor are covered by unit
 tests; the closure is computed over the tasks in the plan.
 
+**Landed (signing, slice 7):** see `0030-signing-rollout.md`. Deviations from the text above: the
+signed message's domain label is `omni-cache-entry-sig-v1`; the server validates a strict signature
+grammar instead of "visible ASCII"; `get_artifact_entry` and `put_artifact_outcome` carry the
+provenance headers and the `409` outcome; the private key is not registered with task log redaction (omni never logs it); its
+environment variable is removed from every child process omni spawns (`omni_process::protect_env_var`)
+unless a task maps it explicitly; a signature binds tenant, organization, workspace and environment but not the
+server address. Still open: the `omni-tests` end-to-end server-compromise scenario.
+
 **Open gates before this RFC can be Implemented:**
 
 - **R2 is not create-only, so R2 writes fail closed by default.** The Workers

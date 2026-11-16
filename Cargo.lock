@@ -6839,6 +6839,7 @@ dependencies = [
  "tokio 1.54.1",
  "tracing",
  "yoke",
+ "zeroize",
 ]
 
 [[package]]
