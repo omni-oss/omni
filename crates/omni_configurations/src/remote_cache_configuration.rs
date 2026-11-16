@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use garde::Validate;
 use merge::Merge;
@@ -7,6 +7,87 @@ use serde::{Deserialize, Serialize};
 use system_traits::{FsRead, FsReadAsync};
 
 use crate::{LoadConfigError, utils};
+
+/// How strictly shared remote entries are verified (RFC 0030, section 4.5).
+/// Ordered from the loosest to the strictest, so a local setting can only
+/// tighten what the workspace chose.
+#[derive(
+    Deserialize,
+    Serialize,
+    JsonSchema,
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Default,
+)]
+#[serde(rename_all = "lowercase")]
+pub enum VerifyMode {
+    /// `require` when the workspace trusts any key, otherwise `off`.
+    #[default]
+    Auto,
+    /// No verification.
+    Off,
+    /// Verify and report failures, but restore the entry anyway.
+    Warn,
+    /// A failure is a miss.
+    Require,
+}
+
+/// A public key the workspace trusts to sign shared cache entries.
+#[derive(Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct TrustedKeyConfiguration {
+    /// The first 16 hexadecimal characters of the SHA-256 of the public key.
+    /// Checked against `public_key`: a different key needs a different id.
+    pub id: String,
+    /// An optional label such as `ci-2026-11`.
+    #[serde(default)]
+    pub name: Option<String>,
+    /// The Ed25519 public key, 32 bytes of standard base64.
+    pub public_key: String,
+}
+
+/// Signature policy committed with the workspace. Machine-local settings may
+/// only tighten it.
+#[derive(
+    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Eq, Default,
+)]
+#[serde(deny_unknown_fields)]
+pub struct WorkspaceSigningConfiguration {
+    #[serde(default)]
+    pub trusted_keys: Vec<TrustedKeyConfiguration>,
+    #[serde(default)]
+    pub verify: VerifyMode,
+}
+
+/// The `remote_cache` section of `workspace.omni.yaml`.
+#[derive(
+    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Eq, Default,
+)]
+#[serde(deny_unknown_fields)]
+pub struct WorkspaceRemoteCacheConfiguration {
+    #[serde(default)]
+    pub signing: WorkspaceSigningConfiguration,
+}
+
+/// Where a publisher's private key is read from. Never the key itself, so it
+/// cannot end up in a config file.
+#[derive(Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct SigningKeyConfiguration {
+    /// The id of the key (see `omni cache keygen`).
+    pub id: String,
+    /// The environment variable holding the base64 private key.
+    #[serde(default)]
+    pub private_key_env: Option<String>,
+    /// A file holding the base64 private key.
+    #[serde(default)]
+    pub private_key_file: Option<PathBuf>,
+}
 
 /// Where an upload goes (RFC 0030). `shared` needs `publish:artifacts`.
 #[derive(
@@ -120,6 +201,9 @@ pub struct RemoteCacheSettings {
     pub target: RemoteTarget,
     pub scope: ScopeConfig,
     pub max_artifact_size: Option<u64>,
+    pub signing_key: Option<SigningKeyConfiguration>,
+    pub verify: Option<VerifyMode>,
+    pub trusted_keys: Option<Vec<String>>,
 }
 
 // This file is stored as MessagePack, which writes a struct as a positional
@@ -171,6 +255,22 @@ pub struct RemoteCacheConfiguration {
     #[serde(default)]
     #[merge(strategy = config_utils::replace)]
     pub max_artifact_size: Option<u64>,
+
+    /// The publisher's signing key (a reference, never the key).
+    #[serde(default)]
+    #[merge(strategy = config_utils::replace)]
+    pub signing_key: Option<SigningKeyConfiguration>,
+
+    /// A local verify mode. It can only tighten the workspace's.
+    #[serde(default)]
+    #[merge(strategy = config_utils::replace)]
+    pub verify: Option<VerifyMode>,
+
+    /// Narrows the workspace's trusted keys to these ids. `None` leaves them
+    /// as they are; `Some([])` trusts none.
+    #[serde(default)]
+    #[merge(strategy = config_utils::replace)]
+    pub trusted_keys: Option<Vec<String>>,
 }
 
 impl RemoteCacheConfiguration {
@@ -180,6 +280,9 @@ impl RemoteCacheConfiguration {
             target: self.target,
             scope: self.scope.clone(),
             max_artifact_size: self.max_artifact_size,
+            signing_key: self.signing_key.clone(),
+            verify: self.verify,
+            trusted_keys: self.trusted_keys.clone(),
         }
     }
 
@@ -242,6 +345,46 @@ mod tests {
         assert_eq!(config.settings(), RemoteCacheSettings::default());
     }
 
+    /// The shape written by the slice that added `push` and friends.
+    #[derive(Serialize)]
+    struct V1 {
+        api_key: &'static str,
+        api_base_url: &'static str,
+        tenant_code: &'static str,
+        organization_code: &'static str,
+        workspace_code: &'static str,
+        environment_code: Option<&'static str>,
+        push: bool,
+        target: RemoteTarget,
+        scope: ScopeConfig,
+        max_artifact_size: Option<u64>,
+    }
+
+    #[test]
+    fn a_file_written_before_signing_loads_with_no_signing_settings() {
+        let bytes = rmp_serde::to_vec(&V1 {
+            api_key: "k",
+            api_base_url: "http://h",
+            tenant_code: "t",
+            organization_code: "o",
+            workspace_code: "w",
+            environment_code: None,
+            push: true,
+            target: RemoteTarget::Shared,
+            scope: ScopeConfig::Literal("pr-1".into()),
+            max_artifact_size: Some(5),
+        })
+        .unwrap();
+        let config: RemoteCacheConfiguration =
+            rmp_serde::from_slice(&bytes).unwrap();
+        assert!(config.push);
+        assert_eq!(config.target, RemoteTarget::Shared);
+        assert_eq!(config.max_artifact_size, Some(5));
+        assert_eq!(config.signing_key, None);
+        assert_eq!(config.verify, None);
+        assert_eq!(config.trusted_keys, None);
+    }
+
     #[test]
     fn new_settings_round_trip_through_msgpack_and_json() {
         let config = RemoteCacheConfiguration {
@@ -255,6 +398,13 @@ mod tests {
             target: RemoteTarget::Shared,
             scope: ScopeConfig::Literal("pr-1".into()),
             max_artifact_size: Some(1024),
+            signing_key: Some(SigningKeyConfiguration {
+                id: "0123456789abcdef".into(),
+                private_key_env: Some("KEY".into()),
+                private_key_file: None,
+            }),
+            verify: Some(VerifyMode::Require),
+            trusted_keys: Some(vec!["0123456789abcdef".into()]),
         };
         let bytes = rmp_serde::to_vec(&config).unwrap();
         assert_eq!(

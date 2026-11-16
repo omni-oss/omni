@@ -178,10 +178,21 @@ pub struct EnabledRemoteConfig {
     /// The configured size cap in bytes; the server's value can only lower it.
     #[new(default)]
     pub max_artifact_size: Option<u64>,
+
+    /// What is verified and signed with. Resolved from the committed workspace
+    /// policy and the local file, never loosened by the latter.
+    #[new(default)]
+    #[serde(skip)]
+    // Not part of the serialized form: never use that as a fingerprint of the
+    // policy. Boxed so the enabled config stays small.
+    pub signing: Box<super::signing_policy::SigningPolicy>,
 }
 
 impl EnabledRemoteConfig {
-    pub fn from_configuration(rc: &RemoteCacheConfiguration) -> Self {
+    pub fn from_configuration(
+        rc: &RemoteCacheConfiguration,
+        workspace: &omni_configurations::WorkspaceRemoteCacheConfiguration,
+    ) -> Self {
         let mut config = Self::new(
             rc.api_base_url.as_str(),
             rc.api_key.as_str(),
@@ -194,6 +205,20 @@ impl EnabledRemoteConfig {
         config.target = rc.target;
         config.scope = rc.scope.clone();
         config.max_artifact_size = rc.max_artifact_size.filter(|n| *n > 0);
+        // An invalid policy must never weaken verification: it rejects every
+        // shared entry and refuses shared uploads until it is fixed.
+        config.signing = Box::new(
+            match super::signing_policy::resolve_signing(
+                workspace,
+                &rc.settings(),
+            ) {
+                Ok(policy) => policy,
+                Err(error) => {
+                    tracing::error!(%error, "invalid signing configuration; shared remote cache entries are rejected");
+                    super::signing_policy::SigningPolicy::fail_closed()
+                }
+            },
+        );
         config
     }
 
@@ -2392,6 +2417,7 @@ mod tests {
                     target: self.target,
                     scope: ScopeConfig::Literal("pr-1".to_string()),
                     max_artifact_size: None,
+                    signing: Default::default(),
                 }),
             )
         }
@@ -3389,6 +3415,7 @@ mod tests {
                 target: RemoteTarget::Isolated,
                 scope: ScopeConfig::Auto,
                 max_artifact_size: None,
+                signing: Default::default(),
             }),
         )
     }

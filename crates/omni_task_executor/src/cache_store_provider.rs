@@ -31,14 +31,16 @@ impl<'a, TSys: ContextSys> CacheStoreProvider
 
     fn get_cache_store(&self) -> Self::CacheStore {
         let cache_dir = self.context.cache_dir();
-        let remote_config =
-            if let Some(rc) = &self.context.remote_cache_configuration() {
-                RemoteConfig::new_enabled(
-                    EnabledRemoteConfig::from_configuration(rc),
-                )
-            } else {
-                RemoteConfig::new_disabled()
-            };
+        let remote_config = if let Some(rc) =
+            &self.context.remote_cache_configuration()
+        {
+            RemoteConfig::new_enabled(EnabledRemoteConfig::from_configuration(
+                rc,
+                &self.context.workspace_configuration().remote_cache,
+            ))
+        } else {
+            RemoteConfig::new_disabled()
+        };
 
         HybridTaskExecutionCacheStore::new(
             cache_dir,

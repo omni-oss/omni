@@ -58,6 +58,7 @@ sets = { workspace = true }
 enum-map = { workspace = true }
 
 omni_cache = { workspace = true }
+omni_remote_cache_client = { workspace = true }
 omni_hasher = { workspace = true }
 derive_builder = { workspace = true }
 bs58 = { workspace = true }

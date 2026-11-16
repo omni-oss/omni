@@ -579,6 +579,7 @@ impl<TSys: ContextSys> Context<TSys> {
         let remote_config = if let Some(rc) = &self.remote_cache {
             RemoteConfig::new_enabled(EnabledRemoteConfig::from_configuration(
                 rc,
+                &self.workspace_configuration().remote_cache,
             ))
         } else {
             RemoteConfig::new_disabled()

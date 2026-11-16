@@ -130,6 +130,9 @@ pub async fn setup_remote_caching_config_async<TClient: RemoteCacheClient>(
         target: settings.target,
         scope: settings.scope.clone(),
         max_artifact_size: settings.max_artifact_size,
+        signing_key: settings.signing_key.clone(),
+        verify: settings.verify,
+        trusted_keys: settings.trusted_keys.clone(),
     };
 
     let parent = remote_config_path.parent().expect("should have parent");

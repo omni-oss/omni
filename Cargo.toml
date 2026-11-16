@@ -236,6 +236,8 @@ atty = { version = "^0.2.14" }
 omni_process = { path = "./crates/omni_process" }
 nix = { version = "^0.31.3" }
 base64 = { version = "^0.23.1" }
+zeroize = { version = "^1.9" }
+ed25519-dalek = { version = "^2.2", default-features = false, features = ["std", "zeroize"] }
 clap_declspec = { path = "./crates/clap_declspec" }
 getset = { version = "^0.1.7" }
 either = { version = "^1.19.0", features = ["serde"] }
