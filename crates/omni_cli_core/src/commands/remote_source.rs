@@ -137,13 +137,24 @@ async fn run_prune(
             checkout.kind, checkout.remote, checkout.pin
         );
     }
+    // A checkout that failed the preview stays on disk and is not offered for
+    // deletion, so it fails the command on every path below.
+    report_failures("Cannot prune", &candidates.failed);
+    let failed_status = if candidates.failed.is_empty() {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    };
     if candidates.checkouts.is_empty() {
-        if candidates.skipped_in_use.is_empty() {
+        if candidates.skipped_in_use.is_empty() && candidates.failed.is_empty()
+        {
             println!("No store checkouts matched the given filters");
         } else {
-            println!("Nothing to prune: every matching checkout is in use");
+            println!(
+                "Nothing to prune: every matching checkout is in use or failed"
+            );
         }
-        return Ok(ExitCode::SUCCESS);
+        return Ok(failed_status);
     }
     let total: u64 = candidates.checkouts.iter().map(|c| c.size_bytes).sum();
     for checkout in &candidates.checkouts {
@@ -165,7 +176,7 @@ async fn run_prune(
             candidates.checkouts.len(),
             ByteSize(total)
         );
-        return Ok(ExitCode::SUCCESS);
+        return Ok(failed_status);
     }
 
     if !args.yes {
@@ -178,7 +189,7 @@ async fn run_prune(
         std::io::stdin().read_line(&mut input)?;
         if input.trim() != "y" {
             println!("Aborting");
-            return Ok(ExitCode::SUCCESS);
+            return Ok(failed_status);
         }
     }
 
@@ -205,19 +216,23 @@ async fn run_prune(
     }
     // Report what was removed first, then fail so a script notices checkouts
     // that are still on disk.
-    for failure in &pruned.failed {
+    report_failures("Could not prune", &pruned.failed);
+    if pruned.failed.is_empty() && candidates.failed.is_empty() {
+        Ok(ExitCode::SUCCESS)
+    } else {
+        Ok(ExitCode::FAILURE)
+    }
+}
+
+fn report_failures(prefix: &str, failed: &[omni_api::StoreCheckoutFailure]) {
+    for failure in failed {
         eprintln!(
-            "Could not prune {} {} {}: {}",
+            "{prefix} {} {} {}: {}",
             failure.checkout.kind,
             failure.checkout.remote,
             failure.checkout.pin,
             failure.error
         );
-    }
-    if pruned.failed.is_empty() {
-        Ok(ExitCode::SUCCESS)
-    } else {
-        Ok(ExitCode::FAILURE)
     }
 }
 

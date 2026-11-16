@@ -634,16 +634,14 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
     /// not atomic and can fail after deleting some files, so the manifest (the
     /// completeness marker) goes first: whatever remains reads as incomplete and
     /// is never reused. If the manifest cannot be removed nothing else is touched.
-    async fn remove_tree_checked(&self, tree: &Path) -> Result<(), Error> {
-        ignore_not_found(
-            self.sys.fs_remove_file_async(manifest_path(tree)).await,
-        )?;
-        ignore_not_found(self.sys.fs_remove_dir_all_async(tree).await)?;
+    async fn remove_tree_checked(sys: &TSys, tree: &Path) -> Result<(), Error> {
+        ignore_not_found(sys.fs_remove_file_async(manifest_path(tree)).await)?;
+        ignore_not_found(sys.fs_remove_dir_all_async(tree).await)?;
         // A leftover marker for a tree that is gone retains nothing, so a failure
         // here is logged, not reported as a failed prune.
-        if let Err(error) = ignore_not_found(
-            self.sys.fs_remove_file_async(used_marker(tree)).await,
-        ) {
+        if let Err(error) =
+            ignore_not_found(sys.fs_remove_file_async(used_marker(tree)).await)
+        {
             tracing::warn!(
                 "could not remove the use marker of {tree:?}: {error}"
             );
@@ -1009,6 +1007,9 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
     /// reclaimed. A failed removal is recorded in `failed` and the run continues.
     /// A deleted checkout is refetched the next time it is used.
     ///
+    /// Once an entry's removal starts it finishes while still holding the remote
+    /// lock and lease, even if the caller is cancelled.
+    ///
     /// A dry run is lock-free and approximate: it reports what a real run would
     /// remove or skip right now.
     pub async fn prune_store_report(
@@ -1084,28 +1085,37 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
         else {
             return Ok(false);
         };
-        // Another process may have removed it while we waited.
-        if self.sys.fs_exists_no_err_async(&entry.dir).await {
-            self.remove_tree_checked(&entry.dir).await?;
-            tracing::debug!("pruned store checkout: {:?}", entry.dir);
-        }
-        if let Some(parent) = entry.dir.parent() {
-            // Once a remote's last tree is gone its raw cache has nothing left
-            // to serve, so drop it too. A leased tree still exists, so it keeps
-            // the parent non-empty.
-            if matches!(
-                self.sys.fs_read_dir_async(parent).await.map(|d| d.len()),
-                Ok(0)
-            ) {
-                let _ = self.sys.fs_remove_dir_all_async(parent).await;
-                let _ = self
-                    .sys
-                    .fs_remove_dir_all_async(
-                        self.raw_dir(&entry.kind, &entry.remote),
-                    )
-                    .await;
+        // From here the work is destructive, so an owned task finishes it while
+        // holding both guards even if the caller is cancelled. Otherwise a peer
+        // could publish and lease a replacement at this path and then have it
+        // deleted by the abandoned removal.
+        let sys = self.sys.clone();
+        let entry = entry.clone();
+        let raw = self.raw_dir(&entry.kind, &entry.remote);
+        tokio::spawn(async move {
+            let _remote = _remote;
+            let _lease = _lease;
+            // Another process may have removed it while we waited.
+            if sys.fs_exists_no_err_async(&entry.dir).await {
+                Self::remove_tree_checked(&sys, &entry.dir).await?;
+                tracing::debug!("pruned store checkout: {:?}", entry.dir);
             }
-        }
+            if let Some(parent) = entry.dir.parent() {
+                // Once a remote's last tree is gone its raw cache has nothing
+                // left to serve, so drop it too. A leased tree still exists, so
+                // it keeps the parent non-empty.
+                if matches!(
+                    sys.fs_read_dir_async(parent).await.map(|d| d.len()),
+                    Ok(0)
+                ) {
+                    let _ = sys.fs_remove_dir_all_async(parent).await;
+                    let _ = sys.fs_remove_dir_all_async(&raw).await;
+                }
+            }
+            Ok::<(), Error>(())
+        })
+        .await
+        .map_err(|error| Error::custom(error.to_string()))??;
         Ok(true)
     }
 
