@@ -90,6 +90,34 @@ Setup warns when the credential cannot do what you asked, such as `--target shar
 without `publish:artifacts`. The client asks the server once per run what the
 credential may do and uses the answer only to skip requests that cannot succeed.
 
+## Local cache partitions
+
+With remote caching on, the local cache directory is split by how far a run trusts
+what it restores, under `<cache_dir>/.partitions/`:
+
+- `trusted/<epoch>`: runs that may publish, or whose access is unknown;
+- `untrusted/<epoch>/<principal>/<scope>`: runs that can write their isolated
+  namespace but not publish. They read their own isolated entries and the shared
+  ones, and write only their own partition.
+
+A credential that is untrusted but whose principal and scope the server did not
+report uses `unknown/<epoch>`, which no other run reads. When the access probe
+fails outright, the run cannot tell and uses `trusted`, so keep untrusted jobs on
+their own cache directory.
+
+The epoch changes with the server, the tenant, organization, workspace and
+environment, so switching any of them starts a fresh partition. A run reads and
+writes only its own partition, so an entry built on isolated content never reaches
+a run that publishes. Restored entries carry an `.omni-origin-remote` marker and
+are placed with a staged rename, so a crash never leaves a half-extracted entry.
+A run that can publish never requests isolated entries.
+
+Runs of different trust tiers must not share a writable cache directory: give pull
+request jobs their own cache directory and never restore one they wrote into a job
+that publishes. With remote caching off the cache directory keeps its plain
+layout, and a run with remote caching on never reads it. The first run after
+turning remote caching on is cold, and old partitions stay on disk until pruned.
+
 **Upgrade note:** configurations written before these settings upload nothing
 until you run setup again with `--push`. A file written by setup from this
 version on cannot be read by older versions of omni. A download is limited to

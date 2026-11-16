@@ -50,6 +50,7 @@ tar = { workspace = true }
 serde_json = { workspace = true }
 schemars = { workspace = true }
 sha2 = { workspace = true }
+omni_path_utils = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

@@ -1610,6 +1610,18 @@ gains `--push`, `--target`, `--scope` and `--max-artifact-size`, because the enc
 edited by hand. Local partition paths (slice 6) must use the server-reported label through the
 server's `segment()` rule, not the raw client label.
 
+**Landed (local partitions, slice 6a):** see `0030-local-partitions-rollout.md`. Deviations from the
+text above: partitions live under a dot-prefixed `.partitions/` directory (`trusted/{epoch}`,
+`untrusted/{epoch}/{principal}/{scope}`, `local`), so they can never collide with a base58 project
+directory; remote-disabled runs keep the plain layout at the cache root, which remote-enabled runs
+never read (so no security difference, and local-only users keep their cache); the first
+remote-enabled run is cold. The file-hash index stays on the cache root and is shared. Only an
+untrusted run reads isolated entries; a run that holds `publish` reads shared only, so publishers
+no longer see their own isolated entries. A remote-enabled run now sends the access probe before its
+first local access, even when nothing is uploaded, because the partition depends on the answer.
+Segment text for the untrusted path uses the same `segment()` rule as the server, which moved to
+`omni_path_utils`.
+
 **Open gates before this RFC can be Implemented:**
 
 - **R2 is not create-only, so R2 writes fail closed by default.** The Workers

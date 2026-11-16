@@ -73,6 +73,10 @@ use super::cache_archive::unarchive_bytes;
 pub struct HybridTaskExecutionCacheStore {
     sys: RealSys,
     cache_dir: PathBuf,
+    /// The whole cache directory. Equal to `cache_dir` except in a view, where
+    /// `cache_dir` is one partition: digests and the file-hash index always use
+    /// this one, so a view hashes exactly what the store does.
+    base_dir: PathBuf,
     ws_root_dir: PathBuf,
     remote_config: RemoteConfig,
     /// Lazily-built remote client. Constructing a `reqwest`/rustls client
@@ -83,6 +87,21 @@ pub struct HybridTaskExecutionCacheStore {
     /// What the access probe reported, asked for at most once per run and
     /// shared by every clone of the store.
     probe: Arc<tokio::sync::OnceCell<RemoteProbe>>,
+    /// The local partition this run uses, resolved once (after the probe, for a
+    /// remote-enabled run).
+    partition: Arc<tokio::sync::OnceCell<LocalPartition>>,
+    /// A store over one directory only (a partition or the cache root): it
+    /// never resolves partitions itself. Used to walk every partition.
+    is_view: bool,
+}
+
+/// Where a run keeps its local entries and how far it trusts what it restores.
+#[derive(Clone, Debug)]
+struct LocalPartition {
+    dir: PathBuf,
+    /// The credential can write its isolated namespace but not publish, so
+    /// what it builds on remote content stays in its own partition.
+    untrusted: bool,
 }
 
 /// The advisory result of the access probe. The server enforces everything
@@ -95,6 +114,10 @@ struct RemoteProbe {
     /// The credential was refused (`401`/`403`): no upload can succeed.
     refused: bool,
     server_max_artifact_size: Option<u64>,
+    /// The principal's and the effective scope's path text, as the server
+    /// reports them (never client input).
+    principal_id: Option<String>,
+    scope: Option<String>,
 }
 
 impl RemoteProbe {
@@ -247,12 +270,108 @@ impl HybridTaskExecutionCacheStore {
         let ws_root_dir = ws_root_dir.into();
         Self {
             sys: RealSys,
+            base_dir: dir.clone(),
             cache_dir: dir,
             ws_root_dir,
             remote_config: remote_config.into(),
             client: OnceLock::new(),
             probe: Arc::new(tokio::sync::OnceCell::new()),
+            partition: Arc::new(tokio::sync::OnceCell::new()),
+            is_view: false,
         }
+    }
+
+    /// A store over exactly `dir`, with no remote and no partitions.
+    fn view(&self, dir: PathBuf) -> Self {
+        Self {
+            cache_dir: dir,
+            remote_config: RemoteConfig::Disabled,
+            is_view: true,
+            ..self.clone()
+        }
+    }
+
+    /// The directories this store covers: the cache root as a plain layout and
+    /// every partition below it. Stats and prune walk all of them so nothing
+    /// is invisible or unprunable, and no network call is needed.
+    async fn views(&self) -> Vec<Self> {
+        if self.is_view {
+            return vec![self.clone()];
+        }
+        let mut views = vec![self.view(self.cache_dir.clone())];
+        for dir in super::partition::existing_partitions(&self.cache_dir).await
+        {
+            views.push(self.view(dir));
+        }
+        views
+    }
+
+    /// The partition of this run. Remote-disabled stores, and views, use the
+    /// cache directory as it is; a remote-enabled run asks the server what its
+    /// credential may do first (that answer is also what the probe is for), and
+    /// anything unknown is trusted, the strict case.
+    async fn local_partition(&self) -> &LocalPartition {
+        self.partition
+            .get_or_init(|| async {
+                let RemoteConfig::Enabled(conf) = &self.remote_config else {
+                    return LocalPartition {
+                        dir: self.cache_dir.clone(),
+                        untrusted: false,
+                    };
+                };
+                if self.is_view {
+                    return LocalPartition {
+                        dir: self.cache_dir.clone(),
+                        untrusted: false,
+                    };
+                }
+                let probe = self.probe(conf).await;
+                let epoch = super::partition::trust_epoch(
+                    &super::partition::EpochInputs {
+                        api_base_url: &conf.api_base_url,
+                        tenant: &conf.tenant_code,
+                        org: &conf.organization_code,
+                        ws: &conf.workspace_code,
+                        env: conf.environment_code.as_deref(),
+                        trusted_key_ids: &[],
+                        verify_mode: "off",
+                    },
+                );
+                let untrusted = !probe.refused
+                    && probe.scopes.is_some()
+                    && probe.holds("write:artifacts")
+                    && !probe.holds("publish:artifacts");
+                if untrusted
+                    && let (Some(principal), Some(scope)) =
+                        (&probe.principal_id, &probe.scope)
+                {
+                    return LocalPartition {
+                        dir: super::partition::untrusted_dir(
+                            &self.base_dir,
+                            &epoch,
+                            principal,
+                            scope,
+                        ),
+                        untrusted: true,
+                    };
+                }
+                if untrusted {
+                    // Known untrusted, but with no partition name to use: keep
+                    // what it builds where no trusted run reads it.
+                    tracing::warn!(
+                        "the server did not report this credential's principal and scope; using a separate local cache partition"
+                    );
+                    return LocalPartition {
+                        dir: super::partition::unknown_dir(&self.base_dir, &epoch),
+                        untrusted: true,
+                    };
+                }
+                LocalPartition {
+                    dir: super::partition::trusted_dir(&self.base_dir, &epoch),
+                    untrusted: false,
+                }
+            })
+            .await
     }
 
     /// Return the remote cache client, building it on first use. This defers the
@@ -287,6 +406,8 @@ impl HybridTaskExecutionCacheStore {
                             .then_some(result.scopes),
                         refused: false,
                         server_max_artifact_size: result.max_artifact_size,
+                        principal_id: result.principal_id,
+                        scope: result.scope,
                     },
                     // Only a refusal means no upload can succeed. A server
                     // error, a `404` from a server without the probe or a `429`
@@ -313,6 +434,47 @@ impl HybridTaskExecutionCacheStore {
             })
             .await
     }
+}
+
+/// Restores a remote archive into `entry_dir` through a sibling staging
+/// directory: the marker is written before the directory is renamed into place,
+/// so a crash can never leave a remote entry without its marker, and a partial
+/// extraction never lands in the final directory. A rejected archive
+/// (`InvalidData`) leaves nothing behind.
+async fn restore_staged(
+    entry_dir: &Path,
+    bytes: &[u8],
+    origin: super::origin::Origin,
+) -> std::io::Result<()> {
+    let staging = staging_dir_for(entry_dir);
+    let bytes = bytes.to_vec();
+    let extract = {
+        let staging = staging.clone();
+        tokio::task::spawn_blocking(move || unarchive_bytes(&staging, &bytes))
+            .await
+            .map_err(std::io::Error::other)
+            .and_then(|result| result)
+    };
+    let staged = async {
+        extract?;
+        tokio::fs::write(
+            staging.join(super::origin::ORIGIN_MARKER),
+            origin.marker_text(),
+        )
+        .await?;
+        publish_staged_dir(
+            &staging,
+            entry_dir,
+            &entry_dir.join(CACHE_OUTPUT_METADATA_FILE),
+            false,
+        )
+        .await
+    }
+    .await;
+    if staged.is_err() {
+        let _ = tokio::fs::remove_dir_all(&staging).await;
+    }
+    staged
 }
 
 /// True when every path in a decoded cache entry can only descend from the base
@@ -418,11 +580,13 @@ impl HybridTaskExecutionCacheStore {
             })
             .collect::<Vec<_>>();
 
+        let partition = self.local_partition().await;
         let to_process = Collector::new(
             self.ws_root_dir.as_path(),
-            self.cache_dir.as_path(),
+            self.base_dir.as_path(),
             self.sys.clone(),
         )
+        .with_output_base(partition.dir.as_path())
         .collect(&collect_task_infos, config)
         .await?;
 
@@ -441,13 +605,14 @@ impl HybridTaskExecutionCacheStore {
         // The timestamps db is a single shared file mutated read-modify-write
         // by every process, so serialize access with an exclusive lock to
         // avoid lost updates and torn writes.
+        let dir = &self.local_partition().await.dir;
         let _guard = CacheLockGuard::acquire_exclusive(lock_file_path(
-            &self.cache_dir,
+            dir,
             LAST_USED_LOCK_FILE,
         ))
         .await?;
 
-        let path = self.cache_dir.join(LAST_USED_TIMESTAMPS_DB_FILE);
+        let path = dir.join(LAST_USED_TIMESTAMPS_DB_FILE);
         let mut last_used_db = LocalLastUsedDb::load(&path).await?;
         let dir = OffsetDateTime::now_utc();
 
@@ -545,14 +710,20 @@ impl HybridTaskExecutionCacheStore {
     /// concurrently-publishing peer's fresh staging directory is never
     /// touched. Best-effort: individual failures are logged and skipped.
     async fn prune_stale_staging_dirs(&self, max_age: std::time::Duration) {
-        let mut projects = match tokio::fs::read_dir(&self.cache_dir).await {
-            Ok(entries) => entries,
-            Err(_) => return,
-        };
+        for view in self.views().await {
+            let mut projects = match tokio::fs::read_dir(&view.cache_dir).await
+            {
+                Ok(entries) => entries,
+                Err(_) => continue,
+            };
 
-        while let Ok(Some(project)) = projects.next_entry().await {
-            reclaim_stale_staging_dirs(&project.path().join("output"), max_age)
+            while let Ok(Some(project)) = projects.next_entry().await {
+                reclaim_stale_staging_dirs(
+                    &project.path().join("output"),
+                    max_age,
+                )
                 .await;
+            }
         }
     }
 }
@@ -618,8 +789,9 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
         // Hold a shared prune lock for the duration of publishing so a
         // concurrent prune cannot delete an entry we are renaming into place.
         // Multiple publishers share the lock and never block each other.
+        let local_dir = self.local_partition().await.dir.clone();
         let _prune_guard = CacheLockGuard::acquire_shared(lock_file_path(
-            &self.cache_dir,
+            &local_dir,
             PRUNE_LOCK_FILE,
         ))
         .await?;
@@ -662,7 +834,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
             let _replace_guard = if upgrading {
                 Some(
                     CacheLockGuard::acquire_exclusive(lock_file_path(
-                        &self.cache_dir,
+                        &local_dir,
                         REPLACE_LOCK_FILE,
                     ))
                     .await?,
@@ -934,19 +1106,39 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
             // Bound the archives held in memory, like uploads.
             let download_slots = Arc::new(tokio::sync::Semaphore::new(8));
             let label = conf.scope_label();
-            // Learn what the credential may do while the downloads run.
-            if self.probe.get().is_none() {
-                let store = self.clone();
-                let conf = conf.clone();
-                tokio::spawn(async move {
-                    store.probe(&conf).await;
-                });
-            }
+            // The partition (and so the probe) is settled before any local
+            // entry is looked at or written.
+            let partition = self.local_partition().await;
+            let untrusted = partition.untrusted;
+            let probe = self.probe(conf).await.clone();
+            // Restores and removals share the prune lock like publishers do, so
+            // a prune never deletes an entry that is being renamed into place.
+            let _prune_guard = CacheLockGuard::acquire_shared(lock_file_path(
+                &partition.dir,
+                PRUNE_LOCK_FILE,
+            ))
+            .await?;
             for project in &collected {
                 let output_dir = project
                     .cache_output_dir
                     .as_deref()
                     .expect("should be some");
+
+                // A trusted run never reuses an entry that came from an
+                // isolated namespace (or whose marker cannot be read). It
+                // cannot be here unless a cache directory was shared against
+                // the guidance, and it is removed so the entry is rebuilt or
+                // fetched like a miss.
+                if !untrusted
+                    && super::origin::read_marker(output_dir).await
+                        == Some(super::origin::Origin::Isolated)
+                {
+                    tracing::warn!(
+                        project = %project.task.project_name,
+                        "discarding a local entry restored from an isolated remote namespace"
+                    );
+                    tokio::fs::remove_dir_all(output_dir).await?;
+                }
 
                 // skip if the output dir already exists/downloaded
                 if tokio::fs::try_exists(output_dir).await? {
@@ -959,8 +1151,8 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                 let client = self.client().clone();
                 let conf = conf.clone();
                 let output_dir = output_dir.to_path_buf();
-                let probe_cell = self.probe.clone();
                 let download_slots = download_slots.clone();
+                let probe = probe.clone();
                 let label = label.clone();
 
                 tasks.spawn(async move {
@@ -968,22 +1160,17 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                         .acquire_owned()
                         .await
                         .expect("download semaphore is never closed");
-                    // The probe never holds a download up: what it has found
-                    // by now is used, nothing is waited for.
-                    let probe = probe_cell.get();
-                    let cap = conf.size_cap(probe);
-                    // The target decides where this run publishes, so a
-                    // publisher reads only what publishers shared. Otherwise
-                    // own entries first, unless the credential is known not to
-                    // be allowed to have any.
-                    let placements: &[Placement] = if conf.target
-                        == RemoteTarget::Shared
-                        || probe.and_then(RemoteProbe::can_write_isolated)
-                            == Some(false)
+                    let cap = conf.size_cap(Some(&probe));
+                    // Only an untrusted run reads its own isolated entries
+                    // (it holds `write` but not `publish`). A run that can
+                    // publish never requests them: what it restores is shared
+                    // and, once signing lands, verified.
+                    let placements: &[Placement] = if untrusted
+                        && conf.target == RemoteTarget::Isolated
                     {
-                        &[Placement::Shared]
-                    } else {
                         &[Placement::Isolated, Placement::Shared]
+                    } else {
+                        &[Placement::Shared]
                     };
                     // A failed read, a refused one (`403`) or an oversized or
                     // truncated body is a miss: the remote is optional and must
@@ -993,7 +1180,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                         let access = conf.access(placement, &label, cap);
                         match client.get_artifact(&access, &digest).await {
                             Ok(Some(bytes)) => {
-                                response = Some(bytes);
+                                response = Some((bytes, placement));
                                 break;
                             }
                             Ok(None) => {}
@@ -1008,9 +1195,16 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                         }
                     }
 
-                    if let Some(bytes) = response {
+                    if let Some((bytes, placement)) = response {
                         tracing::debug!("fetched remote cache for {}", digest);
-                        match unarchive_bytes(&output_dir, &bytes) {
+                        let origin = match placement {
+                            Placement::Shared => super::origin::Origin::Shared,
+                            Placement::Isolated => {
+                                super::origin::Origin::Isolated
+                            }
+                        };
+                        match restore_staged(&output_dir, &bytes, origin).await
+                        {
                             Ok(()) => {}
                             // Rejected before anything was written (a link, an
                             // escaping name, or a corrupt archive): a miss.
@@ -1107,6 +1301,24 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
         &self,
         args: &CacheStatsArgs<'_, TContext>,
     ) -> Result<CacheStats, Self::Error> {
+        if !self.is_view {
+            let mut merged = CacheStats::default();
+            for view in self.views().await {
+                let part = view.get_stats(args).await?;
+                for project in part.projects {
+                    match merged
+                        .projects
+                        .iter_mut()
+                        .find(|p| p.project_name == project.project_name)
+                    {
+                        Some(existing) => existing.tasks.extend(project.tasks),
+                        None => merged.projects.push(project),
+                    }
+                }
+            }
+            return Ok(merged);
+        }
+
         let project_name_globs = args.project_name_globs;
         let task_name_globs = args.task_name_globs;
 
@@ -1346,6 +1558,16 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
         &self,
         args: &PruneCacheArgs<'_, TContext>,
     ) -> Result<Vec<PrunedCacheEntry>, Self::Error> {
+        if !self.is_view {
+            // Each partition is a store of its own with its own lock, so a
+            // prune holds exactly the lock of the entries it deletes.
+            let mut pruned = Vec::new();
+            for view in self.views().await {
+                pruned.extend(view.prune_caches(args).await?);
+            }
+            return Ok(pruned);
+        }
+
         // Take the exclusive prune lock for the whole operation so we never
         // delete an entry a peer is publishing into. Publishers hold this lock
         // in shared mode, so they are excluded while we prune.
@@ -1547,6 +1769,23 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
         &self,
         entries: &[PrunedCacheEntry],
     ) -> Result<(), Self::Error> {
+        if !self.is_view {
+            // The owner of an entry is the deepest view that contains it.
+            let views = self.views().await;
+            for entry in entries {
+                if let Some(owner) = views
+                    .iter()
+                    .filter(|v| entry.entry_dir.starts_with(&v.cache_dir))
+                    .max_by_key(|v| v.cache_dir.components().count())
+                {
+                    owner
+                        .force_prune_caches(std::slice::from_ref(entry))
+                        .await?;
+                }
+            }
+            return Ok(());
+        }
+
         let _prune_guard = CacheLockGuard::acquire_exclusive(lock_file_path(
             &self.cache_dir,
             PRUNE_LOCK_FILE,
@@ -2017,6 +2256,8 @@ mod tests {
         server: tokio::task::JoinHandle<()>,
         push: bool,
         target: RemoteTarget,
+        /// Extra probe response headers, each ending in CRLF.
+        probe_headers: Arc<std::sync::Mutex<String>>,
     }
 
     impl RemoteUploadSpy {
@@ -2034,6 +2275,8 @@ mod tests {
             let captured = requests.clone();
             let lines = Arc::new(std::sync::Mutex::new(Vec::new()));
             let seen_lines = lines.clone();
+            let probe_headers = Arc::new(std::sync::Mutex::new(String::new()));
+            let probe_extra = probe_headers.clone();
             let server = tokio::spawn(async move {
                 loop {
                     let (mut socket, _) = listener.accept().await.unwrap();
@@ -2046,8 +2289,9 @@ mod tests {
                     let line = header.lines().next().unwrap().to_string();
                     seen_lines.lock().unwrap().push(line.clone());
                     if line.starts_with("HEAD /v1/artifacts?") {
+                        let extra = probe_extra.lock().unwrap().clone();
                         let response = format!(
-                            "HTTP/1.1 204 No Content\r\nx-omni-scopes: {scopes}\r\nConnection: close\r\n\r\n"
+                            "HTTP/1.1 204 No Content\r\nx-omni-scopes: {scopes}\r\n{extra}Connection: close\r\n\r\n"
                         );
                         socket.write_all(response.as_bytes()).await.unwrap();
                         continue;
@@ -2110,6 +2354,7 @@ mod tests {
                 server,
                 push: true,
                 target: RemoteTarget::Isolated,
+                probe_headers,
             }
         }
 
@@ -2174,12 +2419,259 @@ mod tests {
         .unwrap();
     }
 
+    fn partitions(cache_dir: &Path) -> Vec<String> {
+        fn walk(dir: &Path, out: &mut Vec<String>, root: &Path) {
+            let Ok(entries) = std::fs::read_dir(dir) else {
+                return;
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    if path.file_name().is_some_and(|n| n == "output") {
+                        let rel = path.parent().unwrap().parent().unwrap();
+                        out.push(
+                            rel.strip_prefix(root)
+                                .unwrap()
+                                .to_string_lossy()
+                                .replace('\\', "/"),
+                        );
+                    } else {
+                        walk(&path, out, root);
+                    }
+                }
+            }
+        }
+        let mut out = Vec::new();
+        walk(cache_dir, &mut out, cache_dir);
+        out.sort();
+        out
+    }
+
+    #[tokio::test]
+    async fn only_an_untrusted_run_reads_its_isolated_namespace() {
+        let headers = "x-omni-principal-id: ci\r\nx-omni-scope: pr-9\r\n";
+        for (scopes, expected) in [
+            ("read:artifacts,write:artifacts", vec!["isolated", "shared"]),
+            (
+                "read:artifacts,write:artifacts,publish:artifacts",
+                vec!["shared"],
+            ),
+            ("read:artifacts", vec!["shared"]),
+        ] {
+            let remote = RemoteUploadSpy::with_scopes(204, scopes).await;
+            *remote.probe_headers.lock().unwrap() = headers.into();
+            let temp = fixture(&["project1"]).await;
+            let task = task("task", "project1", temp.path());
+            remote.cache(temp.path()).get(task.get()).await.unwrap();
+            let lines = remote.lines.lock().unwrap();
+            let seen: Vec<&str> = lines
+                .iter()
+                .filter(|l| l.starts_with("GET "))
+                .map(|l| {
+                    if l.contains("namespace=isolated") {
+                        "isolated"
+                    } else {
+                        "shared"
+                    }
+                })
+                .collect();
+            assert_eq!(seen, expected, "{scopes}");
+        }
+    }
+
+    #[tokio::test]
+    async fn the_partition_follows_what_the_credential_may_do() {
+        let cases = [
+            // (scopes, headers, expected partition prefix)
+            (
+                "read:artifacts,write:artifacts",
+                "x-omni-principal-id: ci\r\nx-omni-scope: pr-9\r\n",
+                ".partitions/untrusted/",
+            ),
+            (
+                "read:artifacts,write:artifacts,publish:artifacts",
+                "x-omni-principal-id: ci\r\nx-omni-scope: pr-9\r\n",
+                ".partitions/trusted/",
+            ),
+            ("read:artifacts", "", ".partitions/trusted/"),
+            // Untrusted, but the server named no principal: a partition no
+            // trusted run reads.
+            ("read:artifacts,write:artifacts", "", ".partitions/unknown/"),
+        ];
+        for (scopes, headers, expected) in cases {
+            let remote = RemoteUploadSpy::with_scopes(204, scopes).await;
+            *remote.probe_headers.lock().unwrap() = headers.into();
+            let temp = fixture(&["project1"]).await;
+            let cache = remote.cache(temp.path());
+            let task = task("task", "project1", temp.path());
+            cache
+                .cache(&new_cache_info_with_exit_code(
+                    Some(&LOGS_CONTENT),
+                    *task.get(),
+                    0,
+                ))
+                .await
+                .unwrap();
+            let found = partitions(&temp.path().join(".omni/cache"));
+            assert_eq!(found.len(), 1, "{scopes}: {found:?}");
+            assert!(found[0].starts_with(expected), "{scopes}: {found:?}");
+            if expected.contains("untrusted") {
+                assert!(found[0].ends_with("/ci/pr-9"), "{found:?}");
+            }
+            // The root layout never gets an entry from a remote-enabled run
+            // (only the shared file-hash index lives there).
+            assert!(
+                !temp
+                    .path()
+                    .join(".omni/cache")
+                    .join(path_safe_bs58("project1"))
+                    .join("output")
+                    .exists(),
+                "{scopes}"
+            );
+        }
+    }
+
+    fn path_safe_bs58(project: &str) -> String {
+        bs58::encode(project.as_bytes()).into_string()
+    }
+
+    #[tokio::test]
+    async fn a_probe_that_gives_no_verdict_uses_the_trusted_partition() {
+        let temp = fixture(&["project1"]).await;
+        // Nothing listens: the probe fails and is unknown.
+        let cache = remote_store(temp.path(), "http://127.0.0.1:9");
+        let task = task("task", "project1", temp.path());
+        cache
+            .cache(&new_cache_info_with_exit_code(
+                Some(&LOGS_CONTENT),
+                *task.get(),
+                0,
+            ))
+            .await
+            .unwrap();
+        let found = partitions(&temp.path().join(".omni/cache-restore"));
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert!(found[0].starts_with(".partitions/trusted/"), "{found:?}");
+    }
+
+    #[tokio::test]
+    async fn a_remote_enabled_run_never_reads_the_root_layout() {
+        let temp = fixture(&["project1"]).await;
+        let task = task("task", "project1", temp.path());
+        // A disabled run writes the plain layout.
+        let plain = HybridTaskExecutionCacheStore::new(
+            temp.path().join(".omni/cache-restore"),
+            temp.path(),
+            RemoteConfig::new_disabled(),
+        );
+        plain
+            .cache(&new_cache_info(Some(&LOGS_CONTENT), *task.get()))
+            .await
+            .unwrap();
+        assert!(plain.get(task.get()).await.unwrap().is_some());
+        // The remote-enabled store over the same directory sees a miss.
+        let enabled = remote_store(temp.path(), "http://127.0.0.1:9");
+        assert!(enabled.get(task.get()).await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn every_view_hashes_inputs_against_the_whole_cache_directory() {
+        let remote =
+            RemoteUploadSpy::with_scopes(204, "read:artifacts,write:artifacts")
+                .await;
+        *remote.probe_headers.lock().unwrap() =
+            "x-omni-principal-id: ci\r\nx-omni-scope: pr-9\r\n".into();
+        let temp = fixture(&["project1"]).await;
+        let cache = remote.cache(temp.path());
+        let task = task("task", "project1", temp.path());
+        cache
+            .cache(&new_cache_info_with_exit_code(
+                Some(&LOGS_CONTENT),
+                *task.get(),
+                0,
+            ))
+            .await
+            .unwrap();
+        let views = cache.views().await;
+        assert!(views.len() >= 2);
+        for view in &views {
+            assert_eq!(view.base_dir, cache.base_dir);
+            assert!(view.is_view);
+        }
+        assert!(views.iter().any(|v| v.cache_dir != cache.base_dir));
+    }
+
+    #[tokio::test]
+    async fn stats_and_prune_cover_every_partition_without_a_probe() {
+        let remote =
+            RemoteUploadSpy::with_scopes(204, "read:artifacts,write:artifacts")
+                .await;
+        *remote.probe_headers.lock().unwrap() =
+            "x-omni-principal-id: ci\r\nx-omni-scope: pr-9\r\n".into();
+        let temp = fixture(&["project1"]).await;
+        let cache = remote.cache(temp.path());
+        let task = task("task", "project1", temp.path());
+        cache
+            .cache(&new_cache_info_with_exit_code(
+                Some(&LOGS_CONTENT),
+                *task.get(),
+                0,
+            ))
+            .await
+            .unwrap();
+        let probes_before = remote.lines.lock().unwrap().len();
+
+        // A store with no remote at all, over the same directory.
+        let plain = HybridTaskExecutionCacheStore::new(
+            temp.path().join(".omni/cache"),
+            temp.path(),
+            RemoteConfig::new_disabled(),
+        );
+        let stats = plain
+            .get_stats(&CacheStatsArgs::<()> {
+                project_name_globs: &["project1"],
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!(stats.projects.len(), 1);
+        assert_eq!(stats.projects[0].tasks.len(), 1);
+
+        let pruned = plain
+            .prune_caches(&PruneCacheArgs::<()> {
+                project_name_globs: &["project1"],
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!(pruned.len(), 1);
+        pruned.iter().for_each(|e| {
+            assert!(e.entry_dir.to_string_lossy().contains(".partitions"))
+        });
+        plain.force_prune_caches(&pruned).await.unwrap();
+        let after = plain
+            .get_stats(&CacheStatsArgs::<()> {
+                project_name_globs: &["project1"],
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        assert!(after.projects.iter().all(|p| p.tasks.is_empty()));
+        assert_eq!(remote.lines.lock().unwrap().len(), probes_before);
+    }
+
     #[tokio::test]
     async fn nothing_is_sent_when_push_is_off() {
         let mut remote = RemoteUploadSpy::new(204).await;
         remote.push = false;
         run_one_upload(&remote).await;
-        assert!(remote.lines.lock().unwrap().is_empty(), "not even a probe");
+        assert!(remote.requests.lock().unwrap().is_empty());
+        let lines = remote.lines.lock().unwrap();
+        assert!(
+            lines.iter().all(|l| l.starts_with("HEAD /v1/artifacts?")),
+            "only the probe, which picks the local partition: {lines:?}"
+        );
     }
 
     #[tokio::test]
@@ -2365,9 +2857,12 @@ mod tests {
         .unwrap();
 
         assert!(remote.requests.lock().unwrap().is_empty());
+        // The local partition depends on what the credential may do, so the
+        // probe is the one request even a failed task causes.
+        let lines = remote.lines.lock().unwrap();
         assert!(
-            cache.client.get().is_none(),
-            "failed tasks must not even construct a client"
+            lines.iter().all(|l| l.starts_with("HEAD /v1/artifacts?")),
+            "{lines:?}"
         );
         assert_eq!(cache.get(task.get()).await.unwrap().unwrap().exit_code, 1);
     }
@@ -2844,6 +3339,188 @@ mod tests {
                 max_artifact_size: None,
             }),
         )
+    }
+
+    /// The archive of a real entry for `task`, as a producer would upload it.
+    async fn genuine_archive(
+        temp: &tempfile::TempDir,
+        info: &TaskExecutionInfo<'_>,
+    ) -> Vec<u8> {
+        let producer = cache_store(temp.path());
+        producer
+            .cache(&new_cache_info(Some(&LOGS_CONTENT), *info))
+            .await
+            .unwrap();
+        let collected = producer
+            .collect(
+                &[*info],
+                &CollectConfig {
+                    cache_output_dirs: true,
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        let mut out = Vec::new();
+        archive(
+            collected[0].cache_output_dir.as_ref().unwrap(),
+            Cursor::new(&mut out),
+        )
+        .unwrap();
+        out
+    }
+
+    /// Serves `body` to every `GET`, and answers the access probe with
+    /// `scopes` and a principal and scope, so the run is untrusted when
+    /// `scopes` has `write` and no `publish`.
+    async fn serve_with_probe(
+        body: Vec<u8>,
+        scopes: &'static str,
+    ) -> (String, tokio::task::JoinHandle<()>) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener =
+            tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            loop {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut header = Vec::new();
+                while !header.ends_with(b"\r\n\r\n") {
+                    header.push(socket.read_u8().await.unwrap());
+                }
+                let response = if header.starts_with(b"HEAD /v1/artifacts?") {
+                    format!("HTTP/1.1 204 No Content\r\nx-omni-scopes: {scopes}\r\nx-omni-principal-id: ci\r\nx-omni-scope: pr-9\r\nConnection: close\r\n\r\n").into_bytes()
+                } else if header.starts_with(b"GET ") {
+                    let mut head = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                        body.len()
+                    )
+                    .into_bytes();
+                    head.extend_from_slice(&body);
+                    head
+                } else {
+                    b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_vec()
+                };
+                socket.write_all(&response).await.unwrap();
+            }
+        });
+        (url, server)
+    }
+
+    /// Every origin marker under `dir`, with the partition it is in.
+    fn markers(dir: &Path) -> Vec<(String, String)> {
+        let mut out = Vec::new();
+        let mut stack = vec![dir.to_path_buf()];
+        while let Some(d) = stack.pop() {
+            for entry in std::fs::read_dir(&d).into_iter().flatten().flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    stack.push(path);
+                } else if path
+                    .file_name()
+                    .is_some_and(|n| n == ".omni-origin-remote")
+                {
+                    out.push((
+                        path.strip_prefix(dir)
+                            .unwrap()
+                            .to_string_lossy()
+                            .replace('\\', "/"),
+                        std::fs::read_to_string(&path).unwrap(),
+                    ));
+                }
+            }
+        }
+        out
+    }
+
+    #[tokio::test]
+    async fn a_trusted_restore_is_marked_shared_in_the_trusted_partition() {
+        let temp = fixture(&["project1"]).await;
+        let task = task("task", "project1", temp.path());
+        let body = genuine_archive(&temp, task.get()).await;
+        let (url, server) = serve_with_probe(body, "read:artifacts").await;
+        let store = remote_store(temp.path(), &url);
+        assert!(store.get(task.get()).await.unwrap().is_some());
+        server.abort();
+        let found = markers(&temp.path().join(".omni/cache-restore"));
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert!(found[0].0.starts_with(".partitions/trusted/"), "{found:?}");
+        assert_eq!(found[0].1, "v1 origin=shared verified_by=none\n");
+    }
+
+    #[tokio::test]
+    async fn an_untrusted_restore_is_marked_isolated_in_its_own_partition() {
+        let temp = fixture(&["project1"]).await;
+        let task = task("task", "project1", temp.path());
+        let body = genuine_archive(&temp, task.get()).await;
+        let (url, server) =
+            serve_with_probe(body, "read:artifacts,write:artifacts").await;
+        let mut store = remote_store(temp.path(), &url);
+        if let RemoteConfig::Enabled(conf) = &mut store.remote_config {
+            conf.scope = ScopeConfig::Literal("pr-9".into());
+        }
+        assert!(store.get(task.get()).await.unwrap().is_some());
+        server.abort();
+        let found = markers(&temp.path().join(".omni/cache-restore"));
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert!(
+            found[0].0.starts_with(".partitions/untrusted/"),
+            "{found:?}"
+        );
+        assert!(found[0].0.contains("/ci/pr-9/"), "{found:?}");
+        assert_eq!(found[0].1, "v1 origin=isolated verified_by=none\n");
+    }
+
+    #[tokio::test]
+    async fn a_trusted_run_discards_an_entry_marked_isolated_and_refetches_it()
+    {
+        let temp = fixture(&["project1"]).await;
+        let task = task("task", "project1", temp.path());
+        let body = genuine_archive(&temp, task.get()).await;
+        let (url, server) = serve_with_probe(body, "read:artifacts").await;
+        let store = remote_store(temp.path(), &url);
+        store.get(task.get()).await.unwrap().unwrap();
+        let cache_dir = temp.path().join(".omni/cache-restore");
+        let marker = {
+            let found = markers(&cache_dir);
+            cache_dir.join(&found[0].0)
+        };
+        std::fs::write(&marker, "v1 origin=isolated verified_by=none\n")
+            .unwrap();
+        let fresh = remote_store(temp.path(), &url);
+        fresh.get(task.get()).await.unwrap().unwrap();
+        server.abort();
+        let found = markers(&cache_dir);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].1, "v1 origin=shared verified_by=none\n");
+    }
+
+    #[tokio::test]
+    async fn a_corrupt_remote_archive_leaves_no_entry_and_no_staging_directory()
+    {
+        let temp = fixture(&["project1"]).await;
+        let task = task("task", "project1", temp.path());
+        let (url, server) =
+            serve_with_probe(b"not an archive".to_vec(), "read:artifacts")
+                .await;
+        let store = remote_store(temp.path(), &url);
+        assert!(store.get(task.get()).await.unwrap().is_none());
+        server.abort();
+        let cache_dir = temp.path().join(".omni/cache-restore");
+        assert!(markers(&cache_dir).is_empty());
+        let mut stack = vec![cache_dir];
+        while let Some(d) = stack.pop() {
+            for entry in std::fs::read_dir(&d).into_iter().flatten().flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                assert!(
+                    !name.starts_with(STAGING_PREFIX),
+                    "leftover staging {name}"
+                );
+                if entry.path().is_dir() {
+                    stack.push(entry.path());
+                }
+            }
+        }
     }
 
     #[tokio::test]

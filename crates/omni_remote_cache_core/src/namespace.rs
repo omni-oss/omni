@@ -12,12 +12,12 @@
 //! the authenticated caller and a validated request, so no client-supplied text
 //! reaches a path unchecked.
 
+use omni_path_utils::is_safe_literal;
+pub use omni_path_utils::{MAX_SCOPE_LEN, is_valid_scope_label, segment};
 use omni_remote_cache_storage_core::{Container, ContainerPrefix};
-use sha2::{Digest as _, Sha256};
 
 use crate::{
-    entry::to_hex, hooks::NamespaceKind,
-    routes::v1::artifacts::common::MAX_DIGEST_LEN,
+    hooks::NamespaceKind, routes::v1::artifacts::common::MAX_DIGEST_LEN,
     security::valid_identity_text, utils::path::escape_path_component,
 };
 
@@ -28,9 +28,6 @@ pub const MAX_CODE_LEN: usize = 255;
 /// The longest object key any backend accepts (S3's limit). The key is the
 /// container, a `/` and the digest.
 pub const MAX_KEY_LEN: usize = 1024;
-
-/// The longest scope label, in characters.
-pub const MAX_SCOPE_LEN: usize = 64;
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum NamespaceError {
@@ -46,72 +43,6 @@ pub enum NamespaceError {
     InvalidScope,
     #[error("the container is not valid")]
     InvalidContainer,
-}
-
-/// Windows treats these as devices, with or without an extension.
-///
-/// `conin$`, `conout$` and `clock$` cannot occur: `$` is not a safe-literal
-/// character.
-fn is_device_name(lowercase: &str) -> bool {
-    let stem = lowercase.split('.').next().unwrap_or(lowercase);
-    matches!(stem, "con" | "prn" | "aux" | "nul")
-        || ["com", "lpt"].iter().any(|prefix| {
-            stem.strip_prefix(prefix).is_some_and(|rest| {
-                rest.len() == 1 && matches!(rest.as_bytes()[0], b'1'..=b'9')
-            })
-        })
-}
-
-/// True when `text` can be a path segment as it is.
-///
-/// Only lowercase text qualifies: macOS and Windows file systems ignore case,
-/// so `Ab` and `ab` would be one directory. Windows also drops a trailing `.`
-/// and reserves device names, and a segment that starts with `h-` would be
-/// indistinguishable from a hashed one. Everything else is hashed.
-pub(crate) fn is_safe_literal(text: &str) -> bool {
-    let bytes = text.as_bytes();
-    let (Some(&first), Some(&last)) = (bytes.first(), bytes.last()) else {
-        return false;
-    };
-    bytes.len() <= 64
-        && matches!(first, b'a'..=b'z' | b'0'..=b'9')
-        && bytes.iter().all(
-            |b| matches!(b, b'a'..=b'z' | b'0'..=b'9' | b'.' | b'_' | b'-'),
-        )
-        && last != b'.'
-        && !text.starts_with("h-")
-        && !is_device_name(text)
-}
-
-/// The path segment for `text`: the text itself when it is a safe literal,
-/// otherwise `h-` and 32 lowercase hex characters of its SHA-256.
-///
-/// This is part of the storage layout and must stay stable: operator tools
-/// (the sweeper, purge) recompute a principal's segment with it. Text is hashed
-/// byte for byte, so two Unicode normalization forms of one name are two
-/// principals, never one merged namespace.
-///
-/// The two forms cannot meet (a literal never starts with `h-`, a hashed
-/// segment always does), the hashed form is lowercase hex, and the mapping is
-/// injective for literals and collision-resistant for the rest, so two
-/// principals or scopes never share a directory, whatever the file system
-/// does with case.
-pub fn segment(text: &str) -> String {
-    if is_safe_literal(text) {
-        text.to_owned()
-    } else {
-        format!("h-{}", &to_hex(&Sha256::digest(text.as_bytes()))[..32])
-    }
-}
-
-/// True for the scope labels the RFC allows: `[A-Za-z0-9][A-Za-z0-9._-]{0,63}`.
-pub fn is_valid_scope_label(label: &str) -> bool {
-    let bytes = label.as_bytes();
-    matches!(bytes.first(), Some(b) if b.is_ascii_alphanumeric())
-        && bytes.len() <= MAX_SCOPE_LEN
-        && bytes.iter().all(|b| {
-            b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-')
-        })
 }
 
 /// A scope label that passed [`is_valid_scope_label`], so code that builds a
