@@ -315,3 +315,26 @@ fn backend_error_display_does_not_expose_the_backend_report() {
     let error = AuthError::Backend(eyre::eyre!("private backend detail"));
     assert_eq!(error.to_string(), "authentication backend unavailable");
 }
+
+#[test]
+fn all_scopes_covers_exactly_the_scope_enum() {
+    assert_eq!(Scopes::ALL, ALL.into());
+    assert_eq!(Scopes::ALL.iter().collect::<Vec<_>>(), ALL);
+    assert!(Scopes::default().is_empty());
+    assert!(!Scopes::ALL.is_empty());
+}
+
+/// Fails to compile when a `Scope` variant is added, as a reminder to extend
+/// `Scopes::ALL`, `Scopes::iter` and the test lists above.
+#[test]
+fn every_scope_variant_is_accounted_for() {
+    for scope in ALL {
+        match scope {
+            Scope::Read
+            | Scope::Write
+            | Scope::List
+            | Scope::Delete
+            | Scope::Publish => assert!(Scopes::ALL.contains(scope)),
+        }
+    }
+}

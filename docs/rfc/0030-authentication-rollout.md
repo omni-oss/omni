@@ -152,4 +152,24 @@ target validation and the service TypeScript suites are left to CI. Do not run
   `DependencyProvider` implementers (they must drop the two methods). Callers of `provider.api_key_id()` use
   `Caller::credential().id()`, or `hooks::api_key_id_keyed` to compute an ID themselves.
   Mention this API break in the slice 2 release note.
-  **Still open in slice 2:** `validate_access` returning scopes, principal and size cap.
+- **Access-probe sub-batch:** implemented and independently reviewed by Opus (no
+  blockers). Review follow-ups applied: `omni cache remote setup` refuses a credential
+  whose reported scopes hold neither read nor write, with its own user diagnostic
+  `remote_cache.insufficient_scopes` (the generic `invalid_access` hint would have misled,
+  and deliberately hides the server's message); an older server that reports no scopes is
+  accepted as before, an exhaustive-match test guards `Scopes::ALL` against new scope
+  variants, and the size field is documented as advisory and unauthenticated. The `HEAD`
+  list route (the probe behind `omni cache remote setup`) now asks the authenticator
+  for every scope (`Scopes::ALL`, which includes publish) and is valid for any
+  recognized caller with at least one scope for the target, instead of requiring
+  `list:artifacts`. It answers `204` with `X-Omni-Scopes` (effective scopes, wire names,
+  fixed order) and `X-Omni-Max-Artifact-Size` (`ServiceState::max_artifact_size`); a
+  caller with no scope is `403`, unknown `401`, backend failure `503`, none of them with
+  the headers. `ValidateAccessResult` gains `scopes` and `max_artifact_size`, filled from
+  the headers only on success and never invented when absent or malformed; they are
+  advisory. Authentication is now one function (`authenticate_caller`) used by the
+  macro and the probe. This also adds the `503` log line the earlier review asked for
+  (the first attempt missed after formatting). **Deferred to slice 4:** the principal ID
+  and effective scope label in the response, because their definitions (namespace
+  encoding, scope label grammar) land with namespaces; adding them now would fix a
+  contract before it exists. Slice 2 is otherwise complete.

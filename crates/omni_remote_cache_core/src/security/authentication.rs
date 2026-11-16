@@ -36,6 +36,12 @@ impl Scope {
 pub struct Scopes(u8);
 
 impl Scopes {
+    pub const ALL: Self = Self(0b1_1111);
+
+    pub fn is_empty(self) -> bool {
+        self.0 == 0
+    }
+
     pub fn iter(self) -> impl Iterator<Item = Scope> {
         [
             Scope::Read,

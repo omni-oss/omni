@@ -17,6 +17,15 @@ pub struct RemoteAccessArgs<'a> {
 pub struct ValidateAccessResult {
     pub is_valid: bool,
     pub message: Option<String>,
+    /// Scopes the server says this credential holds for the target
+    /// (`read:artifacts`, ...). Advisory: the server enforces them on each
+    /// request. Empty when the server did not report any.
+    #[new(default)]
+    pub scopes: Vec<String>,
+    /// The largest artifact the server says it accepts, in bytes. Advisory and
+    /// unauthenticated: use it to skip an upload, never to size an allocation.
+    #[new(default)]
+    pub max_artifact_size: Option<u64>,
 }
 
 #[async_trait]

@@ -34,6 +34,20 @@ fn invalid_access_is_a_user_diagnostic_without_the_server_message() {
 }
 
 #[test]
+fn insufficient_scopes_is_a_user_diagnostic_that_names_what_the_key_holds() {
+    let r = report(SetupRemoteCachingConfigError::from(
+        SetupRemoteCachingConfigErrorInner::InsufficientScopes {
+            scopes: "publish:artifacts".into(),
+        },
+    ));
+    let d = find(&r).expect("diagnostic");
+    assert_eq!(d.code(), "remote_cache.insufficient_scopes");
+    assert_eq!(d.audience(), Audience::User);
+    assert_eq!(d.details().unwrap()["scopes"], "publish:artifacts");
+    assert!(d.hints()[0].contains("read:artifacts"));
+}
+
+#[test]
 fn unreadable_config_names_the_path_and_is_environment() {
     let sys = InMemorySys::default();
     let path = PathBuf::from("/cache/remote.enc");
@@ -94,6 +108,7 @@ fn plumbing_failures_stay_uncoded() {
 fn codes_are_registered_in_the_catalog() {
     for code in [
         "remote_cache.invalid_access",
+        "remote_cache.insufficient_scopes",
         "remote_cache.config_unreadable",
     ] {
         assert!(

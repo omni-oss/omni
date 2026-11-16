@@ -54,6 +54,24 @@ credential cannot learn whether an organization, workspace or environment exists
 
 The hook `api_key_id` is now the authenticated credential ID.
 
+## Checking access
+
+`omni cache remote setup` probes the server with `HEAD /v1/artifacts` (relative to
+the API base URL, for example `/api`) for the target. The probe is valid for any recognized credential that holds at least one
+scope for the target, so a key that can read and write but not list is accepted.
+A valid response is `204` with two headers:
+
+| Header                     | Meaning                                                                                  |
+| -------------------------- | ---------------------------------------------------------------------------------------- |
+| `X-Omni-Scopes`            | The scopes the credential holds for the target, such as `read:artifacts,write:artifacts` |
+| `X-Omni-Max-Artifact-Size` | The largest artifact the server accepts, in bytes (`max_artifact_size`)                  |
+
+The client reads both as advice only. The server still enforces scopes and the
+size limit on every request. A credential with no scope for the target gets `403`,
+and an unknown one `401`, with neither header. When the server reports scopes,
+setup refuses a credential that holds neither `read:artifacts` nor
+`write:artifacts`, since it could not use the cache.
+
 ## Pick a backend
 
 | Where it runs     | Backend                                                | How to enable                                            |

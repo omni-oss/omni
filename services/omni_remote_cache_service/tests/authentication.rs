@@ -27,6 +27,10 @@ use omni_remote_cache_storage_memory::InMemoryBackend;
 #[derive(Clone, Copy)]
 enum Mode {
     Allowed,
+    /// Read and write only, whatever is asked.
+    ReadWrite,
+    /// Exactly one scope, whatever is asked.
+    Only(Scope),
     Denied,
     Unknown,
     Offline,
@@ -52,20 +56,28 @@ impl Authenticator for Identity {
             Mode::Offline => {
                 Err(AuthError::Backend(eyre::eyre!("private-database-error")))
             }
-            Mode::Allowed | Mode::Denied => Caller::new(
-                "external-principal".into(),
-                CredentialId::new(
-                    CredentialKind::Custom("oidc".into()),
-                    "opaque-subject".into(),
-                )?,
-                if matches!(self.mode, Mode::Allowed) {
-                    wanted
-                } else {
-                    Scopes::default()
-                },
-                Some("pr-42".into()),
-            )
-            .map(Some),
+            Mode::Allowed | Mode::ReadWrite | Mode::Only(_) | Mode::Denied => {
+                Caller::new(
+                    "external-principal".into(),
+                    CredentialId::new(
+                        CredentialKind::Custom("oidc".into()),
+                        "opaque-subject".into(),
+                    )?,
+                    match self.mode {
+                        Mode::Allowed => wanted,
+                        Mode::ReadWrite => [Scope::Read, Scope::Write]
+                            .into_iter()
+                            .collect::<Scopes>()
+                            .intersection(wanted),
+                        Mode::Only(scope) => {
+                            Scopes::from(scope).intersection(wanted)
+                        }
+                        _ => Scopes::default(),
+                    },
+                    Some("pr-42".into()),
+                )
+                .map(Some)
+            }
         }
     }
 }
@@ -196,13 +208,14 @@ async fn every_route_accepts_a_non_api_key_caller_and_uses_its_id_for_hooks() {
     }
     let calls = calls.lock().unwrap();
     assert_eq!(calls.len(), 6);
-    for ((resource, wanted), scope) in calls.iter().zip([
-        Scope::List,
-        Scope::List,
-        Scope::Read,
-        Scope::Read,
-        Scope::Write,
-        Scope::Delete,
+    // The HEAD list route is the access probe, so it asks for every scope.
+    for ((resource, wanted), expected) in calls.iter().zip([
+        Scope::List.into(),
+        Scopes::ALL,
+        Scope::Read.into(),
+        Scope::Read.into(),
+        Scope::Write.into(),
+        Scope::Delete.into(),
     ]) {
         assert_eq!(
             resource,
@@ -213,7 +226,7 @@ async fn every_route_accepts_a_non_api_key_caller_and_uses_its_id_for_hooks() {
                 env: "e".into()
             }
         );
-        assert_eq!(*wanted, scope.into());
+        assert_eq!(*wanted, expected);
     }
     let hooks = hooks.0.lock().unwrap();
     assert_eq!(hooks.len(), 6);
@@ -278,4 +291,65 @@ async fn legacy_headers_are_rejected_and_authentication_precedes_ownership() {
         .await
         .assert_status_bad_request();
     assert!(hooks.0.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn the_access_probe_reports_effective_scopes_and_the_size_cap() {
+    let probe = |server: &TestServer| {
+        server
+            .method(http::Method::HEAD, "/api/v1/artifacts?org=o&ws=w&env=e")
+            .add_header("Authorization", "Bearer oidc-token")
+            .add_header("X-OMNI-TENANT", "t")
+    };
+    let (server, _, hooks) = server_for(Mode::Allowed);
+    let response = probe(&server).await;
+    response.assert_status(StatusCode::NO_CONTENT);
+    assert_eq!(
+        response.header("x-omni-scopes"),
+        "read:artifacts,write:artifacts,list:artifacts,delete:artifacts,publish:artifacts"
+    );
+    assert_eq!(
+        response.header("x-omni-max-artifact-size"),
+        omni_remote_cache_core::state::DEFAULT_MAX_ARTIFACT_SIZE
+            .to_string()
+            .as_str()
+    );
+    assert_eq!(
+        hooks.0.lock().unwrap().len(),
+        1,
+        "the probe still runs hooks"
+    );
+
+    // Holding some scopes is enough, with exactly those reported, so a
+    // read/write key without `list` is a valid probe.
+    let (server, _, _) = server_for(Mode::ReadWrite);
+    let response = probe(&server).await;
+    response.assert_status(StatusCode::NO_CONTENT);
+    assert_eq!(
+        response.header("x-omni-scopes"),
+        "read:artifacts,write:artifacts"
+    );
+
+    // A publish-only or delete-only credential is a valid probe too: the probe
+    // reports what is held, and the client decides whether that is usable.
+    for scope in [Scope::Publish, Scope::Delete] {
+        let (server, _, _) = server_for(Mode::Only(scope));
+        let response = probe(&server).await;
+        response.assert_status(StatusCode::NO_CONTENT);
+        assert_eq!(response.header("x-omni-scopes"), scope.as_str());
+    }
+
+    // No scope at all, an unknown credential and a failing backend are not probes.
+    for (mode, status) in [
+        (Mode::Denied, StatusCode::FORBIDDEN),
+        (Mode::Unknown, StatusCode::UNAUTHORIZED),
+        (Mode::Offline, StatusCode::SERVICE_UNAVAILABLE),
+    ] {
+        let (server, _, hooks) = server_for(mode);
+        let response = probe(&server).await;
+        response.assert_status(status);
+        assert!(response.maybe_header("x-omni-scopes").is_none());
+        assert!(response.maybe_header("x-omni-max-artifact-size").is_none());
+        assert!(hooks.0.lock().unwrap().is_empty());
+    }
 }

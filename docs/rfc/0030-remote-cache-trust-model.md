@@ -1524,8 +1524,9 @@ SQLite tests cover this path; Postgres/MySQL identity reads and D1 runtime remai
 unverified. Operators must make `api_key_scope` exclude publish from wildcard grants.
 Routes now use the caller seam and the built-in client sends `Authorization: Bearer`;
 `X-API-KEY` is not accepted (no fallback). Still open, so slice 2 is **not complete**:
-`validate_access` returning
-scopes, principal and size cap, and the hook field rename (slice 3).
+the principal ID and scope label in the `validate_access` response (they arrive with
+namespaces in slice 4), and the hook field rename (slice 3). The probe now returns the
+effective scopes and the size cap in `X-Omni-Scopes` and `X-Omni-Max-Artifact-Size`.
 Providers now expose `authenticator()` through the common trait, including the
 caching decorator. A separate caller cache uses full HMAC-SHA256 keys covering
 credential, resource and canonical wanted scopes, with a per-state random pepper.

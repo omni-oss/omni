@@ -169,6 +169,25 @@ impl RemoteCacheClient for DefaultRemoteCacheClient {
 
         let status = response.status();
 
+        // Advisory values: the server enforces them again on every request.
+        let scopes = response
+            .headers()
+            .get("x-omni-scopes")
+            .and_then(|v| v.to_str().ok())
+            .map(|v| {
+                v.split(',')
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_owned)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        let max_artifact_size = response
+            .headers()
+            .get("x-omni-max-artifact-size")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.parse::<u64>().ok());
+
         let is_json = response
             .headers()
             .get(header::CONTENT_TYPE)
@@ -177,14 +196,19 @@ impl RemoteCacheClient for DefaultRemoteCacheClient {
             })
             .unwrap_or_default();
 
-        Ok(ValidateAccessResult::new(
+        let mut result = ValidateAccessResult::new(
             status.is_success(),
             Some(if is_json {
                 response.json().await.unwrap_or_default()
             } else {
                 response.text().await.unwrap_or_default()
             }),
-        ))
+        );
+        if status.is_success() {
+            result.scopes = scopes;
+            result.max_artifact_size = max_artifact_size;
+        }
+        Ok(result)
     }
 
     async fn artifact_exists(

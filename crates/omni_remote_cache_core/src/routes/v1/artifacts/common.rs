@@ -165,6 +165,49 @@ pub fn forbidden_response(message: Option<&str>) -> Response {
         .into_response()
 }
 
+/// Authenticates for `wanted` and returns the caller, or the (boxed) response to send:
+/// `401` for an unrecognized credential and `503` when the authenticator fails.
+/// The caller may still lack some or all of `wanted`; routes check that.
+pub async fn authenticate_caller(
+    provider: &dyn crate::providers::DependencyProvider,
+    credential: &str,
+    tenant: &str,
+    query: &CommonArtifactQuery,
+    wanted: crate::security::Scopes,
+) -> Result<crate::security::Caller, Box<Response>> {
+    let resource = crate::security::Resource {
+        tenant: tenant.to_string(),
+        org: query.org.clone(),
+        ws: query.ws.clone(),
+        env: query.env.clone(),
+    };
+    match provider
+        .authenticator()
+        .authenticate(credential, &resource, wanted)
+        .await
+    {
+        Ok(Some(caller)) => Ok(caller),
+        Ok(None) => Err(Box::new(crate::extractors::unauthorized_response())),
+        Err(_) => {
+            // The error text may contain credentials, so only the fact is logged.
+            tracing::error!("authenticator backend failed");
+            Err(Box::new(
+                (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "authentication unavailable",
+                )
+                    .into_response(),
+            ))
+        }
+    }
+}
+
+pub fn not_authorized_response() -> Response {
+    forbidden_response(Some("You are not authorized to process this request"))
+}
+
+/// Authenticates for one scope: evaluates to the caller, or returns `401`,
+/// `403` (recognized but without the scope) or `503`.
 pub macro authenticate(
         $provider:expr,
         $credential:expr,
@@ -172,35 +215,25 @@ pub macro authenticate(
         $query:expr,
         $scope:expr$(,)?
     ) {{
-    use crate::routes::v1::artifacts::common::forbidden_response;
-    use crate::security::Resource;
-    use axum::response::IntoResponse as _;
-    let resource = Resource {
-        tenant: $tenant_code.to_string(),
-        org: $query.org.clone(),
-        ws: $query.ws.clone(),
-        env: $query.env.clone(),
+    use crate::routes::v1::artifacts::common::{
+        authenticate_caller, not_authorized_response,
     };
-    match $provider
-        .authenticator()
-        .authenticate($credential, &resource, $scope.into())
-        .await
+    match authenticate_caller(
+        $provider.as_ref(),
+        $credential,
+        $tenant_code,
+        &CommonArtifactQuery {
+            org: $query.org.clone(),
+            ws: $query.ws.clone(),
+            env: $query.env.clone(),
+        },
+        $scope.into(),
+    )
+    .await
     {
-        Ok(Some(caller)) if caller.can($scope) => caller,
-        Ok(Some(_)) => {
-            return forbidden_response(Some(
-                "You are not authorized to process this request",
-            ));
-        }
-        Ok(None) => return crate::extractors::unauthorized_response(),
-        // Never expose or log the backend report: it may contain credentials.
-        Err(_) => {
-            return (
-                ::http::StatusCode::SERVICE_UNAVAILABLE,
-                "authentication unavailable",
-            )
-                .into_response();
-        }
+        Ok(caller) if caller.can($scope) => caller,
+        Ok(_) => return not_authorized_response(),
+        Err(response) => return *response,
     }
 }}
 
