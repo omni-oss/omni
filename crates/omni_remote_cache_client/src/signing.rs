@@ -419,13 +419,16 @@ mod tests {
         let wire = handle.sign(&message());
         let (id, b64) = wire.split_once(':').unwrap();
         let bad = [
-            format!("{}:{b64}", id.to_uppercase()),
+            // Keys are random: an id of only digits has no uppercase form, so
+            // swap in a character that is never lowercase hex.
+            format!("G{}:{b64}", &id[1..]),
             format!("{id}:{}", b64.trim_end_matches('=')),
             format!("{id}:{b64}A"),
             format!("{id}:{}", &b64[..b64.len() - 4]),
             format!("{id} {b64}"),
             format!("{}:{b64}", &id[..15]),
-            format!("{id}:{}", b64.replace('+', "-").replace('/', "_")),
+            // A URL-safe alphabet character, whatever the random bytes were.
+            format!("{id}:-{}", &b64[1..]),
             String::new(),
             format!("{id}:{}", "A".repeat(88)),
         ];
