@@ -5651,6 +5651,8 @@ mod tests {
             "a last-used timestamp should have been recorded"
         );
     }
+    // End to end security scenarios against the real server router.
+    include!("e2e_security.rs");
 }
 
 #[cfg(test)]

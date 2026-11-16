@@ -6801,6 +6801,7 @@ name = "omni_cache"
 version = "0.9.0"
 dependencies = [
  "async-trait",
+ "axum",
  "bs58",
  "bytes 1.12.1",
  "bytesize",
@@ -6809,6 +6810,7 @@ dependencies = [
  "dir_walker",
  "eyre",
  "flate2",
+ "futures 0.3.34",
  "globset",
  "maps",
  "omni_collector",
@@ -6821,6 +6823,9 @@ dependencies = [
  "omni_hasher",
  "omni_path_utils",
  "omni_remote_cache_client",
+ "omni_remote_cache_core",
+ "omni_remote_cache_storage_core",
+ "omni_remote_cache_storage_memory",
  "omni_task_context",
  "omni_task_output_logs",
  "omni_types",

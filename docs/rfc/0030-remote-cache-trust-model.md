@@ -1645,6 +1645,18 @@ concern and no production service has legacy data: `omni cache provenance`, `omn
 and the credential/principal response headers. The release note therefore does not mention
 `omni cache purge --legacy`.
 
+**Landed (end-to-end security tests, slice 10):** `crates/omni_cache/src/cache/impls/e2e_security.rs`
+runs the real hybrid store against the real server router over a socket with in-memory storage and
+a token authenticator. Three scenarios: CREEP (a pull request credential that can only write fills its
+own isolated namespace, cannot publish, and a trusted `require` build with another credential misses,
+including when the PR's object is copied into `shared/` at storage level); a signed publish restored
+only by a reader that trusts the key; and server compromise (the stored object replaced by a
+well-sealed attacker archive carrying the real signature is a miss that extracts nothing, while the
+same tampering with verification off is extracted, which proves the scenario replaces the bytes).
+Disabling verification makes the last two fail. These replace the planned `tests/omni-tests`
+(TypeScript, built binary) scenarios, which need the built `omni` binary and a running service and
+were not added; the Rust tests cover the same boundaries.
+
 **Open gates before this RFC can be Implemented:**
 
 - **R2 is not create-only, so R2 writes fail closed by default.** The Workers
