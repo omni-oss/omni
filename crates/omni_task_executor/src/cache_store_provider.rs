@@ -13,6 +13,9 @@ pub trait CacheStoreProvider {
     type CacheStore: TaskExecutionCacheStore<Error = Self::CacheStoreError>;
 
     fn get_cache_store(&self) -> Self::CacheStore;
+
+    /// A store that never uses the remote cache, for tasks that opted out.
+    fn get_local_cache_store(&self) -> Self::CacheStore;
 }
 
 #[derive(Debug, Clone, new)]
@@ -41,6 +44,13 @@ impl<'a, TSys: ContextSys> CacheStoreProvider
             cache_dir,
             self.context.root_dir(),
             remote_config,
+        )
+    }
+
+    fn get_local_cache_store(&self) -> Self::CacheStore {
+        HybridTaskExecutionCacheStore::new_local_only(
+            self.context.cache_dir(),
+            self.context.root_dir(),
         )
     }
 }

@@ -75,6 +75,10 @@ pub struct CacheLayer {
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[merge(strategy = merge::option::recurse)]
+    pub remote: Option<Replace<bool>>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[merge(strategy = merge::option::recurse)]
     pub output: Option<TaskOutputLayer>,
 }
 
@@ -538,6 +542,7 @@ impl CacheLayer {
         CacheConfiguration {
             key: self.key.map(CacheKeyLayer::finalize).unwrap_or_default(),
             enabled: self.enabled,
+            remote: self.remote,
             output: self
                 .output
                 .map(TaskOutputLayer::finalize)
@@ -1038,6 +1043,19 @@ mod tests {
         assert!(!out.config.cache.output.logs);
         assert!(!out.task_cache["t"].output.logs);
         assert!(!out.task_cache["s"].output.logs);
+    }
+
+    #[test]
+    fn project_cache_remote_false_is_inherited_and_a_task_can_override_it() {
+        let out = composed(&[
+            r#"{"name":"a","cache":{"remote":false},
+            "tasks":{"t":{"exec":"x"},"s":"echo",
+                     "u":{"exec":"y","cache":{"remote":true}}}}"#,
+            r#"{"tasks":{"t":{"cache":{"key":{"env":["T"]}}}}}"#,
+        ]);
+        assert_eq!(out.task_cache["t"].remote, Some(Replace::new(false)));
+        assert_eq!(out.task_cache["s"].remote, Some(Replace::new(false)));
+        assert_eq!(out.task_cache["u"].remote, Some(Replace::new(true)));
     }
 
     #[test]

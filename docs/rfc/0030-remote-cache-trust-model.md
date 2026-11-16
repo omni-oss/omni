@@ -1622,6 +1622,11 @@ first local access, even when nothing is uploaded, because the partition depends
 Segment text for the untrusted path uses the same `segment()` rule as the server, which moved to
 `omni_path_utils`.
 
+**Landed (opt-out, slice 6b):** `cache.remote: false` and `--no-remote-cache` with the transitive
+closure, routed through a second, remote-free store over `.partitions/local` instead of a per-item flag
+in the store trait (no digest or trait change). `omni_cache` and the executor are covered by unit
+tests; the closure is computed over the tasks in the plan.
+
 **Open gates before this RFC can be Implemented:**
 
 - **R2 is not create-only, so R2 writes fail closed by default.** The Workers

@@ -84,6 +84,8 @@ bon = { workspace = true }
 schemars = { workspace = true }
 
 [dev-dependencies]
+time = { workspace = true }
+async-trait = { workspace = true }
 criterion = { workspace = true }
 tempfile = { workspace = true }
 omni_test_utils = { workspace = true }

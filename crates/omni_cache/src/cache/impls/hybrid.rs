@@ -281,6 +281,25 @@ impl HybridTaskExecutionCacheStore {
         }
     }
 
+    /// A store for tasks that must never touch the remote cache: no remote, and
+    /// entries kept in the `local` partition (RFC 0030, section 4.4). Digests
+    /// and the file-hash index still use the whole cache directory.
+    pub fn new_local_only(
+        cache_dir: impl Into<PathBuf>,
+        ws_root_dir: impl Into<PathBuf>,
+    ) -> Self {
+        let store = Self::new(cache_dir, ws_root_dir, RemoteConfig::Disabled);
+        let local = LocalPartition {
+            dir: super::partition::local_dir(&store.base_dir),
+            untrusted: false,
+        };
+        store
+            .partition
+            .set(local)
+            .expect("a new store has not resolved a partition");
+        store
+    }
+
     /// A store over exactly `dir`, with no remote and no partitions.
     fn view(&self, dir: PathBuf) -> Self {
         Self {
@@ -2603,6 +2622,37 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn the_local_only_store_keeps_entries_in_the_local_partition() {
+        let temp = fixture(&["project1"]).await;
+        let task = task("task", "project1", temp.path());
+        let cache_dir = temp.path().join(".omni/cache-restore");
+        let local = HybridTaskExecutionCacheStore::new_local_only(
+            &cache_dir,
+            temp.path(),
+        );
+        local
+            .cache(&new_cache_info(Some(&LOGS_CONTENT), *task.get()))
+            .await
+            .unwrap();
+        assert!(local.get(task.get()).await.unwrap().is_some());
+        let found = partitions(&cache_dir);
+        assert_eq!(found, [".partitions/local"], "{found:?}");
+        // The root layout is untouched, and a remote-enabled run (whose own
+        // partition is elsewhere) does not see the entry.
+        let enabled = remote_store(temp.path(), "http://127.0.0.1:9");
+        assert!(enabled.get(task.get()).await.unwrap().is_none());
+        // Stats and prune still cover it.
+        let stats = local
+            .get_stats(&CacheStatsArgs::<()> {
+                project_name_globs: &["project1"],
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!(stats.projects.len(), 1);
+    }
+
+    #[tokio::test]
     async fn stats_and_prune_cover_every_partition_without_a_probe() {
         let remote =
             RemoteUploadSpy::with_scopes(204, "read:artifacts,write:artifacts")
@@ -2859,11 +2909,13 @@ mod tests {
         assert!(remote.requests.lock().unwrap().is_empty());
         // The local partition depends on what the credential may do, so the
         // probe is the one request even a failed task causes.
-        let lines = remote.lines.lock().unwrap();
-        assert!(
-            lines.iter().all(|l| l.starts_with("HEAD /v1/artifacts?")),
-            "{lines:?}"
-        );
+        {
+            let lines = remote.lines.lock().unwrap();
+            assert!(
+                lines.iter().all(|l| l.starts_with("HEAD /v1/artifacts?")),
+                "{lines:?}"
+            );
+        }
         assert_eq!(cache.get(task.get()).await.unwrap().unwrap().exit_code, 1);
     }
 

@@ -32,6 +32,12 @@ pub struct CacheConfiguration {
     )]
     #[merge(strategy = merge::option::recurse)]
     pub enabled: Option<Replace<bool>>,
+    /// `false` keeps this task, and every task it depends on, off the remote
+    /// cache for the run: it neither reads nor writes remotely. Inherited and
+    /// overridable like `enabled`. Release, deploy and signing tasks set it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[merge(strategy = merge::option::recurse)]
+    pub remote: Option<Replace<bool>>,
     #[serde(default)]
     pub output: TaskOutputConfiguration,
 }
@@ -51,6 +57,7 @@ impl Default for CacheConfiguration {
         Self {
             key: Default::default(),
             enabled: default_enabled(),
+            remote: None,
             output: Default::default(),
         }
     }
@@ -139,6 +146,7 @@ mod tests {
                 ..Default::default()
             },
             enabled: Some(Replace::new(false)),
+            remote: Some(Replace::new(false)),
             output: Default::default(),
         };
 
@@ -148,6 +156,7 @@ mod tests {
                 ..Default::default()
             },
             enabled: None,
+            remote: None,
             output: Default::default(),
         };
 
@@ -155,6 +164,26 @@ mod tests {
 
         assert_eq!(a.key.defaults, Some(true));
         assert_eq!(a.enabled, Some(Replace::new(false)));
+        // An absent `remote` never drops an inherited `false`.
+        assert_eq!(a.remote, Some(Replace::new(false)));
+    }
+
+    #[test]
+    fn remote_false_can_be_overridden_and_is_read_from_config() {
+        let mut inherited: CacheConfiguration =
+            serde_json::from_str(r#"{"remote": false}"#).unwrap();
+        let task_default: CacheConfiguration =
+            serde_json::from_str(r#"{}"#).unwrap();
+        inherited.merge(task_default);
+        assert_eq!(inherited.remote, Some(Replace::new(false)));
+        let override_true: CacheConfiguration =
+            serde_json::from_str(r#"{"remote": true}"#).unwrap();
+        inherited.merge(override_true);
+        assert_eq!(inherited.remote, Some(Replace::new(true)));
+        assert!(
+            serde_json::from_str::<CacheConfiguration>(r#"{"remot": false}"#)
+                .is_err()
+        );
     }
 
     #[test]

@@ -112,6 +112,29 @@ a run that publishes. Restored entries carry an `.omni-origin-remote` marker and
 are placed with a staged rename, so a crash never leaves a half-extracted entry.
 A run that can publish never requests isolated entries.
 
+### Keeping a task off the remote cache
+
+Release, deploy and signing tasks should not restore anything built from remote
+content. Set `cache.remote: false` on the task, or on the project to inherit it
+(a task can override it):
+
+```yaml
+tasks:
+  release:
+    exec: ./release.sh
+    cache:
+      remote: false
+```
+
+`omni run --no-remote-cache` does the same for every task of one run. The task
+and everything it depends on, however many other tasks share those dependencies,
+run once per run against a separate `local` partition: they neither read nor
+write the remote cache. Tasks that depend on them may use their outputs and keep
+their own entries in their own partition. Only dependencies that run in the same
+invocation count: with `--ignore-dependencies`, or when a dependency is left out
+of the plan, its workspace outputs are used as they are. This only applies when remote caching
+is configured; without it everything is local already.
+
 Runs of different trust tiers must not share a writable cache directory: give pull
 request jobs their own cache directory and never restore one they wrote into a job
 that publishes. With remote caching off the cache directory keeps its plain

@@ -160,6 +160,20 @@ Checks per batch: tests for touched crates, clippy `-D warnings`, fmt, wasm32 wo
 - Split: 6a (this change: layout, epoch, class, markers, restore) and 6b (opt-out, closure,
   routing); 6b gets its own review.
 
+## 6b as built
+
+`cache.remote` is an `Option<Replace<bool>>` on `CacheConfiguration` and `CacheLayer`, merged like
+`enabled` (so an absent value never drops an inherited `false`; tested through composition and
+project-to-task inheritance) and carried in `CacheInfo::cache_remote`. `--no-remote-cache`
+(`ExecutionConfig::no_remote_cache`, also in the API request) marks every task. Before the first
+batch the pipeline computes the local-only set: opted-out tasks and their transitive
+dependencies within the plan (`local_only_closure`), only when remote caching is configured. The
+`CacheManager` routes each task by name to one of two stores instead of threading a per-item flag
+through the store trait: the normal store, or `HybridTaskExecutionCacheStore::new_local_only`, which
+has no remote and keeps entries in `.partitions/local`. Digests are untouched (the flag is not in
+`TaskExecutionInfo`). A local-only task with no local store misses rather than falling back to the
+remote store. Deviation from the RFC text: the per-item flag is replaced by this two-store routing.
+
 ## Status
 
-6a implemented. Opus's pre-commit review (no blockers) added: views hash against the whole cache directory (`base_dir`), a known-untrusted run without a reported principal or scope uses `.partitions/unknown/{epoch}`, and a panicking extraction task is cleaned up. A probe that fails outright is still trusted (the RFC's rule). 6b next.
+6a implemented. Opus's pre-commit review (no blockers) added: views hash against the whole cache directory (`base_dir`), a known-untrusted run without a reported principal or scope uses `.partitions/unknown/{epoch}`, and a panicking extraction task is cleaned up. A probe that fails outright is still trusted (the RFC's rule). 6b implemented (see above).

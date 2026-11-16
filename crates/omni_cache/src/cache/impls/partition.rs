@@ -123,7 +123,6 @@ pub(crate) fn unknown_dir(base: &Path, epoch: &str) -> PathBuf {
 }
 
 /// The directory for tasks that must never touch the remote cache.
-#[allow(dead_code)]
 pub(crate) fn local_dir(base: &Path) -> PathBuf {
     base.join(PARTITIONS_DIR).join("local")
 }
