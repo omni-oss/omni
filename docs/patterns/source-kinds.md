@@ -31,3 +31,13 @@ the waiter cannot leave a retained manager trusting a pruned pin or replaying ol
 saved changes. Keep staging files non-JSON so reconciliation ignores them.
 This guarantees complete-file visibility, not power-loss durability or a
 cross-file install transaction.
+
+## Leases and prune
+
+`RemoteSourceManager::materialize_leased` returns the checkout plus an
+`Arc<SourceLease>`; hold it for as long as the tree may be read. `prune_store_report`
+skips leased checkouts (`skipped_in_use`), reclaims the others, and reports removal
+failures instead of hiding them; `prune_store` returns only what was removed.
+Plain `materialize` takes no lease. Lock order is remote lock, then lease, and the
+workspace advisory lock is never held while waiting on either. Leases bind
+cooperating omni processes only. Design: `docs/rfc/0024-tiered-project-discovery-plugins/implementation/features/F08.1-lease-gc-reference-protocol.md`.

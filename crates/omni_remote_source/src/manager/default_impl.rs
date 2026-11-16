@@ -18,10 +18,11 @@ use crate::{
         is_safe_segment, safe_slug,
     },
     error::Error,
+    lease::SourceLease,
     manager::config::RemoteSourceConfig,
     manager::tree,
     refs::{RefSetData, RefSetDataV1_0_0, RefUpdate},
-    source::{MaterializedSource, RemoteSource, RemoteSourceRef},
+    source::{LeasedSource, MaterializedSource, RemoteSource, RemoteSourceRef},
     sys::RemoteSourceSys,
 };
 use system_traits::{FileType, FsMetadataValue as _};
@@ -259,6 +260,50 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
         kind: &str,
         spec: &SourceSpec,
     ) -> Result<MaterializedSource, Error> {
+        Ok(self.materialize_inner(kind, spec, false).await?.0)
+    }
+
+    /// Like [`materialize`](Self::materialize), but also returns a
+    /// [`SourceLease`] that keeps [`prune_store`](Self::prune_store) from
+    /// deleting the checkout while it is held. Hold it (or an `Arc` of it) for
+    /// as long as the tree may be read; dropping it, or process exit, releases it.
+    ///
+    /// The lease is taken before the tree is trusted: on the fast path before the
+    /// completeness check, and on the slow path while the remote lock is still
+    /// held, so a prune cannot delete the tree between publication and lease. A
+    /// lease protects against cooperating omni processes only; it is retention,
+    /// not permission to use the source.
+    pub async fn materialize_leased(
+        &self,
+        source: &RemoteSource,
+    ) -> Result<LeasedSource, Error> {
+        self.materialize_leased_with(source.kind(), &source.spec())
+            .await
+    }
+
+    /// [`materialize_leased`](Self::materialize_leased) for an explicit kind.
+    #[doc(hidden)]
+    pub async fn materialize_leased_with(
+        &self,
+        kind: &str,
+        spec: &SourceSpec,
+    ) -> Result<LeasedSource, Error> {
+        let (source, lease) = self.materialize_inner(kind, spec, true).await?;
+        let lease = lease.ok_or_else(|| {
+            Error::custom("a leased materialization returned no lease")
+        })?;
+        Ok(LeasedSource {
+            source,
+            lease: Arc::new(lease),
+        })
+    }
+
+    async fn materialize_inner(
+        &self,
+        kind: &str,
+        spec: &SourceSpec,
+        leased: bool,
+    ) -> Result<(MaterializedSource, Option<SourceLease>), Error> {
         let driver = self.drivers.get(kind).ok_or_else(|| {
             Error::custom(format!("no driver for source kind `{kind}`"))
         })?;
@@ -273,13 +318,33 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
         // network.
         if let Some(pin) = &locked {
             let tree = self.tree_dir(kind, &slug, pin);
+            // Lease first, then check: a prune that already won the exclusive
+            // lease has deleted the tree (seen as incomplete below), and one
+            // that loses it skips the entry.
+            let lease = if leased {
+                Some(
+                    SourceLease::acquire(
+                        &self.store_root_path,
+                        kind,
+                        &slug,
+                        pin,
+                    )
+                    .await?,
+                )
+            } else {
+                None
+            };
             if self.tree_is_complete(&tree).await {
                 self.mark_used(&tree).await;
-                return Ok(MaterializedSource {
-                    root: tree,
-                    pin: pin.clone(),
-                });
+                return Ok((
+                    MaterializedSource {
+                        root: tree,
+                        pin: pin.clone(),
+                    },
+                    lease,
+                ));
             }
+            drop(lease);
         }
 
         // One resolve or export per remote at a time across every workspace
@@ -317,6 +382,16 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
             self.publish_tree(driver.as_ref(), &ctx, spec, &pin, &tree)
                 .await?;
         }
+        // Still holding the remote lock, which a prune needs to delete this
+        // remote's trees, so the tree cannot disappear before the lease exists.
+        let lease = if leased {
+            Some(
+                SourceLease::acquire(&self.store_root_path, kind, &slug, &pin)
+                    .await?,
+            )
+        } else {
+            None
+        };
         self.mark_used(&tree).await;
 
         if locked.is_none() {
@@ -325,7 +400,7 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
                 .await?;
             self.record_change(kind, spec, Some(&pin));
         }
-        Ok(MaterializedSource { root: tree, pin })
+        Ok((MaterializedSource { root: tree, pin }, lease))
     }
 
     /// Persist the reference set a subsystem resolved on its last run to
@@ -555,6 +630,25 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
         let _ = self.sys.fs_remove_file_async(used_marker(tree)).await;
     }
 
+    /// Delete a tree and its markers, reporting failure. Directory removal is
+    /// not atomic and can fail after deleting some files, so the manifest (the
+    /// completeness marker) goes first: whatever remains reads as incomplete and
+    /// is never reused. If the manifest cannot be removed nothing else is touched.
+    async fn remove_tree_checked(sys: &TSys, tree: &Path) -> Result<(), Error> {
+        ignore_not_found(sys.fs_remove_file_async(manifest_path(tree)).await)?;
+        ignore_not_found(sys.fs_remove_dir_all_async(tree).await)?;
+        // A leftover marker for a tree that is gone retains nothing, so a failure
+        // here is logged, not reported as a failed prune.
+        if let Err(error) =
+            ignore_not_found(sys.fs_remove_file_async(used_marker(tree)).await)
+        {
+            tracing::warn!(
+                "could not remove the use marker of {tree:?}: {error}"
+            );
+        }
+        Ok(())
+    }
+
     async fn tree_is_complete(&self, tree: &Path) -> bool {
         let manifest = manifest_path(tree);
         let tree = tree.to_path_buf();
@@ -762,6 +856,32 @@ pub struct StoreEntry {
     pub last_used: SystemTime,
 }
 
+/// What a prune did. A dry run fills `removed` with what would be removed.
+#[derive(Debug, Clone, Default)]
+pub struct PruneReport {
+    pub removed: Vec<StoreEntry>,
+    /// Checkouts a reader holds a lease on; left in place.
+    pub skipped_in_use: Vec<StoreEntry>,
+    /// Checkouts that could not be removed. A partial removal leaves an
+    /// incomplete tree that the next publish or prune clears.
+    pub failed: Vec<PruneFailure>,
+}
+
+#[derive(Debug, Clone)]
+pub struct PruneFailure {
+    pub entry: StoreEntry,
+    pub error: String,
+}
+
+fn ignore_not_found(result: std::io::Result<()>) -> Result<(), Error> {
+    match result {
+        Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
+            Err(error.into())
+        }
+        _ => Ok(()),
+    }
+}
+
 /// Which store entries [`RemoteSourceManager::prune_store`] selects. An entry
 /// must satisfy every filter that is set; `all` selects every entry.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -865,16 +985,38 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
     }
 
     /// Delete the checkouts `filter` selects, or only report them when
-    /// `dry_run`. This is the only operation that removes checkouts from the
-    /// store: nothing else deletes, so a workspace never loses what another
-    /// needs. Each remote's entries are removed under that remote's lock, so a
-    /// concurrent fetch of the same remote waits instead of racing the delete.
-    /// A deleted checkout is refetched the next time it is used.
+    /// `dry_run`, returning the entries removed (or that would be). Checkouts held
+    /// by a [`SourceLease`] are skipped, not an error; use
+    /// [`prune_store_report`](Self::prune_store_report) to see which were skipped
+    /// or failed, since this returns only the removed entries.
     pub async fn prune_store(
         &self,
         filter: &StorePruneFilter<'_>,
         dry_run: bool,
     ) -> Result<Vec<StoreEntry>, Error> {
+        Ok(self.prune_store_report(filter, dry_run).await?.removed)
+    }
+
+    /// Delete the checkouts `filter` selects, or only report them when
+    /// `dry_run`. This is the only operation that removes checkouts from the
+    /// store: nothing else deletes, so a workspace never loses what another
+    /// needs. Each entry is removed under its remote's lock, so a concurrent
+    /// fetch of the same remote waits instead of racing the delete, and only
+    /// after taking its lease exclusively without waiting: a checkout a reader
+    /// leases is skipped (`skipped_in_use`) and unrelated ones are still
+    /// reclaimed. A failed removal is recorded in `failed` and the run continues.
+    /// A deleted checkout is refetched the next time it is used.
+    ///
+    /// Once an entry's removal starts it finishes while still holding the remote
+    /// lock and lease, even if the caller is cancelled.
+    ///
+    /// A dry run is lock-free and approximate: it reports what a real run would
+    /// remove or skip right now.
+    pub async fn prune_store_report(
+        &self,
+        filter: &StorePruneFilter<'_>,
+        dry_run: bool,
+    ) -> Result<PruneReport, Error> {
         let now = SystemTime::now();
         let selected: Vec<StoreEntry> = self
             .store_entries()
@@ -882,38 +1024,99 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
             .into_iter()
             .filter(|entry| filter.matches(entry, now))
             .collect();
+
+        let mut report = PruneReport::default();
         if dry_run {
-            return Ok(selected);
+            for entry in selected {
+                match SourceLease::is_held(
+                    &self.store_root_path,
+                    &entry.kind,
+                    &entry.remote,
+                    &entry.pin,
+                )
+                .await
+                {
+                    Ok(true) => report.skipped_in_use.push(entry),
+                    Ok(false) => report.removed.push(entry),
+                    Err(error) => report.failed.push(PruneFailure {
+                        entry,
+                        error: error.to_string(),
+                    }),
+                }
+            }
+            return Ok(report);
         }
 
-        let mut removed = Vec::new();
         for entry in selected {
-            let lock = self.remote_lock_path(&entry.kind, &entry.remote);
-            let _guard = LockGuard::acquire_exclusive(lock).await?;
+            match self.prune_entry(&entry).await {
+                Ok(true) => report.removed.push(entry),
+                Ok(false) => report.skipped_in_use.push(entry),
+                Err(error) => {
+                    tracing::warn!(
+                        "could not prune store checkout {:?}: {error}",
+                        entry.dir
+                    );
+                    report.failed.push(PruneFailure {
+                        entry,
+                        error: error.to_string(),
+                    });
+                }
+            }
+        }
+        Ok(report)
+    }
+
+    /// Remove one entry. `Ok(false)` means a reader holds its lease.
+    async fn prune_entry(&self, entry: &StoreEntry) -> Result<bool, Error> {
+        // Lock order: remote lock, then the lease (never the reverse).
+        let _remote = LockGuard::acquire_exclusive(
+            self.remote_lock_path(&entry.kind, &entry.remote),
+        )
+        .await?;
+        // An unsafe directory name cannot be mapped to a lease file, so it is
+        // reported rather than deleted without coordination.
+        let Some(_lease) = SourceLease::try_acquire_exclusive(
+            &self.store_root_path,
+            &entry.kind,
+            &entry.remote,
+            &entry.pin,
+        )
+        .await?
+        else {
+            return Ok(false);
+        };
+        // From here the work is destructive, so an owned task finishes it while
+        // holding both guards even if the caller is cancelled. Otherwise a peer
+        // could publish and lease a replacement at this path and then have it
+        // deleted by the abandoned removal.
+        let sys = self.sys.clone();
+        let entry = entry.clone();
+        let raw = self.raw_dir(&entry.kind, &entry.remote);
+        tokio::spawn(async move {
+            let _remote = _remote;
+            let _lease = _lease;
             // Another process may have removed it while we waited.
-            if self.sys.fs_exists_no_err_async(&entry.dir).await {
-                self.remove_tree(&entry.dir).await;
+            if sys.fs_exists_no_err_async(&entry.dir).await {
+                Self::remove_tree_checked(&sys, &entry.dir).await?;
                 tracing::debug!("pruned store checkout: {:?}", entry.dir);
             }
             if let Some(parent) = entry.dir.parent() {
-                // Once a remote's last tree is gone its raw cache has
-                // nothing left to serve, so drop it too.
+                // Once a remote's last tree is gone its raw cache has nothing
+                // left to serve, so drop it too. A leased tree still exists, so
+                // it keeps the parent non-empty.
                 if matches!(
-                    self.sys.fs_read_dir_async(parent).await.map(|d| d.len()),
+                    sys.fs_read_dir_async(parent).await.map(|d| d.len()),
                     Ok(0)
                 ) {
-                    let _ = self.sys.fs_remove_dir_all_async(parent).await;
-                    let _ = self
-                        .sys
-                        .fs_remove_dir_all_async(
-                            self.raw_dir(&entry.kind, &entry.remote),
-                        )
-                        .await;
+                    let _ = sys.fs_remove_dir_all_async(parent).await;
+                    let _ = sys.fs_remove_dir_all_async(&raw).await;
                 }
             }
-            removed.push(entry);
-        }
-        Ok(removed)
+            Ok::<(), Error>(())
+        })
+        .await
+        .map_err(|error| Error::custom(error.to_string()))??;
+        Ok(true)
     }
 
     async fn last_used(&self, commit_dir: &Path) -> SystemTime {

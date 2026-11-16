@@ -22,6 +22,12 @@ pub struct SourceLease {
     _guard: LockGuard,
 }
 
+impl std::fmt::Debug for SourceLease {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SourceLease").finish_non_exhaustive()
+    }
+}
+
 impl SourceLease {
     /// Acquire a shared checkout lease.
     ///
@@ -57,6 +63,23 @@ impl SourceLease {
     ) -> Result<Option<LockGuard>, Error> {
         let path = Self::path(store_root, kind, slug, pin)?;
         Ok(LockGuard::try_acquire_exclusive(path).await?)
+    }
+
+    /// Whether a lease is currently held, without creating anything. For a dry
+    /// run: an absent lease file means no holder, and a present one is probed
+    /// with a non-blocking exclusive lock that is released immediately. The
+    /// answer is a snapshot; a real prune still takes the lease itself.
+    pub async fn is_held(
+        store_root: &Path,
+        kind: &str,
+        slug: &str,
+        pin: &str,
+    ) -> Result<bool, Error> {
+        let path = Self::path(store_root, kind, slug, pin)?;
+        if !tokio::fs::try_exists(&path).await? {
+            return Ok(false);
+        }
+        Ok(LockGuard::try_acquire_exclusive(path).await?.is_none())
     }
 
     fn path(

@@ -6,7 +6,8 @@ use omni_context::{Context, ContextSys};
 use omni_remote_source::{
     InstallOptions, RemoteSourceContributor,
     manager::{
-        RemoteSourceManager, StorePruneFilter, config::RemoteSourceConfig,
+        PruneReport, RemoteSourceManager, StoreEntry, StorePruneFilter,
+        config::RemoteSourceConfig,
     },
     sys::RemoteSourceSys,
 };
@@ -89,11 +90,28 @@ pub struct StoreCheckoutView {
     pub unused_for_secs: u64,
 }
 
+/// A checkout a prune could not remove.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct StoreCheckoutFailure {
+    #[serde(flatten)]
+    pub checkout: StoreCheckoutView,
+    /// Why the removal failed.
+    pub error: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct RemoteSourcesPruneResponse {
     /// The checkouts that matched; deleted unless the request was a dry run.
     pub checkouts: Vec<StoreCheckoutView>,
     pub deleted: bool,
+    /// Checkouts a running process holds a lease on. They were left in place;
+    /// prune them again once the holder is done.
+    #[serde(default)]
+    pub skipped_in_use: Vec<StoreCheckoutView>,
+    /// Checkouts that could not be removed. A partly removed checkout reads as
+    /// incomplete and is cleared by the next prune or publish.
+    #[serde(default)]
+    pub failed: Vec<StoreCheckoutFailure>,
 }
 
 /// Delete checkouts from the shared remote-source store. This is the only
@@ -128,24 +146,42 @@ where
     }
 
     let manager = open_source_store(ctx, sys).await?;
-    let now = std::time::SystemTime::now();
-    let matched = manager.prune_store(&filter, req.dry_run).await?;
-    Ok(RemoteSourcesPruneResponse {
-        checkouts: matched
+    let report = manager.prune_store_report(&filter, req.dry_run).await?;
+    Ok(prune_response(
+        report,
+        !req.dry_run,
+        std::time::SystemTime::now(),
+    ))
+}
+
+fn prune_response(
+    report: PruneReport,
+    deleted: bool,
+    now: std::time::SystemTime,
+) -> RemoteSourcesPruneResponse {
+    let view = |entry: StoreEntry| StoreCheckoutView {
+        kind: entry.kind,
+        remote: entry.remote,
+        pin: entry.pin,
+        size_bytes: entry.size,
+        unused_for_secs: now
+            .duration_since(entry.last_used)
+            .unwrap_or_default()
+            .as_secs(),
+    };
+    RemoteSourcesPruneResponse {
+        checkouts: report.removed.into_iter().map(view).collect(),
+        deleted,
+        skipped_in_use: report.skipped_in_use.into_iter().map(view).collect(),
+        failed: report
+            .failed
             .into_iter()
-            .map(|entry| StoreCheckoutView {
-                kind: entry.kind,
-                remote: entry.remote,
-                pin: entry.pin,
-                size_bytes: entry.size,
-                unused_for_secs: now
-                    .duration_since(entry.last_used)
-                    .unwrap_or_default()
-                    .as_secs(),
+            .map(|failure| StoreCheckoutFailure {
+                checkout: view(failure.entry),
+                error: failure.error,
             })
             .collect(),
-        deleted: !req.dry_run,
-    })
+    }
 }
 
 /// Which subsystems an install pass processes. No flag set means all of them.
@@ -302,6 +338,49 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use omni_remote_source::manager::PruneFailure;
+
+    fn entry(pin: &str) -> StoreEntry {
+        StoreEntry {
+            kind: "git".into(),
+            remote: "remote".into(),
+            pin: pin.into(),
+            dir: format!("/store/{pin}").into(),
+            size: 7,
+            last_used: std::time::UNIX_EPOCH,
+        }
+    }
+
+    #[test]
+    fn a_prune_response_carries_skipped_and_failed_checkouts() {
+        let report = PruneReport {
+            removed: vec![entry("a")],
+            skipped_in_use: vec![entry("b")],
+            failed: vec![PruneFailure {
+                entry: entry("c"),
+                error: "permission denied".into(),
+            }],
+        };
+        let now = std::time::UNIX_EPOCH + Duration::from_secs(60);
+        let response = prune_response(report, true, now);
+
+        assert!(response.deleted);
+        assert_eq!(response.checkouts.len(), 1);
+        assert_eq!(response.checkouts[0].pin, "a");
+        assert_eq!(response.checkouts[0].unused_for_secs, 60);
+        assert_eq!(response.skipped_in_use[0].pin, "b");
+        assert_eq!(response.failed[0].checkout.pin, "c");
+        assert_eq!(response.failed[0].error, "permission denied");
+
+        // Additive on the wire: an older consumer's payload still parses, and
+        // the failure keeps its checkout fields flat.
+        let json = serde_json::to_value(&response).unwrap();
+        assert_eq!(json["failed"][0]["pin"], "c");
+        let old = r#"{"checkouts":[],"deleted":false}"#;
+        let parsed: RemoteSourcesPruneResponse =
+            serde_json::from_str(old).unwrap();
+        assert!(parsed.skipped_in_use.is_empty() && parsed.failed.is_empty());
+    }
 
     #[test]
     fn empty_selection_resolves_to_all_subsystems() {

@@ -365,6 +365,7 @@ tasks:
     }
   F08.3:
     {
+      owner: "OpenCode (lease-aware prune; pending PR review)",
       title: "GC honors leases",
       parent: F08,
       kind: code,
@@ -374,7 +375,7 @@ tasks:
     }
   F08.4:
     {
-      owner: "OpenCode (atomic references; pending PR review)",
+      owner: "OpenCode (atomic references; merged PR #110)",
       title: "Atomic reference API (complete vs additive)",
       parent: F08,
       kind: code,

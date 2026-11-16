@@ -42,6 +42,16 @@ pub struct MaterializedSource {
     pub pin: String,
 }
 
+/// A materialized source whose checkout is protected from
+/// [`prune_store`](crate::manager::RemoteSourceManager::prune_store) while the
+/// lease is held. Clone the `Arc` for each reader of the tree; the last drop
+/// releases it.
+#[derive(Debug, Clone)]
+pub struct LeasedSource {
+    pub source: MaterializedSource,
+    pub lease: std::sync::Arc<crate::lease::SourceLease>,
+}
+
 /// A resolved reference to a remote source together with the pin it resolved
 /// to. Subsystems return these after materializing; the manager persists them
 /// as garbage-collection roots.

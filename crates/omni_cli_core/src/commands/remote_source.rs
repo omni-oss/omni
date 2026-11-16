@@ -131,9 +131,30 @@ async fn run_prune(
     };
 
     let candidates = api.remote_sources_prune(request(true, None)).await?;
+    for checkout in &candidates.skipped_in_use {
+        println!(
+            "  {} {} {} is in use by a running process and will be skipped",
+            checkout.kind, checkout.remote, checkout.pin
+        );
+    }
+    // A checkout that failed the preview stays on disk and is not offered for
+    // deletion, so it fails the command on every path below.
+    report_failures("Cannot prune", &candidates.failed);
+    let failed_status = if candidates.failed.is_empty() {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    };
     if candidates.checkouts.is_empty() {
-        println!("No store checkouts matched the given filters");
-        return Ok(ExitCode::SUCCESS);
+        if candidates.skipped_in_use.is_empty() && candidates.failed.is_empty()
+        {
+            println!("No store checkouts matched the given filters");
+        } else {
+            println!(
+                "Nothing to prune: every matching checkout is in use or failed"
+            );
+        }
+        return Ok(failed_status);
     }
     let total: u64 = candidates.checkouts.iter().map(|c| c.size_bytes).sum();
     for checkout in &candidates.checkouts {
@@ -155,7 +176,7 @@ async fn run_prune(
             candidates.checkouts.len(),
             ByteSize(total)
         );
-        return Ok(ExitCode::SUCCESS);
+        return Ok(failed_status);
     }
 
     if !args.yes {
@@ -168,7 +189,7 @@ async fn run_prune(
         std::io::stdin().read_line(&mut input)?;
         if input.trim() != "y" {
             println!("Aborting");
-            return Ok(ExitCode::SUCCESS);
+            return Ok(failed_status);
         }
     }
 
@@ -187,7 +208,32 @@ async fn run_prune(
         .remote_sources_prune(request(false, Some(shown)))
         .await?;
     println!("Pruned {} checkouts", pruned.checkouts.len());
-    Ok(ExitCode::SUCCESS)
+    for checkout in &pruned.skipped_in_use {
+        println!(
+            "Skipped {} {} {}: in use by a running process",
+            checkout.kind, checkout.remote, checkout.pin
+        );
+    }
+    // Report what was removed first, then fail so a script notices checkouts
+    // that are still on disk.
+    report_failures("Could not prune", &pruned.failed);
+    if pruned.failed.is_empty() && candidates.failed.is_empty() {
+        Ok(ExitCode::SUCCESS)
+    } else {
+        Ok(ExitCode::FAILURE)
+    }
+}
+
+fn report_failures(prefix: &str, failed: &[omni_api::StoreCheckoutFailure]) {
+    for failure in failed {
+        eprintln!(
+            "{prefix} {} {} {}: {}",
+            failure.checkout.kind,
+            failure.checkout.remote,
+            failure.checkout.pin,
+            failure.error
+        );
+    }
 }
 
 async fn run_install(
