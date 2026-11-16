@@ -17,7 +17,7 @@ use omni_remote_source::{
     RemoteSource, RemoteSourceRef,
     driver::{DriverContext, DriverRegistry, SourceDriver, SourceSpec},
     manager::{RemoteSourceManager, config::RemoteSourceConfig},
-    refs::{RefSetData, RefUpdate},
+    refs::{RefSetData, RefSetUpdate, RefUpdate},
 };
 use omni_utils::lock::LockGuard;
 use system_traits::{impls::RealSys, *};
@@ -29,6 +29,235 @@ const WRITE: u8 = 2;
 const RENAME: u8 = 3;
 const READ: u8 = 4;
 const PAUSE_RENAME: u8 = 5;
+
+#[tokio::test]
+async fn batch_staging_failure_changes_no_sets_and_cleans_all_temps() {
+    let dir = tempfile::tempdir().unwrap();
+    let sys = FaultSys::default();
+    let manager = RemoteSourceManager::new(config(dir.path()), sys.clone())
+        .await
+        .unwrap();
+    let old_refs = [reference("old", "p0")];
+    for id in ["generator", "tool"] {
+        manager
+            .update_refs(id, RefUpdate::ReplaceComplete, &old_refs)
+            .await
+            .unwrap();
+    }
+    let old = std::fs::read(dir.path().join("refs/generator.json")).unwrap();
+    let new_refs = [reference("new", "p1")];
+    let updates = [
+        RefSetUpdate {
+            id: "generator",
+            mode: RefUpdate::ReplaceComplete,
+            refs: &new_refs,
+        },
+        RefSetUpdate {
+            id: "tool",
+            mode: RefUpdate::ReplaceComplete,
+            refs: &new_refs,
+        },
+    ];
+    // Fail after the first set has been staged, both on open and during write.
+    for failure in [&sys.fail_open_at, &sys.fail_write_at] {
+        sys.opens.store(0, Ordering::SeqCst);
+        sys.renames.store(0, Ordering::SeqCst);
+        failure.store(2, Ordering::SeqCst);
+        assert!(manager.update_ref_sets(&updates).await.is_err());
+        failure.store(0, Ordering::SeqCst);
+        assert_eq!(sys.renames.load(Ordering::SeqCst), 0);
+        for id in ["generator", "tool"] {
+            assert_eq!(
+                std::fs::read(dir.path().join(format!("refs/{id}.json")))
+                    .unwrap(),
+                old
+            );
+        }
+        assert_no_staging(&dir.path().join("refs"));
+    }
+}
+
+#[tokio::test]
+async fn batch_commit_failure_leaves_complete_files_and_retry_converges() {
+    let dir = tempfile::tempdir().unwrap();
+    let sys = FaultSys::default();
+    let manager = RemoteSourceManager::new(config(dir.path()), sys.clone())
+        .await
+        .unwrap();
+    let old_refs = [reference("old", "p0")];
+    for id in ["generator", "tool", "projection"] {
+        manager
+            .update_refs(id, RefUpdate::ReplaceComplete, &old_refs)
+            .await
+            .unwrap();
+    }
+    let unselected =
+        std::fs::read(dir.path().join("refs/projection.json")).unwrap();
+    let new_refs = [reference("new", "p1")];
+    let updates = [
+        RefSetUpdate {
+            id: "generator",
+            mode: RefUpdate::ReplaceComplete,
+            refs: &new_refs,
+        },
+        RefSetUpdate {
+            id: "tool",
+            mode: RefUpdate::ReplaceComplete,
+            refs: &[],
+        },
+    ];
+    sys.opens.store(0, Ordering::SeqCst);
+    sys.renames.store(0, Ordering::SeqCst);
+    sys.fail_rename_at.store(2, Ordering::SeqCst);
+    assert!(manager.update_ref_sets(&updates).await.is_err());
+    assert_eq!(sys.opens.load(Ordering::SeqCst), 2);
+    assert_eq!(
+        read_refs(dir.path(), "generator"),
+        [("new".into(), "p1".into())]
+    );
+    assert_eq!(read_refs(dir.path(), "tool"), [("old".into(), "p0".into())]);
+    assert_no_staging(&dir.path().join("refs"));
+    sys.fail_rename_at.store(0, Ordering::SeqCst);
+    manager.update_ref_sets(&updates).await.unwrap();
+    assert!(read_refs(dir.path(), "tool").is_empty());
+    assert_eq!(
+        std::fs::read(dir.path().join("refs/projection.json")).unwrap(),
+        unselected
+    );
+}
+
+#[tokio::test]
+async fn batch_rejects_duplicate_ids_and_bad_later_sets_before_staging() {
+    let dir = tempfile::tempdir().unwrap();
+    let sys = FaultSys::default();
+    let manager = RemoteSourceManager::new(config(dir.path()), sys.clone())
+        .await
+        .unwrap();
+    let refs = [reference("old", "p0")];
+    manager
+        .update_refs("generator", RefUpdate::ReplaceComplete, &refs)
+        .await
+        .unwrap();
+    let old = std::fs::read(dir.path().join("refs/generator.json")).unwrap();
+    sys.opens.store(0, Ordering::SeqCst);
+    let first = RefSetUpdate {
+        id: "generator",
+        mode: RefUpdate::ReplaceComplete,
+        refs: &[],
+    };
+    assert!(manager.update_ref_sets(&[first, first]).await.is_err());
+    std::fs::write(dir.path().join("refs/tool.json"), b"bad json").unwrap();
+    assert!(
+        manager
+            .update_ref_sets(&[
+                first,
+                RefSetUpdate {
+                    id: "tool",
+                    mode: RefUpdate::ReplaceComplete,
+                    refs: &[]
+                },
+            ])
+            .await
+            .is_err()
+    );
+    assert_eq!(sys.opens.load(Ordering::SeqCst), 0);
+    assert_eq!(
+        std::fs::read(dir.path().join("refs/generator.json")).unwrap(),
+        old
+    );
+}
+
+#[tokio::test]
+async fn failed_reconcile_after_batch_keeps_complete_refs_and_old_lockfile() {
+    let dir = tempfile::tempdir().unwrap();
+    let sys = FaultSys::default();
+    let path = dir.path().join("lock.json");
+    let lockfile = Lockfile::load(&path, &RealSys).await.unwrap();
+    let source = reference("old", "p0").source;
+    let spec = source.spec();
+    lockfile
+        .lock_pin("git", &spec.locator, &spec.selector, "p0")
+        .await
+        .unwrap();
+    lockfile.save(&RealSys).await.unwrap();
+    let old = std::fs::read(&path).unwrap();
+    let manager = RemoteSourceManager::new(config(dir.path()), sys.clone())
+        .await
+        .unwrap();
+    let update = RefSetUpdate {
+        id: "generator",
+        mode: RefUpdate::ReplaceComplete,
+        refs: &[],
+    };
+    manager.update_ref_sets(&[update]).await.unwrap();
+    sys.fault.store(RENAME, Ordering::SeqCst);
+    assert!(manager.reconcile_pins().await.is_err());
+    assert_eq!(std::fs::read(&path).unwrap(), old);
+    assert!(read_refs(dir.path(), "generator").is_empty());
+    sys.fault.store(0, Ordering::SeqCst);
+    manager.update_ref_sets(&[update]).await.unwrap();
+    manager.reconcile_pins().await.unwrap();
+    assert!(
+        Lockfile::load(&path, &RealSys)
+            .await
+            .unwrap()
+            .pins()
+            .await
+            .is_empty()
+    );
+    assert_no_staging(dir.path());
+}
+
+#[tokio::test]
+async fn cancelled_batch_retains_lock_until_all_files_are_published() {
+    let dir = tempfile::tempdir().unwrap();
+    let sys = FaultSys::default();
+    let manager = RemoteSourceManager::new(config(dir.path()), sys.clone())
+        .await
+        .unwrap();
+    sys.fault.store(PAUSE_RENAME, Ordering::SeqCst);
+    let task = tokio::spawn(async move {
+        let refs = [reference("new", "p1")];
+        manager
+            .update_ref_sets(&[
+                RefSetUpdate {
+                    id: "generator",
+                    mode: RefUpdate::ReplaceComplete,
+                    refs: &refs,
+                },
+                RefSetUpdate {
+                    id: "tool",
+                    mode: RefUpdate::ReplaceComplete,
+                    refs: &refs,
+                },
+            ])
+            .await
+    });
+    timeout(WAIT, sys.entered.notified()).await.unwrap();
+    assert_eq!(sys.opens.load(Ordering::SeqCst), 2);
+    task.abort();
+    assert!(task.await.unwrap_err().is_cancelled());
+    let lockpath = dir.path().join("lock.json.lock");
+    assert!(
+        LockGuard::try_acquire_exclusive(&lockpath)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    {
+        let (mutex, ready) = &*sys.release;
+        *mutex.lock().unwrap() = true;
+        ready.notify_all();
+    }
+    let _guard = timeout(WAIT, LockGuard::acquire_exclusive(lockpath))
+        .await
+        .unwrap()
+        .unwrap();
+    for id in ["generator", "tool"] {
+        assert_eq!(read_refs(dir.path(), id), [("new".into(), "p1".into())]);
+    }
+    assert_no_staging(&dir.path().join("refs"));
+}
 
 #[derive(Default)]
 struct CountingDriver(AtomicUsize);
@@ -69,6 +298,11 @@ struct FaultSys {
     fault: Arc<AtomicU8>,
     entered: Arc<Notify>,
     release: Arc<(Mutex<bool>, Condvar)>,
+    opens: Arc<AtomicUsize>,
+    renames: Arc<AtomicUsize>,
+    fail_open_at: Arc<AtomicUsize>,
+    fail_write_at: Arc<AtomicUsize>,
+    fail_rename_at: Arc<AtomicUsize>,
 }
 
 fn injected() -> io::Error {
@@ -83,12 +317,17 @@ impl BaseFsOpen for FaultSys {
         path: &Path,
         options: &OpenOptions,
     ) -> io::Result<Self::File> {
+        let opened = self.opens.fetch_add(1, Ordering::SeqCst) + 1;
         assert_ne!(path.extension().and_then(|s| s.to_str()), Some("json"));
-        if self.fault.load(Ordering::SeqCst) == OPEN {
+        if self.fault.load(Ordering::SeqCst) == OPEN
+            || self.fail_open_at.load(Ordering::SeqCst) == opened
+        {
             return Err(injected());
         }
         let file = RealSys.fs_open(path, options)?;
-        if self.fault.load(Ordering::SeqCst) == WRITE {
+        if self.fault.load(Ordering::SeqCst) == WRITE
+            || self.fail_write_at.load(Ordering::SeqCst) == opened
+        {
             drop(file);
             let mut read_only = OpenOptions::new();
             read_only.read = true;
@@ -100,6 +339,10 @@ impl BaseFsOpen for FaultSys {
 
 impl BaseFsRename for FaultSys {
     fn base_fs_rename(&self, from: &Path, to: &Path) -> io::Result<()> {
+        let renamed = self.renames.fetch_add(1, Ordering::SeqCst) + 1;
+        if self.fail_rename_at.load(Ordering::SeqCst) == renamed {
+            return Err(injected());
+        }
         match self.fault.load(Ordering::SeqCst) {
             RENAME => return Err(injected()),
             PAUSE_RENAME => {

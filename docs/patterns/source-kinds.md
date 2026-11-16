@@ -32,6 +32,14 @@ saved changes. Keep staging files non-JSON so reconciliation ignores them.
 This guarantees complete-file visibility, not power-loss durability or a
 cross-file install transaction.
 
+Install resolves every selected contributor before updating any refs. Its
+`update_ref_sets` batch stages all selected files before the first rename under
+one workspace lock. A contributor, validation or staging failure changes no ref
+set or lockfile. Once renaming starts, a failure can leave a prefix committed;
+each file stays complete and re-running install converges. Unselected sets are
+not rewritten. `atomic_file::write_batch` implements the staging boundary; it is
+not a cross-file rollback mechanism.
+
 ## Leases and prune
 
 `RemoteSourceManager::materialize_leased` returns the checkout plus an

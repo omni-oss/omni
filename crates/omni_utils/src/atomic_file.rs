@@ -1,8 +1,8 @@
-//! Single-file atomic publication through the caller's filesystem abstraction.
+//! Staged file publication through the caller's filesystem abstraction.
 
 use std::{
     io::{self, Write},
-    path::Path,
+    path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
 };
 
@@ -24,6 +24,71 @@ pub fn write(
     path: &Path,
     bytes: &[u8],
 ) -> io::Result<()> {
+    write_batch(sys, &[(path, bytes)])
+}
+
+/// Stage every file before publishing any of them.
+///
+/// Staging failure leaves all destinations untouched. Once renaming starts,
+/// failure can leave a prefix committed: each destination is old-complete or
+/// new-complete, but the batch is not a cross-file transaction. Remaining staging
+/// files are cleaned up, and retrying a complete batch converges.
+/// The same external locking, filesystem and durability requirements as
+/// [`write`] apply. Destination paths must be distinct.
+pub fn write_batch(
+    sys: &(impl FsOpen + FsRename + FsRemoveFile),
+    files: &[(&Path, &[u8])],
+) -> io::Result<()> {
+    let mut staged = Vec::with_capacity(files.len());
+    for &(path, bytes) in files {
+        match stage(sys, path, bytes) {
+            Ok(temp) => staged.push((temp, path)),
+            Err(error) => return Err(cleanup(sys, &staged, error)),
+        }
+    }
+    for (temp, path) in &staged {
+        if let Err(error) = sys.fs_rename(temp, path) {
+            return Err(cleanup(sys, &staged, error));
+        }
+    }
+    Ok(())
+}
+
+fn cleanup(
+    sys: &impl FsRemoveFile,
+    staged: &[(PathBuf, &Path)],
+    mut error: io::Error,
+) -> io::Error {
+    for (temp, _) in staged {
+        error = cleanup_one(sys, temp, error);
+    }
+    error
+}
+
+fn cleanup_one(
+    sys: &impl FsRemoveFile,
+    temp: &Path,
+    error: io::Error,
+) -> io::Error {
+    match sys.fs_remove_file(temp) {
+        Err(cleanup) if cleanup.kind() != io::ErrorKind::NotFound => {
+            io::Error::new(
+                error.kind(),
+                format!(
+                    "{error}; could not remove staging file {}: {cleanup}",
+                    temp.display()
+                ),
+            )
+        }
+        _ => error,
+    }
+}
+
+fn stage(
+    sys: &(impl FsOpen + FsRemoveFile),
+    path: &Path,
+    bytes: &[u8],
+) -> io::Result<PathBuf> {
     let parent = path
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
@@ -54,22 +119,10 @@ pub fn write(
         })();
         // Close before replacement and cleanup (especially on Windows).
         drop(file);
-        let result = result.and_then(|()| sys.fs_rename(&staging, path));
         if let Err(error) = result {
-            if let Err(cleanup) = sys.fs_remove_file(&staging)
-                && cleanup.kind() != io::ErrorKind::NotFound
-            {
-                return Err(io::Error::new(
-                    error.kind(),
-                    format!(
-                        "{error}; could not remove staging file {}: {cleanup}",
-                        staging.display()
-                    ),
-                ));
-            }
-            return Err(error);
+            return Err(cleanup_one(sys, &staging, error));
         }
-        return Ok(());
+        return Ok(staging);
     }
     Err(io::Error::new(
         io::ErrorKind::AlreadyExists,
