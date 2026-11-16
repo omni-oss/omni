@@ -104,7 +104,7 @@ trait ArtifactHooks {
   before(&ctx) -> HookDecision          // Allow | Veto { reason }
   after(&ctx, &outcome)                 // observe, cannot veto
 }
-ctx = { tenant, org, ws, env, op, digests, api_key_id, size? }   // digests: one for single ops, all requested for *Many
+ctx = { tenant, org, ws, env, op, digests, caller_id, credential_kind, principal, namespace, scope }   // digests: one for single ops, all requested for *Many; RFC 0030 replaced api_key_id
 op  = Get | GetMany | Head | HeadMany | Put | Delete
 ```
 
@@ -271,6 +271,6 @@ Where the build differs from the plan above:
 - **TLS.** The SQL crate enables `sqlx/tls-rustls` by default (`tls` feature). The service refuses a remote Postgres or MySQL url that does not set `verify-full` / `VERIFY_IDENTITY` (`verify-ca` does not check the host name), unless `allow_insecure_tls` is set. It checks what sqlx will apply: the last TLS-mode parameter wins, and `host` and `hostaddr` replace the url's host. Loopback and unix-socket hosts are exempt.
 - **Caching.** Expiry uses a monotonic clock natively and the wall clock on wasm32. On Workers the cache state is held per isolate so entries survive between requests. `CachingProvider` delegates ownership validation to the wrapped provider and caches only the result, so the wrapped provider's own rules still apply.
 - **Startup validation.** The native executor prepares every configured query at startup. It checks the parameter count (SQLite allows fewer, because it reports the highest index used) and the `found` or `veto_reason` column, and a wrong query stops the service. D1 cannot describe a query, so it keeps first-use failures. Row values and row counts are still checked per request.
-- **`api_key_id` in the hook context.** An opaque fingerprint (16 hex characters). Unkeyed SHA-256 by default, or HMAC-SHA256 under `hooks.api_key_id_secret`, which stops a reader of the usage table from testing key guesses offline. A warning is logged when hooks are on without a secret. It is the last parameter of the `before` query and follows the outcome in the `after` query.
+- **`api_key_id` in the hook context.** An opaque fingerprint (16 hex characters). Unkeyed SHA-256 by default, or HMAC-SHA256 under `hooks.api_key_id_secret`, which stops a reader of the usage table from testing key guesses offline. A warning is logged when hooks are on without a secret. It was the last parameter of the `before` query and followed the outcome in the `after` query. RFC 0030 keeps those positions (as `caller_id`) and appends the new parameters.
 - **Hook isolation.** `after` hooks run on their own pool (`hooks_max_connections`, default 2) and `after_max_in_flight` defaults to that size, so slow usage writes cannot starve authorization lookups or `before` hooks, which stay on the main pool because they are on the request path. With in-memory SQLite or `hooks_max_connections: 0` the pool is shared and a slow `after` hook can delay authorization.
 - **Tenant isolation of storage.** Artifacts are stored under `tenant/org/ws/env`. This is a change from `org/ws/env`: existing artifacts are unreachable after upgrading and are rebuilt as cache misses.

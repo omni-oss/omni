@@ -34,7 +34,7 @@ async fn seed(url: &str) -> SqlxExecutor {
         "CREATE TABLE api_keys(key_hash TEXT, tenant TEXT)",
         "CREATE TABLE key_scopes(key_hash TEXT, scope TEXT)",
         "CREATE TABLE vetoes(tenant TEXT, op TEXT, reason TEXT)",
-        "CREATE TABLE usage(op TEXT, tenant TEXT, digest TEXT, outcome TEXT, api_key_id TEXT)",
+        "CREATE TABLE usage(op TEXT, tenant TEXT, digest TEXT, outcome TEXT, api_key_id TEXT, credential_kind TEXT, principal TEXT, namespace TEXT, sha256 TEXT)",
         "INSERT INTO tenants VALUES ('t')",
         "INSERT INTO orgs VALUES ('t','o')",
         "INSERT INTO workspaces VALUES ('o','w')",
@@ -54,7 +54,7 @@ async fn seed(url: &str) -> SqlxExecutor {
     db
 }
 
-fn repository_config(url: &str) -> serde_json::Value {
+fn repository_config(url: &str, after: &str) -> serde_json::Value {
     json!({
         "database": { "url": url, "max_connections": 1 },
         "queries": {
@@ -74,15 +74,30 @@ fn repository_config(url: &str) -> serde_json::Value {
         },
         "hooks": { "api_key_id_secret": "pepper", "queries": {
             "before": "SELECT reason AS veto_reason FROM vetoes WHERE tenant = ?2 AND (op = ?1 OR op = '*') LIMIT 1",
-            "after": "INSERT INTO usage VALUES (?1, ?2, ?6, ?7, ?8)"
+            "after": after
         }}
     })
 }
 
+/// Records every new fact: `after` binds 13 parameters (op, tenant, org, ws,
+/// env, digest, outcome, caller_id, credential_kind, principal, namespace,
+/// scope, sha256).
+const AFTER: &str =
+    "INSERT INTO usage VALUES (?1, ?2, ?6, ?7, ?8, ?9, ?10, ?11, ?13)";
+
 async fn server(url: &str) -> TestServer {
-    let path = std::env::temp_dir()
-        .join(format!("orcs-repo-{}.json", std::process::id()));
-    std::fs::write(&path, repository_config(url).to_string()).unwrap();
+    server_with(url, AFTER).await
+}
+
+async fn server_with(url: &str, after: &str) -> TestServer {
+    static NEXT: std::sync::atomic::AtomicUsize =
+        std::sync::atomic::AtomicUsize::new(0);
+    let path = std::env::temp_dir().join(format!(
+        "orcs-repo-{}-{}.json",
+        std::process::id(),
+        NEXT.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+    ));
+    std::fs::write(&path, repository_config(url, after).to_string()).unwrap();
 
     let args = ServeArgs::new(
         "".to_string(),
@@ -185,6 +200,16 @@ async fn sql_backend_authorizes_validates_vetoes_and_records_usage() {
         .unwrap(),
         "usage is attributed to the key's opaque id"
     );
+    // The same facts the stored entry records.
+    assert!(
+        db.exists(
+            "SELECT 1 AS found FROM usage WHERE outcome = 'stored' AND credential_kind = 'api_key' AND principal = ?1 AND namespace = 'shared' AND sha256 = ?2",
+            &[&key_id, &sha256_hex(b"x")],
+        )
+        .await
+        .unwrap(),
+        "usage records the credential kind, principal, namespace and hash"
+    );
 
     call(s.get(ONE), KEY, "t")
         .await
@@ -203,4 +228,59 @@ async fn sql_backend_authorizes_validates_vetoes_and_records_usage() {
     assert!(res.text().contains("pruning in progress"));
 
     let _ = std::fs::remove_file(&file);
+}
+
+/// A hook query written before RFC 0030 binds the first eight parameters. On
+/// SQLite it is still accepted, and because those positions keep their meaning
+/// it records exactly what it always did.
+#[tokio::test]
+async fn a_hook_query_written_for_the_older_parameter_list_records_what_it_did()
+{
+    let file = std::env::temp_dir()
+        .join(format!("orcs-older-{}.db", std::process::id()));
+    let _ = std::fs::remove_file(&file);
+    let url = format!(
+        "sqlite:{}?mode=rwc",
+        file.to_string_lossy().replace('\\', "/")
+    );
+    let db = seed(&url).await;
+    db.execute("DROP TABLE usage", &[]).await.unwrap();
+    db.execute(
+        "CREATE TABLE usage(op TEXT, tenant TEXT, digest TEXT, outcome TEXT, api_key_id TEXT)",
+        &[],
+    )
+    .await
+    .unwrap();
+    // op, tenant, digest, outcome, api_key_id: the five-column insert of the
+    // eight-parameter `after` list.
+    let s = server_with(&url, "INSERT INTO usage VALUES (?1, ?2, ?6, ?7, ?8)")
+        .await;
+
+    s.put(ONE)
+        .add_header("Authorization", format!("Bearer {KEY}"))
+        .add_header("X-OMNI-TENANT", "t")
+        .add_header("X-Omni-Content-Sha256", sha256_hex(b"x"))
+        .bytes("x".into())
+        .await
+        .assert_status(http::StatusCode::NO_CONTENT);
+    let key_id =
+        omni_remote_cache_service::hooks::api_key_id_keyed("pepper", KEY);
+    let mut recorded = false;
+    for _ in 0..50 {
+        recorded = db
+            .exists(
+                "SELECT 1 AS found FROM usage WHERE op = 'put' AND tenant = 't' AND outcome = 'stored' AND api_key_id = ?1",
+                &[&key_id],
+            )
+            .await
+            .unwrap();
+        if recorded {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert!(
+        recorded,
+        "an older query keeps recording outcome and api_key_id"
+    );
 }

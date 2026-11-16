@@ -324,10 +324,26 @@ pub async fn after_response(
     success: crate::hooks::OutcomeKind,
     response: Response,
 ) -> Response {
-    use crate::hooks::{HookOutcome, run_after};
+    after_response_with(state, ctx, success, response, None).await
+}
+
+/// As [`after_response`], for an operation that has the artifact's SHA-256 to
+/// report. It is attached only when the operation succeeded in the way the
+/// caller expected (`Stored`, `Hit`); a conflict, miss or failure reports none, so
+/// a hook never records the hash of an entry that was not written or served.
+pub async fn after_response_with(
+    state: &crate::state::ServiceState,
+    ctx: crate::hooks::HookContext,
+    success: crate::hooks::OutcomeKind,
+    response: Response,
+    sha256: Option<String>,
+) -> Response {
+    use crate::hooks::{HookOutcome, OutcomeKind, run_after};
 
     let kind = outcome_kind(response.status(), success);
-    run_after(state.provider.as_ref(), ctx, HookOutcome { kind }).await;
+    let sha256 = sha256
+        .filter(|_| matches!(kind, OutcomeKind::Stored | OutcomeKind::Hit));
+    run_after(state.provider.as_ref(), ctx, HookOutcome { kind, sha256 }).await;
 
     response
 }
@@ -351,8 +367,12 @@ pub macro before_hook(
         ws: $query.ws.clone(),
         env: $query.env.clone(),
         digests: $digests,
-        // Legacy hook field name until the slice 3 hook-contract migration.
-        api_key_id: $caller.credential().id().to_owned(),
+        caller_id: $caller.credential().id().to_owned(),
+        credential_kind: $caller.credential().kind().clone(),
+        principal: $caller.principal().to_owned(),
+        // Only the shared namespace exists until namespaces land.
+        namespace: crate::hooks::NamespaceKind::Shared,
+        scope: None,
     };
 
     if let Some(response) = run_before($state.provider.as_ref(), &ctx).await {

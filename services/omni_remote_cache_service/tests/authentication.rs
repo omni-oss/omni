@@ -241,7 +241,13 @@ async fn every_route_accepts_a_non_api_key_caller_and_uses_its_id_for_hooks() {
     }
     let hooks = hooks.0.lock().unwrap();
     assert_eq!(hooks.len(), 6);
-    assert!(hooks.iter().all(|ctx| ctx.api_key_id == "opaque-subject"));
+    assert!(hooks.iter().all(|ctx| ctx.caller_id == "opaque-subject"));
+    // Nothing downstream assumes an API key: the hooks see the authenticator's
+    // credential kind and principal.
+    assert!(hooks.iter().all(|ctx| {
+        ctx.credential_kind == CredentialKind::Custom("oidc".into())
+            && ctx.principal == "external-principal"
+    }));
 }
 
 #[tokio::test]

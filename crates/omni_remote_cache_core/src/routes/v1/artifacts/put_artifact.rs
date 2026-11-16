@@ -16,7 +16,7 @@ use crate::{
     extractors::{Credential, TenantCode},
     hooks::{ArtifactOp, OutcomeKind},
     routes::v1::artifacts::common::{
-        after_response, authenticate, before_hook, container,
+        after_response_with, authenticate, before_hook, container,
         require_valid_digest, validate_ownership,
     },
     security::Scope,
@@ -136,7 +136,7 @@ pub async fn put_artifact(
     let (stream, sealed) = seal(
         Box::pin(body.into_data_stream().map(|r| r.map_err(Error::custom))),
         SealParams {
-            declared_sha256,
+            declared_sha256: declared_sha256.clone(),
             limit,
             writer_credential: TrailerCredential {
                 kind: caller.credential().kind().as_str().to_owned(),
@@ -174,7 +174,14 @@ pub async fn put_artifact(
         },
     };
 
-    after_response(&state, hook_ctx, OutcomeKind::Stored, response).await
+    after_response_with(
+        &state,
+        hook_ctx,
+        OutcomeKind::Stored,
+        response,
+        Some(declared_sha256),
+    )
+    .await
 }
 
 fn declared_length(headers: &HeaderMap) -> Option<u64> {

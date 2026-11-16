@@ -311,15 +311,22 @@ describeTargets("v1.artifacts.api", (target) => {
         let usage = "";
         for (let i = 0; i < 50 && !usage.includes("stored"); i++) {
             usage = await sql(
-                `SELECT outcome, api_key_id FROM usage WHERE digest = '${digest}' AND op = 'put'`,
+                `SELECT outcome, api_key_id, credential_kind, principal, namespace, sha256 FROM usage WHERE digest = '${digest}' AND op = 'put'`,
             );
             await sleep(100);
         }
         expect(usage).toContain("stored");
         // attributed to an opaque id, never the key
-        expect(usage).toContain(
-            createHash("sha256").update(API_KEY).digest("hex").slice(0, 16),
-        );
+        const callerId = createHash("sha256")
+            .update(API_KEY)
+            .digest("hex")
+            .slice(0, 16);
+        expect(usage).toContain(callerId);
+        expect(usage).not.toContain(API_KEY);
+        // the same facts the stored entry records
+        expect(usage).toContain("api_key");
+        expect(usage).toContain("shared");
+        expect(usage).toContain(sha256Hex(BODY));
 
         await sql(`INSERT INTO vetoes VALUES ('${TENANT}', 'get', 'pruning')`);
         const vetoed = await getArtifact(target.apiBaseUrl);

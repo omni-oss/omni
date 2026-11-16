@@ -20,11 +20,11 @@ use omni_remote_cache_service::{
     },
     hooks::{
         ArtifactHooks, ArtifactOp, DynArtifactHooks, HookContext, HookDecision,
-        HookError, HookOutcome, OutcomeKind,
+        HookError, HookOutcome, NamespaceKind, OutcomeKind,
     },
     providers::DependencyProvider,
     routes::root::RouterConfig,
-    security::Authenticator,
+    security::{Authenticator, CredentialKind},
     services::DynValidationService,
     state::build_state,
 };
@@ -74,6 +74,9 @@ struct Recorder {
     after: AtomicUsize,
     key_ids: std::sync::Mutex<Vec<String>>,
     outcomes: std::sync::Mutex<Vec<OutcomeKind>>,
+    contexts: std::sync::Mutex<Vec<HookContext>>,
+    /// Each `after` call's outcome and the SHA-256 it carried.
+    hashes: std::sync::Mutex<Vec<(OutcomeKind, Option<String>)>>,
 }
 
 #[async_trait]
@@ -83,7 +86,8 @@ impl ArtifactHooks for Recorder {
         ctx: &HookContext,
     ) -> Result<HookDecision, HookError> {
         self.before.fetch_add(1, Ordering::SeqCst);
-        self.key_ids.lock().unwrap().push(ctx.api_key_id.clone());
+        self.key_ids.lock().unwrap().push(ctx.caller_id.clone());
+        self.contexts.lock().unwrap().push(ctx.clone());
         Ok(if self.veto_ops.contains(&ctx.op) {
             HookDecision::Veto {
                 reason: "blocked by policy".into(),
@@ -100,6 +104,10 @@ impl ArtifactHooks for Recorder {
     ) -> Result<(), HookError> {
         self.after.fetch_add(1, Ordering::SeqCst);
         self.outcomes.lock().unwrap().push(outcome.kind);
+        self.hashes
+            .lock()
+            .unwrap()
+            .push((outcome.kind, outcome.sha256.clone()));
         Ok(())
     }
 }
@@ -235,6 +243,63 @@ async fn allowed_operation_runs_after() {
     assert_eq!(ids[0], omni_remote_cache_service::hooks::api_key_id("k"));
     assert_ne!(ids[0], "k");
     assert_eq!(ids[0].len(), 16);
+
+    // and the same facts the stored entry's trailer records
+    let contexts = hooks.contexts.lock().unwrap();
+    let ctx = &contexts[0];
+    assert_eq!(ctx.credential_kind, CredentialKind::ApiKey);
+    assert_eq!(
+        ctx.principal, ids[0],
+        "the default principal is the credential id"
+    );
+    assert_eq!(ctx.namespace, NamespaceKind::Shared);
+    assert_eq!(ctx.scope, None);
+}
+
+#[tokio::test]
+async fn after_carries_the_hash_only_for_a_stored_entry_or_a_hit_on_one() {
+    let hooks = Arc::new(Recorder::default());
+    let s = server(hooks.clone()).await;
+    let call = |r: axum_test::TestRequest| {
+        r.add_header("Authorization", "Bearer k")
+            .add_header("X-OMNI-TENANT", "t")
+    };
+    let hash = sha256_hex(b"artifact");
+    let put = |body: &'static [u8]| {
+        call(s.put(ONE))
+            .add_header("X-Omni-Content-Sha256", sha256_hex(body))
+            .bytes(body.into())
+    };
+
+    put(b"artifact")
+        .await
+        .assert_status(http::StatusCode::NO_CONTENT);
+    put(b"another")
+        .await
+        .assert_status(http::StatusCode::CONFLICT);
+    call(s.get(ONE)).await.assert_status_ok();
+    call(s.get("/api/v1/artifacts/missing?org=o&ws=w&env=e"))
+        .await
+        .assert_status(http::StatusCode::NOT_FOUND);
+    call(s.method(http::Method::HEAD, ONE)).await;
+    call(s.get(LIST)).await;
+    call(s.delete(ONE)).await;
+
+    // This test provider has no host runtime, so `after` runs inline and has
+    // finished by the time each response returns: the order below is exact.
+    assert_eq!(hooks.after.load(Ordering::SeqCst), 7);
+    assert_eq!(
+        *hooks.hashes.lock().unwrap(),
+        [
+            (OutcomeKind::Stored, Some(hash.clone())),
+            (OutcomeKind::AlreadyExists, None),
+            (OutcomeKind::Hit, Some(hash)),
+            (OutcomeKind::Miss, None),
+            (OutcomeKind::Hit, None),
+            (OutcomeKind::Hit, None),
+            (OutcomeKind::Deleted, None),
+        ]
+    );
 }
 
 #[tokio::test]

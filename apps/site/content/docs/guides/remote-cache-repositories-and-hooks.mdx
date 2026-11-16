@@ -52,7 +52,7 @@ credential cannot learn whether an organization, workspace or environment exists
 | 400    | An authenticated request for an organization, workspace or environment that does not exist, or a malformed digest |
 | 503    | The authentication backend failed (nothing else is tried)                                                         |
 
-The hook `api_key_id` is now the authenticated credential ID.
+The caller id that hooks see is the authenticated credential's ID (see [Hooks](#hooks)).
 
 ## Uploads and stored entries
 
@@ -255,16 +255,53 @@ Hooks run on every artifact operation: `get`, `get_many`, `head`, `head_many`,
   a 403 carrying that reason. Zero rows or a NULL reason allows it.
 - `after` observes the result and cannot change it, so use it to record usage.
   It runs after the response is sent.
-- `before` parameters: operation, tenant, organization, workspace, environment,
-  digest, api key id. `after` has the same, with the outcome (`hit`, `miss`,
-  `stored`, `deleted`, `failed`) before the api key id. The digest is empty for
-  list operations. The api key id is an opaque fingerprint (16 hex characters),
-  so usage can be attributed to a key without exposing it. Set
-  `hooks.api_key_id_secret` to make it an HMAC-SHA256 under that secret. Without
-  a secret it is an unkeyed SHA-256 prefix, so anyone who can read your usage
-  table can test key guesses offline. That is only safe for long random keys,
-  and the service logs a warning when hooks are on without a secret. Changing
-  the secret changes every id, so old usage rows stop matching.
+- Parameters are bound by position, as text. `before` binds 11 and `after` binds 13:
+
+  | #   | `before`        | #   | `after`         |
+  | --- | --------------- | --- | --------------- |
+  | 1   | operation       | 1   | operation       |
+  | 2   | tenant          | 2   | tenant          |
+  | 3   | organization    | 3   | organization    |
+  | 4   | workspace       | 4   | workspace       |
+  | 5   | environment     | 5   | environment     |
+  | 6   | digest          | 6   | digest          |
+  | 7   | caller id       | 7   | outcome         |
+  | 8   | credential kind | 8   | caller id       |
+  | 9   | principal       | 9   | credential kind |
+  | 10  | namespace       | 10  | principal       |
+  | 11  | scope           | 11  | namespace       |
+  |     |                 | 12  | scope           |
+  |     |                 | 13  | SHA-256         |
+
+  The digest is empty for list operations. The outcome is `hit`, `miss`,
+  `stored`, `already_exists`, `deleted` or `failed`. The credential kind is
+  `api_key` for an API key. The namespace is `shared`. The scope is empty when
+  there is none. The SHA-256 is the artifact's hash for a `stored` outcome and for
+  a `hit` on one artifact, and empty otherwise. These are the same facts the
+  stored entry records about who wrote it.
+
+- **Upgrading existing queries.** Every position that existed before keeps its
+  meaning: the first seven (`before`) and eight (`after`) parameters are as they
+  were, and the caller id is the value that used to be called the api key id. New
+  parameters are only appended. Postgres, MySQL and D1 require a query to use
+  exactly the number of parameters bound, so on those a query written for the old
+  lists is rejected until you add the new parameters. The native service refuses to
+  start and names the count; D1 cannot describe a query, so there it fails on first
+  use. Your query must also use every parameter: on Postgres and D1 reference each
+  one (for example `AND $12 IS NOT NULL` or `AND ?12 IS NOT NULL`), and on MySQL write
+  13 `?` in order.
+- **Positions never change.** A parameter keeps its position once it has shipped,
+  and new facts are only added at the end, so a query written for an older list
+  keeps its meaning. Absent values (no scope, no hash) are bound as an empty
+  string; use `NULLIF(?13, '')` if you want NULL. SQLite
+  accepts a query that uses fewer, so an old query keeps working there unchanged.
+- The caller id is an opaque fingerprint (16 hex characters), so usage can be
+  attributed to a credential without exposing it. Set `hooks.api_key_id_secret`
+  to make it an HMAC-SHA256 under that secret. Without a secret it is an unkeyed
+  SHA-256 prefix, so anyone who can read your usage table can test key guesses
+  offline. That is only safe for long random keys, and the service logs a
+  warning when hooks are on without a secret. Changing the secret changes every
+  id, so old usage rows stop matching.
 - At most `after_max_in_flight` `after` hooks run at once. On the native service it defaults to `hooks_max_connections`, and on D1 to 64. Extra ones are skipped and logged, so slow hooks cannot starve authorization lookups.
 - A `before` hook that errors or times out blocks the request by default
   (`fail_closed`). Set `fail_open` to let requests through instead.

@@ -28,9 +28,34 @@ pub enum ArtifactOp {
     Delete,
 }
 
+/// Which part of the cache an entry lives in. Only `Shared` exists until
+/// namespaces land (RFC 0030, section 4.1); `Isolated` is reserved so adding them
+/// does not change this contract.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    Display,
+    EnumString,
+    Serialize,
+    Deserialize,
+)]
+#[strum(serialize_all = "snake_case")]
+#[serde(rename_all = "snake_case")]
+pub enum NamespaceKind {
+    Shared,
+    Isolated,
+}
+
 /// What a hook is told about the operation. `digests` holds the one digest
 /// for single-artifact operations and is empty for the list operations
 /// (`GetMany`, `HeadMany`), which address a whole environment.
+///
+/// The caller fields come from the authenticated `Caller`, so they are the same
+/// facts the entry's trailer records. Nothing here assumes an API key.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HookContext {
     pub op: ArtifactOp,
@@ -39,10 +64,17 @@ pub struct HookContext {
     pub ws: String,
     pub env: String,
     pub digests: Vec<String>,
-    /// An opaque, stable id for the presented API key (a truncated SHA-256
-    /// fingerprint). It identifies the key in usage records without
-    /// exposing it.
-    pub api_key_id: String,
+    /// An opaque, stable id for the credential the caller presented. For an API
+    /// key it is the keyed or unkeyed fingerprint that older versions called
+    /// `api_key_id`, so existing usage records stay comparable. It identifies
+    /// the credential in usage records without exposing it.
+    pub caller_id: String,
+    pub credential_kind: crate::security::CredentialKind,
+    /// Who owns the entries this caller writes.
+    pub principal: String,
+    pub namespace: NamespaceKind,
+    /// The isolated-scope label, when there is one.
+    pub scope: Option<String>,
 }
 
 fn hex_prefix(bytes: &[u8]) -> String {
@@ -93,6 +125,10 @@ pub enum OutcomeKind {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HookOutcome {
     pub kind: OutcomeKind,
+    /// The artifact's SHA-256: the one just stored for a `Stored` outcome and
+    /// the stored entry's for a `Hit` on a single artifact. `None` for everything
+    /// else (list operations, `HEAD`, conflicts, misses, deletes and failures).
+    pub sha256: Option<String>,
 }
 
 #[derive(Debug, thiserror::Error)]

@@ -1571,8 +1571,13 @@ Deviations from the text above:
   matters.
 - **`namespace` is always `shared`, `scope` empty** until slice 4.
 - **List sizes are the stored object size**, which includes the trailer.
-- Hooks still carry the old `api_key_id` field (now the authenticated credential id) until the
-  hook contract batch.
+- **Hook parameters are appended, not reordered.** The RFC's order moves `outcome` in the
+  `after` query; SQLite accepts a query that uses fewer parameters than are bound, so an old
+  operator query would silently record the wrong column. Existing positions are kept (`before`:
+  `caller_id, credential_kind, principal, namespace, scope` follow the digest; `after`:
+  `outcome, caller_id, credential_kind, principal, namespace, scope, sha256`), so an old query
+  means what it did. The hook context carries `caller_id`, `credential_kind`, `principal`,
+  `namespace` and `scope`, and `after` the artifact's SHA-256.
 
 **Open gates before this RFC can be Implemented:**
 

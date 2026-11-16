@@ -133,8 +133,15 @@ credential/principal response headers (they exist for operators, slice 8).
    0027 examples, and every `api_key_id` reference (the D1 and SQL executors, the worker and the
    TypeScript fixtures). Tests: every operation records the new facts, `after` carries the hash
    as decided, the SQL queries bind in order, and a query written for the old 7 or 8 parameters
-   fails startup validation with a message that names the new order. 11 and 13 parameters are
-   far below D1's limit. Undo: revert; operators restore the old SQL.
+   is rejected by the databases that need the exact count; the message names the counts ("uses N parameter(s) but M are bound"), and only a Postgres or MySQL run in CI can show it, because SQLite accepts fewer. 11 and 13 parameters are
+   far below D1's limit. Undo: revert; operators restore the old SQL. **Decided while building:
+   the RFC's order is not used, and append-only is now the standing contract for hook parameters.** It would move `outcome` in the `after` query, and SQLite accepts
+   a query that uses fewer parameters than are bound, so an old operator query would keep running
+   but silently record the caller id in the outcome column. Every existing position is kept and
+   the new parameters are only appended (`before`: caller_id, credential_kind, principal,
+   namespace, scope; `after`: outcome, caller_id, credential_kind, principal, namespace, scope,
+   sha256). An old query then means exactly what it did, and Postgres, MySQL and D1 (which need
+   the exact count) still reject a stale query (at startup natively, on first use on D1).
 
 Checks per batch: the unit and integration tests for the touched crates, clippy with
 `-D warnings`, formatting and the wasm32 worker check. The `test:service:*` suites run in CI.
@@ -200,3 +207,16 @@ principal response headers deferred to slice 8.
     agreement, tampered and legacy objects, `409` leaves provenance intact, list sizes, the cap).
   - The TypeScript tests (including new ones for `400`, `422`, headers and `HEAD`) run in CI
     only.
+- **Batch 3 (hooks contract): implemented and independently reviewed by Opus (no
+  blockers; the append-only order confirmed correct on every database).** Follow-ups applied:
+  append-only stated as the standing contract, the Postgres and MySQL parameter notes
+  corrected, and the hash test made independent of timing. `HookContext` drops
+  `api_key_id` for `caller_id`, `credential_kind`, `principal`, `namespace` (`NamespaceKind`)
+  and `scope`; `HookOutcome` gains `sha256` (the stored hash for `Stored`, the entry's for a
+  single-artifact `Hit`, otherwise none, enforced in `after_response_with`). The SQL hook queries
+  bind 11 and 13 parameters in the append-only order above. Tests: the exact bound lists, that the
+  older seven and eight parameters are a prefix, the declared counts, every operation's `after`
+  hash (stored, 409, hit, miss, `HEAD`, list, delete), a non-API-key caller's kind and principal
+  reaching the hooks, a real SQLite database recording the new columns, and an old-shape query
+  still recording what it did. The D1 target's queries and usage table moved with the counts (D1
+  needs every parameter referenced); that and the TypeScript assertions run in CI only.

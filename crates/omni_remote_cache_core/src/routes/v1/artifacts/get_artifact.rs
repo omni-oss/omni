@@ -8,7 +8,10 @@ use http::{StatusCode, header};
 use serde::Deserialize;
 use utoipa::IntoParams;
 
-use super::common::{add_provenance_headers, container, require_valid_digest};
+use super::common::{
+    add_provenance_headers, after_response_with, container,
+    require_valid_digest,
+};
 use crate::{
     entry::{EntryRead, checked_body, read_entry},
     extractors::{Credential, TenantCode},
@@ -121,6 +124,10 @@ pub async fn get_artifact(
         }
     };
 
+    // The hash a hit reports to the hooks is the stored entry's own.
+    let sha256 = entry
+        .as_ref()
+        .map(|entry| entry.parsed.trailer.sha256.clone());
     let response = match entry {
         None => (StatusCode::NOT_FOUND, "Not found").into_response(),
         Some(entry) => {
@@ -160,5 +167,6 @@ pub async fn get_artifact(
         }
     };
 
-    after_response(&state, hook_ctx, OutcomeKind::Hit, response).await
+    after_response_with(&state, hook_ctx, OutcomeKind::Hit, response, sha256)
+        .await
 }
