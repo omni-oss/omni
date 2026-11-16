@@ -40,8 +40,9 @@ pub enum CacheSubcommands {
     Keygen,
     #[command(about = "Remote cache related commands")]
     Remote {
+        // Boxed: the setup flags make this variant much larger than the others.
         #[command(flatten)]
-        args: RemoteArgs,
+        args: Box<RemoteArgs>,
     },
 }
 
