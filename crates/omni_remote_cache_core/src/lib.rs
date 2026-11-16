@@ -5,6 +5,7 @@ pub mod caching;
 pub mod config;
 pub mod data;
 pub mod data_impl;
+pub mod entry;
 mod extractors;
 pub mod hooks;
 pub mod providers;

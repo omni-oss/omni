@@ -7800,6 +7800,7 @@ dependencies = [
  "noyalib",
  "omni_path_utils",
  "omni_remote_cache_storage_core",
+ "rmp-serde",
  "schemars",
  "serde",
  "serde_json",
