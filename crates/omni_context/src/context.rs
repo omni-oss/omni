@@ -577,13 +577,8 @@ impl<TSys: ContextSys> Context<TSys> {
 
     pub fn create_cache_store(&self) -> HybridTaskExecutionCacheStore {
         let remote_config = if let Some(rc) = &self.remote_cache {
-            RemoteConfig::new_enabled(EnabledRemoteConfig::new(
-                rc.api_base_url.as_str(),
-                rc.api_key.as_str(),
-                rc.tenant_code.as_str(),
-                rc.organization_code.as_str(),
-                rc.workspace_code.as_str(),
-                rc.environment_code.clone(),
+            RemoteConfig::new_enabled(EnabledRemoteConfig::from_configuration(
+                rc,
             ))
         } else {
             RemoteConfig::new_disabled()

@@ -60,9 +60,42 @@ prefix: `shared/{tenant}/{org}/{ws}/{env}` and
 that is not lowercase letters, digits, `.`, `_` or `-` (at most 64, not starting
 with `h-`) appears as `h-` plus 32 hex characters of its SHA-256.
 
-Until configured placement lands, the built-in client uploads to its isolated
-namespace and reads isolated first, then shared, so one key with read and write
-behaves as before.
+## Client settings
+
+`omni cache remote setup` writes these machine-local settings next to the
+credential:
+
+| Option                | Default    | Meaning                                                                                  |
+| --------------------- | ---------- | ---------------------------------------------------------------------------------------- |
+| `--push`              | off        | Upload successful results on a miss. Without it the machine only reads                   |
+| `--target`            | `isolated` | Where uploads go: `isolated`, or `shared` (needs `publish:artifacts`)                    |
+| `--scope`             | `auto`     | The isolated label: `auto`, `run`, or a literal such as `release`                        |
+| `--max-artifact-size` | 256 MiB    | Largest artifact to upload or download, in bytes. The server's limit can only lower this |
+
+Uploads are off unless you pass `--push`, so a credential that only reads never
+tries to write. An upload the server refuses, or one over the size cap, is a
+warning and never fails the run. Reads try the isolated namespace first and then
+the shared one; with `--target shared` only the shared one. A failed read, or a
+download that is too large or cut short, is a miss.
+
+`auto` uses `pr-<number>` for a pull request and otherwise the branch name, on
+GitHub Actions, GitLab CI, CircleCI, Buildkite and Jenkins; outside CI it is
+`default`. `run` uses the CI run id. Names with other characters are made safe
+and, if they had to change or are too long, end in `-` and 8 hex characters of
+their SHA-256. Labels are not authenticated: all jobs sharing a credential share
+a trust level, so give pull requests from forks a read-only credential. A scope
+pin on the credential always wins.
+
+Setup warns when the credential cannot do what you asked, such as `--target shared`
+without `publish:artifacts`. The client asks the server once per run what the
+credential may do and uses the answer only to skip requests that cannot succeed.
+
+**Upgrade note:** configurations written before these settings upload nothing
+until you run setup again with `--push`. A file written by setup from this
+version on cannot be read by older versions of omni. A download is limited to
+five minutes, so a very slow link may never fetch a large entry (it is a miss).
+The client also sends one access probe per run, even when `--push` is off, to
+learn whether it can skip reading the isolated namespace.
 
 **Upgrade note:** entries stored before namespaces (under `{tenant}/{org}/{ws}/{env}`) are
 never read again and are not deleted. Remove them from storage when you no longer

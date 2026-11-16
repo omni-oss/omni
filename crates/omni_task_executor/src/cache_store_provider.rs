@@ -30,14 +30,9 @@ impl<'a, TSys: ContextSys> CacheStoreProvider
         let cache_dir = self.context.cache_dir();
         let remote_config =
             if let Some(rc) = &self.context.remote_cache_configuration() {
-                RemoteConfig::new_enabled(EnabledRemoteConfig::new(
-                    rc.api_base_url.as_str(),
-                    rc.api_key.as_str(),
-                    rc.tenant_code.as_str(),
-                    rc.organization_code.as_str(),
-                    rc.workspace_code.as_str(),
-                    rc.environment_code.clone(),
-                ))
+                RemoteConfig::new_enabled(
+                    EnabledRemoteConfig::from_configuration(rc),
+                )
             } else {
                 RemoteConfig::new_disabled()
             };

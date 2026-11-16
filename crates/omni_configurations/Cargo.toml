@@ -49,6 +49,7 @@ omni_diagnostic = { workspace = true }
 omni_codes = { workspace = true }
 
 [dev-dependencies]
+rmp-serde = { workspace = true }
 
 [lints]
 workspace = true

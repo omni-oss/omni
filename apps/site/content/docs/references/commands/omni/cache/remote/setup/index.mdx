@@ -64,6 +64,38 @@ Encrypt the remote cache configuration file
 
 - **Possible values:** `true`, `false`
 
+### `--push`
+
+Upload successful results to the remote cache (off by default)
+
+- **Required:** No
+
+- **Default:** `false`
+
+### `--target`
+
+Where uploads go. `shared` needs the publish:artifacts scope
+
+- **Required:** No
+
+- **Default:** `isolated`
+
+- **Possible values:** `isolated`, `shared`
+
+### `--scope`
+
+The isolated scope label: `auto` (from the CI environment), `run` (the CI run id) or a literal such as `release`
+
+- **Required:** No
+
+- **Default:** `auto`
+
+### `--max-artifact-size`
+
+Largest artifact to upload or download, in bytes. The server's own limit can only lower it
+
+- **Required:** No
+
 ---
 
 ## Examples

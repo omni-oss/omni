@@ -5,7 +5,9 @@ use crate::{
 use std::path::Path;
 
 use derive_new::new;
-use omni_configurations::RemoteCacheConfiguration;
+use omni_configurations::{
+    RemoteCacheConfiguration, RemoteCacheSettings, RemoteTarget, ScopeConfig,
+};
 use omni_remote_cache_client::{
     RemoteAccessArgs, RemoteCacheClient, RemoteCacheClientError,
 };
@@ -47,6 +49,41 @@ fn check_access(
     Ok(())
 }
 
+/// Tells the user, at setup, about settings the server's answer says cannot
+/// work. The configuration is still saved: scopes can change and the server
+/// enforces them on every request.
+fn warn_about_settings(
+    result: &omni_remote_cache_client::ValidateAccessResult,
+    settings: &RemoteCacheSettings,
+) {
+    let held = |scope: &str| result.scopes.iter().any(|s| s == scope);
+    if !result.scopes.is_empty() {
+        if settings.target == RemoteTarget::Shared && !held("publish:artifacts")
+        {
+            tracing::warn!(
+                "`--target shared` needs `publish:artifacts`, which this credential does not hold; uploads will be refused"
+            );
+        }
+        if settings.push
+            && settings.target == RemoteTarget::Isolated
+            && !held("write:artifacts")
+            && !held("publish:artifacts")
+        {
+            tracing::warn!(
+                "`--push` needs `write:artifacts` or `publish:artifacts`, which this credential does not hold; uploads will be refused"
+            );
+        }
+    }
+    if let Some(scope) = &result.scope {
+        tracing::info!(%scope, "the server will use this isolated scope label");
+    }
+    if !settings.push {
+        tracing::info!(
+            "uploads are off; pass `--push` to upload results to the remote cache"
+        );
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub async fn setup_remote_caching_config_async<TClient: RemoteCacheClient>(
     user: &str,
@@ -58,6 +95,7 @@ pub async fn setup_remote_caching_config_async<TClient: RemoteCacheClient>(
     organization_code: &str,
     workspace_code: &str,
     environment_code: Option<&str>,
+    settings: RemoteCacheSettings,
     encrypt: bool,
     sys: &impl SetupSys,
 ) -> Result<(), SetupRemoteCachingConfigError> {
@@ -70,10 +108,16 @@ pub async fn setup_remote_caching_config_async<TClient: RemoteCacheClient>(
             tenant: tenant_code,
             ws: workspace_code,
             placement: Default::default(),
+            scope: match &settings.scope {
+                ScopeConfig::Literal(label) => Some(label.as_str()),
+                _ => None,
+            },
+            max_artifact_size: None,
         })
         .await?;
 
     check_access(&result)?;
+    warn_about_settings(&result, &settings);
 
     let remote_config = RemoteCacheConfiguration {
         api_key: api_key.to_string(),
@@ -82,6 +126,10 @@ pub async fn setup_remote_caching_config_async<TClient: RemoteCacheClient>(
         organization_code: organization_code.to_string(),
         workspace_code: workspace_code.to_string(),
         environment_code: environment_code.map(|s| s.to_string()),
+        push: settings.push,
+        target: settings.target,
+        scope: settings.scope.clone(),
+        max_artifact_size: settings.max_artifact_size,
     };
 
     let parent = remote_config_path.parent().expect("should have parent");

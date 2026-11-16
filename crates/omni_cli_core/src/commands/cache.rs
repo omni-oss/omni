@@ -174,6 +174,40 @@ pub struct SetupArgs {
         default_value_t = false
     )]
     pub secure: bool,
+
+    #[arg(
+        long,
+        help = "Upload successful results to the remote cache (off by default)",
+        default_value_t = false
+    )]
+    pub push: bool,
+
+    #[arg(
+        long,
+        value_parser = ["isolated", "shared"],
+        default_value = "isolated",
+        help = "Where uploads go. `shared` needs the publish:artifacts scope"
+    )]
+    pub target: String,
+
+    #[arg(
+        long,
+        default_value = "auto",
+        value_parser = parse_scope,
+        help = "The isolated scope label: `auto` (from the CI environment), `run` (the CI run id) or a literal such as `release`"
+    )]
+    pub scope: omni_configurations::ScopeConfig,
+
+    #[arg(
+        long,
+        value_parser = clap::value_parser!(u64).range(1..),
+        help = "Largest artifact to upload or download, in bytes. The server's own limit can only lower it"
+    )]
+    pub max_artifact_size: Option<u64>,
+}
+
+fn parse_scope(text: &str) -> Result<omni_configurations::ScopeConfig, String> {
+    omni_configurations::ScopeConfig::parse(text)
 }
 
 pub async fn run(command: &CacheCommand, ctx: &Context) -> eyre::Result<()> {
@@ -254,6 +288,14 @@ pub async fn run(command: &CacheCommand, ctx: &Context) -> eyre::Result<()> {
                     ws: args.ws.clone(),
                     env: args.env.clone(),
                     secure: args.secure,
+                    push: args.push,
+                    target: if args.target == "shared" {
+                        omni_configurations::RemoteTarget::Shared
+                    } else {
+                        omni_configurations::RemoteTarget::Isolated
+                    },
+                    scope: args.scope.clone(),
+                    max_artifact_size: args.max_artifact_size,
                 })
                 .await
                 .wrap_err(

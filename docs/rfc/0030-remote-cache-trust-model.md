@@ -1600,6 +1600,16 @@ text above:
   workspace and environment codes, so on a case-insensitive file system two codes that differ only
   in case alias; and a local-backend key can exceed Windows' `MAX_PATH` without long-path support.
 
+**Landed (client configuration, slice 5):** see `0030-client-config-rollout.md`. Deviations from the
+text above: the names `api_key` and `placement` stay instead of `credential` and `tier`;
+`max_artifact_size` is optional and the server's advertised value can only lower the effective cap
+(`min(local or 256 MiB, server)`); a failed, oversized or truncated read is a miss instead of an error;
+the probe runs once per run with a 10 second timeout and never delays a download. The R2 single-write
+property still rests on the 32 MiB worker cap, which is server-side. `omni cache remote setup`
+gains `--push`, `--target`, `--scope` and `--max-artifact-size`, because the encrypted file cannot be
+edited by hand. Local partition paths (slice 6) must use the server-reported label through the
+server's `segment()` rule, not the raw client label.
+
 **Open gates before this RFC can be Implemented:**
 
 - **R2 is not create-only, so R2 writes fail closed by default.** The Workers

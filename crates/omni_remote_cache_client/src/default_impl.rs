@@ -11,11 +11,15 @@ use reqwest_middleware::{
 use reqwest_tracing::TracingMiddleware;
 
 use crate::{
-    RemoteAccessArgs, RemoteCacheClient, RemoteCacheClientError,
-    ValidateAccessResult,
+    DEFAULT_MAX_ARTIFACT_SIZE, Placement, RemoteAccessArgs, RemoteCacheClient,
+    RemoteCacheClientError, ValidateAccessResult, is_valid_scope_label,
 };
 
 const UPLOAD_REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
+/// A whole download, so a server that trickles bytes cannot stall a run.
+const DOWNLOAD_REQUEST_TIMEOUT: Duration = Duration::from_secs(300);
+/// The access probe; it must not hold up the first restore or upload.
+const PROBE_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Debug, Clone, new)]
 pub struct DefaultRemoteCacheClient {
@@ -89,8 +93,9 @@ impl Middleware for LogRequestMiddleware {
 /// `param` is `target` for a write and `namespace` for everything else.
 fn create_url(remote: &RemoteAccessArgs, digest: &str, param: &str) -> String {
     format!(
-        "{base_url}/v1/artifacts/{digest}?org={org}&ws={ws}&env={env}&{param}={placement}",
+        "{base_url}/v1/artifacts/{digest}?org={org}&ws={ws}&env={env}&{param}={placement}{scope}",
         placement = remote.placement.as_str(),
+        scope = scope_param(remote),
         base_url = remote.api_base_url,
         org = remote.org,
         ws = remote.ws,
@@ -99,9 +104,21 @@ fn create_url(remote: &RemoteAccessArgs, digest: &str, param: &str) -> String {
     )
 }
 
+/// `&scope=<label>` for an isolated request with a valid label, else nothing:
+/// the shared namespace ignores it, and an invalid label would only be a `400`.
+fn scope_param(remote: &RemoteAccessArgs) -> String {
+    match (remote.placement, remote.scope) {
+        (Placement::Isolated, Some(label)) if is_valid_scope_label(label) => {
+            format!("&scope={label}")
+        }
+        _ => String::new(),
+    }
+}
+
 fn create_url_no_digest(remote: &RemoteAccessArgs) -> String {
     format!(
-        "{base_url}/v1/artifacts?org={org}&ws={ws}&env={env}",
+        "{base_url}/v1/artifacts?org={org}&ws={ws}&env={env}{scope}",
+        scope = scope_param(remote),
         base_url = remote.api_base_url,
         org = remote.org,
         ws = remote.ws,
@@ -142,6 +159,7 @@ impl RemoteCacheClient for DefaultRemoteCacheClient {
             .get(url)
             .bearer_auth(remote.api_key)
             .header("X-OMNI-TENANT", remote.tenant)
+            .timeout(DOWNLOAD_REQUEST_TIMEOUT)
             .send()
             .await
             .map_err(RemoteCacheClientError::custom)
@@ -152,12 +170,35 @@ impl RemoteCacheClient for DefaultRemoteCacheClient {
         let status = response.status();
 
         if status.is_success() {
-            let bytes = response
-                .bytes()
-                .await
-                .map_err(RemoteCacheClientError::custom)?;
+            let cap = remote
+                .max_artifact_size
+                .unwrap_or(DEFAULT_MAX_ARTIFACT_SIZE);
+            // A body that is too large, or that ends early or breaks, is a miss:
+            // a broken or hostile server must not fail the run or fill memory.
+            if response.content_length().is_some_and(|length| length > cap) {
+                tracing::warn!(%digest, cap, "remote cache entry is larger than the size cap; ignoring it");
+                return Ok(None);
+            }
+            let mut body = Vec::new();
+            let mut response = response;
+            loop {
+                match response.chunk().await {
+                    Ok(Some(chunk)) => {
+                        if (body.len() + chunk.len()) as u64 > cap {
+                            tracing::warn!(%digest, cap, "remote cache entry exceeded the size cap; ignoring it");
+                            return Ok(None);
+                        }
+                        body.extend_from_slice(&chunk);
+                    }
+                    Ok(None) => break,
+                    Err(e) => {
+                        tracing::warn!(%digest, error = %e, "remote cache download failed part way; ignoring it");
+                        return Ok(None);
+                    }
+                }
+            }
 
-            Ok(Some(bytes))
+            Ok(Some(Bytes::from(body)))
         } else {
             match status {
                 StatusCode::NOT_FOUND => Ok(None),
@@ -180,7 +221,7 @@ impl RemoteCacheClient for DefaultRemoteCacheClient {
             .head(url)
             .bearer_auth(remote.api_key)
             .header("X-OMNI-TENANT", remote.tenant)
-            .timeout(UPLOAD_REQUEST_TIMEOUT)
+            .timeout(PROBE_REQUEST_TIMEOUT)
             .send()
             .await
             .map_err(RemoteCacheClientError::custom)
@@ -189,6 +230,7 @@ impl RemoteCacheClient for DefaultRemoteCacheClient {
             })?;
 
         let status = response.status();
+        let headers = response.headers().clone();
 
         // Advisory values: the server enforces them again on every request.
         let scopes = response
@@ -225,9 +267,20 @@ impl RemoteCacheClient for DefaultRemoteCacheClient {
                 response.text().await.unwrap_or_default()
             }),
         );
+        result.status = Some(status.as_u16());
         if status.is_success() {
             result.scopes = scopes;
             result.max_artifact_size = max_artifact_size;
+            let text = |name: &str| {
+                headers
+                    .get(name)
+                    .and_then(|v| v.to_str().ok())
+                    .filter(|v| !v.is_empty())
+                    .map(str::to_owned)
+            };
+            result.principal_id = text("x-omni-principal-id");
+            result.scope =
+                text("x-omni-scope").filter(|s| is_valid_scope_label(s));
         }
         Ok(result)
     }
@@ -400,6 +453,8 @@ mod tests {
             tenant: DEFAULT_TENANT,
             ws: DEFAULT_WS,
             placement: Default::default(),
+            scope: None,
+            max_artifact_size: None,
         }
     }
 

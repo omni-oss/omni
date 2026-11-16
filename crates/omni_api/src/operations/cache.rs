@@ -57,6 +57,18 @@ pub struct CacheRemoteSetupRequest {
     pub env: Option<String>,
     /// Encrypt the remote cache configuration file.
     pub secure: bool,
+    /// Upload successful results (off by default).
+    #[serde(default)]
+    pub push: bool,
+    /// Where uploads go.
+    #[serde(default)]
+    pub target: omni_configurations::RemoteTarget,
+    /// The isolated scope label: `auto`, `run` or a literal.
+    #[serde(default)]
+    pub scope: omni_configurations::ScopeConfig,
+    /// The size cap in bytes for uploads and downloads.
+    #[serde(default)]
+    pub max_artifact_size: Option<u64>,
 }
 
 // ── Response types ────────────────────────────────────────────────────────────
@@ -210,6 +222,12 @@ where
         &req.org,
         &req.ws,
         req.env.as_deref(),
+        omni_configurations::RemoteCacheSettings {
+            push: req.push,
+            target: req.target,
+            scope: req.scope,
+            max_artifact_size: req.max_artifact_size,
+        },
         req.secure,
         ctx.sys(),
     )

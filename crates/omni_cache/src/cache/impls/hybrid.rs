@@ -1,6 +1,5 @@
 use std::{
     collections::HashSet,
-    io::Cursor,
     path::{Path, PathBuf},
     sync::{Arc, OnceLock},
     time::SystemTime,
@@ -11,6 +10,9 @@ use bytesize::ByteSize;
 use derive_new::new;
 use maps::{Map, UnorderedMap, unordered_map};
 use omni_collector::{CollectConfig, CollectResult, Collector};
+use omni_configurations::{
+    RemoteCacheConfiguration, RemoteTarget, ScopeConfig,
+};
 use omni_execution_plan::{
     Call, DefaultExecutionPlanProvider, ExecutionPlanProvider,
 };
@@ -19,8 +21,8 @@ use omni_hasher::{
     impls::{DefaultHash, DefaultHasher},
 };
 use omni_remote_cache_client::{
-    DefaultRemoteCacheClient, Placement, RemoteAccessArgs, RemoteCacheClient,
-    RemoteCacheClientError,
+    DEFAULT_MAX_ARTIFACT_SIZE, DefaultRemoteCacheClient, Placement,
+    RemoteAccessArgs, RemoteCacheClient, RemoteCacheClientError,
 };
 use omni_task_context::{
     DefaultTaskContextProvider, EnvVars, TaskContextProviderExt,
@@ -78,6 +80,35 @@ pub struct HybridTaskExecutionCacheStore {
     /// when remote caching is disabled or every entry is served locally. It is
     /// only built on first actual remote access via [`Self::client`].
     client: OnceLock<Arc<DefaultRemoteCacheClient>>,
+    /// What the access probe reported, asked for at most once per run and
+    /// shared by every clone of the store.
+    probe: Arc<tokio::sync::OnceCell<RemoteProbe>>,
+}
+
+/// The advisory result of the access probe. The server enforces everything
+/// again on each request; this only avoids requests that cannot succeed.
+#[derive(Clone, Debug, Default)]
+struct RemoteProbe {
+    /// The scopes the credential holds. `None` when the probe could not be
+    /// completed (the server decides then).
+    scopes: Option<Vec<String>>,
+    /// The credential was refused (`401`/`403`): no upload can succeed.
+    refused: bool,
+    server_max_artifact_size: Option<u64>,
+}
+
+impl RemoteProbe {
+    fn holds(&self, scope: &str) -> bool {
+        self.scopes
+            .as_ref()
+            .is_some_and(|s| s.iter().any(|h| h == scope))
+    }
+
+    fn can_write_isolated(&self) -> Option<bool> {
+        self.scopes.as_ref().map(|_| {
+            self.holds("write:artifacts") || self.holds("publish:artifacts")
+        })
+    }
 }
 
 #[derive(
@@ -108,6 +139,102 @@ pub struct EnabledRemoteConfig {
 
     #[new(into)]
     pub environment_code: Option<String>,
+
+    /// Upload successful results on a miss. Off unless configured.
+    #[new(default)]
+    pub push: bool,
+
+    /// Where uploads go.
+    #[new(default)]
+    pub target: RemoteTarget,
+
+    /// How the isolated scope label is chosen.
+    #[new(default)]
+    pub scope: ScopeConfig,
+
+    /// The configured size cap in bytes; the server's value can only lower it.
+    #[new(default)]
+    pub max_artifact_size: Option<u64>,
+}
+
+impl EnabledRemoteConfig {
+    pub fn from_configuration(rc: &RemoteCacheConfiguration) -> Self {
+        let mut config = Self::new(
+            rc.api_base_url.as_str(),
+            rc.api_key.as_str(),
+            rc.tenant_code.as_str(),
+            rc.organization_code.as_str(),
+            rc.workspace_code.as_str(),
+            rc.environment_code.clone(),
+        );
+        config.push = rc.push;
+        config.target = rc.target;
+        config.scope = rc.scope.clone();
+        config.max_artifact_size = rc.max_artifact_size.filter(|n| *n > 0);
+        config
+    }
+
+    /// The isolated scope label for this run.
+    fn scope_label(&self) -> String {
+        super::remote_scope::resolve(&self.scope, &|name| {
+            std::env::var(name).ok()
+        })
+        .0
+    }
+
+    /// The cap on one artifact: the configured one (or the default), lowered
+    /// by the server's advertised limit, never raised by it.
+    fn size_cap(&self, probe: Option<&RemoteProbe>) -> u64 {
+        self.max_artifact_size
+            .unwrap_or(DEFAULT_MAX_ARTIFACT_SIZE)
+            .min(
+                probe
+                    .and_then(|p| p.server_max_artifact_size)
+                    .unwrap_or(u64::MAX),
+            )
+    }
+
+    fn access<'a>(
+        &'a self,
+        placement: Placement,
+        label: &'a str,
+        cap: u64,
+    ) -> RemoteAccessArgs<'a> {
+        RemoteAccessArgs {
+            api_key: &self.api_key,
+            api_base_url: &self.api_base_url,
+            env: self.environment_code.as_deref().unwrap_or("default"),
+            org: &self.organization_code,
+            tenant: &self.tenant_code,
+            ws: &self.workspace_code,
+            placement,
+            scope: Some(label),
+            max_artifact_size: Some(cap),
+        }
+    }
+}
+
+/// A writer that refuses to hold more than `cap` bytes, so an archive that is
+/// too large to upload is abandoned instead of buffered whole.
+struct CappedWriter {
+    buffer: Vec<u8>,
+    cap: u64,
+}
+
+impl std::io::Write for CappedWriter {
+    fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
+        if (self.buffer.len() + data.len()) as u64 > self.cap {
+            return Err(std::io::Error::other(
+                "the archive is larger than the remote cache size cap",
+            ));
+        }
+        self.buffer.extend_from_slice(data);
+        Ok(data.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
 }
 
 impl HybridTaskExecutionCacheStore {
@@ -124,6 +251,7 @@ impl HybridTaskExecutionCacheStore {
             ws_root_dir,
             remote_config: remote_config.into(),
             client: OnceLock::new(),
+            probe: Arc::new(tokio::sync::OnceCell::new()),
         }
     }
 
@@ -133,6 +261,57 @@ impl HybridTaskExecutionCacheStore {
     fn client(&self) -> &Arc<DefaultRemoteCacheClient> {
         self.client
             .get_or_init(|| Arc::new(DefaultRemoteCacheClient::default()))
+    }
+
+    /// Asks the server once what this credential may do. A transport or server
+    /// failure is remembered as unknown (no retry for every task); a refused
+    /// credential is remembered as refused.
+    async fn probe(&self, conf: &EnabledRemoteConfig) -> &RemoteProbe {
+        self.probe
+            .get_or_init(|| async {
+                let (label, warning) = super::remote_scope::resolve(
+                    &conf.scope,
+                    &|name| std::env::var(name).ok(),
+                );
+                if let Some(warning) = warning {
+                    tracing::warn!("{warning}");
+                }
+                let access = conf.access(
+                    Placement::Isolated,
+                    &label,
+                    conf.size_cap(None),
+                );
+                match self.client().validate_access(&access).await {
+                    Ok(result) if result.is_valid => RemoteProbe {
+                        scopes: (!result.scopes.is_empty())
+                            .then_some(result.scopes),
+                        refused: false,
+                        server_max_artifact_size: result.max_artifact_size,
+                    },
+                    // Only a refusal means no upload can succeed. A server
+                    // error, a `404` from a server without the probe or a `429`
+                    // leaves it to the server to decide per request.
+                    Ok(result) if matches!(result.status, Some(401 | 403)) => {
+                        tracing::warn!(
+                            message = result.message.as_deref().unwrap_or(""),
+                            "the remote cache refused this credential; not uploading"
+                        );
+                        RemoteProbe {
+                            refused: true,
+                            ..Default::default()
+                        }
+                    }
+                    Ok(result) => {
+                        tracing::debug!(status = ?result.status, "remote cache access probe was not answered with a verdict; the server decides per request");
+                        RemoteProbe::default()
+                    }
+                    Err(e) => {
+                        tracing::debug!(error = %e, "remote cache access probe failed; the server decides per request");
+                        RemoteProbe::default()
+                    }
+                }
+            })
+            .await
     }
 }
 
@@ -642,15 +821,44 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
 
         if !cached_results.is_empty()
             && let RemoteConfig::Enabled(conf) = &self.remote_config
+            && conf.push
         {
+            let probe = self.probe(conf).await.clone();
+            let needed = match conf.target {
+                RemoteTarget::Shared => "publish:artifacts",
+                RemoteTarget::Isolated => {
+                    "write:artifacts or publish:artifacts"
+                }
+            };
+            let allowed = !probe.refused
+                && match (conf.target, probe.scopes.is_some()) {
+                    (_, false) => true,
+                    (RemoteTarget::Shared, true) => {
+                        probe.holds("publish:artifacts")
+                    }
+                    (RemoteTarget::Isolated, true) => {
+                        probe.can_write_isolated() == Some(true)
+                    }
+                };
+            if !allowed {
+                tracing::warn!(
+                    needed,
+                    "this credential cannot upload to the configured target; skipping remote cache uploads"
+                );
+                return Ok(cache_exec_hashes);
+            }
+
             tracing::debug!("Uploading remote cache artifacts...");
             let mut tasks = JoinSet::new();
             // Bound archive buffers as well as network requests. Acquire inside
             // each worker before building the archive, not just before PUT.
             let upload_slots = Arc::new(tokio::sync::Semaphore::new(8));
+            let cap = conf.size_cap(Some(&probe));
+            let label = conf.scope_label();
             for (hash, output_dir) in cached_results {
                 let client = self.client().clone();
                 let conf = conf.clone();
+                let label = label.clone();
                 let digest = bs58::encode(hash.digest).into_string();
                 let upload_slots = upload_slots.clone();
 
@@ -659,32 +867,29 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                         .acquire_owned()
                         .await
                         .expect("upload semaphore is never closed");
-                    let config = RemoteAccessArgs {
-                        api_key: &conf.api_key,
-                        api_base_url: &conf.api_base_url,
-                        env: conf
-                            .environment_code
-                            .as_deref()
-                            .unwrap_or("default"),
-                        org: &conf.organization_code,
-                        tenant: &conf.tenant_code,
-                        ws: &conf.workspace_code,
-                        // Until configured placement lands, uploads go to this
-                        // credential's own isolated namespace, which needs only
-                        // `write:artifacts`.
-                        placement: Placement::Isolated,
+                    let placement = match conf.target {
+                        RemoteTarget::Shared => Placement::Shared,
+                        RemoteTarget::Isolated => Placement::Isolated,
                     };
+                    let config = conf.access(placement, &label, cap);
 
                     let upload = async {
                         // No existence pre-check: the server stores entries
                         // create-only and answers `409` for an existing one,
                         // which the client treats as success. A `HEAD` would
                         // need read access and would race the write anyway.
-                        let mut artifact = Vec::new();
-                        archive(&output_dir, Cursor::new(&mut artifact))?;
+                        let mut artifact = CappedWriter {
+                            buffer: Vec::new(),
+                            cap,
+                        };
+                        archive(&output_dir, &mut artifact)?;
 
                         client
-                            .put_artifact(&config, &digest, Bytes::from(artifact))
+                            .put_artifact(
+                                &config,
+                                &digest,
+                                Bytes::from(artifact.buffer),
+                            )
                             .await?;
 
                         Ok::<_, LocalTaskExecutionCacheStoreError>(())
@@ -726,6 +931,17 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
 
         if let RemoteConfig::Enabled(conf) = &self.remote_config {
             let mut tasks = JoinSet::new();
+            // Bound the archives held in memory, like uploads.
+            let download_slots = Arc::new(tokio::sync::Semaphore::new(8));
+            let label = conf.scope_label();
+            // Learn what the credential may do while the downloads run.
+            if self.probe.get().is_none() {
+                let store = self.clone();
+                let conf = conf.clone();
+                tokio::spawn(async move {
+                    store.probe(&conf).await;
+                });
+            }
             for project in &collected {
                 let output_dir = project
                     .cache_output_dir
@@ -743,49 +959,53 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                 let client = self.client().clone();
                 let conf = conf.clone();
                 let output_dir = output_dir.to_path_buf();
+                let probe_cell = self.probe.clone();
+                let download_slots = download_slots.clone();
+                let label = label.clone();
 
                 tasks.spawn(async move {
-                    // Own entries first, then what publishers shared. A
-                    // credential that may not read its isolated namespace
-                    // (`403`) or a failure there falls back to shared; only a
-                    // failure of the last attempt is an error.
+                    let _permit = download_slots
+                        .acquire_owned()
+                        .await
+                        .expect("download semaphore is never closed");
+                    // The probe never holds a download up: what it has found
+                    // by now is used, nothing is waited for.
+                    let probe = probe_cell.get();
+                    let cap = conf.size_cap(probe);
+                    // The target decides where this run publishes, so a
+                    // publisher reads only what publishers shared. Otherwise
+                    // own entries first, unless the credential is known not to
+                    // be allowed to have any.
+                    let placements: &[Placement] = if conf.target
+                        == RemoteTarget::Shared
+                        || probe.and_then(RemoteProbe::can_write_isolated)
+                            == Some(false)
+                    {
+                        &[Placement::Shared]
+                    } else {
+                        &[Placement::Isolated, Placement::Shared]
+                    };
+                    // A failed read, a refused one (`403`) or an oversized or
+                    // truncated body is a miss: the remote is optional and must
+                    // not fail the run.
                     let mut response = None;
-                    let mut last_error = None;
-                    for placement in [Placement::Isolated, Placement::Shared] {
-                        let access = RemoteAccessArgs {
-                            api_key: &conf.api_key,
-                            api_base_url: &conf.api_base_url,
-                            env: conf
-                                .environment_code
-                                .as_deref()
-                                .unwrap_or("default"),
-                            org: &conf.organization_code,
-                            tenant: &conf.tenant_code,
-                            ws: &conf.workspace_code,
-                            placement,
-                        };
+                    for &placement in placements {
+                        let access = conf.access(placement, &label, cap);
                         match client.get_artifact(&access, &digest).await {
                             Ok(Some(bytes)) => {
                                 response = Some(bytes);
-                                last_error = None;
                                 break;
                             }
-                            Ok(None) => last_error = None,
+                            Ok(None) => {}
                             Err(e) => {
                                 tracing::debug!(
                                     %digest,
                                     ?placement,
                                     error = %e,
-                                    "remote cache read failed"
+                                    "remote cache read failed; treating it as a miss"
                                 );
-                                last_error = Some(e);
                             }
                         }
-                    }
-                    if response.is_none()
-                        && let Some(e) = last_error
-                    {
-                        return Err(e.into());
                     }
 
                     if let Some(bytes) = response {
@@ -1558,6 +1778,8 @@ pub(crate) enum LocalTaskExecutionCacheStoreErrorInner {
 
 #[cfg(test)]
 mod tests {
+    use std::io::Cursor;
+
     use super::*;
     use crate::{NewCacheInfo, cache::impls::HybridTaskExecutionCacheStore};
     use bytes::Bytes;
@@ -1788,18 +2010,30 @@ mod tests {
 
     struct RemoteUploadSpy {
         url: String,
+        /// Every request except the access probe.
         requests: Arc<std::sync::Mutex<Vec<(String, Bytes)>>>,
+        /// The request line of every request, probe included.
+        lines: Arc<std::sync::Mutex<Vec<String>>>,
         server: tokio::task::JoinHandle<()>,
+        push: bool,
+        target: RemoteTarget,
     }
 
     impl RemoteUploadSpy {
         async fn new(put_status: u16) -> Self {
+            Self::with_scopes(put_status, "write:artifacts").await
+        }
+
+        /// A server whose probe reports `scopes`.
+        async fn with_scopes(put_status: u16, scopes: &'static str) -> Self {
             use tokio::io::AsyncWriteExt;
             let listener =
                 tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
             let url = format!("http://{}", listener.local_addr().unwrap());
             let requests = Arc::new(std::sync::Mutex::new(Vec::new()));
             let captured = requests.clone();
+            let lines = Arc::new(std::sync::Mutex::new(Vec::new()));
+            let seen_lines = lines.clone();
             let server = tokio::spawn(async move {
                 loop {
                     let (mut socket, _) = listener.accept().await.unwrap();
@@ -1809,6 +2043,15 @@ mod tests {
                         assert!(header.len() < 32 * 1024);
                     }
                     let header = String::from_utf8(header).unwrap();
+                    let line = header.lines().next().unwrap().to_string();
+                    seen_lines.lock().unwrap().push(line.clone());
+                    if line.starts_with("HEAD /v1/artifacts?") {
+                        let response = format!(
+                            "HTTP/1.1 204 No Content\r\nx-omni-scopes: {scopes}\r\nConnection: close\r\n\r\n"
+                        );
+                        socket.write_all(response.as_bytes()).await.unwrap();
+                        continue;
+                    }
                     let length = header
                         .lines()
                         .find_map(|line| {
@@ -1863,7 +2106,10 @@ mod tests {
             Self {
                 url,
                 requests,
+                lines,
                 server,
+                push: true,
+                target: RemoteTarget::Isolated,
             }
         }
 
@@ -1878,6 +2124,10 @@ mod tests {
                     organization_code: "o".to_string(),
                     workspace_code: "w".to_string(),
                     environment_code: Some("e".to_string()),
+                    push: self.push,
+                    target: self.target,
+                    scope: ScopeConfig::Literal("pr-1".to_string()),
+                    max_artifact_size: None,
                 }),
             )
         }
@@ -1905,6 +2155,195 @@ mod tests {
         let cached: CachedTaskExecution =
             rmp_serde::from_slice(&metadata).unwrap();
         cached.exit_code
+    }
+
+    async fn run_one_upload(remote: &RemoteUploadSpy) {
+        let temp = fixture(&["project1"]).await;
+        let cache = remote.cache(temp.path());
+        let task = task("task", "project1", temp.path());
+        tokio::time::timeout(
+            std::time::Duration::from_secs(15),
+            cache.cache(&new_cache_info_with_exit_code(
+                Some(&LOGS_CONTENT),
+                *task.get(),
+                0,
+            )),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn nothing_is_sent_when_push_is_off() {
+        let mut remote = RemoteUploadSpy::new(204).await;
+        remote.push = false;
+        run_one_upload(&remote).await;
+        assert!(remote.lines.lock().unwrap().is_empty(), "not even a probe");
+    }
+
+    #[tokio::test]
+    async fn a_read_only_credential_makes_no_upload_attempt() {
+        let remote = RemoteUploadSpy::with_scopes(204, "read:artifacts").await;
+        run_one_upload(&remote).await;
+        assert!(remote.requests.lock().unwrap().is_empty());
+        assert_eq!(remote.lines.lock().unwrap().len(), 1, "only the probe");
+    }
+
+    #[tokio::test]
+    async fn a_probe_that_is_not_a_verdict_does_not_stop_uploads() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        // A server that answers the probe with a 500 and stores everything.
+        let listener =
+            tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let seen = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let log = seen.clone();
+        let server = tokio::spawn(async move {
+            loop {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut header = Vec::new();
+                while !header.ends_with(b"\r\n\r\n") {
+                    header.push(socket.read_u8().await.unwrap());
+                }
+                let header = String::from_utf8(header).unwrap();
+                let line = header.lines().next().unwrap().to_string();
+                if line.starts_with("PUT") {
+                    let length = header
+                        .lines()
+                        .find_map(|l| {
+                            let (n, v) = l.split_once(':')?;
+                            n.eq_ignore_ascii_case("content-length")
+                                .then(|| v.trim().parse::<usize>().unwrap())
+                        })
+                        .unwrap_or(0);
+                    let mut body = vec![0; length];
+                    socket.read_exact(&mut body).await.unwrap();
+                }
+                let status = if line.starts_with("PUT") { 204 } else { 500 };
+                log.lock().unwrap().push(line);
+                let response = format!(
+                    "HTTP/1.1 {status} Test\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                );
+                socket.write_all(response.as_bytes()).await.unwrap();
+            }
+        });
+        let temp = fixture(&["project1"]).await;
+        let mut cache = remote_store(temp.path(), &url);
+        if let RemoteConfig::Enabled(conf) = &mut cache.remote_config {
+            conf.push = true;
+        }
+        let task = task("task", "project1", temp.path());
+        cache
+            .cache(&new_cache_info_with_exit_code(
+                Some(&LOGS_CONTENT),
+                *task.get(),
+                0,
+            ))
+            .await
+            .unwrap();
+        server.abort();
+        assert!(
+            seen.lock().unwrap().iter().any(|l| l.starts_with("PUT")),
+            "a 500 probe is unknown, not a refusal"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_shared_target_needs_publish_and_goes_to_shared() {
+        let mut remote =
+            RemoteUploadSpy::with_scopes(204, "read:artifacts,write:artifacts")
+                .await;
+        remote.target = RemoteTarget::Shared;
+        run_one_upload(&remote).await;
+        assert!(
+            remote.requests.lock().unwrap().is_empty(),
+            "write alone cannot publish"
+        );
+
+        let mut remote = RemoteUploadSpy::with_scopes(
+            204,
+            "read:artifacts,write:artifacts,publish:artifacts",
+        )
+        .await;
+        remote.target = RemoteTarget::Shared;
+        run_one_upload(&remote).await;
+        let lines = remote.lines.lock().unwrap();
+        let put = lines.iter().find(|l| l.starts_with("PUT")).unwrap();
+        assert!(put.contains("target=shared"), "{put}");
+        assert!(!put.contains("scope="), "{put}");
+    }
+
+    #[tokio::test]
+    async fn an_isolated_upload_names_its_scope_and_the_probe_runs_once() {
+        let remote = RemoteUploadSpy::new(204).await;
+        let temp = fixture(&["project1"]).await;
+        let cache = remote.cache(temp.path());
+        let tasks = [
+            task("a", "project1", temp.path()),
+            task("b", "project1", temp.path()),
+        ];
+        let logs = LOGS_CONTENT;
+        let infos = [
+            new_cache_info_with_exit_code(Some(&logs), *tasks[0].get(), 0),
+            new_cache_info_with_exit_code(Some(&logs), *tasks[1].get(), 0),
+        ];
+        cache.cache_many(&infos).await.unwrap();
+        let lines = remote.lines.lock().unwrap();
+        assert_eq!(
+            lines.iter().filter(|l| l.starts_with("HEAD")).count(),
+            1,
+            "{lines:?}"
+        );
+        let puts: Vec<_> =
+            lines.iter().filter(|l| l.starts_with("PUT")).collect();
+        assert_eq!(puts.len(), 2);
+        assert!(
+            puts.iter()
+                .all(|l| l.contains("target=isolated")
+                    && l.contains("&scope=pr-1")),
+            "{puts:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_upload_over_the_size_cap_is_skipped() {
+        let mut remote = RemoteUploadSpy::new(204).await;
+        remote.push = true;
+        let temp = fixture(&["project1"]).await;
+        let mut cache = remote.cache(temp.path());
+        if let RemoteConfig::Enabled(conf) = &mut cache.remote_config {
+            conf.max_artifact_size = Some(16);
+        }
+        let task = task("task", "project1", temp.path());
+        cache
+            .cache(&new_cache_info_with_exit_code(
+                Some(&LOGS_CONTENT),
+                *task.get(),
+                0,
+            ))
+            .await
+            .unwrap();
+        assert!(remote.requests.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn the_server_can_only_lower_the_size_cap() {
+        let mut conf = EnabledRemoteConfig::default();
+        let probe = |n| RemoteProbe {
+            server_max_artifact_size: Some(n),
+            ..Default::default()
+        };
+        assert_eq!(conf.size_cap(None), DEFAULT_MAX_ARTIFACT_SIZE);
+        assert_eq!(conf.size_cap(Some(&probe(1024))), 1024);
+        assert_eq!(
+            conf.size_cap(Some(&probe(u64::MAX))),
+            DEFAULT_MAX_ARTIFACT_SIZE,
+            "a huge advertised value never raises the default"
+        );
+        conf.max_artifact_size = Some(100);
+        assert_eq!(conf.size_cap(Some(&probe(1 << 40))), 100);
+        assert_eq!(conf.size_cap(Some(&probe(10))), 10);
     }
 
     #[tokio::test]
@@ -2399,8 +2838,55 @@ mod tests {
                 organization_code: "o".to_string(),
                 workspace_code: "w".to_string(),
                 environment_code: Some("e".to_string()),
+                push: false,
+                target: RemoteTarget::Isolated,
+                scope: ScopeConfig::Auto,
+                max_artifact_size: None,
             }),
         )
+    }
+
+    #[tokio::test]
+    async fn an_oversized_remote_entry_is_a_miss_and_does_not_fail_the_run() {
+        let temp = fixture(&["project1"]).await;
+        let task = task("task", "project1", temp.path());
+        let (url, server) = serve_remote_entry(vec![7; 100]).await;
+        let mut store = remote_store(temp.path(), &url);
+        if let RemoteConfig::Enabled(conf) = &mut store.remote_config {
+            conf.max_artifact_size = Some(10);
+        }
+        let got = store.get(task.get()).await.unwrap();
+        server.abort();
+        assert!(got.is_none());
+    }
+
+    #[tokio::test]
+    async fn a_failing_remote_read_is_a_miss_and_does_not_fail_the_run() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener =
+            tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            loop {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut header = Vec::new();
+                while !header.ends_with(b"\r\n\r\n") {
+                    header.push(socket.read_u8().await.unwrap());
+                }
+                socket
+                    .write_all(b"HTTP/1.1 500 Oops\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                    .await
+                    .unwrap();
+            }
+        });
+        let temp = fixture(&["project1"]).await;
+        let task = task("task", "project1", temp.path());
+        let got = remote_store(temp.path(), &url)
+            .get(task.get())
+            .await
+            .unwrap();
+        server.abort();
+        assert!(got.is_none());
     }
 
     #[tokio::test]

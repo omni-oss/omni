@@ -7048,6 +7048,7 @@ dependencies = [
  "omni_task_output_logs",
  "omni_types",
  "petgraph",
+ "rmp-serde",
  "schemars",
  "serde",
  "serde-untagged",

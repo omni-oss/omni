@@ -32,6 +32,30 @@ pub struct RemoteAccessArgs<'a> {
     pub env: &'a str,
     #[new(default)]
     pub placement: Placement,
+    /// The isolated scope label to ask for. Sent only for the isolated
+    /// namespace, and only when it is a valid label.
+    #[new(default)]
+    pub scope: Option<&'a str>,
+    /// The largest artifact a download may be, in bytes. `None` means
+    /// [`DEFAULT_MAX_ARTIFACT_SIZE`].
+    #[new(default)]
+    pub max_artifact_size: Option<u64>,
+}
+
+/// The download cap when nothing else is configured (256 MiB, the server's
+/// native default).
+pub const DEFAULT_MAX_ARTIFACT_SIZE: u64 = 256 * 1024 * 1024;
+
+/// True for a scope label the server accepts.
+pub fn is_valid_scope_label(label: &str) -> bool {
+    label
+        .bytes()
+        .next()
+        .is_some_and(|b| b.is_ascii_alphanumeric())
+        && label.len() <= 64
+        && label.bytes().all(|b| {
+            b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-')
+        })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, new)]
@@ -47,6 +71,15 @@ pub struct ValidateAccessResult {
     /// unauthenticated: use it to skip an upload, never to size an allocation.
     #[new(default)]
     pub max_artifact_size: Option<u64>,
+    /// The HTTP status of the probe, when it got an answer.
+    #[new(default)]
+    pub status: Option<u16>,
+    /// The principal's path segment, as the server names it. Advisory.
+    #[new(default)]
+    pub principal_id: Option<String>,
+    /// The effective isolated scope label (a pin wins over the request). Advisory.
+    #[new(default)]
+    pub scope: Option<String>,
 }
 
 #[async_trait]
