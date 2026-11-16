@@ -100,15 +100,15 @@ a key you trust, so it does not have to trust the server at all.
    secret store of the job that publishes.
 2. Trust the key in `workspace.omni.yaml`:
 
-   ```yaml
-   remote_cache:
-     signing:
-       trusted_keys:
-         - id: 3f9a1c07d2b84e61 # derived from the key; a mismatch is an error
-           name: ci-2026-11
-           public_key: "<base64>"
-       verify: auto
-   ```
+    ```yaml
+    remote_cache:
+        signing:
+            trusted_keys:
+                - id: 3f9a1c07d2b84e61 # derived from the key; a mismatch is an error
+                  name: ci-2026-11
+                  public_key: "<base64>"
+            verify: auto
+    ```
 
 3. On the publishing machine, point setup at the key without storing it:
    `omni cache remote setup ... --target shared --signing-key-id 3f9a1c07d2b84e61 --signing-key-env OMNI_SIGNING_KEY`.
@@ -152,21 +152,21 @@ Shared entries never expire: remove them with your storage provider's tools.
 - **S3 and R2:** add a lifecycle rule on the `isolated/` prefix instead, for example
   on S3:
 
-  ```json
-  {
-    "Rules": [
-      {
-        "ID": "expire-isolated-cache-entries",
-        "Status": "Enabled",
-        "Filter": { "Prefix": "isolated/" },
-        "Expiration": { "Days": 7 }
-      }
-    ]
-  }
-  ```
+    ```json
+    {
+        "Rules": [
+            {
+                "ID": "expire-isolated-cache-entries",
+                "Status": "Enabled",
+                "Filter": { "Prefix": "isolated/" },
+                "Expiration": { "Days": 7 }
+            }
+        ]
+    }
+    ```
 
-  Use the equivalent object lifecycle rule in R2. The service does not sweep S3
-  buckets itself.
+    Use the equivalent object lifecycle rule in R2. The service does not sweep S3
+    buckets itself.
 
 Entries stored before namespaces existed are never read again. There is no
 command to remove them; delete them with your storage provider's tools if you ever
@@ -202,10 +202,10 @@ content. Set `cache.remote: false` on the task, or on the project to inherit it
 
 ```yaml
 tasks:
-  release:
-    exec: ./release.sh
-    cache:
-      remote: false
+    release:
+        exec: ./release.sh
+        cache:
+            remote: false
 ```
 
 `omni run --no-remote-cache` does the same for every task of one run. The task
@@ -462,28 +462,28 @@ Hooks run on every artifact operation: `get`, `get_many`, `head`, `head_many`,
   It runs after the response is sent.
 - Parameters are bound by position, as text. `before` binds 11 and `after` binds 13:
 
-  | #   | `before`        | #   | `after`         |
-  | --- | --------------- | --- | --------------- |
-  | 1   | operation       | 1   | operation       |
-  | 2   | tenant          | 2   | tenant          |
-  | 3   | organization    | 3   | organization    |
-  | 4   | workspace       | 4   | workspace       |
-  | 5   | environment     | 5   | environment     |
-  | 6   | digest          | 6   | digest          |
-  | 7   | caller id       | 7   | outcome         |
-  | 8   | credential kind | 8   | caller id       |
-  | 9   | principal       | 9   | credential kind |
-  | 10  | namespace       | 10  | principal       |
-  | 11  | scope           | 11  | namespace       |
-  |     |                 | 12  | scope           |
-  |     |                 | 13  | SHA-256         |
+    | #   | `before`        | #   | `after`         |
+    | --- | --------------- | --- | --------------- |
+    | 1   | operation       | 1   | operation       |
+    | 2   | tenant          | 2   | tenant          |
+    | 3   | organization    | 3   | organization    |
+    | 4   | workspace       | 4   | workspace       |
+    | 5   | environment     | 5   | environment     |
+    | 6   | digest          | 6   | digest          |
+    | 7   | caller id       | 7   | outcome         |
+    | 8   | credential kind | 8   | caller id       |
+    | 9   | principal       | 9   | credential kind |
+    | 10  | namespace       | 10  | principal       |
+    | 11  | scope           | 11  | namespace       |
+    |     |                 | 12  | scope           |
+    |     |                 | 13  | SHA-256         |
 
-  The digest is empty for list operations. The outcome is `hit`, `miss`,
-  `stored`, `already_exists`, `deleted` or `failed`. The credential kind is
-  `api_key` for an API key. The namespace is `shared` or `isolated`. The scope is
-  the label for an isolated namespace and empty for `shared`. The SHA-256 is the artifact's hash for a `stored` outcome and for
-  a `hit` on one artifact, and empty otherwise. These are the same facts the
-  stored entry records about who wrote it.
+    The digest is empty for list operations. The outcome is `hit`, `miss`,
+    `stored`, `already_exists`, `deleted` or `failed`. The credential kind is
+    `api_key` for an API key. The namespace is `shared` or `isolated`. The scope is
+    the label for an isolated namespace and empty for `shared`. The SHA-256 is the artifact's hash for a `stored` outcome and for
+    a `hit` on one artifact, and empty otherwise. These are the same facts the
+    stored entry records about who wrote it.
 
 - **Upgrading existing queries.** Every position that existed before keeps its
   meaning: the first seven (`before`) and eight (`after`) parameters are as they
