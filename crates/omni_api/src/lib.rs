@@ -50,8 +50,9 @@ pub use operations::{
     },
     remote_source::{
         RemoteSourcesInstallRequest, RemoteSourcesInstallResponse,
-        RemoteSourcesPruneRequest, RemoteSourcesPruneResponse, StoreCheckoutId,
-        StoreCheckoutView, SubsystemReportView, SubsystemSelection,
+        RemoteSourcesPruneRequest, RemoteSourcesPruneResponse,
+        StoreCheckoutFailure, StoreCheckoutId, StoreCheckoutView,
+        SubsystemReportView, SubsystemSelection,
     },
     task::{TaskRunFilters, TaskRunRequest, TaskRunResponse},
     tool::{ToolInfo, ToolInspectResponse, ToolListResponse, ToolWorkingDir},

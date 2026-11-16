@@ -131,8 +131,18 @@ async fn run_prune(
     };
 
     let candidates = api.remote_sources_prune(request(true, None)).await?;
+    for checkout in &candidates.skipped_in_use {
+        println!(
+            "  {} {} {} is in use by a running process and will be skipped",
+            checkout.kind, checkout.remote, checkout.pin
+        );
+    }
     if candidates.checkouts.is_empty() {
-        println!("No store checkouts matched the given filters");
+        if candidates.skipped_in_use.is_empty() {
+            println!("No store checkouts matched the given filters");
+        } else {
+            println!("Nothing to prune: every matching checkout is in use");
+        }
         return Ok(ExitCode::SUCCESS);
     }
     let total: u64 = candidates.checkouts.iter().map(|c| c.size_bytes).sum();
@@ -187,7 +197,28 @@ async fn run_prune(
         .remote_sources_prune(request(false, Some(shown)))
         .await?;
     println!("Pruned {} checkouts", pruned.checkouts.len());
-    Ok(ExitCode::SUCCESS)
+    for checkout in &pruned.skipped_in_use {
+        println!(
+            "Skipped {} {} {}: in use by a running process",
+            checkout.kind, checkout.remote, checkout.pin
+        );
+    }
+    // Report what was removed first, then fail so a script notices checkouts
+    // that are still on disk.
+    for failure in &pruned.failed {
+        eprintln!(
+            "Could not prune {} {} {}: {}",
+            failure.checkout.kind,
+            failure.checkout.remote,
+            failure.checkout.pin,
+            failure.error
+        );
+    }
+    if pruned.failed.is_empty() {
+        Ok(ExitCode::SUCCESS)
+    } else {
+        Ok(ExitCode::FAILURE)
+    }
 }
 
 async fn run_install(

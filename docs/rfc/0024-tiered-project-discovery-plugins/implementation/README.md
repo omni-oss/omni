@@ -50,8 +50,10 @@ F08.1 and F10.1 are merged in the
 F08.2's [process-held lease primitive](features/F08.2-lease-primitive.md)
 is merged ([PR #109](https://github.com/omni-oss/omni/pull/109)).
 F08.4's [atomic reference API and lockfile publication](features/F08.4-atomic-reference-api.md)
-is implemented, pending PR review. Materialization and GC do not use leases yet
-(F08.3), and contributor staging remains F08.5. Other runtime code for F03-F10,
+is merged ([PR #110](https://github.com/omni-oss/omni/pull/110)).
+F08.3's [lease-aware prune](features/F08.3-gc-honors-leases.md) is implemented,
+pending PR review; existing callers do not take leases until F08.5, and contributor
+staging remains F08.5. Other runtime code for F03-F10,
 and plugins (P), remains unimplemented.
 
 Known gaps carried forward from the merged refactors:

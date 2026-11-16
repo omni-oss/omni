@@ -9,4 +9,6 @@ pub mod source;
 pub mod sys;
 
 pub use contributor::{InstallOptions, RemoteSourceContributor};
-pub use source::{MaterializedSource, RemoteSource, RemoteSourceRef};
+pub use source::{
+    LeasedSource, MaterializedSource, RemoteSource, RemoteSourceRef,
+};
