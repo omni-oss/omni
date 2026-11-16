@@ -38,6 +38,10 @@ pub struct Scopes(u8);
 impl Scopes {
     pub const ALL: Self = Self(0b1_1111);
 
+    pub fn of(scopes: &[Scope]) -> Self {
+        scopes.iter().copied().collect()
+    }
+
     pub fn is_empty(self) -> bool {
         self.0 == 0
     }
@@ -191,6 +195,25 @@ impl Caller {
 
     pub fn can(&self, scope: Scope) -> bool {
         self.scopes.contains(scope)
+    }
+
+    /// Whether the caller may write its own isolated namespace. `publish`
+    /// implies `write` (RFC 0030, section 4.1), and this is the one place that
+    /// says so.
+    pub fn can_write_isolated(&self) -> bool {
+        self.can(Scope::Write) || self.can(Scope::Publish)
+    }
+
+    /// Whether the caller may read its own isolated entries: `read`, and the
+    /// right to have written them. A read-only credential never sees isolated
+    /// bytes.
+    pub fn can_read_isolated(&self) -> bool {
+        self.can(Scope::Read) && self.can_write_isolated()
+    }
+
+    /// Whether the caller may write the shared namespace.
+    pub fn can_publish(&self) -> bool {
+        self.can(Scope::Publish)
     }
 }
 

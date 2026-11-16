@@ -19,7 +19,7 @@ use omni_remote_cache_storage_local::LocalDiskCacheBackend;
 use sha2::{Digest as _, Sha256};
 
 const DIGEST: &str = "6vQEbzmN9ofk2uWkvxhq8PRPmdZLVPUSw1YJ3tUNyrSd";
-const QUERY: &str = "org=o&ws=w&env=e";
+const QUERY: &str = "org=o&ws=w&env=e&namespace=isolated&target=isolated";
 
 fn sha256_hex(bytes: &[u8]) -> String {
     Sha256::digest(bytes)
@@ -117,7 +117,11 @@ async fn stored_artifact(backend: &LocalDiskCacheBackend) -> Option<Bytes> {
 }
 
 fn container() -> Container {
-    Container::parse("t/o/w/e").unwrap()
+    Container::parse(format!(
+        "isolated/t/o/w/e/{}/default",
+        omni_remote_cache_service::hooks::api_key_id("k")
+    ))
+    .unwrap()
 }
 
 async fn put(

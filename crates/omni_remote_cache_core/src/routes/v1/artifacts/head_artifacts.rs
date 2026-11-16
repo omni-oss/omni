@@ -10,9 +10,11 @@ use utoipa::IntoParams;
 use crate::{
     extractors::{Credential, TenantCode},
     hooks::{ArtifactOp, OutcomeKind},
+    namespace::segment,
     routes::v1::artifacts::common::{
-        CommonArtifactQuery, after_response, authenticate_caller, before_hook,
-        not_authorized_response, validate_ownership,
+        CommonArtifactQuery, NamespaceParam, Placement, after_response,
+        authenticate_caller, before_hook, not_authorized_response,
+        validate_ownership,
     },
     security::{Scope, Scopes},
     state::ServiceState,
@@ -20,6 +22,13 @@ use crate::{
 
 /// Effective scopes the credential holds for the target (`read:artifacts,...`).
 pub const HEADER_SCOPES: HeaderName = HeaderName::from_static("x-omni-scopes");
+
+/// The principal's path segment in the isolated namespace.
+pub const HEADER_PRINCIPAL_ID: HeaderName =
+    HeaderName::from_static("x-omni-principal-id");
+
+/// The effective scope label (the pin, else the request's `scope`, else `default`).
+pub const HEADER_SCOPE: HeaderName = HeaderName::from_static("x-omni-scope");
 
 /// The largest artifact this server accepts, in bytes.
 pub const HEADER_MAX_ARTIFACT_SIZE: HeaderName =
@@ -43,6 +52,10 @@ pub struct HeadArtifactsQuery {
     #[param()]
     /// The environment code
     pub env: String,
+
+    #[param()]
+    /// Scope label to report for the isolated namespace
+    pub scope: Option<String>,
 }
 
 #[utoipa::path(
@@ -90,6 +103,13 @@ pub async fn head_artifacts(
         Err(response) => return *response,
     };
 
+    // Reported so a client can name its partitions: the principal's path
+    // segment and the label an isolated request would use.
+    let label = match Placement::label(&caller, query.scope.as_deref()) {
+        Ok(label) => label,
+        Err(response) => return *response,
+    };
+
     validate_ownership!(state.provider, &tenant_code, &query);
 
     let hook_ctx = before_hook!(
@@ -99,6 +119,8 @@ pub async fn head_artifacts(
         &tenant_code,
         &query,
         Vec::new(),
+        &Placement::resolve(&caller, NamespaceParam::Shared, None)
+            .expect("shared placement cannot fail"),
     );
 
     let mut response = StatusCode::NO_CONTENT.into_response();
@@ -111,6 +133,12 @@ pub async fn head_artifacts(
     let headers = response.headers_mut();
     if let Ok(value) = HeaderValue::from_str(&scopes) {
         headers.insert(HEADER_SCOPES, value);
+    }
+    if let Ok(value) = HeaderValue::from_str(&segment(caller.principal())) {
+        headers.insert(HEADER_PRINCIPAL_ID, value);
+    }
+    if let Ok(value) = HeaderValue::from_str(label.as_str()) {
+        headers.insert(HEADER_SCOPE, value);
     }
     headers.insert(
         HEADER_MAX_ARTIFACT_SIZE,

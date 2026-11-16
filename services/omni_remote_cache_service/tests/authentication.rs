@@ -225,7 +225,7 @@ async fn every_route_accepts_a_non_api_key_caller_and_uses_its_id_for_hooks() {
         Scopes::ALL,
         Scope::Read.into(),
         Scope::Read.into(),
-        Scope::Write.into(),
+        Scopes::of(&[Scope::Write, Scope::Publish]),
         Scope::Delete.into(),
     ]) {
         assert_eq!(

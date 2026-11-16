@@ -9,15 +9,15 @@ use serde::Deserialize;
 use utoipa::IntoParams;
 
 use super::common::{
-    add_provenance_headers, after_response_with, container,
-    require_valid_digest,
+    CommonArtifactQuery, NamespaceParam, Placement, add_provenance_headers,
+    after_response_with, require_valid_digest,
 };
 use crate::{
     entry::{EntryRead, checked_body, read_entry},
     extractors::{Credential, TenantCode},
     hooks::{ArtifactOp, OutcomeKind},
     routes::v1::artifacts::common::{
-        after_response, authenticate, before_hook, validate_ownership,
+        after_response, authorize, before_hook, validate_ownership,
     },
     security::Scope,
     state::ServiceState,
@@ -38,6 +38,10 @@ pub struct GetArtifactQuery {
     pub ws: String,
     /// The environment code
     pub env: String,
+    /// `shared` (default) or `isolated`
+    pub namespace: Option<NamespaceParam>,
+    /// Scope label for the isolated namespace
+    pub scope: Option<String>,
 }
 
 #[utoipa::path(
@@ -68,13 +72,34 @@ pub async fn get_artifact(
     State(state): State<ServiceState>,
     Credential(credential): Credential,
 ) -> Response {
-    let caller = authenticate!(
-        state.provider,
-        &credential,
-        &tenant_code,
-        &query,
-        Scope::Read,
-    );
+    let requested = query.namespace.unwrap_or(NamespaceParam::Shared);
+    let caller = match requested {
+        NamespaceParam::Shared => authorize!(
+            state.provider,
+            &credential,
+            &tenant_code,
+            &query,
+            crate::security::Scopes::of(&[Scope::Read]),
+            |c: &crate::security::Caller| c.can(Scope::Read),
+        ),
+        NamespaceParam::Isolated => authorize!(
+            state.provider,
+            &credential,
+            &tenant_code,
+            &query,
+            crate::security::Scopes::of(&[
+                Scope::Read,
+                Scope::Write,
+                Scope::Publish
+            ]),
+            |c: &crate::security::Caller| c.can_read_isolated(),
+        ),
+    };
+    let placement =
+        match Placement::resolve(&caller, requested, query.scope.as_deref()) {
+            Ok(p) => p,
+            Err(r) => return *r,
+        };
 
     require_valid_digest!(&digest);
 
@@ -87,16 +112,20 @@ pub async fn get_artifact(
         &tenant_code,
         &query,
         vec![digest.clone()],
+        &placement,
     );
 
-    let container =
-        match container(&tenant_code, &query.org, &query.ws, &query.env) {
-            Ok(c) => c,
-            Err(_) => {
-                return (StatusCode::BAD_REQUEST, "invalid org, ws or env")
-                    .into_response();
-            }
-        };
+    let container = match placement.container(
+        &tenant_code,
+        &CommonArtifactQuery {
+            org: query.org.clone(),
+            ws: query.ws.clone(),
+            env: query.env.clone(),
+        },
+    ) {
+        Ok(c) => c,
+        Err(r) => return *r,
+    };
     // Only a well-formed sealed entry is a hit: an object with no valid trailer
     // (for example one stored before trailers existed) is a miss.
     let entry = match read_entry(
@@ -106,7 +135,12 @@ pub async fn get_artifact(
     )
     .await
     {
-        Ok(EntryRead::Valid(entry)) => Some(entry),
+        Ok(EntryRead::Valid(entry))
+            if placement.owns(&entry.parsed.trailer, caller.principal()) =>
+        {
+            Some(entry)
+        }
+        Ok(EntryRead::Valid(_)) => None,
         Ok(EntryRead::Absent) => None,
         Ok(EntryRead::Invalid(why)) => {
             tracing::warn!(%why, "ignoring a stored object that is not a valid entry");

@@ -25,11 +25,48 @@ rejects invalid principals and empty secrets. Principals are operator-assigned:
 using the same principal for multiple keys deliberately shares namespace ownership,
 so only assign a shared principal to credentials with the same trust level.
 
-Artifact routes now authenticate through this identity path. Namespaces by
-principal and the `publish:artifacts` endpoints are not active yet, so
-`publish:artifacts` is an accepted explicit scope that no route requires today.
-Legacy `scopes: "all"` grants the existing read/write/list/delete scopes, never
-publish.
+Artifact routes authenticate through this identity path. Legacy `scopes: "all"`
+grants read, write, list and delete, never `publish:artifacts`.
+
+## Namespaces and scopes
+
+Entries live in one of two namespaces, chosen by the request and checked against
+the credential:
+
+- `shared`: entries a publisher stored for everyone who may read the environment.
+- `isolated`: entries one principal stored for itself, kept apart by a scope label
+  (`default` unless the request or the credential says otherwise).
+
+| Request                                            | Needs                                                         |
+| -------------------------------------------------- | ------------------------------------------------------------- |
+| `PUT ?target=isolated` (the default)               | `write:artifacts` or `publish:artifacts`                      |
+| `PUT ?target=shared`                               | `publish:artifacts`                                           |
+| `GET`/`HEAD ?namespace=shared` (the default)       | `read:artifacts`                                              |
+| `GET`/`HEAD ?namespace=isolated`                   | `read:artifacts` and `write:artifacts` or `publish:artifacts` |
+| `GET /artifacts` (list), either namespace          | `list:artifacts`                                              |
+| `DELETE`, in `shared` or the caller's own isolated | `delete:artifacts`                                            |
+
+`publish:artifacts` implies `write:artifacts`. A read-only credential can never
+write, and `scopes: "all"` can never write the shared namespace. An isolated
+request may carry `scope=<label>` (letters, digits, `.`, `_`, `-`, up to 64,
+starting with a letter or digit); an invalid label is `400`, and the label is
+ignored for `shared`. A credential pinned to a label always uses it. The
+principal is never taken from a request. An isolated entry is only served to the
+principal and label that wrote it. An unknown `target` or `namespace` is `400`.
+
+In storage, keys start with the namespace so a lifecycle rule can match one
+prefix: `shared/{tenant}/{org}/{ws}/{env}` and
+`isolated/{tenant}/{org}/{ws}/{env}/{principal}/{scope}`. A principal or label
+that is not lowercase letters, digits, `.`, `_` or `-` (at most 64, not starting
+with `h-`) appears as `h-` plus 32 hex characters of its SHA-256.
+
+Until configured placement lands, the built-in client uploads to its isolated
+namespace and reads isolated first, then shared, so one key with read and write
+behaves as before.
+
+**Upgrade note:** entries stored before namespaces (under `{tenant}/{org}/{ws}/{env}`) are
+never read again and are not deleted. Remove them from storage when you no longer
+need them.
 
 ## Sending the credential
 
@@ -101,14 +138,16 @@ it has stored new entries needs those entries purged first.
 `omni cache remote setup` probes the server with `HEAD /v1/artifacts` (relative to
 the API base URL, for example `/api`) for the target. The probe is valid for any recognized credential that holds at least one
 scope for the target, so a key that can read and write but not list is accepted.
-A valid response is `204` with two headers:
+A valid response is `204` with these headers:
 
 | Header                     | Meaning                                                                                  |
 | -------------------------- | ---------------------------------------------------------------------------------------- |
 | `X-Omni-Scopes`            | The scopes the credential holds for the target, such as `read:artifacts,write:artifacts` |
 | `X-Omni-Max-Artifact-Size` | The largest artifact the server accepts, in bytes (`max_artifact_size`)                  |
+| `X-Omni-Principal-Id`      | The principal's path segment in the isolated namespace                                   |
+| `X-Omni-Scope`             | The effective scope label (the pin, else the `scope` query, else `default`)              |
 
-The client reads both as advice only. The server still enforces scopes and the
+The client reads these headers as advice only. The server still enforces scopes and the
 size limit on every request. A credential with no scope for the target gets `403`,
 and an unknown one `401`, with neither header. When the server reports scopes,
 setup refuses a credential that holds neither `read:artifacts` nor
@@ -275,8 +314,8 @@ Hooks run on every artifact operation: `get`, `get_many`, `head`, `head_many`,
 
   The digest is empty for list operations. The outcome is `hit`, `miss`,
   `stored`, `already_exists`, `deleted` or `failed`. The credential kind is
-  `api_key` for an API key. The namespace is `shared`. The scope is empty when
-  there is none. The SHA-256 is the artifact's hash for a `stored` outcome and for
+  `api_key` for an API key. The namespace is `shared` or `isolated`. The scope is
+  the label for an isolated namespace and empty for `shared`. The SHA-256 is the artifact's hash for a `stored` outcome and for
   a `hit` on one artifact, and empty otherwise. These are the same facts the
   stored entry records about who wrote it.
 

@@ -26,7 +26,7 @@ use omni_remote_cache_storage_core::{
 use omni_remote_cache_storage_local::LocalDiskCacheBackend;
 use sha2::{Digest as _, Sha256};
 
-const QUERY: &str = "org=o&ws=w&env=e";
+const QUERY: &str = "org=o&ws=w&env=e&namespace=isolated&target=isolated";
 
 fn sha256_hex(bytes: &[u8]) -> String {
     Sha256::digest(bytes)
@@ -103,7 +103,11 @@ async fn server(
 }
 
 fn container() -> Container {
-    Container::parse("t/o/w/e").unwrap()
+    Container::parse(format!(
+        "isolated/t/o/w/e/{}/default",
+        omni_remote_cache_service::hooks::api_key_id("k")
+    ))
+    .unwrap()
 }
 
 fn path(digest: &str) -> String {
@@ -169,8 +173,8 @@ async fn a_stored_entry_is_the_artifact_then_server_authored_provenance() {
         trailer.writer_principal, id,
         "the default principal is the credential id"
     );
-    assert_eq!(trailer.namespace, "shared");
-    assert_eq!(trailer.scope, None);
+    assert_eq!(trailer.namespace, "isolated");
+    assert_eq!(trailer.scope.as_deref(), Some("default"));
     assert_eq!(trailer.signature, None);
     assert_eq!(trailer.size, artifact.len() as u64);
     assert_eq!(trailer.sha256, sha256_hex(artifact));
@@ -205,8 +209,8 @@ async fn nothing_the_client_sends_can_set_provenance() {
     let id = omni_remote_cache_service::hooks::api_key_id("k");
     assert_eq!(trailer.writer_principal, id);
     assert_eq!(trailer.writer_credential.id, id);
-    assert_eq!(trailer.namespace, "shared");
-    assert_eq!(trailer.scope, None);
+    assert_eq!(trailer.namespace, "isolated");
+    assert_eq!(trailer.scope.as_deref(), Some("default"));
     assert_eq!(trailer.signature, None);
 }
 
@@ -310,7 +314,7 @@ async fn get_returns_exactly_the_artifact_and_only_reader_safe_headers() {
         response.header("x-omni-content-sha256"),
         sha256_hex(artifact).as_str()
     );
-    assert_eq!(response.header("x-omni-namespace"), "shared");
+    assert_eq!(response.header("x-omni-namespace"), "isolated");
     time::OffsetDateTime::parse(
         response.header("x-omni-stored-at").to_str().unwrap(),
         &time::format_description::well_known::Rfc3339,

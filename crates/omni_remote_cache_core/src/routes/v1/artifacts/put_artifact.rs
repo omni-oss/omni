@@ -16,8 +16,8 @@ use crate::{
     extractors::{Credential, TenantCode},
     hooks::{ArtifactOp, OutcomeKind},
     routes::v1::artifacts::common::{
-        after_response_with, authenticate, before_hook, container,
-        require_valid_digest, validate_ownership,
+        CommonArtifactQuery, NamespaceParam, Placement, after_response_with,
+        authorize, before_hook, require_valid_digest, validate_ownership,
     },
     security::Scope,
     state::ServiceState,
@@ -43,6 +43,12 @@ pub struct PutArtifactQuery {
     #[param()]
     /// The environment code
     pub env: String,
+    #[param()]
+    /// `isolated` (default) or `shared` (needs `publish:artifacts`)
+    pub target: Option<NamespaceParam>,
+    #[param()]
+    /// Scope label for the isolated namespace
+    pub scope: Option<String>,
 }
 
 #[utoipa::path(
@@ -75,13 +81,30 @@ pub async fn put_artifact(
     headers: HeaderMap,
     body: Body,
 ) -> Response {
-    let caller = authenticate!(
-        state.provider,
-        &credential,
-        &tenant_code,
-        &query,
-        Scope::Write,
-    );
+    let requested = query.target.unwrap_or(NamespaceParam::Isolated);
+    let caller = match requested {
+        NamespaceParam::Shared => authorize!(
+            state.provider,
+            &credential,
+            &tenant_code,
+            &query,
+            crate::security::Scopes::of(&[Scope::Publish]),
+            |c: &crate::security::Caller| c.can_publish(),
+        ),
+        NamespaceParam::Isolated => authorize!(
+            state.provider,
+            &credential,
+            &tenant_code,
+            &query,
+            crate::security::Scopes::of(&[Scope::Write, Scope::Publish]),
+            |c: &crate::security::Caller| c.can_write_isolated(),
+        ),
+    };
+    let placement =
+        match Placement::resolve(&caller, requested, query.scope.as_deref()) {
+            Ok(p) => p,
+            Err(r) => return *r,
+        };
 
     require_valid_digest!(&digest);
 
@@ -118,16 +141,20 @@ pub async fn put_artifact(
         &tenant_code,
         &query,
         vec![digest.clone()],
+        &placement,
     );
 
-    let container =
-        match container(&tenant_code, &query.org, &query.ws, &query.env) {
-            Ok(c) => c,
-            Err(_) => {
-                return (StatusCode::BAD_REQUEST, "invalid org, ws or env")
-                    .into_response();
-            }
-        };
+    let container = match placement.container(
+        &tenant_code,
+        &CommonArtifactQuery {
+            org: query.org.clone(),
+            ws: query.ws.clone(),
+            env: query.env.clone(),
+        },
+    ) {
+        Ok(c) => c,
+        Err(r) => return *r,
+    };
     // The server seals the entry: it hashes the body as it streams, stops at the
     // size limit (a chunked body, or one that lies about its length, is bounded
     // here), compares with the declared hash at the end and only then appends
@@ -143,8 +170,8 @@ pub async fn put_artifact(
                 id: caller.credential().id().to_owned(),
             },
             writer_principal: caller.principal().to_owned(),
-            namespace: "shared".to_owned(),
-            scope: None,
+            namespace: placement.trailer_namespace().to_owned(),
+            scope: placement.scope(),
             signature: None,
             now: OffsetDateTime::now_utc,
         },

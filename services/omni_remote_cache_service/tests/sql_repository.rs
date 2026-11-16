@@ -119,7 +119,8 @@ async fn server_with(url: &str, after: &str) -> TestServer {
     TestServer::new(router)
 }
 
-const ONE: &str = "/api/v1/artifacts/abc?org=o&ws=w&env=e";
+const ONE: &str =
+    "/api/v1/artifacts/abc?org=o&ws=w&env=e&namespace=isolated&target=isolated";
 
 async fn usage_rows(db: &SqlxExecutor, outcome: &str) -> bool {
     for _ in 0..50 {
@@ -203,7 +204,7 @@ async fn sql_backend_authorizes_validates_vetoes_and_records_usage() {
     // The same facts the stored entry records.
     assert!(
         db.exists(
-            "SELECT 1 AS found FROM usage WHERE outcome = 'stored' AND credential_kind = 'api_key' AND principal = ?1 AND namespace = 'shared' AND sha256 = ?2",
+            "SELECT 1 AS found FROM usage WHERE outcome = 'stored' AND credential_kind = 'api_key' AND principal = ?1 AND namespace = 'isolated' AND sha256 = ?2",
             &[&key_id, &sha256_hex(b"x")],
         )
         .await

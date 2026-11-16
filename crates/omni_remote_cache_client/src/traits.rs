@@ -3,6 +3,25 @@ use bytes::Bytes;
 use derive_new::new;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
+/// Which part of the remote cache a request reads or writes (RFC 0030).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub enum Placement {
+    /// Entries a publisher stored for everyone; writing needs `publish:artifacts`.
+    Shared,
+    /// This credential's own entries; the server picks the principal.
+    #[default]
+    Isolated,
+}
+
+impl Placement {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Shared => "shared",
+            Self::Isolated => "isolated",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, new)]
 pub struct RemoteAccessArgs<'a> {
     pub api_base_url: &'a str,
@@ -11,6 +30,8 @@ pub struct RemoteAccessArgs<'a> {
     pub org: &'a str,
     pub ws: &'a str,
     pub env: &'a str,
+    #[new(default)]
+    pub placement: Placement,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, new)]

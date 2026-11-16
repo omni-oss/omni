@@ -69,6 +69,7 @@ pub async fn setup_remote_caching_config_async<TClient: RemoteCacheClient>(
             org: organization_code,
             tenant: tenant_code,
             ws: workspace_code,
+            placement: Default::default(),
         })
         .await?;
 

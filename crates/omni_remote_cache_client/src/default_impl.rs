@@ -86,9 +86,11 @@ impl Middleware for LogRequestMiddleware {
     }
 }
 
-fn create_url(remote: &RemoteAccessArgs, digest: &str) -> String {
+/// `param` is `target` for a write and `namespace` for everything else.
+fn create_url(remote: &RemoteAccessArgs, digest: &str, param: &str) -> String {
     format!(
-        "{base_url}/v1/artifacts/{digest}?org={org}&ws={ws}&env={env}",
+        "{base_url}/v1/artifacts/{digest}?org={org}&ws={ws}&env={env}&{param}={placement}",
+        placement = remote.placement.as_str(),
         base_url = remote.api_base_url,
         org = remote.org,
         ws = remote.ws,
@@ -133,7 +135,7 @@ impl RemoteCacheClient for DefaultRemoteCacheClient {
         remote: &RemoteAccessArgs,
         digest: &str,
     ) -> Result<Option<Bytes>, RemoteCacheClientError> {
-        let url = create_url(remote, digest);
+        let url = create_url(remote, digest, "namespace");
 
         let response = self
             .client
@@ -235,7 +237,7 @@ impl RemoteCacheClient for DefaultRemoteCacheClient {
         remote: &RemoteAccessArgs,
         digest: &str,
     ) -> Result<bool, RemoteCacheClientError> {
-        let url = create_url(remote, digest);
+        let url = create_url(remote, digest, "namespace");
 
         let response = self
             .client
@@ -269,7 +271,7 @@ impl RemoteCacheClient for DefaultRemoteCacheClient {
         digest: &str,
         artifact: Bytes,
     ) -> Result<(), RemoteCacheClientError> {
-        let url = create_url(remote, digest);
+        let url = create_url(remote, digest, "target");
         let sha256 = sha256_hex(artifact.clone()).await?;
 
         let response = self
@@ -377,6 +379,18 @@ mod tests {
     const DEFAULT_API_KEY: &str = "key1";
     const DEFAULT_BODY: Bytes = Bytes::from_static(b"hello world");
 
+    #[test]
+    fn a_request_names_its_namespace() {
+        use super::create_url;
+        let mut args = def_remote_access_args("http://h");
+        assert!(create_url(&args, "d", "target").ends_with("&target=isolated"));
+        args.placement = crate::Placement::Shared;
+        assert!(
+            create_url(&args, "d", "namespace").ends_with("&namespace=shared")
+        );
+        assert!(!create_url(&args, "d", "namespace").contains("scope"));
+    }
+
     fn def_remote_access_args<'a>(base_url: &'a str) -> RemoteAccessArgs<'a> {
         RemoteAccessArgs {
             api_key: DEFAULT_API_KEY,
@@ -385,6 +399,7 @@ mod tests {
             org: DEFAULT_ORG,
             tenant: DEFAULT_TENANT,
             ws: DEFAULT_WS,
+            placement: Default::default(),
         }
     }
 

@@ -181,8 +181,10 @@ async fn router(
     .with_state(state)
 }
 
-const ONE: &str = "/api/v1/artifacts/abc?org=o&ws=w&env=e";
-const LIST: &str = "/api/v1/artifacts?org=o&ws=w&env=e";
+const ONE: &str =
+    "/api/v1/artifacts/abc?org=o&ws=w&env=e&namespace=isolated&target=isolated";
+const LIST: &str =
+    "/api/v1/artifacts?org=o&ws=w&env=e&namespace=isolated&target=isolated";
 
 #[tokio::test]
 async fn every_operation_is_vetoable_and_a_veto_skips_after() {
@@ -252,8 +254,8 @@ async fn allowed_operation_runs_after() {
         ctx.principal, ids[0],
         "the default principal is the credential id"
     );
-    assert_eq!(ctx.namespace, NamespaceKind::Shared);
-    assert_eq!(ctx.scope, None);
+    assert_eq!(ctx.namespace, NamespaceKind::Isolated);
+    assert_eq!(ctx.scope.as_deref(), Some("default"));
 }
 
 #[tokio::test]
@@ -306,7 +308,7 @@ async fn after_carries_the_hash_only_for_a_stored_entry_or_a_hit_on_one() {
 async fn a_malformed_digest_never_reaches_the_hooks() {
     let hooks = Arc::new(Recorder::default());
     let s = server(hooks.clone()).await;
-    let bad = "/api/v1/artifacts/not.a.digest?org=o&ws=w&env=e";
+    let bad = "/api/v1/artifacts/not.a.digest?org=o&ws=w&env=e&namespace=isolated&target=isolated";
     let req = |r: axum_test::TestRequest| {
         r.add_header("Authorization", "Bearer k")
             .add_header("X-OMNI-TENANT", "t")

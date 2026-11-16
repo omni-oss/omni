@@ -254,9 +254,13 @@ fn get_path(
     digest: Option<&str>,
 ) -> String {
     if let Some(digest) = digest {
-        format!("/api/v1/artifacts/{digest}?org={org}&ws={workspace}&env={env}",)
+        format!(
+            "/api/v1/artifacts/{digest}?org={org}&ws={workspace}&env={env}&namespace=isolated&target=isolated",
+        )
     } else {
-        format!("/api/v1/artifacts?org={org}&ws={workspace}&env={env}",)
+        format!(
+            "/api/v1/artifacts?org={org}&ws={workspace}&env={env}&namespace=isolated&target=isolated",
+        )
     }
 }
 

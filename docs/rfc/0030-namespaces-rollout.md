@@ -169,3 +169,13 @@ and the case-sensitive code escaping.
   the server is wrong and become `500`; `common::container` is removed so there is one way to build
   a container; the prefix builders above one environment (`isolated_workspace`, `isolated_env`,
   `shared_*`) are added when purge and the sweeper need them (slice 8).
+
+- **Batch 2 (routes, client, fixtures): implemented.** Every route builds its container from a
+  `Placement` resolved from the authenticated caller (`authorize!` applies the per-namespace scope
+  rule; "publish implies write" lives in the `Caller` helpers). Reads require the trailer to name the
+  request's namespace, principal and scope, otherwise a miss. List is namespace-aware (`CacheItem`
+  gains `scope`). The probe adds `X-Omni-Principal-Id` and `X-Omni-Scope`. The client trait carries a
+  `Placement` in `RemoteAccessArgs` (default isolated) and `hybrid.rs` pushes isolated and reads
+  isolated then shared. Existing service tests and the TS spec address the isolated namespace
+  explicitly; `tests/namespaces.rs` holds the matrix, isolation, pin, copy and list tests.
+  Not yet run here: the TS service suites, the client live tests and `omni-tests`; CI runs them.

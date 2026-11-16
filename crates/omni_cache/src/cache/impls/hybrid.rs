@@ -19,7 +19,7 @@ use omni_hasher::{
     impls::{DefaultHash, DefaultHasher},
 };
 use omni_remote_cache_client::{
-    DefaultRemoteCacheClient, RemoteAccessArgs, RemoteCacheClient,
+    DefaultRemoteCacheClient, Placement, RemoteAccessArgs, RemoteCacheClient,
     RemoteCacheClientError,
 };
 use omni_task_context::{
@@ -669,6 +669,10 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                         org: &conf.organization_code,
                         tenant: &conf.tenant_code,
                         ws: &conf.workspace_code,
+                        // Until configured placement lands, uploads go to this
+                        // credential's own isolated namespace, which needs only
+                        // `write:artifacts`.
+                        placement: Placement::Isolated,
                     };
 
                     let upload = async {
@@ -741,22 +745,48 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                 let output_dir = output_dir.to_path_buf();
 
                 tasks.spawn(async move {
-                    let response = client
-                        .get_artifact(
-                            &RemoteAccessArgs {
-                                api_key: &conf.api_key,
-                                api_base_url: &conf.api_base_url,
-                                env: conf
-                                    .environment_code
-                                    .as_deref()
-                                    .unwrap_or("default"),
-                                org: &conf.organization_code,
-                                tenant: &conf.tenant_code,
-                                ws: &conf.workspace_code,
-                            },
-                            &digest,
-                        )
-                        .await?;
+                    // Own entries first, then what publishers shared. A
+                    // credential that may not read its isolated namespace
+                    // (`403`) or a failure there falls back to shared; only a
+                    // failure of the last attempt is an error.
+                    let mut response = None;
+                    let mut last_error = None;
+                    for placement in [Placement::Isolated, Placement::Shared] {
+                        let access = RemoteAccessArgs {
+                            api_key: &conf.api_key,
+                            api_base_url: &conf.api_base_url,
+                            env: conf
+                                .environment_code
+                                .as_deref()
+                                .unwrap_or("default"),
+                            org: &conf.organization_code,
+                            tenant: &conf.tenant_code,
+                            ws: &conf.workspace_code,
+                            placement,
+                        };
+                        match client.get_artifact(&access, &digest).await {
+                            Ok(Some(bytes)) => {
+                                response = Some(bytes);
+                                last_error = None;
+                                break;
+                            }
+                            Ok(None) => last_error = None,
+                            Err(e) => {
+                                tracing::debug!(
+                                    %digest,
+                                    ?placement,
+                                    error = %e,
+                                    "remote cache read failed"
+                                );
+                                last_error = Some(e);
+                            }
+                        }
+                    }
+                    if response.is_none()
+                        && let Some(e) = last_error
+                    {
+                        return Err(e.into());
+                    }
 
                     if let Some(bytes) = response {
                         tracing::debug!("fetched remote cache for {}", digest);

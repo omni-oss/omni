@@ -3,9 +3,8 @@ use axum::{
     extract::{Query, State},
     response::{IntoResponse as _, Response},
 };
-use axum_extra::{response::InternalServerError, routing::TypedPath};
+use axum_extra::routing::TypedPath;
 use derive_new::new;
-use http::StatusCode;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
@@ -14,8 +13,8 @@ use crate::{
     hooks::{ArtifactOp, OutcomeKind},
     response::data::Data,
     routes::v1::artifacts::common::{
-        after_response, authenticate, before_hook, container,
-        validate_ownership,
+        CommonArtifactQuery, NamespaceParam, Placement, after_response,
+        authorize, before_hook, list_namespace, validate_ownership,
     },
     security::Scope,
     state::ServiceState,
@@ -39,6 +38,14 @@ pub struct GetArtifactsQuery {
     #[param()]
     /// The environment code
     pub env: String,
+
+    #[param()]
+    /// `shared` (default) or `isolated`
+    pub namespace: Option<NamespaceParam>,
+
+    #[param()]
+    /// Scope label for the isolated namespace
+    pub scope: Option<String>,
 }
 
 #[derive(
@@ -47,6 +54,9 @@ pub struct GetArtifactsQuery {
 pub struct CacheItem {
     pub digest: String,
     pub size: u64,
+    /// The scope segment, for entries of an isolated namespace
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scope: Option<String>,
 }
 
 #[utoipa::path(
@@ -71,13 +81,20 @@ pub async fn get_artifacts(
     TenantCode(tenant_code): TenantCode,
     Credential(credential): Credential,
 ) -> Response {
-    let caller = authenticate!(
+    let requested = query.namespace.unwrap_or(NamespaceParam::Shared);
+    let caller = authorize!(
         state.provider,
         &credential,
         &tenant_code,
         &query,
-        Scope::List,
+        crate::security::Scopes::of(&[Scope::List]),
+        |c: &crate::security::Caller| c.can(Scope::List),
     );
+    let placement =
+        match Placement::resolve(&caller, requested, query.scope.as_deref()) {
+            Ok(p) => p,
+            Err(r) => return *r,
+        };
 
     validate_ownership!(state.provider, &tenant_code, &query);
 
@@ -88,33 +105,24 @@ pub async fn get_artifacts(
         &tenant_code,
         &query,
         Vec::new(),
+        &placement,
     );
 
-    let container =
-        match container(&tenant_code, &query.org, &query.ws, &query.env) {
-            Ok(c) => c,
-            Err(_) => {
-                return (StatusCode::BAD_REQUEST, "invalid org, ws or env")
-                    .into_response();
-            }
-        };
-    let all_artifacts = state
-        .storage_backend
-        .list(&container)
-        .await
-        .map_err(InternalServerError);
+    let all_artifacts = list_namespace(
+        state.storage_backend.as_ref(),
+        &placement,
+        &tenant_code,
+        &CommonArtifactQuery {
+            org: query.org.clone(),
+            ws: query.ws.clone(),
+            env: query.env.clone(),
+        },
+    )
+    .await;
 
     let response = match all_artifacts {
-        Ok(r) => Json(Data::new(
-            r.iter()
-                .map(|item| CacheItem {
-                    digest: item.key().to_string(),
-                    size: item.size().as_u64(),
-                })
-                .collect::<Vec<_>>(),
-        ))
-        .into_response(),
-        Err(e) => e.into_response(),
+        Ok(r) => Json(Data::new(r)).into_response(),
+        Err(response) => *response,
     };
 
     after_response(&state, hook_ctx, OutcomeKind::Hit, response).await
