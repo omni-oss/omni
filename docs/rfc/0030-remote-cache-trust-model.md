@@ -1538,6 +1538,42 @@ old bool-based cache remains only for the still-unmigrated request paths. Worker
 runtime validation remains open.
 See [the rollout notes](0030-authentication-rollout.md) for the batch plan.
 
+**Landed (entry trailer and provenance, slice 3 batches 1 and 2):** every entry is stored as
+`[artifact][msgpack trailer][u32 length][OMNIENT1]`, written by the server through a sealing
+stream that hashes the body, enforces `max_artifact_size` on artifact bytes, compares with the
+client-declared `X-Omni-Content-Sha256` and only then appends the trailer, so a mismatch, a
+truncated body or an oversized body commits nothing. `GET` and `HEAD` accept only a well-formed
+entry (older objects are misses); `GET` returns exactly the artifact with `Content-Length` and
+`X-Omni-Namespace`, `X-Omni-Stored-At` and `X-Omni-Content-Sha256`. The client sends the hash.
+Deviations from the text above:
+
+- **No `If-Match`.** The storage trait has no conditional read. `GET` instead streams the
+  object, holds back the last artifact byte and the trailer region, and releases that byte only
+  when the held bytes equal the trailer region it read first and the length matches. A purge
+  and re-publish between the two reads therefore ends the body with an error before the
+  declared `Content-Length` is satisfied, so the transport aborts the transfer. (Releasing all
+  artifact bytes first would not work: an HTTP/1 server stops reading at `Content-Length`, so a
+  check after the last byte is never seen. Tests drive this over a real connection.)
+- **Credential and principal headers are not sent yet.** They are for operators and arrive with
+  the provenance and purge routes (slice 8). `X-Omni-Signature` is sent only when a trailer has
+  one, which no server code writes until slice 7.
+- **The artifact bytes are not re-hashed on `GET`.** The server checks the trailer and the
+  object's shape on every read, so a changed byte inside the artifact is served, with the
+  original `X-Omni-Content-Sha256`. A client that hashes what it received and compares it with
+  that header detects it; that verification is slice 7. A test records the gap.
+- **`409` versus `422` for an existing key with a wrong hash** depends on the backend: local,
+  memory and S3 read the whole body first and answer `422`, R2 checks for the key before
+  reading and answers `409`. The client treats both as "nothing to retry". `422` is the
+  intended answer; aligning R2 waits for the real-R2 work in the open gates.
+- **`HEAD` and small `GET`s cost more** than before: a ranged read of up to 64 KiB (plus a
+  `size` call for objects at least that large; on R2, `get_range` adds its own `HEAD`). Reading
+  the 12-byte footer first, then exactly the trailer, would be cheaper if measurements show it
+  matters.
+- **`namespace` is always `shared`, `scope` empty** until slice 4.
+- **List sizes are the stored object size**, which includes the trailer.
+- Hooks still carry the old `api_key_id` field (now the authenticated credential id) until the
+  hook contract batch.
+
 **Open gates before this RFC can be Implemented:**
 
 - **R2 is not create-only, so R2 writes fail closed by default.** The Workers

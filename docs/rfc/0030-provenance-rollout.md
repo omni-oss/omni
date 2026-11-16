@@ -170,3 +170,33 @@ principal response headers deferred to slice 8.
   write means the backend failed, and a mismatch is known only after every artifact byte was
   forwarded, so each backend's batch-2 tests must show it commits nothing before the stream's
   end. Nothing calls the module yet, so there is no behaviour change. 29 unit tests.
+- **Batch 2 (routes, client and fixtures): implemented and independently reviewed by Opus
+  (one blocker, fixed).** The review found that the end-of-stream check of `checked_body` never
+  reached an HTTP/1 client: hyper stops pulling once it has sent `Content-Length` bytes, so the
+  check ran after the response had already succeeded. `checked_body` now holds back the last
+  artifact byte until the object has been checked; one test models an HTTP/1 reader and one
+  drives a real socket with `reqwest`, and both fail if the byte is released early (verified by
+  reverting). Other follow-ups: a test records that artifact-region corruption is served until
+  the client verifies (slice 7), and RFC section 8 now lists the `409`/`422` backend difference
+  and the `HEAD` cost.
+  - `PUT` validates `X-Omni-Content-Sha256` after the declared-length `413` check and before the
+    hooks, then seals the body (`seal`, replacing `limit_stream`); a failure maps to `413`
+    (cap), `422` (mismatch) or `500` through the handle, read after the backend returns.
+  - `GET` and `HEAD` share `read_entry`; `GET` streams through `checked_body` with
+    `Content-Length: size` and sends `X-Omni-Namespace`, `X-Omni-Stored-At`,
+    `X-Omni-Content-Sha256` (and `X-Omni-Signature` when present).
+  - The client hashes the archive in `spawn_blocking` and sends the header.
+  - The `limit_stream` unit tests were replaced, not dropped: the seal tests cover the exact
+    limit, one over, a single oversized chunk and nothing emitted after the error, and
+    `provenance.rs` covers the cap through the route.
+  - Fixtures moved with the header (service tests, the TypeScript spec, the `hybrid.rs` upload
+    mock, which now asserts the declared hash equals the body's). Four immutability tests that
+    compared raw stored bytes now compare the artifact inside the sealed object, and the
+    conflict test also checks the stored object is unchanged byte for byte.
+  - New: `entry_read.rs` (reader against the memory backend and the LRU, a swapped, longer,
+    shorter or truncated object, every chunk boundary) and `provenance.rs` (13 route tests:
+    server-authored provenance, forged headers ignored, wrong or malformed hash, a failing
+    body, exact `GET` bytes and headers, trailer lookalikes, empty and large artifacts, `HEAD`
+    agreement, tampered and legacy objects, `409` leaves provenance intact, list sizes, the cap).
+  - The TypeScript tests (including new ones for `400`, `422`, headers and `HEAD`) run in CI
+    only.

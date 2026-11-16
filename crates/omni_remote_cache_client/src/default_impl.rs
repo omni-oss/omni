@@ -107,6 +107,25 @@ fn create_url_no_digest(remote: &RemoteAccessArgs) -> String {
     )
 }
 
+/// Lowercase hex SHA-256 of `artifact`. An archive can be hundreds of megabytes,
+/// so it is hashed off the async worker threads.
+async fn sha256_hex(artifact: Bytes) -> Result<String, RemoteCacheClientError> {
+    use sha2::{Digest as _, Sha256};
+    use std::fmt::Write as _;
+
+    tokio::task::spawn_blocking(move || {
+        Sha256::digest(&artifact).iter().fold(
+            String::with_capacity(64),
+            |mut hex, byte| {
+                let _ = write!(hex, "{byte:02x}");
+                hex
+            },
+        )
+    })
+    .await
+    .map_err(RemoteCacheClientError::custom)
+}
+
 #[async_trait]
 impl RemoteCacheClient for DefaultRemoteCacheClient {
     async fn get_artifact(
@@ -251,12 +270,16 @@ impl RemoteCacheClient for DefaultRemoteCacheClient {
         artifact: Bytes,
     ) -> Result<(), RemoteCacheClientError> {
         let url = create_url(remote, digest);
+        let sha256 = sha256_hex(artifact.clone()).await?;
 
         let response = self
             .client
             .put(url)
             .bearer_auth(remote.api_key)
             .header("X-OMNI-TENANT", remote.tenant)
+            // The server seals the entry only if the bytes match this, so a
+            // corrupted or truncated upload is rejected instead of stored.
+            .header("X-Omni-Content-Sha256", sha256)
             .body(artifact)
             .timeout(UPLOAD_REQUEST_TIMEOUT)
             .send()

@@ -11,8 +11,16 @@ use omni_remote_cache_service::{
     state::build_state,
 };
 use serde_json::json;
+use sha2::{Digest as _, Sha256};
 
 const KEY: &str = "good-key";
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    Sha256::digest(bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
 
 async fn seed(url: &str) -> SqlxExecutor {
     let db = SqlxExecutor::connect(url, 1, Duration::from_secs(5))
@@ -160,6 +168,7 @@ async fn sql_backend_authorizes_validates_vetoes_and_records_usage() {
 
     // put, then the after hook records usage off the request path
     call(s.put(ONE), KEY, "t")
+        .add_header("X-Omni-Content-Sha256", sha256_hex(b"x"))
         .bytes("x".into())
         .await
         .assert_status(http::StatusCode::NO_CONTENT);

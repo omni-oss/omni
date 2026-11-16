@@ -54,6 +54,48 @@ credential cannot learn whether an organization, workspace or environment exists
 
 The hook `api_key_id` is now the authenticated credential ID.
 
+## Uploads and stored entries
+
+Every upload must declare the SHA-256 of the artifact in an `X-Omni-Content-Sha256`
+header: exactly one header holding 64 lowercase hexadecimal characters. The built-in
+`omni` client sends it. The server hashes the body while it streams and stores the
+entry only if the bytes match, so a corrupted or truncated upload is never stored and
+the key stays free for a correct one.
+
+| Status | Meaning                                                             |
+| ------ | ------------------------------------------------------------------- |
+| 204    | Stored                                                              |
+| 400    | The hash header is missing, repeated or not 64 lowercase hex digits |
+| 409    | An entry already exists for the digest. Entries are never replaced  |
+| 413    | The artifact is larger than `max_artifact_size`                     |
+| 422    | The bytes do not match `X-Omni-Content-Sha256`. Nothing was stored  |
+
+The server stores each entry as one object: the artifact, then a record it writes
+itself of who stored it (the credential, its principal), when, and the artifact's size
+and SHA-256. Nothing the client sends can set that record. `GET` returns exactly the
+artifact, with `Content-Length`, and these headers:
+
+| Header                  | Meaning                              |
+| ----------------------- | ------------------------------------ |
+| `X-Omni-Content-Sha256` | SHA-256 of the artifact              |
+| `X-Omni-Stored-At`      | When the server stored it (RFC 3339) |
+| `X-Omni-Namespace`      | `shared` (the only namespace so far) |
+
+Things that behave differently from before:
+
+- **Older entries are misses.** An object stored before this change has no record, so
+  `GET` and `HEAD` answer `404` and the task runs again. They are not deleted.
+- **`HEAD` and `GET` agree.** `HEAD` answers `204` only for an entry `GET` would serve.
+- **List sizes include the record.** `GET /v1/artifacts` reports the stored object size,
+  which is a little larger than the artifact.
+- **If a stored object changes while it is being read,** the response ends with an error
+  instead of a short success, and the client treats the download as failed.
+
+Upgrade the server before the clients. A client from before this change cannot upload
+to the new server (`400`), and a new client uploading to an old server stores entries
+in the new format that the old server would serve whole. Rolling the server back after
+it has stored new entries needs those entries purged first.
+
 ## Checking access
 
 `omni cache remote setup` probes the server with `HEAD /v1/artifacts` (relative to

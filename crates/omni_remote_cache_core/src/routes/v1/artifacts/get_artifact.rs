@@ -8,8 +8,9 @@ use http::{StatusCode, header};
 use serde::Deserialize;
 use utoipa::IntoParams;
 
-use super::common::{container, require_valid_digest};
+use super::common::{add_provenance_headers, container, require_valid_digest};
 use crate::{
+    entry::{EntryRead, checked_body, read_entry},
     extractors::{Credential, TenantCode},
     hooks::{ArtifactOp, OutcomeKind},
     routes::v1::artifacts::common::{
@@ -93,30 +94,70 @@ pub async fn get_artifact(
                     .into_response();
             }
         };
-    let x = state
-        .storage_backend
-        .get_stream(&container, &digest)
-        .await
-        .map_err(InternalServerError);
+    // Only a well-formed sealed entry is a hit: an object with no valid trailer
+    // (for example one stored before trailers existed) is a miss.
+    let entry = match read_entry(
+        state.storage_backend.as_ref(),
+        &container,
+        &digest,
+    )
+    .await
+    {
+        Ok(EntryRead::Valid(entry)) => Some(entry),
+        Ok(EntryRead::Absent) => None,
+        Ok(EntryRead::Invalid(why)) => {
+            tracing::warn!(%why, "ignoring a stored object that is not a valid entry");
+            None
+        }
+        Err(e) => {
+            let response = InternalServerError(e).into_response();
+            return after_response(
+                &state,
+                hook_ctx,
+                OutcomeKind::Hit,
+                response,
+            )
+            .await;
+        }
+    };
 
-    let response = match x {
-        Ok(o) => match o {
-            Some(stream) => {
-                let body = Body::from_stream(stream);
-
-                Response::builder()
-                    .status(StatusCode::OK)
-                    .header(header::CONTENT_TYPE, "application/octet-stream")
-                    .header(
-                        header::CONTENT_DISPOSITION,
-                        format!("attachment; filename=\"{}\"", digest),
-                    )
-                    .body(body)
-                    .expect("should be able to build response from stream")
+    let response = match entry {
+        None => (StatusCode::NOT_FOUND, "Not found").into_response(),
+        Some(entry) => {
+            match state
+                .storage_backend
+                .get_stream(&container, &digest)
+                .await
+                .map_err(InternalServerError)
+            {
+                // Removed between the two reads.
+                Ok(None) => {
+                    (StatusCode::NOT_FOUND, "Not found").into_response()
+                }
+                Ok(Some(stream)) => {
+                    let trailer = &entry.parsed.trailer;
+                    let mut response = Response::builder()
+                        .status(StatusCode::OK)
+                        .header(
+                            header::CONTENT_TYPE,
+                            "application/octet-stream",
+                        )
+                        .header(
+                            header::CONTENT_DISPOSITION,
+                            format!("attachment; filename=\"{}\"", digest),
+                        )
+                        // The body is exactly the artifact. If the stored
+                        // object turns out not to match what was read, the body
+                        // errors and this length makes that a failed transfer.
+                        .header(header::CONTENT_LENGTH, trailer.size)
+                        .body(Body::from_stream(checked_body(stream, &entry)))
+                        .expect("should be able to build response from stream");
+                    add_provenance_headers(response.headers_mut(), trailer);
+                    response
+                }
+                Err(e) => e.into_response(),
             }
-            None => (StatusCode::NOT_FOUND, "Not found").into_response(),
-        },
-        Err(e) => e.into_response(),
+        }
     };
 
     after_response(&state, hook_ctx, OutcomeKind::Hit, response).await

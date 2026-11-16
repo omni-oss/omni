@@ -16,9 +16,17 @@ use omni_remote_cache_service::{
 };
 use omni_remote_cache_storage_core::{Container, RemoteCacheStorageBackend};
 use omni_remote_cache_storage_local::LocalDiskCacheBackend;
+use sha2::{Digest as _, Sha256};
 
 const DIGEST: &str = "6vQEbzmN9ofk2uWkvxhq8PRPmdZLVPUSw1YJ3tUNyrSd";
 const QUERY: &str = "org=o&ws=w&env=e";
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    Sha256::digest(bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
 
 fn config() -> Configuration {
     Configuration {
@@ -94,6 +102,20 @@ async fn router(
     (router, backend)
 }
 
+/// The artifact inside the sealed object stored at `DIGEST`, without the
+/// provenance trailer the server appends.
+async fn stored_artifact(backend: &LocalDiskCacheBackend) -> Option<Bytes> {
+    let object = backend.get(&container(), DIGEST).await.unwrap()?;
+    let size = omni_remote_cache_service::entry::Trailer::parse_tail(
+        &object,
+        object.len() as u64,
+    )
+    .expect("a stored entry is sealed")
+    .trailer
+    .size as usize;
+    Some(object.slice(..size))
+}
+
 fn container() -> Container {
     Container::parse("t/o/w/e").unwrap()
 }
@@ -107,6 +129,7 @@ async fn put(
         .put(&format!("/api/v1/artifacts/{digest}?{QUERY}"))
         .add_header("Authorization", "Bearer k")
         .add_header("X-OMNI-TENANT", "t")
+        .add_header("X-Omni-Content-Sha256", sha256_hex(body.as_bytes()))
         .bytes(Bytes::from(body))
         .await
         .status_code()
@@ -118,13 +141,19 @@ async fn a_second_put_conflicts_and_never_replaces_the_stored_entry() {
     let (server, backend) = server(root.path()).await;
 
     assert_eq!(put(&server, DIGEST, "first").await, StatusCode::NO_CONTENT);
+    let sealed = backend.get(&container(), DIGEST).await.unwrap();
     assert_eq!(put(&server, DIGEST, "second").await, StatusCode::CONFLICT);
     assert_eq!(put(&server, DIGEST, "first").await, StatusCode::CONFLICT);
 
     assert_eq!(
-        backend.get(&container(), DIGEST).await.unwrap(),
+        stored_artifact(&backend).await,
         Some(Bytes::from("first")),
         "the first writer's bytes must survive"
+    );
+    assert_eq!(
+        backend.get(&container(), DIGEST).await.unwrap(),
+        sealed,
+        "and so must its provenance, byte for byte"
     );
 }
 
@@ -158,7 +187,7 @@ async fn concurrent_first_writers_agree_on_exactly_one_winner() {
         "every loser gets 409, got {statuses:?}"
     );
     assert_eq!(
-        backend.get(&container(), DIGEST).await.unwrap(),
+        stored_artifact(&backend).await,
         Some(Bytes::from(bodies[winners[0]])),
         "the stored bytes belong to the winner, not a blend"
     );
@@ -205,6 +234,7 @@ async fn authentication_comes_before_digest_validation() {
         .put(&format!("/api/v1/artifacts/not.a.digest?{QUERY}"))
         .add_header("Authorization", "Bearer wrong-key")
         .add_header("X-OMNI-TENANT", "t")
+        .add_header("X-Omni-Content-Sha256", sha256_hex(b"x"))
         .bytes(Bytes::from("x"))
         .await;
     assert_ne!(
@@ -238,6 +268,7 @@ async fn put_stream(
 ) -> StatusCode {
     use tower::ServiceExt as _;
     // A streamed body has no Content-Length, so only the stream bound can stop it.
+    let digest_hex = sha256_hex(&chunks.concat().into_bytes());
     let body = axum::body::Body::from_stream(tokio_stream::iter(
         chunks
             .into_iter()
@@ -248,6 +279,7 @@ async fn put_stream(
         .uri(format!("/api/v1/artifacts/{digest}?{QUERY}"))
         .header("Authorization", "Bearer k")
         .header("X-OMNI-TENANT", "t")
+        .header("X-Omni-Content-Sha256", digest_hex)
         .body(body)
         .unwrap();
     router.clone().oneshot(request).await.unwrap().status()
@@ -266,6 +298,7 @@ async fn put_declared(
         .uri(format!("/api/v1/artifacts/{digest}?{QUERY}"))
         .header("Authorization", "Bearer k")
         .header("X-OMNI-TENANT", "t")
+        .header("X-Omni-Content-Sha256", sha256_hex(body.as_bytes()))
         .header(http::header::CONTENT_LENGTH, body.len().to_string())
         .body(axum::body::Body::from(body))
         .unwrap();
@@ -315,7 +348,7 @@ async fn a_streamed_upload_over_the_limit_commits_nothing() {
         StatusCode::NO_CONTENT
     );
     assert_eq!(
-        backend.get(&container(), DIGEST).await.unwrap(),
+        stored_artifact(&backend).await,
         Some(Bytes::from("12345678"))
     );
 }
@@ -335,7 +368,7 @@ async fn an_oversized_upload_never_disturbs_an_existing_entry() {
         StatusCode::PAYLOAD_TOO_LARGE
     );
     assert_eq!(
-        backend.get(&container(), DIGEST).await.unwrap(),
+        stored_artifact(&backend).await,
         Some(Bytes::from("original"))
     );
 }

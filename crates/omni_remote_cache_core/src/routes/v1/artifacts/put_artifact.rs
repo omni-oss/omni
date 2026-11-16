@@ -1,22 +1,18 @@
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
-};
-
 use axum::{
     body::Body,
     extract::{Query, State},
     response::{IntoResponse as _, Response},
 };
 use axum_extra::{response::InternalServerError, routing::TypedPath};
-use bytes::Bytes;
-use futures::{Stream, StreamExt};
+use futures::StreamExt;
 use http::{HeaderMap, StatusCode, header};
 use omni_remote_cache_storage_core::{SaveOutcome, error::Error};
 use serde::Deserialize;
+use time::OffsetDateTime;
 use utoipa::IntoParams;
 
 use crate::{
+    entry::{SealFailure, SealParams, TrailerCredential, is_sha256_hex, seal},
     extractors::{Credential, TenantCode},
     hooks::{ArtifactOp, OutcomeKind},
     routes::v1::artifacts::common::{
@@ -57,10 +53,13 @@ pub struct PutArtifactQuery {
         PutArtifactPath,
         PutArtifactQuery,
         ("X-OMNI-TENANT" = String, Header, description = "Tenant code"),
+        ("X-Omni-Content-Sha256" = String, Header, description = "Lowercase hex SHA-256 of the artifact. Required, exactly once. The upload is rejected and nothing is stored when the bytes do not match"),
     ),
     request_body(content_type = "application/octet-stream", description = "Raw file streaming content", content = Vec<u8>),
     responses(
         (status = NO_CONTENT, description = "Stored"),
+        (status = PAYLOAD_TOO_LARGE, description = "The artifact exceeds the maximum size"),
+        (status = UNPROCESSABLE_ENTITY, description = "The artifact does not match X-Omni-Content-Sha256"),
         (status = CONFLICT, description = "An entry already exists; entries are immutable"),
         (status = BAD_REQUEST, description = "Bad request"),
         (status = INTERNAL_SERVER_ERROR, description = "Internal server error")
@@ -104,6 +103,14 @@ pub async fn put_artifact(
         return too_large();
     }
 
+    // Decided before the hooks and before reading the body, like the size above.
+    let declared_sha256 = match declared_sha256(&headers) {
+        Ok(hash) => hash,
+        Err(message) => {
+            return (StatusCode::BAD_REQUEST, message).into_response();
+        }
+    };
+
     let hook_ctx = before_hook!(
         state,
         ArtifactOp::Put,
@@ -121,19 +128,31 @@ pub async fn put_artifact(
                     .into_response();
             }
         };
-    // A chunked body (or a lying Content-Length) is bounded while streaming:
-    // the stream fails past the limit, so the backend aborts and nothing is
-    // committed.
-    let exceeded = Arc::new(AtomicBool::new(false));
-    let stream = limit_stream(
-        body.into_data_stream().map(|r| r.map_err(Error::custom)),
-        limit,
-        exceeded.clone(),
+    // The server seals the entry: it hashes the body as it streams, stops at the
+    // size limit (a chunked body, or one that lies about its length, is bounded
+    // here), compares with the declared hash at the end and only then appends
+    // the provenance trailer. Any failure ends the stream with an error, so the
+    // backend aborts and nothing is committed.
+    let (stream, sealed) = seal(
+        Box::pin(body.into_data_stream().map(|r| r.map_err(Error::custom))),
+        SealParams {
+            declared_sha256,
+            limit,
+            writer_credential: TrailerCredential {
+                kind: caller.credential().kind().as_str().to_owned(),
+                id: caller.credential().id().to_owned(),
+            },
+            writer_principal: caller.principal().to_owned(),
+            namespace: "shared".to_owned(),
+            scope: None,
+            signature: None,
+            now: OffsetDateTime::now_utc,
+        },
     );
 
     let x = state
         .storage_backend
-        .save_stream_if_absent(&container, &digest, Box::pin(stream))
+        .save_stream_if_absent(&container, &digest, stream)
         .await
         .map_err(InternalServerError);
 
@@ -142,8 +161,17 @@ pub async fn put_artifact(
         // Immutable: an existing entry is never replaced. The client treats
         // this as "already stored", and the hook logs it as AlreadyExists.
         Ok(SaveOutcome::AlreadyExists) => StatusCode::CONFLICT.into_response(),
-        Err(_) if exceeded.load(Ordering::SeqCst) => too_large(),
-        Err(e) => e.into_response(),
+        // The handle is read after the backend returned. `None` means the
+        // stream did not fail, so the backend did.
+        Err(e) => match sealed.failure() {
+            Some(SealFailure::TooLarge) => too_large(),
+            Some(SealFailure::Mismatch) => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "the artifact does not match X-Omni-Content-Sha256",
+            )
+                .into_response(),
+            _ => e.into_response(),
+        },
     };
 
     after_response(&state, hook_ctx, OutcomeKind::Stored, response).await
@@ -158,79 +186,27 @@ fn declared_length(headers: &HeaderMap) -> Option<u64> {
         .ok()
 }
 
-/// Passes chunks through until `limit` bytes have been seen. The chunk that
-/// crosses it, and any later error, ends the stream with an error and sets
-/// `exceeded` when the limit caused it.
-fn limit_stream<S>(
-    stream: S,
-    limit: u64,
-    exceeded: Arc<AtomicBool>,
-) -> impl Stream<Item = Result<Bytes, Error>> + Send + 'static
-where
-    S: Stream<Item = Result<Bytes, Error>> + Send + 'static,
-{
-    stream.scan((0u64, false), move |(total, finished), item| {
-        if *finished {
-            return std::future::ready(None);
-        }
-        let next = match item {
-            Ok(chunk) => {
-                *total = total.saturating_add(chunk.len() as u64);
-                if *total > limit {
-                    exceeded.store(true, Ordering::SeqCst);
-                    *finished = true;
-                    Some(Err(Error::custom(eyre::eyre!(
-                        "artifact exceeds the size limit"
-                    ))))
-                } else {
-                    Some(Ok(chunk))
-                }
-            }
-            Err(e) => {
-                *finished = true;
-                Some(Err(e))
-            }
-        };
-        std::future::ready(next)
-    })
+/// The client's SHA-256 of the artifact: exactly one `X-Omni-Content-Sha256`
+/// header holding 64 lowercase hex characters.
+fn declared_sha256(headers: &HeaderMap) -> Result<String, &'static str> {
+    const NAME: &str = "x-omni-content-sha256";
+    let mut values = headers.get_all(NAME).iter();
+    let (Some(value), None) = (values.next(), values.next()) else {
+        return Err(
+            "send exactly one X-Omni-Content-Sha256 header (lowercase hex SHA-256 of the artifact)",
+        );
+    };
+    match value.to_str() {
+        Ok(text) if is_sha256_hex(text) => Ok(text.to_owned()),
+        _ => Err(
+            "X-Omni-Content-Sha256 must be 64 lowercase hexadecimal characters",
+        ),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    async fn run(chunks: &[&'static str], limit: u64) -> (Vec<bool>, bool) {
-        let exceeded = Arc::new(AtomicBool::new(false));
-        let stream = futures::stream::iter(
-            chunks
-                .iter()
-                .map(|c| Ok::<_, Error>(Bytes::from_static(c.as_bytes())))
-                .collect::<Vec<_>>(),
-        );
-        let outcomes = limit_stream(stream, limit, exceeded.clone())
-            .map(|item| item.is_ok())
-            .collect::<Vec<_>>()
-            .await;
-        (outcomes, exceeded.load(Ordering::SeqCst))
-    }
-
-    #[tokio::test]
-    async fn a_stream_at_the_limit_passes() {
-        assert_eq!(run(&["abc", "de"], 5).await, (vec![true, true], false));
-        assert_eq!(run(&[], 0).await, (vec![], false));
-    }
-
-    #[tokio::test]
-    async fn the_chunk_that_crosses_the_limit_fails_and_ends_the_stream() {
-        let (outcomes, exceeded) = run(&["abc", "def", "ghi"], 5).await;
-        assert_eq!(outcomes, vec![true, false], "nothing after the failure");
-        assert!(exceeded);
-    }
-
-    #[tokio::test]
-    async fn one_oversized_chunk_fails_immediately() {
-        assert_eq!(run(&["abcdef"], 5).await, (vec![false], true));
-    }
 
     #[test]
     fn content_length_is_read_only_when_it_is_a_number() {
@@ -240,5 +216,34 @@ mod tests {
         assert_eq!(declared_length(&headers), Some(12));
         headers.insert(header::CONTENT_LENGTH, "x".parse().unwrap());
         assert_eq!(declared_length(&headers), None);
+    }
+
+    #[test]
+    fn the_declared_hash_is_one_header_of_lowercase_hex() {
+        let good = "ab".repeat(32);
+        let with = |values: &[&str]| {
+            let mut headers = HeaderMap::new();
+            for value in values {
+                headers.append("x-omni-content-sha256", value.parse().unwrap());
+            }
+            declared_sha256(&headers)
+        };
+        assert_eq!(with(&[&good]), Ok(good.clone()));
+        let upper = "AB".repeat(32);
+        let long = format!("{good}0");
+        let spaced = format!(" {}", &good[1..]);
+        let not_hex = "zz".repeat(32);
+        for bad in [
+            vec![],
+            vec![good.as_str(), good.as_str()],
+            vec![&good[..63]],
+            vec![""],
+            vec![upper.as_str()],
+            vec![long.as_str()],
+            vec![spaced.as_str()],
+            vec![not_hex.as_str()],
+        ] {
+            assert!(with(&bad).is_err(), "{bad:?}");
+        }
     }
 }

@@ -1791,6 +1791,26 @@ mod tests {
                     let mut body = vec![0; length];
                     socket.read_exact(&mut body).await.unwrap();
                     let method = header.split_whitespace().next().unwrap();
+                    if method == "PUT" {
+                        // The server seals the entry only when the bytes match
+                        // this header, so an upload must always declare its hash.
+                        use sha2::{Digest as _, Sha256};
+                        let declared: Vec<&str> = header
+                            .lines()
+                            .filter_map(|line| {
+                                let (name, value) = line.split_once(':')?;
+                                name.eq_ignore_ascii_case(
+                                    "x-omni-content-sha256",
+                                )
+                                .then(|| value.trim())
+                            })
+                            .collect();
+                        let actual: String = Sha256::digest(&body)
+                            .iter()
+                            .map(|b| format!("{b:02x}"))
+                            .collect();
+                        assert_eq!(declared, [actual.as_str()]);
+                    }
                     let status = match method {
                         "PUT" => put_status,
                         // A write-only key is denied every read request.

@@ -9,6 +9,7 @@ use utoipa::IntoParams;
 
 use super::common::{container, require_valid_digest};
 use crate::{
+    entry::{EntryRead, read_entry},
     extractors::{Credential, TenantCode},
     hooks::{ArtifactOp, OutcomeKind},
     routes::v1::artifacts::common::{
@@ -91,21 +92,21 @@ pub async fn head_artifact(
                     .into_response();
             }
         };
-    let exists = state
-        .storage_backend
-        .exists(&container, &digest)
-        .await
-        .map_err(InternalServerError);
-
-    let response = match exists {
-        Ok(o) => {
-            if o {
-                StatusCode::NO_CONTENT.into_response()
-            } else {
-                StatusCode::NOT_FOUND.into_response()
-            }
+    // The same check as `GET`, so the two agree about which entries exist.
+    let response = match read_entry(
+        state.storage_backend.as_ref(),
+        &container,
+        &digest,
+    )
+    .await
+    {
+        Ok(EntryRead::Valid(_)) => StatusCode::NO_CONTENT.into_response(),
+        Ok(EntryRead::Absent) => StatusCode::NOT_FOUND.into_response(),
+        Ok(EntryRead::Invalid(why)) => {
+            tracing::warn!(%why, "ignoring a stored object that is not a valid entry");
+            StatusCode::NOT_FOUND.into_response()
         }
-        Err(e) => e.into_response(),
+        Err(e) => InternalServerError(e).into_response(),
     };
 
     after_response(&state, hook_ctx, OutcomeKind::Hit, response).await

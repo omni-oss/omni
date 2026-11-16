@@ -28,6 +28,10 @@ function randomDigest(): string {
     return digest;
 }
 
+function sha256Hex(body: string | Uint8Array): string {
+    return createHash("sha256").update(body).digest("hex");
+}
+
 describeTargets("v1.artifacts.api", (target) => {
     test("put artifact", async () => {
         const apiBaseUrl = target.apiBaseUrl;
@@ -82,7 +86,9 @@ describeTargets("v1.artifacts.api", (target) => {
             (item: { digest: string }) => item.digest === DIGEST,
         );
         expect(entry).toBeDefined();
-        expect(entry.size).toBe(BODY.length);
+        // The stored object carries a provenance trailer, so it is larger than
+        // the uploaded artifact.
+        expect(entry.size).toBeGreaterThan(BODY.length);
     });
 
     test("get artifact", async () => {
@@ -201,6 +207,95 @@ describeTargets("v1.artifacts.api", (target) => {
         }
     });
 
+    test("put without content sha256 header is rejected", async () => {
+        const apiBaseUrl = target.apiBaseUrl;
+        const response = await fetchWithTimeout(
+            `${apiBaseUrl}/v1/artifacts/${randomDigest()}?org=${ORG}&ws=${WS}&env=${ENV}`,
+            {
+                method: "PUT",
+                headers: {
+                    "Content-Type": "application/octet-stream",
+                    "X-OMNI-TENANT": TENANT,
+                    Authorization: `Bearer ${API_KEY}`,
+                },
+                body: BODY,
+            },
+        );
+
+        expect(response.status).toBe(400);
+    });
+
+    test("put with a mismatched content sha256 is rejected and stores nothing", async () => {
+        const apiBaseUrl = target.apiBaseUrl;
+        const digest = randomDigest();
+
+        const wrong = await putArtifact(
+            apiBaseUrl,
+            digest,
+            TENANT,
+            ORG,
+            WS,
+            ENV,
+            BODY,
+            API_KEY,
+            "0".repeat(64),
+        );
+        expect(wrong.status).toBe(422);
+
+        const get = await getArtifact(apiBaseUrl, digest);
+        expect(get.status).toBe(404);
+
+        const retry = await putArtifact(apiBaseUrl, digest);
+        expect(retry.status).toBeOneOf([200, 204]);
+    });
+
+    test("put with uppercase content sha256 is rejected", async () => {
+        const apiBaseUrl = target.apiBaseUrl;
+        const response = await putArtifact(
+            apiBaseUrl,
+            randomDigest(),
+            TENANT,
+            ORG,
+            WS,
+            ENV,
+            BODY,
+            API_KEY,
+            sha256Hex(BODY).toUpperCase(),
+        );
+
+        expect(response.status).toBe(400);
+    });
+
+    test("get returns the uploaded bytes and the stored metadata", async () => {
+        const apiBaseUrl = target.apiBaseUrl;
+        const digest = randomDigest();
+        const hash = sha256Hex(BODY);
+        await putArtifact(apiBaseUrl, digest);
+
+        const response = await getArtifact(apiBaseUrl, digest);
+
+        expect(response.status).toBe(200);
+        expect(await response.text()).toEqual(BODY);
+        expect(response.headers.get("x-omni-content-sha256")).toBe(hash);
+        expect(response.headers.get("x-omni-stored-at")).toBeTruthy();
+        expect(response.headers.get("x-omni-namespace")).toBe("shared");
+    });
+
+    test("head agrees with get about which entries exist", async () => {
+        const apiBaseUrl = target.apiBaseUrl;
+        const digest = randomDigest();
+        await putArtifact(apiBaseUrl, digest);
+
+        // HEAD answers 204 for an entry that GET serves with 200.
+        expect((await getArtifact(apiBaseUrl, digest)).status).toBe(200);
+        expect((await headArtifact(apiBaseUrl, digest)).status).toBeOneOf([
+            200, 204,
+        ]);
+        expect((await headArtifact(apiBaseUrl, randomDigest())).status).toBe(
+            404,
+        );
+    });
+
     // Guards the D1 and `waitUntil` hook path, which only a database-backed
     // target has and which nothing else can run. Last, because it adds a veto.
     test("database hooks record usage after the response and can veto", async (ctx) => {
@@ -245,6 +340,7 @@ async function putArtifact(
     env: string = ENV,
     body: string | Uint8Array<ArrayBuffer> = BODY,
     apiKey: string = API_KEY,
+    contentSha256: string = sha256Hex(body),
 ) {
     return await fetchWithTimeout(
         `${apiBaseUrl}/v1/artifacts/${digest}?org=${org}&ws=${ws}&env=${env}`,
@@ -254,6 +350,7 @@ async function putArtifact(
                 "Content-Type": "application/octet-stream",
                 "X-OMNI-TENANT": tenant,
                 Authorization: `Bearer ${apiKey}`,
+                "X-Omni-Content-Sha256": contentSha256,
             },
             body,
         },

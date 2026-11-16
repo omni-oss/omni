@@ -28,6 +28,14 @@ use omni_remote_cache_service::{
     services::DynValidationService,
     state::build_state,
 };
+use sha2::{Digest as _, Sha256};
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    Sha256::digest(bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
 
 struct WithHooks {
     inner: Arc<dyn DependencyProvider>,
@@ -192,7 +200,9 @@ async fn every_operation_is_vetoable_and_a_veto_skips_after() {
         req(s.get(LIST)),
         req(s.method(http::Method::HEAD, ONE)),
         req(s.method(http::Method::HEAD, LIST)),
-        req(s.put(ONE)).bytes("x".into()),
+        req(s.put(ONE))
+            .add_header("X-Omni-Content-Sha256", sha256_hex(b"x"))
+            .bytes("x".into()),
         req(s.delete(ONE)),
     ] {
         let res = r.await;
@@ -213,6 +223,7 @@ async fn allowed_operation_runs_after() {
         .put(ONE)
         .add_header("Authorization", "Bearer k")
         .add_header("X-OMNI-TENANT", "t")
+        .add_header("X-Omni-Content-Sha256", sha256_hex(b"x"))
         .bytes("x".into())
         .await;
     res.assert_status(http::StatusCode::NO_CONTENT);
@@ -238,7 +249,9 @@ async fn a_malformed_digest_never_reaches_the_hooks() {
     for r in [
         req(s.get(bad)),
         req(s.method(http::Method::HEAD, bad)),
-        req(s.put(bad)).bytes("x".into()),
+        req(s.put(bad))
+            .add_header("X-Omni-Content-Sha256", sha256_hex(b"x"))
+            .bytes("x".into()),
         req(s.delete(bad)),
     ] {
         r.await.assert_status(http::StatusCode::BAD_REQUEST);
@@ -255,6 +268,7 @@ async fn a_conflicting_put_reports_already_exists_to_the_hooks() {
         s.put(ONE)
             .add_header("Authorization", "Bearer k")
             .add_header("X-OMNI-TENANT", "t")
+            .add_header("X-Omni-Content-Sha256", sha256_hex(b"x"))
             .bytes("x".into())
             .await
             .status_code()
@@ -283,6 +297,7 @@ async fn a_declared_oversized_upload_never_reaches_the_hooks() {
         .uri(ONE)
         .header("Authorization", "Bearer k")
         .header("X-OMNI-TENANT", "t")
+        .header("X-Omni-Content-Sha256", sha256_hex(b"12345"))
         .header(http::header::CONTENT_LENGTH, "5")
         .body(axum::body::Body::from("12345"))
         .unwrap();
@@ -297,6 +312,13 @@ async fn stream_put(
     chunks: Vec<Result<&'static str, &'static str>>,
 ) -> http::StatusCode {
     use tower::ServiceExt as _;
+    let digest = sha256_hex(
+        &chunks
+            .iter()
+            .filter_map(|c| c.ok())
+            .flat_map(|c| c.bytes())
+            .collect::<Vec<u8>>(),
+    );
     // No Content-Length: only the stream bound, or a stream error, can stop it.
     let body = axum::body::Body::from_stream(tokio_stream::iter(
         chunks
@@ -308,6 +330,7 @@ async fn stream_put(
         .uri(ONE)
         .header("Authorization", "Bearer k")
         .header("X-OMNI-TENANT", "t")
+        .header("X-Omni-Content-Sha256", digest)
         .body(body)
         .unwrap();
     router.clone().oneshot(request).await.unwrap().status()

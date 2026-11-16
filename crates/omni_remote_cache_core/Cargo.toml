@@ -49,6 +49,10 @@ utoipa = { workspace = true }
 time = { workspace = true, features = ["wasm-bindgen"] }
 
 [dev-dependencies]
+async-trait = { workspace = true }
+bytesize = { workspace = true }
+eyre = { workspace = true }
+omni_remote_cache_storage_memory = { workspace = true }
 tokio = { workspace = true }
 
 [lints]

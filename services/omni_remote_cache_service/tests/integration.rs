@@ -10,11 +10,11 @@ use omni_remote_cache_service::{
         ScopesConfiguration, SecurityConfiguration, TenantConfiguration,
         WorkspaceConfiguration,
     },
-    response::data::Data,
-    routes::{root::RouterConfig, v1::artifacts::CacheItem},
+    routes::root::RouterConfig,
     state::build_state,
 };
 use sets::{UnorderedSet, unordered_set};
+use sha2::{Digest as _, Sha256};
 
 fn default_config() -> Configuration {
     Configuration {
@@ -81,6 +81,13 @@ fn default_body() -> Bytes {
         .expect("should be able to serialize to json");
 
     Bytes::from(vec)
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    Sha256::digest(bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 async fn create_server(cfg: &Configuration) -> TestServer {
@@ -223,6 +230,7 @@ async fn interrupted_put_preserves_the_existing_local_artifact() {
             ))
             .header("Authorization", format!("Bearer {DEFAULT_API_KEY}"))
             .header("X-OMNI-TENANT", DEFAULT_TENANT)
+            .header("X-Omni-Content-Sha256", sha256_hex(b"partial"))
             .body(Body::from_stream(stream))
             .unwrap();
         let response = router.clone().oneshot(request).await.unwrap();
@@ -285,6 +293,7 @@ async fn put_artifact(
         .add_header("Authorization", format!("Bearer {api_key}"))
         .add_header("Content-Type", "application/octet-stream")
         .add_header("X-OMNI-TENANT", tenant)
+        .add_header("X-Omni-Content-Sha256", sha256_hex(&body))
         .bytes(body)
         .await
 }
@@ -490,11 +499,17 @@ async fn test_get_artifacts() {
 
     get_resp.assert_status_ok();
     get_resp.assert_header("Content-Type", "application/json");
-    let data = Data::new(vec![CacheItem {
-        digest: DEFAULT_DIGEST.to_string(),
-        size: body.len() as u64,
-    }]);
-    get_resp.assert_json(&data);
+    let json: serde_json::Value = get_resp.json();
+    let item = &json["data"][0];
+    // The listed size is the stored object: the artifact plus its provenance trailer.
+    assert_eq!(json["data"].as_array().map(Vec::len), Some(1));
+    assert_eq!(item["digest"], DEFAULT_DIGEST);
+    let size = item["size"].as_u64().unwrap();
+    assert!(
+        size > body.len() as u64,
+        "stored size includes the trailer, got {size} for {} artifact bytes",
+        body.len()
+    );
 }
 
 #[tokio::test]

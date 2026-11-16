@@ -269,6 +269,37 @@ pub macro validate_ownership(
     }
 }}
 
+/// Sets the provenance headers `GET` returns for a stored entry. Only what a
+/// reader needs: where the entry came from and what it hashes to. Who wrote it
+/// is for operators (`list:artifacts` or `delete:artifacts`) and is not sent
+/// here.
+pub fn add_provenance_headers(
+    headers: &mut http::HeaderMap,
+    trailer: &crate::entry::Trailer,
+) {
+    use http::{HeaderName, HeaderValue};
+    let mut set = |name: &'static str, value: String| {
+        // Server-authored text that is not a valid header value is left out
+        // rather than failing a read.
+        if let Ok(value) = HeaderValue::from_str(&value) {
+            headers.insert(HeaderName::from_static(name), value);
+        }
+    };
+    set("x-omni-namespace", trailer.namespace.clone());
+    if let Ok(stored_at) = trailer
+        .stored_at
+        .format(&time::format_description::well_known::Rfc3339)
+    {
+        set("x-omni-stored-at", stored_at);
+    }
+    set("x-omni-content-sha256", trailer.sha256.clone());
+    if let Some(signature) =
+        trailer.signature.as_ref().filter(|s| s.len() <= 256)
+    {
+        set("x-omni-signature", signature.clone());
+    }
+}
+
 /// Maps a response status to the outcome the `after` hook reports.
 pub fn outcome_kind(
     status: StatusCode,

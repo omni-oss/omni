@@ -10,8 +10,8 @@ pub mod state;
 pub mod storage_backend;
 
 pub use omni_remote_cache_core::{
-    config, data, data_impl, hooks, providers, request, response, routes,
-    security, services,
+    config, data, data_impl, entry, hooks, providers, request, response,
+    routes, security, services,
 };
 
 use clap::Parser;

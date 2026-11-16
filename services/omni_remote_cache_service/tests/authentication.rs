@@ -23,6 +23,14 @@ use omni_remote_cache_core::{
     state::{ServiceInfo, ServiceState},
 };
 use omni_remote_cache_storage_memory::InMemoryBackend;
+use sha2::{Digest as _, Sha256};
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    Sha256::digest(bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
 
 #[derive(Clone, Copy)]
 enum Mode {
@@ -189,7 +197,10 @@ fn request(server: &TestServer, index: usize) -> TestRequest {
         1 => server.method(http::Method::HEAD, all),
         2 => server.get(one),
         3 => server.method(http::Method::HEAD, one),
-        4 => server.put(one).bytes("body".into()),
+        4 => server
+            .put(one)
+            .add_header("X-Omni-Content-Sha256", sha256_hex(b"body"))
+            .bytes("body".into()),
         _ => server.delete(one),
     }
 }
