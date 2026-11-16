@@ -1579,6 +1579,27 @@ Deviations from the text above:
   means what it did. The hook context carries `caller_id`, `credential_kind`, `principal`,
   `namespace` and `scope`, and `after` the artifact's SHA-256.
 
+**Landed (namespace type, slice 4 batch 1):** the container of an artifact route is built by
+one module from the authenticated caller and a validated request:
+`shared/{t}/{o}/{w}/{e}` or `isolated/{t}/{o}/{w}/{e}/{principal_id}/{scope}`. Deviations from the
+text above:
+
+- **Lowercase literals only, everything else hashed.** A `principal_id` or `scope` segment is the
+  value itself only if it is lowercase letters and digits first, then `[a-z0-9._-]`, at most 64
+  characters, with no trailing `.`, not a Windows device name, and not starting with `h-`;
+  anything else is `h-` plus 32 hex characters of its SHA-256. The RFC keeps `[A-Za-z0-9]` text
+  as is, but on macOS and Windows `Ab` and `ab` are one directory, `a.` is `a`, and a literal
+  `h-` plus 32 hex characters would imitate a hashed principal, so any of those would let two
+  principals read each other's isolated entries. Operators reading storage see `h-...` for a
+  principal such as `Owner`; the readable text is in the trailer and the hook `principal`.
+- **Unicode forms are separate principals.** Segments are hashed byte for byte, so NFC and NFD
+  forms of one name are two principals, never a merged namespace.
+- **New limits.** An escaped resource code over 255 bytes, or a key (container, `/` and a 64 byte
+  digest) over 1024 bytes, is `400` instead of failing later inside a backend.
+- **Known limits, unchanged.** The existing code escaping is case-sensitive for tenant, org,
+  workspace and environment codes, so on a case-insensitive file system two codes that differ only
+  in case alias; and a local-backend key can exceed Windows' `MAX_PATH` without long-path support.
+
 **Open gates before this RFC can be Implemented:**
 
 - **R2 is not create-only, so R2 writes fail closed by default.** The Workers

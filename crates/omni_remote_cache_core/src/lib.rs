@@ -8,6 +8,7 @@ pub mod data_impl;
 pub mod entry;
 mod extractors;
 pub mod hooks;
+pub mod namespace;
 pub mod providers;
 pub mod request;
 pub mod response;
