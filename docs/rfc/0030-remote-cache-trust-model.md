@@ -1513,7 +1513,7 @@ The static provider now has a resource-scoped authenticator: valid keys denied
 access to the resource remain recognized with no grants. Its optional per-key
 `principal` defaults to the credential ID; `security.api_key_id_secret` feeds both
 the new caller and existing hook IDs in native and Worker static configuration.
-Legacy `all` excludes publish in both the old and new security services; publish
+Legacy `all` excludes publish in the static authenticator; publish
 requires an explicit `publish:artifacts` grant. API keys never assert a scope pin.
 The SQL/D1 query provider also exposes an authenticator. `api_key_valid` may return
 a nullable text `principal`; missing/NULL keeps the default ID, non-text or invalid
@@ -1524,7 +1524,7 @@ SQLite tests cover this path; Postgres/MySQL identity reads and D1 runtime remai
 unverified. Operators must make `api_key_scope` exclude publish from wildcard grants.
 Routes now use the caller seam and the built-in client sends `Authorization: Bearer`;
 `X-API-KEY` is not accepted (no fallback). Still open, so slice 2 is **not complete**:
-removing the unused `SecurityService`/`CachedSecurity` code, `validate_access` returning
+`validate_access` returning
 scopes, principal and size cap, and the hook field rename (slice 3).
 Providers now expose `authenticator()` through the common trait, including the
 caching decorator. A separate caller cache uses full HMAC-SHA256 keys covering

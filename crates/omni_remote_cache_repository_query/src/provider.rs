@@ -6,18 +6,15 @@ use omni_remote_cache_core::{
         organizations::DynOrganizationRepository, tenants::DynTenantRepository,
         workspaces::DynWorkspaceRepository,
     },
-    hooks::{
-        DynArtifactHooks, HookSettings, HostRuntime, NoopHooks, api_key_id,
-        api_key_id_keyed,
-    },
+    hooks::{DynArtifactHooks, HookSettings, HostRuntime, NoopHooks},
     providers::DependencyProvider,
-    security::{Authenticator, AuthenticatorChain, DynSecurityService},
+    security::{Authenticator, AuthenticatorChain},
     services::{DefaultValidationService, DynValidationService},
 };
 
 use crate::{
     ApiKeyHashConfiguration, QueriesConfiguration, QueryAuthenticator,
-    QueryExecutor, QueryRepositories, QuerySecurityService,
+    QueryExecutor, QueryRepositories,
 };
 
 /// A `DependencyProvider` whose data comes from operator queries run by a
@@ -107,20 +104,6 @@ impl DependencyProvider for QueryDependencyProvider {
         ))
     }
 
-    fn security_service(&self) -> DynSecurityService {
-        Box::new(QuerySecurityService::new(
-            self.repos.clone(),
-            self.hash.clone(),
-        ))
-    }
-
-    fn api_key_id(&self, api_key: &str) -> String {
-        match &self.api_key_id_secret {
-            Some(secret) => api_key_id_keyed(secret, api_key),
-            None => api_key_id(api_key),
-        }
-    }
-
     fn hooks(&self) -> DynArtifactHooks {
         self.hooks.clone()
     }
@@ -139,6 +122,11 @@ mod tests {
     use std::sync::Mutex;
 
     use async_trait::async_trait;
+
+    use omni_remote_cache_core::{
+        hooks::{api_key_id, api_key_id_keyed},
+        security::{Resource, Scope, Scopes},
+    };
 
     use super::*;
     use crate::QueryError;
@@ -228,14 +216,16 @@ mod tests {
             .validate_ownership(evil, evil, evil, evil)
             .await
             .unwrap();
-        p.security_service()
-            .can_access(
+        p.authenticator()
+            .authenticate(
                 "secret-key",
-                evil,
-                evil,
-                evil,
-                evil,
-                &["read:artifacts"],
+                &Resource {
+                    tenant: evil.into(),
+                    org: evil.into(),
+                    ws: evil.into(),
+                    env: evil.into(),
+                },
+                Scope::Read.into(),
             )
             .await
             .unwrap();
@@ -262,29 +252,60 @@ mod tests {
             ApiKeyHashConfiguration::default(),
         )
         .unwrap();
-        let ok = p
-            .security_service()
-            .can_access("k", "t", "o", "w", "e", &["read:artifacts"])
+        let caller = p
+            .authenticator()
+            .authenticate(
+                "k",
+                &Resource {
+                    tenant: "t".into(),
+                    org: "o".into(),
+                    ws: "w".into(),
+                    env: "e".into(),
+                },
+                Scope::Read.into(),
+            )
             .await
             .unwrap();
-        assert!(!ok);
+        assert!(caller.is_none(), "a false validity answer is unrecognized");
         assert_eq!(exec.calls.lock().unwrap().len(), 1);
     }
 
-    #[test]
-    fn api_key_ids_are_keyed_when_a_secret_is_set() {
-        let make = |secret: Option<&str>| {
-            QueryDependencyProvider::new(
-                Arc::new(Recording::default()),
+    #[tokio::test]
+    async fn caller_ids_are_keyed_when_a_secret_is_set() {
+        let id = |secret: Option<&str>| {
+            let p = QueryDependencyProvider::new(
+                Arc::new(Recording {
+                    answer: true,
+                    ..Default::default()
+                }),
                 queries(),
                 ApiKeyHashConfiguration::default(),
             )
             .unwrap()
-            .with_api_key_id_secret(secret.map(String::from))
+            .with_api_key_id_secret(secret.map(String::from));
+            async move {
+                p.authenticator()
+                    .authenticate(
+                        "k",
+                        &Resource {
+                            tenant: "t".into(),
+                            org: "o".into(),
+                            ws: "w".into(),
+                            env: "e".into(),
+                        },
+                        Scopes::default(),
+                    )
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .credential()
+                    .id()
+                    .to_owned()
+            }
         };
-        assert_eq!(make(None).api_key_id("k"), api_key_id("k"));
-        assert_eq!(make(Some("")).api_key_id("k"), api_key_id("k"));
-        let keyed = make(Some("s")).api_key_id("k");
+        assert_eq!(id(None).await, api_key_id("k"));
+        assert_eq!(id(Some("")).await, api_key_id("k"));
+        let keyed = id(Some("s")).await;
         assert_eq!(keyed, api_key_id_keyed("s", "k"));
         assert_ne!(keyed, api_key_id("k"));
     }

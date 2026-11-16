@@ -124,7 +124,7 @@ const DEFAULT_ENV: &str = "test-env";
 const DEFAULT_API_KEY: &str = "test-api-key";
 
 #[tokio::test]
-async fn static_config_secret_is_applied_to_provider_ids() {
+async fn static_config_secret_is_applied_to_caller_ids() {
     let mut config = default_config();
     config.security.api_key_id_secret = Some("test-id-secret".into());
     let args = ServeArgs::new(
@@ -140,8 +140,24 @@ async fn static_config_secret_is_applied_to_provider_ids() {
         None,
     );
     let state = build_state(&args).await.unwrap();
+    let caller = state
+        .provider
+        .authenticator()
+        .authenticate(
+            DEFAULT_API_KEY,
+            &omni_remote_cache_core::security::Resource {
+                tenant: DEFAULT_TENANT.into(),
+                org: DEFAULT_ORG.into(),
+                ws: DEFAULT_WORKSPACE.into(),
+                env: DEFAULT_ENV.into(),
+            },
+            omni_remote_cache_core::security::Scope::Read.into(),
+        )
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(
-        state.provider.api_key_id(DEFAULT_API_KEY),
+        caller.credential().id(),
         omni_remote_cache_core::hooks::api_key_id_keyed(
             "test-id-secret",
             DEFAULT_API_KEY

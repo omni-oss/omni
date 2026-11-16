@@ -138,15 +138,13 @@ credentials use `negative_ttl_secs` only when configured. Errors are never cache
 A newly added grant can therefore also take up to the positive TTL to appear if
 the recognized caller was previously cached with no grants.
 If secure randomness is unavailable, caller caching is disabled with a warning.
-This caller cache becomes active when routes migrate; current routes still use
-the legacy security cache.
+This caller cache serves every artifact route.
 
 - For the new RFC 0030 authenticator, `api_key_valid` can additionally return
   `principal` as text or NULL. Omitting the column or returning NULL uses the
   credential ID as principal; an empty, control-containing or over-256-byte value
   fails authentication, as does a non-text column. The `found` column is still
-  required. Existing queries need no change. This identity path is preparatory:
-  artifact routes still use the old security service until the header migration.
+  required. Existing queries need no change.
   With MySQL, use a text column (or an appropriate `CAST(... AS CHAR)`); a binary
   value or binary-collated result may be reported as a blob by the driver and is
   rejected rather than used as an identity.

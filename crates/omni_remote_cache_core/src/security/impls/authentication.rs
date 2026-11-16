@@ -10,14 +10,21 @@ use crate::{
     hooks::{api_key_id, api_key_id_keyed},
     security::{
         AuthError, Authenticator, Caller, CredentialId, CredentialKind,
-        InMemorySecurityService, Resource, Scope, Scopes, SecurityService,
+        Resource, Scope, Scopes,
     },
 };
+
+fn allows(set: &AllOrSpecificConfiguration, code: &str) -> bool {
+    match set {
+        AllOrSpecificConfiguration::All(_) => true,
+        AllOrSpecificConfiguration::Specific(items) => items.contains(code),
+    }
+}
 
 /// Static API-key authenticator. Invalid credentials return `None`; valid keys
 /// outside their resource restrictions remain recognized but have no grants.
 pub struct InMemoryAuthenticator {
-    security: InMemorySecurityService,
+    api_keys: Arc<UnorderedMap<String, ApiKeyConfiguration>>,
     api_key_id_secret: Option<String>,
 }
 
@@ -27,7 +34,7 @@ impl InMemoryAuthenticator {
         api_key_id_secret: Option<String>,
     ) -> Self {
         Self {
-            security: InMemorySecurityService::new(api_keys),
+            api_keys,
             api_key_id_secret,
         }
     }
@@ -41,15 +48,12 @@ impl Authenticator for InMemoryAuthenticator {
         resource: &Resource,
         wanted: Scopes,
     ) -> Result<Option<Caller>, AuthError> {
-        if !self
-            .security
-            .is_valid(credential)
-            .await
-            .map_err(|e| AuthError::Backend(eyre::Report::new(e)))?
-        {
-            return Ok(None);
-        }
-        let Some(config) = self.security.api_keys.get(credential) else {
+        // Unknown, disabled and expired credentials are not recognized.
+        let Some(config) = self.api_keys.get(credential).filter(|c| {
+            c.enabled
+                && c.expires_at
+                    .is_none_or(|at| at > time::OffsetDateTime::now_utc())
+        }) else {
             return Ok(None);
         };
         if self.api_key_id_secret.as_deref() == Some("") {
@@ -61,17 +65,10 @@ impl Authenticator for InMemoryAuthenticator {
         };
         let principal = config.principal.clone().unwrap_or_else(|| id.clone());
 
-        let in_resource = self
-            .security
-            .can_access_environment(
-                credential,
-                &resource.tenant,
-                &resource.org,
-                &resource.ws,
-                &resource.env,
-            )
-            .await
-            .map_err(|e| AuthError::Backend(eyre::Report::new(e)))?;
+        let in_resource = allows(&config.tenants, &resource.tenant)
+            && allows(&config.organizations, &resource.org)
+            && allows(&config.workspaces, &resource.ws)
+            && allows(&config.environments, &resource.env);
         let scopes = [
             (Scope::Read, ScopesConfiguration::ReadArtifacts),
             (Scope::Write, ScopesConfiguration::WriteArtifacts),

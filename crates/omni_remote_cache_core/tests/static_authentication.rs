@@ -10,8 +10,8 @@ use omni_remote_cache_core::{
     hooks::{api_key_id, api_key_id_keyed},
     providers::{ConfigBasedDependencyProvider, DependencyProvider},
     security::{
-        Authenticator, Caller, CredentialKind, InMemoryAuthenticator,
-        InMemorySecurityService, Resource, Scope, Scopes, SecurityService,
+        Authenticator, Caller, CredentialKind, InMemoryAuthenticator, Resource,
+        Scope, Scopes,
     },
 };
 
@@ -67,19 +67,6 @@ async fn legacy_all_grants_each_old_scope_but_never_publish() {
     assert_eq!(caller.credential().id(), api_key_id("key"));
     assert_eq!(caller.principal(), caller.credential().id());
     assert_eq!(caller.scope_pin(), None);
-
-    // The legacy service must agree while both implementations coexist.
-    let old = InMemorySecurityService::new(Arc::new(
-        unordered_map!("key".into() => key()),
-    ));
-    for scope in ALL {
-        assert_eq!(
-            old.can_access("key", "t", "o", "w", "e", &[scope.as_str()])
-                .await
-                .unwrap(),
-            scope != Scope::Publish
-        );
-    }
 }
 
 #[tokio::test]
@@ -114,18 +101,6 @@ async fn explicit_grants_are_independent_and_limited_to_wanted() {
             .unwrap()
             .unwrap();
         assert_eq!(empty.scopes(), Scopes::default());
-
-        let old = InMemorySecurityService::new(Arc::new(
-            unordered_map!("key".into() => config),
-        ));
-        for scope in ALL {
-            assert_eq!(
-                old.can_access("key", "t", "o", "w", "e", &[scope.as_str()])
-                    .await
-                    .unwrap(),
-                scope == allowed
-            );
-        }
     }
 }
 
@@ -249,7 +224,7 @@ async fn invalid_principal_fails_closed_instead_of_using_a_default() {
 }
 
 #[tokio::test]
-async fn provider_uses_the_same_keyed_id_for_hooks_and_authentication() {
+async fn provider_applies_the_configured_secret_to_caller_ids() {
     // Construct data through the config API, as the service does.
     let data: InMemoryDatabase =
         omni_remote_cache_core::config::Configuration {
@@ -271,11 +246,7 @@ async fn provider_uses_the_same_keyed_id_for_hooks_and_authentication() {
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(
-        provider.api_key_id("key"),
-        api_key_id_keyed("secret", "key")
-    );
-    assert_eq!(caller.credential().id(), provider.api_key_id("key"));
+    assert_eq!(caller.credential().id(), api_key_id_keyed("secret", "key"));
 }
 
 #[test]

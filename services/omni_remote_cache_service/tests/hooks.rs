@@ -24,7 +24,7 @@ use omni_remote_cache_service::{
     },
     providers::DependencyProvider,
     routes::root::RouterConfig,
-    security::{Authenticator, DynSecurityService},
+    security::Authenticator,
     services::DynValidationService,
     state::build_state,
 };
@@ -53,9 +53,6 @@ impl DependencyProvider for WithHooks {
     }
     fn validation_service(&self) -> DynValidationService {
         self.inner.validation_service()
-    }
-    fn security_service(&self) -> DynSecurityService {
-        self.inner.security_service()
     }
     fn hooks(&self) -> DynArtifactHooks {
         self.hooks.clone()

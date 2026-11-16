@@ -1,7 +1,8 @@
 //! Resource-scoped identity contract for RFC 0030.
 //!
-//! This is preparatory: routes and providers still use `SecurityService` until
-//! the header, provider, and authentication-cache migration lands together.
+//! Every artifact route authenticates through this seam. Providers return an
+//! [`Authenticator`] (a chain, possibly cached) and no route knows what kind of
+//! credential was presented.
 
 use std::sync::Arc;
 

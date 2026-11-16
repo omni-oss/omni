@@ -16,10 +16,7 @@ use crate::{
         InMemoryWorkspaceRepository,
     },
     providers::DependencyProvider,
-    security::{
-        Authenticator, AuthenticatorChain, DynSecurityService,
-        InMemoryAuthenticator, InMemorySecurityService,
-    },
+    security::{Authenticator, AuthenticatorChain, InMemoryAuthenticator},
     services::{DefaultValidationService, DynValidationService},
 };
 
@@ -48,13 +45,6 @@ impl DependencyProvider for ConfigBasedDependencyProvider {
         )]))
     }
 
-    fn api_key_id(&self, api_key: &str) -> String {
-        match &self.api_key_id_secret {
-            Some(secret) => crate::hooks::api_key_id_keyed(secret, api_key),
-            None => crate::hooks::api_key_id(api_key),
-        }
-    }
-
     fn workspace_repository(&self) -> DynWorkspaceRepository {
         Box::new(InMemoryWorkspaceRepository::new(self.data.clone()))
     }
@@ -78,9 +68,5 @@ impl DependencyProvider for ConfigBasedDependencyProvider {
             self.workspace_repository(),
             self.environment_repository(),
         ))
-    }
-
-    fn security_service(&self) -> DynSecurityService {
-        Box::new(InMemorySecurityService::new(self.api_keys.clone()))
     }
 }

@@ -17,7 +17,7 @@ use omni_remote_cache_core::{
     providers::{ConfigBasedDependencyProvider, DependencyProvider},
     security::{
         AuthError, Authenticator, AuthenticatorChain, Caller, CredentialId,
-        CredentialKind, DynSecurityService, Resource, Scope, Scopes,
+        CredentialKind, Resource, Scope, Scopes,
     },
     services::DynValidationService,
     state::{ServiceInfo, ServiceState},
@@ -116,12 +116,6 @@ impl DependencyProvider for Provider {
     }
     fn validation_service(&self) -> DynValidationService {
         self.inner.validation_service()
-    }
-    fn security_service(&self) -> DynSecurityService {
-        panic!("routes must not use API-key security")
-    }
-    fn api_key_id(&self, _: &str) -> String {
-        panic!("hooks must use the authenticated credential ID")
     }
     fn hooks(&self) -> DynArtifactHooks {
         self.hooks.clone()

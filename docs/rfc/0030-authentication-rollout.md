@@ -116,8 +116,7 @@ target validation and the service TypeScript suites are left to CI. Do not run
   not slide expiry forward. Never share a state between independent authorities.
   Fake-clock tests check exact expiry and revocation, key separation, denial,
   errors, capacity and negative results; a scripted query provider proves rebuilt
-  decorators share the state. Routes still use legacy `CachedSecurity` until the
-  header migration, when the old bool cache and raw-key paths must be removed.
+  decorators share the state. The old bool-based cache was removed with the request migration (below).
   Undo: remove the additive caller cache and provider method together; legacy
   request authentication is unchanged. Worker randomness/runtime remains a CI gate.
 - **Request-migration sub-batch:** implemented and independently reviewed by Opus,
@@ -136,9 +135,21 @@ target validation and the service TypeScript suites are left to CI. Do not run
   Route spans skip all arguments and record only digest, org, ws and env. Hooks get the
   authenticated credential ID in the existing `api_key_id` field until slice 3.
   Tests use a non-API-key authenticator through all six routes, check that
-  `security_service` and `api_key_id` are never called, that hooks do not run before
+  `security_service` and `api_key_id` are never called (those stubs were removed with the legacy code, so the compiler now enforces it), that hooks do not run before
   authentication, and that a missing `X-OMNI-TENANT` is still `400` (the extractor order
   is unchanged). Existing tests changed only in their headers and the `401` for unknown keys.
-  Left for follow-up: removing the unused `SecurityService`, `CachedSecurity` and the
-  `api_key_id` provider method, and `validate_access` returning scopes. Undo: revert
+  Undo: revert
   server and client together (a client on the old header cannot authenticate).
+- **Legacy-removal sub-batch:** implemented and independently reviewed by Opus (no
+  code blockers; the stale guide sentences it flagged are fixed). Removed
+  `SecurityService`, its error types, `InMemorySecurityService`, `QuerySecurityService`,
+  `CachedSecurity` (and the separate boolean cache in `CachingState`), and the
+  `DependencyProvider::security_service` and `api_key_id` methods. The static authenticator
+  now applies the enabled/expiry and four resource checks itself. `caching.security`
+  settings now configure only the caller cache. Hooks keep the existing `api_key_id`
+  field (renamed in slice 3). Provider tests that compared against the old service now
+  assert the authenticated behaviour directly. This is a Rust API break for third-party
+  `DependencyProvider` implementers (they must drop the two methods). Callers of `provider.api_key_id()` use
+  `Caller::credential().id()`, or `hooks::api_key_id_keyed` to compute an ID themselves.
+  Mention this API break in the slice 2 release note.
+  **Still open in slice 2:** `validate_access` returning scopes, principal and size cap.

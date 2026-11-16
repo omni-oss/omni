@@ -38,7 +38,7 @@ Done means all of these hold:
 | Repository traits  | `data/{tenants,organizations,workspaces,environments}/repository.rs`                                                         | The traits stay the extension point; their shape is reviewed in step 1.                                                                    |
 | Providers          | `providers/{traits,config}.rs`, `DependencyProvider`                                                                         | Adds backend selection and a hooks accessor.                                                                                               |
 | Validation         | `services/validation*.rs`                                                                                                    | Consumes the repositories; may collapse several round trips into one query.                                                                |
-| Security           | `security/` (`SecurityService`)                                                                                              | API keys and scopes become pluggable, with the same backends and query contract as the repositories.                                       |
+| Security           | `security/` (`SecurityService`, replaced by the `Authenticator` seam in RFC 0030)                                            | API keys and scopes become pluggable, with the same backends and query contract as the repositories.                                       |
 | Routes             | `routes/v1/artifacts/{get_artifact,get_artifacts,head_artifact,head_artifacts,put_artifact,delete_artifact}.rs`, `common.rs` | Hook call sites and veto responses in all six handlers.                                                                                    |
 | Config             | `config/mod.rs`                                                                                                              | New backend and query configuration.                                                                                                       |
 | Consumers          | `services/omni_remote_cache_service`, `services/omni_remote_cache_worker`                                                    | Wire the chosen backend. The worker is wasm.                                                                                               |
@@ -51,8 +51,8 @@ An operator runs the Worker with D1 and an external pruning service.
 **Happy path**
 
 1. Config points ownership lookups at D1 with these queries:
-    - `SELECT 1 AS found FROM orgs o JOIN tenants t ON t.id = o.tenant_id WHERE t.code = ?1 AND o.code = ?2`
-    - Equivalents for the workspace and environment checks.
+   - `SELECT 1 AS found FROM orgs o JOIN tenants t ON t.id = o.tenant_id WHERE t.code = ?1 AND o.code = ?2`
+   - Equivalents for the workspace and environment checks.
 2. `PUT /v1/artifacts/abc?org=o&ws=w&env=e` passes auth and ownership validation. The `before` hook allows it, the artifact is stored, and the `after` hook inserts a row in `artifact_events`.
 3. `GET` of the same artifact runs the `before` hook, which allows it, then serves it and upserts `last_read_at` in `artifact_usage`.
 4. The external pruner reads `artifact_usage`, deletes cold entries, and the next `GET` returns 404. Usage can be stale (a failed `after`, sampled or batched writes), so a recently read entry can look cold. The pruner contract: it must only delete entries idle for longer than a minimum age that exceeds the expected usage-update delay (sampling or batch interval plus `after` timeout), or accept that a wrongly pruned entry is a cache miss and a rebuild, not data loss.
@@ -85,13 +85,13 @@ Each query is declared in config with a name, the SQL text, and an ordered list 
 
 ```yaml
 repository:
-    kind: sql # sql | d1 | in_memory
-    queries:
-        tenant_exists:
-            {
-                sql: "SELECT 1 AS found FROM tenants WHERE code = $1",
-                params: [tenant_code],
-            }
+  kind: sql # sql | d1 | in_memory
+  queries:
+    tenant_exists:
+      {
+        sql: "SELECT 1 AS found FROM tenants WHERE code = $1",
+        params: [tenant_code],
+      }
 ```
 
 - **Row shape.** Every query returns zero or one row with the documented columns. `exists` queries return a column named `found` that is a boolean or an integer. Non-zero means true. Any other type, including NULL, is a shape error. Zero rows means false.
@@ -122,10 +122,10 @@ The service transforms the presented key before it touches the database, so the 
 
 ```yaml
 security:
-    api_key_hash:
-        algorithm: sha256 # none | sha256 | sha512 | hmac-sha256
-        encoding: hex # hex | base64
-        secret: ${KEY_PEPPER} # only for hmac-sha256
+  api_key_hash:
+    algorithm: sha256 # none | sha256 | sha512 | hmac-sha256
+    encoding: hex # hex | base64
+    secret: ${KEY_PEPPER} # only for hmac-sha256
 ```
 
 - **Flow.** The service computes `stored = encode(hash(presented))`. It binds `stored` as the query parameter, and the query returns the `api_key` column plus scopes. The service compares the returned value with `stored` in constant time before trusting the row.

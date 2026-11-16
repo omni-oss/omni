@@ -203,7 +203,7 @@ async fn legacy_identity_defaults_to_the_keyed_id_and_queries_only_wanted_scope(
         .unwrap();
     let id = api_key_id_keyed("secret", "credential");
     assert_eq!(caller.principal(), id);
-    assert_eq!(caller.credential().id(), provider.api_key_id("credential"));
+    assert_eq!(caller.credential().id(), id);
     assert_eq!(caller.scope_pin(), None);
     assert!(caller.can(Scope::Read));
     assert!(!caller.can(Scope::Write));
