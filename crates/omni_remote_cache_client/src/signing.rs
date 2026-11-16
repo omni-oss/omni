@@ -450,14 +450,13 @@ mod tests {
         if tweaked != wire {
             // Only a character whose unused bits are non-zero is non-canonical;
             // either way it must never verify.
-            assert_eq!(
+            assert!(
                 verify(
                     std::slice::from_ref(&trusted),
                     Some(&tweaked),
                     &message()
                 )
-                .is_ok(),
-                false
+                .is_err()
             );
         }
         // Well formed but not a signature by this key.
