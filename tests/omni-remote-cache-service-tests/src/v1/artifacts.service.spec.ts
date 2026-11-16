@@ -278,7 +278,7 @@ describeTargets("v1.artifacts.api", (target) => {
         expect(await response.text()).toEqual(BODY);
         expect(response.headers.get("x-omni-content-sha256")).toBe(hash);
         expect(response.headers.get("x-omni-stored-at")).toBeTruthy();
-        expect(response.headers.get("x-omni-namespace")).toBe("shared");
+        expect(response.headers.get("x-omni-namespace")).toBe("isolated");
     });
 
     test("head agrees with get about which entries exist", async () => {
@@ -325,7 +325,7 @@ describeTargets("v1.artifacts.api", (target) => {
         expect(usage).not.toContain(API_KEY);
         // the same facts the stored entry records
         expect(usage).toContain("api_key");
-        expect(usage).toContain("shared");
+        expect(usage).toContain("isolated");
         expect(usage).toContain(sha256Hex(BODY));
 
         await sql(`INSERT INTO vetoes VALUES ('${TENANT}', 'get', 'pruning')`);
