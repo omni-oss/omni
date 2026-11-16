@@ -1,5 +1,7 @@
 # RFC 0030: signing and verification rollout
 
+> Note: mentions of `omni cache purge` or `--legacy` below are superseded by `0030-operator-tools-rollout.md` (slice 8 was reduced to isolated-entry expiry).
+
 Plan for slice 7 of [RFC 0030](0030-remote-cache-trust-model.md) (section 4.5, 4.4's `trusted_keys` and
 `verify`, 4.8.5, 4.8.8). The RFC stays the design authority.
 

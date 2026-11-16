@@ -139,6 +139,39 @@ environment of every task it runs, but expose it only to the step that signs
 regardless. A workspace file with `remote_cache` is rejected
 by omni versions that do not know the section.
 
+## Expiring isolated entries
+
+Isolated entries are one writer's scratch space, so they should not pile up.
+Shared entries never expire: remove them with your storage provider's tools.
+
+- **Local disk and memory backends:** the service removes isolated entries stored
+  more than `--isolated-ttl-days` ago (default 7, `0` keeps them forever,
+  `OMNI_REMOTE_CACHE_SERVICE_ISOLATED_TTL_DAYS`). It sweeps hourly, works through
+  at most 100,000 objects per pass, and skips anything that is not a well-formed
+  isolated entry.
+- **S3 and R2:** add a lifecycle rule on the `isolated/` prefix instead, for example
+  on S3:
+
+  ```json
+  {
+    "Rules": [
+      {
+        "ID": "expire-isolated-cache-entries",
+        "Status": "Enabled",
+        "Filter": { "Prefix": "isolated/" },
+        "Expiration": { "Days": 7 }
+      }
+    ]
+  }
+  ```
+
+  Use the equivalent object lifecycle rule in R2. The service does not sweep S3
+  buckets itself.
+
+Entries stored before namespaces existed are never read again. There is no
+command to remove them; delete them with your storage provider's tools if you ever
+had a deployment that wrote them.
+
 ## Local cache partitions
 
 With remote caching on, the local cache directory is split by how far a run trusts

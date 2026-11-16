@@ -7,6 +7,7 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+time = { workspace = true }
 async-trait = { workspace = true }
 eyre = { workspace = true }
 strum = { workspace = true }
@@ -41,7 +42,6 @@ shadow-rs = { workspace = true }
 
 [dev-dependencies]
 reqwest = { workspace = true }
-time = { workspace = true }
 futures = { workspace = true }
 axum-test = { workspace = true }
 tempfile = { workspace = true }

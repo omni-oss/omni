@@ -1,5 +1,7 @@
 # RFC 0030: entry trailer and provenance rollout
 
+> Note: mentions of `omni cache purge` or `--legacy` below are superseded by `0030-operator-tools-rollout.md` (slice 8 was reduced to isolated-entry expiry).
+
 Implementation plan for slice 3 of [RFC 0030](0030-remote-cache-trust-model.md) (section 4.3,
 section 4.8.4 and 4.8.7). The RFC stays the design authority. This records the decisions the
 RFC leaves open, the batches, and what each batch proves.

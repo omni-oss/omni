@@ -400,7 +400,7 @@ safe and explicit. Routing to several buckets is out of scope.
   (4.5), including recomputing the archive hash, so it detects swapped bytes and not
   only a bad signature header. A `HEAD` is not used: it has no body to hash. If the entry is unsigned or does not verify
   against `trusted_keys`, it logs a warning naming the digest and the reason, and
-  points at `omni cache purge`. It never fails the run and never retries or replaces,
+  points at purging the entry with the storage provider's tools (no `omni cache purge`, see section 8). It never fails the run and never retries or replaces,
   because immutability has no exception. The server does not judge signatures (4.3),
   so this is how a publisher learns that a stray or tampered entry occupies its
   digest. Skipped when `verify` is `off`. It also needs `read:artifacts`, which
@@ -457,6 +457,8 @@ and `X-Omni-Signature` (`<key_id>:<base64>`, bounded to 256 bytes). It sets
 or `delete:artifacts`**: read-only clients do not need them (trust comes from the
 signature, 4.5), and an unkeyed credential id would let them test key guesses
 offline and learn org structure.
+
+> **Superseded (slice 8):** `omni cache purge`, `omni cache provenance`, `--legacy` and the credential/principal response headers described here are not built; cleanup is a server or storage-provider concern. See `0030-operator-tools-rollout.md` and section 8. Incident response is: revoke the credential, rotate the signing key, and remove objects with the provider's tools.
 
 Operator tooling:
 
@@ -1285,7 +1287,7 @@ true` means **one bucket with container key prefixes**, and `false` (the default
 
 Undo: each slice is a commit on `main` and can be reverted. Data is not migrated.
 Existing remote entries use the old container layout and have no trailer, so
-they become misses and operators clear them with `omni cache purge --legacy`. The release note says so. At
+they become misses; there is no command to remove them (see section 8), and storage provider tools can. At
 runtime, `verify: off` disables verification and `push: false` stops uploads.
 
 ## 7. Alternatives and review questions
@@ -1634,6 +1636,14 @@ provenance headers and the `409` outcome; the private key is not registered with
 environment variable is removed from every child process omni spawns (`omni_process::protect_env_var`)
 unless a task maps it explicitly; a signature binds tenant, organization, workspace and environment but not the
 server address. Still open: the `omni-tests` end-to-end server-compromise scenario.
+
+**Landed (isolated expiry, slice 8, reduced):** see `0030-operator-tools-rollout.md`. Only expiry is
+built: a server sweeper for the local-disk and memory backends (`--isolated-ttl-days`, default 7) and
+a bucket lifecycle rule for S3 and R2. Not built, by decision, because cleanup is a server or provider
+concern and no production service has legacy data: `omni cache provenance`, `omni cache purge`
+(`--credential`, `--principal`, `--signing-key`, `--digest`, `--legacy`), the provenance and purge routes
+and the credential/principal response headers. The release note therefore does not mention
+`omni cache purge --legacy`.
 
 **Open gates before this RFC can be Implemented:**
 

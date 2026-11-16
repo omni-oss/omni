@@ -105,6 +105,15 @@ pub struct ServeArgs {
     )]
     #[new(value = "omni_remote_cache_core::state::DEFAULT_MAX_ARTIFACT_SIZE")]
     pub max_artifact_size: u64,
+
+    #[arg(
+        long,
+        default_value_t = 7,
+        env = "OMNI_REMOTE_CACHE_SERVICE_ISOLATED_TTL_DAYS",
+        help = "Remove isolated entries stored more than this many days ago (local-disk and memory backends only; S3 and R2 use a bucket lifecycle rule on the `isolated/` prefix). 0 keeps them forever. Shared entries never expire"
+    )]
+    #[new(value = "7")]
+    pub isolated_ttl_days: u64,
 }
 
 #[derive(
