@@ -2870,29 +2870,28 @@ mod tests {
         let temp = fixture(&["project1"]).await;
         let mut cache = remote.cache(temp.path());
         if let RemoteConfig::Enabled(conf) = &mut cache.remote_config {
-            conf.signing =
-                Box::new(super::super::signing_policy::SigningPolicy {
-                    verify: EffectiveVerify::Require,
-                    trusted: vec![
-                        omni_remote_cache_client::TrustedKey::parse(
-                            &kp.id,
-                            &kp.public_key,
-                        )
-                        .unwrap(),
-                        omni_remote_cache_client::TrustedKey::parse(
-                            &key.id,
-                            &key.public_key,
-                        )
-                        .unwrap(),
-                    ],
-                    signing_key: Some(
-                        omni_configurations::SigningKeyConfiguration {
-                            id: kp.id.clone(),
-                            private_key_env: None,
-                            private_key_file: Some(file),
-                        },
-                    ),
-                });
+            *conf.signing = super::super::signing_policy::SigningPolicy {
+                verify: EffectiveVerify::Require,
+                trusted: vec![
+                    omni_remote_cache_client::TrustedKey::parse(
+                        &kp.id,
+                        &kp.public_key,
+                    )
+                    .unwrap(),
+                    omni_remote_cache_client::TrustedKey::parse(
+                        &key.id,
+                        &key.public_key,
+                    )
+                    .unwrap(),
+                ],
+                signing_key: Some(
+                    omni_configurations::SigningKeyConfiguration {
+                        id: kp.id.clone(),
+                        private_key_env: None,
+                        private_key_file: Some(file),
+                    },
+                ),
+            };
         }
         let t0 = task("task", "project1", temp.path());
         cache
@@ -2953,18 +2952,17 @@ mod tests {
         let temp = fixture(&["project1"]).await;
         let mut cache = remote.cache(temp.path());
         if let RemoteConfig::Enabled(conf) = &mut cache.remote_config {
-            conf.signing =
-                Box::new(super::super::signing_policy::SigningPolicy {
-                    verify: EffectiveVerify::Require,
-                    trusted: vec![
-                        omni_remote_cache_client::TrustedKey::parse(
-                            &key.id,
-                            &key.public_key,
-                        )
-                        .unwrap(),
-                    ],
-                    signing_key: None,
-                });
+            *conf.signing = super::super::signing_policy::SigningPolicy {
+                verify: EffectiveVerify::Require,
+                trusted: vec![
+                    omni_remote_cache_client::TrustedKey::parse(
+                        &key.id,
+                        &key.public_key,
+                    )
+                    .unwrap(),
+                ],
+                signing_key: None,
+            };
         }
         let t0 = task("task", "project1", temp.path());
         cache
@@ -4023,21 +4021,20 @@ mod tests {
     ) -> HybridTaskExecutionCacheStore {
         let mut store = remote_store(temp.path(), url);
         if let RemoteConfig::Enabled(conf) = &mut store.remote_config {
-            conf.signing =
-                Box::new(super::super::signing_policy::SigningPolicy {
-                    verify: mode,
-                    trusted: trusted
-                        .iter()
-                        .map(|s| {
-                            omni_remote_cache_client::TrustedKey::parse(
-                                &s.id,
-                                &s.public_key,
-                            )
-                            .unwrap()
-                        })
-                        .collect(),
-                    signing_key: None,
-                });
+            *conf.signing = super::super::signing_policy::SigningPolicy {
+                verify: mode,
+                trusted: trusted
+                    .iter()
+                    .map(|s| {
+                        omni_remote_cache_client::TrustedKey::parse(
+                            &s.id,
+                            &s.public_key,
+                        )
+                        .unwrap()
+                    })
+                    .collect(),
+                signing_key: None,
+            };
         }
         store
     }

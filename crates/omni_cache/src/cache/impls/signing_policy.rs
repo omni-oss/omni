@@ -232,7 +232,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(some.verify, EffectiveVerify::Require);
-        assert_eq!(some.trusted_ids(), [f.a.id.clone()]);
+        assert_eq!(some.trusted_ids(), vec![f.a.id.clone()]);
     }
 
     #[test]
@@ -286,7 +286,7 @@ mod tests {
         let narrowed =
             resolve_signing(&ws, &local(None, Some(vec![f.a.id.clone()])))
                 .unwrap();
-        assert_eq!(narrowed.trusted_ids(), [f.a.id.clone()]);
+        assert_eq!(narrowed.trusted_ids(), vec![f.a.id.clone()]);
         assert_eq!(narrowed.verify, EffectiveVerify::Require);
         // An id the workspace does not trust is ignored, not added.
         let stranger = resolve_signing(

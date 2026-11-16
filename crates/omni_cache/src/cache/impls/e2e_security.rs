@@ -146,7 +146,6 @@ async fn remote() -> Remote {
 }
 
 struct Key {
-    handle: omni_remote_cache_client::SigningHandle,
     trusted: omni_remote_cache_client::TrustedKey,
     private_key: String,
     id: String,
@@ -155,7 +154,6 @@ struct Key {
 fn key() -> Key {
     let kp = omni_remote_cache_client::generate_keypair().unwrap();
     Key {
-        handle: omni_remote_cache_client::SigningHandle::from_base64(&kp.private_key).unwrap(),
         trusted: omni_remote_cache_client::TrustedKey::parse(&kp.id, &kp.public_key).unwrap(),
         private_key: kp.private_key.to_string(),
         id: kp.id,
