@@ -463,7 +463,13 @@ where
         }
     }
 
-    remote_sources.record_refs("tool", &refs).await?;
+    remote_sources
+        .update_refs(
+            "tool",
+            omni_remote_source::refs::RefUpdate::ReplaceComplete,
+            &refs,
+        )
+        .await?;
     remote_sources.persist_pins().await?;
 
     Ok(configurations)

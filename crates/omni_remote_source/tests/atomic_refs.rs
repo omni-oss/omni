@@ -17,7 +17,7 @@ use omni_remote_source::{
     RemoteSource, RemoteSourceRef,
     driver::{DriverContext, DriverRegistry, SourceDriver, SourceSpec},
     manager::{RemoteSourceManager, config::RemoteSourceConfig},
-    refs::{RefSetData, RefUpdate},
+    refs::{RefSetData, RefSetUpdate, RefUpdate},
 };
 use omni_utils::lock::LockGuard;
 use system_traits::{impls::RealSys, *};
@@ -29,6 +29,312 @@ const WRITE: u8 = 2;
 const RENAME: u8 = 3;
 const READ: u8 = 4;
 const PAUSE_RENAME: u8 = 5;
+const PAUSE_LAYOUT: u8 = 6;
+const REPORT_LAYOUT_READ: u8 = 7;
+
+#[tokio::test]
+async fn layout_initialization_never_exposes_a_partial_version_marker() {
+    let dir = tempfile::tempdir().unwrap();
+    let sys = FaultSys::default();
+    let mut drivers = DriverRegistry::default();
+    drivers.register(Arc::new(CountingDriver::default()));
+    let manager = RemoteSourceManager::with_drivers(
+        config(dir.path()),
+        sys.clone(),
+        drivers,
+    )
+    .await
+    .unwrap();
+    let peer = RemoteSourceManager::new(config(dir.path()), sys.clone())
+        .await
+        .unwrap();
+    sys.fault.store(PAUSE_LAYOUT, Ordering::SeqCst);
+    let writer = tokio::spawn(async move {
+        manager.materialize(&reference("main", "p1").source).await
+    });
+    timeout(WAIT, sys.entered.notified()).await.unwrap();
+    let observed = peer.store_entries().await;
+    {
+        let (mutex, ready) = &*sys.release;
+        *mutex.lock().unwrap() = true;
+        ready.notify_all();
+    }
+    timeout(WAIT, writer).await.unwrap().unwrap().unwrap();
+    assert!(
+        observed.is_ok(),
+        "layout reader saw partial publication: {observed:?}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("store/VERSION")).unwrap(),
+        "1\n"
+    );
+}
+
+#[tokio::test]
+async fn late_layout_initializer_rechecks_the_marker_and_never_downgrades_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let sys = FaultSys::default();
+    let store = dir.path().join("store");
+    let guard = LockGuard::acquire_exclusive(store.join(".layout.lock"))
+        .await
+        .unwrap();
+    let mut drivers = DriverRegistry::default();
+    drivers.register(Arc::new(CountingDriver::default()));
+    let manager = RemoteSourceManager::with_drivers(
+        config(dir.path()),
+        sys.clone(),
+        drivers,
+    )
+    .await
+    .unwrap();
+    sys.fault.store(REPORT_LAYOUT_READ, Ordering::SeqCst);
+    let writer = tokio::spawn(async move {
+        manager.materialize(&reference("main", "p1").source).await
+    });
+    timeout(WAIT, sys.entered.notified()).await.unwrap();
+    // A peer finishes initializing a newer layout before this initializer can
+    // get the store initialization lock.
+    std::fs::write(store.join("VERSION"), "2\n").unwrap();
+    drop(guard);
+    let result = timeout(WAIT, writer).await.unwrap().unwrap();
+    assert!(
+        result.is_err(),
+        "initializer ignored the peer's newer marker"
+    );
+    assert_eq!(
+        std::fs::read_to_string(store.join("VERSION")).unwrap(),
+        "2\n"
+    );
+}
+
+#[tokio::test]
+async fn batch_staging_failure_changes_no_sets_and_cleans_all_temps() {
+    let dir = tempfile::tempdir().unwrap();
+    let sys = FaultSys::default();
+    let manager = RemoteSourceManager::new(config(dir.path()), sys.clone())
+        .await
+        .unwrap();
+    let old_refs = [reference("old", "p0")];
+    for id in ["generator", "tool"] {
+        manager
+            .update_refs(id, RefUpdate::ReplaceComplete, &old_refs)
+            .await
+            .unwrap();
+    }
+    let old = std::fs::read(dir.path().join("refs/generator.json")).unwrap();
+    let new_refs = [reference("new", "p1")];
+    let updates = [
+        RefSetUpdate {
+            id: "generator",
+            mode: RefUpdate::ReplaceComplete,
+            refs: &new_refs,
+        },
+        RefSetUpdate {
+            id: "tool",
+            mode: RefUpdate::ReplaceComplete,
+            refs: &new_refs,
+        },
+    ];
+    // Fail after the first set has been staged, both on open and during write.
+    for failure in [&sys.fail_open_at, &sys.fail_write_at] {
+        sys.opens.store(0, Ordering::SeqCst);
+        sys.renames.store(0, Ordering::SeqCst);
+        failure.store(2, Ordering::SeqCst);
+        assert!(manager.update_ref_sets(&updates).await.is_err());
+        failure.store(0, Ordering::SeqCst);
+        assert_eq!(sys.renames.load(Ordering::SeqCst), 0);
+        for id in ["generator", "tool"] {
+            assert_eq!(
+                std::fs::read(dir.path().join(format!("refs/{id}.json")))
+                    .unwrap(),
+                old
+            );
+        }
+        assert_no_staging(&dir.path().join("refs"));
+    }
+}
+
+#[tokio::test]
+async fn batch_commit_failure_leaves_complete_files_and_retry_converges() {
+    let dir = tempfile::tempdir().unwrap();
+    let sys = FaultSys::default();
+    let manager = RemoteSourceManager::new(config(dir.path()), sys.clone())
+        .await
+        .unwrap();
+    let old_refs = [reference("old", "p0")];
+    for id in ["generator", "tool", "projection"] {
+        manager
+            .update_refs(id, RefUpdate::ReplaceComplete, &old_refs)
+            .await
+            .unwrap();
+    }
+    let unselected =
+        std::fs::read(dir.path().join("refs/projection.json")).unwrap();
+    let new_refs = [reference("new", "p1")];
+    let updates = [
+        RefSetUpdate {
+            id: "generator",
+            mode: RefUpdate::ReplaceComplete,
+            refs: &new_refs,
+        },
+        RefSetUpdate {
+            id: "tool",
+            mode: RefUpdate::ReplaceComplete,
+            refs: &[],
+        },
+    ];
+    sys.opens.store(0, Ordering::SeqCst);
+    sys.renames.store(0, Ordering::SeqCst);
+    sys.fail_rename_at.store(2, Ordering::SeqCst);
+    assert!(manager.update_ref_sets(&updates).await.is_err());
+    assert_eq!(sys.opens.load(Ordering::SeqCst), 2);
+    assert_eq!(
+        read_refs(dir.path(), "generator"),
+        [("new".into(), "p1".into())]
+    );
+    assert_eq!(read_refs(dir.path(), "tool"), [("old".into(), "p0".into())]);
+    assert_no_staging(&dir.path().join("refs"));
+    sys.fail_rename_at.store(0, Ordering::SeqCst);
+    manager.update_ref_sets(&updates).await.unwrap();
+    assert!(read_refs(dir.path(), "tool").is_empty());
+    assert_eq!(
+        std::fs::read(dir.path().join("refs/projection.json")).unwrap(),
+        unselected
+    );
+}
+
+#[tokio::test]
+async fn batch_rejects_duplicate_ids_and_bad_later_sets_before_staging() {
+    let dir = tempfile::tempdir().unwrap();
+    let sys = FaultSys::default();
+    let manager = RemoteSourceManager::new(config(dir.path()), sys.clone())
+        .await
+        .unwrap();
+    let refs = [reference("old", "p0")];
+    manager
+        .update_refs("generator", RefUpdate::ReplaceComplete, &refs)
+        .await
+        .unwrap();
+    let old = std::fs::read(dir.path().join("refs/generator.json")).unwrap();
+    sys.opens.store(0, Ordering::SeqCst);
+    let first = RefSetUpdate {
+        id: "generator",
+        mode: RefUpdate::ReplaceComplete,
+        refs: &[],
+    };
+    assert!(manager.update_ref_sets(&[first, first]).await.is_err());
+    std::fs::write(dir.path().join("refs/tool.json"), b"bad json").unwrap();
+    assert!(
+        manager
+            .update_ref_sets(&[
+                first,
+                RefSetUpdate {
+                    id: "tool",
+                    mode: RefUpdate::ReplaceComplete,
+                    refs: &[]
+                },
+            ])
+            .await
+            .is_err()
+    );
+    assert_eq!(sys.opens.load(Ordering::SeqCst), 0);
+    assert_eq!(
+        std::fs::read(dir.path().join("refs/generator.json")).unwrap(),
+        old
+    );
+}
+
+#[tokio::test]
+async fn failed_reconcile_after_batch_keeps_complete_refs_and_old_lockfile() {
+    let dir = tempfile::tempdir().unwrap();
+    let sys = FaultSys::default();
+    let path = dir.path().join("lock.json");
+    let lockfile = Lockfile::load(&path, &RealSys).await.unwrap();
+    let source = reference("old", "p0").source;
+    let spec = source.spec();
+    lockfile
+        .lock_pin("git", &spec.locator, &spec.selector, "p0")
+        .await
+        .unwrap();
+    lockfile.save(&RealSys).await.unwrap();
+    let old = std::fs::read(&path).unwrap();
+    let manager = RemoteSourceManager::new(config(dir.path()), sys.clone())
+        .await
+        .unwrap();
+    let update = RefSetUpdate {
+        id: "generator",
+        mode: RefUpdate::ReplaceComplete,
+        refs: &[],
+    };
+    manager.update_ref_sets(&[update]).await.unwrap();
+    sys.fault.store(RENAME, Ordering::SeqCst);
+    assert!(manager.reconcile_pins().await.is_err());
+    assert_eq!(std::fs::read(&path).unwrap(), old);
+    assert!(read_refs(dir.path(), "generator").is_empty());
+    sys.fault.store(0, Ordering::SeqCst);
+    manager.update_ref_sets(&[update]).await.unwrap();
+    manager.reconcile_pins().await.unwrap();
+    assert!(
+        Lockfile::load(&path, &RealSys)
+            .await
+            .unwrap()
+            .pins()
+            .await
+            .is_empty()
+    );
+    assert_no_staging(dir.path());
+}
+
+#[tokio::test]
+async fn cancelled_batch_retains_lock_until_all_files_are_published() {
+    let dir = tempfile::tempdir().unwrap();
+    let sys = FaultSys::default();
+    let manager = RemoteSourceManager::new(config(dir.path()), sys.clone())
+        .await
+        .unwrap();
+    sys.fault.store(PAUSE_RENAME, Ordering::SeqCst);
+    let task = tokio::spawn(async move {
+        let refs = [reference("new", "p1")];
+        manager
+            .update_ref_sets(&[
+                RefSetUpdate {
+                    id: "generator",
+                    mode: RefUpdate::ReplaceComplete,
+                    refs: &refs,
+                },
+                RefSetUpdate {
+                    id: "tool",
+                    mode: RefUpdate::ReplaceComplete,
+                    refs: &refs,
+                },
+            ])
+            .await
+    });
+    timeout(WAIT, sys.entered.notified()).await.unwrap();
+    assert_eq!(sys.opens.load(Ordering::SeqCst), 2);
+    task.abort();
+    assert!(task.await.unwrap_err().is_cancelled());
+    let lockpath = dir.path().join("lock.json.lock");
+    assert!(
+        LockGuard::try_acquire_exclusive(&lockpath)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    {
+        let (mutex, ready) = &*sys.release;
+        *mutex.lock().unwrap() = true;
+        ready.notify_all();
+    }
+    let _guard = timeout(WAIT, LockGuard::acquire_exclusive(lockpath))
+        .await
+        .unwrap()
+        .unwrap();
+    for id in ["generator", "tool"] {
+        assert_eq!(read_refs(dir.path(), id), [("new".into(), "p1".into())]);
+    }
+    assert_no_staging(&dir.path().join("refs"));
+}
 
 #[derive(Default)]
 struct CountingDriver(AtomicUsize);
@@ -69,6 +375,11 @@ struct FaultSys {
     fault: Arc<AtomicU8>,
     entered: Arc<Notify>,
     release: Arc<(Mutex<bool>, Condvar)>,
+    opens: Arc<AtomicUsize>,
+    renames: Arc<AtomicUsize>,
+    fail_open_at: Arc<AtomicUsize>,
+    fail_write_at: Arc<AtomicUsize>,
+    fail_rename_at: Arc<AtomicUsize>,
 }
 
 fn injected() -> io::Error {
@@ -83,12 +394,17 @@ impl BaseFsOpen for FaultSys {
         path: &Path,
         options: &OpenOptions,
     ) -> io::Result<Self::File> {
+        let opened = self.opens.fetch_add(1, Ordering::SeqCst) + 1;
         assert_ne!(path.extension().and_then(|s| s.to_str()), Some("json"));
-        if self.fault.load(Ordering::SeqCst) == OPEN {
+        if self.fault.load(Ordering::SeqCst) == OPEN
+            || self.fail_open_at.load(Ordering::SeqCst) == opened
+        {
             return Err(injected());
         }
         let file = RealSys.fs_open(path, options)?;
-        if self.fault.load(Ordering::SeqCst) == WRITE {
+        if self.fault.load(Ordering::SeqCst) == WRITE
+            || self.fail_write_at.load(Ordering::SeqCst) == opened
+        {
             drop(file);
             let mut read_only = OpenOptions::new();
             read_only.read = true;
@@ -100,9 +416,16 @@ impl BaseFsOpen for FaultSys {
 
 impl BaseFsRename for FaultSys {
     fn base_fs_rename(&self, from: &Path, to: &Path) -> io::Result<()> {
+        let renamed = self.renames.fetch_add(1, Ordering::SeqCst) + 1;
+        if self.fail_rename_at.load(Ordering::SeqCst) == renamed {
+            return Err(injected());
+        }
         match self.fault.load(Ordering::SeqCst) {
             RENAME => return Err(injected()),
-            PAUSE_RENAME => {
+            PAUSE_RENAME | PAUSE_LAYOUT
+                if self.fault.load(Ordering::SeqCst) == PAUSE_RENAME
+                    || to.file_name().is_some_and(|name| name == "VERSION") =>
+            {
                 self.entered.notify_one();
                 let (mutex, ready) = &*self.release;
                 let released = ready
@@ -135,7 +458,16 @@ impl BaseFsReadAsync for FaultSys {
         if self.fault.load(Ordering::SeqCst) == READ {
             return Err(injected());
         }
-        RealSys.fs_read_async(path).await
+        let result = RealSys.fs_read_async(path).await;
+        if self.fault.load(Ordering::SeqCst) == REPORT_LAYOUT_READ
+            && path.file_name().is_some_and(|name| name == "VERSION")
+            && result
+                .as_ref()
+                .is_err_and(|error| error.kind() == io::ErrorKind::NotFound)
+        {
+            self.entered.notify_one();
+        }
+        result
     }
 }
 
@@ -165,6 +497,31 @@ impl BaseFsWriteAsync for FaultSys {
         path: &Path,
         data: &[u8],
     ) -> io::Result<()> {
+        if self.fault.load(Ordering::SeqCst) == PAUSE_LAYOUT
+            && path.file_name().is_some_and(|name| name == "VERSION")
+        {
+            // Expose the direct writer's truncate-to-empty window. For the
+            // staged writer we instead pause immediately before its rename.
+            RealSys.fs_write_async(path, b"").await?;
+            let sys = self.clone();
+            let path = path.to_path_buf();
+            let data = data.to_vec();
+            return tokio::task::spawn_blocking(move || {
+                sys.entered.notify_one();
+                let (mutex, ready) = &*sys.release;
+                let released = ready
+                    .wait_timeout_while(
+                        mutex.lock().unwrap(),
+                        WAIT,
+                        |released| !*released,
+                    )
+                    .unwrap();
+                assert!(*released.0, "layout writer was not released");
+                RealSys.fs_write(&path, &data)
+            })
+            .await
+            .map_err(io::Error::other)?;
+        }
         RealSys.fs_write_async(path, data).await
     }
 }

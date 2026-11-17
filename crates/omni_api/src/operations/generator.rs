@@ -596,7 +596,13 @@ where
         }
     }
 
-    remote_sources.record_refs("generator", &refs).await?;
+    remote_sources
+        .update_refs(
+            "generator",
+            omni_remote_source::refs::RefUpdate::ReplaceComplete,
+            &refs,
+        )
+        .await?;
     remote_sources.persist_pins().await?;
 
     Ok(configurations)

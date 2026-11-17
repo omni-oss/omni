@@ -11,6 +11,14 @@ pub enum RefUpdate {
     MergeAdditive,
 }
 
+/// One subsystem update in a staged reference batch.
+#[derive(Debug, Clone, Copy)]
+pub struct RefSetUpdate<'a> {
+    pub id: &'a str,
+    pub mode: RefUpdate,
+    pub refs: &'a [crate::RemoteSourceRef],
+}
+
 /// The persisted reference set for a single subsystem, written to
 /// `refs/<id>.json`. It records every remote source the subsystem resolved on
 /// its last run, together with the pin it resolved to. Pin reconciliation unions

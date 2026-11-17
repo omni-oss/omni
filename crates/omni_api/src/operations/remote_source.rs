@@ -9,6 +9,7 @@ use omni_remote_source::{
         PruneReport, RemoteSourceManager, StoreEntry, StorePruneFilter,
         config::RemoteSourceConfig,
     },
+    refs::{RefSetUpdate, RefUpdate},
     sys::RemoteSourceSys,
 };
 use omni_remote_source_contributors::{
@@ -292,7 +293,8 @@ where
 }
 
 /// Drive a set of contributors against one shared store: materialize (via each
-/// contributor), persist each subsystem's reference set, reconcile lockfile
+/// contributor), stage every subsystem's reference set before publishing any,
+/// reconcile lockfile
 /// pins, and aggregate per-subsystem counts. A source shared by
 /// two subsystems is credited as materialized to the first and deduplicated to
 /// the rest.
@@ -306,11 +308,11 @@ where
 {
     let mut subsystems = Vec::with_capacity(contributors.len());
     let mut seen: HashSet<(&'static str, String, String)> = HashSet::new();
+    let mut resolved = Vec::with_capacity(contributors.len());
 
     for contributor in &contributors {
         let id = contributor.id();
         let refs = contributor.contribute(manager, options).await?;
-        manager.record_refs(id, &refs).await?;
 
         let mut materialized = 0;
         let mut deduplicated = 0;
@@ -328,8 +330,18 @@ where
             materialized,
             deduplicated,
         });
+        resolved.push((id, refs));
     }
 
+    let updates: Vec<_> = resolved
+        .iter()
+        .map(|(id, refs)| RefSetUpdate {
+            id,
+            mode: RefUpdate::ReplaceComplete,
+            refs,
+        })
+        .collect();
+    manager.update_ref_sets(&updates).await?;
     manager.reconcile_pins().await?;
 
     Ok(RemoteSourcesInstallResponse { subsystems })
@@ -430,6 +442,106 @@ mod tests {
     struct StubContributor {
         id: &'static str,
         refs: Vec<omni_remote_source::RemoteSourceRef>,
+    }
+
+    struct FailingContributor;
+
+    #[async_trait::async_trait]
+    impl<TSys: RemoteSourceSys> RemoteSourceContributor<TSys>
+        for FailingContributor
+    {
+        fn id(&self) -> &'static str {
+            "tool"
+        }
+
+        async fn contribute(
+            &self,
+            _manager: &RemoteSourceManager<TSys>,
+            _options: &InstallOptions,
+        ) -> eyre::Result<Vec<omni_remote_source::RemoteSourceRef>> {
+            eyre::bail!("injected later contributor failure")
+        }
+    }
+
+    #[tokio::test]
+    async fn later_contributor_failure_preserves_all_refs_and_lockfile() {
+        let dir = tempfile::tempdir().unwrap();
+        let manager = temp_manager(dir.path()).await;
+        let old = [git_ref("https://example.com/old.git", "main", "p0")];
+        for id in ["generator", "tool"] {
+            manager
+                .update_refs(id, RefUpdate::ReplaceComplete, &old)
+                .await
+                .unwrap();
+        }
+        manager.reconcile_pins().await.unwrap();
+        let root = dir.path().join(".omni/sources");
+        let before: Vec<_> =
+            ["refs/generator.json", "refs/tool.json", "lock.json"]
+                .iter()
+                .map(|name| std::fs::read(root.join(name)).unwrap())
+                .collect();
+        let contributors: Vec<
+            Box<dyn RemoteSourceContributor<system_traits::impls::RealSys>>,
+        > = vec![
+            Box::new(StubContributor {
+                id: "generator",
+                refs: vec![git_ref(
+                    "https://example.com/new.git",
+                    "main",
+                    "p1",
+                )],
+            }),
+            Box::new(FailingContributor),
+        ];
+        assert!(
+            run_contributors(
+                &manager,
+                contributors,
+                &InstallOptions::default()
+            )
+            .await
+            .is_err()
+        );
+        for (name, bytes) in
+            ["refs/generator.json", "refs/tool.json", "lock.json"]
+                .iter()
+                .zip(before)
+        {
+            assert_eq!(std::fs::read(root.join(name)).unwrap(), bytes);
+        }
+    }
+
+    #[tokio::test]
+    async fn empty_selected_subsystem_releases_refs_without_touching_siblings()
+    {
+        let dir = tempfile::tempdir().unwrap();
+        let manager = temp_manager(dir.path()).await;
+        let old = [git_ref("https://example.com/old.git", "main", "p0")];
+        for id in ["generator", "tool"] {
+            manager
+                .update_refs(id, RefUpdate::ReplaceComplete, &old)
+                .await
+                .unwrap();
+        }
+        let root = dir.path().join(".omni/sources/refs");
+        let tool = std::fs::read(root.join("tool.json")).unwrap();
+        run_contributors(
+            &manager,
+            vec![Box::new(StubContributor {
+                id: "generator",
+                refs: vec![],
+            })],
+            &InstallOptions::default(),
+        )
+        .await
+        .unwrap();
+        let generator: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(root.join("generator.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(generator["sources"], serde_json::json!({}));
+        assert_eq!(std::fs::read(root.join("tool.json")).unwrap(), tool);
     }
 
     #[async_trait::async_trait]

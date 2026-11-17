@@ -21,7 +21,7 @@ use crate::{
     lease::SourceLease,
     manager::config::RemoteSourceConfig,
     manager::tree,
-    refs::{RefSetData, RefSetDataV1_0_0, RefUpdate},
+    refs::{RefSetData, RefSetDataV1_0_0, RefSetUpdate, RefUpdate},
     source::{LeasedSource, MaterializedSource, RemoteSource, RemoteSourceRef},
     sys::RemoteSourceSys,
 };
@@ -428,21 +428,72 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
         mode: RefUpdate,
         refs: &[RemoteSourceRef],
     ) -> Result<(), Error> {
-        if !is_safe_segment(id) {
-            return Err(Error::custom(format!(
-                "unsafe reference set id {id:?}"
-            )));
+        self.update_ref_sets(&[RefSetUpdate { id, mode, refs }])
+            .await
+    }
+
+    /// Stage all selected subsystem updates before publishing any of them.
+    ///
+    /// Contributor resolution must finish before calling this. Invalid or
+    /// duplicate IDs, corrupt existing sets, serialization and staging failures
+    /// leave every old set unchanged. After renaming starts, failure can leave a
+    /// prefix replaced: each file is complete, and re-running install converges.
+    /// The workspace lock covers preparation, staging and all renames, including
+    /// after cancellation of the waiting caller.
+    pub async fn update_ref_sets(
+        &self,
+        updates: &[RefSetUpdate<'_>],
+    ) -> Result<(), Error> {
+        let mut ids = HashSet::new();
+        for update in updates {
+            if !is_safe_segment(update.id) || !ids.insert(update.id) {
+                return Err(Error::custom(format!(
+                    "unsafe or duplicate reference set id {:?}",
+                    update.id
+                )));
+            }
+            for r in update.refs {
+                check_pin(r.source.kind(), &r.source.spec(), &r.pin)?;
+            }
         }
-        for r in refs {
-            check_pin(r.source.kind(), &r.source.spec(), &r.pin)?;
+        if updates.is_empty() {
+            return Ok(());
         }
         let guard =
             LockGuard::acquire_exclusive(self.advisory_lock_path()).await?;
         let refs_dir = self.refs_dir();
-        let path = refs_dir.join(format!("{id}.json"));
+        let mut files = Vec::with_capacity(updates.len());
+        for update in updates {
+            let path = refs_dir.join(format!("{}.json", update.id));
+            let bytes = self
+                .prepare_ref_set(&path, update.mode, update.refs)
+                .await?;
+            files.push((path, bytes));
+        }
+        self.sys.fs_create_dir_all_async(&refs_dir).await?;
+        let sys = self.sys.clone();
+        tokio::task::spawn_blocking(move || {
+            let _guard = guard;
+            let files: Vec<_> = files
+                .iter()
+                .map(|(path, bytes)| (path.as_path(), bytes.as_slice()))
+                .collect();
+            omni_utils::atomic_file::write_batch(&sys, &files)
+        })
+        .await
+        .map_err(|error| Error::custom(error.to_string()))??;
+        Ok(())
+    }
+
+    async fn prepare_ref_set(
+        &self,
+        path: &Path,
+        mode: RefUpdate,
+        refs: &[RemoteSourceRef],
+    ) -> Result<Vec<u8>, Error> {
         // Only NotFound is empty; permission/read/parse failures must never
         // silently reset an existing set to a partial additive update.
-        let existing = match self.sys.fs_read_async(&path).await {
+        let existing = match self.sys.fs_read_async(path).await {
             Ok(bytes) => {
                 let data: RefSetData = omni_file_data_serde::from_slice(
                     &bytes,
@@ -450,7 +501,7 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
                 )?;
                 let RefSetData::V1_0_0(data) = data;
                 for (kind, locators) in &data.sources {
-                    self.check_kind(kind, &path)?;
+                    self.check_kind(kind, path)?;
                     for selectors in locators.values() {
                         for value in selectors.values() {
                             if !is_safe_segment(&value.pin) {
@@ -474,24 +525,15 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
             RefUpdate::MergeAdditive => existing,
         };
         for r in refs {
-            self.check_kind(r.source.kind(), &path)?;
+            self.check_kind(r.source.kind(), path)?;
             let spec = r.source.spec();
             data.insert(r.source.kind(), &spec.locator, &spec.selector, &r.pin);
         }
 
-        self.sys.fs_create_dir_all_async(&refs_dir).await?;
-        let bytes = omni_file_data_serde::to_vec(
+        Ok(omni_file_data_serde::to_vec(
             &RefSetData::V1_0_0(data),
             omni_file_data_serde::Format::Json,
-        )?;
-        let sys = self.sys.clone();
-        tokio::task::spawn_blocking(move || {
-            let _guard = guard;
-            omni_utils::atomic_file::write(&sys, &path, &bytes)
-        })
-        .await
-        .map_err(|error| Error::custom(error.to_string()))??;
-        Ok(())
+        )?)
     }
 
     /// Drop lockfile pins that no persisted reference set references, and write
@@ -673,38 +715,68 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
     async fn layout(&self, create: bool) -> Result<(), Error> {
         let path = self.store_root_path.join(LAYOUT_VERSION_FILE);
         match self.sys.fs_read_to_string_async(&path).await {
-            Ok(text) => match text.trim().parse::<u32>() {
-                Ok(found) if found > LAYOUT_VERSION => {
-                    Err(Error::custom(format!(
-                        "the remote-source store at {} uses layout {found}, newer than this omni supports ({LAYOUT_VERSION}); upgrade omni or choose another store with --sources-dir",
-                        self.store_root_path.display()
-                    )))
-                }
-                Ok(_) => Ok(()),
-                Err(_) => Err(Error::custom(format!(
-                    "unrecognized store layout marker in {}",
-                    path.display()
-                ))),
-            },
+            Ok(text) => self.validate_layout_marker(&path, &text),
             Err(error)
                 if create && error.kind() == std::io::ErrorKind::NotFound =>
             {
-                self.sys
-                    .fs_create_dir_all_async(&self.store_root_path)
-                    .await?;
-                self.sys
-                    .fs_write_async(
-                        &path,
-                        format!("{LAYOUT_VERSION}\n").as_bytes(),
-                    )
-                    .await?;
-                Ok(())
+                self.initialize_layout(path).await
             }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 Ok(())
             }
             Err(error) => Err(error.into()),
         }
+    }
+
+    fn validate_layout_marker(
+        &self,
+        path: &Path,
+        text: &str,
+    ) -> Result<(), Error> {
+        match text.trim().parse::<u32>() {
+            Ok(found) if found > LAYOUT_VERSION => Err(Error::custom(format!(
+                "the remote-source store at {} uses layout {found}, newer than this omni supports ({LAYOUT_VERSION}); upgrade omni or choose another store with --sources-dir",
+                self.store_root_path.display()
+            ))),
+            Ok(_) => Ok(()),
+            Err(_) => Err(Error::custom(format!(
+                "unrecognized store layout marker in {}",
+                path.display()
+            ))),
+        }
+    }
+
+    async fn initialize_layout(&self, path: PathBuf) -> Result<(), Error> {
+        // Different remotes have different locks, but share this marker. Recheck
+        // under a short-lived store initialization lock so a late initializer
+        // cannot replace a marker a peer has already published (or downgrade it).
+        // This lock is never held while acquiring a remote lock.
+        let guard = LockGuard::acquire_exclusive(
+            self.store_root_path.join(".layout.lock"),
+        )
+        .await?;
+        match self.sys.fs_read_to_string_async(&path).await {
+            Ok(text) => return self.validate_layout_marker(&path, &text),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+        }
+        self.sys
+            .fs_create_dir_all_async(&self.store_root_path)
+            .await?;
+        let sys = self.sys.clone();
+        tokio::task::spawn_blocking(move || {
+            let _guard = guard;
+            // A lock-free layout reader must see either no marker or the
+            // complete marker, never the direct writer's truncate/write window.
+            omni_utils::atomic_file::write(
+                &sys,
+                &path,
+                format!("{LAYOUT_VERSION}\n").as_bytes(),
+            )
+        })
+        .await
+        .map_err(|error| Error::custom(error.to_string()))??;
+        Ok(())
     }
 
     /// Record that a checkout was just used, for age-based pruning. The marker

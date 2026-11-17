@@ -436,7 +436,13 @@ where
     // GC keeps every source this sync materialized. A targeted run sees only a
     // subset, so it leaves the recorded set untouched to avoid under-retaining.
     if full_sync {
-        remote.record_refs("projection", &all_git).await?;
+        remote
+            .update_refs(
+                "projection",
+                omni_remote_source::refs::RefUpdate::ReplaceComplete,
+                &all_git,
+            )
+            .await?;
     }
     remote.persist_pins().await?;
 
