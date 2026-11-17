@@ -133,8 +133,12 @@ pub enum ReferenceError {
     #[error("the reference ends with a dangling backslash at byte {index}")]
     DanglingBackslash { index: usize },
 
-    #[error("the {component} is empty")]
-    Empty { component: ReferenceComponent },
+    #[error("the {component} is empty{}", at(*index))]
+    Empty {
+        component: ReferenceComponent,
+        /// Byte offset where the component ends. `None` for raw components.
+        index: Option<usize>,
+    },
 
     #[error(
         "extra unescaped {separator} at byte {index}; escape a literal one with a backslash"
@@ -149,8 +153,12 @@ pub enum ReferenceError {
     )]
     ScopedProject { index: usize },
 
-    #[error("a component contains a NUL character")]
-    Nul { component: ReferenceComponent },
+    #[error("the {component} contains a NUL character{}", at(*index))]
+    Nul {
+        component: ReferenceComponent,
+        /// Byte offset of the NUL. `None` for raw components.
+        index: Option<usize>,
+    },
 
     #[error(
         "an upstream reference (`^`) cannot name a project; use `project#task` or `^task`"
@@ -164,17 +172,16 @@ pub enum ReferenceError {
     },
 }
 
+fn at(index: Option<usize>) -> String {
+    index.map(|i| format!(" at byte {i}")).unwrap_or_default()
+}
+
 const ESCAPABLE: [char; 4] = ['\\', '#', ':', '^'];
 
 impl TaskReference {
-    /// A reference with only a task name.
-    pub fn own(task: impl Into<String>) -> Self {
-        Self {
-            upstream: false,
-            project: None,
-            plugin: None,
-            task: task.into(),
-        }
+    /// A reference with only a task name. Fails on an empty name or a NUL.
+    pub fn own(task: impl Into<String>) -> Result<Self, ReferenceError> {
+        Self::from_raw_components(false, None, None, task.into())
     }
 
     /// Build a reference from raw components, for structured input. Nothing is
@@ -208,10 +215,16 @@ impl TaskReference {
         for (component, value) in parts {
             let Some(value) = value else { continue };
             if value.is_empty() {
-                return Err(ReferenceError::Empty { component });
+                return Err(ReferenceError::Empty {
+                    component,
+                    index: None,
+                });
             }
             if value.contains('\0') {
-                return Err(ReferenceError::Nul { component });
+                return Err(ReferenceError::Nul {
+                    component,
+                    index: None,
+                });
             }
         }
         Ok(())
@@ -229,6 +242,7 @@ impl TaskReference {
         let mut project: Option<String> = None;
         let mut plugin: Option<String> = None;
         let mut current = String::new();
+        let mut nul_at: Option<usize> = None;
 
         while let Some((index, c)) = chars.next() {
             match c {
@@ -257,6 +271,8 @@ impl TaskReference {
                     }
                     project = Some(take_component(
                         &mut current,
+                        &mut nul_at,
+                        index,
                         ReferenceComponent::Project,
                     )?);
                 }
@@ -275,14 +291,26 @@ impl TaskReference {
                     }
                     plugin = Some(take_component(
                         &mut current,
+                        &mut nul_at,
+                        index,
                         ReferenceComponent::Plugin,
                     )?);
                 }
-                other => current.push(other),
+                other => {
+                    if other == '\0' {
+                        nul_at.get_or_insert(index);
+                    }
+                    current.push(other);
+                }
             }
         }
 
-        let task = take_component(&mut current, ReferenceComponent::Task)?;
+        let task = take_component(
+            &mut current,
+            &mut nul_at,
+            input.len(),
+            ReferenceComponent::Task,
+        )?;
         let reference = Self {
             upstream,
             project,
@@ -365,10 +393,21 @@ impl std::str::FromStr for TaskReference {
 
 fn take_component(
     current: &mut String,
+    nul_at: &mut Option<usize>,
+    end: usize,
     component: ReferenceComponent,
 ) -> Result<String, ReferenceError> {
     if current.is_empty() {
-        return Err(ReferenceError::Empty { component });
+        return Err(ReferenceError::Empty {
+            component,
+            index: Some(end),
+        });
+    }
+    if let Some(index) = nul_at.take() {
+        return Err(ReferenceError::Nul {
+            component,
+            index: Some(index),
+        });
     }
     Ok(std::mem::take(current))
 }
@@ -443,8 +482,8 @@ mod tests {
 
     #[test]
     fn a_single_colon_is_an_ordinary_name() {
-        assert_eq!(parse("lint:fix"), TaskReference::own("lint:fix"));
-        assert_eq!(parse("a:b:c"), TaskReference::own("a:b:c"));
+        assert_eq!(parse("lint:fix"), TaskReference::own("lint:fix").unwrap());
+        assert_eq!(parse("a:b:c"), TaskReference::own("a:b:c").unwrap());
     }
 
     #[test]
@@ -452,7 +491,7 @@ mod tests {
         let scoped = parse("native::build");
         assert_eq!(scoped, reference(false, None, Some("native"), "build"));
         let literal = parse(r"native\:\:build");
-        assert_eq!(literal, TaskReference::own("native::build"));
+        assert_eq!(literal, TaskReference::own("native::build").unwrap());
         assert_ne!(scoped, literal);
     }
 
@@ -467,7 +506,7 @@ mod tests {
         let b = parse(r"build\:\:debug");
         let c = parse("build#debug");
         assert_eq!(a, reference(false, None, Some("build"), "debug"));
-        assert_eq!(b, TaskReference::own("build::debug"));
+        assert_eq!(b, TaskReference::own("build::debug").unwrap());
         assert_eq!(c, reference(false, Some("build"), None, "debug"));
         assert!(a != b && b != c && a != c);
     }
@@ -479,9 +518,9 @@ mod tests {
             parse("app#build"),
             reference(false, Some("app"), None, "build")
         );
-        assert_eq!(parse(r"\^build"), TaskReference::own("^build"));
+        assert_eq!(parse(r"\^build"), TaskReference::own("^build").unwrap());
         // Only a leading caret is syntax.
-        assert_eq!(parse("a^b"), TaskReference::own("a^b"));
+        assert_eq!(parse("a^b"), TaskReference::own("a^b").unwrap());
         assert_eq!(parse("app#^build").task, "^build");
         assert_eq!(parse("^^x"), reference(true, None, None, "^x"));
     }
@@ -514,12 +553,48 @@ mod tests {
             }
         );
         assert_eq!(err("a\\"), ReferenceError::DanglingBackslash { index: 1 });
-        assert_eq!(err(""), ReferenceError::Empty { component: Task });
-        assert_eq!(err("^"), ReferenceError::Empty { component: Task });
-        assert_eq!(err("#x"), ReferenceError::Empty { component: Project });
-        assert_eq!(err("x#"), ReferenceError::Empty { component: Task });
-        assert_eq!(err("::x"), ReferenceError::Empty { component: Plugin });
-        assert_eq!(err("x::"), ReferenceError::Empty { component: Task });
+        assert_eq!(
+            err(""),
+            ReferenceError::Empty {
+                component: Task,
+                index: Some(0)
+            }
+        );
+        assert_eq!(
+            err("^"),
+            ReferenceError::Empty {
+                component: Task,
+                index: Some(1)
+            }
+        );
+        assert_eq!(
+            err("#x"),
+            ReferenceError::Empty {
+                component: Project,
+                index: Some(0)
+            }
+        );
+        assert_eq!(
+            err("x#"),
+            ReferenceError::Empty {
+                component: ReferenceComponent::Task,
+                index: Some(2)
+            }
+        );
+        assert_eq!(
+            err("::x"),
+            ReferenceError::Empty {
+                component: Plugin,
+                index: Some(0)
+            }
+        );
+        assert_eq!(
+            err("x::"),
+            ReferenceError::Empty {
+                component: Task,
+                index: Some(3)
+            }
+        );
         assert_eq!(
             err("a#b#c"),
             ReferenceError::ExtraSeparator {
@@ -612,27 +687,46 @@ mod tests {
             )
         };
         assert_eq!(
+            TaskReference::own("").unwrap_err(),
+            ReferenceError::Empty {
+                component: ReferenceComponent::Task,
+                index: None
+            }
+        );
+        assert!(TaskReference::own("a\0").is_err());
+        assert_eq!(
+            TaskReference::parse("é\0").unwrap_err(),
+            ReferenceError::Nul {
+                component: ReferenceComponent::Task,
+                index: Some(2)
+            }
+        );
+        assert_eq!(
             raw(None, None, "").unwrap_err(),
             ReferenceError::Empty {
-                component: ReferenceComponent::Task
+                component: ReferenceComponent::Task,
+                index: None
             }
         );
         assert_eq!(
             raw(Some(""), None, "t").unwrap_err(),
             ReferenceError::Empty {
-                component: ReferenceComponent::Project
+                component: ReferenceComponent::Project,
+                index: None
             }
         );
         assert_eq!(
             raw(None, Some(""), "t").unwrap_err(),
             ReferenceError::Empty {
-                component: ReferenceComponent::Plugin
+                component: ReferenceComponent::Plugin,
+                index: None
             }
         );
         assert_eq!(
             raw(None, None, "a\0b").unwrap_err(),
             ReferenceError::Nul {
-                component: ReferenceComponent::Task
+                component: ReferenceComponent::Task,
+                index: None
             }
         );
         assert_eq!(
