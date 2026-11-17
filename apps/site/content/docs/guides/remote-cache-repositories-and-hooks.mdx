@@ -405,10 +405,7 @@ prepare, use the number of parameters listed below (SQLite allows fewer) and
 return the documented column. A wrong query stops the service from starting.
 D1 cannot describe a query, so there a wrong query fails on first use.
 
-Artifacts are stored under `tenant/org/ws/env`, so tenants never share
-storage, even when they reuse the same codes. Upgrading from a version that
-stored under `org/ws/env` leaves old artifacts unreachable. They are cache
-entries, so they are rebuilt.
+Artifacts are stored under `shared/tenant/org/ws/env` or `isolated/tenant/org/ws/env/principal/scope` (see Namespaces and scopes), so tenants never share storage, even when they reuse the same codes. Entries stored under the older `tenant/org/ws/env` layout are never read again; they are cache entries, so they are rebuilt.
 
 ## The query contract
 

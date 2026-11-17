@@ -1675,8 +1675,22 @@ were not added; the Rust tests cover the same boundaries.
 - **S3-compatible endpoints must be verified.** `--s3.endpoint` accepts non-AWS
   stores, and one that ignores `If-None-Match: *` would silently overwrite. Verify
   enforcement against each supported store (and consider a startup probe) before
-  claiming immutability for it. Only AWS semantics are assumed here; the S3 tests
-  are request-shape tests against a scripted server, not a real bucket.
+  claiming immutability for it. **Verified (slice 11):** `crates/omni_remote_cache_storage_s3/tests/live_s3.rs`
+  runs against a real S3 API server when `OMNI_TEST_S3_ENDPOINT` (and access and
+  secret keys) are set. Run against RustFS in Docker it showed a second write is
+  `AlreadyExists`, 16 concurrent first writers produce exactly one `Stored` and the
+  stored bytes are the winner's, a failing stream commits nothing and leaves the key
+  free, `get_range` and `list_prefix` work, and a `ci/` prefix operation never touches
+  `ci2/`. MinIO's and LocalStack's public images are no longer available (LocalStack now
+  needs a licence), so AWS S3 itself and MinIO were not exercised; run the same test
+  against them before claiming them.
+- **Postgres and MySQL verified (slice 11):** `services/omni_remote_cache_service/tests/sql_live.rs`
+  (`TEST_POSTGRES_URL`, `TEST_MYSQL_URL`) runs the whole service against real Postgres 17 and
+  MySQL 8: Bearer identity with the `principal` column, scopes, ownership, a veto-capable
+  `before` hook binding 11 parameters and an `after` hook binding 13, usage rows recording the
+  principal, namespace and hash, and a hook query written for the older, shorter parameter lists
+  is refused at startup on both. D1 and the worker are covered by the CI service suites only.
+  Still not verified: real R2, Windows runtime behaviour.
 - **Oversized streams are tested at the route** (local storage), not per backend;
   S3, memory and R2 rely on the stream error aborting them. The `409` retries have no backoff (a racing delete is rare); add jitter if
   measurements show contention.
