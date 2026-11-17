@@ -27,7 +27,7 @@ use omni_input_provider::configuration::builder::string;
 use omni_input_provider::{AllowedValue, ValidationConfig, collect_one};
 use omni_messages::NoopSubscriber;
 use omni_prompt::{CliInputProvider, builder::allowed};
-use omni_remote_source::RemoteSourceRef;
+use omni_remote_source::{RemoteSourceRef, lease::LeaseSet};
 use owo_colors::OwoColorize;
 use sets::OrderedSet;
 use tokio::task::JoinSet;
@@ -194,7 +194,7 @@ async fn run_generator_run(
     tracing::trace!("Generator output directory: {}", output_dir.display());
 
     let sys = loaded_context.sys();
-    let generators = get_generators(ctx, sys).await?;
+    let (generators, _leases) = get_generators(ctx, sys).await?;
 
     let generator_name = if let Some(name) = &command.args.name {
         Cow::Borrowed(name.as_str())
@@ -515,15 +515,18 @@ type RetrievalResult = eyre::Result<(
     Option<RemoteSourceRef>,
 )>;
 
+/// The generators plus the leases on every store checkout they read from. Keep
+/// the lease set (bound to a named variable) until the generator has run.
 async fn get_generators(
     ctx: &Context,
     sys: &impl GeneratorSys,
-) -> eyre::Result<Vec<Cow<'static, GeneratorConfiguration>>> {
+) -> eyre::Result<(Vec<Cow<'static, GeneratorConfiguration>>, LeaseSet)> {
     let remote_sources = Arc::new(
         omni_api::operations::remote_source::open_source_store(ctx, ctx.sys())
             .await?,
     );
 
+    let leases = LeaseSet::new();
     let mut retrieval_tasks: JoinSet<RetrievalResult> = JoinSet::new();
 
     for (idx, config) in
@@ -561,14 +564,16 @@ async fn get_generators(
                 let remote_sources = remote_sources.clone();
                 let sys = sys.clone();
                 let git = git.clone();
+                let leases = leases.clone();
 
                 retrieval_tasks.spawn(async move {
                     let source =
                         omni_remote_source_contributors::remote_source_for_git(
                             &git,
                         );
-                    let materialized =
-                        remote_sources.materialize(&source).await?;
+                    let materialized = remote_sources
+                        .materialize_into(&source, &leases)
+                        .await?;
                     let configurations = omni_generator::discover_in_source(
                         &materialized.root,
                         &["**"],
@@ -617,6 +622,7 @@ async fn get_generators(
             )
             .await?;
         refs.extend(pack_refs);
+        leases.absorb(&expanded.leases);
 
         for contributed in expanded.effective_generator_sources() {
             let discovered = match &contributed.source {
@@ -642,8 +648,9 @@ async fn get_generators(
                         omni_remote_source_contributors::remote_source_for_git(
                             git,
                         );
-                    let materialized =
-                        remote_sources.materialize(&source).await?;
+                    let materialized = remote_sources
+                        .materialize_into(&source, &leases)
+                        .await?;
                     let discovered = omni_generator::discover_in_source(
                         &materialized.root,
                         &["**"],
@@ -687,5 +694,5 @@ async fn get_generators(
         .await?;
     remote_sources.persist_pins().await?;
 
-    Ok(configurations)
+    Ok((configurations, leases))
 }

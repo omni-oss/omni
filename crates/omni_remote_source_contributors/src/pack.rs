@@ -18,7 +18,7 @@ use omni_meta::{
     SourceIdentity, expand,
 };
 use omni_remote_source::{
-    InstallOptions, RemoteSourceContributor, RemoteSourceRef,
+    InstallOptions, RemoteSourceContributor, RemoteSourceRef, lease::LeaseSet,
     manager::RemoteSourceManager, sys::RemoteSourceSys,
 };
 use system_traits::FsReadAsync;
@@ -85,6 +85,11 @@ pub struct PackContributedSource<P: omni_configurations::SourceConfigProfile> {
 #[derive(Debug, Clone, Default)]
 pub struct ExpandedPacks {
     pub nodes: Vec<ExpandedPackNode>,
+    /// Leases on every git checkout the nodes' roots point into, held for as
+    /// long as this value (or a clone) lives. A caller that reads node roots
+    /// keeps the value, or [`absorb`](LeaseSet::absorb)s these into its own set,
+    /// until it has finished reading.
+    pub leases: LeaseSet,
 }
 
 impl ExpandedPacks {
@@ -235,6 +240,7 @@ where
         manager,
         update,
         refs: Mutex::new(Vec::new()),
+        leases: LeaseSet::new(),
         locality: Locality::default(),
     };
 
@@ -275,7 +281,13 @@ where
         .collect();
 
     let refs = expander.refs.into_inner().expect("refs mutex poisoned");
-    Ok((ExpandedPacks { nodes }, refs))
+    Ok((
+        ExpandedPacks {
+            nodes,
+            leases: expander.leases,
+        },
+        refs,
+    ))
 }
 
 /// The effective `provides` for a node is the intersection of the gate declared
@@ -320,6 +332,7 @@ struct PackMetaExpand<'a, TSys: RemoteSourceSys> {
     manager: &'a RemoteSourceManager<TSys>,
     update: bool,
     refs: Mutex<Vec<RemoteSourceRef>>,
+    leases: LeaseSet,
     locality: Locality,
 }
 
@@ -354,7 +367,10 @@ where
                 if self.update {
                     self.manager.invalidate(&remote).await?;
                 }
-                let materialized = self.manager.materialize(&remote).await?;
+                let materialized = self
+                    .manager
+                    .materialize_into(&remote, &self.leases)
+                    .await?;
                 let pin = materialized.pin.clone();
                 self.refs.lock().expect("refs mutex poisoned").push(
                     RemoteSourceRef {

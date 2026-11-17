@@ -53,9 +53,10 @@ F08.4's [atomic reference API and lockfile publication](features/F08.4-atomic-re
 is merged ([PR #110](https://github.com/omni-oss/omni/pull/110)).
 F08.3's [lease-aware prune](features/F08.3-gc-honors-leases.md)
 is merged ([PR #111](https://github.com/omni-oss/omni/pull/111)).
-The [first F08.5 batch](features/F08.5-staged-installs.md) implements staged installs
-and explicit reference modes, pending PR review. F08.5 remains incomplete:
-lease propagation through existing callers is still a follow-up batch.
+The [first F08.5 batch](features/F08.5-staged-installs.md) (staged installs and explicit
+reference modes) is merged ([PR #112](https://github.com/omni-oss/omni/pull/112)). Its
+second batch gives runtime readers (generators, tools, projection sync, packs) leases,
+pending PR review. F08.5 remains incomplete: install contributors are batch 3.
 Other runtime code for F03-F10,
 and plugins (P), remains unimplemented.
 

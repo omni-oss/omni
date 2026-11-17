@@ -1,7 +1,10 @@
 //! Low-level checkout retention locks. These coordinate cooperating processes;
 //! they do not protect against external deletion or grant access to a source.
 
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::{Arc, Mutex},
+};
 
 use omni_utils::lock::LockGuard;
 
@@ -100,5 +103,51 @@ impl SourceLease {
             .join(kind)
             .join(slug)
             .join(format!("{pin}.lease")))
+    }
+}
+
+/// The leases one operation holds, released together when the last handle drops.
+///
+/// An operation that reads store checkouts (a generator run, a projection sync)
+/// collects a lease per materialized source here and keeps the set alive until
+/// it has finished reading. Clones share one set, so a spawned task can add to
+/// it. Bind the set to a named variable (`let _leases = ...`, never `_`): an
+/// unbound set drops at once and protects nothing.
+#[derive(Debug, Clone, Default)]
+#[must_use = "dropping the set releases every lease it holds"]
+pub struct LeaseSet(Arc<Mutex<Vec<Arc<SourceLease>>>>);
+
+impl LeaseSet {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Keep `lease` held for as long as any handle to this set lives.
+    pub fn hold(&self, lease: Arc<SourceLease>) {
+        // The set is only appended to, so a poisoned lock leaves it consistent.
+        self.0.lock().unwrap_or_else(|e| e.into_inner()).push(lease);
+    }
+
+    /// Move every lease `other` holds into this set. `other` keeps nothing, so
+    /// protection follows the operation that outlives the helper which took it.
+    pub fn absorb(&self, other: &LeaseSet) {
+        if Arc::ptr_eq(&self.0, &other.0) {
+            return;
+        }
+        let taken = std::mem::take(
+            &mut *other.0.lock().unwrap_or_else(|e| e.into_inner()),
+        );
+        self.0
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .extend(taken);
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.lock().unwrap_or_else(|e| e.into_inner()).len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 }

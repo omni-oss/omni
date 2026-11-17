@@ -6,7 +6,9 @@ use omni_capabilities::{PathRoots, Root};
 use omni_configurations::{SourceConfig, Subsystem, types::SingleOrMany};
 use omni_context::{Context, ContextSys, LoadedContext};
 use omni_input_schema::{ValidationConfig, to_json_schema, validate};
-use omni_remote_source::{RemoteSourceRef, sys::RemoteSourceSys};
+use omni_remote_source::{
+    RemoteSourceRef, lease::LeaseSet, sys::RemoteSourceSys,
+};
 use omni_tool::{LazyToolRunner, ToolEnforcement, ToolSys, run_named};
 use omni_tool_configurations::ToolConfiguration;
 use schemars::JsonSchema;
@@ -56,7 +58,7 @@ where
         ContextSys + ToolSys + omni_remote_source::sys::RemoteSourceSys + Clone,
 {
     let sys = ctx.sys().clone();
-    let tools = get_tools(ctx, &sys).await?;
+    let (tools, _leases) = get_tools(ctx, &sys).await?;
 
     let tools = tools
         .iter()
@@ -79,7 +81,7 @@ where
         ContextSys + ToolSys + omni_remote_source::sys::RemoteSourceSys + Clone,
 {
     let sys = ctx.sys().clone();
-    let tools = get_tools(ctx, &sys).await?;
+    let (tools, _leases) = get_tools(ctx, &sys).await?;
 
     let tool = tools
         .iter()
@@ -123,7 +125,7 @@ where
     <TSys as BaseFsMetadataAsync>::Metadata: Send,
 {
     let sys = ctx.sys().clone();
-    let tools = get_tools(ctx.as_context(), &sys).await?;
+    let (tools, _leases) = get_tools(ctx.as_context(), &sys).await?;
 
     let tool = tools
         .iter()
@@ -330,10 +332,14 @@ type RetrievalResult = eyre::Result<(
 )>;
 
 /// Discover and load every tool declared in the workspace's `tools:` sources.
+///
+/// Returns the tools and the leases on every store checkout they read from. Keep
+/// the [`LeaseSet`] (bound to a named variable) until the tools have been used,
+/// or a concurrent `remote-sources prune` may delete them.
 pub async fn get_tools<TSys>(
     ctx: &Context<TSys>,
     sys: &TSys,
-) -> eyre::Result<Vec<Cow<'static, ToolConfiguration>>>
+) -> eyre::Result<(Vec<Cow<'static, ToolConfiguration>>, LeaseSet)>
 where
     TSys: ContextSys + ToolSys + RemoteSourceSys + Clone,
 {
@@ -341,6 +347,7 @@ where
         crate::operations::remote_source::open_source_store(ctx, sys).await?,
     );
 
+    let leases = LeaseSet::new();
     let mut retrieval_tasks: JoinSet<RetrievalResult> = JoinSet::new();
 
     for config in ctx.workspace_configuration().tools.iter() {
@@ -366,13 +373,15 @@ where
                 let remote_sources = remote_sources.clone();
                 let sys = sys.clone();
                 let git = git.clone();
+                let leases = leases.clone();
                 retrieval_tasks.spawn(async move {
                     let source =
                         omni_remote_source_contributors::remote_source_for_git(
                             &git,
                         );
-                    let materialized =
-                        remote_sources.materialize(&source).await?;
+                    let materialized = remote_sources
+                        .materialize_into(&source, &leases)
+                        .await?;
                     let configurations = omni_tool::discover_in_source(
                         &materialized.root,
                         &["**"],
@@ -414,6 +423,7 @@ where
             )
             .await?;
         refs.extend(pack_refs);
+        leases.absorb(&expanded.leases);
 
         for contributed in expanded.effective_tool_sources() {
             let discovered = match &contributed.source {
@@ -439,8 +449,9 @@ where
                         omni_remote_source_contributors::remote_source_for_git(
                             git,
                         );
-                    let materialized =
-                        remote_sources.materialize(&source).await?;
+                    let materialized = remote_sources
+                        .materialize_into(&source, &leases)
+                        .await?;
                     let discovered = omni_tool::discover_in_source(
                         &materialized.root,
                         &["**"],
@@ -472,7 +483,7 @@ where
         .await?;
     remote_sources.persist_pins().await?;
 
-    Ok(configurations)
+    Ok((configurations, leases))
 }
 
 /// Namespace every discovered tool's unique name by the pack's qualified id

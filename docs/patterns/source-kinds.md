@@ -49,3 +49,9 @@ failures instead of hiding them; `prune_store` returns only what was removed.
 Plain `materialize` takes no lease. Lock order is remote lock, then lease, and the
 workspace advisory lock is never held while waiting on either. Leases bind
 cooperating omni processes only. Design: `docs/rfc/0024-tiered-project-discovery-plugins/implementation/features/F08.1-lease-gc-reference-protocol.md`.
+
+An operation that reads checkouts (generator or tool run, projection sync) must
+hold a `LeaseSet` for its whole duration: `manager.materialize_into(&source, &leases)`
+for each source, `leases.absorb(&expanded.leases)` for pack roots, and the set bound
+to a named variable. Never `let _ = ...`. Do not call plain `materialize` in these
+paths; a test in `omni_api` enforces it.

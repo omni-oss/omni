@@ -33,7 +33,9 @@ use omni_configurations::{SourceConfig, types::SingleOrMany};
 use omni_context::{Context, ContextSys, LoadedContext};
 use omni_generator::{GeneratorSys, RunConfig};
 use omni_messages::GeneratorEventSubscriber;
-use omni_remote_source::{RemoteSourceRef, sys::RemoteSourceSys};
+use omni_remote_source::{
+    RemoteSourceRef, lease::LeaseSet, sys::RemoteSourceSys,
+};
 use sets::UnorderedSet;
 use tokio::task::JoinSet;
 use value_bag::{OwnedValueBag, ValueBag};
@@ -280,7 +282,7 @@ where
             .await;
     }
 
-    let generators = get_generators(ctx.as_context(), &sys).await?;
+    let (generators, _leases) = get_generators(ctx.as_context(), &sys).await?;
 
     // Workspace-level capability floor for the generator subsystem. Filter the
     // single subsystem-tagged workspace list down to the entries that govern
@@ -417,7 +419,7 @@ where
         + Clone,
 {
     let sys = ctx.sys().clone();
-    let generators = get_generators(ctx, &sys).await?;
+    let (generators, _leases) = get_generators(ctx, &sys).await?;
 
     let generators = generators
         .iter()
@@ -442,10 +444,14 @@ type RetrievalResult = eyre::Result<(
 /// Discover and load all generators declared in the workspace configuration.
 ///
 /// Mirrors the same logic in `omni_cli_core::commands::generator::get_generators`.
+///
+/// Returns the generators and the leases on every store checkout they read from.
+/// Keep the [`LeaseSet`] (bound to a named variable) until the generators have
+/// been used, or a concurrent `remote-sources prune` may delete their templates.
 pub async fn get_generators<TSys>(
     ctx: &Context<TSys>,
     sys: &TSys,
-) -> eyre::Result<Vec<Cow<'static, GeneratorConfiguration>>>
+) -> eyre::Result<(Vec<Cow<'static, GeneratorConfiguration>>, LeaseSet)>
 where
     TSys: ContextSys + GeneratorSys + RemoteSourceSys + Clone,
 {
@@ -453,6 +459,7 @@ where
         crate::operations::remote_source::open_source_store(ctx, sys).await?,
     );
 
+    let leases = LeaseSet::new();
     let mut retrieval_tasks: JoinSet<RetrievalResult> = JoinSet::new();
 
     for (idx, config) in
@@ -489,13 +496,15 @@ where
                 let remote_sources = remote_sources.clone();
                 let sys = sys.clone();
                 let git = git.clone();
+                let leases = leases.clone();
                 retrieval_tasks.spawn(async move {
                     let source =
                         omni_remote_source_contributors::remote_source_for_git(
                             &git,
                         );
-                    let materialized =
-                        remote_sources.materialize(&source).await?;
+                    let materialized = remote_sources
+                        .materialize_into(&source, &leases)
+                        .await?;
                     let configurations = omni_generator::discover_in_source(
                         &materialized.root,
                         &["**"],
@@ -543,6 +552,7 @@ where
             )
             .await?;
         refs.extend(pack_refs);
+        leases.absorb(&expanded.leases);
 
         for contributed in expanded.effective_generator_sources() {
             let discovered = match &contributed.source {
@@ -568,8 +578,9 @@ where
                         omni_remote_source_contributors::remote_source_for_git(
                             git,
                         );
-                    let materialized =
-                        remote_sources.materialize(&source).await?;
+                    let materialized = remote_sources
+                        .materialize_into(&source, &leases)
+                        .await?;
                     let discovered = omni_generator::discover_in_source(
                         &materialized.root,
                         &["**"],
@@ -605,7 +616,7 @@ where
         .await?;
     remote_sources.persist_pins().await?;
 
-    Ok(configurations)
+    Ok((configurations, leases))
 }
 
 /// Namespace every discovered generator's unique name by the pack's qualified
@@ -803,7 +814,7 @@ where
         + Clone,
 {
     let sys = ctx.sys().clone();
-    let generators = get_generators(ctx, &sys).await?;
+    let (generators, _leases) = get_generators(ctx, &sys).await?;
     let mut visited = HashSet::new();
     match view {
         InspectViewKind::Widget => {
@@ -1147,7 +1158,7 @@ where
         + Clone,
 {
     let sys = ctx.sys().clone();
-    let generators = get_generators(ctx, &sys).await?;
+    let (generators, _leases) = get_generators(ctx, &sys).await?;
 
     let config = omni_input_provider::ValidationConfig {
         use_defaults: req.use_defaults,
