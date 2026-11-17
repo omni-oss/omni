@@ -6938,6 +6938,7 @@ dependencies = [
  "omni_constants",
  "omni_glob",
  "omni_hasher",
+ "omni_retry_config",
  "omni_types",
  "omni_utils",
  "serde_json",

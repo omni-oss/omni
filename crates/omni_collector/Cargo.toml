@@ -14,6 +14,7 @@ dir_walker = { workspace = true }
 omni_types = { workspace = true }
 omni_command_config = { workspace = true }
 omni_hasher = { workspace = true }
+omni_retry_config = { workspace = true }
 system_traits = { workspace = true }
 tracing = { workspace = true }
 enum-map = { workspace = true }

@@ -318,6 +318,7 @@ tasks:
     }
   F06.2:
     {
+      owner: "OpenCode (canonical digest; pending PR review)",
       title: "Canonical digest function + golden vectors",
       parent: F06,
       kind: code,
