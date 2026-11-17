@@ -715,38 +715,68 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
     async fn layout(&self, create: bool) -> Result<(), Error> {
         let path = self.store_root_path.join(LAYOUT_VERSION_FILE);
         match self.sys.fs_read_to_string_async(&path).await {
-            Ok(text) => match text.trim().parse::<u32>() {
-                Ok(found) if found > LAYOUT_VERSION => {
-                    Err(Error::custom(format!(
-                        "the remote-source store at {} uses layout {found}, newer than this omni supports ({LAYOUT_VERSION}); upgrade omni or choose another store with --sources-dir",
-                        self.store_root_path.display()
-                    )))
-                }
-                Ok(_) => Ok(()),
-                Err(_) => Err(Error::custom(format!(
-                    "unrecognized store layout marker in {}",
-                    path.display()
-                ))),
-            },
+            Ok(text) => self.validate_layout_marker(&path, &text),
             Err(error)
                 if create && error.kind() == std::io::ErrorKind::NotFound =>
             {
-                self.sys
-                    .fs_create_dir_all_async(&self.store_root_path)
-                    .await?;
-                self.sys
-                    .fs_write_async(
-                        &path,
-                        format!("{LAYOUT_VERSION}\n").as_bytes(),
-                    )
-                    .await?;
-                Ok(())
+                self.initialize_layout(path).await
             }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 Ok(())
             }
             Err(error) => Err(error.into()),
         }
+    }
+
+    fn validate_layout_marker(
+        &self,
+        path: &Path,
+        text: &str,
+    ) -> Result<(), Error> {
+        match text.trim().parse::<u32>() {
+            Ok(found) if found > LAYOUT_VERSION => Err(Error::custom(format!(
+                "the remote-source store at {} uses layout {found}, newer than this omni supports ({LAYOUT_VERSION}); upgrade omni or choose another store with --sources-dir",
+                self.store_root_path.display()
+            ))),
+            Ok(_) => Ok(()),
+            Err(_) => Err(Error::custom(format!(
+                "unrecognized store layout marker in {}",
+                path.display()
+            ))),
+        }
+    }
+
+    async fn initialize_layout(&self, path: PathBuf) -> Result<(), Error> {
+        // Different remotes have different locks, but share this marker. Recheck
+        // under a short-lived store initialization lock so a late initializer
+        // cannot replace a marker a peer has already published (or downgrade it).
+        // This lock is never held while acquiring a remote lock.
+        let guard = LockGuard::acquire_exclusive(
+            self.store_root_path.join(".layout.lock"),
+        )
+        .await?;
+        match self.sys.fs_read_to_string_async(&path).await {
+            Ok(text) => return self.validate_layout_marker(&path, &text),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+        }
+        self.sys
+            .fs_create_dir_all_async(&self.store_root_path)
+            .await?;
+        let sys = self.sys.clone();
+        tokio::task::spawn_blocking(move || {
+            let _guard = guard;
+            // A lock-free layout reader must see either no marker or the
+            // complete marker, never the direct writer's truncate/write window.
+            omni_utils::atomic_file::write(
+                &sys,
+                &path,
+                format!("{LAYOUT_VERSION}\n").as_bytes(),
+            )
+        })
+        .await
+        .map_err(|error| Error::custom(error.to_string()))??;
+        Ok(())
     }
 
     /// Record that a checkout was just used, for age-based pruning. The marker
