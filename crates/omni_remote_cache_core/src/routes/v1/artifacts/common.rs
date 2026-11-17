@@ -107,7 +107,7 @@ fn translate_violation(
         Violation::TenantDoesNotHaveOrganization => {
             format!(
                 "tenant for code '{}' does not have an organization with code '{}'",
-                org, org
+                tenant, org
             )
         }
         Violation::OrganizationDoesNotExist => {

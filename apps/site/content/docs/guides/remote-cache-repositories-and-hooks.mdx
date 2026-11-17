@@ -135,9 +135,23 @@ A signature vouches for the publisher, not the server address, so the same key
 signing for another server with the same codes is accepted. The key id is 64
 bits: it selects a key you already trust and the signature is always checked
 against that key. Omni removes the signing key's environment variable from the
-environment of every task it runs, but expose it only to the step that signs
-regardless. A workspace file with `remote_cache` is rejected
+environment of every task it runs, but this is only a guard: a task can still map
+the variable itself, other processes of the same user can read omni's
+environment, and a key kept in `--signing-key-file` is not hidden at all. Hold the
+signing key only in a job that does not run untrusted code, and never in one that
+builds pull requests. A workspace file with `remote_cache` is rejected
 by omni versions that do not know the section.
+
+## Listing, sizes and deletes
+
+`GET /v1/artifacts` lists the stored objects of one namespace. The reported `size`
+is the stored size, which includes a small provenance trailer, so it is larger than
+the artifact. Objects that are not well-formed entries (for example stored before
+this layout) are listed but are always a miss on download. `DELETE` needs only
+`delete:artifacts`, so a key that can delete and publish can replace a shared
+entry; give those scopes to different credentials if entries must stay immutable.
+A key with no configured principal uses its hashed credential id as its principal,
+so do not choose a principal that looks like one.
 
 ## Expiring isolated entries
 
@@ -174,6 +188,10 @@ had a deployment that wrote them.
 
 ## Local cache partitions
 
+The partitions below are defense in depth, not isolation: code that runs as the
+same user as omni can write anywhere in the cache directory. Use separate cache
+directories (or users) for untrusted jobs, as described below.
+
 With remote caching on, the local cache directory is split by how far a run trusts
 what it restores, under `<cache_dir>/.partitions/`:
 
@@ -184,8 +202,9 @@ what it restores, under `<cache_dir>/.partitions/`:
 
 A credential that is untrusted but whose principal and scope the server did not
 report uses `unknown/<epoch>`, which no other run reads. When the access probe
-fails outright, the run cannot tell and uses `trusted`, so keep untrusted jobs on
-their own cache directory.
+fails outright, or the credential is refused, a run that uploads to its isolated
+namespace uses `unknown/<epoch>` and never reads isolated entries, since it may be
+an untrusted job; one that targets `shared` uses `trusted`.
 
 The epoch changes with the server, the tenant, organization, workspace and
 environment, so switching any of them starts a fresh partition. A run reads and
@@ -460,6 +479,7 @@ Hooks run on every artifact operation: `get`, `get_many`, `head`, `head_many`,
   a 403 carrying that reason. Zero rows or a NULL reason allows it.
 - `after` observes the result and cannot change it, so use it to record usage.
   It runs after the response is sent.
+- **Upgrade:** hook queries written for the older parameter lists fail at startup on Postgres, MySQL and D1 (SQLite queries keep working); extend them to the lists below.
 - Parameters are bound by position, as text. `before` binds 11 and `after` binds 13:
 
     | #   | `before`        | #   | `after`         |

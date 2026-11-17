@@ -423,6 +423,20 @@ impl HybridTaskExecutionCacheStore {
                         untrusted: true,
                     };
                 }
+                // No verdict at all (the probe failed or the server reports no
+                // scopes), or a refused credential, on a machine that publishes
+                // to its own namespace: it may well be an untrusted run (a fork
+                // pull request with no secrets), so what it builds goes where no
+                // trusted run reads it, and it never reads isolated entries.
+                if probe.refused
+                    || (probe.scopes.is_none()
+                        && conf.target == RemoteTarget::Isolated)
+                {
+                    return LocalPartition {
+                        dir: super::partition::unknown_dir(&self.base_dir, &epoch),
+                        untrusted: false,
+                    };
+                }
                 LocalPartition {
                     dir: super::partition::trusted_dir(&self.base_dir, &epoch),
                     untrusted: false,
@@ -2699,7 +2713,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_probe_that_gives_no_verdict_uses_the_trusted_partition() {
+    async fn a_probe_that_gives_no_verdict_is_kept_out_of_the_trusted_partition()
+     {
         let temp = fixture(&["project1"]).await;
         // Nothing listens: the probe fails and is unknown.
         let cache = remote_store(temp.path(), "http://127.0.0.1:9");
@@ -2714,7 +2729,7 @@ mod tests {
             .unwrap();
         let found = partitions(&temp.path().join(".omni/cache-restore"));
         assert_eq!(found.len(), 1, "{found:?}");
-        assert!(found[0].starts_with(".partitions/trusted/"), "{found:?}");
+        assert!(found[0].starts_with(".partitions/unknown/"), "{found:?}");
     }
 
     #[tokio::test]
