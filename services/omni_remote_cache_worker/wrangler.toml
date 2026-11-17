@@ -13,10 +13,8 @@ bucket_name = "omni-remote-cache"
 API_PREFIX = "/api"
 ENABLE_OPENAPI = "false"
 
-# Artifact writes are rejected until R2 create-only publication is verified (RFC
-# 0030 section 4.2). Reads and deletes work. To accept a non-atomic existence
-# check instead (two concurrent first writers can overwrite each other), set:
-# R2_ALLOW_NON_ATOMIC_WRITES = "true"
+# Artifact writes use one conditional R2 put, which stores only if the key is absent
+# (RFC 0030 section 4.2). Every entry is buffered in memory first, so keep the cap below.
 
 # Largest accepted artifact in bytes (default 33554432, 32 MiB, because an isolate
 # has 128 MB of memory). Larger uploads get 413. Request bodies are also capped by

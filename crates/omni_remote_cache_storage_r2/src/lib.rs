@@ -15,11 +15,8 @@ use omni_remote_cache_storage_core::{
     RemoteCacheStorageBackend, SaveOutcome, WriteStream, error::Error,
 };
 use send_wrapper::SendWrapper;
-use worker::{Bucket, MultipartUpload, Range, UploadedPart, send::SendFuture};
+use worker::{Bucket, Conditional, Range, send::SendFuture};
 
-/// R2 requires every part of a multipart upload, except the last, to have
-/// the same size and be at least 5 MiB.
-const PART_SIZE: usize = 8 * 1024 * 1024;
 const MAX_LIST_LIMIT: u32 = 1000;
 
 /// A [`RemoteCacheStorageBackend`] backed by a Cloudflare R2 bucket binding.
@@ -31,41 +28,12 @@ const MAX_LIST_LIMIT: u32 = 1000;
 /// satisfy the `Send + Sync` bounds required by axum state.
 pub struct R2Backend {
     bucket: SendWrapper<Bucket>,
-    write_policy: R2WritePolicy,
-}
-
-/// How this backend treats writes while R2 create-only publication is unproven.
-///
-/// Immutability needs an atomic create-only write. The Workers binding's
-/// conditional put has not been proven create-only on real R2 (RFC 0030
-/// section 4.2), and a multipart upload completes without any condition, so
-/// neither write path can enforce it today. Writes therefore fail closed unless
-/// the operator explicitly accepts a weaker guarantee.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum R2WritePolicy {
-    /// Reject every write. Reads and deletes still work.
-    #[default]
-    FailClosed,
-    /// Check for an existing object, then write. Two concurrent first writers can
-    /// both pass the check, and the later write replaces the earlier one.
-    NonAtomicCheckFirst,
 }
 
 impl R2Backend {
-    pub fn new(bucket: Bucket, write_policy: R2WritePolicy) -> Self {
+    pub fn new(bucket: Bucket) -> Self {
         Self {
             bucket: SendWrapper::new(bucket),
-            write_policy,
-        }
-    }
-
-    fn require_writable(&self) -> Result<(), Error> {
-        match self.write_policy {
-            R2WritePolicy::NonAtomicCheckFirst => Ok(()),
-            R2WritePolicy::FailClosed => Err(Error::custom(eyre::eyre!(
-                "R2 writes are disabled: create-only publication is unverified on R2. \
-                 Set R2_ALLOW_NON_ATOMIC_WRITES=true to accept a non-atomic existence check"
-            ))),
         }
     }
 
@@ -97,89 +65,43 @@ impl Stream for SendStream {
     }
 }
 
-/// Best-effort create-only write. The Workers binding's conditional put is not
-/// proven to be create-only on real R2 (RFC 0030 section 4.2, open question), so
-/// this checks for an existing object first. That check is NOT atomic: two
-/// concurrent first writers can both pass it. Replace it with a conditional put
-/// once the real-R2 spike proves `If-None-Match: *` semantics, before this
-/// backend is relied on for immutability.
-async fn exists(bucket: &Bucket, key: &str) -> Result<bool, Error> {
-    Ok(bucket.head(key).await.map_err(err)?.is_some())
-}
-
-async fn upload_multipart(
+/// A create-only write: one conditional put with `etagDoesNotMatch: "*"`.
+///
+/// Verified on real R2 (RFC 0030 section 8): of 24 concurrent writers to one key
+/// exactly one stores and the others get a precondition failure (`null`). A
+/// multipart upload is not used because `complete` takes no condition and
+/// replaces an existing object (also observed on real R2), so the whole entry is
+/// buffered and written once. The service caps every entry
+/// (`max_artifact_size`, 32 MiB by default on Workers), which bounds the buffer.
+async fn put_if_absent(
     bucket: &Bucket,
     key: &str,
-    mut value: WriteStream,
+    value: Vec<u8>,
 ) -> Result<SaveOutcome, Error> {
-    if exists(bucket, key).await? {
-        return Ok(SaveOutcome::AlreadyExists);
-    }
+    let stored = bucket
+        .put(key, value)
+        .only_if(Conditional {
+            etag_does_not_match: Some("*".to_string()),
+            ..Default::default()
+        })
+        .execute()
+        .await
+        .map_err(err)?;
+    Ok(if stored.is_some() {
+        SaveOutcome::Stored
+    } else {
+        SaveOutcome::AlreadyExists
+    })
+}
+
+/// Collects the sealed stream. An upstream error aborts before anything is
+/// written, so a failed upload commits nothing.
+async fn collect(mut value: WriteStream) -> Result<Vec<u8>, Error> {
     let mut buf = BytesMut::new();
-    let mut upload: Option<MultipartUpload> = None;
-    let mut parts: Vec<UploadedPart> = Vec::new();
-
-    let result: Result<(), Error> = async {
-        while let Some(chunk) = value.next().await {
-            buf.extend_from_slice(&chunk?);
-
-            while buf.len() >= PART_SIZE {
-                let part = buf.split_to(PART_SIZE);
-                if upload.is_none() {
-                    upload = Some(
-                        bucket
-                            .create_multipart_upload(key)
-                            .execute()
-                            .await
-                            .map_err(err)?,
-                    );
-                }
-                let number = u16::try_from(parts.len() + 1)
-                    .map_err(|e| Error::custom(eyre::eyre!(e)))?;
-                let uploaded = upload
-                    .as_ref()
-                    .expect("upload is created above")
-                    .upload_part(number, part.to_vec())
-                    .await
-                    .map_err(err)?;
-                parts.push(uploaded);
-            }
-        }
-
-        match upload.as_ref() {
-            None => {
-                bucket.put(key, buf.to_vec()).execute().await.map_err(err)?;
-            }
-            Some(upload) => {
-                if !buf.is_empty() {
-                    let number = u16::try_from(parts.len() + 1)
-                        .map_err(|e| Error::custom(eyre::eyre!(e)))?;
-                    parts.push(
-                        upload
-                            .upload_part(number, buf.to_vec())
-                            .await
-                            .map_err(err)?,
-                    );
-                }
-            }
-        }
-
-        Ok(())
+    while let Some(chunk) = value.next().await {
+        buf.extend_from_slice(&chunk?);
     }
-    .await;
-
-    match (result, upload) {
-        (Ok(()), Some(upload)) => {
-            upload.complete(parts).await.map_err(err)?;
-            Ok(SaveOutcome::Stored)
-        }
-        (Ok(()), None) => Ok(SaveOutcome::Stored),
-        (Err(e), Some(upload)) => {
-            let _ = upload.abort().await;
-            Err(e)
-        }
-        (Err(e), None) => Err(e),
-    }
+    Ok(buf.to_vec())
 }
 
 /// R2 reports sizes and offsets as JavaScript numbers, which are exact only up to
@@ -428,21 +350,8 @@ impl RemoteCacheStorageBackend for R2Backend {
         key: &str,
         value: Bytes,
     ) -> Result<SaveOutcome, Error> {
-        self.require_writable()?;
         let key = self.object_key(container, key);
-        SendFuture::new(async {
-            if exists(&self.bucket, &key).await? {
-                return Ok(SaveOutcome::AlreadyExists);
-            }
-            self.bucket
-                .put(key, value.to_vec())
-                .execute()
-                .await
-                .map_err(err)?;
-
-            Ok(SaveOutcome::Stored)
-        })
-        .await
+        SendFuture::new(put_if_absent(&self.bucket, &key, value.to_vec())).await
     }
 
     async fn save_stream_if_absent(
@@ -451,9 +360,12 @@ impl RemoteCacheStorageBackend for R2Backend {
         key: &str,
         value: WriteStream,
     ) -> Result<SaveOutcome, Error> {
-        self.require_writable()?;
         let key = self.object_key(container, key);
-        SendFuture::new(upload_multipart(&self.bucket, &key, value)).await
+        SendFuture::new(async {
+            let body = collect(value).await?;
+            put_if_absent(&self.bucket, &key, body).await
+        })
+        .await
     }
 
     async fn delete(

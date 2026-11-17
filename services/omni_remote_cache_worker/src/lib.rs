@@ -11,7 +11,7 @@ use omni_remote_cache_core::{
 };
 use omni_remote_cache_repository_d1::{D1Executor, WaitUntilRuntime};
 use omni_remote_cache_repository_query::RepositoryConfiguration;
-use omni_remote_cache_storage_r2::{R2Backend, R2WritePolicy};
+use omni_remote_cache_storage_r2::R2Backend;
 use tower_service::Service as _;
 use worker::{Context, Env, HttpRequest, Result, event};
 
@@ -21,7 +21,6 @@ const REPOSITORY_CONFIG_BINDING: &str = "ORCS_REPOSITORY_CONFIG";
 const D1_BINDING: &str = "DB";
 const MAX_ARTIFACT_SIZE_BINDING: &str = "MAX_ARTIFACT_SIZE";
 const DEFAULT_WORKER_MAX_ARTIFACT_SIZE: u64 = 32 * 1024 * 1024;
-const ALLOW_NON_ATOMIC_WRITES_BINDING: &str = "R2_ALLOW_NON_ATOMIC_WRITES";
 
 fn text_binding(env: &Env, name: &str) -> Option<String> {
     env.secret(name)
@@ -109,15 +108,8 @@ fn build_state(
         api_prefix,
     );
 
-    // Fail closed unless the operator accepts a non-atomic existence check.
-    let write_policy = if bool_binding(env, ALLOW_NON_ATOMIC_WRITES_BINDING) {
-        R2WritePolicy::NonAtomicCheckFirst
-    } else {
-        R2WritePolicy::FailClosed
-    };
-
     let mut state = ServiceState::new(
-        Arc::new(R2Backend::new(bucket, write_policy)),
+        Arc::new(R2Backend::new(bucket)),
         Arc::new(info),
         provider,
     );

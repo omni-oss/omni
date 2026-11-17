@@ -1659,19 +1659,18 @@ were not added; the Rust tests cover the same boundaries.
 
 **Open gates before this RFC can be Implemented:**
 
-- **R2 is not create-only, so R2 writes fail closed by default.** The Workers
-  binding's conditional put is unproven on real R2, and no write path there can
-  enforce absence. `R2WritePolicy::FailClosed` rejects every R2 write (reads and
-  deletes still work); the worker enables the weaker `NonAtomicCheckFirst` only when
-  `R2_ALLOW_NON_ATOMIC_WRITES=true` is set. With it, two concurrent first writers can
-  both pass the existence check and the later write replaces the earlier one. The
-  local worker test targets set it. Run the real-R2 spike and switch to a conditional
-  put (or the S3 API path) before relying on R2 for immutability. The crate and
-  worker type-check for `wasm32`; nothing about R2 at runtime is verified here.
-- **R2's streamed upload still commits through multipart `complete`, which takes
-  no condition** (4.2 says multipart must not be on the commit path). The size cap
-  (slice 5) makes every entry a single conditional write; until then the R2 gate
-  covers this path too.
+- **R2 create-only: resolved (slice 11).** Run against real Cloudflare R2 through a deployed
+  Worker with an R2 binding: a `put` with `onlyIf: { etagDoesNotMatch: "*" }` is atomic (24
+  concurrent writers to one key: exactly one stored, 23 got `null`, the survivor's bytes were
+  kept, and a put on an existing key returned `null`). A multipart upload is **not** create-only:
+  a second `complete` on an existing key replaced the object. `R2Backend` therefore writes every
+  entry (streamed or not) as one conditional put, buffering the sealed entry in memory (bounded
+  by `max_artifact_size`, 32 MiB by default on Workers), and the multipart path and the
+  `R2WritePolicy` / `R2_ALLOW_NON_ATOMIC_WRITES` opt-in are removed, so R2 writes are no longer
+  disabled by default. The Rust glue (`only_if` and the `null` result) compiles for `wasm32` and
+  is covered by the CI worker suites running against Miniflare; the real-R2 result comes from the
+  JavaScript binding probe, not the compiled worker, which was not deployed. Raising
+  `MAX_ARTIFACT_SIZE` on Workers raises the per-request memory use accordingly.
 - **S3-compatible endpoints must be verified.** `--s3.endpoint` accepts non-AWS
   stores, and one that ignores `If-None-Match: *` would silently overwrite. Verify
   enforcement against each supported store (and consider a startup probe) before
@@ -1695,10 +1694,8 @@ were not added; the Rust tests cover the same boundaries.
   afterwards): `If-None-Match: *` gives `AlreadyExists` on a second write, 16 concurrent first
   writers produce exactly one winner, a failing stream commits nothing, ranges and prefix operations
   behave. This proves R2 enforces create-only for the S3 API, which is the "S3 API path" this RFC
-  allows. It does **not** cover the Workers R2 _binding_ the worker crate uses (`put` with `onlyIf`
-  and multipart `complete`): that needs a deployed worker with an R2 binding and was not run.
-  Until it is, the worker keeps `R2WritePolicy::FailClosed`; the worker could instead be switched
-  to the S3 API path. Still not verified: Windows runtime behaviour.
+  allows. The Workers binding was verified separately (see "R2 create-only: resolved" above). Still not
+  verified: Windows runtime behaviour.
 - **Oversized streams are tested at the route** (local storage), not per backend;
   S3, memory and R2 rely on the stream error aborting them. The `409` retries have no backoff (a racing delete is rare); add jitter if
   measurements show contention.

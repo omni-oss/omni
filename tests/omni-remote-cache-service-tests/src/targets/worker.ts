@@ -163,9 +163,6 @@ export const workerTarget: Target = workerTargetFor({
             args: [
                 "--var",
                 `ORCS_CONFIG:${config}`,
-                // The suite needs uploads; accept the non-atomic R2 check here.
-                "--var",
-                "R2_ALLOW_NON_ATOMIC_WRITES:true",
             ],
         };
     },
