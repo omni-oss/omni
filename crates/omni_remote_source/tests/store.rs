@@ -8,6 +8,7 @@ use std::{path::Path, process::Command};
 
 use omni_remote_source::{
     RemoteSource, RemoteSourceRef,
+    lease::LeaseSet,
     manager::{
         RemoteSourceManager, StorePruneFilter, config::RemoteSourceConfig,
     },
@@ -1011,4 +1012,62 @@ async fn a_locked_commit_the_remote_no_longer_serves_points_at_update() {
         .to_string();
     assert!(error.contains(gone), "{error}");
     assert!(error.contains("--update"), "{error}");
+}
+
+#[tokio::test]
+async fn a_lease_set_protects_every_source_until_the_last_handle_drops() {
+    if !omni_test_capabilities::gate(
+        "git",
+        git_available(),
+        "git binary not found on PATH",
+    ) {
+        return;
+    }
+    let ws = Workspace::new();
+    let (a, url_a, _) = build_repo("alpha\n");
+    let (b, url_b, _) = build_repo("beta\n");
+    let _repos = (a, b);
+    let manager = ws.manager().await;
+    let all = StorePruneFilter {
+        all: true,
+        ..Default::default()
+    };
+
+    // One set collects both sources; a clone handed to another task adds to the
+    // same set, as the parallel generator and tool retrieval does.
+    let leases = LeaseSet::new();
+    let task_handle = leases.clone();
+    let root_a = manager
+        .materialize_into(&source_of(&url_a, "main"), &leases)
+        .await
+        .expect("materialize a")
+        .root;
+    let root_b = manager
+        .materialize_into(&source_of(&url_b, "main"), &task_handle)
+        .await
+        .expect("materialize b")
+        .root;
+    assert_eq!(leases.len(), 2);
+
+    // Neither checkout can be pruned while the set lives, even after the helper
+    // that took one of the handles is gone.
+    drop(task_handle);
+    let report = manager.prune_store_report(&all, false).await.unwrap();
+    assert!(report.removed.is_empty(), "pruned a leased checkout");
+    assert_eq!(report.skipped_in_use.len(), 2);
+    assert!(root_a.exists() && root_b.exists());
+
+    // Handing the leases to a longer-lived set releases nothing.
+    let longer = LeaseSet::new();
+    longer.absorb(&leases);
+    assert!(leases.is_empty());
+    drop(leases);
+    let report = manager.prune_store_report(&all, false).await.unwrap();
+    assert_eq!(report.skipped_in_use.len(), 2, "absorb dropped the leases");
+
+    // The last handle going away releases them, and they can then be pruned.
+    drop(longer);
+    let report = manager.prune_store_report(&all, false).await.unwrap();
+    assert_eq!(report.removed.len(), 2);
+    assert!(!root_a.exists() && !root_b.exists());
 }

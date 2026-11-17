@@ -352,6 +352,35 @@ mod tests {
     use super::*;
     use omni_remote_source::manager::PruneFailure;
 
+    /// Operations that read store checkouts after materializing them must take a
+    /// lease (`materialize_into`), or a concurrent `remote-sources prune` can
+    /// delete the tree mid-read. Plain `materialize` is for callers that finish
+    /// with the checkout before returning; none of these do.
+    #[test]
+    fn runtime_paths_never_materialize_without_a_lease() {
+        let runtime = [
+            ("generator", include_str!("generator.rs")),
+            ("tool", include_str!("tool.rs")),
+            ("projection", include_str!("projection.rs")),
+            (
+                "cli generator",
+                include_str!(
+                    "../../../omni_cli_core/src/commands/generator.rs"
+                ),
+            ),
+        ];
+        for (name, source) in runtime {
+            assert!(
+                !source.contains(".materialize("),
+                "{name} materializes without a lease; use materialize_into and keep the LeaseSet"
+            );
+            assert!(
+                source.contains("materialize_into("),
+                "{name} no longer leases the checkouts it reads"
+            );
+        }
+    }
+
     fn entry(pin: &str) -> StoreEntry {
         StoreEntry {
             kind: "git".into(),

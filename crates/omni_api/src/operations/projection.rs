@@ -20,7 +20,8 @@ use omni_projections::{
     existing_file_conflicts, plan_source,
 };
 use omni_remote_source::{
-    RemoteSourceRef, manager::RemoteSourceManager, sys::RemoteSourceSys,
+    RemoteSourceRef, lease::LeaseSet, manager::RemoteSourceManager,
+    sys::RemoteSourceSys,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -177,6 +178,11 @@ where
     // pack qualified id, so they slot in as ordinary top-level sources.
     let packs = ctx.workspace_configuration().packs.clone();
     let mut sources = ctx.workspace_configuration().projections.clone();
+    // Leases on every checkout this sync reads (pack roots and projection
+    // sources). Held until the function returns, after the last file is
+    // projected, so a concurrent `remote-sources prune` cannot delete a source
+    // mid-sync.
+    let leases = LeaseSet::new();
     let mut pack_refs = Vec::new();
     let mut non_local_ids = std::collections::HashSet::new();
     if !packs.is_empty() {
@@ -189,6 +195,7 @@ where
         )
         .await?;
         pack_refs = refs;
+        leases.absorb(&expanded.leases);
         non_local_ids = expanded.non_local_projection_ids();
         sources.extend(expanded.effective_projection_sources());
     }
@@ -228,6 +235,7 @@ where
         remote: &remote,
         update: req.update,
         git_refs: Mutex::new(Vec::new()),
+        leases: leases.clone(),
         non_local_ids: &non_local_ids,
         locality: omni_remote_source_contributors::Locality::default(),
     };
@@ -623,6 +631,7 @@ struct ProjectionMetaExpand<'a, TSys: RemoteSourceSys> {
     /// Every git ref pulled during expansion, recorded so a full sync can
     /// retain the meta repos and every git child from garbage collection.
     git_refs: Mutex<Vec<RemoteSourceRef>>,
+    leases: LeaseSet,
     /// Ids of pack-contributed sources whose pack is not local. They are
     /// appended as top-level sources, so position alone cannot tell they are
     /// inside the store.
@@ -669,7 +678,8 @@ where
                 if self.update {
                     self.remote.invalidate(&source).await?;
                 }
-                let materialized = self.remote.materialize(&source).await?;
+                let materialized =
+                    self.remote.materialize_into(&source, &self.leases).await?;
                 let pin = Some(materialized.pin.clone());
                 if let Ok(mut refs) = self.git_refs.lock() {
                     refs.push(RemoteSourceRef {

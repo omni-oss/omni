@@ -10,7 +10,9 @@ use omni_configurations::{
 };
 use omni_remote_source::{
     InstallOptions, RemoteSource, RemoteSourceContributor,
-    manager::{RemoteSourceManager, config::RemoteSourceConfig},
+    manager::{
+        RemoteSourceManager, StorePruneFilter, config::RemoteSourceConfig,
+    },
 };
 use omni_remote_source_contributors::{
     GeneratorRemoteContributor, ProjectionRemoteContributor, expand_packs,
@@ -307,4 +309,68 @@ async fn packs_sharing_a_root_keep_their_own_locality() {
         by_id("mirror::inner").is_local,
         "a local child is not tainted by a git entry for the same root"
     );
+}
+
+#[tokio::test]
+async fn expanded_packs_hold_leases_on_every_git_root_they_read() {
+    if !git_available() {
+        eprintln!("skipping: `git` is not available on PATH");
+        return;
+    }
+    let (_repo, url, _) = build_repo(&[
+        (
+            "pack.omni.yaml",
+            "name: \"@org/kit\"\npacks:\n  - source: local\n    path: ./inner\n    id: inner\n",
+        ),
+        (
+            "inner/pack.omni.yaml",
+            "name: \"@org/inner\"\ntools:\n  - source: local\n    path: ./tools\n",
+        ),
+    ]);
+    let (ws, sources_root) = workspace();
+    let manager = manager(&sources_root).await;
+    let pack: PackSourceConfiguration = serde_json::from_str(&format!(
+        r#"{{"source":"git","uri":"{url}","rev":"main","id":"remote"}}"#
+    ))
+    .expect("valid pack source");
+    let all = StorePruneFilter {
+        all: true,
+        ..Default::default()
+    };
+
+    let (packs, _refs) =
+        expand_packs(&manager, &[pack], ws.path(), false, None)
+            .await
+            .expect("expand");
+    let root = packs.nodes[0].root.clone();
+    assert!(
+        !packs.leases.is_empty(),
+        "no lease was taken for the git pack"
+    );
+
+    // A runtime caller keeps the expanded packs (or absorbs their leases) while
+    // it reads node roots; prune must leave the checkout alone meanwhile.
+    let report = manager.prune_store_report(&all, false).await.unwrap();
+    assert!(report.removed.is_empty(), "pruned a pack root in use");
+    assert_eq!(report.skipped_in_use.len(), 1);
+    assert!(root.join("pack.omni.yaml").exists());
+
+    // Moving the leases to a longer-lived set keeps them held after the packs go.
+    let kept = omni_remote_source::lease::LeaseSet::new();
+    kept.absorb(&packs.leases);
+    drop(packs);
+    assert_eq!(
+        manager
+            .prune_store_report(&all, false)
+            .await
+            .unwrap()
+            .skipped_in_use
+            .len(),
+        1
+    );
+
+    drop(kept);
+    let removed = manager.prune_store(&all, false).await.unwrap();
+    assert_eq!(removed.len(), 1);
+    assert!(!root.exists());
 }

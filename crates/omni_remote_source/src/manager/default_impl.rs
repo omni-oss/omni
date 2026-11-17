@@ -18,7 +18,7 @@ use crate::{
         is_safe_segment, safe_slug,
     },
     error::Error,
-    lease::SourceLease,
+    lease::{LeaseSet, SourceLease},
     manager::config::RemoteSourceConfig,
     manager::tree,
     refs::{RefSetData, RefSetDataV1_0_0, RefSetUpdate, RefUpdate},
@@ -279,6 +279,19 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
     ) -> Result<LeasedSource, Error> {
         self.materialize_leased_with(source.kind(), &source.spec())
             .await
+    }
+
+    /// Materialize `source` and add its lease to `leases`, so the checkout stays
+    /// protected from prune until the set is dropped. The tool for an operation
+    /// that reads several sources and finishes with all of them.
+    pub async fn materialize_into(
+        &self,
+        source: &RemoteSource,
+        leases: &LeaseSet,
+    ) -> Result<MaterializedSource, Error> {
+        let leased = self.materialize_leased(source).await?;
+        leases.hold(leased.lease);
+        Ok(leased.source)
     }
 
     /// [`materialize_leased`](Self::materialize_leased) for an explicit kind.
