@@ -1690,7 +1690,15 @@ were not added; the Rust tests cover the same boundaries.
   `before` hook binding 11 parameters and an `after` hook binding 13, usage rows recording the
   principal, namespace and hash, and a hook query written for the older, shorter parameter lists
   is refused at startup on both. D1 and the worker are covered by the CI service suites only.
-  Still not verified: real R2, Windows runtime behaviour.
+- **R2 through its S3 API: verified (slice 11).** The same `live_s3.rs` test passed against real
+  Cloudflare R2 (`<account>.r2.cloudflarestorage.com`, temporary token, test buckets removed
+  afterwards): `If-None-Match: *` gives `AlreadyExists` on a second write, 16 concurrent first
+  writers produce exactly one winner, a failing stream commits nothing, ranges and prefix operations
+  behave. This proves R2 enforces create-only for the S3 API, which is the "S3 API path" this RFC
+  allows. It does **not** cover the Workers R2 _binding_ the worker crate uses (`put` with `onlyIf`
+  and multipart `complete`): that needs a deployed worker with an R2 binding and was not run.
+  Until it is, the worker keeps `R2WritePolicy::FailClosed`; the worker could instead be switched
+  to the S3 API path. Still not verified: Windows runtime behaviour.
 - **Oversized streams are tested at the route** (local storage), not per backend;
   S3, memory and R2 rely on the stream error aborting them. The `409` retries have no backoff (a racing delete is rare); add jitter if
   measurements show contention.
