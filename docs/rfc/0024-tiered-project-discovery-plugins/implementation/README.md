@@ -57,7 +57,8 @@ The [first F08.5 batch](features/F08.5-staged-installs.md) (staged installs and 
 reference modes) is merged ([PR #112](https://github.com/omni-oss/omni/pull/112)). Its
 second batch gives runtime readers (generators, tools, projection sync, packs) leases,
 pending PR review. F08.5 remains incomplete: install contributors are batch 3.
-Other runtime code for F03-F10,
+F06.2's [canonical digest function](features/F06.2-canonical-digest.md) is implemented,
+unused until F06.3, pending PR review. Other runtime code for F03-F10,
 and plugins (P), remains unimplemented.
 
 Known gaps carried forward from the merged refactors:
