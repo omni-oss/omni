@@ -1,6 +1,7 @@
 #![allow(clippy::redundant_field_names)]
 
 mod cache_configuration;
+mod cache_enabled;
 mod capabilities;
 mod constants;
 #[cfg(test)]
@@ -25,6 +26,7 @@ mod workspace_configuration;
 mod worktree_configuration;
 
 pub use cache_configuration::*;
+pub use cache_enabled::*;
 pub use capabilities::*;
 pub use ignore::*;
 pub use layer::*;

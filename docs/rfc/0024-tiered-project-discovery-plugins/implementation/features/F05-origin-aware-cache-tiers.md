@@ -2,6 +2,9 @@
 
 **Type:** feature · **Size:** L · **Depends on:** R04, B04 · **Unblocks:** F06 (final digest inputs), F09
 
+Slice 1 ([F05.1](F05.1-origin-tagged-enablement.md)) records each task's origin; the
+contradiction rule and demotion causes (F05.2) remain unimplemented.
+
 ## Problem
 
 `project_data_extractor.rs` collapses cache enablement with
