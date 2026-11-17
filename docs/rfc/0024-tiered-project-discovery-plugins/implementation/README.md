@@ -58,7 +58,8 @@ reference modes) is merged ([PR #112](https://github.com/omni-oss/omni/pull/112)
 second batch gives runtime readers (generators, tools, projection sync, packs) leases,
 pending PR review. F08.5 remains incomplete: install contributors are batch 3.
 F06.2's [canonical digest function](features/F06.2-canonical-digest.md) is implemented,
-unused until F06.3, pending PR review. Other runtime code for F03-F10,
+unused until F06.3, pending PR review. F05.1's [origin-tagged cache enablement](features/F05.1-origin-tagged-enablement.md) is
+implemented, pending PR review; the contradiction rule (F05.2) is not. Other runtime code for F03-F10,
 and plugins (P), remains unimplemented.
 
 Known gaps carried forward from the merged refactors:

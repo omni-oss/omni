@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use config_utils::{IntoInner, ListConfig};
+use config_utils::ListConfig;
 use derive_new::new;
 use env::{
     CommandExpansionConfig, ExpansionError, expand_into_with_command_config,
@@ -220,6 +220,11 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
                     .get(name)
                     .expect("every task has an effective cache");
 
+                let enabled = *finalized
+                    .task_cache_enabled
+                    .get(name)
+                    .expect("every task has an effective cache enablement");
+
                 let use_defaults = cache.key.defaults.unwrap_or(true);
 
                 let key_input_files = if use_defaults {
@@ -248,10 +253,8 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
                 cache_infos.insert(
                     full_task_name.clone(),
                     CacheInfo {
-                        cache_enabled: cache
-                            .enabled
-                            .map(|i| i.into_inner())
-                            .unwrap_or(true),
+                        cache_enabled: enabled.value,
+                        cache_enabled_source: enabled.source,
                         key_defaults: use_defaults,
                         key_env_keys: cache.key.env.to_vec_to_inner(),
                         key_input_files,
@@ -482,5 +485,55 @@ mod tests {
         .unwrap();
 
         assert!(inputs.is_empty());
+    }
+
+    /// F05.1: the origin of each task's `cache.enabled` reaches `CacheInfo`, and
+    /// the value is exactly what the extractor computed before origins existed.
+    #[test]
+    fn extraction_carries_the_origin_of_cache_enablement() {
+        use omni_configurations::{CacheEnabledSource, ProjectLayer};
+        use system_traits::impls::RealSys;
+
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().to_path_buf();
+        std::fs::create_dir_all(root.join("app")).unwrap();
+        let file = root.join("app/project.omni.yaml");
+        let file = file.to_str().unwrap();
+        let layer = LoadedLayer {
+            layer: serde_json::from_str::<ProjectLayer>(
+                r#"{"name":"app","cache":{"enabled":false},"tasks":{
+                    "inherits":"echo",
+                    "own":{"exec":"x","cache":{"enabled":true}}}}"#,
+            )
+            .unwrap(),
+            ..layer(file, &[])
+        };
+        let graph = ExtensionGraph::from_nodes(vec![layer.clone()]).unwrap();
+        let finalized = layer.finalize_composed().unwrap();
+
+        let workspace: WorkspaceConfiguration =
+            serde_json::from_str(r#"{"projects":["**"]}"#)
+                .expect("a minimal workspace is valid");
+        let mut env_loader = EnvLoader::new(RealSys, root.clone(), vec![]);
+        let infos = ProjectDataExtractor::new(
+            &RealSys,
+            &root,
+            &mut env_loader,
+            false,
+            &workspace,
+        )
+        .extract_all(&[finalized], &[PathBuf::from(file)], &graph)
+        .unwrap()
+        .cache_infos;
+
+        let inherits = &infos["app#inherits"];
+        assert!(!inherits.cache_enabled);
+        assert_eq!(
+            inherits.cache_enabled_source,
+            CacheEnabledSource::ProjectExplicit
+        );
+        let own = &infos["app#own"];
+        assert!(own.cache_enabled);
+        assert_eq!(own.cache_enabled_source, CacheEnabledSource::TaskExplicit);
     }
 }

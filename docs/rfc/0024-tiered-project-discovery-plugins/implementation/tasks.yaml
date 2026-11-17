@@ -290,6 +290,7 @@ tasks:
     }
   F05.1:
     {
+      owner: "OpenCode (origin-tagged enablement; pending PR review)",
       title: "Origin-tagged cache enablement through CacheInfo",
       parent: F05,
       kind: code,

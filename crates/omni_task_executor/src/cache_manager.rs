@@ -287,8 +287,10 @@ pub(crate) enum CacheManagerErrorInner {
 mod tests {
     use std::{borrow::Cow, path::PathBuf, sync::Arc};
 
+    use omni_cache::TaskExecutionInfoExt as _;
     use omni_command_config::CommandConfig;
     use omni_config_types::TeraExprBoolean;
+    use omni_configurations::CacheEnabledSource;
     use omni_core::TaskExecutionNode;
     use omni_task_context::{CacheInfo, TaskContext};
 
@@ -312,6 +314,7 @@ mod tests {
     fn info(enabled: bool) -> CacheInfo {
         CacheInfo {
             cache_enabled: enabled,
+            cache_enabled_source: Default::default(),
             key_defaults: true,
             key_env_keys: vec![],
             key_input_files: Default::default(),
@@ -351,5 +354,65 @@ mod tests {
     #[test]
     fn task_without_cache_info_is_not_eligible() {
         assert!(!eligible(&node(false), None));
+    }
+
+    fn context<'a>(
+        node: &'a TaskExecutionNode,
+        info: CacheInfo,
+    ) -> TaskContext<'a> {
+        TaskContext {
+            node,
+            dependency_hashes: vec![],
+            env_vars: Arc::new(Default::default()),
+            cache_info: Some(Cow::Owned(info)),
+            output_logs: None,
+            template_context: Default::default(),
+        }
+    }
+
+    const SOURCES: [CacheEnabledSource; 5] = [
+        CacheEnabledSource::HostFallback,
+        CacheEnabledSource::ActivationDefaults,
+        CacheEnabledSource::Plugin,
+        CacheEnabledSource::ProjectExplicit,
+        CacheEnabledSource::TaskExplicit,
+    ];
+
+    /// Provenance must never change a cache key: the same task decided by a
+    /// different tier is the same task. `execution_info` is the whole of what the
+    /// key is built from.
+    #[test]
+    fn the_origin_of_enablement_never_reaches_the_cache_key() {
+        let node = node(false);
+        let key = |source| {
+            let info = CacheInfo {
+                cache_enabled_source: source,
+                ..info(true)
+            };
+            // Leak nothing: compare the derived execution info, not the context.
+            let ctx = context(&node, info);
+            let execution = ctx.execution_info().expect("has cache info");
+            format!("{execution:?}")
+        };
+        let reference = key(SOURCES[0]);
+        for source in SOURCES {
+            assert_eq!(key(source), reference, "{source:?} changed the key");
+        }
+    }
+
+    #[test]
+    fn eligibility_depends_on_the_value_not_its_origin() {
+        for source in SOURCES {
+            let on = CacheInfo {
+                cache_enabled_source: source,
+                ..info(true)
+            };
+            let off = CacheInfo {
+                cache_enabled_source: source,
+                ..info(false)
+            };
+            assert!(eligible(&node(false), Some(on)), "{source:?}");
+            assert!(!eligible(&node(false), Some(off)), "{source:?}");
+        }
     }
 }

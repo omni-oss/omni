@@ -27,11 +27,11 @@ use serde::{Deserialize, Serialize};
 use system_traits::FsReadAsync;
 
 use crate::{
-    CacheConfiguration, CacheKeyConfiguration, LoadConfigError,
-    MetaConfiguration, ProjectConfiguration, ProjectEnvConfiguration,
-    RedactConfiguration, TaskConfiguration, TaskConfigurationLongForm,
-    TaskDependencyConfiguration, TaskEnvConfiguration, TaskOutputConfiguration,
-    utils,
+    CacheConfiguration, CacheEnabled, CacheKeyConfiguration,
+    HANDWRITTEN_TASK_FALLBACK, LoadConfigError, MetaConfiguration,
+    ProjectConfiguration, ProjectEnvConfiguration, RedactConfiguration,
+    TaskConfiguration, TaskConfigurationLongForm, TaskDependencyConfiguration,
+    TaskEnvConfiguration, TaskOutputConfiguration, utils,
 };
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, Merge)]
@@ -428,6 +428,10 @@ pub struct FinalizedProject {
     /// Effective cache per task name. Empty for `base` projects, which run no
     /// tasks.
     pub task_cache: maps::Map<String, CacheConfiguration>,
+    /// Each task's effective `cache.enabled` with the tier that decided it. The
+    /// value always equals what `task_cache` resolves; this adds the origin,
+    /// which `Replace<bool>` loses once layers are merged.
+    pub task_cache_enabled: maps::Map<String, CacheEnabled>,
 }
 
 /// Why a composed project cannot be finalized.
@@ -453,11 +457,16 @@ impl LoadedLayer {
             return Err(MissingProjectName.into());
         }
         let mut task_cache = maps::Map::default();
+        let mut task_cache_enabled = maps::Map::default();
         if layer.base != Some(true) {
             if let Some(tasks) = layer.tasks.as_mut() {
                 crate::task_extension::resolve_task_layer_extensions(tasks)?;
             }
             let project_cache = layer.cache.clone();
+            let project_enabled = project_cache
+                .as_ref()
+                .and_then(|cache| cache.enabled.as_ref())
+                .map(|enabled| *enabled.as_ref());
             let project_effective =
                 project_cache.clone().unwrap_or_default().finalize();
             for (name, task) in layer.tasks.iter().flat_map(|t| t.iter()) {
@@ -470,11 +479,29 @@ impl LoadedLayer {
                     _ => project_effective.clone(),
                 };
                 task_cache.insert(name.clone(), effective);
+
+                let task_enabled = match task {
+                    TaskLayer::LongForm(task) => task
+                        .cache
+                        .as_ref()
+                        .and_then(|cache| cache.enabled.as_ref())
+                        .map(|enabled| *enabled.as_ref()),
+                    _ => None,
+                };
+                task_cache_enabled.insert(
+                    name.clone(),
+                    CacheEnabled::from_authored(
+                        task_enabled,
+                        project_enabled,
+                        HANDWRITTEN_TASK_FALLBACK,
+                    ),
+                );
             }
         }
         Ok(FinalizedProject {
             config: layer.finalize(file, dir)?,
             task_cache,
+            task_cache_enabled,
         })
     }
 }
