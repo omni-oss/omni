@@ -340,6 +340,9 @@ impl TaskReference {
             task,
         };
         reference.check_components()?;
+        if reference.upstream && reference.project.is_some() {
+            return Err(ReferenceError::UpstreamWithProject);
+        }
         Ok(reference)
     }
 
@@ -696,6 +699,16 @@ mod tests {
         .unwrap();
         assert_eq!(raw.task, r"a\#b");
         assert_eq!(raw.format(), r"a\\\#b");
+    }
+
+    #[test]
+    fn parse_rejects_upstream_with_project() {
+        assert_eq!(
+            TaskReference::parse("^app#build").unwrap_err(),
+            ReferenceError::UpstreamWithProject
+        );
+        assert!(TaskReference::parse(r"^\^app#build").is_err());
+        assert!(TaskReference::parse("^build").is_ok());
     }
 
     #[test]
