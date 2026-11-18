@@ -1411,8 +1411,38 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
 
             let output = if self.sys.fs_exists_async(&file).await? {
                 let bytes = self.sys.fs_read_async(&file).await?;
+                // A remote or hostile entry may carry undecodable metadata, or
+                // metadata that names another task or digest than the one it
+                // was requested for. Either is a miss, never an error and never
+                // a hit for a different task.
                 let mut cached_output: CachedTaskExecution =
-                    rmp_serde::decode::from_slice(&bytes)?;
+                    match rmp_serde::decode::from_slice(&bytes) {
+                        Ok(decoded) => decoded,
+                        Err(e) => {
+                            tracing::warn!(
+                                project = %project.task.project_name,
+                                error = %e,
+                                "ignoring a cache entry with unreadable metadata"
+                            );
+                            outputs.push(None);
+                            continue 'outer_loop;
+                        }
+                    };
+                if cached_output.project_name != project.task.project_name
+                    || cached_output.task_name != project.task.task_name
+                    || project
+                        .digest
+                        .as_ref()
+                        .is_none_or(|d| *d != cached_output.digest)
+                {
+                    tracing::warn!(
+                        project = %project.task.project_name,
+                        task = %project.task.task_name,
+                        "ignoring a cache entry whose metadata names a different task or digest"
+                    );
+                    outputs.push(None);
+                    continue 'outer_loop;
+                }
 
                 // An entry may come from a remote cache or a hostile writer, and
                 // its metadata is not covered by the archive layer's checks. A
@@ -3569,6 +3599,58 @@ mod tests {
                 .await
         );
         assert!(remote.requests.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn entry_metadata_that_is_unreadable_or_names_another_task_is_a_miss()
+    {
+        let temp = fixture(&["project1"]).await;
+        let cache = HybridTaskExecutionCacheStore::new(
+            temp.path().join(".cache"),
+            temp.path(),
+            RemoteConfig::new_disabled(),
+        );
+        let task = task("task", "project1", temp.path());
+        cache
+            .cache(&new_cache_info(Some(&LOGS_CONTENT), *task.get()))
+            .await
+            .unwrap();
+        let hit = cache.get_many(&[*task.get()]).await.unwrap();
+        assert!(hit[0].is_some(), "the untouched entry is a hit");
+        let collected = cache
+            .collect(
+                &[*task.get()],
+                &CollectConfig {
+                    cache_output_dirs: true,
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        let metadata = collected[0]
+            .cache_output_dir
+            .as_ref()
+            .unwrap()
+            .join(CACHE_OUTPUT_METADATA_FILE);
+        let original = tokio::fs::read(&metadata).await.unwrap();
+        let decoded: CachedTaskExecution =
+            rmp_serde::from_slice(&original).unwrap();
+
+        let mut other_task = decoded.clone();
+        other_task.task_name = "release".into();
+        let mut other_project = decoded.clone();
+        other_project.project_name = "elsewhere".into();
+        for (name, bytes) in [
+            ("garbage", b"not messagepack".to_vec()),
+            ("other task", rmp_serde::to_vec(&other_task).unwrap()),
+            ("other project", rmp_serde::to_vec(&other_project).unwrap()),
+        ] {
+            tokio::fs::write(&metadata, bytes).await.unwrap();
+            let got = cache.get_many(&[*task.get()]).await.unwrap();
+            assert!(got[0].is_none(), "{name} must be a miss");
+        }
+        tokio::fs::write(&metadata, original).await.unwrap();
+        assert!(cache.get_many(&[*task.get()]).await.unwrap()[0].is_some());
     }
 
     #[tokio::test]

@@ -104,8 +104,12 @@ immutability, asymmetric signatures and provenance. This RFC does.
   own earlier runs.
 - A stored entry cannot be replaced by a writer.
 - In `require` mode, a read-only run and any run that can publish restore only
-  shared entries signed by a trusted publisher, even if the server and storage are
-  fully compromised. Such runs never read an isolated namespace. Only an untrusted run
+  shared entries signed by a trusted publisher, even if the storage is fully
+  compromised. Such runs never read an isolated namespace. The client learns which
+  kind of run it is from the server's access probe, so a fully compromised
+  *server* could claim a read-only credential is an untrusted writer and have it
+  read unsigned isolated entries. A run that must hold against that sets
+  `target: shared`, which never reads isolated entries whatever the probe says. Only an untrusted run
   (its credential has `write:artifacts` but not `publish:artifacts`, and its `target`
   is `isolated`; the scopes decide, 4.4) may also
   read its own isolated namespace, and nothing it builds can reach `shared`.
@@ -313,7 +317,8 @@ server's claim about where a hit came from:
   4.4); and it then probes `isolated` and `shared` in parallel and prefers its own
   isolated entry. A read-only client, a publisher, and any run with `target: shared`
   probe `shared` only. So trusted runs and verifying readers never read unsigned
-  isolated bytes, even if a compromised server answers the probe.
+  isolated bytes unless a compromised server answers the probe falsely;
+  `target: shared` removes that dependence on the probe.
 - `PUT` takes `?target=shared|isolated` (default `isolated`). `shared` needs
   `publish:artifacts`, otherwise `403`.
 - An isolated entry is never copied or promoted into shared.
@@ -722,8 +727,9 @@ signature, hash mismatch) is treated as a miss, with a diagnostic naming the
 digest and reason. The task then runs locally. Isolated hits are not verified,
 because isolated entries are unsigned by design, so the rule is on _who may read
 them_ (4.1): only an untrusted run (`target: isolated`, not able to publish) ever
-reads an isolated namespace. Trusted runs and read-only runs never do, so a
-compromised server cannot feed them unsigned bytes through the isolated probe.
+reads an isolated namespace. Trusted runs and read-only runs never do while the
+server's probe answer is truthful. A compromised server can lie in that answer,
+so a run that must resist it sets `target: shared`.
 
 **Modes.**
 
@@ -834,7 +840,9 @@ Edge cases the fixture must cover:
 - Isolated and shared entries for the same digest: an untrusted run prefers its own
   isolated entry by its own probe order. Pin it.
 - A publisher or a read-only run, with a compromised server answering the isolated
-  probe: the client never sends it, so nothing unsigned is restored. A publisher
+  probe: with `target: shared` the client never sends it, so nothing unsigned is
+  restored. With the default `target: isolated` the server's probe answer decides
+  (a known limit). A publisher
   configured with `target: isolated` is still treated as a publisher (it has
   `publish`) and does not probe isolated.
 - A local config that sets `verify: off` or adds a `trusted_keys` entry that the
@@ -1810,6 +1818,12 @@ Slice 0 deviations and remaining checks:
   before filesystem joins. Shared `Container` parsing and S3 prefixes are unchanged.
 - S3 listing pagination remains incomplete: `list` stops at one service page and
   `paged_list` ignores `after_key`. Include pagination coverage in slice 1.
+- Second independent review (GPT-6.1 Sol) fixes: downloaded entry metadata must name the requested
+  project, task and digest and must decode, else it is a miss; replay refuses a destination whose
+  nearest existing ancestor resolves outside the workspace; the in-memory LRU checks the purge
+  generation under its lock; archives are bounded in entries (200k) and declared expanded size
+  (8 GiB). Documented instead of changed: the probe-trust limit (`target: shared`) and untrusted runs
+  not reading the trusted partition.
 - Real S3/R2 checks are done (section above). The breaking-change notes are in the remote cache guide, "Upgrading from earlier releases".
 
 ### Plan (steps, checks, undo)

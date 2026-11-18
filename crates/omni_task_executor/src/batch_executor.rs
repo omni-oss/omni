@@ -287,6 +287,17 @@ where
                     continue;
                 }
 
+                // The path was confined lexically when the entry was read. An
+                // existing symlink on the way (say `link -> /outside`) would
+                // still carry the write out of the workspace, so the nearest
+                // existing ancestor must really be inside it.
+                if !restores_inside(self.context.root_dir(), original_path) {
+                    tracing::warn!(
+                        "not restoring {original_path:?}: an existing path component leads outside the workspace",
+                    );
+                    continue;
+                }
+
                 let dir = original_path.parent().expect("should have parent");
                 if !self.sys.fs_exists_async(dir).await? {
                     self.sys.fs_create_dir_all_async(dir).await?;
@@ -1600,5 +1611,60 @@ mod tests {
         );
         let same = super::redact_error(failure(), &other);
         assert_eq!(same.kind(), super::BatchExecutorErrorKind::Io);
+    }
+}
+
+/// True when the nearest existing ancestor of `path`, with symlinks resolved,
+/// lies inside the real workspace root.
+fn restores_inside(
+    workspace: &std::path::Path,
+    path: &std::path::Path,
+) -> bool {
+    let Ok(root) = std::fs::canonicalize(workspace) else {
+        return false;
+    };
+    path.ancestors()
+        .skip(1)
+        .find_map(|ancestor| std::fs::canonicalize(ancestor).ok())
+        .is_some_and(|real| real.starts_with(&root))
+}
+
+#[cfg(test)]
+mod restore_confinement_tests {
+    use super::restores_inside;
+
+    #[test]
+    fn plain_and_new_directories_are_inside() {
+        let ws = tempfile::tempdir().unwrap();
+        std::fs::create_dir(ws.path().join("p")).unwrap();
+        assert!(restores_inside(ws.path(), &ws.path().join("p/out/new.txt")));
+        assert!(restores_inside(ws.path(), &ws.path().join("p/new.txt")));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlink_leading_outside_is_refused() {
+        let ws = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        std::os::unix::fs::symlink(outside.path(), ws.path().join("link"))
+            .unwrap();
+        assert!(!restores_inside(ws.path(), &ws.path().join("link/new.txt")));
+        assert!(!restores_inside(
+            ws.path(),
+            &ws.path().join("link/a/b/c.txt")
+        ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlink_staying_inside_is_allowed() {
+        let ws = tempfile::tempdir().unwrap();
+        std::fs::create_dir(ws.path().join("real")).unwrap();
+        std::os::unix::fs::symlink(
+            ws.path().join("real"),
+            ws.path().join("alias"),
+        )
+        .unwrap();
+        assert!(restores_inside(ws.path(), &ws.path().join("alias/x.txt")));
     }
 }

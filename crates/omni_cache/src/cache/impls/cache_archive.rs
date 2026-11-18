@@ -32,9 +32,24 @@ pub fn archive<W: io::Write>(src_dir: &Path, dst: W) -> io::Result<()> {
 /// anything is written; a rejected archive leaves `dst_dir` untouched and is
 /// reported as [`io::ErrorKind::InvalidData`].
 pub fn unarchive_bytes(dst_dir: &Path, bytes: &[u8]) -> io::Result<()> {
+    unarchive_bytes_limited(dst_dir, bytes, MAX_ENTRIES, MAX_EXPANDED_BYTES)
+}
+
+/// An archive is capped on its compressed size at download, but a tiny gzip
+/// stream can expand enormously. The declared sizes and the entry count are
+/// bounded before anything is written.
+const MAX_ENTRIES: u64 = 200_000;
+const MAX_EXPANDED_BYTES: u64 = 8 * 1024 * 1024 * 1024;
+
+fn unarchive_bytes_limited(
+    dst_dir: &Path,
+    bytes: &[u8],
+    max_entries: u64,
+    max_expanded: u64,
+) -> io::Result<()> {
     // The bytes are in memory, so any failure while reading them means the data
     // itself is bad (corrupt gzip, truncated tar, a rejected entry).
-    validate_entries(bytes).map_err(|e| {
+    validate_entries(bytes, max_entries, max_expanded).map_err(|e| {
         if e.kind() == io::ErrorKind::InvalidData {
             e
         } else {
@@ -48,14 +63,26 @@ pub fn unarchive_bytes(dst_dir: &Path, bytes: &[u8]) -> io::Result<()> {
     Ok(())
 }
 
-fn validate_entries(bytes: &[u8]) -> io::Result<()> {
+fn validate_entries(
+    bytes: &[u8],
+    max_entries: u64,
+    max_expanded: u64,
+) -> io::Result<()> {
     use tar::EntryType;
 
     let reject = |why: String| io::Error::new(io::ErrorKind::InvalidData, why);
 
     let mut archive = Archive::new(GzDecoder::new(bytes));
+    let (mut count, mut total) = (0u64, 0u64);
     for entry in archive.entries()? {
         let entry = entry?;
+        count += 1;
+        total = total.saturating_add(entry.header().size()?);
+        if count > max_entries || total > max_expanded {
+            return Err(reject(format!(
+                "cache archive is too large once expanded (over {max_entries} entries or {max_expanded} bytes)"
+            )));
+        }
         let kind = entry.header().entry_type();
         let path = entry.path()?;
         if !matches!(kind, EntryType::Regular | EntryType::Directory) {
@@ -112,6 +139,34 @@ mod tests {
         header.set_mode(0o644);
         header.set_cksum();
         tar.append(&header, data).unwrap();
+    }
+
+    #[test]
+    fn an_archive_that_expands_past_the_limits_is_rejected_unwritten() {
+        let many = gz(|t| {
+            for i in 0..5 {
+                raw_entry(
+                    t,
+                    format!("f{i}").as_bytes(),
+                    tar::EntryType::Regular,
+                    None,
+                    b"x",
+                );
+            }
+        });
+        let big = gz(|t| {
+            raw_entry(t, b"big", tar::EntryType::Regular, None, &[0u8; 4096])
+        });
+        for (name, bytes, entries, expanded) in
+            [("count", many, 4, u64::MAX), ("size", big, u64::MAX, 1000)]
+        {
+            let dir = tempdir().unwrap();
+            let err =
+                unarchive_bytes_limited(dir.path(), &bytes, entries, expanded)
+                    .expect_err(name);
+            assert_eq!(err.kind(), io::ErrorKind::InvalidData, "{name}");
+            assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+        }
     }
 
     #[test]

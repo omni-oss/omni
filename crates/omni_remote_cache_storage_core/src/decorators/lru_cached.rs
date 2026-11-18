@@ -270,18 +270,23 @@ where
             .unwrap_or_else(PoisonError::into_inner)
             .take();
 
+        // The generation is checked while holding the cache lock, so a purge
+        // that bumps it afterwards must also take the lock to clear the cache
+        // and so removes what is inserted here.
+        let mut cache = self.cache();
         match (&result, captured) {
             // Cache the captured bytes only when they are what was stored. On
             // `AlreadyExists` the stored object is a different, earlier entry.
             (Ok(SaveOutcome::Stored), Some(buf))
                 if self.purges.load(Ordering::SeqCst) == generation =>
             {
-                self.cache().put(cache_key, buf.freeze());
+                cache.put(cache_key, buf.freeze());
             }
             _ => {
-                self.cache().pop(&cache_key);
+                cache.pop(&cache_key);
             }
         }
+        drop(cache);
 
         result
     }

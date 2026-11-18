@@ -26,8 +26,9 @@ before commit.
 - With remote caching enabled, every local entry lives under one partition of the cache directory:
   `trusted/{epoch}/` or `untrusted/{epoch}/{principal_id}/{scope}/`. A run reads and writes only
   its own class. An untrusted run (the credential holds `write:artifacts` and not
-  `publish:artifacts`, per the probe) reads its own `untrusted/...` partition, then
-  `trusted/{epoch}/`, and writes only its own partition. Anything else is trusted. Unknown scopes
+  `publish:artifacts`, per the probe) reads and writes only its own `untrusted/...`
+  partition (it does not read `trusted/{epoch}/`; shared entries reach it through the remote
+  cache, where they are verified). Anything else is trusted. Unknown scopes
   (no probe answer) are trusted, the strict case.
 - With remote caching disabled the layout is unchanged (the cache directory root). Remote-enabled
   runs never read the root, so entries written before this change, or by a disabled run, cannot

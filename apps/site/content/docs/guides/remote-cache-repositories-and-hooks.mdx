@@ -138,6 +138,8 @@ refuses to upload to the shared namespace.
 Verification happens before anything is extracted. An entry restored under a
 weaker policy, or signed by a key that is no longer trusted, is not reused under
 `require`. Changing the trusted keys or the mode starts a fresh local partition.
+
+The client decides whether a run may read unsigned isolated entries from the server's answer about the credential. If the server itself is not trusted, set `target: shared` on read-only and verifying runs: they then never read isolated entries, whatever the server says.
 Rotation: trust the old and new keys, switch the publisher, then remove the old
 key. Entries signed by a removed key are misses, and they cannot be published again
 until they are purged. When a publisher finds the shared entry for a digest does not
