@@ -16,10 +16,9 @@ This release changes the remote cache in ways that need action:
 - **Uploads are off by default.** Set `push` for the machines that may write shared entries (see "Client settings"). Without it a client only reads.
 - **New storage layout and entry format.** Entries are stored under a namespace and carry a sealed trailer. Existing entries are not read, so the cache starts empty. Old and new omni versions do not share a cache.
 - **Bearer authentication only.** Send the credential as `Authorization: Bearer <token>`.
-- **SQL hooks take more parameters.** The API key lookup hooks now receive the caller facts, so update the queries in your repository (see "The query contract"). The count differs per hook; check each against the contract.
+- **SQL hooks take more parameters.** The `before` hook takes 11 text parameters and `after` takes 13, including caller and namespace facts. Update the hook queries (see "Hooks"); these are not the API-key lookup queries.
 - **New `remote_cache` section in `workspace.omni.yaml`.** It holds trusted keys and verification. An older omni cannot read a config that uses it.
 - **Isolated entries expire.** The server removes them after `--isolated-ttl-days` (default 7). On S3 and R2 add a bucket lifecycle rule.
-- **Removed:** the `--s3.multi-bucket` server flag.
 
 ## Static API-key identity settings
 
@@ -131,15 +130,18 @@ and runs the task. A machine's own setup can only tighten this (`--verify`) or
 narrow the trusted keys (`--trusted-key`); it can never turn verification down.
 Shared uploads are signed over the tenant, organization, workspace, environment,
 digest and a hash of the archive, so an entry cannot be replayed under another
-digest or environment. Isolated entries are unsigned and are only ever read by
-untrusted runs with the same credential and scope. Whenever signatures are required, a machine with no signing key
+digest or environment. Isolated entries are unsigned. Only untrusted runs in
+`off` or `warn` mode read them; `require` reads signed shared entries only,
+regardless of the server's reported scopes or the configured upload target.
+Whenever signatures are required, a machine with no signing key
 refuses to upload to the shared namespace.
 
 Verification happens before anything is extracted. An entry restored under a
 weaker policy, or signed by a key that is no longer trusted, is not reused under
 `require`. Changing the trusted keys or the mode starts a fresh local partition.
 
-The client decides whether a run may read unsigned isolated entries from the server's answer about the credential. If the server itself is not trusted, set `target: shared` on read-only and verifying runs: they then never read isolated entries, whatever the server says.
+The server's access probe cannot weaken `require`. Unsigned isolated reuse is
+available only under a locally selected `off` or `warn` policy.
 Rotation: trust the old and new keys, switch the publisher, then remove the old
 key. Entries signed by a removed key are misses, and they cannot be published again
 until they are purged. When a publisher finds the shared entry for a digest does not
@@ -209,16 +211,16 @@ directories (or users) for untrusted jobs, as described below.
 With remote caching on, the local cache directory is split by how far a run trusts
 what it restores, under `<cache_dir>/.partitions/`:
 
-- `trusted/<epoch>`: runs that may publish, or whose access is unknown;
+- `trusted/<epoch>`: read-only/publishing runs, or shared-target runs with no probe verdict;
 - `untrusted/<epoch>/<principal>/<scope>`: runs that can write their isolated
-  namespace but not publish. They read their own isolated entries and the shared
-  ones, and write only their own partition.
+  namespace but not publish. They write only their own partition. They read
+  shared entries and, unless verification is `require`, their own isolated ones.
 
 A credential that is untrusted but whose principal and scope the server did not
-report uses `unknown/<epoch>`, which no other run reads. When the access probe
-fails outright, or the credential is refused, a run that uploads to its isolated
-namespace uses `unknown/<epoch>` and never reads isolated entries, since it may be
-an untrusted job; one that targets `shared` uses `trusted`.
+report uses `unknown/<epoch>-<run-id>`. A new store gets a fresh run ID; its clones
+share it, but later invocations do not reuse it. All refused credentials, and
+isolated-target runs whose probe failed, use this fallback and do not request
+isolated entries. A shared-target run with an unavailable probe uses `trusted`.
 
 The epoch changes with the server, the tenant, organization, workspace and
 environment, so switching any of them starts a fresh partition. A run reads and
@@ -226,6 +228,25 @@ writes only its own partition, so an entry built on isolated content never reach
 a run that publishes. Restored entries carry an `.omni-origin-remote` marker and
 are placed with a staged rename, so a crash never leaves a half-extracted entry.
 A run that can publish never requests isolated entries.
+
+Restoring output files uses retained directory handles and exclusive file
+creation, rather than checking an absolute path and later reopening it. Parent
+symlinks (even ones pointing inside the workspace) are refused. A restore failure
+is a cache miss and the task executes, not a successful hit with missing outputs.
+Existing regular output files are retained; missing files are copied into fresh
+files, not hardlinked to the cache. This avoids both final-link writes and later
+workspace edits mutating the cached inode. This is not a sandbox for task execution.
+
+Downloaded archives are limited to 200,000 logical entries, 8 GiB of total
+expanded tar data (including headers and padding), and 1 MiB per extension
+record. Malformed metadata or metadata for another task/digest is rejected
+before publication. Invalid persisted entries are discarded under cache locks
+so a rebuild can repair them.
+
+Local cache directories must be writable, even for lookups: Omni creates lock
+files and may remove invalid entries. Unknown partitions are discoverable by
+cache maintenance, but their empty directories and lock files may remain after
+entry pruning; remove unused directories when the relevant runs have stopped.
 
 ### Keeping a task off the remote cache
 
@@ -315,7 +336,7 @@ artifact, with `Content-Length`, and these headers:
 | ----------------------- | ------------------------------------ |
 | `X-Omni-Content-Sha256` | SHA-256 of the artifact              |
 | `X-Omni-Stored-At`      | When the server stored it (RFC 3339) |
-| `X-Omni-Namespace`      | `shared` (the only namespace so far) |
+| `X-Omni-Namespace`      | `shared` or `isolated`               |
 
 Things that behave differently from before:
 
@@ -327,10 +348,13 @@ Things that behave differently from before:
 - **If a stored object changes while it is being read,** the response ends with an error
   instead of a short success, and the client treats the download as failed.
 
-Upgrade the server before the clients. A client from before this change cannot upload
-to the new server (`400`), and a new client uploading to an old server stores entries
-in the new format that the old server would serve whole. Rolling the server back after
-it has stored new entries needs those entries purged first.
+Upgrade clients and server together. Old clients send `X-API-KEY`, so the new
+server refuses them with `401`; new clients send Bearer credentials, which the
+old server does not support. Custom clients that migrate authentication must
+also migrate upload hashes and namespace selection. The server, not the client,
+adds the trailer. For rollback, restore the matching old binaries/configuration;
+the old layout is separate, and new objects need provider-side cleanup if no
+longer wanted.
 
 ## Checking access
 
@@ -346,11 +370,14 @@ A valid response is `204` with these headers:
 | `X-Omni-Principal-Id`      | The principal's path segment in the isolated namespace                                   |
 | `X-Omni-Scope`             | The effective scope label (the pin, else the `scope` query, else `default`)              |
 
-The client reads these headers as advice only. The server still enforces scopes and the
-size limit on every request. A credential with no scope for the target gets `403`,
+The client uses these headers to select its local partition and, in `off`/`warn`
+mode, whether to try isolated reads. They cannot bypass required signature
+verification. The server enforces scopes and the size limit on every request.
+A credential with no scope for the target gets `403`,
 and an unknown one `401`, with neither header. When the server reports scopes,
-setup refuses a credential that holds neither `read:artifacts` nor
-`write:artifacts`, since it could not use the cache.
+setup accepts credentials with `read:artifacts`, `write:artifacts`, or
+`publish:artifacts`; credentials holding only list/delete permissions cannot use
+the build cache.
 
 ## Pick a backend
 

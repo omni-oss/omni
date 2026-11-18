@@ -2,6 +2,11 @@
 
 > Note: mentions of `omni cache purge` or `--legacy` below are superseded by `0030-operator-tools-rollout.md` (slice 8 was reduced to isolated-entry expiry).
 
+> Final policy update: `0030-review-follow-up.md` supersedes the historical
+> unknown-scope and isolated-read decisions below. Unknown partitions are fresh
+> per store (`unknown/<epoch>-<run-id>`); `require` never requests unsigned
+> isolated entries, even when the probe claims an untrusted writer identity.
+
 Plan for slice 6 of [RFC 0030](0030-remote-cache-trust-model.md) (section 4.4: local cache
 partitions, trust epoch, origin markers, per-task `cache.remote: false`, `--no-remote-cache`). The RFC
 stays the design authority. Signing and `verify` are slice 7, so the verify mode is the constant

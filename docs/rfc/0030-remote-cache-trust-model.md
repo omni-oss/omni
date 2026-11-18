@@ -103,15 +103,11 @@ immutability, asymmetric signatures and provenance. This RFC does.
 - An untrusted PR build still gets cache hits from the shared cache and from its
   own earlier runs.
 - A stored entry cannot be replaced by a writer.
-- In `require` mode, a read-only run and any run that can publish restore only
-  shared entries signed by a trusted publisher, even if the storage is fully
-  compromised. Such runs never read an isolated namespace. The client learns which
-  kind of run it is from the server's access probe, so a fully compromised
-  *server* could claim a read-only credential is an untrusted writer and have it
-  read unsigned isolated entries. A run that must hold against that sets
-  `target: shared`, which never reads isolated entries whatever the probe says. Only an untrusted run
+- In `require` mode, every run restores only shared entries signed by a trusted
+  publisher, even if the server and storage are fully compromised. The server's
+  probe cannot weaken this locally selected requirement. Only an untrusted run
   (its credential has `write:artifacts` but not `publish:artifacts`, and its `target`
-  is `isolated`; the scopes decide, 4.4) may also
+  is `isolated`; the scopes decide, 4.4), in `off` or `warn` mode, may also
   read its own isolated namespace, and nothing it builds can reach `shared`.
 - An operator can tell who wrote an entry, and remove everything one key wrote
   without wiping the cache.
@@ -314,11 +310,9 @@ server's claim about where a hit came from:
 - **When the client probes `isolated`.** Only when all of these hold: its configured
   `target` is `isolated`; the credential has `write:artifacts` and does **not** have
   `publish:artifacts` (the client learns its effective scopes from `validate_access`,
-  4.4); and it then probes `isolated` and `shared` in parallel and prefers its own
+  4.4); verification is not `require`; it then tries isolated before shared and prefers its own
   isolated entry. A read-only client, a publisher, and any run with `target: shared`
-  probe `shared` only. So trusted runs and verifying readers never read unsigned
-  isolated bytes unless a compromised server answers the probe falsely;
-  `target: shared` removes that dependence on the probe.
+  probe `shared` only. Requiring readers do so regardless of the probe's answer.
 - `PUT` takes `?target=shared|isolated` (default `isolated`). `shared` needs
   `publish:artifacts`, otherwise `403`.
 - An isolated entry is never copied or promoted into shared.
@@ -642,7 +636,8 @@ construction: no marker has to be propagated through derived entries.
 | Partition | Path under `cache_dir`                      | Written by                                                     | Read by                                              |
 | --------- | ------------------------------------------- | -------------------------------------------------------------- | ---------------------------------------------------- |
 | trusted   | `trusted/{epoch}/`                          | runs that are not untrusted and not opted-out                  | same epoch only                                      |
-| untrusted | `untrusted/{epoch}/{principal_id}/{scope}/` | untrusted runs (`write`, no `publish`)                         | that run, then `trusted/{epoch}/` of its own epoch   |
+| untrusted | `untrusted/{epoch}/{principal_id}/{scope}/` | untrusted runs (`write`, no `publish`)                         | same partition only; no trusted-partition fallback   |
+| unknown   | `unknown/{epoch}-{run-id}/`                | runs without usable identity/trust information                | same store and its clones only; never a later run    |
 | local     | `local/`                                    | opted-out tasks and their dependencies (`cache.remote: false`) | those tasks; normal dependents consume their outputs |
 
 - **Trust epoch** = first 16 hex of SHA-256 over the effective `trusted_keys` ids
@@ -724,12 +719,10 @@ signature>`, bounded to 256 bytes.
 `sha256` of the downloaded archive bytes, rebuild the message, find
 `key_id` in `trusted_keys`, and verify. Any failure (unsigned, unknown key id, bad
 signature, hash mismatch) is treated as a miss, with a diagnostic naming the
-digest and reason. The task then runs locally. Isolated hits are not verified,
-because isolated entries are unsigned by design, so the rule is on _who may read
-them_ (4.1): only an untrusted run (`target: isolated`, not able to publish) ever
-reads an isolated namespace. Trusted runs and read-only runs never do while the
-server's probe answer is truthful. A compromised server can lie in that answer,
-so a run that must resist it sets `target: shared`.
+digest and reason. The task then runs locally. Isolated entries are unsigned by
+design and are never requested under `require`. Only an untrusted run with
+`target: isolated` and an `off` or `warn` policy reads its isolated namespace.
+The server's probe cannot downgrade signature requirements.
 
 **Modes.**
 
@@ -837,12 +830,11 @@ Edge cases the fixture must cover:
 - `verify: warn` restores but reports (the verdict is `Warn`, not `Reject`). `auto` with no trusted keys behaves as
   `off`.
 - A publisher with `trusted_keys` set but no `signing_key` refuses to upload.
-- Isolated and shared entries for the same digest: an untrusted run prefers its own
+- Isolated and shared entries for the same digest: an untrusted `off`/`warn` run prefers its own
   isolated entry by its own probe order. Pin it.
-- A publisher or a read-only run, with a compromised server answering the isolated
-  probe: with `target: shared` the client never sends it, so nothing unsigned is
-  restored. With the default `target: isolated` the server's probe answer decides
-  (a known limit). A publisher
+- A requiring run, with a compromised server claiming an isolated-writer identity:
+  the client never requests isolated entries, so nothing unsigned is restored.
+  A publisher
   configured with `target: isolated` is still treated as a publisher (it has
   `publish`) and does not probe isolated.
 - A local config that sets `verify: off` or adds a `trusted_keys` entry that the
@@ -1049,7 +1041,8 @@ match verify_shared(&conf.signing, &access, &digest, &entry) {
     Verdict::Reject(why) => { tracing::warn!(%digest, %why, "remote entry rejected"); /* miss */ }
 }
 // Probe order (4.1): isolated is probed only when target is isolated AND the credential
-// has write but not publish; then shared. An isolated probe error falls back to shared.
+// has write but not publish AND verification is not require; then shared.
+// An isolated probe error falls back to shared.
 ```
 
 Why: verification must run before any byte reaches disk, and the temp directory plus
@@ -1818,12 +1811,17 @@ Slice 0 deviations and remaining checks:
   before filesystem joins. Shared `Container` parsing and S3 prefixes are unchanged.
 - S3 listing pagination remains incomplete: `list` stops at one service page and
   `paged_list` ignores `after_key`. Include pagination coverage in slice 1.
-- Second independent review (GPT-6.1 Sol) fixes: downloaded entry metadata must name the requested
-  project, task and digest and must decode, else it is a miss; replay refuses a destination whose
-  nearest existing ancestor resolves outside the workspace; the in-memory LRU checks the purge
-  generation under its lock; archives are bounded in entries (200k) and declared expanded size
-  (8 GiB). Documented instead of changed: the probe-trust limit (`target: shared`) and untrusted runs
-  not reading the trusted partition.
+- Independent-review follow-up: see `0030-review-follow-up.md`. `require` never
+  requests unsigned isolated entries, regardless of the server's probe answer.
+  Metadata identity/path/file checks run before remote publication and before
+  replacing local entries; invalid entries are discarded under prune/replacement
+  locks so a rebuild repairs them. Replay uses directory capabilities, no-follow
+  parent traversal, and exclusive destination creation, and failed restore is a
+  miss, not a hit with missing outputs. Both LRU purge transitions and clears are
+  under the same mutex. Archives are bounded in logical entries (200k), total
+  expanded tar bytes (8 GiB including headers/padding), and extension size (1 MiB),
+  with effective PAX sizes checked. Unknown partitions are fresh per store.
+  Untrusted runs do not read a trusted-partition fallback.
 - Real S3/R2 checks are done (section above). The breaking-change notes are in the remote cache guide, "Upgrading from earlier releases".
 
 ### Plan (steps, checks, undo)

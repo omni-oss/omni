@@ -110,8 +110,8 @@ struct LocalPartition {
     untrusted: bool,
 }
 
-/// The advisory result of the access probe. The server enforces everything
-/// again on each request; this only avoids requests that cannot succeed.
+/// Access-probe facts used for permissions, partition selection, and optional
+/// isolated reads. They never weaken the locally required verification policy.
 #[derive(Clone, Debug, Default)]
 struct RemoteProbe {
     /// The scopes the credential holds. `None` when the probe could not be
@@ -365,7 +365,8 @@ impl HybridTaskExecutionCacheStore {
     /// The partition of this run. Remote-disabled stores, and views, use the
     /// cache directory as it is; a remote-enabled run asks the server what its
     /// credential may do first (that answer is also what the probe is for), and
-    /// anything unknown is trusted, the strict case.
+    /// missing identity or an unavailable/refused isolated probe uses a fresh
+    /// unknown partition rather than reusable trusted storage.
     async fn local_partition(&self) -> &LocalPartition {
         self.partition
             .get_or_init(|| async {
@@ -516,6 +517,7 @@ async fn restore_staged(
     entry_dir: &Path,
     bytes: Bytes,
     marker: super::origin::Marker,
+    identity: &EntryIdentity,
 ) -> std::io::Result<()> {
     let staging = staging_dir_for(entry_dir);
     let extract = {
@@ -527,6 +529,7 @@ async fn restore_staged(
     };
     let staged = async {
         extract?;
+        read_validated_entry(&staging, identity).await?;
         tokio::fs::write(
             staging.join(super::origin::ORIGIN_MARKER),
             marker.text(),
@@ -545,6 +548,90 @@ async fn restore_staged(
         let _ = tokio::fs::remove_dir_all(&staging).await;
     }
     staged
+}
+
+/// Owned so a remote transfer can validate its metadata before publication.
+struct EntryIdentity {
+    project: String,
+    task: String,
+    digest: DefaultHash,
+    workspace: PathBuf,
+    project_dir: PathBuf,
+}
+
+impl EntryIdentity {
+    fn of(result: &CollectResult<'_>) -> Self {
+        Self {
+            project: result.task.project_name.into(),
+            task: result.task.task_name.into(),
+            digest: result.digest.expect("collection requested a digest"),
+            workspace: result.roots[omni_types::Root::Workspace].into(),
+            project_dir: result.roots[omni_types::Root::Project].into(),
+        }
+    }
+
+    fn roots(&self) -> omni_types::RootMap<'_> {
+        omni_types::RootMap::from_fn(|root| match root {
+            omni_types::Root::Workspace => self.workspace.as_path(),
+            omni_types::Root::Project => self.project_dir.as_path(),
+        })
+    }
+}
+
+async fn read_validated_entry(
+    dir: &Path,
+    identity: &EntryIdentity,
+) -> std::io::Result<CachedTaskExecution> {
+    let invalid = || {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "invalid cache entry metadata or files",
+        )
+    };
+    let bytes = tokio::fs::read(dir.join(CACHE_OUTPUT_METADATA_FILE))
+        .await
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                invalid()
+            } else {
+                e
+            }
+        })?;
+    let entry: CachedTaskExecution =
+        rmp_serde::from_slice(&bytes).map_err(|_| invalid())?;
+    if entry.project_name != identity.project
+        || entry.task_name != identity.task
+        || entry.digest != identity.digest
+        || !restore_paths_are_confined(&entry, &identity.roots())
+    {
+        return Err(invalid());
+    }
+    if let Some(log) = &entry.logs_path
+        && !is_regular_file(&dir.join(log)).await
+    {
+        return Err(invalid());
+    }
+    for file in &entry.files {
+        if !is_regular_file(&dir.join(&file.cached_path)).await {
+            return Err(invalid());
+        }
+    }
+    Ok(entry)
+}
+
+/// Called only while holding the partition's shared prune and exclusive
+/// replacement locks. Invalid/partial entries must not block a rebuild's write.
+async fn discard_invalid_entry(
+    dir: &Path,
+    identity: &EntryIdentity,
+) -> std::io::Result<()> {
+    if tokio::fs::try_exists(dir).await?
+        && let Err(error) = read_validated_entry(dir, identity).await
+    {
+        tracing::warn!(%error, "discarding an invalid local cache entry so it can be rebuilt");
+        tokio::fs::remove_dir_all(dir).await?;
+    }
+    Ok(())
 }
 
 /// True when every path in a decoded cache entry can only descend from the base
@@ -865,6 +952,13 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
             PRUNE_LOCK_FILE,
         ))
         .await?;
+        // Lock order everywhere: prune (shared), then replacement (exclusive).
+        // Readers that discard invalid entries use the same lock as publishers.
+        let _replace_guard = CacheLockGuard::acquire_exclusive(lock_file_path(
+            &local_dir,
+            REPLACE_LOCK_FILE,
+        ))
+        .await?;
 
         for result in results {
             let output_dir =
@@ -882,6 +976,8 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
             );
             let new_cache_info =
                 cache_info_map.get(&tfqn).expect("should be some");
+            discard_invalid_entry(output_dir, &EntryIdentity::of(&result))
+                .await?;
 
             // Entries are addressed only by their input digest, which does not
             // encode the execution outcome. A flaky task can therefore produce
@@ -893,32 +989,8 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
             let existing_exit_code =
                 self.read_cached_exit_code(&metadata_path).await?;
 
-            // Overwriting an existing entry is only ever needed to upgrade a
-            // cached failure to a success. Serialize those replacements with a
-            // dedicated exclusive lock so two concurrent upgrades of the same
-            // digest cannot race, then re-read under the lock so we never
-            // downgrade an entry a peer just upgraded.
-            let upgrading = existing_exit_code.is_some_and(|c| c != 0)
-                && new_cache_info.exit_code == 0;
-
-            let _replace_guard = if upgrading {
-                Some(
-                    CacheLockGuard::acquire_exclusive(lock_file_path(
-                        &local_dir,
-                        REPLACE_LOCK_FILE,
-                    ))
-                    .await?,
-                )
-            } else {
-                None
-            };
-
-            let existing_exit_code = if upgrading {
-                self.read_cached_exit_code(&metadata_path).await?
-            } else {
-                existing_exit_code
-            };
-
+            // Invalid entries were discarded above under the replacement
+            // lock. Among valid entries only failure-to-success is replaced.
             let should_write = match existing_exit_code {
                 // Nothing cached yet: write a fresh entry.
                 None => true,
@@ -1221,6 +1293,27 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
         };
 
         let collected = self.collect(projects, &config).await?;
+        let partition = self.local_partition().await;
+        let _prune_guard = CacheLockGuard::acquire_shared(lock_file_path(
+            &partition.dir,
+            PRUNE_LOCK_FILE,
+        ))
+        .await?;
+        let _replace_guard = CacheLockGuard::acquire_exclusive(lock_file_path(
+            &partition.dir,
+            REPLACE_LOCK_FILE,
+        ))
+        .await?;
+        for project in &collected {
+            discard_invalid_entry(
+                project
+                    .cache_output_dir
+                    .as_deref()
+                    .expect("collection requested output dirs"),
+                &EntryIdentity::of(project),
+            )
+            .await?;
+        }
 
         if let RemoteConfig::Enabled(conf) = &self.remote_config {
             let mut tasks = JoinSet::new();
@@ -1229,16 +1322,10 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
             let label = conf.scope_label();
             // The partition (and so the probe) is settled before any local
             // entry is looked at or written.
-            let partition = self.local_partition().await;
             let untrusted = partition.untrusted;
             let probe = self.probe(conf).await.clone();
             // Restores and removals share the prune lock like publishers do, so
             // a prune never deletes an entry that is being renamed into place.
-            let _prune_guard = CacheLockGuard::acquire_shared(lock_file_path(
-                &partition.dir,
-                PRUNE_LOCK_FILE,
-            ))
-            .await?;
             for project in &collected {
                 let output_dir = project
                     .cache_output_dir
@@ -1251,7 +1338,8 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                 // the guidance, and it is removed so the entry is rebuilt or
                 // fetched like a miss.
                 let marker = super::origin::read_marker(output_dir).await;
-                if !untrusted
+                if (!untrusted
+                    || conf.signing.verify == EffectiveVerify::Require)
                     && marker.as_ref().map(|m| m.origin)
                         == Some(super::origin::Origin::Isolated)
                 {
@@ -1290,6 +1378,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                 let download_slots = download_slots.clone();
                 let probe = probe.clone();
                 let label = label.clone();
+                let identity = EntryIdentity::of(project);
 
                 tasks.spawn(async move {
                     let _permit = download_slots
@@ -1299,10 +1388,11 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                     let cap = conf.size_cap(Some(&probe));
                     // Only an untrusted run reads its own isolated entries
                     // (it holds `write` but not `publish`). A run that can
-                    // publish never requests them: what it restores is shared
-                    // and, once signing lands, verified.
+                    // publish never requests them. `require` also never does:
+                    // a compromised server cannot make scopes bypass signing.
                     let placements: &[Placement] = if untrusted
                         && conf.target == RemoteTarget::Isolated
+                        && conf.signing.verify != EffectiveVerify::Require
                     {
                         &[Placement::Isolated, Placement::Shared]
                     } else {
@@ -1371,7 +1461,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                             verified_by: verified_by
                                 .filter(|_| conf.signing.verify == EffectiveVerify::Require),
                         };
-                        match restore_staged(&output_dir, artifact.bytes, marker)
+                        match restore_staged(&output_dir, artifact.bytes, marker, &identity)
                             .await
                         {
                             Ok(()) => {}
@@ -1623,8 +1713,16 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                     let cache_meta_bytes =
                         tokio::fs::read(&cache_meta_path).await?;
 
-                    let cache_meta: CachedTaskExecution =
-                        rmp_serde::decode::from_slice(&cache_meta_bytes)?;
+                    let Ok(cache_meta) = rmp_serde::decode::from_slice::<CachedTaskExecution>(&cache_meta_bytes) else {
+                        tracing::warn!("ignoring unreadable metadata while computing cache statistics");
+                        continue;
+                    };
+                    if !cache_meta.logs_path.as_deref().is_none_or(omni_types::is_confined_relative)
+                        || cache_meta.files.iter().any(|f| !omni_types::is_confined_relative(&f.cached_path))
+                    {
+                        tracing::warn!("ignoring unsafe metadata while computing cache statistics");
+                        continue;
+                    }
 
                     if !t_task_glob.is_match(&cache_meta.task_name) {
                         continue;
@@ -3106,7 +3204,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn an_untrusted_run_still_verifies_the_shared_fallback() {
+    async fn require_ignores_a_malicious_probe_and_never_requests_unsigned_isolated_entries()
+     {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         let temp = fixture(&["project1"]).await;
         let t0 = task("task", "project1", temp.path());
@@ -3132,7 +3231,12 @@ mod tests {
                 } else if line.starts_with("GET ")
                     && line.contains("namespace=isolated")
                 {
-                    b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_vec()
+                    let mut r = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                        body.len()
+                    ).into_bytes();
+                    r.extend_from_slice(&body);
+                    r
                 } else {
                     // The shared entry: valid archive, but unsigned.
                     let mut r = format!(
@@ -3154,7 +3258,10 @@ mod tests {
         server.abort();
         let lines = seen.lock().unwrap().clone();
         assert!(
-            lines.iter().any(|l| l.contains("namespace=isolated")),
+            !lines
+                .iter()
+                .any(|l| l.starts_with("GET ")
+                    && l.contains("namespace=isolated")),
             "{lines:?}"
         );
         assert!(
@@ -3640,16 +3747,53 @@ mod tests {
         other_task.task_name = "release".into();
         let mut other_project = decoded.clone();
         other_project.project_name = "elsewhere".into();
+        let mut other_digest = decoded.clone();
+        other_digest.digest[0] ^= 1;
+        let mut unsafe_paths = decoded.clone();
+        unsafe_paths.logs_path = Some("../escape".into());
         for (name, bytes) in [
             ("garbage", b"not messagepack".to_vec()),
             ("other task", rmp_serde::to_vec(&other_task).unwrap()),
             ("other project", rmp_serde::to_vec(&other_project).unwrap()),
+            ("other digest", rmp_serde::to_vec(&other_digest).unwrap()),
+            ("unsafe path", rmp_serde::to_vec(&unsafe_paths).unwrap()),
         ] {
             tokio::fs::write(&metadata, bytes).await.unwrap();
+            // Maintenance must remain usable even before lookup repairs it.
+            cache
+                .get_stats(&CacheStatsArgs::<()> {
+                    project_name_globs: &["project1"],
+                    ..Default::default()
+                })
+                .await
+                .unwrap();
+            cache
+                .prune_caches(&PruneCacheArgs::<()> {
+                    project_name_globs: &["project1"],
+                    ..Default::default()
+                })
+                .await
+                .unwrap();
             let got = cache.get_many(&[*task.get()]).await.unwrap();
             assert!(got[0].is_none(), "{name} must be a miss");
+            cache
+                .cache(&new_cache_info(Some(&LOGS_CONTENT), *task.get()))
+                .await
+                .unwrap();
+            assert!(
+                cache.get_many(&[*task.get()]).await.unwrap()[0].is_some(),
+                "{name}: a rebuild must repair the entry"
+            );
         }
         tokio::fs::write(&metadata, original).await.unwrap();
+        assert!(cache.get_many(&[*task.get()]).await.unwrap()[0].is_some());
+        // A rebuild need not first call get(): the writer validates and repairs
+        // a poisoned entry too.
+        tokio::fs::write(&metadata, b"bad metadata").await.unwrap();
+        cache
+            .cache(&new_cache_info(Some(&LOGS_CONTENT), *task.get()))
+            .await
+            .unwrap();
         assert!(cache.get_many(&[*task.get()]).await.unwrap()[0].is_some());
     }
 
@@ -4028,7 +4172,7 @@ mod tests {
                     header.push(socket.read_u8().await.unwrap());
                 }
                 let response = if header.starts_with(b"HEAD /v1/artifacts?") {
-                    format!("HTTP/1.1 204 No Content\r\nx-omni-scopes: {scopes}\r\nConnection: close\r\n\r\n").into_bytes()
+                    format!("HTTP/1.1 204 No Content\r\nx-omni-scopes: {scopes}\r\nx-omni-principal-id: ci\r\nx-omni-scope: pr-9\r\nConnection: close\r\n\r\n").into_bytes()
                 } else if header.starts_with(b"GET ") {
                     let extra = extra.lock().unwrap().clone();
                     let mut head = format!(
@@ -4222,6 +4366,40 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn require_accepts_signed_shared_bytes_despite_a_probe_claiming_untrusted()
+     {
+        let temp = fixture(&["project1"]).await;
+        let task = task("task", "project1", temp.path());
+        let archive = genuine_archive(&temp, task.get()).await;
+        let digest = digest_of(&temp, task.get()).await;
+        let good = signer();
+        let (url, server) = serve_with_headers(
+            archive.clone(),
+            "read:artifacts,write:artifacts",
+            signed_headers(&good, &archive, &digest, "e"),
+        )
+        .await;
+        let store =
+            verifying_store(&temp, &url, &[&good], EffectiveVerify::Require);
+        assert!(store.get(task.get()).await.unwrap().is_some());
+        let found = markers(&store.cache_dir);
+        assert_eq!(found.len(), 1);
+        assert!(found[0].0.starts_with(".partitions/untrusted/"));
+        std::fs::write(
+            store.cache_dir.join(&found[0].0),
+            "v1 origin=isolated verified_by=none\n",
+        )
+        .unwrap();
+        assert!(store.get(task.get()).await.unwrap().is_some());
+        assert_eq!(
+            markers(&store.cache_dir)[0].1,
+            format!("v1 origin=shared verified_by={}\n", good.id),
+            "require must discard an isolated marker even in its untrusted partition"
+        );
+        server.abort();
+    }
+
+    #[tokio::test]
     async fn warn_restores_with_no_key_recorded_and_off_does_not_check() {
         let temp = fixture(&["project1"]).await;
         let t0 = task("task", "project1", temp.path());
@@ -4332,6 +4510,44 @@ mod tests {
         let found = markers(&cache_dir);
         assert_eq!(found.len(), 1, "{found:?}");
         assert_eq!(found[0].1, "v1 origin=shared verified_by=none\n");
+    }
+
+    #[tokio::test]
+    async fn valid_tar_with_invalid_metadata_is_never_published_and_a_rebuild_recovers()
+     {
+        let temp = fixture(&["project1"]).await;
+        let task = task("task", "project1", temp.path());
+        let mut archive = Vec::new();
+        {
+            let mut tar = tar::Builder::new(flate2::write::GzEncoder::new(
+                &mut archive,
+                flate2::Compression::default(),
+            ));
+            let bad = b"not messagepack";
+            let mut header = tar::Header::new_gnu();
+            header.set_size(bad.len() as u64);
+            header.set_mode(0o644);
+            header.set_cksum();
+            tar.append_data(&mut header, CACHE_OUTPUT_METADATA_FILE, &bad[..])
+                .unwrap();
+            tar.into_inner().unwrap().finish().unwrap();
+        }
+        let (url, server) = serve_with_probe(archive, "read:artifacts").await;
+        let store = remote_store(temp.path(), &url);
+        assert!(store.get(task.get()).await.unwrap().is_none());
+        assert!(
+            markers(&store.cache_dir).is_empty(),
+            "invalid metadata must not be published"
+        );
+        store
+            .cache(&new_cache_info(Some(&LOGS_CONTENT), *task.get()))
+            .await
+            .unwrap();
+        assert!(
+            store.get(task.get()).await.unwrap().is_some(),
+            "rebuilt result must be reusable"
+        );
+        server.abort();
     }
 
     #[tokio::test]

@@ -115,11 +115,19 @@ pub(crate) fn untrusted_dir(
     dir
 }
 
-/// The directory of a run that is known to be untrusted but whose principal and
-/// scope the server did not report. No other run reads it, so such a run never
-/// writes into a partition a trusted run restores from.
+/// A fresh partition for a store whose trust/identity could not be established.
+/// Resolved once by the store and shared by its clones, never reused by a new
+/// store. Keep the flat epoch+nonce directory discoverable by stats and pruning.
 pub(crate) fn unknown_dir(base: &Path, epoch: &str) -> PathBuf {
-    base.join(PARTITIONS_DIR).join("unknown").join(epoch)
+    let unique = crate::storage::staging_dir_for(Path::new(epoch));
+    let name = unique
+        .file_name()
+        .expect("staging path has a name")
+        .to_string_lossy();
+    base.join(PARTITIONS_DIR).join("unknown").join(
+        name.strip_prefix(crate::storage::STAGING_PREFIX)
+            .expect("staging prefix"),
+    )
 }
 
 /// The directory for tasks that must never touch the remote cache.
@@ -327,5 +335,15 @@ mod tests {
                 .iter()
                 .all(|p| p.starts_with(base.join(PARTITIONS_DIR)))
         );
+    }
+
+    #[test]
+    fn unknown_partitions_are_never_reused_even_for_the_same_epoch() {
+        let base = Path::new("cache");
+        let a = unknown_dir(base, "epoch");
+        let b = unknown_dir(base, "epoch");
+        assert_ne!(a, b);
+        assert!(is_confined(base, &a));
+        assert!(is_confined(base, &b));
     }
 }

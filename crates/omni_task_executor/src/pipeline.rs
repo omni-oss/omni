@@ -100,7 +100,6 @@ impl<'a, TSys: TaskExecutorSys, S: ExecutionEventSubscriber>
         let mut batch_exec = BatchExecutor::new(
             self.context,
             cache_manager,
-            self.context.sys().clone(),
             self.subscriber,
             self.config.max_concurrency().unwrap_or(num_cpus::get() * 4),
             self.config.ignore_dependencies(),

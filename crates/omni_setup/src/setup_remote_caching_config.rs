@@ -41,6 +41,7 @@ fn check_access(
     if !result.scopes.is_empty()
         && !held("read:artifacts")
         && !held("write:artifacts")
+        && !held("publish:artifacts")
     {
         return Err(SetupRemoteCachingConfigErrorInner::InsufficientScopes {
             scopes: result.scopes.join(", "),
@@ -357,6 +358,7 @@ mod tests {
         for scopes in [
             vec!["read:artifacts"],
             vec!["write:artifacts"],
+            vec!["publish:artifacts"],
             vec!["list:artifacts", "write:artifacts", "publish:artifacts"],
         ] {
             assert!(check_access(&result(true, &scopes)).is_ok(), "{scopes:?}");
@@ -367,7 +369,6 @@ mod tests {
     fn a_credential_that_can_neither_read_nor_write_is_refused_with_its_scopes()
     {
         for scopes in [
-            vec!["publish:artifacts"],
             vec!["delete:artifacts"],
             vec!["list:artifacts", "delete:artifacts"],
         ] {

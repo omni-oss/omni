@@ -185,11 +185,9 @@ where
         let purges = self.purges.clone();
         let prefix = prefix.clone();
         let purge = async move {
-            purges.fetch_add(1, Ordering::SeqCst);
-            purge_cached(&cached, &prefix);
+            purge_cached(&cached, &purges, &prefix);
             let result = inner.delete_prefix(&prefix).await;
-            purge_cached(&cached, &prefix);
-            purges.fetch_add(1, Ordering::SeqCst);
+            purge_cached(&cached, &purges, &prefix);
             result
         };
         #[cfg(not(target_arch = "wasm32"))]
@@ -344,8 +342,27 @@ where
 }
 
 /// Drops every cached entry whose object path starts with `prefix`.
-fn purge_cached(cached: &Mutex<Cache>, prefix: &ContainerPrefix) {
+fn purge_cached(
+    cached: &Mutex<Cache>,
+    purges: &AtomicU64,
+    prefix: &ContainerPrefix,
+) {
+    purge_cached_then(cached, purges, prefix, || {});
+}
+
+// The callback is a deterministic observation point for the lock-boundary test;
+// in production it is an inlined no-op.
+fn purge_cached_then(
+    cached: &Mutex<Cache>,
+    purges: &AtomicU64,
+    prefix: &ContainerPrefix,
+    after_clear: impl FnOnce(),
+) {
     let mut cache = cached.lock().unwrap_or_else(PoisonError::into_inner);
+    // Both transitions (before and after the backend delete) must be atomic
+    // with clearing. Otherwise a writer that began during deletion can insert
+    // between the final clear and its generation transition.
+    purges.fetch_add(1, Ordering::SeqCst);
     let doomed: Vec<(String, String)> = cache
         .iter()
         .filter(|((container, key), _)| {
@@ -355,5 +372,40 @@ fn purge_cached(cached: &Mutex<Cache>, prefix: &ContainerPrefix) {
         .collect();
     for key in doomed {
         cache.pop(&key);
+    }
+    after_clear();
+}
+
+#[cfg(test)]
+mod purge_tests {
+    use super::*;
+
+    #[test]
+    fn final_clear_advances_generation_before_releasing_the_cache_lock() {
+        let cache = Mutex::new(Cache::new(NonZeroUsize::new(4).unwrap()));
+        let purges = AtomicU64::new(1); // writer began while purge was active
+        let prefix = ContainerPrefix::parse("isolated/").unwrap();
+        let key = ("isolated/t/o/w/e/p/s".into(), "d".into());
+        cache
+            .lock()
+            .unwrap()
+            .put(key.clone(), Bytes::from_static(b"old"));
+        let writer_generation = purges.load(Ordering::SeqCst);
+        purge_cached_then(&cache, &purges, &prefix, || {
+            assert!(
+                cache.try_lock().is_err(),
+                "a writer must still be excluded"
+            );
+            assert_ne!(
+                purges.load(Ordering::SeqCst),
+                writer_generation,
+                "the final clear must not release with the writer's old generation"
+            );
+        });
+        let mut writer = cache.lock().unwrap();
+        if purges.load(Ordering::SeqCst) == writer_generation {
+            writer.put(key.clone(), Bytes::from_static(b"resurrected"));
+        }
+        assert!(writer.get(&key).is_none());
     }
 }

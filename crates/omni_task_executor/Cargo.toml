@@ -29,6 +29,8 @@ harness = false
 required-features = ["bench-support"]
 
 [dependencies]
+cap-std = { workspace = true }
+cap-fs-ext = { workspace = true }
 eyre = { workspace = true }
 thiserror = { workspace = true }
 merge = { workspace = true }

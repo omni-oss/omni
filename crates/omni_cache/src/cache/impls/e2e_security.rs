@@ -337,12 +337,21 @@ async fn server_compromise_tampered_bytes_with_a_stolen_signature_are_a_miss() {
 
     // The attacker controls the server: it replaces the stored object with a
     // different, perfectly sealed archive that carries the real signature.
+    // Preserve valid metadata so the regression exercises signature checking,
+    // not rejection of an incomplete archive before publication.
+    let task = task("task", "project1", publisher.path());
+    let genuine = genuine_archive(&publisher, task.get()).await;
     let evil = {
         let mut out = Vec::new();
         let mut tar = tar::Builder::new(flate2::write::GzEncoder::new(
             &mut out,
             flate2::Compression::default(),
         ));
+        let mut source = tar::Archive::new(flate2::read::GzDecoder::new(&genuine[..]));
+        for entry in source.entries().unwrap() {
+            let mut entry = entry.unwrap();
+            tar.append(&entry.header().clone(), &mut entry).unwrap();
+        }
         let mut header = tar::Header::new_gnu();
         let payload = b"attacker controlled";
         header.set_size(payload.len() as u64);

@@ -2,6 +2,7 @@
 
 mod batch_executor;
 mod cache_manager;
+mod cache_restore;
 mod cache_status;
 mod cache_store_provider;
 mod config;

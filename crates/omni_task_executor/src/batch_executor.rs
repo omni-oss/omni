@@ -45,7 +45,6 @@ where
 {
     context: &'s LoadedContext<TSys>,
     cache_manager: CacheManager<TCacheStore, TSys>,
-    sys: TSys,
     subscriber: &'s S,
     wants_task_output_stream: bool,
     wants_task_input_stream: bool,
@@ -72,7 +71,6 @@ where
     pub fn new(
         context: &'s LoadedContext<TSys>,
         cache_manager: CacheManager<TCacheStore, TSys>,
-        sys: TSys,
         subscriber: &'s S,
         max_concurrent_tasks: usize,
         ignore_dependencies: bool,
@@ -89,7 +87,6 @@ where
         Self {
             context,
             cache_manager,
-            sys,
             wants_task_output_stream: subscriber.wants_task_output_stream(),
             wants_task_input_stream: subscriber.wants_task_input_stream(),
             subscriber,
@@ -233,7 +230,20 @@ where
         &self,
         task_ctx: &TaskContext<'_>,
         res: &CachedTaskExecution,
-    ) -> Result<(), BatchExecutorError> {
+    ) -> Result<bool, BatchExecutorError> {
+        if !self.dry_run {
+            let root = self.context.root_dir().to_path_buf();
+            let entry = res.clone();
+            let restored = tokio::task::spawn_blocking(move || {
+                crate::cache_restore::Restore::prepare(&root, &entry)?.write()
+            })
+            .await
+            .map_err(std::io::Error::other)?;
+            if let Err(error) = restored {
+                tracing::warn!(%error, "cache output restoration failed; executing the task instead");
+                return Ok(false);
+            }
+        }
         let effective = self.resolve_output_logs(task_ctx);
         let cached_failed = res.exit_code != 0;
         let should_replay = !self.dry_run
@@ -274,70 +284,7 @@ where
                 .await;
         }
 
-        // hard link the cached files to the original file paths if they don't exist
-        if !self.dry_run {
-            for file in res.files.iter() {
-                let original_path =
-                    file.original_path.path().expect("should be resolved");
-
-                if self.sys.fs_exists_async(original_path).await? {
-                    tracing::debug!(
-                        "file already exists {original_path:?}, skipping cache restore",
-                    );
-                    continue;
-                }
-
-                // The path was confined lexically when the entry was read. An
-                // existing symlink on the way (say `link -> /outside`) would
-                // still carry the write out of the workspace, so the nearest
-                // existing ancestor must really be inside it.
-                if !restores_inside(self.context.root_dir(), original_path) {
-                    tracing::warn!(
-                        "not restoring {original_path:?}: an existing path component leads outside the workspace",
-                    );
-                    continue;
-                }
-
-                let dir = original_path.parent().expect("should have parent");
-                if !self.sys.fs_exists_async(dir).await? {
-                    self.sys.fs_create_dir_all_async(dir).await?;
-                }
-
-                if let Err(err) = self
-                    .sys
-                    .fs_hard_link_async(
-                        file.cached_path.as_path(),
-                        original_path,
-                    )
-                    .await
-                {
-                    if !omni_utils::fs::should_copy_after_hardlink_error(&err) {
-                        return Err(err.into());
-                    }
-
-                    // Copy when the filesystem or its permissions prevent
-                    // hardlinking. Other failures must not be masked by a copy.
-                    tracing::debug!(
-                        "Restoring cached file by copy because hardlinking was unavailable ({err}): {:?}",
-                        original_path
-                    );
-                    self.sys
-                        .fs_copy_async(
-                            file.cached_path.as_path(),
-                            original_path,
-                        )
-                        .await?;
-                }
-
-                tracing::debug!(
-                    "restored cached file {:?} to {:?}",
-                    file.cached_path,
-                    original_path,
-                );
-            }
-        }
-
-        Ok(())
+        Ok(true)
     }
 
     #[tracing::instrument(level = Level::DEBUG, skip_all)]
@@ -551,6 +498,7 @@ where
             if let Some(cached_result) = cached_results
                 .get(task_ctx.node.full_task_name())
                 .filter(|_| is_cache_eligible(task_ctx))
+                && self.replay_cached_results(task_ctx, cached_result).await?
             {
                 new_results.insert(
                     task_ctx.node.full_task_name().to_string(),
@@ -563,8 +511,6 @@ where
                         cached_result.tries,
                     ),
                 );
-
-                self.replay_cached_results(task_ctx, cached_result).await?;
 
                 continue;
             }
@@ -1611,60 +1557,5 @@ mod tests {
         );
         let same = super::redact_error(failure(), &other);
         assert_eq!(same.kind(), super::BatchExecutorErrorKind::Io);
-    }
-}
-
-/// True when the nearest existing ancestor of `path`, with symlinks resolved,
-/// lies inside the real workspace root.
-fn restores_inside(
-    workspace: &std::path::Path,
-    path: &std::path::Path,
-) -> bool {
-    let Ok(root) = std::fs::canonicalize(workspace) else {
-        return false;
-    };
-    path.ancestors()
-        .skip(1)
-        .find_map(|ancestor| std::fs::canonicalize(ancestor).ok())
-        .is_some_and(|real| real.starts_with(&root))
-}
-
-#[cfg(test)]
-mod restore_confinement_tests {
-    use super::restores_inside;
-
-    #[test]
-    fn plain_and_new_directories_are_inside() {
-        let ws = tempfile::tempdir().unwrap();
-        std::fs::create_dir(ws.path().join("p")).unwrap();
-        assert!(restores_inside(ws.path(), &ws.path().join("p/out/new.txt")));
-        assert!(restores_inside(ws.path(), &ws.path().join("p/new.txt")));
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn a_symlink_leading_outside_is_refused() {
-        let ws = tempfile::tempdir().unwrap();
-        let outside = tempfile::tempdir().unwrap();
-        std::os::unix::fs::symlink(outside.path(), ws.path().join("link"))
-            .unwrap();
-        assert!(!restores_inside(ws.path(), &ws.path().join("link/new.txt")));
-        assert!(!restores_inside(
-            ws.path(),
-            &ws.path().join("link/a/b/c.txt")
-        ));
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn a_symlink_staying_inside_is_allowed() {
-        let ws = tempfile::tempdir().unwrap();
-        std::fs::create_dir(ws.path().join("real")).unwrap();
-        std::os::unix::fs::symlink(
-            ws.path().join("real"),
-            ws.path().join("alias"),
-        )
-        .unwrap();
-        assert!(restores_inside(ws.path(), &ws.path().join("alias/x.txt")));
     }
 }

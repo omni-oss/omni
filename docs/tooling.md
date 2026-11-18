@@ -7,6 +7,11 @@ Keeping this up to date: change this page in the same PR that adds, removes or u
 - Rust: nightly pinned in `rust-toolchain.toml` (with `rustfmt`, `clippy` and the `wasm32-unknown-unknown` target). Crates are in `crates/` and `cli/omni`, sharing `Cargo.toml` workspace dependencies.
 - TypeScript: bun (pinned in `package.json` `packageManager`) with workspaces in `packages/`, `scripts/`, `apps/`, `services/` and `tests/`. Dependency versions live in the root catalog.
 - Docs site: `apps/site`.
+- Cache output replay uses `cap-std` and `cap-fs-ext` (Bytecode Alliance,
+  Apache-2.0/Apache-2.0-with-LLVM-exception/MIT) behind the executor's private
+  `cache_restore` module. Directory-relative no-follow operations and retained
+  Windows handles avoid implementing platform security primitives ourselves;
+  dependency versions are locked in `Cargo.lock`.
 
 ## Quality tools
 
