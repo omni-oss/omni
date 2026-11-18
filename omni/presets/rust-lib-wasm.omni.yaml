@@ -6,13 +6,11 @@ extends:
 
 tasks:
   build:
-    exec: >-
-      sh -c 'case "${WASM_PACK_NO_OPT:-}" in 1|true|TRUE|True|yes) set -- --no-opt;; *) set --;; esac;
-      exec wasm-pack build --target nodejs --out-name index --out-dir ./dist "$@"'
+    exec: wasm-pack build --target nodejs --out-name index --out-dir ./dist ${WASM_PACK_ADDITIONAL_ARGS:-}
     cache:
       key:
         env:
-          append: [WASM_PACK_NO_OPT]
+          append: [WASM_PACK_ADDITIONAL_ARGS]
       output:
         files:
           - "dist/**"
