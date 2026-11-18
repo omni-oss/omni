@@ -48,17 +48,19 @@
 
 use std::fmt;
 
-/// A parsed task reference with raw (decoded) components.
+/// A parsed task reference with raw (decoded) components. Fields are private so
+/// every value comes from a validating constructor and always formats to text
+/// that parses back to it.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TaskReference {
     /// A leading unescaped `^`: look the task up in upstream projects.
-    pub upstream: bool,
+    upstream: bool,
     /// The explicit project, before `#`.
-    pub project: Option<String>,
+    project: Option<String>,
     /// The plugin (activation) the task is scoped to, before `::`.
-    pub plugin: Option<String>,
+    plugin: Option<String>,
     /// The raw local task name.
-    pub task: String,
+    task: String,
 }
 
 /// A part of a reference, named in errors.
@@ -182,6 +184,26 @@ impl TaskReference {
     /// A reference with only a task name. Fails on an empty name or a NUL.
     pub fn own(task: impl Into<String>) -> Result<Self, ReferenceError> {
         Self::from_raw_components(false, None, None, task.into())
+    }
+
+    /// Whether this is an upstream (`^`) reference.
+    pub fn upstream(&self) -> bool {
+        self.upstream
+    }
+
+    /// The explicit project, if any.
+    pub fn project(&self) -> Option<&str> {
+        self.project.as_deref()
+    }
+
+    /// The plugin the task is scoped to, if any.
+    pub fn plugin(&self) -> Option<&str> {
+        self.plugin.as_deref()
+    }
+
+    /// The raw local task name.
+    pub fn task(&self) -> &str {
+        &self.task
     }
 
     /// Build a reference from raw components, for structured input. Nothing is
