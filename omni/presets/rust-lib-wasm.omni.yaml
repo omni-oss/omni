@@ -6,14 +6,11 @@ extends:
 
 tasks:
   build:
-    exec: sh ${WORKSPACE_DIR}/omni/scripts/wasm-pack-build.sh
+    exec: wasm-pack build --target nodejs --out-name index --out-dir ./dist ${WASM_PACK_ADDITIONAL_ARGS:-}
     cache:
       key:
         env:
-          append: [WASM_PACK_NO_OPT]
-        files:
-          append:
-            - "@workspace/omni/scripts/wasm-pack-build.sh"
+          append: [WASM_PACK_ADDITIONAL_ARGS]
       output:
         files:
           - "dist/**"
