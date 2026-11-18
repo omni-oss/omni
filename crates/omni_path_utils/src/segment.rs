@@ -26,7 +26,7 @@ fn is_device_name(lowercase: &str) -> bool {
     matches!(stem, "con" | "prn" | "aux" | "nul")
         || ["com", "lpt"].iter().any(|prefix| {
             stem.strip_prefix(prefix).is_some_and(|rest| {
-                rest.len() == 1 && matches!(rest.as_bytes()[0], b'1'..=b'9')
+                rest.len() == 1 && rest.as_bytes()[0].is_ascii_digit()
             })
         })
 }

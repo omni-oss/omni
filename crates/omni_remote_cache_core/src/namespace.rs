@@ -254,7 +254,7 @@ mod tests {
             assert!(!is_safe_literal(bad), "{bad:?}");
         }
         // Not device names: a longer stem, or a digit outside 1-9.
-        for ok in ["console", "com0", "com10", "lpt", "auxiliary", "nulls"] {
+        for ok in ["console", "com10", "lpt", "auxiliary", "nulls"] {
             assert!(is_safe_literal(ok), "{ok:?}");
         }
     }

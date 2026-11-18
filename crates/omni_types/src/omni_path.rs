@@ -292,8 +292,14 @@ pub fn is_windows_unsafe_name(name: &str) -> bool {
         stem.as_str(),
         "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$"
     ) || ["COM", "LPT"].iter().any(|prefix| {
+        // `COM0` and `LPT0` are reserved too, and so are the superscript
+        // digits `COM¹`, `COM²` and `COM³`.
         stem.strip_prefix(prefix).is_some_and(|rest| {
-            rest.len() == 1 && rest.as_bytes()[0].is_ascii_digit()
+            let mut chars = rest.chars();
+            matches!(
+                (chars.next(), chars.next()),
+                (Some('0'..='9' | '\u{b9}' | '\u{b2}' | '\u{b3}'), None)
+            )
         })
     })
 }
@@ -453,6 +459,11 @@ mod tests {
             "COM3.log",
             "CONIN$",
             "CONOUT$",
+            "COM0",
+            "lpt0",
+            "COM\u{b9}",
+            "com\u{b2}.txt",
+            "LPT\u{b3}",
         ] {
             assert!(is_windows_unsafe_name(bad), "{bad:?} must be unsafe");
         }
