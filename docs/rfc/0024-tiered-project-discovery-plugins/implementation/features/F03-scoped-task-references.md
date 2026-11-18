@@ -4,8 +4,8 @@
 
 Audit prerequisite: [F03.1 identity and parser inventory](F03.1-identity-parser-audit.md).
 The escape-aware parser/formatter ([F03.2 part 1](F03.2-reference-parser.md)) is
-implemented but not yet used by configuration; its schema wiring and root lowering
-(F03.3) remain unimplemented.
+merged and now parses `dependencies`/`with` ([part 2](F03.2-reference-parser.md#part-2-wiring-into-dependencies-and-with)); root lowering
+(F03.3) and plugin-scoped variants remain unimplemented.
 
 ## Problem
 
