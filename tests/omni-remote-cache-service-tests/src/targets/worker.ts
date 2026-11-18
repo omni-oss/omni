@@ -160,10 +160,7 @@ export const workerTarget: Target = workerTargetFor({
             .readFileSync(path.join(process.cwd(), "orcs.config.json"), "utf8")
             .replace(/\n/g, "");
         return {
-            args: [
-                "--var",
-                `ORCS_CONFIG:${config}`,
-            ],
+            args: ["--var", `ORCS_CONFIG:${config}`],
         };
     },
 });
