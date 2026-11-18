@@ -263,6 +263,7 @@ tasks:
     }
   F03.2:
     {
+      owner: "OpenCode (part 1 parser pending review; schema wiring follows)",
       title: "Scoped reference schema, parser/formatter",
       parent: F03,
       kind: code,

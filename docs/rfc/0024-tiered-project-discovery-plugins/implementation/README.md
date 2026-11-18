@@ -59,7 +59,8 @@ second batch gives runtime readers (generators, tools, projection sync, packs) l
 pending PR review. F08.5 remains incomplete: install contributors are batch 3.
 F06.2's [canonical digest function](features/F06.2-canonical-digest.md) is implemented,
 unused until F06.3, pending PR review. F05.1's [origin-tagged cache enablement](features/F05.1-origin-tagged-enablement.md) is
-implemented, pending PR review; the contradiction rule (F05.2) is not. Other runtime code for F03-F10,
+implemented, pending PR review; the contradiction rule (F05.2) is not. F03.2's [escape-aware reference parser](features/F03.2-reference-parser.md) (part 1) is
+implemented but not yet used by configuration, pending PR review. Other runtime code for F03-F10,
 and plugins (P), remains unimplemented.
 
 Known gaps carried forward from the merged refactors:
