@@ -9,6 +9,18 @@ at your own database. You own the schema and the migrations. You supply SQL
 queries that return the shape the service needs, and the service sends them to
 the driver verbatim.
 
+## Upgrading from earlier releases
+
+This release changes the remote cache in ways that need action:
+
+- **Uploads are off by default.** Set `push` for the machines that may write shared entries (see "Client settings"). Without it a client only reads.
+- **New storage layout and entry format.** Entries are stored under a namespace and carry a sealed trailer. Existing entries are not read, so the cache starts empty. Old and new omni versions do not share a cache.
+- **Bearer authentication only.** Send the credential as `Authorization: Bearer <token>`.
+- **SQL hooks take more parameters.** The API key lookup hooks now receive the caller facts, so update the queries in your repository (see "The query contract"). The count differs per hook; check each against the contract.
+- **New `remote_cache` section in `workspace.omni.yaml`.** It holds trusted keys and verification. An older omni cannot read a config that uses it.
+- **Isolated entries expire.** The server removes them after `--isolated-ttl-days` (default 7). On S3 and R2 add a bucket lifecycle rule.
+- **Removed:** the `--s3.multi-bucket` server flag.
+
 ## Static API-key identity settings
 
 When using the default configuration-file provider, you can set

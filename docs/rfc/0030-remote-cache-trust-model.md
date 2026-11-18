@@ -1,6 +1,6 @@
 # RFC 0030: Remote cache trust model (tiers, immutability, provenance, signing)
 
-- **Status:** Draft <!-- Draft | Accepted | Implemented | Superseded -->
+- **Status:** Implemented <!-- Draft | Accepted | Implemented | Superseded -->
 - **Owner:** TBD
 - **Date:** 2026-11-13
 - **Base branch:** `main`
@@ -1440,8 +1440,9 @@ decorator caches a streamed write only when the outcome is `Stored`.
   it would write outside the workspace, or a copy would read any readable file into
   the workspace or the log. Windows: a name that Win32 normalizes or treats specially
   (trailing dot or space, `:`, wildcard characters, device names) is not confined; the
-  rule is unit-tested on every platform but only applied on Windows, where it has not
-  been run.
+  rule is unit-tested on every platform and applied on Windows, where the Windows CI
+  runner exercised it (this found `COM0`, `LPT0` and the superscript-digit device names,
+  now rejected).
 - **Size cap.** The server rejects an upload larger than `max_artifact_size` with
   `413` and stores nothing. An honest `Content-Length` is refused before any byte is
   read, and a chunked body, or one that lies about its length, is bounded while
@@ -1694,8 +1695,10 @@ were not added; the Rust tests cover the same boundaries.
   afterwards): `If-None-Match: *` gives `AlreadyExists` on a second write, 16 concurrent first
   writers produce exactly one winner, a failing stream commits nothing, ranges and prefix operations
   behave. This proves R2 enforces create-only for the S3 API, which is the "S3 API path" this RFC
-  allows. The Workers binding was verified separately (see "R2 create-only: resolved" above). Still not
-  verified: Windows runtime behaviour.
+  allows. The Workers binding was verified separately (see "R2 create-only: resolved" above). Windows
+  runtime behaviour was verified on the Windows CI runner with temporary tests (path confinement, hostile
+  archives, staged restore, partitions, markers, key files, the local backend, the sweeper, protected
+  environment variables); the tests were removed afterwards. Not verified: D1/worker beyond the CI suites.
 - **Oversized streams are tested at the route** (local storage), not per backend;
   S3, memory and R2 rely on the stream error aborting them. The `409` retries have no backoff (a racing delete is rare); add jitter if
   measurements show contention.
@@ -1807,7 +1810,7 @@ Slice 0 deviations and remaining checks:
   before filesystem joins. Shared `Container` parsing and S3 prefixes are unchanged.
 - S3 listing pagination remains incomplete: `list` stops at one service page and
   `paged_list` ignores `after_key`. Include pagination coverage in slice 1.
-- Real S3/R2 checks and the breaking-change release note remain outstanding.
+- Real S3/R2 checks are done (section above). The breaking-change notes are in the remote cache guide, "Upgrading from earlier releases".
 
 ### Plan (steps, checks, undo)
 
