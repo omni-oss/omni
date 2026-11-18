@@ -16,6 +16,7 @@ Keeping this up to date: change this page in the same PR that adds, removes or u
 ## Dev tools
 
 - `omni`: the task runner used on this repo. Tasks come from `omni/presets/*.omni.yaml`; run `omni run <task> -p <project>`.
+- Wasm builds: set `WASM_PACK_NO_OPT=true` for wasm-pack builds or `WORKER_BUILD_NO_OPT=true` for Cloudflare worker builds (for example in the project's `.env.local`) to skip wasm-opt. Optimization remains enabled by default.
 - `omni generate`: scaffolds from `generators/` (`crate`, `rust-error`, `ts-package`).
 - `omni remote-sources install` and `omni projection sync`: fetch and link the projected guidelines and skills (`workspace.omni.yaml`).
 - `cog` (cocogitto): commit checks and releases, configured in `cog.toml`.
