@@ -33,8 +33,8 @@ use serde::{Deserialize, Serialize};
 use strum::{EnumDiscriminants, EnumIs, IntoDiscriminant as _};
 use system_traits::{
     FsCopyAsync as _, FsCreateDirAllAsync, FsHardLinkAsync as _,
-    FsMetadataAsync, FsReadAsync as _, FsRemoveDirAllAsync as _,
-    FsWriteAsync as _, impls::RealSys,
+    FsMetadataAsync, FsRemoveDirAllAsync as _, FsWriteAsync as _,
+    impls::RealSys,
 };
 use time::OffsetDateTime;
 use tokio::task::JoinSet;
@@ -530,6 +530,16 @@ async fn restore_staged(
     let staged = async {
         extract?;
         read_validated_entry(&staging, identity).await?;
+        // The marker is ours alone: an archive that ships that name (as a file
+        // or directory) is rejected rather than overwritten.
+        if tokio::fs::symlink_metadata(
+            staging.join(super::origin::ORIGIN_MARKER),
+        )
+        .await
+        .is_ok()
+        {
+            return Err(invalid_entry());
+        }
         tokio::fs::write(
             staging.join(super::origin::ORIGIN_MARKER),
             marker.text(),
@@ -548,6 +558,33 @@ async fn restore_staged(
         let _ = tokio::fs::remove_dir_all(&staging).await;
     }
     staged
+}
+
+/// A cache entry's metadata is a small MessagePack record; anything larger is
+/// not one, and must not be read whole into memory.
+const MAX_METADATA_BYTES: u64 = 16 * 1024 * 1024;
+
+fn invalid_entry() -> std::io::Error {
+    std::io::Error::new(
+        std::io::ErrorKind::InvalidData,
+        "invalid cache entry metadata or files",
+    )
+}
+
+/// Reads an entry's metadata file. A missing, oversized or non-regular file
+/// (an archive can put a directory there) is an invalid entry, not an I/O error.
+async fn read_metadata_bounded(path: &Path) -> std::io::Result<Vec<u8>> {
+    let meta = match tokio::fs::symlink_metadata(path).await {
+        Ok(meta) => meta,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Err(invalid_entry());
+        }
+        Err(e) => return Err(e),
+    };
+    if !meta.is_file() || meta.len() > MAX_METADATA_BYTES {
+        return Err(invalid_entry());
+    }
+    tokio::fs::read(path).await
 }
 
 /// Owned so a remote transfer can validate its metadata before publication.
@@ -582,21 +619,9 @@ async fn read_validated_entry(
     dir: &Path,
     identity: &EntryIdentity,
 ) -> std::io::Result<CachedTaskExecution> {
-    let invalid = || {
-        std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            "invalid cache entry metadata or files",
-        )
-    };
-    let bytes = tokio::fs::read(dir.join(CACHE_OUTPUT_METADATA_FILE))
-        .await
-        .map_err(|e| {
-            if e.kind() == std::io::ErrorKind::NotFound {
-                invalid()
-            } else {
-                e
-            }
-        })?;
+    let invalid = invalid_entry;
+    let bytes =
+        read_metadata_bounded(&dir.join(CACHE_OUTPUT_METADATA_FILE)).await?;
     let entry: CachedTaskExecution =
         rmp_serde::from_slice(&bytes).map_err(|_| invalid())?;
     if entry.project_name != identity.project
@@ -804,7 +829,7 @@ impl HybridTaskExecutionCacheStore {
             return Ok(None);
         }
 
-        let bytes = self.sys.fs_read_async(metadata_path).await?;
+        let bytes = read_metadata_bounded(metadata_path).await?;
         let metadata: CachedTaskExecution =
             rmp_serde::decode::from_slice(&bytes)?;
 
@@ -1500,7 +1525,18 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
             let cache_abs = |p: &Path| std::path::absolute(output_dir.join(p));
 
             let output = if self.sys.fs_exists_async(&file).await? {
-                let bytes = self.sys.fs_read_async(&file).await?;
+                let bytes = match read_metadata_bounded(&file).await {
+                    Ok(bytes) => bytes,
+                    Err(e) if e.kind() == std::io::ErrorKind::InvalidData => {
+                        tracing::warn!(
+                            project = %project.task.project_name,
+                            "ignoring a cache entry with oversized or invalid metadata"
+                        );
+                        outputs.push(None);
+                        continue 'outer_loop;
+                    }
+                    Err(e) => return Err(e.into()),
+                };
                 // A remote or hostile entry may carry undecodable metadata, or
                 // metadata that names another task or digest than the one it
                 // was requested for. Either is a miss, never an error and never
@@ -1710,8 +1746,12 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                         continue;
                     }
 
-                    let cache_meta_bytes =
-                        tokio::fs::read(&cache_meta_path).await?;
+                    let Ok(cache_meta_bytes) =
+                        read_metadata_bounded(&cache_meta_path).await
+                    else {
+                        tracing::warn!("ignoring oversized or invalid metadata while computing cache statistics");
+                        continue;
+                    };
 
                     let Ok(cache_meta) = rmp_serde::decode::from_slice::<CachedTaskExecution>(&cache_meta_bytes) else {
                         tracing::warn!("ignoring unreadable metadata while computing cache statistics");
@@ -4548,6 +4588,108 @@ mod tests {
             "rebuilt result must be reusable"
         );
         server.abort();
+    }
+
+    #[tokio::test]
+    async fn archive_controlled_structure_is_a_miss_not_an_error() {
+        let temp = fixture(&["project1"]).await;
+        let task = task("task", "project1", temp.path());
+        let genuine = genuine_archive(&temp, task.get()).await;
+        let dir_named = |name: &'static str, keep_genuine: bool| {
+            let mut out = Vec::new();
+            {
+                let mut tar = tar::Builder::new(flate2::write::GzEncoder::new(
+                    &mut out,
+                    flate2::Compression::default(),
+                ));
+                if keep_genuine {
+                    let mut src = tar::Archive::new(
+                        flate2::read::GzDecoder::new(&genuine[..]),
+                    );
+                    for entry in src.entries().unwrap() {
+                        let mut entry = entry.unwrap();
+                        tar.append(&entry.header().clone(), &mut entry)
+                            .unwrap();
+                    }
+                }
+                let mut header = tar::Header::new_gnu();
+                header.set_entry_type(tar::EntryType::Directory);
+                header.set_size(0);
+                header.set_mode(0o755);
+                header.set_cksum();
+                tar.append_data(&mut header, name, std::io::empty())
+                    .unwrap();
+                tar.into_inner().unwrap().finish().unwrap();
+            }
+            out
+        };
+        for (name, archive) in [
+            (
+                "metadata is a directory",
+                dir_named(CACHE_OUTPUT_METADATA_FILE, false),
+            ),
+            (
+                "marker is a directory",
+                dir_named(".omni-origin-remote", true),
+            ),
+        ] {
+            let (url, server) =
+                serve_with_probe(archive, "read:artifacts").await;
+            let store = remote_store(temp.path(), &url);
+            assert!(store.get(task.get()).await.unwrap().is_none(), "{name}");
+            server.abort();
+            assert!(markers(&store.cache_dir).is_empty(), "{name}");
+            store
+                .cache(&new_cache_info(Some(&LOGS_CONTENT), *task.get()))
+                .await
+                .unwrap();
+            assert!(
+                store.get(task.get()).await.unwrap().is_some(),
+                "{name}: rebuild recovers"
+            );
+            std::fs::remove_dir_all(&store.cache_dir).ok();
+        }
+    }
+
+    #[tokio::test]
+    async fn oversized_metadata_is_invalid_without_being_read_whole() {
+        let temp = fixture(&["project1"]).await;
+        let cache = HybridTaskExecutionCacheStore::new(
+            temp.path().join(".cache"),
+            temp.path(),
+            RemoteConfig::new_disabled(),
+        );
+        let task = task("task", "project1", temp.path());
+        cache
+            .cache(&new_cache_info(Some(&LOGS_CONTENT), *task.get()))
+            .await
+            .unwrap();
+        let collected = cache
+            .collect(
+                &[*task.get()],
+                &CollectConfig {
+                    cache_output_dirs: true,
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        let metadata = collected[0]
+            .cache_output_dir
+            .as_ref()
+            .unwrap()
+            .join(CACHE_OUTPUT_METADATA_FILE);
+        let file = std::fs::OpenOptions::new()
+            .write(true)
+            .open(&metadata)
+            .unwrap();
+        file.set_len(MAX_METADATA_BYTES + 1).unwrap();
+        assert!(cache.get_many(&[*task.get()]).await.unwrap()[0].is_none());
+        cache
+            .cache(&new_cache_info(Some(&LOGS_CONTENT), *task.get()))
+            .await
+            .unwrap();
+        assert!(cache.get_many(&[*task.get()]).await.unwrap()[0].is_some());
     }
 
     #[tokio::test]

@@ -7963,6 +7963,7 @@ dependencies = [
  "async-trait",
  "axum",
  "axum-extra",
+ "base64 0.23.1",
  "bytes 1.12.1",
  "bytesize",
  "derive-new",

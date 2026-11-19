@@ -696,7 +696,7 @@ async fn the_probe_reports_the_principal_segment_and_the_effective_scope() {
 }
 
 fn signature() -> String {
-    format!("{}:{}=", "0123456789abcdef", "A".repeat(87))
+    format!("{}:{}==", "0123456789abcdef", "A".repeat(86))
 }
 
 #[tokio::test]

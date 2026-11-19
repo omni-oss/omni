@@ -257,20 +257,19 @@ fn declared_signature(
     }
 }
 
-/// True for `<16 lowercase hex>:<88 characters of padded standard base64>`.
+/// True for `<16 lowercase hex>:<base64 of exactly 64 bytes>`, the shape of an
+/// Ed25519 signature. The bytes are only decoded, never verified here.
 fn is_well_formed_signature(text: &str) -> bool {
+    use base64::{Engine as _, engine::general_purpose::STANDARD};
     let Some((id, encoded)) = text.split_once(':') else {
         return false;
     };
     id.len() == 16
         && id.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
         && encoded.len() == 88
-        && encoded.ends_with('=')
-        && !encoded.ends_with("===")
-        && encoded
-            .trim_end_matches('=')
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b == b'+' || b == b'/')
+        && STANDARD
+            .decode(encoded)
+            .is_ok_and(|bytes| bytes.len() == 64)
 }
 
 /// The client's SHA-256 of the artifact: exactly one `X-Omni-Content-Sha256`
@@ -297,7 +296,7 @@ mod tests {
 
     #[test]
     fn the_signature_grammar_is_strict_and_optional() {
-        let sig = format!("{}:{}=", "0123456789abcdef", "A".repeat(87));
+        let sig = format!("{}:{}==", "0123456789abcdef", "A".repeat(86));
         let one = |value: &str| {
             let mut headers = HeaderMap::new();
             headers.insert("x-omni-signature", value.parse().unwrap());
@@ -308,7 +307,9 @@ mod tests {
         for bad in [
             sig.to_uppercase(),
             sig.replace(':', ";"),
-            format!("{}:{}=", "0123456789abcde", "A".repeat(87)),
+            // Valid base64 of 65 bytes: not an Ed25519 signature.
+            format!("{}:{}=", "0123456789abcdef", "A".repeat(87)),
+            format!("{}:{}=", "0123456789abcde", "A".repeat(86)),
             format!("{}:{}", "0123456789abcdef", "A".repeat(88)),
             format!("{}:{}==", "0123456789abcdef", "A".repeat(86))
                 .replace("==", "==="),

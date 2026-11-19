@@ -1345,12 +1345,12 @@ runtime, `verify: off` disables verification and `push: false` stops uploads.
   query contract, filled by the issuer (4.1).
 - **Authenticator chain:** first match wins, in config order, and credential
   formats must be unambiguous (4.0).
-- **Isolated reads and verification:** only untrusted runs (`target: isolated`, no
-  `publish`) probe isolated. Trusted and read-only runs never do (4.1). The review
-  recommended also disabling isolated reads in `require` mode outright. That would,
-  with workspace-level `trusted_keys`, switch off isolated caches for PR CI in every
-  signing-enabled workspace and defeat goal 3, so the rule is on who reads, not on the
-  mode.
+- **Isolated reads and verification:** superseded. An earlier review recommended
+  disabling isolated reads in `require` mode and this was first declined, because it
+  switches off isolated caches for PR CI in signing-enabled workspaces. A later review
+  showed that deciding by the server's probe lets a compromised server bypass
+  `require`, so the decision is now local: `require` never requests unsigned isolated
+  entries (see `0030-review-follow-up.md`). Isolated reuse remains under `off`/`warn`.
 - **Where `trusted_keys` and `verify` live:** the committed workspace config, merged
   with the local file so the local file can only tighten (4.4).
 - **Layout and lifecycle:** namespace first, `shared/...` and `isolated/...`, one
@@ -1703,7 +1703,7 @@ were not added; the Rust tests cover the same boundaries.
 - **Oversized streams are tested at the route** (local storage), not per backend;
   S3, memory and R2 rely on the stream error aborting them. The `409` retries have no backoff (a racing delete is rare); add jitter if
   measurements show contention.
-- Not implemented yet: slices 2-10, and the client reading the size cap.
+- Historical: written at slice 1. Slices 2-10 and the client size cap have since landed (see the later sections).
 - Rollout order matters: block or upgrade every old client with write access, then
   purge legacy failed remote entries, then enable immutable writes. Otherwise an old
   client can repopulate a failed entry that then holds its digest (`409`) until an
