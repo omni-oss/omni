@@ -21,3 +21,16 @@ Keeping this up to date: change this page in the same PR that adds, removes or u
 - `omni remote-sources install` and `omni projection sync`: fetch and link the projected guidelines and skills (`workspace.omni.yaml`).
 - `cog` (cocogitto): commit checks and releases, configured in `cog.toml`.
 - `docker`: available for container-based tests.
+
+## Remote-cache worker tests
+
+`omni run test:service:worker -p @omni-oss/omni-remote-cache-service-tests`
+builds the worker and runs the API suite through local Wrangler/Miniflare.
+Node must be on `PATH`: without it, `bunx wrangler` can fall back to Bun,
+which Wrangler rejects with HTTP 503 because Bun's `fetch` does not support
+the dispatcher Miniflare uses.
+
+On a failing worker test, the harness prints captured Wrangler output and
+process exit information. The 20 MiB upload assertion also reports the response
+body on failure. These diagnostics do not retry the request or weaken the
+expected status.

@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe } from "vitest";
+import { afterAll, afterEach, beforeAll, describe } from "vitest";
 
 import { resolveTargets, type Target } from "./targets";
 
@@ -29,6 +29,14 @@ export function describeTargets(
             offsets.set(target.name, offset + 1);
             running = await target.start(target.basePort + offset);
         }, 600_000);
+
+        afterEach((ctx) => {
+            if (ctx.task.result?.state === "fail" && running?.diagnostics) {
+                console.error(
+                    `${target.name} runtime output:\n${running.diagnostics()}`,
+                );
+            }
+        });
 
         afterAll(async () => {
             await running?.stop();

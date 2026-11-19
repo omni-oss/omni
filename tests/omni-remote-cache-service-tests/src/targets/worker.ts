@@ -139,6 +139,8 @@ export function workerTargetFor(variant: WorkerVariant): Target {
 
             return {
                 apiBaseUrl,
+                diagnostics: () =>
+                    `Node ${process.version}; exit=${child.exitCode}; signal=${child.signalCode}\n${output.join("")}`,
                 sql: prepared.sql,
                 async stop() {
                     kill("SIGTERM");
