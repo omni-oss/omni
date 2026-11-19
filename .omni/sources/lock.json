@@ -9,12 +9,12 @@
       },
       "https://github.com/cs-clarence/swe-skills": {
         "main": {
-          "pin": "57fdd47cc8244b24b3dcdde46d6e6cf2e4ee5b39"
+          "pin": "ee008d2dcf794c07ec334cf3b4ea39570377e886"
         }
       },
       "https://github.com/cursor/plugins.git": {
         "main": {
-          "pin": "a5539b15a3d56e04992565aafee2b37051329ce3"
+          "pin": "e58dd043600587dbaf58ba315e7f2b38373eeb43"
         }
       },
       "https://github.com/mattpocock/skills.git": {
