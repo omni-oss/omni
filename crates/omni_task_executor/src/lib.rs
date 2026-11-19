@@ -1,6 +1,7 @@
 #![allow(clippy::redundant_field_names)]
 
 mod batch_executor;
+mod cache_contradiction;
 mod cache_manager;
 mod cache_restore;
 mod cache_status;
@@ -19,6 +20,10 @@ mod sys;
 mod task_context_provider;
 mod utils;
 
+pub use cache_contradiction::{
+    CacheContradiction, ContradictionNode, ContradictionRole,
+    find_explicit_contradictions,
+};
 pub use cache_status::CacheStatus;
 pub use config::*;
 pub use executor::*;
