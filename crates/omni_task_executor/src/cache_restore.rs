@@ -10,6 +10,39 @@ use cap_std::fs::{Dir, OpenOptions};
 
 use omni_cache::CachedTaskExecution;
 
+/// Where an absolute link target must start to count as inside the workspace.
+struct Workspace {
+    given: PathBuf,
+    real: PathBuf,
+}
+
+impl Workspace {
+    fn new(workspace: &Path) -> io::Result<Self> {
+        Ok(Self {
+            given: workspace.to_path_buf(),
+            real: std::fs::canonicalize(workspace)?,
+        })
+    }
+
+    /// A link's contents as a path relative to the workspace root, resolved
+    /// from `real` (the link's directory) when it is relative itself.
+    fn relative_target(
+        &self,
+        contents: &Path,
+        real: &Path,
+    ) -> io::Result<PathBuf> {
+        if contents.is_absolute() {
+            contents
+                .strip_prefix(&self.real)
+                .or_else(|_| contents.strip_prefix(&self.given))
+                .map(Path::to_path_buf)
+                .map_err(|_| unsafe_path())
+        } else {
+            Ok(real.join(contents))
+        }
+    }
+}
+
 struct Output {
     source: PathBuf,
     relative: PathBuf,
@@ -19,6 +52,7 @@ struct Output {
 /// cause execution, not a cache hit with some promised outputs silently absent.
 pub(crate) struct Restore {
     root: Dir,
+    workspace: Workspace,
     outputs: Vec<Output>,
 }
 
@@ -29,6 +63,7 @@ impl Restore {
     ) -> io::Result<Self> {
         let root =
             Dir::open_ambient_dir(workspace, cap_std::ambient_authority())?;
+        let anchors = Workspace::new(workspace)?;
         let mut outputs = Vec::with_capacity(entry.files.len());
         for file in &entry.files {
             let path = file.original_path.path().map_err(|_| unsafe_path())?;
@@ -39,7 +74,7 @@ impl Restore {
                 .strip_prefix(workspace)
                 .map_err(|_| unsafe_path())?
                 .to_path_buf();
-            let (parents, name) = destination(&root, &relative)?;
+            let (parents, name) = destination(&root, &anchors, &relative)?;
             let parent = parents.last().expect("root is retained");
             match parent.symlink_metadata(&name) {
                 Ok(meta) if meta.is_file() => continue, // Existing outputs are retained.
@@ -55,14 +90,19 @@ impl Restore {
                 relative,
             });
         }
-        Ok(Self { root, outputs })
+        Ok(Self {
+            root,
+            workspace: anchors,
+            outputs,
+        })
     }
 
     pub(crate) fn write(self) -> io::Result<()> {
         for output in self.outputs {
             // Reopen safely, not by pathname. Keeping only this file's chain
             // bounds descriptors by path depth, not by archive entry count.
-            let (parents, name) = destination(&self.root, &output.relative)?;
+            let (parents, name) =
+                destination(&self.root, &self.workspace, &output.relative)?;
             write_output(&output.source, &parents, &name)?;
         }
         Ok(())
@@ -88,6 +128,7 @@ fn relative_destination(workspace: &Path, path: &Path) -> io::Result<PathBuf> {
 
 fn destination(
     root: &Dir,
+    workspace: &Workspace,
     relative: &Path,
 ) -> io::Result<(Vec<Dir>, std::ffi::OsString)> {
     let mut parents = vec![root.try_clone()?];
@@ -112,7 +153,10 @@ fn destination(
                         // never leave `root`; an escaping link is an error.
                         // Every component is then re-opened without following
                         // links, so a later swap fails closed.
-                        let target = root.canonicalize(real.join(name))?;
+                        let contents = parent.read_link_contents(name)?;
+                        let target = root.canonicalize(
+                            workspace.relative_target(&contents, &real)?,
+                        )?;
                         parents = vec![root.try_clone()?];
                         for part in target.components() {
                             let Component::Normal(part) = part else {
@@ -207,11 +251,13 @@ mod tests {
     }
 
     fn test_destination(
-        root: &Path,
+        root_path: &Path,
         relative: &str,
     ) -> io::Result<(Vec<Dir>, std::ffi::OsString)> {
-        let root = Dir::open_ambient_dir(root, cap_std::ambient_authority())?;
-        destination(&root, Path::new(relative))
+        let root =
+            Dir::open_ambient_dir(root_path, cap_std::ambient_authority())?;
+        let workspace = Workspace::new(root_path)?;
+        destination(&root, &workspace, Path::new(relative))
     }
 
     #[test]
@@ -334,6 +380,28 @@ mod tests {
         let source = tempfile::NamedTempFile::new().unwrap();
         write_output(source.path(), &parents, &name).unwrap();
         assert!(root.path().join("real/out").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_absolute_symlink_into_the_workspace_is_followed_but_one_outside_is_not()
+     {
+        let root = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        std::fs::create_dir(root.path().join("real")).unwrap();
+        std::os::unix::fs::symlink(
+            root.path().join("real"),
+            root.path().join("inside"),
+        )
+        .unwrap();
+        std::os::unix::fs::symlink(outside.path(), root.path().join("outside"))
+            .unwrap();
+        let (parents, name) =
+            test_destination(root.path(), "inside/out").unwrap();
+        let source = tempfile::NamedTempFile::new().unwrap();
+        write_output(source.path(), &parents, &name).unwrap();
+        assert!(root.path().join("real/out").exists());
+        assert!(test_destination(root.path(), "outside/out").is_err());
     }
 
     #[test]
