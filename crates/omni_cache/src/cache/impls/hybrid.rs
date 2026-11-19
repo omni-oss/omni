@@ -560,6 +560,14 @@ async fn restore_staged(
     staged
 }
 
+/// Removes an entry directory; one that another run already removed is fine.
+async fn remove_entry_dir(dir: &Path) -> std::io::Result<()> {
+    match tokio::fs::remove_dir_all(dir).await {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
+        _ => Ok(()),
+    }
+}
+
 /// A cache entry's metadata is a small MessagePack record; anything larger is
 /// not one, and must not be read whole into memory.
 const MAX_METADATA_BYTES: u64 = 16 * 1024 * 1024;
@@ -1147,12 +1155,16 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
 
             cache_exec_hashes.push(execution_hash);
 
-            if self
-                .can_upload_cached_result(
-                    new_cache_info.exit_code,
-                    &metadata_path,
-                )
-                .await
+            // An entry restored from the remote was fetched, not built here: it
+            // carries an origin marker, and re-uploading it would publish a
+            // directory the restore rejects.
+            if super::origin::read_marker(output_dir).await.is_none()
+                && self
+                    .can_upload_cached_result(
+                        new_cache_info.exit_code,
+                        &metadata_path,
+                    )
+                    .await
             {
                 cached_results.push((execution_hash, output_dir.to_path_buf()));
             }
@@ -1381,7 +1393,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                         project = %project.task.project_name,
                         "discarding a local entry restored from an isolated remote namespace"
                     );
-                    tokio::fs::remove_dir_all(output_dir).await?;
+                    remove_entry_dir(output_dir).await?;
                 } else if conf.signing.verify == EffectiveVerify::Require
                     && let Some(m) = &marker
                     && m.origin == super::origin::Origin::Shared
@@ -1395,7 +1407,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                         project = %project.task.project_name,
                         "discarding a local remote entry that was not verified by a currently trusted key"
                     );
-                    tokio::fs::remove_dir_all(output_dir).await?;
+                    remove_entry_dir(output_dir).await?;
                 }
 
                 // skip if the output dir already exists/downloaded
@@ -1511,7 +1523,16 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                                     "ignoring an unsafe or corrupt remote cache entry"
                                 );
                             }
-                            Err(e) => return Err(e.into()),
+                            // A local I/O failure while restoring (disk full, a
+                            // failed rename) must not fail the run: the remote
+                            // is optional, so it is a miss.
+                            Err(e) => {
+                                tracing::warn!(
+                                    %digest,
+                                    error = %e,
+                                    "could not restore a remote cache entry; treating it as a miss"
+                                );
+                            }
                         }
                     }
 
@@ -4725,6 +4746,44 @@ mod tests {
         gate.notify_one();
         let _ = downloading.await;
         server.abort();
+    }
+
+    #[tokio::test]
+    async fn an_entry_restored_from_the_remote_is_never_uploaded_again() {
+        let remote = RemoteUploadSpy::new(204).await;
+        let temp = fixture(&["project1"]).await;
+        let cache = remote.cache(temp.path());
+        let task = task("task", "project1", temp.path());
+        let logs = LOGS_CONTENT.clone();
+        let info = new_cache_info_with_exit_code(Some(&logs), *task.get(), 0);
+        cache.cache(&info).await.unwrap();
+        assert_eq!(
+            remote.requests.lock().unwrap().len(),
+            1,
+            "built here: uploaded"
+        );
+        let collected = cache
+            .collect(
+                &[*task.get()],
+                &CollectConfig {
+                    cache_output_dirs: true,
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        let dir = collected[0].cache_output_dir.clone().unwrap();
+        std::fs::write(
+            dir.join(".omni-origin-remote"),
+            "v1 origin=shared verified_by=none\n",
+        )
+        .unwrap();
+        cache.cache(&info).await.unwrap();
+        assert_eq!(
+            remote.requests.lock().unwrap().len(),
+            1,
+            "a fetched entry carries a marker and must not be re-uploaded"
+        );
     }
 
     #[tokio::test]
