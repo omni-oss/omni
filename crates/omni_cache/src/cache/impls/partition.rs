@@ -384,12 +384,13 @@ mod tests {
         // A directory handle needs backup semantics (and write access to its
         // attributes) on Windows.
         let mut options = std::fs::OpenOptions::new();
-        options.write(true);
         #[cfg(windows)]
         {
             use std::os::windows::fs::OpenOptionsExt as _;
-            options.custom_flags(0x0200_0000); // FILE_FLAG_BACKUP_SEMANTICS
+            options.write(true).custom_flags(0x0200_0000); // FILE_FLAG_BACKUP_SEMANTICS
         }
+        #[cfg(not(windows))]
+        options.read(true);
         options.open(&old).unwrap().set_modified(long_ago).unwrap();
         reclaim_stale_unknown(base, UNKNOWN_PARTITION_MAX_AGE).await;
         assert!(!old.exists());
