@@ -231,7 +231,8 @@ A run that can publish never requests isolated entries.
 
 Restoring output files uses retained directory handles and exclusive file
 creation, rather than checking an absolute path and later reopening it. Parent
-symlinks (even ones pointing inside the workspace) are refused. A restore failure
+symlinks that stay inside the workspace are followed to their real directory;
+ones that leave it fail the restore. A restore failure
 is a cache miss and the task executes, not a successful hit with missing outputs.
 Existing regular output files are retained; missing files are copied into fresh
 files, not hardlinked to the cache. This avoids both final-link writes and later

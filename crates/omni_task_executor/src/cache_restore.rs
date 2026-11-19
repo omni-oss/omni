@@ -91,29 +91,55 @@ fn destination(
     relative: &Path,
 ) -> io::Result<(Vec<Dir>, std::ffi::OsString)> {
     let mut parents = vec![root.try_clone()?];
+    // The real (symlink-free) location of `parents.last()`, relative to root.
+    let mut real = PathBuf::new();
     for component in relative.parent().ok_or_else(unsafe_path)?.components() {
-        let Component::Normal(name) = component else {
-            if component == Component::CurDir {
-                continue;
-            }
-            if component == Component::ParentDir && parents.len() > 1 {
+        match component {
+            Component::CurDir => continue,
+            Component::ParentDir if parents.len() > 1 => {
                 parents.pop();
+                real.pop();
                 continue;
             }
-            return Err(unsafe_path());
-        };
-        if !omni_types::is_confined_relative(Path::new(name)) {
-            return Err(unsafe_path());
+            Component::Normal(name)
+                if omni_types::is_confined_relative(Path::new(name)) =>
+            {
+                let parent = parents.last().expect("root is retained");
+                match parent.symlink_metadata(name) {
+                    Ok(meta) if meta.file_type().is_symlink() => {
+                        // A link that stays inside the workspace is followed to
+                        // its real directory, resolved by cap-std so it can
+                        // never leave `root`; an escaping link is an error.
+                        // Every component is then re-opened without following
+                        // links, so a later swap fails closed.
+                        let target = root.canonicalize(real.join(name))?;
+                        parents = vec![root.try_clone()?];
+                        for part in target.components() {
+                            let Component::Normal(part) = part else {
+                                return Err(unsafe_path());
+                            };
+                            let next = parents
+                                .last()
+                                .expect("root is retained")
+                                .open_dir_nofollow(part)?;
+                            parents.push(next);
+                        }
+                        real = target;
+                    }
+                    Ok(_) => {
+                        parents.push(parent.open_dir_nofollow(name)?);
+                        real.push(name);
+                    }
+                    Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                        parent.create_dir(name)?;
+                        parents.push(parent.open_dir_nofollow(name)?);
+                        real.push(name);
+                    }
+                    Err(e) => return Err(e),
+                }
+            }
+            _ => return Err(unsafe_path()),
         }
-        let parent = parents.last().expect("root is retained");
-        match parent.create_dir(name) {
-            Ok(()) => {}
-            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {}
-            Err(e) => return Err(e),
-        }
-        // A single no-follow component; retain the chain while writing. On
-        // Windows these handles also deny renaming/deleting the parents.
-        parents.push(parent.open_dir_nofollow(name)?);
     }
     let name = relative.file_name().ok_or_else(unsafe_path)?;
     if !omni_types::is_confined_relative(Path::new(name)) {
@@ -294,6 +320,20 @@ mod tests {
             "normalization must not hide an existing symlink"
         );
         assert!(!outside.path().join("out").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlink_staying_inside_the_workspace_is_followed_to_its_real_directory()
+     {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir(root.path().join("real")).unwrap();
+        std::os::unix::fs::symlink("real", root.path().join("alias")).unwrap();
+        let (parents, name) =
+            test_destination(root.path(), "alias/out").unwrap();
+        let source = tempfile::NamedTempFile::new().unwrap();
+        write_output(source.path(), &parents, &name).unwrap();
+        assert!(root.path().join("real/out").exists());
     }
 
     #[test]
