@@ -246,9 +246,9 @@ before publication. Invalid persisted entries are discarded under cache locks
 so a rebuild can repair them.
 
 Local cache directories must be writable, even for lookups: Omni creates lock
-files and may remove invalid entries. Unknown partitions are discoverable by
-cache maintenance, but their empty directories and lock files may remain after
-entry pruning; remove unused directories when the relevant runs have stopped.
+files and may remove invalid entries. Each run without a usable access
+verdict gets its own `unknown` partition, so it starts cold. A later run removes
+`unknown` partitions not modified for 7 days, and `omni cache prune` also sees them.
 
 ### Keeping a task off the remote cache
 
@@ -346,7 +346,9 @@ Things that behave differently from before:
   `GET` and `HEAD` answer `404` and the task runs again. They are not deleted.
 - **`HEAD` and `GET` agree.** `HEAD` answers `204` only for an entry `GET` would serve.
 - **List sizes include the record.** `GET /v1/artifacts` reports the stored object size,
-  which is a little larger than the artifact.
+  which is a little larger than the artifact. For an isolated listing, `scope` is the
+  stored path segment, which is a hash for labels with uppercase letters or special
+  characters, not the label itself; do not send it back as `?scope=`.
 - **If a stored object changes while it is being read,** the response ends with an error
   instead of a short success, and the client treats the download as failed.
 

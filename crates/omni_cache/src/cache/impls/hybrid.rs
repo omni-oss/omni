@@ -395,6 +395,13 @@ impl HybridTaskExecutionCacheStore {
                         verify_mode: conf.signing.verify.as_str(),
                     },
                 );
+                // Each run without a usable verdict gets a fresh partition, so
+                // clear out ones nobody has used for a week.
+                super::partition::reclaim_stale_unknown(
+                    &self.base_dir,
+                    super::partition::UNKNOWN_PARTITION_MAX_AGE,
+                )
+                .await;
                 let untrusted = !probe.refused
                     && probe.scopes.is_some()
                     && probe.holds("write:artifacts")

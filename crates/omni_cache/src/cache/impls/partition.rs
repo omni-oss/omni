@@ -130,6 +130,39 @@ pub(crate) fn unknown_dir(base: &Path, epoch: &str) -> PathBuf {
     )
 }
 
+/// How long an `unknown` partition may sit unused before a later run removes it.
+pub(crate) const UNKNOWN_PARTITION_MAX_AGE: std::time::Duration =
+    std::time::Duration::from_secs(7 * 24 * 60 * 60);
+
+/// Removes `unknown/*` partitions not modified for `max_age`. Each run gets its
+/// own, so without this they pile up. Best effort: a failure is only logged.
+pub(crate) async fn reclaim_stale_unknown(
+    base: &Path,
+    max_age: std::time::Duration,
+) {
+    let root = base.join(PARTITIONS_DIR).join("unknown");
+    let Ok(mut entries) = tokio::fs::read_dir(&root).await else {
+        return;
+    };
+    let now = std::time::SystemTime::now();
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        let stale = entry
+            .metadata()
+            .await
+            .ok()
+            .filter(|m| m.is_dir())
+            .and_then(|m| m.modified().ok())
+            .and_then(|modified| now.duration_since(modified).ok())
+            .is_some_and(|age| age >= max_age);
+        if stale && let Err(e) = tokio::fs::remove_dir_all(entry.path()).await {
+            tracing::debug!(
+                "failed to remove a stale unknown partition {}: {e}",
+                entry.path().display()
+            );
+        }
+    }
+}
+
 /// The directory for tasks that must never touch the remote cache.
 pub(crate) fn local_dir(base: &Path) -> PathBuf {
     base.join(PARTITIONS_DIR).join("local")
@@ -335,6 +368,26 @@ mod tests {
                 .iter()
                 .all(|p| p.starts_with(base.join(PARTITIONS_DIR)))
         );
+    }
+
+    #[tokio::test]
+    async fn only_stale_unknown_partitions_are_reclaimed() {
+        let temp = tempfile::tempdir().unwrap();
+        let base = temp.path();
+        let old = unknown_dir(base, "e");
+        let fresh = unknown_dir(base, "e");
+        for d in [&old, &fresh] {
+            tokio::fs::create_dir_all(d.join("proj")).await.unwrap();
+        }
+        let long_ago = std::time::SystemTime::now()
+            - std::time::Duration::from_secs(10 * 24 * 3600);
+        std::fs::File::open(&old)
+            .unwrap()
+            .set_modified(long_ago)
+            .unwrap();
+        reclaim_stale_unknown(base, UNKNOWN_PARTITION_MAX_AGE).await;
+        assert!(!old.exists());
+        assert!(fresh.exists());
     }
 
     #[test]

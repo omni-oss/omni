@@ -151,6 +151,106 @@ impl LocalDiskCacheBackend {
         Ok(files)
     }
 
+    /// One page of regular files under `dir` in bytewise order of their full
+    /// keys, strictly after `after`, at most `limit + 1` of them so the caller
+    /// can tell whether more follow. Entries are walked in that order (a
+    /// directory sorts as `name/`) and subtrees that sort wholly before `after`
+    /// are skipped, so a page costs about the page, not the whole tree.
+    async fn page_of_files(
+        dir: &std::path::Path,
+        after: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<(String, u64)>, Error> {
+        async fn read_sorted(
+            current: &std::path::Path,
+        ) -> Result<Vec<(String, bool)>, Error> {
+            let mut entries = match tokio::fs::read_dir(current).await {
+                Ok(entries) => entries,
+                // Removed while walking (a concurrent purge): nothing left.
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                    return Ok(Vec::new());
+                }
+                Err(e) => return Err(Error::custom(e)),
+            };
+            let mut listed = Vec::new();
+            while let Some(entry) =
+                entries.next_entry().await.map_err(Error::custom)?
+            {
+                // A name that is not UTF-8 cannot be a key we wrote.
+                let Ok(name) = entry.file_name().into_string() else {
+                    continue;
+                };
+                let Ok(file_type) = entry.file_type().await else {
+                    continue;
+                };
+                // Symlinks and special entries are skipped, never followed.
+                if file_type.is_dir() {
+                    listed.push((name, true));
+                } else if file_type.is_file() {
+                    listed.push((name, false));
+                }
+            }
+            // `name/` for a directory is the start of every key below it.
+            listed.sort_by(|a, b| {
+                let key = |(name, is_dir): &(String, bool)| {
+                    if *is_dir {
+                        format!("{name}/")
+                    } else {
+                        name.clone()
+                    }
+                };
+                key(a).cmp(&key(b))
+            });
+            Ok(listed)
+        }
+
+        let mut out: Vec<(String, u64)> = Vec::new();
+        // Frames: (entries, cursor, key prefix, directory path).
+        let mut stack = vec![(
+            read_sorted(dir).await?,
+            0usize,
+            String::new(),
+            dir.to_path_buf(),
+        )];
+        while let Some((entries, cursor, rel, path)) = stack.last_mut() {
+            let Some((name, is_dir)) = entries.get(*cursor).cloned() else {
+                stack.pop();
+                continue;
+            };
+            *cursor += 1;
+            let key = if rel.is_empty() {
+                name.clone()
+            } else {
+                format!("{rel}/{name}")
+            };
+            let child = path.join(&name);
+            if is_dir {
+                let prefix = format!("{key}/");
+                // Every key below starts with `prefix`: all are before `after`
+                // when `prefix` is, and `after` is not inside it.
+                if after.is_some_and(|after| {
+                    prefix.as_str() < after && !after.starts_with(&prefix)
+                }) {
+                    continue;
+                }
+                let children = read_sorted(&child).await?;
+                stack.push((children, 0, key, child));
+            } else {
+                if after.is_some_and(|after| key.as_str() <= after) {
+                    continue;
+                }
+                let Ok(meta) = tokio::fs::metadata(&child).await else {
+                    continue;
+                };
+                out.push((key, meta.len()));
+                if out.len() > limit {
+                    break;
+                }
+            }
+        }
+        Ok(out)
+    }
+
     /// Number of regular files under `dir`, whatever their names. Tolerates
     /// entries that vanish while walking.
     async fn count_regular_files(dir: &std::path::Path) -> u64 {
@@ -397,13 +497,10 @@ impl RemoteCacheStorageBackend for LocalDiskCacheBackend {
         let Some(dir) = self.prefix_root(prefix).await? else {
             return Ok(PrefixPage::default());
         };
-        let mut files = Self::regular_files(&dir).await?;
-        files.sort_by(|a, b| a.0.cmp(&b.0));
-
         let limit = limit.max(1) as usize;
-        let remaining: Vec<ListItem> = files
+        let remaining: Vec<ListItem> = Self::page_of_files(&dir, after, limit)
+            .await?
             .into_iter()
-            .filter(|(key, _)| after.is_none_or(|after| key.as_str() > after))
             .map(|(key, len)| ListItem {
                 key,
                 size: ByteSize::b(len),
@@ -562,6 +659,50 @@ mod tests {
     use omni_remote_cache_storage_core::decl_remote_cache_storage_backend_tests;
     fn temp_dir() -> tempfile::TempDir {
         tempfile::tempdir().unwrap()
+    }
+
+    #[tokio::test]
+    async fn a_page_equals_the_matching_slice_of_the_full_bytewise_listing() {
+        let dir = temp_dir();
+        let names = [
+            "a/b", "a-b/x", "a.c", "a/b2/c", "a/z", "b", "b-/k", "ab", "c/d/e",
+            "c/d/f", "c/e", "z",
+        ];
+        for name in names {
+            let path = dir.path().join(name);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, b"x").unwrap();
+        }
+        let mut all: Vec<String> =
+            names.iter().map(|n| n.to_string()).collect();
+        all.sort();
+        let mut afters: Vec<Option<String>> = vec![None];
+        afters.extend(all.iter().cloned().map(Some));
+        afters.extend(
+            ["a/", "a/c", "a0", "bb", "zz", "a-", "c/d"]
+                .map(|a| Some(a.to_string())),
+        );
+        for after in afters {
+            for limit in [1usize, 2, 5, 50] {
+                let page: Vec<String> = LocalDiskCacheBackend::page_of_files(
+                    dir.path(),
+                    after.as_deref(),
+                    limit,
+                )
+                .await
+                .unwrap()
+                .into_iter()
+                .map(|(k, _)| k)
+                .collect();
+                let expected: Vec<String> = all
+                    .iter()
+                    .filter(|k| after.as_deref().is_none_or(|a| k.as_str() > a))
+                    .take(limit + 1)
+                    .cloned()
+                    .collect();
+                assert_eq!(page, expected, "after {after:?} limit {limit}");
+            }
+        }
     }
 
     #[tokio::test]
