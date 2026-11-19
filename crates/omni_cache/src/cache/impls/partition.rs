@@ -381,10 +381,16 @@ mod tests {
         }
         let long_ago = std::time::SystemTime::now()
             - std::time::Duration::from_secs(10 * 24 * 3600);
-        std::fs::File::open(&old)
-            .unwrap()
-            .set_modified(long_ago)
-            .unwrap();
+        // A directory handle needs backup semantics (and write access to its
+        // attributes) on Windows.
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true);
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt as _;
+            options.custom_flags(0x0200_0000); // FILE_FLAG_BACKUP_SEMANTICS
+        }
+        options.open(&old).unwrap().set_modified(long_ago).unwrap();
         reclaim_stale_unknown(base, UNKNOWN_PARTITION_MAX_AGE).await;
         assert!(!old.exists());
         assert!(fresh.exists());
