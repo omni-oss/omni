@@ -146,17 +146,28 @@ fn destination(
                 if omni_types::is_confined_relative(Path::new(name)) =>
             {
                 let parent = parents.last().expect("root is retained");
-                match parent.symlink_metadata(name) {
-                    Ok(meta) if meta.file_type().is_symlink() => {
-                        // A link that stays inside the workspace is followed to
-                        // its real directory, resolved by cap-std so it can
-                        // never leave `root`; an escaping link is an error.
-                        // Every component is then re-opened without following
-                        // links, so a later swap fails closed.
-                        let contents = parent.read_link_contents(name)?;
-                        let target = root.canonicalize(
-                            workspace.relative_target(&contents, &real)?,
-                        )?;
+                let opened = match parent.symlink_metadata(name) {
+                    Ok(meta) if !meta.file_type().is_symlink() => {
+                        parent.open_dir_nofollow(name).map(Some)
+                    }
+                    Ok(_) => Ok(None),
+                    Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                        parent.create_dir(name)?;
+                        parent.open_dir_nofollow(name).map(Some)
+                    }
+                    Err(e) => Err(e),
+                };
+                match opened {
+                    Ok(Some(dir)) => {
+                        parents.push(dir);
+                        real.push(name);
+                    }
+                    // A link (or a junction cap-std does not classify as one):
+                    // follow it only if it stays inside the workspace, then
+                    // re-open every real component without following links.
+                    Ok(None) | Err(_) if is_link(workspace, &real, name) => {
+                        let target =
+                            resolve_link(root, workspace, parent, &real, name)?;
                         parents = vec![root.try_clone()?];
                         for part in target.components() {
                             let Component::Normal(part) = part else {
@@ -170,15 +181,7 @@ fn destination(
                         }
                         real = target;
                     }
-                    Ok(_) => {
-                        parents.push(parent.open_dir_nofollow(name)?);
-                        real.push(name);
-                    }
-                    Err(e) if e.kind() == io::ErrorKind::NotFound => {
-                        parent.create_dir(name)?;
-                        parents.push(parent.open_dir_nofollow(name)?);
-                        real.push(name);
-                    }
+                    Ok(None) => return Err(unsafe_path()),
                     Err(e) => return Err(e),
                 }
             }
@@ -190,6 +193,37 @@ fn destination(
         return Err(unsafe_path());
     }
     Ok((parents, name.into()))
+}
+
+/// True when `real/name` under the workspace is a symlink or a Windows junction
+/// (std reports both as symlinks).
+fn is_link(workspace: &Workspace, real: &Path, name: &std::ffi::OsStr) -> bool {
+    std::fs::symlink_metadata(workspace.real.join(real).join(name))
+        .is_ok_and(|m| m.file_type().is_symlink())
+}
+
+/// The workspace-relative real directory a link leads to, or an error when it
+/// leads outside. cap-std resolves relative and absolute links it can; the std
+/// fallback covers junctions and platform spellings, and its result is only
+/// ever used after it is proven to be under the real workspace root.
+fn resolve_link(
+    root: &Dir,
+    workspace: &Workspace,
+    parent: &Dir,
+    real: &Path,
+    name: &std::ffi::OsStr,
+) -> io::Result<PathBuf> {
+    let by_cap = parent.read_link_contents(name).and_then(|contents| {
+        root.canonicalize(workspace.relative_target(&contents, real)?)
+    });
+    if let Ok(target) = by_cap {
+        return Ok(target);
+    }
+    let resolved = std::fs::canonicalize(workspace.real.join(real).join(name))?;
+    resolved
+        .strip_prefix(&workspace.real)
+        .map(Path::to_path_buf)
+        .map_err(|_| unsafe_path())
 }
 
 fn write_output(
@@ -421,6 +455,25 @@ mod tests {
             std::fs::read(outside.path().join("victim")).unwrap(),
             b"keep"
         );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_junction_inside_the_workspace_is_followed() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir(root.path().join("real")).unwrap();
+        let output = std::process::Command::new("cmd.exe")
+            .args(["/C", "mklink", "/J"])
+            .arg(root.path().join("alias"))
+            .arg(root.path().join("real"))
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        let (parents, name) =
+            test_destination(root.path(), "alias/out").unwrap();
+        let source = tempfile::NamedTempFile::new().unwrap();
+        write_output(source.path(), &parents, &name).unwrap();
+        assert!(root.path().join("real/out").exists());
     }
 
     #[cfg(windows)]
