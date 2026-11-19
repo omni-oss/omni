@@ -1157,6 +1157,9 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                 cached_results.push((execution_hash, output_dir.to_path_buf()));
             }
         }
+        // Local publication is done. The replacement lock only serializes
+        // in-place replacement, so it must not be held across network uploads.
+        drop(_replace_guard);
 
         if !cached_results.is_empty()
             && let RemoteConfig::Enabled(conf) = &self.remote_config
@@ -1339,6 +1342,12 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
             )
             .await?;
         }
+        // Repair is done. Downloads publish new entries with an atomic
+        // no-replace rename, so they must not hold the replacement lock: a slow
+        // transfer would otherwise block every other lookup in the partition.
+        // The shared prune lock stays, as before, so a prune never deletes an
+        // entry that is being renamed into place.
+        drop(_replace_guard);
 
         if let RemoteConfig::Enabled(conf) = &self.remote_config {
             let mut tasks = JoinSet::new();
@@ -4649,6 +4658,73 @@ mod tests {
             );
             std::fs::remove_dir_all(&store.cache_dir).ok();
         }
+    }
+
+    #[tokio::test]
+    async fn a_slow_download_does_not_block_an_unrelated_local_hit() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let temp = fixture(&["project1"]).await;
+        let slow = task("task", "project1", temp.path());
+        let local = task("other", "project1", temp.path());
+        let body = genuine_archive(&temp, slow.get()).await;
+        let gate = Arc::new(tokio::sync::Notify::new());
+        let listener =
+            tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let held = gate.clone();
+        let server = tokio::spawn(async move {
+            loop {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let (body, held) = (body.clone(), held.clone());
+                tokio::spawn(async move {
+                    let mut header = Vec::new();
+                    while !header.ends_with(b"\r\n\r\n") {
+                        if socket
+                            .read_u8()
+                            .await
+                            .map(|b| header.push(b))
+                            .is_err()
+                        {
+                            return;
+                        }
+                    }
+                    let response = if header.starts_with(b"HEAD ") {
+                        b"HTTP/1.1 204 No Content\r\nx-omni-scopes: read:artifacts\r\nConnection: close\r\n\r\n".to_vec()
+                    } else {
+                        held.notified().await;
+                        let mut head = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len()).into_bytes();
+                        head.extend_from_slice(&body);
+                        head
+                    };
+                    let _ = socket.write_all(&response).await;
+                });
+            }
+        });
+        // An entry that already exists locally in the same partition.
+        let store = Arc::new(remote_store(temp.path(), &url));
+        store
+            .cache(&new_cache_info(Some(&LOGS_CONTENT), *local.get()))
+            .await
+            .unwrap();
+        let downloading = {
+            let store = store.clone();
+            let slow = task("task", "project1", temp.path());
+            tokio::spawn(async move { store.get(slow.get()).await })
+        };
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        let other = remote_store(temp.path(), &url);
+        let hit = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            other.get(local.get()),
+        )
+        .await
+        .expect("a local hit must not wait for another run's download")
+        .unwrap();
+        assert!(hit.is_some());
+        gate.notify_waiters();
+        gate.notify_one();
+        let _ = downloading.await;
+        server.abort();
     }
 
     #[tokio::test]

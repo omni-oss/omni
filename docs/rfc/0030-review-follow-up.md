@@ -65,11 +65,13 @@ existing PR authorization, after independent review; no history rewrite needed.
   untouched. Open handles are bounded by path depth rather than output count.
 - The workspace root and local cache remain trusted. Directory-relative writes
   resist path-to-symlink swaps; this is not process isolation or a sandbox.
-- Recovery uses the existing per-partition prune/replacement locks. Local entry
-  reads/repairs and publishers now serialize against each other within a partition,
-  including during remote retrieval; downloads within one request still use eight
-  workers. This favors a simple, coordinated repair protocol over cross-process
-  parallel publication. Per-entry locking is a possible future optimization.
+- Recovery uses the existing per-partition prune/replacement locks, held only while
+  invalid local entries are discarded and while local entries are published. The
+  exclusive replacement lock is released before any remote download or upload, so a
+  slow transfer never blocks another run's lookups (regression test:
+  `a_slow_download_does_not_block_an_unrelated_local_hit`). The shared prune lock is
+  still held across transfers, as it was before, so a prune cannot delete an entry
+  being renamed into place; it blocks only a prune.
 - Archive hardening was delegated as a bounded, single-file slice. Parent inspected
   the result, added mixed PAX-size/extension compatibility coverage, and ran combined checks.
   Raw overhead counts toward 8 GiB; validation/extraction uses three passes.
