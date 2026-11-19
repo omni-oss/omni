@@ -7,7 +7,7 @@ use std::{
 };
 
 use async_trait::async_trait;
-use bytes::{Bytes, BytesMut};
+use bytes::Bytes;
 use bytesize::ByteSize;
 use futures::{Stream, StreamExt as _};
 use omni_remote_cache_storage_core::{
@@ -97,11 +97,13 @@ async fn put_if_absent(
 /// Collects the sealed stream. An upstream error aborts before anything is
 /// written, so a failed upload commits nothing.
 async fn collect(mut value: WriteStream) -> Result<Vec<u8>, Error> {
-    let mut buf = BytesMut::new();
+    // A `Vec` from the start: converting a `BytesMut` would copy the whole body
+    // again, and the Workers isolate has limited memory.
+    let mut buf = Vec::new();
     while let Some(chunk) = value.next().await {
         buf.extend_from_slice(&chunk?);
     }
-    Ok(buf.to_vec())
+    Ok(buf)
 }
 
 /// R2 reports sizes and offsets as JavaScript numbers, which are exact only up to

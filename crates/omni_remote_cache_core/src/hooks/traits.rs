@@ -28,9 +28,8 @@ pub enum ArtifactOp {
     Delete,
 }
 
-/// Which part of the cache an entry lives in. Only `Shared` exists until
-/// namespaces land (RFC 0030, section 4.1); `Isolated` is reserved so adding them
-/// does not change this contract.
+/// Which part of the cache an entry lives in (RFC 0030, section 4.1): the
+/// `Shared` namespace, or a principal's `Isolated` one.
 #[derive(
     Debug,
     Clone,
