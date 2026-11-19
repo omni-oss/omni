@@ -118,7 +118,15 @@ describeTargets("v1.artifacts.api", (target) => {
         );
         // A bare status hides workerd/Miniflare errors (for example a 503).
         // Keep the response body in CI without consuming the successful body.
-        const failure = put.status === 204 ? "" : await put.text();
+        const failure =
+            put.status === 204
+                ? ""
+                : await put
+                      .text()
+                      .catch(
+                          (error: unknown) =>
+                              `could not read response body: ${String(error)}`,
+                      );
         expect(put.status, `large upload response: ${failure}`).toBe(204);
 
         const get = await fetch(
