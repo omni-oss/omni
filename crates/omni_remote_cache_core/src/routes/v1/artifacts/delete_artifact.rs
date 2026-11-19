@@ -9,11 +9,13 @@ use serde::Deserialize;
 use utoipa::IntoParams;
 
 use crate::{
-    extractors::{ApiKey, TenantCode},
+    extractors::{Credential, TenantCode},
     hooks::{ArtifactOp, OutcomeKind},
     routes::v1::artifacts::common::{
-        after_response, before_hook, container, guard, validate_ownership,
+        CommonArtifactQuery, NamespaceParam, Placement, after_response,
+        authorize, before_hook, require_valid_digest, validate_ownership,
     },
+    security::Scope,
     state::ServiceState,
 };
 
@@ -32,6 +34,10 @@ pub struct DeleteArtifactQuery {
     pub ws: String,
     /// The environment code
     pub env: String,
+    /// `shared` (default) or `isolated`
+    pub namespace: Option<NamespaceParam>,
+    /// Scope label for the isolated namespace
+    pub scope: Option<String>,
 }
 
 #[utoipa::path(
@@ -50,42 +56,55 @@ pub struct DeleteArtifactQuery {
         (status = INTERNAL_SERVER_ERROR, description = "Internal server error")
     )
 )]
-#[tracing::instrument(skip(state))]
+#[tracing::instrument(skip_all, fields(digest = %digest, org = %query.org, ws = %query.ws, env = %query.env))]
 #[debug_handler]
 pub async fn delete_artifact(
     DeleteArtifactPath { digest }: DeleteArtifactPath,
     Query(query): Query<DeleteArtifactQuery>,
     State(state): State<ServiceState>,
     TenantCode(tenant_code): TenantCode,
-    ApiKey(api_key): ApiKey,
+    Credential(credential): Credential,
 ) -> Response {
-    guard!(
+    let requested = query.namespace.unwrap_or(NamespaceParam::Shared);
+    let caller = authorize!(
         state.provider,
-        &api_key,
+        &credential,
         &tenant_code,
         &query,
-        &["delete:artifacts"]
+        crate::security::Scopes::of(&[Scope::Delete]),
+        |c: &crate::security::Caller| c.can(Scope::Delete),
     );
+    let placement =
+        match Placement::resolve(&caller, requested, query.scope.as_deref()) {
+            Ok(p) => p,
+            Err(r) => return *r,
+        };
+
+    require_valid_digest!(&digest);
 
     validate_ownership!(state.provider, &tenant_code, &query);
 
     let hook_ctx = before_hook!(
         state,
         ArtifactOp::Delete,
-        &api_key,
+        &caller,
         &tenant_code,
         &query,
         vec![digest.clone()],
+        &placement,
     );
 
-    let container =
-        match container(&tenant_code, &query.org, &query.ws, &query.env) {
-            Ok(c) => c,
-            Err(_) => {
-                return (StatusCode::BAD_REQUEST, "invalid org, ws or env")
-                    .into_response();
-            }
-        };
+    let container = match placement.container(
+        &tenant_code,
+        &CommonArtifactQuery {
+            org: query.org.clone(),
+            ws: query.ws.clone(),
+            env: query.env.clone(),
+        },
+    ) {
+        Ok(c) => c,
+        Err(r) => return *r,
+    };
     let x = state
         .storage_backend
         .delete(&container, &digest)

@@ -13,6 +13,16 @@ bucket_name = "omni-remote-cache"
 API_PREFIX = "/api"
 ENABLE_OPENAPI = "false"
 
+# Artifact writes use one conditional R2 put, which stores only if the key is absent
+# (RFC 0030 section 4.2). Every entry is buffered in memory first, so keep the cap below.
+
+# Largest accepted artifact in bytes (default 33554432, 32 MiB, because an isolate
+# has 128 MB of memory). Larger uploads get 413. Request bodies are also capped by
+# your Cloudflare plan (100 MB on Free and Pro, 200 MB on Business).
+# A value that is not a plain number of bytes (for example "32MiB") is ignored with
+# a warning. 0 rejects every non-empty upload.
+# MAX_ARTIFACT_SIZE = "33554432"
+
 # Provide the service configuration (tenants and API keys, same JSON schema as
 # orcs.config.json) as a secret:
 #   wrangler secret put ORCS_CONFIG

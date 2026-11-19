@@ -128,6 +128,14 @@ impl<TRoot: OmniPathRoot> OmniPath<TRoot> {
         &self.path
     }
 
+    /// True when this path is anchored to a named root and can only descend
+    /// from it: non-empty, relative, and made of plain names (a `.` is
+    /// ignored). Used to check untrusted paths, such as those inside a
+    /// downloaded cache entry, before they are joined onto a root.
+    pub fn is_confined(&self) -> bool {
+        self.root.is_some() && is_confined_relative(&self.path)
+    }
+
     /// Resolves the path relative to the given base
     #[inline(always)]
     pub fn resolve<'a>(
@@ -154,6 +162,146 @@ impl<TRoot: OmniPathRoot> OmniPath<TRoot> {
             };
         }
     }
+}
+
+impl OmniPath<Root> {
+    /// True when this path is anchored to a root and, once `..` segments are
+    /// resolved lexically, still lies strictly inside the workspace root. A
+    /// sibling project directory (`@project/../shared/x`) is allowed; leaving
+    /// the workspace, an absolute or drive-prefixed path, an unrooted path, an
+    /// empty path and unsafe names (see [`is_confined_relative`]) are not.
+    ///
+    /// Lexical only: it does not look at symlinks on disk.
+    pub fn stays_within_workspace(&self, roots: &RootMap) -> bool {
+        use std::path::Component;
+        let Some(root) = self.root else {
+            return false;
+        };
+        // An empty or dot-only path names no file.
+        if !self
+            .path
+            .components()
+            .any(|c| matches!(c, Component::Normal(_)))
+        {
+            return false;
+        }
+        let mut resolved: Vec<std::ffi::OsString> = Vec::new();
+        let mut push_all = |path: &StdPath, check_names: bool| -> bool {
+            for component in path.components() {
+                match component {
+                    Component::Prefix(_) | Component::RootDir => {
+                        if check_names {
+                            return false;
+                        }
+                        resolved.clear();
+                    }
+                    Component::CurDir => {}
+                    Component::ParentDir => {
+                        if resolved.pop().is_none() {
+                            return false;
+                        }
+                    }
+                    Component::Normal(name) => {
+                        if check_names {
+                            let text = name.to_string_lossy();
+                            if text.chars().any(char::is_control)
+                                || (cfg!(windows)
+                                    && is_windows_unsafe_name(&text))
+                            {
+                                return false;
+                            }
+                        }
+                        resolved.push(name.to_os_string());
+                    }
+                }
+            }
+            true
+        };
+        // The roots are trusted absolute paths; `Prefix`/`RootDir` in them
+        // restart the accumulation.
+        if !push_all(roots[root], false) || !push_all(&self.path, true) {
+            return false;
+        }
+        let mut workspace: Vec<std::ffi::OsString> = Vec::new();
+        for component in roots[Root::Workspace].components() {
+            match component {
+                Component::Prefix(_) | Component::RootDir => workspace.clear(),
+                Component::CurDir => {}
+                Component::ParentDir => {
+                    workspace.pop();
+                }
+                Component::Normal(name) => workspace.push(name.to_os_string()),
+            }
+        }
+        resolved.len() > workspace.len() && resolved.starts_with(&workspace)
+    }
+}
+
+/// True for a non-empty relative path whose components are all plain names (or
+/// `.`). Rejects `..`, a root directory, and a Windows drive or UNC prefix, each
+/// of which would let `base.join(path)` leave `base` (a rooted or prefixed
+/// argument replaces the base outright). A name with a control character is
+/// rejected on every platform; on Windows a name that Win32 would normalize or
+/// treat specially is rejected too (see [`is_windows_unsafe_name`]).
+pub fn is_confined_relative(path: &StdPath) -> bool {
+    use std::path::Component;
+    let mut names = 0usize;
+    for component in path.components() {
+        match component {
+            Component::Normal(name) => {
+                let name = name.to_string_lossy();
+                if name.chars().any(char::is_control)
+                    || (cfg!(windows) && is_windows_unsafe_name(&name))
+                {
+                    return false;
+                }
+                names += 1;
+            }
+            Component::CurDir => {}
+            Component::ParentDir
+            | Component::RootDir
+            | Component::Prefix(_) => {
+                return false;
+            }
+        }
+    }
+    names > 0
+}
+
+/// True for a file name that Windows treats as something other than the plain
+/// file it looks like. `std::path::absolute` calls `GetFullPathNameW`, which
+/// strips trailing dots and spaces, so `".. "` or `"..."` is not a harmless name;
+/// a `:` selects an alternate data stream or a drive; some characters are
+/// wildcards; and a device name such as `CON` or `NUL.txt` opens a device.
+///
+/// Pure string logic, so it is tested on every platform.
+pub fn is_windows_unsafe_name(name: &str) -> bool {
+    if name.ends_with('.') || name.ends_with(' ') {
+        return true;
+    }
+    if name
+        .chars()
+        .any(|c| matches!(c, ':' | '<' | '>' | '"' | '|' | '?' | '*'))
+    {
+        return true;
+    }
+    // A device name is reserved with or without an extension.
+    let stem = name.split('.').next().unwrap_or(name).trim_end_matches(' ');
+    let stem = stem.to_ascii_uppercase();
+    matches!(
+        stem.as_str(),
+        "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$"
+    ) || ["COM", "LPT"].iter().any(|prefix| {
+        // `COM0` and `LPT0` are reserved too, and so are the superscript
+        // digits `COM¹`, `COM²` and `COM³`.
+        stem.strip_prefix(prefix).is_some_and(|rest| {
+            let mut chars = rest.chars();
+            matches!(
+                (chars.next(), chars.next()),
+                (Some('0'..='9' | '\u{b9}' | '\u{b2}' | '\u{b3}'), None)
+            )
+        })
+    })
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -268,6 +416,157 @@ mod tests {
     use std::path::Path;
 
     use super::*;
+
+    #[test]
+    fn confined_paths_are_rooted_relative_plain_names() {
+        for ok in ["dist/a.js", "./dist/a.js", "a", "a/./b"] {
+            assert!(
+                OmniPath::<Root>::new_rooted(ok, Root::Project).is_confined(),
+                "{ok:?}"
+            );
+            assert!(
+                OmniPath::<Root>::new_rooted(ok, Root::Workspace).is_confined(),
+                "{ok:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn windows_unsafe_names_are_recognised_on_every_platform() {
+        for bad in [
+            "..",
+            "...",
+            ".. ",
+            "a.",
+            "a ",
+            "a:b",
+            "a:stream",
+            "C:",
+            "a*b",
+            "a?b",
+            "a<b",
+            "a>b",
+            "a\"b",
+            "a|b",
+            "CON",
+            "con",
+            "NUL",
+            "nul.txt",
+            "Aux.tar.gz",
+            "PRN ",
+            "COM1",
+            "lpt9",
+            "COM3.log",
+            "CONIN$",
+            "CONOUT$",
+            "COM0",
+            "lpt0",
+            "COM\u{b9}",
+            "com\u{b2}.txt",
+            "LPT\u{b3}",
+        ] {
+            assert!(is_windows_unsafe_name(bad), "{bad:?} must be unsafe");
+        }
+        for good in [
+            "a",
+            "a.b",
+            "dist",
+            "output.js.cache",
+            "console",
+            "CONSOLE",
+            "COM10",
+            "COM",
+            "LPT0x",
+            "nulls",
+            "a b",
+            ".hidden",
+            "x..y",
+        ] {
+            assert!(!is_windows_unsafe_name(good), "{good:?} must be fine");
+        }
+    }
+
+    #[test]
+    fn control_characters_are_never_confined() {
+        for bad in ["a\0b", "a\nb", "dir/a\tb", "\u{7f}", "x/\r"] {
+            assert!(!is_confined_relative(Path::new(bad)), "{bad:?}");
+            assert!(
+                !OmniPath::<Root>::new_rooted(bad, Root::Project).is_confined(),
+                "{bad:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn sibling_paths_stay_within_the_workspace_but_nothing_else() {
+        let nested: RootMap = if cfg!(windows) {
+            enum_map::enum_map! {
+                Root::Workspace => Path::new("E:\\ws"),
+                Root::Project => Path::new("E:\\ws\\app"),
+            }
+        } else {
+            enum_map::enum_map! {
+                Root::Workspace => Path::new("/ws"),
+                Root::Project => Path::new("/ws/app"),
+            }
+        };
+        let n = |p: &str, r: Root| {
+            OmniPath::<Root>::new_rooted(p, r).stays_within_workspace(&nested)
+        };
+        for ok in [
+            ("../shared/x", Root::Project),
+            ("../shared/out.txt", Root::Project),
+            ("dist/../out/x", Root::Project),
+            ("shared/x", Root::Workspace),
+        ] {
+            assert!(n(ok.0, ok.1), "{ok:?}");
+        }
+        for bad in [
+            ("../../external/x", Root::Project),
+            ("../..", Root::Project),
+            ("..", Root::Project),
+            ("../", Root::Project),
+            ("", Root::Project),
+            ("../../x", Root::Workspace),
+            ("a/../../../x", Root::Project),
+            ("a\0b", Root::Project),
+        ] {
+            assert!(!n(bad.0, bad.1), "{bad:?} must not be within");
+        }
+        assert!(!OmniPath::<Root>::new("a/b").stays_within_workspace(&nested));
+        if !cfg!(windows) {
+            assert!(!n("/etc/passwd", Root::Project));
+        }
+    }
+
+    #[test]
+    fn escaping_or_anchorless_paths_are_not_confined() {
+        let mut bad = vec![
+            "",
+            ".",
+            "./",
+            "..",
+            "../x",
+            "a/../../x",
+            "a/..",
+            "../../etc/passwd",
+        ];
+        if cfg!(windows) {
+            bad.extend(["C:\\x", "C:x", "\\\\host\\share\\x", "\\x"]);
+        } else {
+            bad.extend(["/etc/passwd", "//x", "/"]);
+        }
+        for p in bad {
+            assert!(
+                !OmniPath::<Root>::new_rooted(p, Root::Project).is_confined(),
+                "{p:?} must not be confined"
+            );
+            assert!(!is_confined_relative(Path::new(p)), "{p:?}");
+        }
+        // Without a root there is nothing to confine the path to.
+        assert!(!OmniPath::<Root>::new("dist/a.js").is_confined());
+        assert!(!OmniPath::<Root>::new("/abs").is_confined());
+    }
 
     fn base() -> RootMap<'static> {
         if cfg!(windows) {

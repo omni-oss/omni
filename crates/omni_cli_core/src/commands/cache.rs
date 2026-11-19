@@ -34,10 +34,15 @@ pub enum CacheSubcommands {
         #[command(flatten)]
         args: PruneArgs,
     },
+    #[command(
+        about = "Generate an Ed25519 key pair for signing shared remote cache entries"
+    )]
+    Keygen,
     #[command(about = "Remote cache related commands")]
     Remote {
+        // Boxed: the setup flags make this variant much larger than the others.
         #[command(flatten)]
-        args: RemoteArgs,
+        args: Box<RemoteArgs>,
     },
 }
 
@@ -136,6 +141,7 @@ pub enum RemoteSubcommands {
 }
 
 #[derive(clap::Args, Debug)]
+#[command(group = clap::ArgGroup::new("signing_key_source").multiple(false))]
 pub struct SetupArgs {
     #[arg(
         long,
@@ -174,6 +180,76 @@ pub struct SetupArgs {
         default_value_t = false
     )]
     pub secure: bool,
+
+    #[arg(
+        long,
+        help = "Upload successful results to the remote cache (off by default)",
+        default_value_t = false
+    )]
+    pub push: bool,
+
+    #[arg(
+        long,
+        value_parser = ["isolated", "shared"],
+        default_value = "isolated",
+        help = "Where uploads go. `shared` needs the publish:artifacts scope"
+    )]
+    pub target: String,
+
+    #[arg(
+        long,
+        default_value = "auto",
+        value_parser = parse_scope,
+        help = "The isolated scope label: `auto` (from the CI environment), `run` (the CI run id) or a literal such as `release`"
+    )]
+    pub scope: omni_configurations::ScopeConfig,
+
+    #[arg(
+        long,
+        value_parser = clap::value_parser!(u64).range(1..),
+        help = "Largest artifact to upload or download, in bytes. The server's own limit can only lower it"
+    )]
+    pub max_artifact_size: Option<u64>,
+
+    #[arg(
+        long,
+        requires = "signing_key_source",
+        help = "The id of this machine's signing key (see `omni cache keygen`); publishers only"
+    )]
+    pub signing_key_id: Option<String>,
+
+    #[arg(
+        long,
+        group = "signing_key_source",
+        requires = "signing_key_id",
+        help = "The environment variable that holds the base64 private signing key"
+    )]
+    pub signing_key_env: Option<String>,
+
+    #[arg(
+        long,
+        group = "signing_key_source",
+        requires = "signing_key_id",
+        help = "A file that holds the base64 private signing key"
+    )]
+    pub signing_key_file: Option<std::path::PathBuf>,
+
+    #[arg(
+        long,
+        value_parser = ["auto", "off", "warn", "require"],
+        help = "Verify signatures of shared entries; can only tighten the workspace's setting"
+    )]
+    pub verify: Option<String>,
+
+    #[arg(
+        long = "trusted-key",
+        help = "Trust only this key id (repeatable); it must be one the workspace trusts"
+    )]
+    pub trusted_key: Vec<String>,
+}
+
+fn parse_scope(text: &str) -> Result<omni_configurations::ScopeConfig, String> {
+    omni_configurations::ScopeConfig::parse(text)
 }
 
 pub async fn run(command: &CacheCommand, ctx: &Context) -> eyre::Result<()> {
@@ -182,6 +258,25 @@ pub async fn run(command: &CacheCommand, ctx: &Context) -> eyre::Result<()> {
     match &command.subcommand {
         CacheSubcommands::Dir => {
             println!("{}", api.cache_dir().await.display());
+        }
+
+        CacheSubcommands::Keygen => {
+            let pair = omni_remote_cache_client::generate_keypair()?;
+            // The private key is shown once and never stored by omni: keep it in
+            // the publisher's secret store, never in the repository.
+            println!("Key id: {}", pair.id);
+            println!();
+            println!("Public key (commit this in workspace.omni.yaml):");
+            println!("remote_cache:");
+            println!("  signing:");
+            println!("    trusted_keys:");
+            println!("      - id: {}", pair.id);
+            println!("        public_key: \"{}\"", pair.public_key);
+            println!();
+            println!(
+                "Private key (secret; shown once; for the publishing job only):"
+            );
+            println!("{}", pair.private_key.as_str());
         }
 
         CacheSubcommands::Stats { args } => {
@@ -254,6 +349,29 @@ pub async fn run(command: &CacheCommand, ctx: &Context) -> eyre::Result<()> {
                     ws: args.ws.clone(),
                     env: args.env.clone(),
                     secure: args.secure,
+                    push: args.push,
+                    target: if args.target == "shared" {
+                        omni_configurations::RemoteTarget::Shared
+                    } else {
+                        omni_configurations::RemoteTarget::Isolated
+                    },
+                    scope: args.scope.clone(),
+                    max_artifact_size: args.max_artifact_size,
+                    signing_key: args.signing_key_id.clone().map(|id| {
+                        omni_configurations::SigningKeyConfiguration {
+                            id,
+                            private_key_env: args.signing_key_env.clone(),
+                            private_key_file: args.signing_key_file.clone(),
+                        }
+                    }),
+                    verify: args.verify.as_deref().map(|v| match v {
+                        "off" => omni_configurations::VerifyMode::Off,
+                        "warn" => omni_configurations::VerifyMode::Warn,
+                        "require" => omni_configurations::VerifyMode::Require,
+                        _ => omni_configurations::VerifyMode::Auto,
+                    }),
+                    trusted_keys: (!args.trusted_key.is_empty())
+                        .then(|| args.trusted_key.clone()),
                 })
                 .await
                 .wrap_err(
@@ -377,5 +495,64 @@ fn display_pruned_entries(pruned: &[PrunedCacheEntry]) {
             }
         }
         println!();
+    }
+}
+
+#[cfg(test)]
+mod signing_flag_tests {
+    use clap::Parser;
+
+    use super::*;
+
+    #[derive(Parser)]
+    struct Cli {
+        #[command(flatten)]
+        args: SetupArgs,
+    }
+
+    fn parse(extra: &[&str]) -> Result<Cli, clap::Error> {
+        let mut argv = vec![
+            "t", "-b", "http://h", "-a", "k", "-t", "t", "-o", "o", "-w", "w",
+        ];
+        argv.extend_from_slice(extra);
+        Cli::try_parse_from(argv)
+    }
+
+    #[test]
+    fn a_signing_key_needs_an_id_and_exactly_one_source() {
+        let id = "0123456789abcdef";
+        assert!(parse(&[]).is_ok());
+        assert!(
+            parse(&["--signing-key-id", id, "--signing-key-env", "K"]).is_ok()
+        );
+        assert!(
+            parse(&["--signing-key-id", id, "--signing-key-file", "k"]).is_ok()
+        );
+        assert!(parse(&["--signing-key-id", id]).is_err());
+        assert!(parse(&["--signing-key-env", "K"]).is_err());
+        assert!(parse(&["--signing-key-file", "k"]).is_err());
+        assert!(
+            parse(&[
+                "--signing-key-id",
+                id,
+                "--signing-key-env",
+                "K",
+                "--signing-key-file",
+                "k",
+            ])
+            .is_err()
+        );
+        assert!(parse(&["--verify", "strict"]).is_err());
+        assert!(
+            parse(&[
+                "--verify",
+                "require",
+                "--trusted-key",
+                id,
+                "--trusted-key",
+                "ab"
+            ])
+            .is_ok()
+        );
     }
 }

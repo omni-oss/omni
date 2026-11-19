@@ -4,8 +4,8 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use derive_new::new;
 use omni_remote_cache_storage_core::{
-    Container, ListItem, PageOptions, ReadStream, RemoteCacheStorageBackend,
-    WriteStream,
+    ByteRange, Container, ContainerPrefix, ListItem, PrefixPage, ReadStream,
+    RemoteCacheStorageBackend, SaveOutcome, WriteStream,
     decorators::LruCached,
     error::{self, Error},
 };
@@ -150,6 +150,31 @@ impl RemoteCacheStorageBackend for StorageBackend {
         }
     }
 
+    async fn get_range(
+        &self,
+        container: &Container,
+        key: &str,
+        range: ByteRange,
+    ) -> Result<Option<Bytes>, error::Error> {
+        match self {
+            StorageBackend::LruCachedLocalDisk(inner) => {
+                inner.get_range(container, key, range).await
+            }
+            StorageBackend::LocalDisk(inner) => {
+                inner.get_range(container, key, range).await
+            }
+            StorageBackend::LruCachedS3(inner) => {
+                inner.get_range(container, key, range).await
+            }
+            StorageBackend::S3(inner) => {
+                inner.get_range(container, key, range).await
+            }
+            StorageBackend::InMemory(inner) => {
+                inner.get_range(container, key, range).await
+            }
+        }
+    }
+
     async fn list(
         &self,
         container: &Container,
@@ -165,76 +190,119 @@ impl RemoteCacheStorageBackend for StorageBackend {
         }
     }
 
-    async fn paged_list(
+    async fn list_prefix(
         &self,
-        container: &Container,
-        query: PageOptions,
-    ) -> Result<Vec<ListItem>, Error> {
+        prefix: &ContainerPrefix,
+        after: Option<&str>,
+        limit: u32,
+    ) -> Result<PrefixPage, error::Error> {
         match self {
             StorageBackend::LruCachedLocalDisk(inner) => {
-                inner.paged_list(container, query).await
+                inner.list_prefix(prefix, after, limit).await
             }
             StorageBackend::LocalDisk(inner) => {
-                inner.paged_list(container, query).await
+                inner.list_prefix(prefix, after, limit).await
             }
             StorageBackend::LruCachedS3(inner) => {
-                inner.paged_list(container, query).await
+                inner.list_prefix(prefix, after, limit).await
             }
             StorageBackend::S3(inner) => {
-                inner.paged_list(container, query).await
+                inner.list_prefix(prefix, after, limit).await
             }
             StorageBackend::InMemory(inner) => {
-                inner.paged_list(container, query).await
+                inner.list_prefix(prefix, after, limit).await
             }
         }
     }
 
-    async fn save(
+    async fn list_children(
+        &self,
+        prefix: &ContainerPrefix,
+    ) -> Result<Vec<String>, error::Error> {
+        match self {
+            StorageBackend::LruCachedLocalDisk(inner) => {
+                inner.list_children(prefix).await
+            }
+            StorageBackend::LocalDisk(inner) => {
+                inner.list_children(prefix).await
+            }
+            StorageBackend::LruCachedS3(inner) => {
+                inner.list_children(prefix).await
+            }
+            StorageBackend::S3(inner) => inner.list_children(prefix).await,
+            StorageBackend::InMemory(inner) => {
+                inner.list_children(prefix).await
+            }
+        }
+    }
+
+    async fn delete_prefix(
+        &self,
+        prefix: &ContainerPrefix,
+    ) -> Result<u64, error::Error> {
+        match self {
+            StorageBackend::LruCachedLocalDisk(inner) => {
+                inner.delete_prefix(prefix).await
+            }
+            StorageBackend::LocalDisk(inner) => {
+                inner.delete_prefix(prefix).await
+            }
+            StorageBackend::LruCachedS3(inner) => {
+                inner.delete_prefix(prefix).await
+            }
+            StorageBackend::S3(inner) => inner.delete_prefix(prefix).await,
+            StorageBackend::InMemory(inner) => {
+                inner.delete_prefix(prefix).await
+            }
+        }
+    }
+
+    async fn save_if_absent(
         &self,
         container: &Container,
         key: &str,
         value: Bytes,
-    ) -> Result<(), error::Error> {
+    ) -> Result<SaveOutcome, error::Error> {
         match self {
             StorageBackend::LruCachedLocalDisk(inner) => {
-                inner.save(container, key, value).await
+                inner.save_if_absent(container, key, value).await
             }
             StorageBackend::LocalDisk(inner) => {
-                inner.save(container, key, value).await
+                inner.save_if_absent(container, key, value).await
             }
             StorageBackend::LruCachedS3(inner) => {
-                inner.save(container, key, value).await
+                inner.save_if_absent(container, key, value).await
             }
             StorageBackend::S3(inner) => {
-                inner.save(container, key, value).await
+                inner.save_if_absent(container, key, value).await
             }
             StorageBackend::InMemory(inner) => {
-                inner.save(container, key, value).await
+                inner.save_if_absent(container, key, value).await
             }
         }
     }
 
-    async fn save_stream(
+    async fn save_stream_if_absent(
         &self,
         container: &Container,
         key: &str,
         value: WriteStream,
-    ) -> Result<(), Error> {
+    ) -> Result<SaveOutcome, Error> {
         match self {
             StorageBackend::LruCachedLocalDisk(inner) => {
-                inner.save_stream(container, key, value).await
+                inner.save_stream_if_absent(container, key, value).await
             }
             StorageBackend::LocalDisk(inner) => {
-                inner.save_stream(container, key, value).await
+                inner.save_stream_if_absent(container, key, value).await
             }
             StorageBackend::LruCachedS3(inner) => {
-                inner.save_stream(container, key, value).await
+                inner.save_stream_if_absent(container, key, value).await
             }
             StorageBackend::S3(inner) => {
-                inner.save_stream(container, key, value).await
+                inner.save_stream_if_absent(container, key, value).await
             }
             StorageBackend::InMemory(inner) => {
-                inner.save_stream(container, key, value).await
+                inner.save_stream_if_absent(container, key, value).await
             }
         }
     }

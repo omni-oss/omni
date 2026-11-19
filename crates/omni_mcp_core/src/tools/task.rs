@@ -52,6 +52,7 @@ where
             with_dependents: false,
             on_failure: OnFailure::SkipDependents,
             no_cache: false,
+            no_remote_cache: false,
             output_logs: Some(include_logs),
             output_cached_logs: None,
         };

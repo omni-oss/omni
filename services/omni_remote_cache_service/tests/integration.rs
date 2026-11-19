@@ -10,11 +10,11 @@ use omni_remote_cache_service::{
         ScopesConfiguration, SecurityConfiguration, TenantConfiguration,
         WorkspaceConfiguration,
     },
-    response::data::Data,
-    routes::{root::RouterConfig, v1::artifacts::CacheItem},
+    routes::root::RouterConfig,
     state::build_state,
 };
 use sets::{UnorderedSet, unordered_set};
+use sha2::{Digest as _, Sha256};
 
 fn default_config() -> Configuration {
     Configuration {
@@ -43,8 +43,10 @@ fn default_config() -> Configuration {
             }
         ),
         security: SecurityConfiguration {
+            api_key_id_secret: None,
             api_keys: unordered_map!(
                 "test-api-key".to_string() => ApiKeyConfiguration {
+                    principal: None,
                     description: None,
                     enabled: true,
                     expires_at: None,
@@ -81,6 +83,13 @@ fn default_body() -> Bytes {
     Bytes::from(vec)
 }
 
+fn sha256_hex(bytes: &[u8]) -> String {
+    Sha256::digest(bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
 async fn create_server(cfg: &Configuration) -> TestServer {
     let json_config = serde_json::to_string(cfg)
         .expect("should be able to serialize to json");
@@ -111,13 +120,57 @@ async fn create_server(cfg: &Configuration) -> TestServer {
 }
 
 const DEFAULT_DIGEST: &str =
-    "d8e8fca2dc0f896fd7cb4cb0031ba249274155f46f29cef4e282d744";
+    "5RkZ7vQ2mXwYpLt3hNcFbA9dGjEsKuVoWiHaBxCqTyMnPrDfUgSe8JzL";
+
+const NEW_DIGEST: &str = "3vQ7mXwYpLt5hNcFbA9dGjEsKuVoWiHaBxCq";
 
 const DEFAULT_ORG: &str = "test-org";
 const DEFAULT_TENANT: &str = "test-tenant";
 const DEFAULT_WORKSPACE: &str = "test-workspace";
 const DEFAULT_ENV: &str = "test-env";
 const DEFAULT_API_KEY: &str = "test-api-key";
+
+#[tokio::test]
+async fn static_config_secret_is_applied_to_caller_ids() {
+    let mut config = default_config();
+    config.security.api_key_id_secret = Some("test-id-secret".into());
+    let args = ServeArgs::new(
+        "".into(),
+        Some(serde_json::to_string(&config).unwrap()),
+        Some(ConfigType::Inline),
+        false,
+        None,
+        None,
+        None,
+        BackendType::InMemory,
+        Some(RouterArgs::new(Some("/api".into()), false)),
+        None,
+    );
+    let state = build_state(&args).await.unwrap();
+    let caller = state
+        .provider
+        .authenticator()
+        .authenticate(
+            DEFAULT_API_KEY,
+            &omni_remote_cache_core::security::Resource {
+                tenant: DEFAULT_TENANT.into(),
+                org: DEFAULT_ORG.into(),
+                ws: DEFAULT_WORKSPACE.into(),
+                env: DEFAULT_ENV.into(),
+            },
+            omni_remote_cache_core::security::Scope::Read.into(),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        caller.credential().id(),
+        omni_remote_cache_core::hooks::api_key_id_keyed(
+            "test-id-secret",
+            DEFAULT_API_KEY
+        )
+    );
+}
 
 #[tokio::test]
 async fn interrupted_put_preserves_the_existing_local_artifact() {
@@ -154,11 +207,15 @@ async fn interrupted_put_preserves_the_existing_local_artifact() {
     ))
     .unwrap();
     backend
-        .save(&container, DEFAULT_DIGEST, Bytes::from("complete archive"))
+        .save_if_absent(
+            &container,
+            DEFAULT_DIGEST,
+            Bytes::from("complete archive"),
+        )
         .await
         .unwrap();
 
-    for digest in [DEFAULT_DIGEST, "new-digest"] {
+    for digest in [DEFAULT_DIGEST, NEW_DIGEST] {
         let stream = tokio_stream::iter([
             Ok(Bytes::from("partial")),
             Err(std::io::Error::other("interrupted request body")),
@@ -171,8 +228,9 @@ async fn interrupted_put_preserves_the_existing_local_artifact() {
                 DEFAULT_ENV,
                 Some(digest),
             ))
-            .header("X-API-KEY", DEFAULT_API_KEY)
+            .header("Authorization", format!("Bearer {DEFAULT_API_KEY}"))
             .header("X-OMNI-TENANT", DEFAULT_TENANT)
+            .header("X-Omni-Content-Sha256", sha256_hex(b"partial"))
             .body(Body::from_stream(stream))
             .unwrap();
         let response = router.clone().oneshot(request).await.unwrap();
@@ -186,13 +244,7 @@ async fn interrupted_put_preserves_the_existing_local_artifact() {
         backend.get(&container, DEFAULT_DIGEST).await.unwrap(),
         Some(Bytes::from("complete archive"))
     );
-    assert!(
-        backend
-            .get(&container, "new-digest")
-            .await
-            .unwrap()
-            .is_none()
-    );
+    assert!(backend.get(&container, NEW_DIGEST).await.unwrap().is_none());
 }
 
 fn get_path(
@@ -202,9 +254,13 @@ fn get_path(
     digest: Option<&str>,
 ) -> String {
     if let Some(digest) = digest {
-        format!("/api/v1/artifacts/{digest}?org={org}&ws={workspace}&env={env}",)
+        format!(
+            "/api/v1/artifacts/{digest}?org={org}&ws={workspace}&env={env}&namespace=isolated&target=isolated",
+        )
     } else {
-        format!("/api/v1/artifacts?org={org}&ws={workspace}&env={env}",)
+        format!(
+            "/api/v1/artifacts?org={org}&ws={workspace}&env={env}&namespace=isolated&target=isolated",
+        )
     }
 }
 
@@ -219,7 +275,7 @@ async fn get_artifacts(
     let path = get_path(org, workspace, env, None);
     server
         .get(&path)
-        .add_header("X-API-KEY", api_key)
+        .add_header("Authorization", format!("Bearer {api_key}"))
         .add_header("X-OMNI-TENANT", tenant)
         .await
 }
@@ -238,9 +294,10 @@ async fn put_artifact(
     let path = get_path(org, workspace, env, Some(digest));
     server
         .put(&path)
-        .add_header("X-API-KEY", api_key)
+        .add_header("Authorization", format!("Bearer {api_key}"))
         .add_header("Content-Type", "application/octet-stream")
         .add_header("X-OMNI-TENANT", tenant)
+        .add_header("X-Omni-Content-Sha256", sha256_hex(&body))
         .bytes(body)
         .await
 }
@@ -257,7 +314,24 @@ async fn get_artifact(
     let path = get_path(org, workspace, env, Some(digest));
     server
         .get(&path)
-        .add_header("X-API-KEY", api_key)
+        .add_header("Authorization", format!("Bearer {api_key}"))
+        .add_header("X-OMNI-TENANT", tenant)
+        .await
+}
+
+async fn head_artifact(
+    server: &TestServer,
+    tenant: &str,
+    api_key: &str,
+    org: &str,
+    workspace: &str,
+    env: &str,
+    digest: &str,
+) -> TestResponse {
+    let path = get_path(org, workspace, env, Some(digest));
+    server
+        .method(http::Method::HEAD, &path)
+        .add_header("Authorization", format!("Bearer {api_key}"))
         .add_header("X-OMNI-TENANT", tenant)
         .await
 }
@@ -274,7 +348,7 @@ async fn delete_artifact(
     let path = get_path(org, workspace, env, Some(digest));
     server
         .delete(&path)
-        .add_header("X-API-KEY", api_key)
+        .add_header("Authorization", format!("Bearer {api_key}"))
         .add_header("X-OMNI-TENANT", tenant)
         .await
 }
@@ -429,11 +503,17 @@ async fn test_get_artifacts() {
 
     get_resp.assert_status_ok();
     get_resp.assert_header("Content-Type", "application/json");
-    let data = Data::new(vec![CacheItem {
-        digest: DEFAULT_DIGEST.to_string(),
-        size: body.len() as u64,
-    }]);
-    get_resp.assert_json(&data);
+    let json: serde_json::Value = get_resp.json();
+    let item = &json["data"][0];
+    // The listed size is the stored object: the artifact plus its provenance trailer.
+    assert_eq!(json["data"].as_array().map(Vec::len), Some(1));
+    assert_eq!(item["digest"], DEFAULT_DIGEST);
+    let size = item["size"].as_u64().unwrap();
+    assert!(
+        size > body.len() as u64,
+        "stored size includes the trailer, got {size} for {} artifact bytes",
+        body.len()
+    );
 }
 
 #[tokio::test]
@@ -465,7 +545,7 @@ async fn test_invalid_api_key() {
     )
     .await;
 
-    get_resp.assert_status_forbidden();
+    get_resp.assert_status_unauthorized();
 }
 
 #[tokio::test]
@@ -548,19 +628,77 @@ async fn test_invalid_env() {
 async fn test_invalid_digest() {
     let cfg = default_config();
     let server = create_server(&cfg).await;
+    let body = default_body();
+    let too_long = "1".repeat(65);
 
-    let get_resp = get_artifact(
+    for digest in [
+        "invalid-digest",
+        "has.dot",
+        "0abc",
+        "lll",
+        too_long.as_str(),
+    ] {
+        get_artifact(
+            &server,
+            DEFAULT_TENANT,
+            DEFAULT_API_KEY,
+            DEFAULT_ORG,
+            DEFAULT_WORKSPACE,
+            DEFAULT_ENV,
+            digest,
+        )
+        .await
+        .assert_status_bad_request();
+
+        put_artifact(
+            &server,
+            DEFAULT_TENANT,
+            DEFAULT_API_KEY,
+            DEFAULT_ORG,
+            DEFAULT_WORKSPACE,
+            DEFAULT_ENV,
+            digest,
+            body.clone(),
+        )
+        .await
+        .assert_status_bad_request();
+
+        head_artifact(
+            &server,
+            DEFAULT_TENANT,
+            DEFAULT_API_KEY,
+            DEFAULT_ORG,
+            DEFAULT_WORKSPACE,
+            DEFAULT_ENV,
+            digest,
+        )
+        .await
+        .assert_status_bad_request();
+
+        delete_artifact(
+            &server,
+            DEFAULT_TENANT,
+            DEFAULT_API_KEY,
+            DEFAULT_ORG,
+            DEFAULT_WORKSPACE,
+            DEFAULT_ENV,
+            digest,
+        )
+        .await
+        .assert_status_bad_request();
+    }
+
+    get_artifact(
         &server,
         DEFAULT_TENANT,
         DEFAULT_API_KEY,
         DEFAULT_ORG,
         DEFAULT_WORKSPACE,
         DEFAULT_ENV,
-        "invalid-digest",
+        DEFAULT_DIGEST,
     )
-    .await;
-
-    get_resp.assert_status_not_found();
+    .await
+    .assert_status_not_found();
 }
 
 #[tokio::test]

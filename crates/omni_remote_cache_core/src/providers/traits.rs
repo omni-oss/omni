@@ -7,7 +7,7 @@ use crate::{
         workspaces::DynWorkspaceRepository,
     },
     hooks::{DynArtifactHooks, HookSettings, HostRuntime, NoopHooks},
-    security::DynSecurityService,
+    security::Authenticator,
     services::DynValidationService,
 };
 
@@ -17,14 +17,9 @@ pub trait DependencyProvider: Send + Sync + 'static {
     fn environment_repository(&self) -> DynEnvironmentRepository;
     fn tenant_repository(&self) -> DynTenantRepository;
     fn validation_service(&self) -> DynValidationService;
-    fn security_service(&self) -> DynSecurityService;
-
-    /// The opaque id hooks see for an API key. Unkeyed by default, so
-    /// providers that expose usage to untrusted readers should override it
-    /// with `api_key_id_keyed`.
-    fn api_key_id(&self, api_key: &str) -> String {
-        crate::hooks::api_key_id(api_key)
-    }
+    /// Resource-scoped authentication through a chain (possibly cached).
+    /// A separate credential format must not fall back to API-key checks.
+    fn authenticator(&self) -> Arc<dyn Authenticator>;
 
     /// Veto-capable hooks. No-op unless overridden.
     fn hooks(&self) -> DynArtifactHooks {

@@ -108,6 +108,11 @@ pub struct WorkspaceConfiguration {
     /// Display only: execution and cache keys are unaffected.
     #[serde(default)]
     pub redact: crate::RedactConfiguration,
+
+    /// Remote cache policy that belongs to the repository, such as the keys
+    /// whose signatures to trust. Machine-local settings can only tighten it.
+    #[serde(default)]
+    pub remote_cache: crate::WorkspaceRemoteCacheConfiguration,
 }
 
 impl WorkspaceConfiguration {

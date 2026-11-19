@@ -16,7 +16,7 @@ use crate::{
         InMemoryWorkspaceRepository,
     },
     providers::DependencyProvider,
-    security::{DynSecurityService, InMemorySecurityService},
+    security::{Authenticator, AuthenticatorChain, InMemoryAuthenticator},
     services::{DefaultValidationService, DynValidationService},
 };
 
@@ -24,9 +24,27 @@ use crate::{
 pub struct ConfigBasedDependencyProvider {
     data: Arc<InMemoryDatabase>,
     api_keys: Arc<UnorderedMap<String, ApiKeyConfiguration>>,
+    #[new(default)]
+    api_key_id_secret: Option<String>,
+}
+
+impl ConfigBasedDependencyProvider {
+    pub fn with_api_key_id_secret(mut self, secret: Option<String>) -> Self {
+        self.api_key_id_secret = secret;
+        self
+    }
 }
 
 impl DependencyProvider for ConfigBasedDependencyProvider {
+    fn authenticator(&self) -> Arc<dyn Authenticator> {
+        Arc::new(AuthenticatorChain::new(vec![Arc::new(
+            InMemoryAuthenticator::new(
+                self.api_keys.clone(),
+                self.api_key_id_secret.clone(),
+            ),
+        )]))
+    }
+
     fn workspace_repository(&self) -> DynWorkspaceRepository {
         Box::new(InMemoryWorkspaceRepository::new(self.data.clone()))
     }
@@ -50,9 +68,5 @@ impl DependencyProvider for ConfigBasedDependencyProvider {
             self.workspace_repository(),
             self.environment_repository(),
         ))
-    }
-
-    fn security_service(&self) -> DynSecurityService {
-        Box::new(InMemorySecurityService::new(self.api_keys.clone()))
     }
 }

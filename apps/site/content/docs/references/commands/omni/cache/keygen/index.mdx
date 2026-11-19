@@ -1,0 +1,23 @@
+---
+title: "keygen"
+
+description: "Generate an Ed25519 key pair for signing shared remote cache entries"
+---
+
+The private key is printed to standard output once and is never stored by omni.
+Run this where the output is not logged, and keep the key in the publishing
+job's secret store, never in the repository.
+
+## Usage
+
+```bash
+omni cache keygen
+```
+
+---
+
+## Examples
+
+```bash
+omni cache keygen
+```

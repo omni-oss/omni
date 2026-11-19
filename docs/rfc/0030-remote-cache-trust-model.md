@@ -1,6 +1,6 @@
 # RFC 0030: Remote cache trust model (tiers, immutability, provenance, signing)
 
-- **Status:** Draft <!-- Draft | Accepted | Implemented | Superseded -->
+- **Status:** Implemented <!-- Draft | Accepted | Implemented | Superseded -->
 - **Owner:** TBD
 - **Date:** 2026-11-13
 - **Base branch:** `main`
@@ -68,9 +68,11 @@ as presence-aware layers (`omni_configurations/src/layer.rs`), which affects whe
   the SQL/D1 provider, and the static-config provider always uses the unkeyed
   16-hex SHA-256 prefix. Entries carry no writer information, and the client calls
   `unarchive` on whatever bytes it gets.
-- **Extraction.** `tar` 0.4.46 `unpack` skips `..` entries and validates symlink
-  destinations, so the archive layer is covered. The metadata inside the archive is
-  not: restore resolves each cached `original_path` with `base.join(path)` and
+- **Extraction.** `tar` 0.4.46 `unpack` skips `..` entries and will not write
+  _through_ a symlink, but it still creates a symlink or hard-link entry with any
+  target, and restore later follows such a link when it copies or links the cached
+  file (so the archive layer is not covered on its own; see section 8). The metadata
+  inside the archive is not covered either: restore resolves each cached `original_path` with `base.join(path)` and
   `std::path::absolute` (`omni_types/src/omni_path.rs`), which neither rejects `..`
   nor absolute paths. A hostile entry that gets past verification (or any entry
   when `verify` is `off`) could write outside the workspace on replay (4.1, path
@@ -101,11 +103,11 @@ immutability, asymmetric signatures and provenance. This RFC does.
 - An untrusted PR build still gets cache hits from the shared cache and from its
   own earlier runs.
 - A stored entry cannot be replaced by a writer.
-- In `require` mode, a read-only run and any run that can publish restore only
-  shared entries signed by a trusted publisher, even if the server and storage are
-  fully compromised. Such runs never read an isolated namespace. Only an untrusted run
+- In `require` mode, every run restores only shared entries signed by a trusted
+  publisher, even if the server and storage are fully compromised. The server's
+  probe cannot weaken this locally selected requirement. Only an untrusted run
   (its credential has `write:artifacts` but not `publish:artifacts`, and its `target`
-  is `isolated`; the scopes decide, 4.4) may also
+  is `isolated`; the scopes decide, 4.4), in `off` or `warn` mode, may also
   read its own isolated namespace, and nothing it builds can reach `shared`.
 - An operator can tell who wrote an entry, and remove everything one key wrote
   without wiping the cache.
@@ -167,7 +169,8 @@ trait Authenticator {           // replaces the bool-returning SecurityService m
   (`503`, never a fall-through to another authenticator). Today the chain has one member, the API-key
   authenticator (static config or SQL/D1 repositories, RFC 0027).
 - Authentication is **per request and scoped to the target**: the route knows the
-  resource (after `validate_ownership`) and the scopes it needs, and passes both, so
+  resource (from the request; authentication runs before ownership validation so
+  anonymous callers cannot probe for targets) and the scopes it needs, and passes both, so
   the returned `Caller` is already limited to that resource and `Caller::can(scope)`
   is a synchronous check. This fits the SQL/D1 key contract, which is a set of
   per-request `exists` queries (`api_key_valid`, `_tenant`, `_organization`,
@@ -307,10 +310,9 @@ server's claim about where a hit came from:
 - **When the client probes `isolated`.** Only when all of these hold: its configured
   `target` is `isolated`; the credential has `write:artifacts` and does **not** have
   `publish:artifacts` (the client learns its effective scopes from `validate_access`,
-  4.4); and it then probes `isolated` and `shared` in parallel and prefers its own
+  4.4); verification is not `require`; it then tries isolated before shared and prefers its own
   isolated entry. A read-only client, a publisher, and any run with `target: shared`
-  probe `shared` only. So trusted runs and verifying readers never read unsigned
-  isolated bytes, even if a compromised server answers the probe.
+  probe `shared` only. Requiring readers do so regardless of the probe's answer.
 - `PUT` takes `?target=shared|isolated` (default `isolated`). `shared` needs
   `publish:artifacts`, otherwise `403`.
 - An isolated entry is never copied or promoted into shared.
@@ -397,7 +399,7 @@ safe and explicit. Routing to several buckets is out of scope.
   (4.5), including recomputing the archive hash, so it detects swapped bytes and not
   only a bad signature header. A `HEAD` is not used: it has no body to hash. If the entry is unsigned or does not verify
   against `trusted_keys`, it logs a warning naming the digest and the reason, and
-  points at `omni cache purge`. It never fails the run and never retries or replaces,
+  points at purging the entry with the storage provider's tools (no `omni cache purge`, see section 8). It never fails the run and never retries or replaces,
   because immutability has no exception. The server does not judge signatures (4.3),
   so this is how a publisher learns that a stray or tampered entry occupies its
   digest. Skipped when `verify` is `off`. It also needs `read:artifacts`, which
@@ -454,6 +456,8 @@ and `X-Omni-Signature` (`<key_id>:<base64>`, bounded to 256 bytes). It sets
 or `delete:artifacts`**: read-only clients do not need them (trust comes from the
 signature, 4.5), and an unkeyed credential id would let them test key guesses
 offline and learn org structure.
+
+> **Superseded (slice 8):** `omni cache purge`, `omni cache provenance`, `--legacy` and the credential/principal response headers described here are not built; cleanup is a server or storage-provider concern. See `0030-operator-tools-rollout.md` and section 8. Incident response is: revoke the credential, rotate the signing key, and remove objects with the provider's tools.
 
 Operator tooling:
 
@@ -632,7 +636,8 @@ construction: no marker has to be propagated through derived entries.
 | Partition | Path under `cache_dir`                      | Written by                                                     | Read by                                              |
 | --------- | ------------------------------------------- | -------------------------------------------------------------- | ---------------------------------------------------- |
 | trusted   | `trusted/{epoch}/`                          | runs that are not untrusted and not opted-out                  | same epoch only                                      |
-| untrusted | `untrusted/{epoch}/{principal_id}/{scope}/` | untrusted runs (`write`, no `publish`)                         | that run, then `trusted/{epoch}/` of its own epoch   |
+| untrusted | `untrusted/{epoch}/{principal_id}/{scope}/` | untrusted runs (`write`, no `publish`)                         | same partition only; no trusted-partition fallback   |
+| unknown   | `unknown/{epoch}-{run-id}/`                | runs without usable identity/trust information                | same store and its clones only; never a later run    |
 | local     | `local/`                                    | opted-out tasks and their dependencies (`cache.remote: false`) | those tasks; normal dependents consume their outputs |
 
 - **Trust epoch** = first 16 hex of SHA-256 over the effective `trusted_keys` ids
@@ -714,11 +719,10 @@ signature>`, bounded to 256 bytes.
 `sha256` of the downloaded archive bytes, rebuild the message, find
 `key_id` in `trusted_keys`, and verify. Any failure (unsigned, unknown key id, bad
 signature, hash mismatch) is treated as a miss, with a diagnostic naming the
-digest and reason. The task then runs locally. Isolated hits are not verified,
-because isolated entries are unsigned by design, so the rule is on _who may read
-them_ (4.1): only an untrusted run (`target: isolated`, not able to publish) ever
-reads an isolated namespace. Trusted runs and read-only runs never do, so a
-compromised server cannot feed them unsigned bytes through the isolated probe.
+digest and reason. The task then runs locally. Isolated entries are unsigned by
+design and are never requested under `require`. Only an untrusted run with
+`target: isolated` and an `off` or `warn` policy reads its isolated namespace.
+The server's probe cannot downgrade signature requirements.
 
 **Modes.**
 
@@ -826,10 +830,11 @@ Edge cases the fixture must cover:
 - `verify: warn` restores but reports (the verdict is `Warn`, not `Reject`). `auto` with no trusted keys behaves as
   `off`.
 - A publisher with `trusted_keys` set but no `signing_key` refuses to upload.
-- Isolated and shared entries for the same digest: an untrusted run prefers its own
+- Isolated and shared entries for the same digest: an untrusted `off`/`warn` run prefers its own
   isolated entry by its own probe order. Pin it.
-- A publisher or a read-only run, with a compromised server answering the isolated
-  probe: the client never sends it, so nothing unsigned is restored. A publisher
+- A requiring run, with a compromised server claiming an isolated-writer identity:
+  the client never requests isolated entries, so nothing unsigned is restored.
+  A publisher
   configured with `target: isolated` is still treated as a publisher (it has
   `publish`) and does not probe isolated.
 - A local config that sets `verify: off` or adds a `trusted_keys` entry that the
@@ -1036,7 +1041,8 @@ match verify_shared(&conf.signing, &access, &digest, &entry) {
     Verdict::Reject(why) => { tracing::warn!(%digest, %why, "remote entry rejected"); /* miss */ }
 }
 // Probe order (4.1): isolated is probed only when target is isolated AND the credential
-// has write but not publish; then shared. An isolated probe error falls back to shared.
+// has write but not publish AND verification is not require; then shared.
+// An isolated probe error falls back to shared.
 ```
 
 Why: verification must run before any byte reaches disk, and the temp directory plus
@@ -1282,7 +1288,7 @@ true` means **one bucket with container key prefixes**, and `false` (the default
 
 Undo: each slice is a commit on `main` and can be reverted. Data is not migrated.
 Existing remote entries use the old container layout and have no trailer, so
-they become misses and operators clear them with `omni cache purge --legacy`. The release note says so. At
+they become misses; there is no command to remove them (see section 8), and storage provider tools can. At
 runtime, `verify: off` disables verification and `push: false` stops uploads.
 
 ## 7. Alternatives and review questions
@@ -1339,12 +1345,12 @@ runtime, `verify: off` disables verification and `push: false` stops uploads.
   query contract, filled by the issuer (4.1).
 - **Authenticator chain:** first match wins, in config order, and credential
   formats must be unambiguous (4.0).
-- **Isolated reads and verification:** only untrusted runs (`target: isolated`, no
-  `publish`) probe isolated. Trusted and read-only runs never do (4.1). The review
-  recommended also disabling isolated reads in `require` mode outright. That would,
-  with workspace-level `trusted_keys`, switch off isolated caches for PR CI in every
-  signing-enabled workspace and defeat goal 3, so the rule is on who reads, not on the
-  mode.
+- **Isolated reads and verification:** superseded. An earlier review recommended
+  disabling isolated reads in `require` mode and this was first declined, because it
+  switches off isolated caches for PR CI in signing-enabled workspaces. A later review
+  showed that deciding by the server's probe lets a compromised server bypass
+  `require`, so the decision is now local: `require` never requests unsigned isolated
+  entries (see `0030-review-follow-up.md`). Isolated reuse remains under `off`/`warn`.
 - **Where `trusted_keys` and `verify` live:** the committed workspace config, merged
   with the local file so the local file can only tighten (4.4).
 - **Layout and lifecycle:** namespace first, `shared/...` and `isolated/...`, one
@@ -1387,41 +1393,321 @@ CI variable table in 4.4 against current docs, since both change.
 
 ## 8. Implementation status and deviations
 
-Slice 0 landed on PR #104: typed containers and prefixes, removal of
-default containers and S3 bucket-per-container mode, and local key validation
-landed in `e7288322`. Review follow-ups fix container-relative S3 listing keys,
-container-scoped deletes, and caching of rejected writes. CodeRabbit is green
-through `44d12083`. Slice 1's client prerequisite batch is implemented: failed
-executions stay local, remote errors are warnings, the remote replacement bypass
-is removed, and the client accepts `409` without retrying. Review follow-ups check
-the persisted exit code as well as the caller's outcome: a losing successful
-publisher must not upload a failed first-publication winner. The upload `HEAD`
-pre-check is temporarily retained until conditional (create-only) writes land in
-the same batch as its removal. Atomic replacement prevents partial reads, but
-successful uploads can still overwrite existing entries. Until then, a write-only key denied by
-`HEAD` skips publication with a warning. Persisted-outcome read/decode failures
-also warn and skip publication rather than failing the locally stored batch.
-At most eight archives/uploads run concurrently. Each worker builds its full
-archive in memory before PUT, so up to eight uncapped archives may be resident
-at once until size caps land in slice 5. Upload requests and their `HEAD`
-existence pre-check have a 60-second
-total timeout (including body transfer); slow connections may exhaust it, in which
-case the upload warns and the local result remains usable. Revisit timeout
-configuration alongside size caps in slice 5. This request timeout does not cover
-archive construction.
+**Landed (PR #104, merged):** slice 0 (typed `Container` and `ContainerPrefix`,
+no default containers, S3 key-prefix mode only, local key and container checks) and
+slice 1's client side and atomic local publication. Failed executions stay local,
+remote upload errors are warnings, local failure-to-success upgrades are kept, and
+an upload is queued only when both the caller and the persisted entry are
+successful. At most eight archives upload at once. Each worker builds its archive in
+memory, so up to eight uncapped archives can be resident until size caps land in
+slice 5. Upload requests have a 60-second total timeout (body transfer included) that
+does not cover archive construction. Upload streams carry fallible chunks end to end,
+so an interrupted body never commits.
 
-The current review requires atomic publication to close the concurrent
-`HEAD`-404/`PUT` race, so that work is included in the client prerequisite
-follow-up rather than waiting for its green check. Upload streams now carry
-fallible chunks and the route no longer drops body errors. Local byte and streamed
-writes stage outside the container, flush and sync the file, then atomically rename; failed or
-cancelled streams remove staging files without touching the published artifact.
-S3 staged streams flush and retain their temporary file until PUT finishes;
-memory and R2 propagate upload-stream errors before publication. This is atomic
-replacement, not create-only immutability: the existence pre-check remains until
-the conditional-write batch lands. R2 cross-target/real-service validation remains
-outstanding. Conditional writes, size caps, and remaining slice 1 primitives are
-not implemented yet; slices 2–10 have not started.
+**Landed (create-only writes PR):** the storage write methods are
+`save_if_absent` and `save_stream_if_absent`, returning `SaveOutcome::{Stored,
+AlreadyExists}`. There is no replace. Local storage links the staged file without
+replacing it, memory checks and inserts under one lock, S3 sends a single
+`PutObject` with `If-None-Match: *` (`412` is `AlreadyExists`, `409` is retried up
+to three times, and the body is rebuilt for every attempt). The server answers `409`
+for an existing entry and the `after` hook reports it as `already_exists`. Every
+artifact route validates `{digest}` as base58 of at most 64 characters before any
+path is built (`400` otherwise). The client no longer sends a `HEAD` before an
+upload, so a write-only key can publish, and it treats `409` as success. The LRU
+decorator caches a streamed write only when the outcome is `Stored`.
+
+**Landed (restore safety and size cap):**
+
+- **Restore validation.** A decoded cache entry whose paths could leave the base
+  they are joined onto is a miss, in every namespace and `verify` mode, before any
+  path is resolved. For `original_path`, `OmniPath::stays_within_workspace` requires
+  a root-anchored path with no root directory or drive/UNC prefix, at least one name,
+  no unsafe names, and that its lexically resolved location lies strictly inside the
+  workspace root. `cached_path`, `logs_path` and archive entry names use the stricter
+  `is_confined_relative` (plain names only, no `..`), because they are joined onto the
+  entry directory, where an absolute value replaces the base outright. Deviations from
+  the RFC text: the boundary is the workspace root, not the project root, because
+  outputs in a sibling project directory (`../shared/x`, `@project/../shared/x`) are a
+  supported feature with e2e coverage; and an entry stored with an unrooted absolute
+  path (an output outside the workspace) is a miss, so such tasks run again instead of
+  restoring from cache. The check is lexical and does not inspect symlinks on disk (an
+  existing in-workspace symlink to elsewhere is the same local-write threat as above).
+- **Archive entries.** `unarchive` first reads the whole archive and accepts only
+  regular files and directories with confined relative names; a symlink, hard link,
+  device, `..` or absolute name rejects the archive before anything is written, and
+  `get_many` treats that (or a corrupt archive) as a miss. Restore also checks that
+  each cached file is a regular file without following links. Without this, a
+  hostile archive could plant a symlink at a confined name and a later entry under
+  it would write outside the workspace, or a copy would read any readable file into
+  the workspace or the log. Windows: a name that Win32 normalizes or treats specially
+  (trailing dot or space, `:`, wildcard characters, device names) is not confined; the
+  rule is unit-tested on every platform and applied on Windows, where the Windows CI
+  runner exercised it (this found `COM0`, `LPT0` and the superscript-digit device names,
+  now rejected).
+- **Size cap.** The server rejects an upload larger than `max_artifact_size` with
+  `413` and stores nothing. An honest `Content-Length` is refused before any byte is
+  read, and a chunked body, or one that lies about its length, is bounded while
+  streaming, so the backend aborts and removes its staging file. Defaults are
+  256 MiB native (`--max-artifact-size`, `OMNI_REMOTE_CACHE_SERVICE_MAX_ARTIFACT_SIZE`,
+  bytes) and 32 MiB on Workers (`MAX_ARTIFACT_SIZE`). The client does not yet read the
+  cap or skip an oversized upload (slices 2 and 5), so an oversized upload currently
+  reaches the server and the client logs a warning for the `413`. A declared oversize
+  is refused before the hooks run (like a malformed digest), whether or not the key
+  already holds an entry (`413` takes priority over `409`); a streamed one runs the
+  hooks and is reported as `failed`. The cap bounds one upload, not total load: the
+  S3 backend spools each upload to a temporary file, so many concurrent uploads can
+  still use disk up to the cap each.
+
+**Landed (storage primitives):** the storage trait gained `get_range`,
+`list_prefix`, `list_children` and `delete_prefix`, and lost `paged_list` and
+`PageOptions`. `list` is now a provided method that follows every `list_prefix` page,
+so it no longer stops at one S3 page (1000 keys) or reads only one directory level.
+
+- `get_range(Suffix(n) | Bounded(start, end))`: `Ok(None)` only for an absent object; a
+  range that selects nothing is `Ok(Some(empty))`; a range past the end is clamped
+  (`ByteRange::resolve`).
+- `list_prefix(prefix, after, limit)`: recursive, ascending byte order of the full
+  relative key, keys relative to the prefix, an exclusive key cursor, and `next_after`
+  set exactly when more keys may follow. A key cursor (S3 and R2 `start_after`) is used
+  everywhere instead of opaque tokens, so one cursor works on every backend.
+- `list_children(prefix)`: the immediate sub-prefixes that contain at least one object
+  (a leftover empty directory is not a child), sorted. This is how a purge learns the
+  environments or principals that exist.
+- `delete_prefix(prefix)`: returns the number removed; not atomic, and calling it
+  again finishes an interrupted purge. The trailing `/` of a `ContainerPrefix` keeps `ci`
+  from touching `ci2`.
+- One contract-test macro runs for local, memory and the LRU-wrapped memory backend
+  (range clamping, recursive and sibling-safe listing, every page size, children,
+  purge scope and re-use). S3 is covered by scripted-server request tests, and R2 only
+  by a `wasm32` type-check.
+- Local storage never follows a symlink in these operations, and refuses a container
+  reached through a symlinked directory. The older `get`, `exists`, `size` and `delete`
+  still follow symlinks; that needs a link planted inside the storage root, which no
+  client request can do, so it is recorded here and not widened into this change.
+- R2 resolves a range against the object's real size (a `HEAD`) and requests exactly
+  those bytes, so it never depends on how R2 treats a range past the end. `delete_prefix`
+  stays allowed under the R2 fail-closed write policy, since it only removes.
+- The LRU decorator serves `get_range` from a cached entry, and purges the cache for the
+  prefix before and after `delete_prefix`. It takes no per-key lock for that, so a write
+  racing a purge of its own prefix may survive it.
+- **Known limits.** Local `list_prefix` loads and sorts the whole subtree for every
+  page (`list` does one walk); fine for operator scans, not for huge trees. A purge
+  racing a concurrent upload may hit `ENOENT` or `ENOTEMPTY`; rerunning finishes it.
+  The local symlink checks have a check-to-use gap (same threat model as above: it needs
+  write access inside the storage root). S3 and R2 `list_children` and `delete_prefix`
+  see folder markers, which local does not. Case-insensitive filesystems can alias
+  names that S3 keeps distinct. S3 `get_range` buffers the whole range. The LRU purge
+  uses a generation counter so a streamed write in flight during a purge is not cached.
+- **Runtime gap (open gate).** The new primitives are untested at runtime on S3 (only
+  request shape against a scripted server; the `416` fallback and `DeleteObjects`
+  behaviour are assumed, and the 1000-key delete split is not exercised) and on R2
+  (type-check only). The section 5 plan needs MinIO or LocalStack and Miniflare runs.
+- Nothing calls these yet; the provenance and purge routes (slices 3 and 8) are the
+  consumers.
+
+**Slice 2 preparation (not yet active):** the core now defines `Caller`,
+`CredentialId`, `Resource`, explicit `Scope`/`Scopes`, `Authenticator` and an ordered
+`AuthenticatorChain`. First recognition wins even without enough grants; errors
+stop the chain, and returned grants are narrowed to the wanted set. Credential kind
+is a non-exhaustive `ApiKey | Custom(String)` enum. Identity text is bounded to 256
+UTF-8 bytes and cannot be empty or contain controls; namespace resolution must still
+validate the scope pin's label grammar. Tests cover an identity from a non-API-key
+authenticator, ordering, denial, errors and resource/request-specific grants.
+The static provider now has a resource-scoped authenticator: valid keys denied
+access to the resource remain recognized with no grants. Its optional per-key
+`principal` defaults to the credential ID; `security.api_key_id_secret` feeds both
+the new caller and existing hook IDs in native and Worker static configuration.
+Legacy `all` excludes publish in the static authenticator; publish
+requires an explicit `publish:artifacts` grant. API keys never assert a scope pin.
+The SQL/D1 query provider also exposes an authenticator. `api_key_valid` may return
+a nullable text `principal`; missing/NULL keeps the default ID, non-text or invalid
+identity text fails closed. Native SQL and D1 implement the new required
+`QueryExecutor::api_key_identity` method. Validity is read once, resource restrictions
+are checked in order, and only wanted scope queries run. Scripted provider and real
+SQLite tests cover this path; Postgres/MySQL identity reads and D1 runtime remain
+unverified. Operators must make `api_key_scope` exclude publish from wildcard grants.
+Routes now use the caller seam and the built-in client sends `Authorization: Bearer`;
+`X-API-KEY` is not accepted (no fallback). Still open, so slice 2 is **not complete**:
+the principal ID and scope label in the `validate_access` response (they arrive with
+namespaces in slice 4), and the hook field rename (slice 3). The probe now returns the
+effective scopes and the size cap in `X-Omni-Scopes` and `X-Omni-Max-Artifact-Size`.
+Providers now expose `authenticator()` through the common trait, including the
+caching decorator. A separate caller cache uses full HMAC-SHA256 keys covering
+credential, resource and canonical wanted scopes, with a per-state random pepper.
+Randomness failure disables caller caching instead of using an unkeyed fallback.
+Recognized identities (including denials) use the security TTL; unknown credentials
+use optional negative caching. Tests cover state sharing across rebuilt wrappers,
+resource/scope/key separation and exact TTL expiry for grants and principals. The
+old bool-based cache remains only for the still-unmigrated request paths. Worker
+runtime validation remains open.
+See [the rollout notes](0030-authentication-rollout.md) for the batch plan.
+
+**Landed (entry trailer and provenance, slice 3 batches 1 and 2):** every entry is stored as
+`[artifact][msgpack trailer][u32 length][OMNIENT1]`, written by the server through a sealing
+stream that hashes the body, enforces `max_artifact_size` on artifact bytes, compares with the
+client-declared `X-Omni-Content-Sha256` and only then appends the trailer, so a mismatch, a
+truncated body or an oversized body commits nothing. `GET` and `HEAD` accept only a well-formed
+entry (older objects are misses); `GET` returns exactly the artifact with `Content-Length` and
+`X-Omni-Namespace`, `X-Omni-Stored-At` and `X-Omni-Content-Sha256`. The client sends the hash.
+Deviations from the text above:
+
+- **No `If-Match`.** The storage trait has no conditional read. `GET` instead streams the
+  object, holds back the last artifact byte and the trailer region, and releases that byte only
+  when the held bytes equal the trailer region it read first and the length matches. A purge
+  and re-publish between the two reads therefore ends the body with an error before the
+  declared `Content-Length` is satisfied, so the transport aborts the transfer. (Releasing all
+  artifact bytes first would not work: an HTTP/1 server stops reading at `Content-Length`, so a
+  check after the last byte is never seen. Tests drive this over a real connection.)
+- **Credential and principal headers are not sent yet.** They are for operators and arrive with
+  the provenance and purge routes (slice 8). `X-Omni-Signature` is sent only when a trailer has
+  one, which no server code writes until slice 7.
+- **The artifact bytes are not re-hashed on `GET`.** The server checks the trailer and the
+  object's shape on every read, so a changed byte inside the artifact is served, with the
+  original `X-Omni-Content-Sha256`. A client that hashes what it received and compares it with
+  that header detects it; that verification is slice 7. A test records the gap.
+- **`409` versus `422` for an existing key with a wrong hash** depends on the backend: local,
+  memory and S3 read the whole body first and answer `422`, R2 checks for the key before
+  reading and answers `409`. The client treats both as "nothing to retry". `422` is the
+  intended answer; aligning R2 waits for the real-R2 work in the open gates.
+- **`HEAD` and small `GET`s cost more** than before: a ranged read of up to 64 KiB (plus a
+  `size` call for objects at least that large; on R2, `get_range` adds its own `HEAD`). Reading
+  the 12-byte footer first, then exactly the trailer, would be cheaper if measurements show it
+  matters.
+- **`namespace` is always `shared`, `scope` empty** until slice 4.
+- **List sizes are the stored object size**, which includes the trailer.
+- **Hook parameters are appended, not reordered.** The RFC's order moves `outcome` in the
+  `after` query; SQLite accepts a query that uses fewer parameters than are bound, so an old
+  operator query would silently record the wrong column. Existing positions are kept (`before`:
+  `caller_id, credential_kind, principal, namespace, scope` follow the digest; `after`:
+  `outcome, caller_id, credential_kind, principal, namespace, scope, sha256`), so an old query
+  means what it did. The hook context carries `caller_id`, `credential_kind`, `principal`,
+  `namespace` and `scope`, and `after` the artifact's SHA-256.
+
+**Landed (namespace type, slice 4 batch 1):** the container of an artifact route is built by
+one module from the authenticated caller and a validated request:
+`shared/{t}/{o}/{w}/{e}` or `isolated/{t}/{o}/{w}/{e}/{principal_id}/{scope}`. Deviations from the
+text above:
+
+- **Lowercase literals only, everything else hashed.** A `principal_id` or `scope` segment is the
+  value itself only if it is lowercase letters and digits first, then `[a-z0-9._-]`, at most 64
+  characters, with no trailing `.`, not a Windows device name, and not starting with `h-`;
+  anything else is `h-` plus 32 hex characters of its SHA-256. The RFC keeps `[A-Za-z0-9]` text
+  as is, but on macOS and Windows `Ab` and `ab` are one directory, `a.` is `a`, and a literal
+  `h-` plus 32 hex characters would imitate a hashed principal, so any of those would let two
+  principals read each other's isolated entries. Operators reading storage see `h-...` for a
+  principal such as `Owner`; the readable text is in the trailer and the hook `principal`.
+- **Unicode forms are separate principals.** Segments are hashed byte for byte, so NFC and NFD
+  forms of one name are two principals, never a merged namespace.
+- **New limits.** An escaped resource code over 255 bytes, or a key (container, `/` and a 64 byte
+  digest) over 1024 bytes, is `400` instead of failing later inside a backend.
+- **Known limits, unchanged.** The existing code escaping is case-sensitive for tenant, org,
+  workspace and environment codes, so on a case-insensitive file system two codes that differ only
+  in case alias; and a local-backend key can exceed Windows' `MAX_PATH` without long-path support.
+
+**Landed (client configuration, slice 5):** see `0030-client-config-rollout.md`. Deviations from the
+text above: the names `api_key` and `placement` stay instead of `credential` and `tier`;
+`max_artifact_size` is optional and the server's advertised value can only lower the effective cap
+(`min(local or 256 MiB, server)`); a failed, oversized or truncated read is a miss instead of an error;
+the probe runs once per run with a 10 second timeout and never delays a download. The R2 single-write
+property still rests on the 32 MiB worker cap, which is server-side. `omni cache remote setup`
+gains `--push`, `--target`, `--scope` and `--max-artifact-size`, because the encrypted file cannot be
+edited by hand. Local partition paths (slice 6) must use the server-reported label through the
+server's `segment()` rule, not the raw client label.
+
+**Landed (local partitions, slice 6a):** see `0030-local-partitions-rollout.md`. Deviations from the
+text above: partitions live under a dot-prefixed `.partitions/` directory (`trusted/{epoch}`,
+`untrusted/{epoch}/{principal}/{scope}`, `local`), so they can never collide with a base58 project
+directory; remote-disabled runs keep the plain layout at the cache root, which remote-enabled runs
+never read (so no security difference, and local-only users keep their cache); the first
+remote-enabled run is cold. The file-hash index stays on the cache root and is shared. Only an
+untrusted run reads isolated entries; a run that holds `publish` reads shared only, so publishers
+no longer see their own isolated entries. A remote-enabled run now sends the access probe before its
+first local access, even when nothing is uploaded, because the partition depends on the answer.
+Segment text for the untrusted path uses the same `segment()` rule as the server, which moved to
+`omni_path_utils`.
+
+**Landed (opt-out, slice 6b):** `cache.remote: false` and `--no-remote-cache` with the transitive
+closure, routed through a second, remote-free store over `.partitions/local` instead of a per-item flag
+in the store trait (no digest or trait change). `omni_cache` and the executor are covered by unit
+tests; the closure is computed over the tasks in the plan.
+
+**Landed (signing, slice 7):** see `0030-signing-rollout.md`. Deviations from the text above: the
+signed message's domain label is `omni-cache-entry-sig-v1`; the server validates a strict signature
+grammar instead of "visible ASCII"; `get_artifact_entry` and `put_artifact_outcome` carry the
+provenance headers and the `409` outcome; the private key is not registered with task log redaction (omni never logs it); its
+environment variable is removed from every child process omni spawns (`omni_process::protect_env_var`)
+unless a task maps it explicitly; a signature binds tenant, organization, workspace and environment but not the
+server address. Still open: the `omni-tests` end-to-end server-compromise scenario.
+
+**Landed (isolated expiry, slice 8, reduced):** see `0030-operator-tools-rollout.md`. Only expiry is
+built: a server sweeper for the local-disk and memory backends (`--isolated-ttl-days`, default 7) and
+a bucket lifecycle rule for S3 and R2. Not built, by decision, because cleanup is a server or provider
+concern and no production service has legacy data: `omni cache provenance`, `omni cache purge`
+(`--credential`, `--principal`, `--signing-key`, `--digest`, `--legacy`), the provenance and purge routes
+and the credential/principal response headers. The release note therefore does not mention
+`omni cache purge --legacy`.
+
+**Landed (end-to-end security tests, slice 10):** `crates/omni_cache/src/cache/impls/e2e_security.rs`
+runs the real hybrid store against the real server router over a socket with in-memory storage and
+a token authenticator. Three scenarios: CREEP (a pull request credential that can only write fills its
+own isolated namespace, cannot publish, and a trusted `require` build with another credential misses,
+including when the PR's object is copied into `shared/` at storage level); a signed publish restored
+only by a reader that trusts the key; and server compromise (the stored object replaced by a
+well-sealed attacker archive carrying the real signature is a miss that extracts nothing, while the
+same tampering with verification off is extracted, which proves the scenario replaces the bytes).
+Disabling verification makes the last two fail. These replace the planned `tests/omni-tests`
+(TypeScript, built binary) scenarios, which need the built `omni` binary and a running service and
+were not added; the Rust tests cover the same boundaries.
+
+**Open gates before this RFC can be Implemented:**
+
+- **R2 create-only: resolved (slice 11).** Run against real Cloudflare R2 through a deployed
+  Worker with an R2 binding: a `put` with `onlyIf: { etagDoesNotMatch: "*" }` is atomic (24
+  concurrent writers to one key: exactly one stored, 23 got `null`, the survivor's bytes were
+  kept, and a put on an existing key returned `null`). A multipart upload is **not** create-only:
+  a second `complete` on an existing key replaced the object. `R2Backend` therefore writes every
+  entry (streamed or not) as one conditional put, buffering the sealed entry in memory (bounded
+  by `max_artifact_size`, 32 MiB by default on Workers), and the multipart path and the
+  `R2WritePolicy` / `R2_ALLOW_NON_ATOMIC_WRITES` opt-in are removed, so R2 writes are no longer
+  disabled by default. The Rust glue (`only_if` and the `null` result) compiles for `wasm32` and
+  is covered by the CI worker suites running against Miniflare; the real-R2 result comes from the
+  JavaScript binding probe, not the compiled worker, which was not deployed. Raising
+  `MAX_ARTIFACT_SIZE` on Workers raises the per-request memory use accordingly.
+- **S3-compatible endpoints must be verified.** `--s3.endpoint` accepts non-AWS
+  stores, and one that ignores `If-None-Match: *` would silently overwrite. Verify
+  enforcement against each supported store (and consider a startup probe) before
+  claiming immutability for it. **Verified (slice 11):** `crates/omni_remote_cache_storage_s3/tests/live_s3.rs`
+  runs against a real S3 API server when `OMNI_TEST_S3_ENDPOINT` (and access and
+  secret keys) are set. Run against RustFS in Docker it showed a second write is
+  `AlreadyExists`, 16 concurrent first writers produce exactly one `Stored` and the
+  stored bytes are the winner's, a failing stream commits nothing and leaves the key
+  free, `get_range` and `list_prefix` work, and a `ci/` prefix operation never touches
+  `ci2/`. MinIO's and LocalStack's public images are no longer available (LocalStack now
+  needs a licence), so AWS S3 itself and MinIO were not exercised; run the same test
+  against them before claiming them.
+- **Postgres and MySQL verified (slice 11):** `services/omni_remote_cache_service/tests/sql_live.rs`
+  (`TEST_POSTGRES_URL`, `TEST_MYSQL_URL`) runs the whole service against real Postgres 17 and
+  MySQL 8: Bearer identity with the `principal` column, scopes, ownership, a veto-capable
+  `before` hook binding 11 parameters and an `after` hook binding 13, usage rows recording the
+  principal, namespace and hash, and a hook query written for the older, shorter parameter lists
+  is refused at startup on both. D1 and the worker are covered by the CI service suites only.
+- **R2 through its S3 API: verified (slice 11).** The same `live_s3.rs` test passed against real
+  Cloudflare R2 (`<account>.r2.cloudflarestorage.com`, temporary token, test buckets removed
+  afterwards): `If-None-Match: *` gives `AlreadyExists` on a second write, 16 concurrent first
+  writers produce exactly one winner, a failing stream commits nothing, ranges and prefix operations
+  behave. This proves R2 enforces create-only for the S3 API, which is the "S3 API path" this RFC
+  allows. The Workers binding was verified separately (see "R2 create-only: resolved" above). Windows
+  runtime behaviour was verified on the Windows CI runner with temporary tests (path confinement, hostile
+  archives, staged restore, partitions, markers, key files, the local backend, the sweeper, protected
+  environment variables); the tests were removed afterwards. Not verified: D1/worker beyond the CI suites.
+- **Oversized streams are tested at the route** (local storage), not per backend;
+  S3, memory and R2 rely on the stream error aborting them. The `409` retries have no backoff (a racing delete is rare); add jitter if
+  measurements show contention.
+- Historical: written at slice 1. Slices 2-10 and the client size cap have since landed (see the later sections).
+- Rollout order matters: block or upgrade every old client with write access, then
+  purge legacy failed remote entries, then enable immutable writes. Otherwise an old
+  client can repopulate a failed entry that then holds its digest (`409`) until an
+  operator removes it.
 
 Atomic publication operational notes:
 
@@ -1429,8 +1715,8 @@ Atomic publication operational notes:
   (0600 on Unix), rather than the previous umask-derived permissions. Sidecars and
   backup readers using another UID need an explicit operational access policy.
 - Staging files live at the backend root, outside resource containers. Errors and
-  cancellation clean them up, but SIGKILL or a machine crash can leave orphan
-  staging files. Root-level scans must exclude them; cleanup after a crash is
+  cancellation clean them up, but SIGKILL, a machine crash, or a failed unlink in
+  the hard-link fallback can leave orphan staging files. Root-level scans must exclude them; cleanup after a crash is
   currently manual, pending the lifecycle/maintenance work.
 - File data is synced before rename. On Unix, publication then syncs the
   destination directory and its ancestors through the backend root (also the
@@ -1449,15 +1735,23 @@ Atomic publication operational notes:
   Sync failures propagate even if rename already made the artifact visible.
   On non-Unix platforms, portable directory sync is unavailable, so file data is
   synced but crash-durable directory names are not promised.
-- Open-reader replacement is tested without a platform skip. Windows and network
-  filesystem behavior still need CI/deployment validation; a failed rename reports
-  an error without deliberately truncating the old object.
+- Local publication is create-only: the staged file is linked into place without
+  replacing (`renameat(RENAME_NOREPLACE)` on Linux and macOS with a hard-link
+  fallback, `MoveFileExW` without replace on Windows). An existing entry, and any
+  reader that has it open, is never touched, and a loser's staged file is removed.
+  Windows and network-filesystem behavior still need CI/deployment validation. A
+  loser can be told `AlreadyExists` (`409`) while the winner has not yet finished
+  its directory syncs, so a crash in that window can lose an entry that a client
+  was told exists. That is acceptable for a cache: the entry is simply a miss.
+- Existing keys written before the `{digest}` check that are not bounded base58
+  still appear in a listing but can no longer be fetched or deleted through the API.
+  Remove them through the storage backend.
 - Body-read errors currently return 500. The size-cap batch must distinguish
   oversized requests (413) from other stream errors.
 
-Slice 1 execution order (High risk; continuing on PR #104):
+Slice 1 execution order (High risk):
 
-1. Client prerequisite batch: never upload failed executions, remove the remote
+1. **Done.** Client prerequisite batch: never upload failed executions, remove the remote
    replacement bypass (keep local failure-to-success upgrades), treat upload
    failures as warnings, and accept a server `409` without retrying. Retain the
    existence pre-check until atomic server publication is active. Queue an upload
@@ -1468,11 +1762,10 @@ Slice 1 execution order (High risk; continuing on PR #104):
    rejection does not fail local storage; `409` is accepted. Undo: revert batch.
    The failed-winner regression uses the real publication primitive and eligibility
    helper at unit level, rather than injecting a race into `cache_many` itself.
-   The `artifact_exists` client trait method remains available for readers. Until
-   the next batch, upload keys still need read access for the interim pre-check.
-   Size caps and shared-conflict verification are
+   The `artifact_exists` client trait method remains available for readers; the
+   upload path no longer uses it. Size caps and shared-conflict verification are
    implemented with their configuration and signing dependencies in slices 5/7.
-2. Atomic storage/server batch: conditional create-only writes, fallible and
+2. **Done except R2 (see open gates).** Atomic storage/server batch: conditional create-only writes, fallible and
    bounded uploads, abort cleanup, digest/path checks, server `409`, and mutation
    coordination. Remove the existence pre-check in this batch, not before atomic
    publication is active, so a write-only key can upload without `HEAD` and a future
@@ -1518,7 +1811,18 @@ Slice 0 deviations and remaining checks:
   before filesystem joins. Shared `Container` parsing and S3 prefixes are unchanged.
 - S3 listing pagination remains incomplete: `list` stops at one service page and
   `paged_list` ignores `after_key`. Include pagination coverage in slice 1.
-- Real S3/R2 checks and the breaking-change release note remain outstanding.
+- Independent-review follow-up: see `0030-review-follow-up.md`. `require` never
+  requests unsigned isolated entries, regardless of the server's probe answer.
+  Metadata identity/path/file checks run before remote publication and before
+  replacing local entries; invalid entries are discarded under prune/replacement
+  locks so a rebuild repairs them. Replay uses directory capabilities, no-follow
+  parent traversal, and exclusive destination creation, and failed restore is a
+  miss, not a hit with missing outputs. Both LRU purge transitions and clears are
+  under the same mutex. Archives are bounded in logical entries (200k), total
+  expanded tar bytes (8 GiB including headers/padding), and extension size (1 MiB),
+  with effective PAX sizes checked. Unknown partitions are fresh per store.
+  Untrusted runs do not read a trusted-partition fallback.
+- Real S3/R2 checks are done (section above). The breaking-change notes are in the remote cache guide, "Upgrading from earlier releases".
 
 ### Plan (steps, checks, undo)
 

@@ -43,8 +43,12 @@ const repositoryConfig = {
     },
     hooks: {
         queries: {
-            before: `SELECT reason AS veto_reason FROM vetoes WHERE tenant = ?2 AND (op = ?1 OR op = '*')${refs(3, 7)} LIMIT 1`,
-            after: `INSERT INTO usage SELECT ?1, ?2, ?6, ?7, ?8 WHERE 1 = 1${refs(3, 5)}`,
+            // 11 parameters: op, tenant, org, ws, env, digest, caller_id,
+            // credential_kind, principal, namespace, scope.
+            before: `SELECT reason AS veto_reason FROM vetoes WHERE tenant = ?2 AND (op = ?1 OR op = '*')${refs(3, 11)} LIMIT 1`,
+            // 13 parameters: op, tenant, org, ws, env, digest, outcome, caller_id,
+            // credential_kind, principal, namespace, scope, sha256.
+            after: `INSERT INTO usage SELECT ?1, ?2, ?6, ?7, ?8, ?9, ?10, ?11, ?13 WHERE 1 = 1${refs(3, 5)}${refs(12, 12)}`,
         },
     },
 };
@@ -57,7 +61,7 @@ CREATE TABLE envs(ws TEXT, code TEXT);
 CREATE TABLE api_keys(key_hash TEXT, tenant TEXT);
 CREATE TABLE key_scopes(key_hash TEXT, scope TEXT);
 CREATE TABLE vetoes(tenant TEXT, op TEXT, reason TEXT);
-CREATE TABLE usage(op TEXT, tenant TEXT, digest TEXT, outcome TEXT, api_key_id TEXT);
+CREATE TABLE usage(op TEXT, tenant TEXT, digest TEXT, outcome TEXT, api_key_id TEXT, credential_kind TEXT, principal TEXT, namespace TEXT, sha256 TEXT);
 INSERT INTO tenants VALUES ('tenant1');
 INSERT INTO orgs VALUES ('tenant1', 'org1');
 INSERT INTO workspaces VALUES ('org1', 'ws1');

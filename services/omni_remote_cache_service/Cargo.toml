@@ -7,6 +7,7 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+time = { workspace = true }
 async-trait = { workspace = true }
 eyre = { workspace = true }
 strum = { workspace = true }
@@ -40,11 +41,14 @@ omni_tracing_subscriber = { workspace = true }
 shadow-rs = { workspace = true }
 
 [dev-dependencies]
+reqwest = { workspace = true }
+futures = { workspace = true }
 axum-test = { workspace = true }
 tempfile = { workspace = true }
 tokio-stream = { workspace = true }
 maps = { workspace = true }
 sets = { workspace = true }
+sha2 = { workspace = true }
 
 [build-dependencies]
 eyre = { workspace = true }

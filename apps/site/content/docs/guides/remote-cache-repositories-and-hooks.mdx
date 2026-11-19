@@ -9,6 +9,380 @@ at your own database. You own the schema and the migrations. You supply SQL
 queries that return the shape the service needs, and the service sends them to
 the driver verbatim.
 
+## Upgrading from earlier releases
+
+This release changes the remote cache in ways that need action:
+
+- **Uploads are off by default.** Set `push` for the machines that may write shared entries (see "Client settings"). Without it a client only reads.
+- **New storage layout and entry format.** Entries are stored under a namespace and carry a sealed trailer. Existing entries are not read, so the cache starts empty. Old and new omni versions do not share a cache.
+- **Bearer authentication only.** Send the credential as `Authorization: Bearer <token>`.
+- **SQL hooks take more parameters.** The `before` hook takes 11 text parameters and `after` takes 13, including caller and namespace facts. Update the hook queries (see "Hooks"); these are not the API-key lookup queries.
+- **New `remote_cache` section in `workspace.omni.yaml`.** It holds trusted keys and verification. An older omni cannot read a config that uses it.
+- **Rust API changes.** If you build on these crates: `omni_remote_cache_storage_core` replaces `save`/`save_stream` with `save_if_absent`/`save_stream_if_absent`, removes `paged_list`/`PageOptions`, and adds `get_range`, `list_prefix`, `list_children` and `delete_prefix`; `omni_remote_cache_client` adds `get_artifact_entry` and `put_artifact_outcome` to its trait and new fields to `RemoteAccessArgs`; `SecurityService` is replaced by the `Authenticator`/`Caller` seam in `omni_remote_cache_core::security`.
+- **Isolated entries expire.** The server removes them after `--isolated-ttl-days` (default 7). On S3 and R2 add a bucket lifecycle rule.
+
+## Static API-key identity settings
+
+When using the default configuration-file provider, you can set
+`security.api_key_id_secret` to a secret used to HMAC credential IDs. The native
+service and Worker both apply it; without it, IDs retain their legacy unkeyed
+hash. Supply it securely with the configuration, not in a committed file. Static
+configuration does not expand environment-variable placeholders.
+
+Each entry under `security.api_keys` can set an optional `principal`: a stable
+namespace owner, limited to 256 UTF-8 bytes with no control characters. If omitted,
+the new authenticator uses the credential ID. Rotating `api_key_id_secret` changes
+IDs and default principals; explicit principals stay stable. Loading configuration
+rejects invalid principals and empty secrets. Principals are operator-assigned:
+using the same principal for multiple keys deliberately shares namespace ownership,
+so only assign a shared principal to credentials with the same trust level.
+
+Artifact routes authenticate through this identity path. Legacy `scopes: "all"`
+grants read, write, list and delete, never `publish:artifacts`.
+
+## Namespaces and scopes
+
+Entries live in one of two namespaces, chosen by the request and checked against
+the credential:
+
+- `shared`: entries a publisher stored for everyone who may read the environment.
+- `isolated`: entries one principal stored for itself, kept apart by a scope label
+  (`default` unless the request or the credential says otherwise).
+
+| Request                                            | Needs                                                         |
+| -------------------------------------------------- | ------------------------------------------------------------- |
+| `PUT ?target=isolated` (the default)               | `write:artifacts` or `publish:artifacts`                      |
+| `PUT ?target=shared`                               | `publish:artifacts`                                           |
+| `GET`/`HEAD ?namespace=shared` (the default)       | `read:artifacts`                                              |
+| `GET`/`HEAD ?namespace=isolated`                   | `read:artifacts` and `write:artifacts` or `publish:artifacts` |
+| `GET /artifacts` (list), either namespace          | `list:artifacts`                                              |
+| `DELETE`, in `shared` or the caller's own isolated | `delete:artifacts`                                            |
+
+`publish:artifacts` implies `write:artifacts`. A read-only credential can never
+write, and `scopes: "all"` can never write the shared namespace. An isolated
+request may carry `scope=<label>` (letters, digits, `.`, `_`, `-`, up to 64,
+starting with a letter or digit); an invalid label is `400`, and the label is
+ignored for `shared`. A credential pinned to a label always uses it. The
+principal is never taken from a request. An isolated entry is only served to the
+principal and label that wrote it. An unknown `target` or `namespace` is `400`.
+
+In storage, keys start with the namespace so a lifecycle rule can match one
+prefix: `shared/{tenant}/{org}/{ws}/{env}` and
+`isolated/{tenant}/{org}/{ws}/{env}/{principal}/{scope}`. A principal or label
+that is not lowercase letters, digits, `.`, `_` or `-` (at most 64, not starting
+with `h-`) appears as `h-` plus 32 hex characters of its SHA-256.
+
+## Client settings
+
+`omni cache remote setup` writes these machine-local settings next to the
+credential:
+
+| Option                | Default    | Meaning                                                                                                                                                                                                                |
+| --------------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--push`              | off        | Upload successful results on a miss. Without it the machine only reads                                                                                                                                                 |
+| `--target`            | `isolated` | Where uploads go: `isolated`, or `shared` (needs `publish:artifacts`)                                                                                                                                                  |
+| `--scope`             | `auto`     | The isolated label: `auto`, `run`, or a literal such as `release`                                                                                                                                                      |
+| `--max-artifact-size` | 256 MiB    | Largest artifact to upload or download, in bytes. The server's limit can only lower this. The Cloudflare Worker defaults to 32 MiB and buffers each upload in memory, so keep it well under half the isolate's 128 MiB |
+
+Uploads are off unless you pass `--push`, so a credential that only reads never
+tries to write. An upload the server refuses, or one over the size cap, is a
+warning and never fails the run. Reads try the isolated namespace first and then
+the shared one; with `--target shared` only the shared one. A failed read, or a
+download that is too large or cut short, is a miss.
+
+`auto` uses `pr-<number>` for a pull request and otherwise the branch name, on
+GitHub Actions, GitLab CI, CircleCI, Buildkite and Jenkins; outside CI it is
+`default`. `run` uses the CI run id. Names with other characters are made safe
+and, if they had to change or are too long, end in `-` and 8 hex characters of
+their SHA-256. Labels are not authenticated: all jobs sharing a credential share
+a trust level, so give pull requests from forks a read-only credential. A scope
+pin on the credential always wins.
+
+Setup warns when the credential cannot do what you asked, such as `--target shared`
+without `publish:artifacts`. The client asks the server once per run what the
+credential may do and uses the answer only to skip requests that cannot succeed.
+
+## Signing shared entries
+
+Anyone who can reach the server or its storage can try to serve a build that
+looks like yours. Signing lets a client check that a shared entry was produced by
+a key you trust, so it does not have to trust the server at all.
+
+1. Run `omni cache keygen` once. Commit the public key; keep the private key in the
+   secret store of the job that publishes.
+2. Trust the key in `workspace.omni.yaml`:
+
+    ```yaml
+    remote_cache:
+        signing:
+            trusted_keys:
+                - id: 3f9a1c07d2b84e61 # derived from the key; a mismatch is an error
+                  name: ci-2026-11
+                  public_key: "<base64>"
+            verify: auto
+    ```
+
+3. On the publishing machine, point setup at the key without storing it:
+   `omni cache remote setup ... --push --target shared --signing-key-id 3f9a1c07d2b84e61 --signing-key-env OMNI_SIGNING_KEY`.
+
+`verify` is `auto` by default: `require` when any key is trusted, otherwise `off`.
+`warn` checks and reports but still restores; `require` treats a failure as a miss
+and runs the task. A machine's own setup can only tighten this (`--verify`) or
+narrow the trusted keys (`--trusted-key`); it can never turn verification down.
+Shared uploads are signed over the tenant, organization, workspace, environment,
+digest and a hash of the archive, so an entry cannot be replayed under another
+digest or environment. Isolated entries are unsigned. Only untrusted runs in
+`off` or `warn` mode read them; `require` reads signed shared entries only,
+regardless of the server's reported scopes or the configured upload target.
+Whenever signatures are required, a machine with no signing key
+refuses to upload to the shared namespace.
+
+Verification happens before anything is extracted. An entry restored under a
+weaker policy, or signed by a key that is no longer trusted, is not reused under
+`require`. Changing the trusted keys or the mode starts a fresh local partition.
+
+The server's access probe cannot weaken `require`. Unsigned isolated reuse is
+available only under a locally selected `off` or `warn` policy.
+Rotation: trust the old and new keys, switch the publisher, then remove the old
+key. Entries signed by a removed key are misses, and they cannot be published again
+until they are purged. When a publisher finds the shared entry for a digest does not
+verify, it says so in the log.
+
+A signature vouches for the publisher, not the server address, so the same key
+signing for another server with the same codes is accepted. The key id is 64
+bits: it selects a key you already trust and the signature is always checked
+against that key. Omni removes the signing key's environment variable from the
+environment of every task it runs, but this is only a guard: a task can still map
+the variable itself, other processes of the same user can read omni's
+environment, and a key kept in `--signing-key-file` is not hidden at all. Hold the
+signing key only in a job that does not run untrusted code, and never in one that
+builds pull requests. A workspace file with `remote_cache` is rejected
+by omni versions that do not know the section.
+
+## Listing, sizes and deletes
+
+`GET /v1/artifacts` lists the stored objects of one namespace. The reported `size`
+is the stored size, which includes a small provenance trailer, so it is larger than
+the artifact. Objects that are not well-formed entries (for example stored before
+this layout) are listed but are always a miss on download. `DELETE` needs only
+`delete:artifacts`, so a key that can delete and publish can replace a shared
+entry; give those scopes to different credentials if entries must stay immutable.
+A key with no configured principal uses its hashed credential id as its principal,
+so do not choose a principal that looks like one.
+
+## Expiring isolated entries
+
+Isolated entries are one writer's scratch space, so they should not pile up.
+Shared entries never expire: remove them with your storage provider's tools.
+
+- **Local disk and memory backends:** the service removes isolated entries stored
+  more than `--isolated-ttl-days` ago (default 7, `0` keeps them forever,
+  `OMNI_REMOTE_CACHE_SERVICE_ISOLATED_TTL_DAYS`). It sweeps hourly, works through
+  at most 100,000 objects per pass, and skips anything that is not a well-formed
+  isolated entry.
+- **S3 and R2:** add a lifecycle rule on the `isolated/` prefix instead, for example
+  on S3:
+
+    ```json
+    {
+        "Rules": [
+            {
+                "ID": "expire-isolated-cache-entries",
+                "Status": "Enabled",
+                "Filter": { "Prefix": "isolated/" },
+                "Expiration": { "Days": 7 }
+            }
+        ]
+    }
+    ```
+
+    Use the equivalent object lifecycle rule in R2. The service does not sweep S3
+    buckets itself.
+
+Entries stored before namespaces existed are never read again. There is no
+command to remove them; delete them with your storage provider's tools if you ever
+had a deployment that wrote them.
+
+## Local cache partitions
+
+The partitions below are defense in depth, not isolation: code that runs as the
+same user as omni can write anywhere in the cache directory. Use separate cache
+directories (or users) for untrusted jobs, as described below.
+
+With remote caching on, the local cache directory is split by how far a run trusts
+what it restores, under `<cache_dir>/.partitions/`:
+
+- `trusted/<epoch>`: read-only/publishing runs, or shared-target runs with no probe verdict;
+- `untrusted/<epoch>/<principal>/<scope>`: runs that can write their isolated
+  namespace but not publish. They write only their own partition. They read
+  shared entries and, unless verification is `require`, their own isolated ones.
+
+A credential that is untrusted but whose principal and scope the server did not
+report uses `unknown/<epoch>-<run-id>`. A new store gets a fresh run ID; its clones
+share it, but later invocations do not reuse it. All refused credentials, and
+isolated-target runs whose probe failed, use this fallback and do not request
+isolated entries. A shared-target run with an unavailable probe uses `trusted`.
+
+The epoch changes with the server, the tenant, organization, workspace and
+environment, so switching any of them starts a fresh partition. A run reads and
+writes only its own partition, so an entry built on isolated content never reaches
+a run that publishes. Restored entries carry an `.omni-origin-remote` marker and
+are placed with a staged rename, so a crash never leaves a half-extracted entry.
+A run that can publish never requests isolated entries.
+
+Restoring output files uses retained directory handles and exclusive file
+creation, rather than checking an absolute path and later reopening it. Parent
+symlinks that stay inside the workspace are followed to their real directory;
+ones that leave it fail the restore. A restore failure
+is a cache miss and the task executes, not a successful hit with missing outputs.
+Existing regular output files are retained; missing files are copied into fresh
+files, not hardlinked to the cache. This avoids both final-link writes and later
+workspace edits mutating the cached inode. This is not a sandbox for task execution.
+
+Downloaded archives are limited to 200,000 logical entries, 8 GiB of total
+expanded tar data (including headers and padding), and 1 MiB per extension
+record. Malformed metadata or metadata for another task/digest is rejected
+before publication. Invalid persisted entries are discarded under cache locks
+so a rebuild can repair them.
+
+Local cache directories must be writable, even for lookups: Omni creates lock
+files and may remove invalid entries. Each run without a usable access
+verdict gets its own `unknown` partition, so it starts cold. A later run removes
+`unknown` partitions not modified for 7 days, and `omni cache prune` also sees them.
+
+### Keeping a task off the remote cache
+
+Release, deploy and signing tasks should not restore anything built from remote
+content. Set `cache.remote: false` on the task, or on the project to inherit it
+(a task can override it):
+
+```yaml
+tasks:
+    release:
+        exec: ./release.sh
+        cache:
+            remote: false
+```
+
+`omni run --no-remote-cache` does the same for every task of one run. The task
+and everything it depends on, however many other tasks share those dependencies,
+run once per run against a separate `local` partition: they neither read nor
+write the remote cache. Tasks that depend on them may use their outputs and keep
+their own entries in their own partition. Only dependencies that run in the same
+invocation count: with `--ignore-dependencies`, or when a dependency is left out
+of the plan, its workspace outputs are used as they are. This only applies when remote caching
+is configured; without it everything is local already.
+
+Runs of different trust tiers must not share a writable cache directory: give pull
+request jobs their own cache directory and never restore one they wrote into a job
+that publishes. With remote caching off the cache directory keeps its plain
+layout, and a run with remote caching on never reads it. The first run after
+turning remote caching on is cold, and old partitions stay on disk until pruned.
+
+**Upgrade note:** configurations written before these settings upload nothing
+until you run setup again with `--push`. A file written by setup from this
+version on cannot be read by older versions of omni. A download is limited to
+five minutes, so a very slow link may never fetch a large entry (it is a miss).
+The client also sends one access probe per run, even when `--push` is off, to
+learn whether it can skip reading the isolated namespace.
+
+**Upgrade note:** entries stored before namespaces (under `{tenant}/{org}/{ws}/{env}`) are
+never read again and are not deleted. Remove them from storage when you no longer
+need them.
+
+## Sending the credential
+
+Clients send the API key as `Authorization: Bearer <key>`. The old `X-API-KEY`
+header is no longer read, with no fallback, so update every client and script
+together with the server. The built-in `omni` client already sends the new
+header. The `X-OMNI-TENANT` header is unchanged.
+
+Any key made of visible ASCII characters (no spaces, control or non-ASCII
+characters) works. A key that contains a space or a non-ASCII character cannot be
+sent as a Bearer token and must be replaced.
+
+Authentication runs before the target is validated, so a caller without a valid
+credential cannot learn whether an organization, workspace or environment exists.
+
+| Status | Meaning                                                                                                           |
+| ------ | ----------------------------------------------------------------------------------------------------------------- |
+| 401    | Missing, malformed, unknown, disabled or expired credential                                                       |
+| 403    | A recognized credential without access to the target or the scope                                                 |
+| 400    | An authenticated request for an organization, workspace or environment that does not exist, or a malformed digest |
+| 503    | The authentication backend failed (nothing else is tried)                                                         |
+
+The caller id that hooks see is the authenticated credential's ID (see [Hooks](#hooks)).
+
+## Uploads and stored entries
+
+Every upload must declare the SHA-256 of the artifact in an `X-Omni-Content-Sha256`
+header: exactly one header holding 64 lowercase hexadecimal characters. The built-in
+`omni` client sends it. The server hashes the body while it streams and stores the
+entry only if the bytes match, so a corrupted or truncated upload is never stored and
+the key stays free for a correct one.
+
+| Status | Meaning                                                             |
+| ------ | ------------------------------------------------------------------- |
+| 204    | Stored                                                              |
+| 400    | The hash header is missing, repeated or not 64 lowercase hex digits |
+| 409    | An entry already exists for the digest. Entries are never replaced  |
+| 413    | The artifact is larger than `max_artifact_size`                     |
+| 422    | The bytes do not match `X-Omni-Content-Sha256`. Nothing was stored  |
+
+The server stores each entry as one object: the artifact, then a record it writes
+itself of who stored it (the credential, its principal), when, and the artifact's size
+and SHA-256. Nothing the client sends can set that record. `GET` returns exactly the
+artifact, with `Content-Length`, and these headers:
+
+| Header                  | Meaning                              |
+| ----------------------- | ------------------------------------ |
+| `X-Omni-Content-Sha256` | SHA-256 of the artifact              |
+| `X-Omni-Stored-At`      | When the server stored it (RFC 3339) |
+| `X-Omni-Namespace`      | `shared` or `isolated`               |
+
+Things that behave differently from before:
+
+- **Older entries are misses.** An object stored before this change has no record, so
+  `GET` and `HEAD` answer `404` and the task runs again. They are not deleted.
+- **`HEAD` and `GET` agree.** `HEAD` answers `204` only for an entry `GET` would serve.
+- **List sizes include the record.** `GET /v1/artifacts` reports the stored object size,
+  which is a little larger than the artifact. For an isolated listing, `scope` is the
+  stored path segment, which is a hash for labels with uppercase letters or special
+  characters, not the label itself; do not send it back as `?scope=`.
+- **If a stored object changes while it is being read,** the response ends with an error
+  instead of a short success, and the client treats the download as failed.
+
+Upgrade clients and server together. Old clients send `X-API-KEY`, so the new
+server refuses them with `401`; new clients send Bearer credentials, which the
+old server does not support. Custom clients that migrate authentication must
+also migrate upload hashes and namespace selection. The server, not the client,
+adds the trailer. For rollback, restore the matching old binaries/configuration;
+the old layout is separate, and new objects need provider-side cleanup if no
+longer wanted.
+
+## Checking access
+
+`omni cache remote setup` probes the server with `HEAD /v1/artifacts` (relative to
+the API base URL, for example `/api`) for the target. The probe is valid for any recognized credential that holds at least one
+scope for the target, so a key that can read and write but not list is accepted.
+A valid response is `204` with these headers:
+
+| Header                     | Meaning                                                                                  |
+| -------------------------- | ---------------------------------------------------------------------------------------- |
+| `X-Omni-Scopes`            | The scopes the credential holds for the target, such as `read:artifacts,write:artifacts` |
+| `X-Omni-Max-Artifact-Size` | The largest artifact the server accepts, in bytes (`max_artifact_size`)                  |
+| `X-Omni-Principal-Id`      | The principal's path segment in the isolated namespace                                   |
+| `X-Omni-Scope`             | The effective scope label (the pin, else the `scope` query, else `default`)              |
+
+The client uses these headers to select its local partition and, in `off`/`warn`
+mode, whether to try isolated reads. They cannot bypass required signature
+verification. The server enforces scopes and the size limit on every request.
+A credential with no scope for the target gets `403`,
+and an unknown one `401`, with neither header. When the server reports scopes,
+setup accepts credentials with `read:artifacts`, `write:artifacts`, or
+`publish:artifacts`; credentials holding only list/delete permissions cannot use
+the build cache.
+
 ## Pick a backend
 
 | Where it runs     | Backend                                                | How to enable                                            |
@@ -35,13 +409,13 @@ The native drivers are cargo features of the service and are on by default.
     "api_key_hash": { "algorithm": "sha256", "encoding": "hex" },
     "hooks": {
         "queries": {
-            "before": "SELECT reason AS veto_reason FROM vetoes WHERE tenant = $2 AND $1 IS NOT NULL AND $3 IS NOT NULL AND $4 IS NOT NULL AND $5 IS NOT NULL AND $6 IS NOT NULL AND $7 IS NOT NULL LIMIT 1",
+            "before": "SELECT reason AS veto_reason FROM vetoes WHERE tenant = $2 AND $1 IS NOT NULL AND $3 IS NOT NULL AND $4 IS NOT NULL AND $5 IS NOT NULL AND $6 IS NOT NULL AND $7 IS NOT NULL AND $8 IS NOT NULL AND $9 IS NOT NULL AND $10 IS NOT NULL AND $11 IS NOT NULL LIMIT 1",
             "after": "INSERT INTO artifact_usage (...) VALUES (...)"
         },
         "before_timeout_ms": 2000,
         "after_timeout_ms": 10000,
         "after_max_in_flight": 2,
-        "api_key_id_secret": "${KEY_ID_PEPPER}",
+        "api_key_id_secret": "a-long-random-secret-from-your-secret-store",
         "before_failure_policy": "fail_closed"
     },
     "caching": {
@@ -76,13 +450,34 @@ prepare, use the number of parameters listed below (SQLite allows fewer) and
 return the documented column. A wrong query stops the service from starting.
 D1 cannot describe a query, so there a wrong query fails on first use.
 
-Artifacts are stored under `tenant/org/ws/env`, so tenants never share
-storage, even when they reuse the same codes. Upgrading from a version that
-stored under `org/ws/env` leaves old artifacts unreachable. They are cache
-entries, so they are rebuilt.
+Artifacts are stored under `shared/tenant/org/ws/env` or `isolated/tenant/org/ws/env/principal/scope` (see Namespaces and scopes), so tenants never share storage, even when they reuse the same codes. Entries stored under the older `tenant/org/ws/env` layout are never read again; they are cache entries, so they are rebuilt.
 
 ## The query contract
 
+The new authenticator's optional cache uses the existing `caching.security`
+settings. Its keys cover the credential, full target and requested scope set,
+under a random per-cache HMAC key, separate from `hooks.api_key_id_secret`.
+Recognized callers retain their principal and grants until `ttl_secs` expires:
+removing a key or scope does not invalidate an existing hit immediately. Hits do
+not extend the TTL. Recognized callers with no grants use that same TTL; unknown
+credentials use `negative_ttl_secs` only when configured. Errors are never cached.
+A newly added grant can therefore also take up to the positive TTL to appear if
+the recognized caller was previously cached with no grants.
+If secure randomness is unavailable, caller caching is disabled with a warning.
+This caller cache serves every artifact route.
+
+- For the new RFC 0030 authenticator, `api_key_valid` can additionally return
+  `principal` as text or NULL. Omitting the column or returning NULL uses the
+  credential ID as principal; an empty, control-containing or over-256-byte value
+  fails authentication, as does a non-text column. The `found` column is still
+  required. Existing queries need no change.
+  With MySQL, use a text column (or an appropriate `CAST(... AS CHAR)`); a binary
+  value or binary-collated result may be reported as a blob by the driver and is
+  rejected rather than used as an identity.
+- `api_key_scope` must return true for `publish:artifacts` only for an explicit
+  publish grant. If your query matches a wildcard such as `scope = 'all'`, exclude
+  publish from that branch. The service cannot infer whether your SQL matched an
+  explicit or wildcard database row.
 - Queries run verbatim in your driver's dialect: `$1` for Postgres, `?` for
   MySQL, `?1` or `?` for SQLite and D1. Nothing is rewritten.
 - Parameters are bound in order, as text. They never become part of the SQL.
@@ -126,16 +521,54 @@ Hooks run on every artifact operation: `get`, `get_many`, `head`, `head_many`,
   a 403 carrying that reason. Zero rows or a NULL reason allows it.
 - `after` observes the result and cannot change it, so use it to record usage.
   It runs after the response is sent.
-- `before` parameters: operation, tenant, organization, workspace, environment,
-  digest, api key id. `after` has the same, with the outcome (`hit`, `miss`,
-  `stored`, `deleted`, `failed`) before the api key id. The digest is empty for
-  list operations. The api key id is an opaque fingerprint (16 hex characters),
-  so usage can be attributed to a key without exposing it. Set
-  `hooks.api_key_id_secret` to make it an HMAC-SHA256 under that secret. Without
-  a secret it is an unkeyed SHA-256 prefix, so anyone who can read your usage
-  table can test key guesses offline. That is only safe for long random keys,
-  and the service logs a warning when hooks are on without a secret. Changing
-  the secret changes every id, so old usage rows stop matching.
+- **Upgrade:** hook queries written for the older parameter lists fail at startup on Postgres and MySQL (SQLite queries keep working, and D1 cannot check queries up front, so a wrong one fails on first use); extend them to the lists below.
+- Parameters are bound by position, as text. `before` binds 11 and `after` binds 13:
+
+    | #   | `before`        | #   | `after`         |
+    | --- | --------------- | --- | --------------- |
+    | 1   | operation       | 1   | operation       |
+    | 2   | tenant          | 2   | tenant          |
+    | 3   | organization    | 3   | organization    |
+    | 4   | workspace       | 4   | workspace       |
+    | 5   | environment     | 5   | environment     |
+    | 6   | digest          | 6   | digest          |
+    | 7   | caller id       | 7   | outcome         |
+    | 8   | credential kind | 8   | caller id       |
+    | 9   | principal       | 9   | credential kind |
+    | 10  | namespace       | 10  | principal       |
+    | 11  | scope           | 11  | namespace       |
+    |     |                 | 12  | scope           |
+    |     |                 | 13  | SHA-256         |
+
+    The digest is empty for list operations. The outcome is `hit`, `miss`,
+    `stored`, `already_exists`, `deleted` or `failed`. The credential kind is
+    `api_key` for an API key. The namespace is `shared` or `isolated`. The scope is
+    the label for an isolated namespace and empty for `shared`. The SHA-256 is the artifact's hash for a `stored` outcome and for
+    a `hit` on one artifact, and empty otherwise. These are the same facts the
+    stored entry records about who wrote it.
+
+- **Upgrading existing queries.** Every position that existed before keeps its
+  meaning: the first seven (`before`) and eight (`after`) parameters are as they
+  were, and the caller id is the value that used to be called the api key id. New
+  parameters are only appended. Postgres, MySQL and D1 require a query to use
+  exactly the number of parameters bound, so on those a query written for the old
+  lists is rejected until you add the new parameters. The native service refuses to
+  start and names the count; D1 cannot describe a query, so there it fails on first
+  use. Your query must also use every parameter: on Postgres and D1 reference each
+  one (for example `AND $12 IS NOT NULL` or `AND ?12 IS NOT NULL`), and on MySQL write
+  13 `?` in order.
+- **Positions never change.** A parameter keeps its position once it has shipped,
+  and new facts are only added at the end, so a query written for an older list
+  keeps its meaning. Absent values (no scope, no hash) are bound as an empty
+  string; use `NULLIF(?13, '')` if you want NULL. SQLite
+  accepts a query that uses fewer, so an old query keeps working there unchanged.
+- The caller id is an opaque fingerprint (16 hex characters), so usage can be
+  attributed to a credential without exposing it. Set `hooks.api_key_id_secret`
+  to make it an HMAC-SHA256 under that secret. Without a secret it is an unkeyed
+  SHA-256 prefix, so anyone who can read your usage table can test key guesses
+  offline. That is only safe for long random keys, and the service logs a
+  warning when hooks are on without a secret. Changing the secret changes every
+  id, so old usage rows stop matching.
 - At most `after_max_in_flight` `after` hooks run at once. On the native service it defaults to `hooks_max_connections`, and on D1 to 64. Extra ones are skipped and logged, so slow hooks cannot starve authorization lookups.
 - A `before` hook that errors or times out blocks the request by default
   (`fail_closed`). Set `fail_open` to let requests through instead.

@@ -13,6 +13,7 @@ schemars = ["dep:schemars", "serde"]
 [dependencies]
 schemars = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
+sha2 = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]

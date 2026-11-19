@@ -1,4 +1,9 @@
+mod segment;
 mod workspace_path;
+
+pub use segment::{
+    MAX_SCOPE_LEN, is_safe_literal, is_valid_scope_label, segment,
+};
 
 pub use workspace_path::{
     DEFAULT_MAX_WORKSPACE_PATH_LEN, ProjectRootId, WorkspacePath,

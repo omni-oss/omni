@@ -5,7 +5,9 @@ use crate::{
 use std::path::Path;
 
 use derive_new::new;
-use omni_configurations::RemoteCacheConfiguration;
+use omni_configurations::{
+    RemoteCacheConfiguration, RemoteCacheSettings, RemoteTarget, ScopeConfig,
+};
 use omni_remote_cache_client::{
     RemoteAccessArgs, RemoteCacheClient, RemoteCacheClientError,
 };
@@ -14,6 +16,74 @@ use strum::{EnumDiscriminants, EnumIs, IntoDiscriminant as _};
 use crate::{
     crypto, derive_key::derive_key_from_seed, secret_key::get_secret_key,
 };
+
+/// Decides whether a probe result can be saved.
+///
+/// A server that reports its scopes lets setup refuse a credential that could
+/// neither read nor write the cache (for example one that can only list or
+/// publish), instead of saving a configuration that fails on every task. A
+/// server that reports none (an older one) is accepted as before.
+fn check_access(
+    result: &omni_remote_cache_client::ValidateAccessResult,
+) -> Result<(), SetupRemoteCachingConfigErrorInner> {
+    if !result.is_valid {
+        return Err(SetupRemoteCachingConfigErrorInner::InvalidAccess(
+            eyre::Report::msg(
+                result
+                    .message
+                    .as_deref()
+                    .unwrap_or("invalid access")
+                    .to_string(),
+            ),
+        ));
+    }
+    let held = |scope: &str| result.scopes.iter().any(|s| s == scope);
+    if !result.scopes.is_empty()
+        && !held("read:artifacts")
+        && !held("write:artifacts")
+        && !held("publish:artifacts")
+    {
+        return Err(SetupRemoteCachingConfigErrorInner::InsufficientScopes {
+            scopes: result.scopes.join(", "),
+        });
+    }
+    Ok(())
+}
+
+/// Tells the user, at setup, about settings the server's answer says cannot
+/// work. The configuration is still saved: scopes can change and the server
+/// enforces them on every request.
+fn warn_about_settings(
+    result: &omni_remote_cache_client::ValidateAccessResult,
+    settings: &RemoteCacheSettings,
+) {
+    let held = |scope: &str| result.scopes.iter().any(|s| s == scope);
+    if !result.scopes.is_empty() {
+        if settings.target == RemoteTarget::Shared && !held("publish:artifacts")
+        {
+            tracing::warn!(
+                "`--target shared` needs `publish:artifacts`, which this credential does not hold; uploads will be refused"
+            );
+        }
+        if settings.push
+            && settings.target == RemoteTarget::Isolated
+            && !held("write:artifacts")
+            && !held("publish:artifacts")
+        {
+            tracing::warn!(
+                "`--push` needs `write:artifacts` or `publish:artifacts`, which this credential does not hold; uploads will be refused"
+            );
+        }
+    }
+    if let Some(scope) = &result.scope {
+        tracing::info!(%scope, "the server will use this isolated scope label");
+    }
+    if !settings.push {
+        tracing::info!(
+            "uploads are off; pass `--push` to upload results to the remote cache"
+        );
+    }
+}
 
 #[allow(clippy::too_many_arguments)]
 pub async fn setup_remote_caching_config_async<TClient: RemoteCacheClient>(
@@ -26,6 +96,7 @@ pub async fn setup_remote_caching_config_async<TClient: RemoteCacheClient>(
     organization_code: &str,
     workspace_code: &str,
     environment_code: Option<&str>,
+    settings: RemoteCacheSettings,
     encrypt: bool,
     sys: &impl SetupSys,
 ) -> Result<(), SetupRemoteCachingConfigError> {
@@ -37,21 +108,18 @@ pub async fn setup_remote_caching_config_async<TClient: RemoteCacheClient>(
             org: organization_code,
             tenant: tenant_code,
             ws: workspace_code,
+            placement: Default::default(),
+            scope: match &settings.scope {
+                ScopeConfig::Literal(label) => Some(label.as_str()),
+                _ => None,
+            },
+            max_artifact_size: None,
+            signature: None,
         })
         .await?;
 
-    if !result.is_valid {
-        return Err(SetupRemoteCachingConfigErrorInner::InvalidAccess(
-            eyre::Report::msg(
-                result
-                    .message
-                    .as_deref()
-                    .unwrap_or("invalid access")
-                    .to_string(),
-            ),
-        )
-        .into());
-    }
+    check_access(&result)?;
+    warn_about_settings(&result, &settings);
 
     let remote_config = RemoteCacheConfiguration {
         api_key: api_key.to_string(),
@@ -60,6 +128,13 @@ pub async fn setup_remote_caching_config_async<TClient: RemoteCacheClient>(
         organization_code: organization_code.to_string(),
         workspace_code: workspace_code.to_string(),
         environment_code: environment_code.map(|s| s.to_string()),
+        push: settings.push,
+        target: settings.target,
+        scope: settings.scope.clone(),
+        max_artifact_size: settings.max_artifact_size,
+        signing_key: settings.signing_key.clone(),
+        verify: settings.verify,
+        trusted_keys: settings.trusted_keys.clone(),
     };
 
     let parent = remote_config_path.parent().expect("should have parent");
@@ -197,6 +272,19 @@ pub(crate) enum SetupRemoteCachingConfigErrorInner {
     )]
     InvalidAccess(#[source] eyre::Report),
 
+    /// The credential is valid for the target but cannot use the cache.
+    #[error(
+        "the credential cannot read or write artifacts (it holds: {scopes})"
+    )]
+    #[diagnostic(
+        code = "remote_cache.insufficient_scopes",
+        hint = "grant the API key read:artifacts and/or write:artifacts for this environment, then run remote caching setup again"
+    )]
+    InsufficientScopes {
+        #[diagnostic(detail)]
+        scopes: String,
+    },
+
     #[error(transparent)]
     #[diagnostic(delegate)]
     Crypto(#[from] crypto::CryptoError),
@@ -241,5 +329,60 @@ mod diagnostic_tests {
         assert!(chain.contains("permission denied"), "{chain}");
         assert!(omni_codes::get("remote_cache.config_write_failed").is_some());
         assert!(omni_codes::get("remote_cache.config_save_failed").is_some());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use omni_remote_cache_client::ValidateAccessResult;
+
+    use super::{SetupRemoteCachingConfigErrorInner as Inner, check_access};
+
+    fn result(valid: bool, scopes: &[&str]) -> ValidateAccessResult {
+        let mut result =
+            ValidateAccessResult::new(valid, Some("denied".into()));
+        result.scopes = scopes.iter().map(|s| s.to_string()).collect();
+        result
+    }
+
+    #[test]
+    fn an_invalid_probe_is_invalid_access() {
+        assert!(matches!(
+            check_access(&result(false, &[])),
+            Err(Inner::InvalidAccess(_))
+        ));
+    }
+
+    #[test]
+    fn a_credential_that_can_read_or_write_is_accepted() {
+        for scopes in [
+            vec!["read:artifacts"],
+            vec!["write:artifacts"],
+            vec!["publish:artifacts"],
+            vec!["list:artifacts", "write:artifacts", "publish:artifacts"],
+        ] {
+            assert!(check_access(&result(true, &scopes)).is_ok(), "{scopes:?}");
+        }
+    }
+
+    #[test]
+    fn a_credential_that_can_neither_read_nor_write_is_refused_with_its_scopes()
+    {
+        for scopes in [
+            vec!["delete:artifacts"],
+            vec!["list:artifacts", "delete:artifacts"],
+        ] {
+            match check_access(&result(true, &scopes)) {
+                Err(Inner::InsufficientScopes { scopes: held }) => {
+                    assert_eq!(held, scopes.join(", "));
+                }
+                other => panic!("{scopes:?}: {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn a_server_that_reports_no_scopes_is_accepted_as_before() {
+        assert!(check_access(&result(true, &[])).is_ok());
     }
 }

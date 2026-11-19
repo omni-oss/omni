@@ -45,7 +45,6 @@ where
 {
     context: &'s LoadedContext<TSys>,
     cache_manager: CacheManager<TCacheStore, TSys>,
-    sys: TSys,
     subscriber: &'s S,
     wants_task_output_stream: bool,
     wants_task_input_stream: bool,
@@ -72,7 +71,6 @@ where
     pub fn new(
         context: &'s LoadedContext<TSys>,
         cache_manager: CacheManager<TCacheStore, TSys>,
-        sys: TSys,
         subscriber: &'s S,
         max_concurrent_tasks: usize,
         ignore_dependencies: bool,
@@ -89,7 +87,6 @@ where
         Self {
             context,
             cache_manager,
-            sys,
             wants_task_output_stream: subscriber.wants_task_output_stream(),
             wants_task_input_stream: subscriber.wants_task_input_stream(),
             subscriber,
@@ -233,7 +230,20 @@ where
         &self,
         task_ctx: &TaskContext<'_>,
         res: &CachedTaskExecution,
-    ) -> Result<(), BatchExecutorError> {
+    ) -> Result<bool, BatchExecutorError> {
+        if !self.dry_run {
+            let root = self.context.root_dir().to_path_buf();
+            let entry = res.clone();
+            let restored = tokio::task::spawn_blocking(move || {
+                crate::cache_restore::Restore::prepare(&root, &entry)?.write()
+            })
+            .await
+            .map_err(std::io::Error::other)?;
+            if let Err(error) = restored {
+                tracing::warn!(%error, "cache output restoration failed; executing the task instead");
+                return Ok(false);
+            }
+        }
         let effective = self.resolve_output_logs(task_ctx);
         let cached_failed = res.exit_code != 0;
         let should_replay = !self.dry_run
@@ -274,59 +284,7 @@ where
                 .await;
         }
 
-        // hard link the cached files to the original file paths if they don't exist
-        if !self.dry_run {
-            for file in res.files.iter() {
-                let original_path =
-                    file.original_path.path().expect("should be resolved");
-
-                if self.sys.fs_exists_async(original_path).await? {
-                    tracing::debug!(
-                        "file already exists {original_path:?}, skipping cache restore",
-                    );
-                    continue;
-                }
-
-                let dir = original_path.parent().expect("should have parent");
-                if !self.sys.fs_exists_async(dir).await? {
-                    self.sys.fs_create_dir_all_async(dir).await?;
-                }
-
-                if let Err(err) = self
-                    .sys
-                    .fs_hard_link_async(
-                        file.cached_path.as_path(),
-                        original_path,
-                    )
-                    .await
-                {
-                    if !omni_utils::fs::should_copy_after_hardlink_error(&err) {
-                        return Err(err.into());
-                    }
-
-                    // Copy when the filesystem or its permissions prevent
-                    // hardlinking. Other failures must not be masked by a copy.
-                    tracing::debug!(
-                        "Restoring cached file by copy because hardlinking was unavailable ({err}): {:?}",
-                        original_path
-                    );
-                    self.sys
-                        .fs_copy_async(
-                            file.cached_path.as_path(),
-                            original_path,
-                        )
-                        .await?;
-                }
-
-                tracing::debug!(
-                    "restored cached file {:?} to {:?}",
-                    file.cached_path,
-                    original_path,
-                );
-            }
-        }
-
-        Ok(())
+        Ok(true)
     }
 
     #[tracing::instrument(level = Level::DEBUG, skip_all)]
@@ -540,6 +498,7 @@ where
             if let Some(cached_result) = cached_results
                 .get(task_ctx.node.full_task_name())
                 .filter(|_| is_cache_eligible(task_ctx))
+                && self.replay_cached_results(task_ctx, cached_result).await?
             {
                 new_results.insert(
                     task_ctx.node.full_task_name().to_string(),
@@ -552,8 +511,6 @@ where
                         cached_result.tries,
                     ),
                 );
-
-                self.replay_cached_results(task_ctx, cached_result).await?;
 
                 continue;
             }

@@ -12,10 +12,17 @@ pub struct CacheInfo {
     /// decided their enablement.
     #[serde(default)]
     pub cache_enabled_source: CacheEnabledSource,
+    /// `false` keeps the task off the remote cache (read and write).
+    #[serde(default = "default_remote")]
+    pub cache_remote: bool,
     pub key_defaults: bool,
     pub key_env_keys: Vec<String>,
     pub key_input_files: GlobPatterns<OmniPath>,
     pub cache_output_files: GlobPatterns<OmniPath>,
     pub cache_logs: bool,
     pub args: Map<String, serde_json::Value>,
+}
+
+fn default_remote() -> bool {
+    true
 }

@@ -59,6 +59,12 @@ pub struct ExecutionConfig {
     #[getset(get_copy = "pub")]
     no_cache: bool,
 
+    /// if true, no task reads or writes the remote cache in this run (every
+    /// task is treated as if it set `cache.remote: false`)
+    #[builder(default = false)]
+    #[getset(get_copy = "pub")]
+    no_remote_cache: bool,
+
     /// How to handle failures
     #[builder(default = OnFailure::SkipDependents)]
     #[getset(get_copy = "pub")]

@@ -111,7 +111,12 @@ pub struct Collector<'a, TSys: CollectorSys = RealSys> {
     ws_root_dir: &'a Path,
     sys: TSys,
     dir_hasher: RealDirHasher,
+    /// The cache directory proper: the file-hash index lives here and it is
+    /// kept out of every input walk, whatever partition entries are in.
     cache_dir: &'a Path,
+    /// Where project output directories are kept. The cache directory itself
+    /// unless a partition is chosen.
+    output_base: &'a Path,
 }
 
 impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
@@ -127,7 +132,16 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
             sys,
             dir_hasher,
             cache_dir,
+            output_base: cache_dir,
         }
+    }
+
+    /// Keeps project output directories under `output_base` (a partition of
+    /// the cache directory) while the hash index and the input-walk exclusion
+    /// stay on the whole cache directory.
+    pub fn with_output_base(mut self, output_base: &'a Path) -> Self {
+        self.output_base = output_base;
+        self
     }
 }
 
@@ -135,7 +149,7 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
     fn get_project_dir(&self, project_name: &str) -> PathBuf {
         let name = path_safe(project_name);
 
-        self.cache_dir.join(name).join("output")
+        self.output_base.join(name).join("output")
     }
 
     fn canonical_ws_root(&self) -> PathBuf {
@@ -1221,6 +1235,47 @@ mod tests {
             .iter()
             .cloned()
             .collect()
+    }
+
+    #[tokio::test]
+    async fn an_output_base_moves_entries_but_not_the_input_walk_exclusion() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        write_file(&root.join("proj/source.txt"), "source");
+        // The cache directory sits inside the project the inputs are globbed in.
+        let cache_dir = root.join("proj/.cache");
+        let ours = cache_dir.join(".partitions/trusted/e1");
+        std::fs::create_dir_all(&ours).unwrap();
+        let mut project = Project::new(root, "proj");
+        project.input_files = vec![OmniPath::new("**/*")];
+        let config = CollectConfig {
+            input_files: true,
+            digests: true,
+            cache_output_dirs: true,
+            ..Default::default()
+        };
+        let collect = || async {
+            let collector = Collector::new(root, &cache_dir, RealSys)
+                .with_output_base(&ours);
+            let mut out =
+                collector.collect(&[project.info()], &config).await.unwrap();
+            Collected::from(out.pop().unwrap())
+        };
+        let before = collect().await;
+        assert!(
+            before.cache_output_dir.as_ref().unwrap().starts_with(&ours),
+            "{:?}",
+            before.cache_output_dir
+        );
+        // Another partition's content is not an input, so it cannot move a key.
+        write_file(
+            &cache_dir.join(".partitions/untrusted/e1/p/s/planted.txt"),
+            "x",
+        );
+        let after = collect().await;
+        assert_eq!(before.input_files, after.input_files);
+        assert_eq!(before.digest, after.digest);
+        assert_eq!(as_set(&before.input_files), rel_paths(&["source.txt"]));
     }
 
     #[tokio::test]

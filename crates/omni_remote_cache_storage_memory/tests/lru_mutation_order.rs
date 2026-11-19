@@ -4,8 +4,9 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use bytesize::ByteSize;
 use omni_remote_cache_storage_core::{
-    Container, ListItem, PageOptions, ReadStream, RemoteCacheStorageBackend,
-    WriteStream, decorators::LruCached, error::Error,
+    ByteRange, Container, ContainerPrefix, PrefixPage, ReadStream,
+    RemoteCacheStorageBackend, SaveOutcome, WriteStream, decorators::LruCached,
+    error::Error,
 };
 use omni_remote_cache_storage_memory::InMemoryBackend;
 use tokio::sync::Notify;
@@ -36,34 +37,49 @@ impl RemoteCacheStorageBackend for PausedStreamBackend {
     ) -> Result<Option<ReadStream>, Error> {
         self.inner.get_stream(c, k).await
     }
-    async fn list(&self, c: &Container) -> Result<Vec<ListItem>, Error> {
-        self.inner.list(c).await
-    }
-    async fn paged_list(
+    async fn get_range(
         &self,
         c: &Container,
-        p: PageOptions,
-    ) -> Result<Vec<ListItem>, Error> {
-        self.inner.paged_list(c, p).await
+        k: &str,
+        r: ByteRange,
+    ) -> Result<Option<Bytes>, Error> {
+        self.inner.get_range(c, k, r).await
     }
-    async fn save(
+    async fn list_prefix(
+        &self,
+        p: &ContainerPrefix,
+        after: Option<&str>,
+        limit: u32,
+    ) -> Result<PrefixPage, Error> {
+        self.inner.list_prefix(p, after, limit).await
+    }
+    async fn list_children(
+        &self,
+        p: &ContainerPrefix,
+    ) -> Result<Vec<String>, Error> {
+        self.inner.list_children(p).await
+    }
+    async fn delete_prefix(&self, p: &ContainerPrefix) -> Result<u64, Error> {
+        self.inner.delete_prefix(p).await
+    }
+    async fn save_if_absent(
         &self,
         c: &Container,
         k: &str,
         b: Bytes,
-    ) -> Result<(), Error> {
-        self.inner.save(c, k, b).await
+    ) -> Result<SaveOutcome, Error> {
+        self.inner.save_if_absent(c, k, b).await
     }
-    async fn save_stream(
+    async fn save_stream_if_absent(
         &self,
         c: &Container,
         k: &str,
         s: WriteStream,
-    ) -> Result<(), Error> {
-        self.inner.save_stream(c, k, s).await?;
+    ) -> Result<SaveOutcome, Error> {
+        let outcome = self.inner.save_stream_if_absent(c, k, s).await?;
         self.committed.notify_one();
         self.resume.notified().await;
-        Ok(())
+        Ok(outcome)
     }
     async fn delete(&self, c: &Container, k: &str) -> Result<(), Error> {
         if let Some((submitted, release)) = &self.delete_pause {
@@ -101,7 +117,7 @@ async fn obsolete_stream_cannot_repopulate_after_a_byte_write_or_delete() {
         let c = container.clone();
         let stream = tokio::spawn(async move {
             writer
-                .save_stream(
+                .save_stream_if_absent(
                     &c,
                     "d",
                     Box::pin(futures::stream::iter([Ok(Bytes::from("old"))])),
@@ -113,7 +129,11 @@ async fn obsolete_stream_cannot_repopulate_after_a_byte_write_or_delete() {
             .unwrap();
         tokio::time::timeout(
             Duration::from_secs(5),
-            cache.save(&container, "unrelated", Bytes::from("independent")),
+            cache.save_if_absent(
+                &container,
+                "unrelated",
+                Bytes::from("independent"),
+            ),
         )
         .await
         .expect("unrelated keys must not wait for a stalled stream")
@@ -123,7 +143,12 @@ async fn obsolete_stream_cannot_repopulate_after_a_byte_write_or_delete() {
             if delete {
                 cache.delete(&container, "d").await
             } else {
-                cache.save(&container, "d", Bytes::from("new")).await
+                // Create-only: replacing an entry means deleting it first.
+                cache.delete(&container, "d").await?;
+                cache
+                    .save_if_absent(&container, "d", Bytes::from("new"))
+                    .await
+                    .map(|_| ())
             }
         };
         tokio::pin!(mutation);
@@ -170,7 +195,7 @@ async fn uncontested_stream_still_populates_the_lru() {
     );
     let container = Container::parse("ns/ci").unwrap();
     cache
-        .save_stream(
+        .save_stream_if_absent(
             &container,
             "d",
             Box::pin(futures::stream::iter([Ok(Bytes::from("old"))])),
@@ -202,7 +227,7 @@ async fn cancelled_delete_keeps_the_lock_until_backend_removal_finishes() {
     ));
     let container = Container::parse("ns/ci").unwrap();
     cache
-        .save(&container, "d", Bytes::from("old"))
+        .save_if_absent(&container, "d", Bytes::from("old"))
         .await
         .unwrap();
     let deleting = cache.clone();
@@ -213,7 +238,7 @@ async fn cancelled_delete_keeps_the_lock_until_backend_removal_finishes() {
         .unwrap();
     caller.abort();
     assert!(caller.await.unwrap_err().is_cancelled());
-    let replacement = cache.save_stream(
+    let replacement = cache.save_stream_if_absent(
         &container,
         "d",
         Box::pin(futures::stream::iter([Ok(Bytes::from("new"))])),
@@ -238,5 +263,154 @@ async fn cancelled_delete_keeps_the_lock_until_backend_removal_finishes() {
         cache.get(&container, "d").await.unwrap(),
         Some(Bytes::from("new")),
         "replacement should be cached"
+    );
+}
+
+#[tokio::test]
+async fn a_byte_write_after_a_stalled_stream_conflicts_and_is_never_cached() {
+    let committed = Arc::new(Notify::new());
+    let resume = Arc::new(Notify::new());
+    let inner = Arc::new(InMemoryBackend::new());
+    let cache = Arc::new(LruCached::new(
+        PausedStreamBackend {
+            inner: inner.clone(),
+            committed: committed.clone(),
+            resume: resume.clone(),
+            delete_pause: None,
+        },
+        NonZeroUsize::new(10).unwrap(),
+    ));
+    let container = Container::parse("ns/ci").unwrap();
+    let writer = cache.clone();
+    let c = container.clone();
+    let stream = tokio::spawn(async move {
+        writer
+            .save_stream_if_absent(
+                &c,
+                "d",
+                Box::pin(futures::stream::iter([Ok(Bytes::from("stream"))])),
+            )
+            .await
+    });
+    tokio::time::timeout(Duration::from_secs(5), committed.notified())
+        .await
+        .unwrap();
+
+    // No delete involved: a competing create of the same key must wait for the
+    // stalled stream, then lose the race.
+    let competing = cache.save_if_absent(&container, "d", Bytes::from("bytes"));
+    tokio::pin!(competing);
+    assert!(futures::poll!(&mut competing).is_pending());
+    resume.notify_one();
+    assert_eq!(
+        tokio::time::timeout(Duration::from_secs(5), stream)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap(),
+        SaveOutcome::Stored
+    );
+    assert_eq!(
+        tokio::time::timeout(Duration::from_secs(5), competing)
+            .await
+            .unwrap()
+            .unwrap(),
+        SaveOutcome::AlreadyExists
+    );
+    assert_eq!(
+        inner.get(&container, "d").await.unwrap(),
+        Some(Bytes::from("stream"))
+    );
+    assert_eq!(
+        cache.get(&container, "d").await.unwrap(),
+        Some(Bytes::from("stream")),
+        "the losing writer's bytes must never be served"
+    );
+}
+
+#[tokio::test]
+async fn a_stream_in_flight_during_a_prefix_delete_is_not_cached() {
+    let committed = Arc::new(Notify::new());
+    let resume = Arc::new(Notify::new());
+    let inner = Arc::new(InMemoryBackend::new());
+    let cache = Arc::new(LruCached::new(
+        PausedStreamBackend {
+            inner: inner.clone(),
+            committed: committed.clone(),
+            resume: resume.clone(),
+            delete_pause: None,
+        },
+        NonZeroUsize::new(10).unwrap(),
+    ));
+    let container = Container::parse("ns/ci").unwrap();
+    let writer = cache.clone();
+    let c = container.clone();
+    let stream = tokio::spawn(async move {
+        writer
+            .save_stream_if_absent(
+                &c,
+                "d",
+                Box::pin(futures::stream::iter([Ok(Bytes::from("old"))])),
+            )
+            .await
+    });
+    tokio::time::timeout(Duration::from_secs(5), committed.notified())
+        .await
+        .unwrap();
+    // The stream is committed in the backend but has not reached the cache yet.
+    let removed = cache.delete_prefix(&container.prefix()).await.unwrap();
+    assert_eq!(removed, 1);
+    resume.notify_one();
+    tokio::time::timeout(Duration::from_secs(5), stream)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert_eq!(inner.get(&container, "d").await.unwrap(), None);
+    assert_eq!(
+        cache.get(&container, "d").await.unwrap(),
+        None,
+        "a purged entry must not be resurrected by an in-flight stream"
+    );
+}
+
+#[tokio::test]
+async fn get_range_is_served_from_a_cached_streamed_entry() {
+    let inner = Arc::new(InMemoryBackend::new());
+    let resume = Arc::new(Notify::new());
+    resume.notify_one();
+    let cache = LruCached::new(
+        PausedStreamBackend {
+            inner: inner.clone(),
+            committed: Arc::new(Notify::new()),
+            resume,
+            delete_pause: None,
+        },
+        NonZeroUsize::new(10).unwrap(),
+    );
+    let container = Container::parse("ns/ci").unwrap();
+    cache
+        .save_stream_if_absent(
+            &container,
+            "d",
+            Box::pin(futures::stream::iter([Ok(Bytes::from("abcdef"))])),
+        )
+        .await
+        .unwrap();
+    // Remove it behind the cache's back: only the cache can answer now.
+    inner.delete(&container, "d").await.unwrap();
+    assert_eq!(
+        cache
+            .get_range(&container, "d", ByteRange::Suffix(2))
+            .await
+            .unwrap(),
+        Some(Bytes::from("ef"))
+    );
+    assert_eq!(
+        cache
+            .get_range(&container, "d", ByteRange::Bounded(1, 3))
+            .await
+            .unwrap(),
+        Some(Bytes::from("bc"))
     );
 }

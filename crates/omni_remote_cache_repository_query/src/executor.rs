@@ -10,6 +10,14 @@ pub enum QueryError {
     Shape(String),
 }
 
+/// One `api_key_valid` row. A missing or NULL principal uses the credential ID;
+/// an explicit value must be text and is validated by the authenticator.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ApiKeyIdentity {
+    pub found: bool,
+    pub principal: Option<String>,
+}
+
 /// Runs an operator-supplied query and reads the `found` contract.
 ///
 /// Implementations must send `sql` to the driver verbatim, bind `params` in
@@ -20,6 +28,16 @@ pub enum QueryError {
 /// means `false`.
 #[async_trait]
 pub trait QueryExecutor: Send + Sync + 'static {
+    /// Runs `api_key_valid`, with the same `found`, row-count, verbatim SQL and
+    /// ordered-binding contract as `exists`, plus an optional `principal` column.
+    /// Zero rows means `None`; absent/NULL principal means the default identity.
+    /// A present, non-text principal is a shape error, not a default principal.
+    async fn api_key_identity(
+        &self,
+        sql: &str,
+        params: &[&str],
+    ) -> Result<Option<ApiKeyIdentity>, QueryError>;
+
     async fn exists(
         &self,
         sql: &str,

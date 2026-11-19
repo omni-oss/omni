@@ -390,6 +390,30 @@ pub(crate) enum ChildErrorInner {
     Send(#[from] tokio::sync::mpsc::error::SendError<Vec<u8>>),
 }
 
+static PROTECTED_ENV: std::sync::RwLock<Vec<OsString>> =
+    std::sync::RwLock::new(Vec::new());
+
+/// Keeps `name` out of the environment of every child process spawned from now
+/// on, so a build task cannot read a secret that only omni itself uses (for
+/// example the cache signing key). A task that names the variable in its own
+/// environment mapping still gets that value: that is the task's explicit
+/// choice.
+pub fn protect_env_var(name: impl Into<OsString>) {
+    let name = name.into();
+    if let Ok(mut protected) = PROTECTED_ENV.write()
+        && !protected.contains(&name)
+    {
+        protected.push(name);
+    }
+}
+
+fn protected_env() -> Vec<OsString> {
+    PROTECTED_ENV
+        .read()
+        .map(|protected| protected.clone())
+        .unwrap_or_default()
+}
+
 fn create_inner(
     command: String,
     args: Vec<String>,
@@ -422,6 +446,9 @@ fn create_inner(
                     c
                 };
                 pty_cmd.cwd(cwd);
+                for name in protected_env() {
+                    pty_cmd.env_remove(name);
+                }
                 for (k, v) in env.into_iter() {
                     pty_cmd.env(k, v);
                 }
@@ -444,6 +471,9 @@ fn create_inner(
 
     std_cmd.args(args);
     std_cmd.current_dir(cwd);
+    for name in protected_env() {
+        std_cmd.env_remove(name);
+    }
     std_cmd.envs(env);
 
     Ok(Command::Normal(StdCommand { cmd: std_cmd }))
@@ -475,4 +505,49 @@ enum ChildInner {
         writer_task: JoinHandle<Result<(), ChildError>>,
     },
     Normal(tokio::process::Child),
+}
+
+#[cfg(test)]
+mod protected_env_tests {
+    use super::*;
+
+    #[test]
+    fn a_protected_variable_is_removed_from_the_child_environment() {
+        let name = OsString::from("OMNI_TEST_PROTECTED_SECRET");
+        protect_env_var(&name);
+        protect_env_var(&name);
+        assert_eq!(
+            protected_env().iter().filter(|n| **n == name).count(),
+            1,
+            "registered once"
+        );
+        // The piped path (the pty path is used only on a terminal).
+        if let Ok(Command::Normal(command)) = create_inner(
+            "echo".into(),
+            vec![],
+            std::env::temp_dir(),
+            HashMap::new(),
+        ) {
+            let removed =
+                command.cmd.as_std().get_envs().any(|(key, value)| {
+                    key == name.as_os_str() && value.is_none()
+                });
+            assert!(removed, "the variable must be explicitly removed");
+        }
+        // A task that names it itself still gets its own value.
+        if let Ok(Command::Normal(command)) = create_inner(
+            "echo".into(),
+            vec![],
+            std::env::temp_dir(),
+            HashMap::from([(name.clone(), OsString::from("explicit"))]),
+        ) {
+            let value = command
+                .cmd
+                .as_std()
+                .get_envs()
+                .find(|(key, _)| *key == name.as_os_str())
+                .and_then(|(_, v)| v.map(|v| v.to_owned()));
+            assert_eq!(value, Some(OsString::from("explicit")));
+        }
+    }
 }

@@ -5,6 +5,7 @@
 //! `QueryExecutor`, implemented by `omni_remote_cache_repository_sql` (native)
 //! and `omni_remote_cache_repository_d1` (Cloudflare Workers).
 
+mod authentication;
 mod config;
 mod executor;
 mod hashing;
@@ -12,8 +13,8 @@ mod hooks;
 mod provider;
 mod queries;
 mod repositories;
-mod security;
 
+pub use authentication::*;
 pub use config::*;
 pub use executor::*;
 pub use hashing::*;
@@ -21,4 +22,3 @@ pub use hooks::*;
 pub use provider::*;
 pub use queries::*;
 pub use repositories::*;
-pub use security::*;

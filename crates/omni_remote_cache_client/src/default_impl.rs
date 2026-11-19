@@ -11,11 +11,16 @@ use reqwest_middleware::{
 use reqwest_tracing::TracingMiddleware;
 
 use crate::{
-    RemoteAccessArgs, RemoteCacheClient, RemoteCacheClientError,
-    ValidateAccessResult,
+    DEFAULT_MAX_ARTIFACT_SIZE, Placement, PutOutcome, RemoteAccessArgs,
+    RemoteArtifact, RemoteCacheClient, RemoteCacheClientError,
+    ValidateAccessResult, is_valid_scope_label,
 };
 
 const UPLOAD_REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
+/// A whole download, so a server that trickles bytes cannot stall a run.
+const DOWNLOAD_REQUEST_TIMEOUT: Duration = Duration::from_secs(300);
+/// The access probe; it must not hold up the first restore or upload.
+const PROBE_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Debug, Clone, new)]
 pub struct DefaultRemoteCacheClient {
@@ -86,9 +91,12 @@ impl Middleware for LogRequestMiddleware {
     }
 }
 
-fn create_url(remote: &RemoteAccessArgs, digest: &str) -> String {
+/// `param` is `target` for a write and `namespace` for everything else.
+fn create_url(remote: &RemoteAccessArgs, digest: &str, param: &str) -> String {
     format!(
-        "{base_url}/v1/artifacts/{digest}?org={org}&ws={ws}&env={env}",
+        "{base_url}/v1/artifacts/{digest}?org={org}&ws={ws}&env={env}&{param}={placement}{scope}",
+        placement = remote.placement.as_str(),
+        scope = scope_param(remote),
         base_url = remote.api_base_url,
         org = remote.org,
         ws = remote.ws,
@@ -97,9 +105,21 @@ fn create_url(remote: &RemoteAccessArgs, digest: &str) -> String {
     )
 }
 
+/// `&scope=<label>` for an isolated request with a valid label, else nothing:
+/// the shared namespace ignores it, and an invalid label would only be a `400`.
+fn scope_param(remote: &RemoteAccessArgs) -> String {
+    match (remote.placement, remote.scope) {
+        (Placement::Isolated, Some(label)) if is_valid_scope_label(label) => {
+            format!("&scope={label}")
+        }
+        _ => String::new(),
+    }
+}
+
 fn create_url_no_digest(remote: &RemoteAccessArgs) -> String {
     format!(
-        "{base_url}/v1/artifacts?org={org}&ws={ws}&env={env}",
+        "{base_url}/v1/artifacts?org={org}&ws={ws}&env={env}{scope}",
+        scope = scope_param(remote),
         base_url = remote.api_base_url,
         org = remote.org,
         ws = remote.ws,
@@ -107,20 +127,40 @@ fn create_url_no_digest(remote: &RemoteAccessArgs) -> String {
     )
 }
 
+/// Lowercase hex SHA-256 of `artifact`. An archive can be hundreds of megabytes,
+/// so it is hashed off the async worker threads.
+async fn sha256_hex(artifact: Bytes) -> Result<String, RemoteCacheClientError> {
+    use sha2::{Digest as _, Sha256};
+    use std::fmt::Write as _;
+
+    tokio::task::spawn_blocking(move || {
+        Sha256::digest(&artifact).iter().fold(
+            String::with_capacity(64),
+            |mut hex, byte| {
+                let _ = write!(hex, "{byte:02x}");
+                hex
+            },
+        )
+    })
+    .await
+    .map_err(RemoteCacheClientError::custom)
+}
+
 #[async_trait]
 impl RemoteCacheClient for DefaultRemoteCacheClient {
-    async fn get_artifact(
+    async fn get_artifact_entry(
         &self,
         remote: &RemoteAccessArgs,
         digest: &str,
-    ) -> Result<Option<Bytes>, RemoteCacheClientError> {
-        let url = create_url(remote, digest);
+    ) -> Result<Option<RemoteArtifact>, RemoteCacheClientError> {
+        let url = create_url(remote, digest, "namespace");
 
         let response = self
             .client
             .get(url)
-            .header("X-API-KEY", remote.api_key)
+            .bearer_auth(remote.api_key)
             .header("X-OMNI-TENANT", remote.tenant)
+            .timeout(DOWNLOAD_REQUEST_TIMEOUT)
             .send()
             .await
             .map_err(RemoteCacheClientError::custom)
@@ -129,14 +169,52 @@ impl RemoteCacheClient for DefaultRemoteCacheClient {
             })?;
 
         let status = response.status();
+        let single = |name: &str| -> (Option<String>, bool) {
+            let mut values = response.headers().get_all(name).iter();
+            match (values.next(), values.next()) {
+                (Some(v), None) => (v.to_str().ok().map(str::to_owned), false),
+                (None, _) => (None, false),
+                _ => (None, true),
+            }
+        };
+        let (sha256, sha_twice) = single("x-omni-content-sha256");
+        let (signature, sig_twice) = single("x-omni-signature");
 
         if status.is_success() {
-            let bytes = response
-                .bytes()
-                .await
-                .map_err(RemoteCacheClientError::custom)?;
+            let cap = remote
+                .max_artifact_size
+                .unwrap_or(DEFAULT_MAX_ARTIFACT_SIZE);
+            // A body that is too large, or that ends early or breaks, is a miss:
+            // a broken or hostile server must not fail the run or fill memory.
+            if response.content_length().is_some_and(|length| length > cap) {
+                tracing::warn!(%digest, cap, "remote cache entry is larger than the size cap; ignoring it");
+                return Ok(None);
+            }
+            let mut body = Vec::new();
+            let mut response = response;
+            loop {
+                match response.chunk().await {
+                    Ok(Some(chunk)) => {
+                        if (body.len() + chunk.len()) as u64 > cap {
+                            tracing::warn!(%digest, cap, "remote cache entry exceeded the size cap; ignoring it");
+                            return Ok(None);
+                        }
+                        body.extend_from_slice(&chunk);
+                    }
+                    Ok(None) => break,
+                    Err(e) => {
+                        tracing::warn!(%digest, error = %e, "remote cache download failed part way; ignoring it");
+                        return Ok(None);
+                    }
+                }
+            }
 
-            Ok(Some(bytes))
+            Ok(Some(RemoteArtifact {
+                bytes: Bytes::from(body),
+                sha256,
+                signature,
+                ambiguous_provenance: sha_twice || sig_twice,
+            }))
         } else {
             match status {
                 StatusCode::NOT_FOUND => Ok(None),
@@ -157,9 +235,9 @@ impl RemoteCacheClient for DefaultRemoteCacheClient {
         let response = self
             .client
             .head(url)
-            .header("X-API-KEY", remote.api_key)
+            .bearer_auth(remote.api_key)
             .header("X-OMNI-TENANT", remote.tenant)
-            .timeout(UPLOAD_REQUEST_TIMEOUT)
+            .timeout(PROBE_REQUEST_TIMEOUT)
             .send()
             .await
             .map_err(RemoteCacheClientError::custom)
@@ -168,6 +246,26 @@ impl RemoteCacheClient for DefaultRemoteCacheClient {
             })?;
 
         let status = response.status();
+        let headers = response.headers().clone();
+
+        // Advisory values: the server enforces them again on every request.
+        let scopes = response
+            .headers()
+            .get("x-omni-scopes")
+            .and_then(|v| v.to_str().ok())
+            .map(|v| {
+                v.split(',')
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_owned)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        let max_artifact_size = response
+            .headers()
+            .get("x-omni-max-artifact-size")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.parse::<u64>().ok());
 
         let is_json = response
             .headers()
@@ -177,14 +275,30 @@ impl RemoteCacheClient for DefaultRemoteCacheClient {
             })
             .unwrap_or_default();
 
-        Ok(ValidateAccessResult::new(
+        let mut result = ValidateAccessResult::new(
             status.is_success(),
             Some(if is_json {
                 response.json().await.unwrap_or_default()
             } else {
                 response.text().await.unwrap_or_default()
             }),
-        ))
+        );
+        result.status = Some(status.as_u16());
+        if status.is_success() {
+            result.scopes = scopes;
+            result.max_artifact_size = max_artifact_size;
+            let text = |name: &str| {
+                headers
+                    .get(name)
+                    .and_then(|v| v.to_str().ok())
+                    .filter(|v| !v.is_empty())
+                    .map(str::to_owned)
+            };
+            result.principal_id = text("x-omni-principal-id");
+            result.scope =
+                text("x-omni-scope").filter(|s| is_valid_scope_label(s));
+        }
+        Ok(result)
     }
 
     async fn artifact_exists(
@@ -192,12 +306,12 @@ impl RemoteCacheClient for DefaultRemoteCacheClient {
         remote: &RemoteAccessArgs,
         digest: &str,
     ) -> Result<bool, RemoteCacheClientError> {
-        let url = create_url(remote, digest);
+        let url = create_url(remote, digest, "namespace");
 
         let response = self
             .client
             .head(url)
-            .header("X-API-KEY", remote.api_key)
+            .bearer_auth(remote.api_key)
             .header("X-OMNI-TENANT", remote.tenant)
             .timeout(UPLOAD_REQUEST_TIMEOUT)
             .send()
@@ -220,21 +334,31 @@ impl RemoteCacheClient for DefaultRemoteCacheClient {
         }
     }
 
-    async fn put_artifact(
+    async fn put_artifact_outcome(
         &self,
         remote: &RemoteAccessArgs,
         digest: &str,
         artifact: Bytes,
-    ) -> Result<(), RemoteCacheClientError> {
-        let url = create_url(remote, digest);
+    ) -> Result<PutOutcome, RemoteCacheClientError> {
+        let url = create_url(remote, digest, "target");
+        let sha256 = sha256_hex(artifact.clone()).await?;
 
-        let response = self
+        let mut request = self
             .client
             .put(url)
-            .header("X-API-KEY", remote.api_key)
+            .bearer_auth(remote.api_key)
             .header("X-OMNI-TENANT", remote.tenant)
+            // The server seals the entry only if the bytes match this, so a
+            // corrupted or truncated upload is rejected instead of stored.
+            .header("X-Omni-Content-Sha256", sha256)
             .body(artifact)
-            .timeout(UPLOAD_REQUEST_TIMEOUT)
+            .timeout(UPLOAD_REQUEST_TIMEOUT);
+        if let (Placement::Shared, Some(signature)) =
+            (remote.placement, remote.signature)
+        {
+            request = request.header("X-Omni-Signature", signature);
+        }
+        let response = request
             .send()
             .await
             .map_err(RemoteCacheClientError::custom)
@@ -242,10 +366,10 @@ impl RemoteCacheClient for DefaultRemoteCacheClient {
                 tracing::debug!(error = ?e, "put_artifact_failed");
             })?;
 
-        if response.status().is_success()
-            || response.status() == StatusCode::CONFLICT
-        {
-            Ok(())
+        if response.status() == StatusCode::CONFLICT {
+            Ok(PutOutcome::AlreadyExists)
+        } else if response.status().is_success() {
+            Ok(PutOutcome::Stored)
         } else {
             Err(RemoteCacheClientError::custom(eyre::eyre!(
                 "put artifact failed: status code {}",
@@ -322,13 +446,25 @@ mod tests {
     };
 
     const DEFAULT_DIGEST: &str =
-        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+        "5RkZ7vQ2mXwYpLt3hNcFbA9dGjEsKuVoWiHaBxCqTyMnPrDfUkw9TzHc3pQsNbVx";
     const DEFAULT_TENANT: &str = "tenant1";
     const DEFAULT_ORG: &str = "org1";
     const DEFAULT_WS: &str = "ws1";
     const DEFAULT_ENV: &str = "env1";
     const DEFAULT_API_KEY: &str = "key1";
     const DEFAULT_BODY: Bytes = Bytes::from_static(b"hello world");
+
+    #[test]
+    fn a_request_names_its_namespace() {
+        use super::create_url;
+        let mut args = def_remote_access_args("http://h");
+        assert!(create_url(&args, "d", "target").ends_with("&target=isolated"));
+        args.placement = crate::Placement::Shared;
+        assert!(
+            create_url(&args, "d", "namespace").ends_with("&namespace=shared")
+        );
+        assert!(!create_url(&args, "d", "namespace").contains("scope"));
+    }
 
     fn def_remote_access_args<'a>(base_url: &'a str) -> RemoteAccessArgs<'a> {
         RemoteAccessArgs {
@@ -338,6 +474,10 @@ mod tests {
             org: DEFAULT_ORG,
             tenant: DEFAULT_TENANT,
             ws: DEFAULT_WS,
+            placement: Default::default(),
+            scope: None,
+            max_artifact_size: None,
+            signature: None,
         }
     }
 

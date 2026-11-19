@@ -64,6 +64,70 @@ Encrypt the remote cache configuration file
 
 - **Possible values:** `true`, `false`
 
+### `--push`
+
+Upload successful results to the remote cache (off by default)
+
+- **Required:** No
+
+- **Default:** `false`
+
+### `--target`
+
+Where uploads go. `shared` needs the publish:artifacts scope
+
+- **Required:** No
+
+- **Default:** `isolated`
+
+- **Possible values:** `isolated`, `shared`
+
+### `--scope`
+
+The isolated scope label: `auto` (from the CI environment), `run` (the CI run id) or a literal such as `release`
+
+- **Required:** No
+
+- **Default:** `auto`
+
+### `--max-artifact-size`
+
+Largest artifact to upload or download, in bytes. The server's own limit can only lower it
+
+- **Required:** No
+
+### `--signing-key-id`
+
+The id of this machine's signing key (see `omni cache keygen`); publishers only
+
+- **Required:** No
+
+### `--signing-key-env`
+
+The environment variable that holds the base64 private signing key. Needs `--signing-key-id`
+
+- **Required:** No
+
+### `--signing-key-file`
+
+A file that holds the base64 private signing key. Needs `--signing-key-id`
+
+- **Required:** No
+
+### `--verify`
+
+Verify signatures of shared entries; can only tighten the workspace's setting
+
+- **Required:** No
+
+- **Possible values:** `auto`, `off`, `warn`, `require`
+
+### `--trusted-key`
+
+Trust only this key id (repeatable); it must be one the workspace trusts
+
+- **Required:** No
+
 ---
 
 ## Examples

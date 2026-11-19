@@ -29,6 +29,8 @@ harness = false
 required-features = ["bench-support"]
 
 [dependencies]
+cap-std = { workspace = true }
+cap-fs-ext = { workspace = true }
 eyre = { workspace = true }
 thiserror = { workspace = true }
 merge = { workspace = true }
@@ -84,6 +86,8 @@ bon = { workspace = true }
 schemars = { workspace = true }
 
 [dev-dependencies]
+time = { workspace = true }
+async-trait = { workspace = true }
 criterion = { workspace = true }
 tempfile = { workspace = true }
 omni_test_utils = { workspace = true }

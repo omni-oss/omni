@@ -11,7 +11,7 @@ use strum::{EnumDiscriminants, IntoDiscriminant as _};
 use crate::{
     ExecutionConfig, TaskExecutionResult, TaskExecutorSys,
     batch_executor::{BatchExecutor, BatchExecutorError},
-    cache_manager::CacheManager,
+    cache_manager::{CacheManager, local_only_set},
     cache_store_provider::{CacheStoreProvider, ContextCacheStoreProvider},
 };
 
@@ -50,12 +50,43 @@ impl<'a, TSys: TaskExecutorSys, S: ExecutionEventSubscriber>
 
         let task_count: usize = execution_plan.iter().map(|b| b.len()).sum();
 
-        let cache_store =
-            ContextCacheStoreProvider::new(self.context).get_cache_store();
+        // The signing key is for omni's own uploads: no task needs it.
+        if let Some(rc) = self.context.remote_cache_configuration()
+            && let Some(key) = &rc.signing_key
+            && let Some(name) = &key.private_key_env
+        {
+            omni_process::protect_env_var(name);
+        }
+
+        let store_provider = ContextCacheStoreProvider::new(self.context);
+        let cache_store = store_provider.get_cache_store();
+
+        // With remote caching off everything is local already. Otherwise the
+        // tasks that opted out (or all of them under `--no-remote-cache`) and
+        // everything they depend on run against a store that never talks to the
+        // remote, decided once before the first batch.
+        let remote_enabled =
+            self.context.remote_cache_configuration().is_some();
+        let local_only = local_only_set(
+            execution_plan.iter().flatten(),
+            remote_enabled,
+            |project, task| {
+                self.context
+                    .get_cache_info(project, task)
+                    .is_some_and(|info| !info.cache_remote)
+            },
+            self.config.no_remote_cache(),
+            self.config.ignore_dependencies(),
+        );
 
         let cache_manager =
             CacheManager::<HybridTaskExecutionCacheStore, TSys>::builder()
                 .store(cache_store)
+                .maybe_local_store(
+                    (!local_only.is_empty())
+                        .then(|| store_provider.get_local_cache_store()),
+                )
+                .local_only(local_only)
                 .dry_run(self.config.dry_run())
                 .force(self.config.force())
                 .no_cache(self.config.no_cache())
@@ -69,7 +100,6 @@ impl<'a, TSys: TaskExecutorSys, S: ExecutionEventSubscriber>
         let mut batch_exec = BatchExecutor::new(
             self.context,
             cache_manager,
-            self.context.sys().clone(),
             self.subscriber,
             self.config.max_concurrency().unwrap_or(num_cpus::get() * 4),
             self.config.ignore_dependencies(),

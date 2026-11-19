@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
+use super::authentication::{AuthenticationCache, CachedAuthenticator};
 use super::{CachingConfiguration, TtlCache, cache_key};
 use crate::{
     data::{
@@ -23,7 +24,7 @@ use crate::{
     },
     hooks::{DynArtifactHooks, HookSettings, HostRuntime},
     providers::DependencyProvider,
-    security::{DynSecurityService, SecurityService, SecurityServiceError},
+    security::Authenticator,
     services::{
         DynValidationService, ValidationResult, ValidationService,
         ValidationServiceError,
@@ -32,12 +33,14 @@ use crate::{
 
 /// The caches themselves. Share one across providers that are rebuilt per
 /// request (as on Workers) so entries outlive a single request.
+/// A state belongs to one authority/configuration: never share it between
+/// independent providers. Policy changes take effect after the configured TTL.
 pub struct CachingState {
     tenants: Option<Arc<TtlCache>>,
     orgs: Option<Arc<TtlCache>>,
     workspaces: Option<Arc<TtlCache>>,
     environments: Option<Arc<TtlCache>>,
-    security: Option<Arc<TtlCache>>,
+    authentication: Option<Arc<AuthenticationCache>>,
     validation: Option<Arc<TtlCache<ValidationResult>>>,
 }
 
@@ -54,10 +57,11 @@ impl CachingState {
             orgs: repo(),
             workspaces: repo(),
             environments: repo(),
-            security: config
+            authentication: config
                 .security
                 .clone()
-                .map(|c| Arc::new(TtlCache::new(c))),
+                .and_then(AuthenticationCache::new)
+                .map(Arc::new),
             validation: config
                 .repositories
                 .clone()
@@ -66,7 +70,7 @@ impl CachingState {
     }
 }
 
-/// Wraps a provider and caches its repository and security lookups.
+/// Wraps a provider and caches its repository and authentication lookups.
 ///
 /// Ownership validation is delegated to the wrapped provider, so its own
 /// rules still apply, and only the result is cached (with the repositories'
@@ -108,7 +112,6 @@ struct CachedTenants(DynTenantRepository, Option<Arc<TtlCache>>);
 struct CachedOrgs(DynOrganizationRepository, Option<Arc<TtlCache>>);
 struct CachedWorkspaces(DynWorkspaceRepository, Option<Arc<TtlCache>>);
 struct CachedEnvironments(DynEnvironmentRepository, Option<Arc<TtlCache>>);
-struct CachedSecurity(DynSecurityService, Option<Arc<TtlCache>>);
 struct CachedValidation(
     DynValidationService,
     Option<Arc<TtlCache<ValidationResult>>>,
@@ -226,132 +229,14 @@ impl EnvironmentRepository for CachedEnvironments {
     }
 }
 
-#[async_trait]
-impl SecurityService for CachedSecurity {
-    async fn is_valid(
-        &self,
-        token: &str,
-    ) -> Result<bool, SecurityServiceError> {
-        cached!(self.1, ["valid", token], self.0.is_valid(token))
-    }
-
-    async fn can_access_tenant(
-        &self,
-        api_key: &str,
-        tenant_code: &str,
-    ) -> Result<bool, SecurityServiceError> {
-        cached!(
-            self.1,
-            ["tenant", api_key, tenant_code],
-            self.0.can_access_tenant(api_key, tenant_code)
-        )
-    }
-
-    async fn can_access_organization(
-        &self,
-        api_key: &str,
-        tenant_code: &str,
-        organization_code: &str,
-    ) -> Result<bool, SecurityServiceError> {
-        cached!(
-            self.1,
-            ["org", api_key, tenant_code, organization_code],
-            self.0.can_access_organization(
-                api_key,
-                tenant_code,
-                organization_code
-            )
-        )
-    }
-
-    async fn can_access_workspace(
-        &self,
-        api_key: &str,
-        tenant_code: &str,
-        organization_code: &str,
-        workspace_code: &str,
-    ) -> Result<bool, SecurityServiceError> {
-        cached!(
-            self.1,
-            [
-                "ws",
-                api_key,
-                tenant_code,
-                organization_code,
-                workspace_code
-            ],
-            self.0.can_access_workspace(
-                api_key,
-                tenant_code,
-                organization_code,
-                workspace_code
-            )
-        )
-    }
-
-    async fn can_access_environment(
-        &self,
-        api_key: &str,
-        tenant_code: &str,
-        organization_code: &str,
-        workspace_code: &str,
-        environment_code: &str,
-    ) -> Result<bool, SecurityServiceError> {
-        cached!(
-            self.1,
-            [
-                "env",
-                api_key,
-                tenant_code,
-                organization_code,
-                workspace_code,
-                environment_code
-            ],
-            self.0.can_access_environment(
-                api_key,
-                tenant_code,
-                organization_code,
-                workspace_code,
-                environment_code
-            )
-        )
-    }
-
-    async fn can_access(
-        &self,
-        api_key: &str,
-        tenant_code: &str,
-        organization_code: &str,
-        workspace_code: &str,
-        environment_code: &str,
-        required_scopes: &[&str],
-    ) -> Result<bool, SecurityServiceError> {
-        // One key part per scope, so scope lists cannot collide.
-        let mut key = vec![
-            "access",
-            api_key,
-            tenant_code,
-            organization_code,
-            workspace_code,
-            environment_code,
-        ];
-        key.extend(required_scopes.iter().copied());
-        cached!(
-            self.1,
-            key,
-            self.0.can_access(
-                api_key,
-                tenant_code,
-                organization_code,
-                workspace_code,
-                environment_code,
-                required_scopes
-            )
-        )
-    }
-}
-
 impl DependencyProvider for CachingProvider {
+    fn authenticator(&self) -> Arc<dyn Authenticator> {
+        Arc::new(CachedAuthenticator::new(
+            self.inner.authenticator(),
+            self.state.authentication.clone(),
+        ))
+    }
+
     fn workspace_repository(&self) -> DynWorkspaceRepository {
         Box::new(CachedWorkspaces(
             self.inner.workspace_repository(),
@@ -387,17 +272,6 @@ impl DependencyProvider for CachingProvider {
         ))
     }
 
-    fn security_service(&self) -> DynSecurityService {
-        Box::new(CachedSecurity(
-            self.inner.security_service(),
-            self.state.security.clone(),
-        ))
-    }
-
-    fn api_key_id(&self, api_key: &str) -> String {
-        self.inner.api_key_id(api_key)
-    }
-
     fn hooks(&self) -> DynArtifactHooks {
         self.inner.hooks()
     }
@@ -417,88 +291,6 @@ mod tests {
 
     use super::*;
     use crate::caching::CacheConfiguration;
-
-    struct Counting(Arc<AtomicUsize>);
-
-    #[async_trait]
-    impl SecurityService for Counting {
-        async fn is_valid(
-            &self,
-            _: &str,
-        ) -> Result<bool, SecurityServiceError> {
-            Ok(true)
-        }
-        async fn can_access_tenant(
-            &self,
-            _: &str,
-            _: &str,
-        ) -> Result<bool, SecurityServiceError> {
-            Ok(true)
-        }
-        async fn can_access_organization(
-            &self,
-            _: &str,
-            _: &str,
-            _: &str,
-        ) -> Result<bool, SecurityServiceError> {
-            Ok(true)
-        }
-        async fn can_access_workspace(
-            &self,
-            _: &str,
-            _: &str,
-            _: &str,
-            _: &str,
-        ) -> Result<bool, SecurityServiceError> {
-            Ok(true)
-        }
-        async fn can_access_environment(
-            &self,
-            _: &str,
-            _: &str,
-            _: &str,
-            _: &str,
-            _: &str,
-        ) -> Result<bool, SecurityServiceError> {
-            Ok(true)
-        }
-        async fn can_access(
-            &self,
-            _: &str,
-            _: &str,
-            _: &str,
-            _: &str,
-            _: &str,
-            _: &[&str],
-        ) -> Result<bool, SecurityServiceError> {
-            self.0.fetch_add(1, Ordering::SeqCst);
-            Ok(true)
-        }
-    }
-
-    #[tokio::test]
-    async fn different_scope_lists_never_share_a_cache_entry() {
-        let calls = Arc::new(AtomicUsize::new(0));
-        let svc = CachedSecurity(
-            Box::new(Counting(calls.clone())),
-            Some(Arc::new(TtlCache::new(CacheConfiguration {
-                ttl_secs: 60,
-                max_entries: 100,
-                negative_ttl_secs: None,
-            }))),
-        );
-        svc.can_access("k", "t", "o", "w", "e", &["a,b", "c"])
-            .await
-            .unwrap();
-        svc.can_access("k", "t", "o", "w", "e", &["a", "b,c"])
-            .await
-            .unwrap();
-        assert_eq!(calls.load(Ordering::SeqCst), 2);
-        svc.can_access("k", "t", "o", "w", "e", &["a", "b,c"])
-            .await
-            .unwrap();
-        assert_eq!(calls.load(Ordering::SeqCst), 2, "same list is cached");
-    }
 
     struct FakeValidation(Arc<AtomicUsize>, bool);
 

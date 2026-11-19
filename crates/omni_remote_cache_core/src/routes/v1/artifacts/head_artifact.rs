@@ -7,13 +7,17 @@ use http::StatusCode;
 use serde::Deserialize;
 use utoipa::IntoParams;
 
-use super::common::container;
+use super::common::{
+    CommonArtifactQuery, NamespaceParam, Placement, require_valid_digest,
+};
 use crate::{
-    extractors::{ApiKey, TenantCode},
+    entry::{EntryRead, read_entry},
+    extractors::{Credential, TenantCode},
     hooks::{ArtifactOp, OutcomeKind},
     routes::v1::artifacts::common::{
-        after_response, before_hook, guard, validate_ownership,
+        after_response, authorize, before_hook, validate_ownership,
     },
+    security::Scope,
     state::ServiceState,
 };
 
@@ -32,6 +36,10 @@ pub struct HeadArtifactQuery {
     pub ws: String,
     /// The environment code
     pub env: String,
+    /// `shared` (default) or `isolated`
+    pub namespace: Option<NamespaceParam>,
+    /// Scope label for the isolated namespace
+    pub scope: Option<String>,
 }
 
 #[utoipa::path(
@@ -53,56 +61,88 @@ pub struct HeadArtifactQuery {
         (status = INTERNAL_SERVER_ERROR, description = "Internal server error")
     )
 )]
-#[tracing::instrument(skip(state))]
+#[tracing::instrument(skip_all, fields(digest = %digest, org = %query.org, ws = %query.ws, env = %query.env))]
 pub async fn head_artifact(
     HeadArtifactPath { digest }: HeadArtifactPath,
     Query(query): Query<HeadArtifactQuery>,
     TenantCode(tenant_code): TenantCode,
     State(state): State<ServiceState>,
-    ApiKey(api_key): ApiKey,
+    Credential(credential): Credential,
 ) -> Response {
-    guard!(
-        state.provider,
-        &api_key,
-        &tenant_code,
-        &query,
-        &["read:artifacts"],
-    );
+    let requested = query.namespace.unwrap_or(NamespaceParam::Shared);
+    let caller = match requested {
+        NamespaceParam::Shared => authorize!(
+            state.provider,
+            &credential,
+            &tenant_code,
+            &query,
+            crate::security::Scopes::of(&[Scope::Read]),
+            |c: &crate::security::Caller| c.can(Scope::Read),
+        ),
+        NamespaceParam::Isolated => authorize!(
+            state.provider,
+            &credential,
+            &tenant_code,
+            &query,
+            crate::security::Scopes::of(&[
+                Scope::Read,
+                Scope::Write,
+                Scope::Publish
+            ]),
+            |c: &crate::security::Caller| c.can_read_isolated(),
+        ),
+    };
+    let placement =
+        match Placement::resolve(&caller, requested, query.scope.as_deref()) {
+            Ok(p) => p,
+            Err(r) => return *r,
+        };
+
+    require_valid_digest!(&digest);
 
     validate_ownership!(state.provider, &tenant_code, &query);
 
     let hook_ctx = before_hook!(
         state,
         ArtifactOp::Head,
-        &api_key,
+        &caller,
         &tenant_code,
         &query,
         vec![digest.clone()],
+        &placement,
     );
 
-    let container =
-        match container(&tenant_code, &query.org, &query.ws, &query.env) {
-            Ok(c) => c,
-            Err(_) => {
-                return (StatusCode::BAD_REQUEST, "invalid org, ws or env")
-                    .into_response();
-            }
-        };
-    let exists = state
-        .storage_backend
-        .exists(&container, &digest)
-        .await
-        .map_err(InternalServerError);
-
-    let response = match exists {
-        Ok(o) => {
-            if o {
-                StatusCode::NO_CONTENT.into_response()
-            } else {
-                StatusCode::NOT_FOUND.into_response()
-            }
+    let container = match placement.container(
+        &tenant_code,
+        &CommonArtifactQuery {
+            org: query.org.clone(),
+            ws: query.ws.clone(),
+            env: query.env.clone(),
+        },
+    ) {
+        Ok(c) => c,
+        Err(r) => return *r,
+    };
+    // The same check as `GET`, so the two agree about which entries exist.
+    let response = match read_entry(
+        state.storage_backend.as_ref(),
+        &container,
+        &digest,
+    )
+    .await
+    {
+        Ok(EntryRead::Valid(entry))
+            if placement.owns(&entry.parsed.trailer, caller.principal()) =>
+        {
+            StatusCode::NO_CONTENT.into_response()
         }
-        Err(e) => e.into_response(),
+        Ok(EntryRead::Valid(_)) => StatusCode::NOT_FOUND.into_response(),
+        Ok(EntryRead::Absent) => StatusCode::NOT_FOUND.into_response(),
+        Ok(EntryRead::Invalid(why)) => {
+            tracing::warn!(%why, "ignoring a stored object that is not a valid entry");
+            StatusCode::NOT_FOUND.into_response()
+        }
+        Err(e) => InternalServerError(e).into_response(),
     };
 
     after_response(&state, hook_ctx, OutcomeKind::Hit, response).await

@@ -25,6 +25,8 @@ authors = ["Clarence Manuel <rencedm112@gmail.com>"]
 disallowed_macros = "deny"
 
 [workspace.dependencies]
+cap-std = "4.0.3"
+cap-fs-ext = "4.0.3"
 serde = { version = "^1.0.229", features = ["derive", "rc", "alloc"] }
 serde-untagged = { version = "^0.1.9" }
 serde_path_to_error = { version = "^0.1.20" }
@@ -236,6 +238,8 @@ atty = { version = "^0.2.14" }
 omni_process = { path = "./crates/omni_process" }
 nix = { version = "^0.31.3" }
 base64 = { version = "^0.23.1" }
+zeroize = { version = "^1.9" }
+ed25519-dalek = { version = "^2.2", default-features = false, features = ["std", "zeroize"] }
 clap_declspec = { path = "./crates/clap_declspec" }
 getset = { version = "^0.1.7" }
 either = { version = "^1.19.0", features = ["serde"] }

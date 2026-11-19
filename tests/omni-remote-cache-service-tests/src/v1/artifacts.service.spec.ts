@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomInt } from "node:crypto";
 
 import { expect, test } from "vitest";
 
@@ -6,7 +6,8 @@ import { sleep, withTimeout } from "@/utils";
 
 import { describeTargets } from "../test";
 
-const DIGEST = "12345678901234567890123456789012345678901234567890123456789012";
+const BASE58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+const DIGEST = "5RkZ7vQ2mXwYpLt3hNcFbA9dGjEsKuVoWiHaBxCqTyMn";
 const API_KEY = "key1";
 const TENANT = "tenant1";
 const ORG = "org1";
@@ -19,12 +20,57 @@ const BODY = JSON.stringify({
     },
 });
 
+function randomDigest(): string {
+    let digest = "";
+    for (let i = 0; i < 44; i++) {
+        digest += BASE58[randomInt(BASE58.length)];
+    }
+    return digest;
+}
+
+function sha256Hex(body: string | Uint8Array): string {
+    return createHash("sha256").update(body).digest("hex");
+}
+
 describeTargets("v1.artifacts.api", (target) => {
     test("put artifact", async () => {
         const apiBaseUrl = target.apiBaseUrl;
-        const response = await putArtifact(apiBaseUrl);
+        // A fresh digest: entries are immutable, so a shared one would answer
+        // 409 for every test after the first.
+        const response = await putArtifact(apiBaseUrl, randomDigest());
 
         expect(response.status).toBeOneOf([200, 204]);
+    });
+
+    test("an existing artifact is immutable", async () => {
+        const apiBaseUrl = target.apiBaseUrl;
+        const digest = randomDigest();
+
+        const first = await putArtifact(
+            apiBaseUrl,
+            digest,
+            TENANT,
+            ORG,
+            WS,
+            ENV,
+            "first body",
+        );
+        expect(first.status).toBeOneOf([200, 204]);
+
+        const second = await putArtifact(
+            apiBaseUrl,
+            digest,
+            TENANT,
+            ORG,
+            WS,
+            ENV,
+            "second body",
+        );
+        expect(second.status).toBe(409);
+
+        const get = await getArtifact(apiBaseUrl, digest);
+        expect(get.status).toBe(200);
+        expect(await get.text()).toBe("first body");
     });
 
     test("list artifacts", async () => {
@@ -34,9 +80,15 @@ describeTargets("v1.artifacts.api", (target) => {
         const body = await response.json();
 
         expect(response.status).toBe(200);
-        expect(body.data).toHaveLength(1);
-        expect(body.data[0].digest).toBe(DIGEST);
-        expect(body.data[0].size).toBe(BODY.length);
+        // Entries are immutable and the container is shared across tests, so
+        // other tests' digests may also be listed.
+        const entry = body.data.find(
+            (item: { digest: string }) => item.digest === DIGEST,
+        );
+        expect(entry).toBeDefined();
+        // The stored object carries a provenance trailer, so it is larger than
+        // the uploaded artifact.
+        expect(entry.size).toBeGreaterThan(BODY.length);
     });
 
     test("get artifact", async () => {
@@ -54,7 +106,7 @@ describeTargets("v1.artifacts.api", (target) => {
 
     test("get artifact not found", async () => {
         const apiBaseUrl = target.apiBaseUrl;
-        const response = await getArtifact(apiBaseUrl, crypto.randomUUID());
+        const response = await getArtifact(apiBaseUrl, randomDigest());
 
         expect(response.status).toBe(404);
     });
@@ -70,7 +122,7 @@ describeTargets("v1.artifacts.api", (target) => {
 
     test("artifact exists not found", async () => {
         const apiBaseUrl = target.apiBaseUrl;
-        const response = await headArtifact(apiBaseUrl, crypto.randomUUID());
+        const response = await headArtifact(apiBaseUrl, randomDigest());
 
         expect(response.status).toBe(404);
     });
@@ -95,7 +147,7 @@ describeTargets("v1.artifacts.api", (target) => {
             "invalid",
         );
 
-        expect(response.status).toBe(403);
+        expect(response.status).toBe(401);
     });
 
     test("large artifact round trip", async () => {
@@ -105,7 +157,7 @@ describeTargets("v1.artifacts.api", (target) => {
         for (let i = 0; i < big.length; i += 65536) {
             crypto.getRandomValues(big.subarray(i, i + 65536));
         }
-        const digest = crypto.randomUUID();
+        const digest = randomDigest();
 
         const put = await putArtifact(
             apiBaseUrl,
@@ -130,8 +182,13 @@ describeTargets("v1.artifacts.api", (target) => {
         expect(put.status, `large upload response: ${failure}`).toBe(204);
 
         const get = await fetch(
-            `${apiBaseUrl}/v1/artifacts/${digest}?org=${ORG}&ws=${WS}&env=${ENV}`,
-            { headers: { "X-OMNI-TENANT": TENANT, "X-API-KEY": API_KEY } },
+            `${apiBaseUrl}/v1/artifacts/${digest}?org=${ORG}&ws=${WS}&env=${ENV}&namespace=isolated&target=isolated`,
+            {
+                headers: {
+                    "X-OMNI-TENANT": TENANT,
+                    Authorization: `Bearer ${API_KEY}`,
+                },
+            },
         );
         expect(get.status).toBe(200);
         expect(Buffer.compare(Buffer.from(await get.arrayBuffer()), big)).toBe(
@@ -150,6 +207,106 @@ describeTargets("v1.artifacts.api", (target) => {
         expect(getResponse.status).toBe(404);
     });
 
+    test("invalid digest is rejected", async () => {
+        const apiBaseUrl = target.apiBaseUrl;
+
+        for (const digest of ["invalid-digest", "has.dot", "0abc", "lll"]) {
+            expect((await getArtifact(apiBaseUrl, digest)).status).toBe(400);
+            expect((await headArtifact(apiBaseUrl, digest)).status).toBe(400);
+            expect((await putArtifact(apiBaseUrl, digest)).status).toBe(400);
+            expect((await deleteArtifact(apiBaseUrl, digest)).status).toBe(400);
+        }
+    });
+
+    test("put without content sha256 header is rejected", async () => {
+        const apiBaseUrl = target.apiBaseUrl;
+        const response = await fetchWithTimeout(
+            `${apiBaseUrl}/v1/artifacts/${randomDigest()}?org=${ORG}&ws=${WS}&env=${ENV}&namespace=isolated&target=isolated`,
+            {
+                method: "PUT",
+                headers: {
+                    "Content-Type": "application/octet-stream",
+                    "X-OMNI-TENANT": TENANT,
+                    Authorization: `Bearer ${API_KEY}`,
+                },
+                body: BODY,
+            },
+        );
+
+        expect(response.status).toBe(400);
+    });
+
+    test("put with a mismatched content sha256 is rejected and stores nothing", async () => {
+        const apiBaseUrl = target.apiBaseUrl;
+        const digest = randomDigest();
+
+        const wrong = await putArtifact(
+            apiBaseUrl,
+            digest,
+            TENANT,
+            ORG,
+            WS,
+            ENV,
+            BODY,
+            API_KEY,
+            "0".repeat(64),
+        );
+        expect(wrong.status).toBe(422);
+
+        const get = await getArtifact(apiBaseUrl, digest);
+        expect(get.status).toBe(404);
+
+        const retry = await putArtifact(apiBaseUrl, digest);
+        expect(retry.status).toBeOneOf([200, 204]);
+    });
+
+    test("put with uppercase content sha256 is rejected", async () => {
+        const apiBaseUrl = target.apiBaseUrl;
+        const response = await putArtifact(
+            apiBaseUrl,
+            randomDigest(),
+            TENANT,
+            ORG,
+            WS,
+            ENV,
+            BODY,
+            API_KEY,
+            sha256Hex(BODY).toUpperCase(),
+        );
+
+        expect(response.status).toBe(400);
+    });
+
+    test("get returns the uploaded bytes and the stored metadata", async () => {
+        const apiBaseUrl = target.apiBaseUrl;
+        const digest = randomDigest();
+        const hash = sha256Hex(BODY);
+        await putArtifact(apiBaseUrl, digest);
+
+        const response = await getArtifact(apiBaseUrl, digest);
+
+        expect(response.status).toBe(200);
+        expect(await response.text()).toEqual(BODY);
+        expect(response.headers.get("x-omni-content-sha256")).toBe(hash);
+        expect(response.headers.get("x-omni-stored-at")).toBeTruthy();
+        expect(response.headers.get("x-omni-namespace")).toBe("isolated");
+    });
+
+    test("head agrees with get about which entries exist", async () => {
+        const apiBaseUrl = target.apiBaseUrl;
+        const digest = randomDigest();
+        await putArtifact(apiBaseUrl, digest);
+
+        // HEAD answers 204 for an entry that GET serves with 200.
+        expect((await getArtifact(apiBaseUrl, digest)).status).toBe(200);
+        expect((await headArtifact(apiBaseUrl, digest)).status).toBeOneOf([
+            200, 204,
+        ]);
+        expect((await headArtifact(apiBaseUrl, randomDigest())).status).toBe(
+            404,
+        );
+    });
+
     // Guards the D1 and `waitUntil` hook path, which only a database-backed
     // target has and which nothing else can run. Last, because it adds a veto.
     test("database hooks record usage after the response and can veto", async (ctx) => {
@@ -157,22 +314,30 @@ describeTargets("v1.artifacts.api", (target) => {
         const sql = target.sql!;
 
         // A unique digest ties the assertion to this upload's after hook.
-        const digest = crypto.randomUUID();
+        const digest = randomDigest();
+
         const put = await putArtifact(target.apiBaseUrl, digest);
         expect(put.status).toBeOneOf([200, 204]);
 
         let usage = "";
         for (let i = 0; i < 50 && !usage.includes("stored"); i++) {
             usage = await sql(
-                `SELECT outcome, api_key_id FROM usage WHERE digest = '${digest}' AND op = 'put'`,
+                `SELECT outcome, api_key_id, credential_kind, principal, namespace, sha256 FROM usage WHERE digest = '${digest}' AND op = 'put'`,
             );
             await sleep(100);
         }
         expect(usage).toContain("stored");
         // attributed to an opaque id, never the key
-        expect(usage).toContain(
-            createHash("sha256").update(API_KEY).digest("hex").slice(0, 16),
-        );
+        const callerId = createHash("sha256")
+            .update(API_KEY)
+            .digest("hex")
+            .slice(0, 16);
+        expect(usage).toContain(callerId);
+        expect(usage).not.toContain(API_KEY);
+        // the same facts the stored entry records
+        expect(usage).toContain("api_key");
+        expect(usage).toContain("isolated");
+        expect(usage).toContain(sha256Hex(BODY));
 
         await sql(`INSERT INTO vetoes VALUES ('${TENANT}', 'get', 'pruning')`);
         const vetoed = await getArtifact(target.apiBaseUrl);
@@ -193,15 +358,17 @@ async function putArtifact(
     env: string = ENV,
     body: string | Uint8Array<ArrayBuffer> = BODY,
     apiKey: string = API_KEY,
+    contentSha256: string = sha256Hex(body),
 ) {
     return await fetchWithTimeout(
-        `${apiBaseUrl}/v1/artifacts/${digest}?org=${org}&ws=${ws}&env=${env}`,
+        `${apiBaseUrl}/v1/artifacts/${digest}?org=${org}&ws=${ws}&env=${env}&namespace=isolated&target=isolated`,
         {
             method: "PUT",
             headers: {
                 "Content-Type": "application/octet-stream",
                 "X-OMNI-TENANT": tenant,
-                "X-API-KEY": apiKey,
+                Authorization: `Bearer ${apiKey}`,
+                "X-Omni-Content-Sha256": contentSha256,
             },
             body,
         },
@@ -218,13 +385,13 @@ async function getArtifact(
     apiKey: string = API_KEY,
 ) {
     return await fetchWithTimeout(
-        `${apiBaseUrl}/v1/artifacts/${digest}?org=${org}&ws=${ws}&env=${env}`,
+        `${apiBaseUrl}/v1/artifacts/${digest}?org=${org}&ws=${ws}&env=${env}&namespace=isolated&target=isolated`,
         {
             method: "GET",
             headers: {
                 "Content-Type": "application/octet-stream",
                 "X-OMNI-TENANT": tenant,
-                "X-API-KEY": apiKey,
+                Authorization: `Bearer ${apiKey}`,
             },
         },
     );
@@ -240,13 +407,13 @@ async function headArtifact(
     apiKey: string = API_KEY,
 ) {
     return await fetchWithTimeout(
-        `${apiBaseUrl}/v1/artifacts/${digest}?org=${org}&ws=${ws}&env=${env}`,
+        `${apiBaseUrl}/v1/artifacts/${digest}?org=${org}&ws=${ws}&env=${env}&namespace=isolated&target=isolated`,
         {
             method: "HEAD",
             headers: {
                 "Content-Type": "application/octet-stream",
                 "X-OMNI-TENANT": tenant,
-                "X-API-KEY": apiKey,
+                Authorization: `Bearer ${apiKey}`,
             },
         },
     );
@@ -262,13 +429,13 @@ async function deleteArtifact(
     apiKey: string = API_KEY,
 ) {
     return await fetchWithTimeout(
-        `${apiBaseUrl}/v1/artifacts/${digest}?org=${org}&ws=${ws}&env=${env}`,
+        `${apiBaseUrl}/v1/artifacts/${digest}?org=${org}&ws=${ws}&env=${env}&namespace=isolated&target=isolated`,
         {
             method: "DELETE",
             headers: {
                 "Content-Type": "application/octet-stream",
                 "X-OMNI-TENANT": tenant,
-                "X-API-KEY": apiKey,
+                Authorization: `Bearer ${apiKey}`,
             },
         },
     );
@@ -283,12 +450,12 @@ async function listArtifacts(
     apiKey: string = API_KEY,
 ) {
     return await fetchWithTimeout(
-        `${apiBaseUrl}/v1/artifacts?org=${org}&ws=${ws}&env=${env}`,
+        `${apiBaseUrl}/v1/artifacts?org=${org}&ws=${ws}&env=${env}&namespace=isolated&target=isolated`,
         {
             method: "GET",
             headers: {
                 "X-OMNI-TENANT": tenant,
-                "X-API-KEY": apiKey,
+                Authorization: `Bearer ${apiKey}`,
             },
         },
     );
@@ -303,12 +470,12 @@ async function headArtifacts(
     apiKey: string = API_KEY,
 ) {
     return await fetchWithTimeout(
-        `${apiBaseUrl}/v1/artifacts?org=${org}&ws=${ws}&env=${env}`,
+        `${apiBaseUrl}/v1/artifacts?org=${org}&ws=${ws}&env=${env}&namespace=isolated&target=isolated`,
         {
             method: "HEAD",
             headers: {
                 "X-OMNI-TENANT": tenant,
-                "X-API-KEY": apiKey,
+                Authorization: `Bearer ${apiKey}`,
             },
         },
     );

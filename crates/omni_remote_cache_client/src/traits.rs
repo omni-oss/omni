@@ -3,6 +3,25 @@ use bytes::Bytes;
 use derive_new::new;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
+/// Which part of the remote cache a request reads or writes (RFC 0030).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub enum Placement {
+    /// Entries a publisher stored for everyone; writing needs `publish:artifacts`.
+    Shared,
+    /// This credential's own entries; the server picks the principal.
+    #[default]
+    Isolated,
+}
+
+impl Placement {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Shared => "shared",
+            Self::Isolated => "isolated",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, new)]
 pub struct RemoteAccessArgs<'a> {
     pub api_base_url: &'a str,
@@ -11,12 +30,80 @@ pub struct RemoteAccessArgs<'a> {
     pub org: &'a str,
     pub ws: &'a str,
     pub env: &'a str,
+    #[new(default)]
+    pub placement: Placement,
+    /// The isolated scope label to ask for. Sent only for the isolated
+    /// namespace, and only when it is a valid label.
+    #[new(default)]
+    pub scope: Option<&'a str>,
+    /// The largest artifact a download may be, in bytes. `None` means
+    /// [`DEFAULT_MAX_ARTIFACT_SIZE`].
+    #[new(default)]
+    pub max_artifact_size: Option<u64>,
+    /// `X-Omni-Signature` for a shared upload, built by the caller.
+    #[new(default)]
+    pub signature: Option<&'a str>,
+}
+
+/// The download cap when nothing else is configured (256 MiB, the server's
+/// native default).
+pub const DEFAULT_MAX_ARTIFACT_SIZE: u64 = 256 * 1024 * 1024;
+
+/// True for a scope label the server accepts.
+pub fn is_valid_scope_label(label: &str) -> bool {
+    label
+        .bytes()
+        .next()
+        .is_some_and(|b| b.is_ascii_alphanumeric())
+        && label.len() <= 64
+        && label.bytes().all(|b| {
+            b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-')
+        })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, new)]
 pub struct ValidateAccessResult {
     pub is_valid: bool,
     pub message: Option<String>,
+    /// Scopes the server says this credential holds for the target
+    /// (`read:artifacts`, ...). Advisory: the server enforces them on each
+    /// request. Empty when the server did not report any.
+    #[new(default)]
+    pub scopes: Vec<String>,
+    /// The largest artifact the server says it accepts, in bytes. Advisory and
+    /// unauthenticated: use it to skip an upload, never to size an allocation.
+    #[new(default)]
+    pub max_artifact_size: Option<u64>,
+    /// The HTTP status of the probe, when it got an answer.
+    #[new(default)]
+    pub status: Option<u16>,
+    /// The principal's path segment, as the server names it. Advisory.
+    #[new(default)]
+    pub principal_id: Option<String>,
+    /// The effective isolated scope label (a pin wins over the request). Advisory.
+    #[new(default)]
+    pub scope: Option<String>,
+}
+
+/// A downloaded artifact with the provenance the server reported. The server
+/// is not trusted for any of it: a verifier recomputes the hash itself.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RemoteArtifact {
+    pub bytes: Bytes,
+    /// `X-Omni-Content-Sha256`, when it was sent exactly once.
+    pub sha256: Option<String>,
+    /// `X-Omni-Signature`, when it was sent exactly once.
+    pub signature: Option<String>,
+    /// The server sent either header more than once: treat it as unverifiable.
+    pub ambiguous_provenance: bool,
+}
+
+/// What a `PUT` did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PutOutcome {
+    Stored,
+    /// An entry already existed and was kept (`409`): entries are immutable.
+    AlreadyExists,
 }
 
 #[async_trait]
@@ -26,11 +113,23 @@ pub trait RemoteCacheClient: Send + Sync + 'static {
         remote: &RemoteAccessArgs,
     ) -> Result<ValidateAccessResult, RemoteCacheClientError>;
 
+    /// Download an artifact with the provenance headers the server sent.
+    async fn get_artifact_entry(
+        &self,
+        remote: &RemoteAccessArgs,
+        digest: &str,
+    ) -> Result<Option<RemoteArtifact>, RemoteCacheClientError>;
+
     async fn get_artifact(
         &self,
         remote: &RemoteAccessArgs,
         digest: &str,
-    ) -> Result<Option<Bytes>, RemoteCacheClientError>;
+    ) -> Result<Option<Bytes>, RemoteCacheClientError> {
+        Ok(self
+            .get_artifact_entry(remote, digest)
+            .await?
+            .map(|artifact| artifact.bytes))
+    }
 
     async fn artifact_exists(
         &self,
@@ -41,12 +140,23 @@ pub trait RemoteCacheClient: Send + Sync + 'static {
     /// Upload an artifact. An existing immutable entry (`409 Conflict`) is
     /// accepted as success; other rejection statuses remain errors for the
     /// caller to report without failing task execution.
+    async fn put_artifact_outcome(
+        &self,
+        remote: &RemoteAccessArgs,
+        digest: &str,
+        artifact: Bytes,
+    ) -> Result<PutOutcome, RemoteCacheClientError>;
+
     async fn put_artifact(
         &self,
         remote: &RemoteAccessArgs,
         digest: &str,
         artifact: Bytes,
-    ) -> Result<(), RemoteCacheClientError>;
+    ) -> Result<(), RemoteCacheClientError> {
+        self.put_artifact_outcome(remote, digest, artifact)
+            .await
+            .map(|_| ())
+    }
 }
 
 #[derive(Debug, thiserror::Error, new)]

@@ -327,3 +327,26 @@ fn aliases_survive_task_extension_resolution() {
     // An alias has no eager task form before F03.
     assert!(!tasks.contains_key("t"));
 }
+
+#[test]
+fn an_overriding_task_cannot_silently_drop_cache_remote_false() {
+    // A later document that does not mention `remote` keeps it, whatever form
+    // it takes.
+    for later in [
+        r#""new""#,
+        r#"{"exec":"new"}"#,
+        r#"{"cache":{"enabled":true}}"#,
+    ] {
+        let l = long(task(&[
+            &doc(r#"{"exec":"old","cache":{"remote":false}}"#),
+            &doc(later),
+        ]));
+        assert_eq!(l.cache.remote, Some(Replace::new(false)), "{later}");
+    }
+    // Only an explicit value overrides it.
+    let l = long(task(&[
+        &doc(r#"{"exec":"old","cache":{"remote":false}}"#),
+        &doc(r#"{"cache":{"remote":true}}"#),
+    ]));
+    assert_eq!(l.cache.remote, Some(Replace::new(true)));
+}

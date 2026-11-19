@@ -57,6 +57,27 @@ pub struct CacheRemoteSetupRequest {
     pub env: Option<String>,
     /// Encrypt the remote cache configuration file.
     pub secure: bool,
+    /// Upload successful results (off by default).
+    #[serde(default)]
+    pub push: bool,
+    /// Where uploads go.
+    #[serde(default)]
+    pub target: omni_configurations::RemoteTarget,
+    /// The isolated scope label: `auto`, `run` or a literal.
+    #[serde(default)]
+    pub scope: omni_configurations::ScopeConfig,
+    /// The size cap in bytes for uploads and downloads.
+    #[serde(default)]
+    pub max_artifact_size: Option<u64>,
+    /// The publisher's signing key reference (never the key).
+    #[serde(default)]
+    pub signing_key: Option<omni_configurations::SigningKeyConfiguration>,
+    /// A local verify mode; it can only tighten the workspace's.
+    #[serde(default)]
+    pub verify: Option<omni_configurations::VerifyMode>,
+    /// Narrow the workspace's trusted keys to these ids.
+    #[serde(default)]
+    pub trusted_keys: Option<Vec<String>>,
 }
 
 // ── Response types ────────────────────────────────────────────────────────────
@@ -210,6 +231,15 @@ where
         &req.org,
         &req.ws,
         req.env.as_deref(),
+        omni_configurations::RemoteCacheSettings {
+            push: req.push,
+            target: req.target,
+            scope: req.scope,
+            max_artifact_size: req.max_artifact_size,
+            signing_key: req.signing_key,
+            verify: req.verify,
+            trusted_keys: req.trusted_keys,
+        },
         req.secure,
         ctx.sys(),
     )

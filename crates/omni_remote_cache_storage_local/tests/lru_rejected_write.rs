@@ -2,7 +2,7 @@ use std::num::NonZeroUsize;
 
 use bytes::Bytes;
 use omni_remote_cache_storage_core::{
-    Container, RemoteCacheStorageBackend, decorators::LruCached,
+    Container, RemoteCacheStorageBackend, SaveOutcome, decorators::LruCached,
 };
 use omni_remote_cache_storage_local::LocalDiskCacheBackend;
 
@@ -17,7 +17,7 @@ async fn rejected_write_is_not_cached() {
     let key = "../x";
     assert!(
         backend
-            .save(&container, key, Bytes::from("rejected"))
+            .save_if_absent(&container, key, Bytes::from("rejected"))
             .await
             .is_err()
     );
@@ -28,7 +28,7 @@ async fn rejected_write_is_not_cached() {
 }
 
 #[tokio::test]
-async fn successful_write_invalidates_cached_reads_without_warming() {
+async fn delete_then_create_never_serves_cached_old_bytes() {
     let root = tempfile::tempdir().unwrap();
     let backend = LruCached::new(
         LocalDiskCacheBackend::new(root.path()),
@@ -36,7 +36,7 @@ async fn successful_write_invalidates_cached_reads_without_warming() {
     );
     let container = Container::parse("ns/ci").unwrap();
     backend
-        .save_stream(
+        .save_stream_if_absent(
             &container,
             "d",
             Box::pin(futures::stream::once(std::future::ready(Ok(
@@ -49,13 +49,37 @@ async fn successful_write_invalidates_cached_reads_without_warming() {
         backend.get(&container, "d").await.unwrap(),
         Some(Bytes::from("old"))
     );
-    backend
-        .save(&container, "d", Bytes::from("new"))
-        .await
-        .unwrap();
+    backend.delete(&container, "d").await.unwrap();
+    assert_eq!(
+        backend
+            .save_if_absent(&container, "d", Bytes::from("new"))
+            .await
+            .unwrap(),
+        SaveOutcome::Stored
+    );
+    assert_eq!(
+        backend.get(&container, "d").await.unwrap(),
+        Some(Bytes::from("new"))
+    );
+}
 
-    // Model an object removed after backend acceptance, before the next
-    // read. No old or newly written bytes should survive in the LRU.
+#[tokio::test]
+async fn a_byte_create_invalidates_and_never_warms_the_cache() {
+    let root = tempfile::tempdir().unwrap();
+    let backend = LruCached::new(
+        LocalDiskCacheBackend::new(root.path()),
+        NonZeroUsize::new(10).unwrap(),
+    );
+    let container = Container::parse("ns/ci").unwrap();
+    assert_eq!(
+        backend
+            .save_if_absent(&container, "d", Bytes::from("bytes"))
+            .await
+            .unwrap(),
+        SaveOutcome::Stored
+    );
+    // Remove the object behind the decorator's back. If the create had warmed
+    // the LRU, the stale bytes would still be served here.
     tokio::fs::remove_file(root.path().join("ns/ci/d"))
         .await
         .unwrap();

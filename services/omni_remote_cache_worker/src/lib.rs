@@ -19,6 +19,8 @@ const BUCKET_BINDING: &str = "CACHE_BUCKET";
 const CONFIG_BINDING: &str = "ORCS_CONFIG";
 const REPOSITORY_CONFIG_BINDING: &str = "ORCS_REPOSITORY_CONFIG";
 const D1_BINDING: &str = "DB";
+const MAX_ARTIFACT_SIZE_BINDING: &str = "MAX_ARTIFACT_SIZE";
+const DEFAULT_WORKER_MAX_ARTIFACT_SIZE: u64 = 32 * 1024 * 1024;
 
 fn text_binding(env: &Env, name: &str) -> Option<String> {
     env.secret(name)
@@ -60,10 +62,13 @@ fn build_provider(
         internal(format!("missing `{CONFIG_BINDING}` secret or variable"))
     })?;
     let config = Configuration::from_inline(config).map_err(internal)?;
-    Ok(Arc::new(ConfigBasedDependencyProvider::new(
-        Arc::new(config.to_in_memory_database()),
-        Arc::new(config.security.api_keys.clone()),
-    )))
+    Ok(Arc::new(
+        ConfigBasedDependencyProvider::new(
+            Arc::new(config.to_in_memory_database()),
+            Arc::new(config.security.api_keys.clone()),
+        )
+        .with_api_key_id_secret(config.security.api_key_id_secret.clone()),
+    ))
 }
 
 thread_local! {
@@ -103,11 +108,24 @@ fn build_state(
         api_prefix,
     );
 
-    Ok(ServiceState::new(
+    let mut state = ServiceState::new(
         Arc::new(R2Backend::new(bucket)),
         Arc::new(info),
         provider,
-    ))
+    );
+    // An isolate has 128 MB of memory and buffers an entry, so the default cap
+    // is far below the native server's.
+    state.max_artifact_size = match text_binding(env, MAX_ARTIFACT_SIZE_BINDING)
+    {
+        None => DEFAULT_WORKER_MAX_ARTIFACT_SIZE,
+        Some(value) => value.parse().unwrap_or_else(|_| {
+            worker::console_warn!(
+                "ignoring invalid {MAX_ARTIFACT_SIZE_BINDING} {value:?}: expected a number of bytes"
+            );
+            DEFAULT_WORKER_MAX_ARTIFACT_SIZE
+        }),
+    };
+    Ok(state)
 }
 
 #[event(fetch)]

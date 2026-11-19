@@ -80,6 +80,9 @@ pub struct TaskRunRequest {
     pub on_failure: OnFailure,
     /// Do not persist results to the local cache.
     pub no_cache: bool,
+    /// Do not read from or write to the remote cache for any task.
+    #[serde(default)]
+    pub no_remote_cache: bool,
     /// Output-logs display policy for fresh (cache-miss) output; `None` inherits
     /// the resolved config (default `failed`).
     pub output_logs: Option<LogsDisplay>,
@@ -102,6 +105,7 @@ impl Default for TaskRunRequest {
             with_dependents: false,
             on_failure: OnFailure::SkipDependents,
             no_cache: false,
+            no_remote_cache: false,
             output_logs: None,
             output_cached_logs: None,
             force: Force::None,
@@ -150,6 +154,7 @@ where
         .with_dependents(req.with_dependents)
         .on_failure(req.on_failure)
         .no_cache(req.no_cache)
+        .no_remote_cache(req.no_remote_cache)
         .force(req.force)
         .call(Call::Tasks(
             req.tasks

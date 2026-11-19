@@ -32,9 +32,17 @@ impl ServiceInfo {
     }
 }
 
+/// Default bound on one stored entry: 256 MiB. The Workers build lowers it to
+/// 32 MiB because an isolate has 128 MB of memory.
+pub const DEFAULT_MAX_ARTIFACT_SIZE: u64 = 256 * 1024 * 1024;
+
 #[derive(new, Clone)]
 pub struct ServiceState {
     pub storage_backend: Arc<DynStorageBackend>,
     pub info: Arc<ServiceInfo>,
     pub provider: Arc<dyn DependencyProvider>,
+    /// Largest accepted upload in bytes. Larger uploads are answered with `413`
+    /// and nothing is stored.
+    #[new(value = "DEFAULT_MAX_ARTIFACT_SIZE")]
+    pub max_artifact_size: u64,
 }

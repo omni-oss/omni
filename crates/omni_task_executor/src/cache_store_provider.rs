@@ -13,6 +13,9 @@ pub trait CacheStoreProvider {
     type CacheStore: TaskExecutionCacheStore<Error = Self::CacheStoreError>;
 
     fn get_cache_store(&self) -> Self::CacheStore;
+
+    /// A store that never uses the remote cache, for tasks that opted out.
+    fn get_local_cache_store(&self) -> Self::CacheStore;
 }
 
 #[derive(Debug, Clone, new)]
@@ -28,24 +31,28 @@ impl<'a, TSys: ContextSys> CacheStoreProvider
 
     fn get_cache_store(&self) -> Self::CacheStore {
         let cache_dir = self.context.cache_dir();
-        let remote_config =
-            if let Some(rc) = &self.context.remote_cache_configuration() {
-                RemoteConfig::new_enabled(EnabledRemoteConfig::new(
-                    rc.api_base_url.as_str(),
-                    rc.api_key.as_str(),
-                    rc.tenant_code.as_str(),
-                    rc.organization_code.as_str(),
-                    rc.workspace_code.as_str(),
-                    rc.environment_code.clone(),
-                ))
-            } else {
-                RemoteConfig::new_disabled()
-            };
+        let remote_config = if let Some(rc) =
+            &self.context.remote_cache_configuration()
+        {
+            RemoteConfig::new_enabled(EnabledRemoteConfig::from_configuration(
+                rc,
+                &self.context.workspace_configuration().remote_cache,
+            ))
+        } else {
+            RemoteConfig::new_disabled()
+        };
 
         HybridTaskExecutionCacheStore::new(
             cache_dir,
             self.context.root_dir(),
             remote_config,
+        )
+    }
+
+    fn get_local_cache_store(&self) -> Self::CacheStore {
+        HybridTaskExecutionCacheStore::new_local_only(
+            self.context.cache_dir(),
+            self.context.root_dir(),
         )
     }
 }

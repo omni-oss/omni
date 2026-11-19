@@ -20,14 +20,22 @@ use omni_remote_cache_service::{
     },
     hooks::{
         ArtifactHooks, ArtifactOp, DynArtifactHooks, HookContext, HookDecision,
-        HookError, HookOutcome,
+        HookError, HookOutcome, NamespaceKind, OutcomeKind,
     },
     providers::DependencyProvider,
     routes::root::RouterConfig,
-    security::DynSecurityService,
+    security::{Authenticator, CredentialKind},
     services::DynValidationService,
     state::build_state,
 };
+use sha2::{Digest as _, Sha256};
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    Sha256::digest(bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
 
 struct WithHooks {
     inner: Arc<dyn DependencyProvider>,
@@ -35,6 +43,10 @@ struct WithHooks {
 }
 
 impl DependencyProvider for WithHooks {
+    fn authenticator(&self) -> Arc<dyn Authenticator> {
+        self.inner.authenticator()
+    }
+
     fn workspace_repository(&self) -> DynWorkspaceRepository {
         self.inner.workspace_repository()
     }
@@ -50,9 +62,6 @@ impl DependencyProvider for WithHooks {
     fn validation_service(&self) -> DynValidationService {
         self.inner.validation_service()
     }
-    fn security_service(&self) -> DynSecurityService {
-        self.inner.security_service()
-    }
     fn hooks(&self) -> DynArtifactHooks {
         self.hooks.clone()
     }
@@ -64,6 +73,10 @@ struct Recorder {
     before: AtomicUsize,
     after: AtomicUsize,
     key_ids: std::sync::Mutex<Vec<String>>,
+    outcomes: std::sync::Mutex<Vec<OutcomeKind>>,
+    contexts: std::sync::Mutex<Vec<HookContext>>,
+    /// Each `after` call's outcome and the SHA-256 it carried.
+    hashes: std::sync::Mutex<Vec<(OutcomeKind, Option<String>)>>,
 }
 
 #[async_trait]
@@ -73,7 +86,8 @@ impl ArtifactHooks for Recorder {
         ctx: &HookContext,
     ) -> Result<HookDecision, HookError> {
         self.before.fetch_add(1, Ordering::SeqCst);
-        self.key_ids.lock().unwrap().push(ctx.api_key_id.clone());
+        self.key_ids.lock().unwrap().push(ctx.caller_id.clone());
+        self.contexts.lock().unwrap().push(ctx.clone());
         Ok(if self.veto_ops.contains(&ctx.op) {
             HookDecision::Veto {
                 reason: "blocked by policy".into(),
@@ -86,9 +100,14 @@ impl ArtifactHooks for Recorder {
     async fn after(
         &self,
         _: &HookContext,
-        _: &HookOutcome,
+        outcome: &HookOutcome,
     ) -> Result<(), HookError> {
         self.after.fetch_add(1, Ordering::SeqCst);
+        self.outcomes.lock().unwrap().push(outcome.kind);
+        self.hashes
+            .lock()
+            .unwrap()
+            .push((outcome.kind, outcome.sha256.clone()));
         Ok(())
     }
 }
@@ -112,7 +131,9 @@ fn config() -> Configuration {
             }),
         }),
         security: SecurityConfiguration {
+            api_key_id_secret: None,
             api_keys: unordered_map!("k".to_string() => ApiKeyConfiguration {
+                principal: None,
                 description: None,
                 enabled: true,
                 expires_at: None,
@@ -127,6 +148,13 @@ fn config() -> Configuration {
 }
 
 async fn server(hooks: Arc<Recorder>) -> TestServer {
+    TestServer::new(router(hooks, None).await)
+}
+
+async fn router(
+    hooks: Arc<Recorder>,
+    max_artifact_size: Option<u64>,
+) -> axum::Router {
     let serve_args = ServeArgs::new(
         "".to_string(),
         Some(serde_json::to_string(&config()).unwrap()),
@@ -144,15 +172,19 @@ async fn server(hooks: Arc<Recorder>) -> TestServer {
         inner: state.provider.clone(),
         hooks,
     });
-    let router = omni_remote_cache_service::routes::root::build_router(
-        &RouterConfig::from(serve_args.routes.clone().unwrap()),
-    )
-    .with_state(state);
-    TestServer::new(router)
+    if let Some(limit) = max_artifact_size {
+        state.max_artifact_size = limit;
+    }
+    omni_remote_cache_service::routes::root::build_router(&RouterConfig::from(
+        serve_args.routes.clone().unwrap(),
+    ))
+    .with_state(state)
 }
 
-const ONE: &str = "/api/v1/artifacts/abc?org=o&ws=w&env=e";
-const LIST: &str = "/api/v1/artifacts?org=o&ws=w&env=e";
+const ONE: &str =
+    "/api/v1/artifacts/abc?org=o&ws=w&env=e&namespace=isolated&target=isolated";
+const LIST: &str =
+    "/api/v1/artifacts?org=o&ws=w&env=e&namespace=isolated&target=isolated";
 
 #[tokio::test]
 async fn every_operation_is_vetoable_and_a_veto_skips_after() {
@@ -169,7 +201,7 @@ async fn every_operation_is_vetoable_and_a_veto_skips_after() {
     });
     let s = server(hooks.clone()).await;
     let req = |r: axum_test::TestRequest| {
-        r.add_header("X-API-KEY", "k")
+        r.add_header("Authorization", "Bearer k")
             .add_header("X-OMNI-TENANT", "t")
     };
 
@@ -178,7 +210,9 @@ async fn every_operation_is_vetoable_and_a_veto_skips_after() {
         req(s.get(LIST)),
         req(s.method(http::Method::HEAD, ONE)),
         req(s.method(http::Method::HEAD, LIST)),
-        req(s.put(ONE)).bytes("x".into()),
+        req(s.put(ONE))
+            .add_header("X-Omni-Content-Sha256", sha256_hex(b"x"))
+            .bytes("x".into()),
         req(s.delete(ONE)),
     ] {
         let res = r.await;
@@ -197,8 +231,9 @@ async fn allowed_operation_runs_after() {
     let s = server(hooks.clone()).await;
     let res = s
         .put(ONE)
-        .add_header("X-API-KEY", "k")
+        .add_header("Authorization", "Bearer k")
         .add_header("X-OMNI-TENANT", "t")
+        .add_header("X-Omni-Content-Sha256", sha256_hex(b"x"))
         .bytes("x".into())
         .await;
     res.assert_status(http::StatusCode::NO_CONTENT);
@@ -210,4 +245,190 @@ async fn allowed_operation_runs_after() {
     assert_eq!(ids[0], omni_remote_cache_service::hooks::api_key_id("k"));
     assert_ne!(ids[0], "k");
     assert_eq!(ids[0].len(), 16);
+
+    // and the same facts the stored entry's trailer records
+    let contexts = hooks.contexts.lock().unwrap();
+    let ctx = &contexts[0];
+    assert_eq!(ctx.credential_kind, CredentialKind::ApiKey);
+    assert_eq!(
+        ctx.principal, ids[0],
+        "the default principal is the credential id"
+    );
+    assert_eq!(ctx.namespace, NamespaceKind::Isolated);
+    assert_eq!(ctx.scope.as_deref(), Some("default"));
+}
+
+#[tokio::test]
+async fn after_carries_the_hash_only_for_a_stored_entry_or_a_hit_on_one() {
+    let hooks = Arc::new(Recorder::default());
+    let s = server(hooks.clone()).await;
+    let call = |r: axum_test::TestRequest| {
+        r.add_header("Authorization", "Bearer k")
+            .add_header("X-OMNI-TENANT", "t")
+    };
+    let hash = sha256_hex(b"artifact");
+    let put = |body: &'static [u8]| {
+        call(s.put(ONE))
+            .add_header("X-Omni-Content-Sha256", sha256_hex(body))
+            .bytes(body.into())
+    };
+
+    put(b"artifact")
+        .await
+        .assert_status(http::StatusCode::NO_CONTENT);
+    put(b"another")
+        .await
+        .assert_status(http::StatusCode::CONFLICT);
+    call(s.get(ONE)).await.assert_status_ok();
+    call(s.get("/api/v1/artifacts/missing?org=o&ws=w&env=e"))
+        .await
+        .assert_status(http::StatusCode::NOT_FOUND);
+    call(s.method(http::Method::HEAD, ONE)).await;
+    call(s.get(LIST)).await;
+    call(s.delete(ONE)).await;
+
+    // This test provider has no host runtime, so `after` runs inline and has
+    // finished by the time each response returns: the order below is exact.
+    assert_eq!(hooks.after.load(Ordering::SeqCst), 7);
+    assert_eq!(
+        *hooks.hashes.lock().unwrap(),
+        [
+            (OutcomeKind::Stored, Some(hash.clone())),
+            (OutcomeKind::AlreadyExists, None),
+            (OutcomeKind::Hit, Some(hash)),
+            (OutcomeKind::Miss, None),
+            (OutcomeKind::Hit, None),
+            (OutcomeKind::Hit, None),
+            (OutcomeKind::Deleted, None),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn a_malformed_digest_never_reaches_the_hooks() {
+    let hooks = Arc::new(Recorder::default());
+    let s = server(hooks.clone()).await;
+    let bad = "/api/v1/artifacts/not.a.digest?org=o&ws=w&env=e&namespace=isolated&target=isolated";
+    let req = |r: axum_test::TestRequest| {
+        r.add_header("Authorization", "Bearer k")
+            .add_header("X-OMNI-TENANT", "t")
+    };
+    for r in [
+        req(s.get(bad)),
+        req(s.method(http::Method::HEAD, bad)),
+        req(s.put(bad))
+            .add_header("X-Omni-Content-Sha256", sha256_hex(b"x"))
+            .bytes("x".into()),
+        req(s.delete(bad)),
+    ] {
+        r.await.assert_status(http::StatusCode::BAD_REQUEST);
+    }
+    assert_eq!(hooks.before.load(Ordering::SeqCst), 0);
+    assert_eq!(hooks.after.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn a_conflicting_put_reports_already_exists_to_the_hooks() {
+    let hooks = Arc::new(Recorder::default());
+    let s = server(hooks.clone()).await;
+    let put = || async {
+        s.put(ONE)
+            .add_header("Authorization", "Bearer k")
+            .add_header("X-OMNI-TENANT", "t")
+            .add_header("X-Omni-Content-Sha256", sha256_hex(b"x"))
+            .bytes("x".into())
+            .await
+            .status_code()
+    };
+    assert_eq!(put().await, http::StatusCode::NO_CONTENT);
+    assert_eq!(put().await, http::StatusCode::CONFLICT);
+    let outcomes = hooks.outcomes.lock().unwrap();
+    assert_eq!(
+        *outcomes,
+        [
+            omni_remote_cache_service::hooks::OutcomeKind::Stored,
+            omni_remote_cache_service::hooks::OutcomeKind::AlreadyExists,
+        ]
+    );
+}
+
+#[tokio::test]
+async fn a_declared_oversized_upload_never_reaches_the_hooks() {
+    use tower::ServiceExt as _;
+    let hooks = Arc::new(Recorder::default());
+    let router = router(hooks.clone(), Some(4)).await;
+    // The in-process test client sends no Content-Length of its own, so set it:
+    // this is the header path that is refused before the body is read.
+    let request = http::Request::builder()
+        .method("PUT")
+        .uri(ONE)
+        .header("Authorization", "Bearer k")
+        .header("X-OMNI-TENANT", "t")
+        .header("X-Omni-Content-Sha256", sha256_hex(b"12345"))
+        .header(http::header::CONTENT_LENGTH, "5")
+        .body(axum::body::Body::from("12345"))
+        .unwrap();
+    let status = router.oneshot(request).await.unwrap().status();
+    assert_eq!(status, http::StatusCode::PAYLOAD_TOO_LARGE);
+    assert_eq!(hooks.before.load(Ordering::SeqCst), 0);
+    assert_eq!(hooks.after.load(Ordering::SeqCst), 0);
+}
+
+async fn stream_put(
+    router: &axum::Router,
+    chunks: Vec<Result<&'static str, &'static str>>,
+) -> http::StatusCode {
+    use tower::ServiceExt as _;
+    let digest = sha256_hex(
+        &chunks
+            .iter()
+            .filter_map(|c| c.ok())
+            .flat_map(|c| c.bytes())
+            .collect::<Vec<u8>>(),
+    );
+    // No Content-Length: only the stream bound, or a stream error, can stop it.
+    let body = axum::body::Body::from_stream(tokio_stream::iter(
+        chunks
+            .into_iter()
+            .map(|c| c.map(bytes::Bytes::from).map_err(std::io::Error::other)),
+    ));
+    let request = http::Request::builder()
+        .method("PUT")
+        .uri(ONE)
+        .header("Authorization", "Bearer k")
+        .header("X-OMNI-TENANT", "t")
+        .header("X-Omni-Content-Sha256", digest)
+        .body(body)
+        .unwrap();
+    router.clone().oneshot(request).await.unwrap().status()
+}
+
+#[tokio::test]
+async fn a_streamed_oversized_upload_is_413_and_reported_as_failed() {
+    let hooks = Arc::new(Recorder::default());
+    let router = router(hooks.clone(), Some(4)).await;
+    assert_eq!(
+        stream_put(&router, vec![Ok("123"), Ok("45")]).await,
+        http::StatusCode::PAYLOAD_TOO_LARGE
+    );
+    assert_eq!(hooks.before.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        hooks.after.load(Ordering::SeqCst),
+        1,
+        "before needs an after"
+    );
+    assert_eq!(
+        *hooks.outcomes.lock().unwrap(),
+        [omni_remote_cache_service::hooks::OutcomeKind::Failed]
+    );
+}
+
+#[tokio::test]
+async fn a_body_error_under_the_limit_is_not_mistaken_for_413() {
+    let hooks = Arc::new(Recorder::default());
+    let router = router(hooks.clone(), Some(1024)).await;
+    assert_eq!(
+        stream_put(&router, vec![Ok("12"), Err("connection reset")]).await,
+        http::StatusCode::INTERNAL_SERVER_ERROR
+    );
 }

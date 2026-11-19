@@ -56,6 +56,13 @@ pub struct RunCommand {
 
     #[arg(
         long,
+        help = "Don't read from or write to the remote cache for any task",
+        default_value_t = false
+    )]
+    pub no_remote_cache: bool,
+
+    #[arg(
+        long,
         short,
         num_args = 0..=1,
         help = "Force execution of tasks, even if it's already cached",
@@ -87,6 +94,7 @@ pub async fn run(
         .with_dependents(command.with_dependents)
         .on_failure(command.on_failure.value())
         .no_cache(command.no_cache)
+        .no_remote_cache(command.no_remote_cache)
         .force(command.force.value())
         .call(Call::pattern_tasks(&command.task));
 

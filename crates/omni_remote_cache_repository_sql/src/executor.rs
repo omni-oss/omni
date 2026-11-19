@@ -2,7 +2,9 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use futures::TryStreamExt as _;
-use omni_remote_cache_repository_query::{QueryError, QueryExecutor};
+use omni_remote_cache_repository_query::{
+    ApiKeyIdentity, QueryError, QueryExecutor,
+};
 use sqlx::{AnyPool, Either, Row as _, any::AnyPoolOptions};
 
 #[derive(Clone)]
@@ -107,6 +109,30 @@ impl SqlxExecutor {
 
 #[async_trait]
 impl QueryExecutor for SqlxExecutor {
+    async fn api_key_identity(
+        &self,
+        sql: &str,
+        params: &[&str],
+    ) -> Result<Option<ApiKeyIdentity>, QueryError> {
+        let Some(row) = self.bounded(self.single_row(sql, params)).await?
+        else {
+            return Ok(None);
+        };
+        let principal = match row.try_get::<Option<String>, _>("principal") {
+            Ok(value) => value,
+            Err(sqlx::Error::ColumnNotFound(_)) => None,
+            Err(_) => {
+                return Err(QueryError::Shape(
+                    "`principal` must be text or NULL".into(),
+                ));
+            }
+        };
+        Ok(Some(ApiKeyIdentity {
+            found: read_found(&row)?,
+            principal,
+        }))
+    }
+
     async fn exists(
         &self,
         sql: &str,
@@ -116,14 +142,7 @@ impl QueryExecutor for SqlxExecutor {
         else {
             return Ok(false);
         };
-        match row.try_get::<i64, _>("found") {
-            Ok(v) => Ok(v != 0),
-            Err(_) => row.try_get::<bool, _>("found").map_err(|e| {
-                QueryError::Shape(format!(
-                    "`found` must be a boolean or an integer: {e}"
-                ))
-            }),
-        }
+        read_found(&row)
     }
 
     async fn veto_reason(
@@ -208,9 +227,87 @@ impl QueryExecutor for SqlxExecutor {
     }
 }
 
+fn read_found(row: &sqlx::any::AnyRow) -> Result<bool, QueryError> {
+    match row.try_get::<i64, _>("found") {
+        Ok(v) => Ok(v != 0),
+        Err(_) => row.try_get::<bool, _>("found").map_err(|_| {
+            QueryError::Shape("`found` must be a boolean or an integer".into())
+        }),
+    }
+}
+
 #[cfg(all(test, feature = "sqlite"))]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn identity_rows_keep_legacy_queries_and_read_optional_principals() {
+        let executor = db().await;
+        for (sql, expected) in [
+            (
+                "SELECT 1 AS found",
+                Some(ApiKeyIdentity {
+                    found: true,
+                    principal: None,
+                }),
+            ),
+            (
+                "SELECT 1 AS found, NULL AS principal",
+                Some(ApiKeyIdentity {
+                    found: true,
+                    principal: None,
+                }),
+            ),
+            (
+                "SELECT 0 AS found, 'owner' AS principal",
+                Some(ApiKeyIdentity {
+                    found: false,
+                    principal: Some("owner".into()),
+                }),
+            ),
+            ("SELECT 1 AS found WHERE 0", None),
+        ] {
+            assert_eq!(
+                executor.api_key_identity(sql, &[]).await.unwrap(),
+                expected,
+                "{sql}"
+            );
+        }
+        let text = "owner'; DROP TABLE tenants; --";
+        assert_eq!(
+            executor
+                .api_key_identity("SELECT 1 AS found, ?1 AS principal", &[text])
+                .await
+                .unwrap(),
+            Some(ApiKeyIdentity {
+                found: true,
+                principal: Some(text.into())
+            }),
+            "principal is data, never SQL"
+        );
+    }
+
+    #[tokio::test]
+    async fn malformed_or_multiple_identity_rows_are_shape_errors() {
+        let executor = db().await;
+        for sql in [
+            "SELECT 1 AS wrong",
+            "SELECT NULL AS found",
+            "SELECT 'yes' AS found",
+            "SELECT 1.5 AS found",
+            "SELECT 1 AS found, 42 AS principal",
+            "SELECT 1 AS found, x'ff' AS principal",
+            "SELECT 1 AS found UNION ALL SELECT 1 AS found",
+        ] {
+            assert!(
+                matches!(
+                    executor.api_key_identity(sql, &[]).await,
+                    Err(QueryError::Shape(_))
+                ),
+                "{sql}"
+            );
+        }
+    }
 
     async fn db() -> SqlxExecutor {
         let e =
