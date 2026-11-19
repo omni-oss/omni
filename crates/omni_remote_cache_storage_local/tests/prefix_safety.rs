@@ -126,7 +126,11 @@ async fn a_non_utf8_name_is_not_listed_but_does_not_block_a_purge() {
     let odd = root
         .join("ns/ci")
         .join(std::ffi::OsStr::from_bytes(b"bad\xff"));
-    std::fs::write(&odd, "junk").unwrap();
+    // Some file systems (APFS on macOS) refuse names that are not valid UTF-8,
+    // so there is nothing to list or purge there.
+    if std::fs::write(&odd, "junk").is_err() {
+        return;
+    }
 
     let keys: Vec<String> = backend
         .list(&ci)
