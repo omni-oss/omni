@@ -146,7 +146,7 @@ pub(crate) async fn reclaim_stale_unknown(
     };
     let now = std::time::SystemTime::now();
     while let Ok(Some(entry)) = entries.next_entry().await {
-        let stale = entry
+        let candidate = entry
             .metadata()
             .await
             .ok()
@@ -154,6 +154,11 @@ pub(crate) async fn reclaim_stale_unknown(
             .and_then(|m| m.modified().ok())
             .and_then(|modified| now.duration_since(modified).ok())
             .is_some_and(|age| age >= max_age);
+        // A directory's own time moves only when its direct children do, so a
+        // long-lived run writing deeper down would look idle. Confirm that
+        // nothing below it changed within `max_age` either.
+        let stale =
+            candidate && !changed_within(&entry.path(), now, max_age).await;
         if stale && let Err(e) = tokio::fs::remove_dir_all(entry.path()).await {
             tracing::debug!(
                 "failed to remove a stale unknown partition {}: {e}",
@@ -161,6 +166,38 @@ pub(crate) async fn reclaim_stale_unknown(
             );
         }
     }
+}
+
+/// True when anything under `dir` (including `dir`) was modified within `max_age`.
+/// Stops at the first recent entry; symlinks are not followed.
+async fn changed_within(
+    dir: &Path,
+    now: std::time::SystemTime,
+    max_age: std::time::Duration,
+) -> bool {
+    let mut pending = vec![dir.to_path_buf()];
+    while let Some(current) = pending.pop() {
+        let Ok(mut entries) = tokio::fs::read_dir(&current).await else {
+            continue;
+        };
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            let Ok(meta) = entry.metadata().await else {
+                continue;
+            };
+            let recent = meta
+                .modified()
+                .ok()
+                .and_then(|modified| now.duration_since(modified).ok())
+                .is_none_or(|age| age < max_age);
+            if recent {
+                return true;
+            }
+            if meta.is_dir() {
+                pending.push(entry.path());
+            }
+        }
+    }
+    false
 }
 
 /// The directory for tasks that must never touch the remote cache.
@@ -379,10 +416,16 @@ mod tests {
         for d in [&old, &fresh] {
             tokio::fs::create_dir_all(d.join("proj")).await.unwrap();
         }
-        let long_ago = std::time::SystemTime::now()
-            - std::time::Duration::from_secs(10 * 24 * 3600);
-        // A directory handle needs backup semantics (and write access to its
-        // attributes) on Windows.
+        backdate(&old.join("proj"));
+        backdate(&old);
+        reclaim_stale_unknown(base, UNKNOWN_PARTITION_MAX_AGE).await;
+        assert!(!old.exists());
+        assert!(fresh.exists());
+    }
+
+    /// Sets a directory's modified time to ten days ago. A directory handle
+    /// needs backup semantics (and write access to attributes) on Windows.
+    fn backdate(dir: &Path) {
         let mut options = std::fs::OpenOptions::new();
         #[cfg(windows)]
         {
@@ -391,10 +434,21 @@ mod tests {
         }
         #[cfg(not(windows))]
         options.read(true);
-        options.open(&old).unwrap().set_modified(long_ago).unwrap();
-        reclaim_stale_unknown(base, UNKNOWN_PARTITION_MAX_AGE).await;
-        assert!(!old.exists());
-        assert!(fresh.exists());
+        let long_ago = std::time::SystemTime::now()
+            - std::time::Duration::from_secs(10 * 24 * 3600);
+        options.open(dir).unwrap().set_modified(long_ago).unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_partition_with_recent_activity_below_it_is_not_reclaimed() {
+        let temp = tempfile::tempdir().unwrap();
+        let busy = unknown_dir(temp.path(), "e");
+        std::fs::create_dir_all(busy.join("proj/output")).unwrap();
+        std::fs::write(busy.join("proj/output/entry"), b"x").unwrap();
+        // Only the top directory looks old; a file deeper down is recent.
+        backdate(&busy);
+        reclaim_stale_unknown(temp.path(), UNKNOWN_PARTITION_MAX_AGE).await;
+        assert!(busy.exists());
     }
 
     #[test]

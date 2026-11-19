@@ -1361,13 +1361,6 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
             )
             .await?;
         }
-        // Repair is done. Downloads publish new entries with an atomic
-        // no-replace rename, so they must not hold the replacement lock: a slow
-        // transfer would otherwise block every other lookup in the partition.
-        // The shared prune lock stays, as before, so a prune never deletes an
-        // entry that is being renamed into place.
-        drop(_replace_guard);
-
         if let RemoteConfig::Enabled(conf) = &self.remote_config {
             let mut tasks = JoinSet::new();
             // Bound the archives held in memory, like uploads.
@@ -1547,11 +1540,20 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                 });
             }
 
+            // Repair and the marker-based discards above are done. Downloads
+            // publish new entries with an atomic no-replace rename, so they must
+            // not hold the replacement lock: a slow transfer would otherwise
+            // block every other lookup in the partition. The shared prune lock
+            // stays, as before, so a prune never deletes an entry that is being
+            // renamed into place.
+            drop(_replace_guard);
             let results = tasks.join_all().await;
 
             for result in results {
                 result?;
             }
+        } else {
+            drop(_replace_guard);
         }
 
         'outer_loop: for project in &collected {

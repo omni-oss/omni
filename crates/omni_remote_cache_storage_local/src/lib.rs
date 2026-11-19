@@ -239,9 +239,14 @@ impl LocalDiskCacheBackend {
                 if after.is_some_and(|after| key.as_str() <= after) {
                     continue;
                 }
-                let Ok(meta) = tokio::fs::metadata(&child).await else {
+                // `file_type` above came from the directory listing; stat without
+                // following a link swapped in since, and re-check it is a file.
+                let Ok(meta) = tokio::fs::symlink_metadata(&child).await else {
                     continue;
                 };
+                if !meta.is_file() {
+                    continue;
+                }
                 out.push((key, meta.len()));
                 if out.len() > limit {
                     break;
