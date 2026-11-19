@@ -55,8 +55,9 @@ F08.3's [lease-aware prune](features/F08.3-gc-honors-leases.md)
 is merged ([PR #111](https://github.com/omni-oss/omni/pull/111)).
 The [first F08.5 batch](features/F08.5-staged-installs.md) (staged installs and explicit
 reference modes) is merged ([PR #112](https://github.com/omni-oss/omni/pull/112)). Its
-second batch gives runtime readers (generators, tools, projection sync, packs) leases,
-pending PR review. F08.5 remains incomplete: install contributors are batch 3.
+second batch gives runtime readers (generators, tools, projection sync, packs) leases
+and is merged (#113). Batch 3 protects install manifest readers and is implemented,
+pending independent PR review; the existing store compatibility decisions remain open.
 F06.2's [canonical digest function](features/F06.2-canonical-digest.md) is implemented,
 unused until F06.3, pending PR review. F05.1's [origin-tagged cache enablement](features/F05.1-origin-tagged-enablement.md) is
 implemented, pending PR review; the contradiction rule (F05.2) is not. F03.2's [escape-aware reference parser](features/F03.2-reference-parser.md) (part 1) is

@@ -16,7 +16,7 @@ use omni_meta::{
     SourceIdentity, expand,
 };
 use omni_remote_source::{
-    InstallOptions, RemoteSourceContributor, RemoteSourceRef,
+    InstallOptions, RemoteSourceContributor, RemoteSourceRef, lease::LeaseSet,
     manager::RemoteSourceManager, sys::RemoteSourceSys,
 };
 use system_traits::FsReadAsync;
@@ -62,6 +62,7 @@ where
             update: options.update,
             refs: Mutex::new(Vec::new()),
             locality: Locality::default(),
+            leases: LeaseSet::new(),
         };
 
         expand(
@@ -86,6 +87,9 @@ struct MaterializeOnlyExpand<'a, TSys: RemoteSourceSys> {
     update: bool,
     refs: Mutex<Vec<RemoteSourceRef>>,
     locality: Locality,
+    // A local child can read inside a git parent's checkout after the parent's
+    // classify has returned. Keep every lease for the whole expansion.
+    leases: LeaseSet,
 }
 
 impl<TSys> MetaExpand for MaterializeOnlyExpand<'_, TSys>
@@ -117,7 +121,10 @@ where
                 if self.update {
                     self.manager.invalidate(&remote).await?;
                 }
-                let materialized = self.manager.materialize(&remote).await?;
+                let materialized = self
+                    .manager
+                    .materialize_into(&remote, &self.leases)
+                    .await?;
                 let pin = materialized.pin.clone();
 
                 self.refs.lock().expect("refs mutex poisoned").push(
