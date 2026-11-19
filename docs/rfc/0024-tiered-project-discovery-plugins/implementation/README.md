@@ -57,10 +57,12 @@ The [first F08.5 batch](features/F08.5-staged-installs.md) (staged installs and 
 reference modes) is merged ([PR #112](https://github.com/omni-oss/omni/pull/112)). Its
 second batch gives runtime readers (generators, tools, projection sync, packs) leases,
 pending PR review. F08.5 remains incomplete: install contributors are batch 3.
-F06.2's [canonical digest function](features/F06.2-canonical-digest.md) is implemented,
-unused until F06.3, pending PR review. F05.1's [origin-tagged cache enablement](features/F05.1-origin-tagged-enablement.md) is
-implemented, pending PR review; the contradiction rule (F05.2) is not. F03.2's [escape-aware reference parser](features/F03.2-reference-parser.md) (part 1) is
-merged, and part 2 now parses `dependencies`/`with` through it (pending PR review). Other runtime code for F03-F10,
+F06.2's [canonical digest function](features/F06.2-canonical-digest.md) is merged, unused until
+F06.3. F05.1's [origin-tagged cache enablement](features/F05.1-origin-tagged-enablement.md) is merged.
+F05.2's [contradiction detector](features/F05.2-contradiction-detector.md) (part 1, not wired into
+planning) is implemented, pending PR review. F03.2's
+[escape-aware reference parser](features/F03.2-reference-parser.md) is merged and parses
+`dependencies`/`with`. Other runtime code for F03-F10,
 and plugins (P), remains unimplemented.
 
 Known gaps carried forward from the merged refactors:

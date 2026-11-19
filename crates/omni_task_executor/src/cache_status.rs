@@ -14,8 +14,9 @@ use strum::EnumIs;
 #[serde(tag = "status", rename_all = "kebab-case")]
 pub enum CacheStatus {
     Eligible,
-    /// Caching is disabled for the task. `deciding_source` is reserved for
-    /// origin-aware tiers; it is `None` until configuration can supply it.
+    /// Caching is disabled for the task. `deciding_source` names the tier that
+    /// decided it (`task-explicit`, `project-explicit`, ...); `None` when the
+    /// task never reached the origin-aware path (for example it was skipped).
     Disabled {
         deciding_source: Option<String>,
     },
@@ -44,6 +45,7 @@ pub(crate) struct OwnFacts {
     pub has_command: bool,
     pub persistent: bool,
     pub cache_enabled: bool,
+    pub cache_source: Option<omni_configurations::CacheEnabledSource>,
     pub no_cache: bool,
 }
 
@@ -72,7 +74,7 @@ pub(crate) fn derive_status<'a>(
     }
     if !own.cache_enabled {
         return CacheStatus::Disabled {
-            deciding_source: None,
+            deciding_source: own.cache_source.map(|s| s.as_str().to_string()),
         };
     }
     if let Some((direct, root)) =
@@ -141,6 +143,7 @@ mod tests {
             has_command: true,
             persistent: false,
             cache_enabled: true,
+            cache_source: None,
             no_cache: false,
         }
     }
@@ -201,6 +204,14 @@ mod tests {
             derive(f, &[], &g),
             CacheStatus::Disabled {
                 deciding_source: None
+            }
+        );
+        f.cache_source =
+            Some(omni_configurations::CacheEnabledSource::ProjectExplicit);
+        assert_eq!(
+            derive(f, &[], &g),
+            CacheStatus::Disabled {
+                deciding_source: Some("project-explicit".into())
             }
         );
         let mut f = facts();

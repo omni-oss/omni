@@ -301,6 +301,7 @@ tasks:
     }
   F05.2:
     {
+      owner: "OpenCode (part 1 detector and deciding_source pending PR review; planner wiring follows)",
       title: "Explicit-contradiction error and deciding_source",
       parent: F05,
       kind: code,
