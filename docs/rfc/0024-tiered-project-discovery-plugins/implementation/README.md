@@ -52,7 +52,8 @@ and F08 are done**; F03, F05, F06 and F10 are partly done; F04 is in review; F07
 
 Open decisions that remain: store `VERSION` compatibility (D1), reference-driven retention
 (D3), `.pending` cleanup (D7), and the F10.2 decisions (D2, D5, D9). Plugins (P) are not
-started; they wait on the F03, F05 and F06 wiring.
+started, except P01 (specification closure), which can start immediately; the rest wait on
+the F03, F05 and F06 wiring.
 
 Known gaps carried forward from the merged refactors:
 
