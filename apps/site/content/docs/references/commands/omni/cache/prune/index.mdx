@@ -42,7 +42,13 @@ Add filter to clear only cache entries that are larger than the given size
 
 ### `-p`, `--project`
 
-Add filter to clear only cache entries belonging to a project that matches the given project name, accepts glob patterns
+Add filter to clear only cache entries belonging to the project with this exact name. Glob characters are literal; use --project-pattern to match by glob
+
+- **Required:** No
+
+### `--project-pattern`
+
+Add filter to clear only cache entries belonging to projects whose name matches this glob. Repeatable, and may be combined with --project
 
 - **Required:** No
 

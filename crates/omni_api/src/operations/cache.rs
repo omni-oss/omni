@@ -22,7 +22,10 @@ use serde::{Deserialize, Serialize};
 /// Filters for [`handle_cache_stats`].
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct CacheStatsRequest {
+    /// Exact project names; glob characters are literal.
     pub project: Vec<String>,
+    /// Project name globs, in addition to `project`.
+    pub project_pattern: Vec<String>,
     /// Exact task names; glob characters are literal.
     pub task: Vec<String>,
     /// Task name globs, in addition to `task`.
@@ -41,7 +44,10 @@ pub struct CachePruneRequest {
     /// Only prune entries larger than this byte size.
     #[schemars(with = "Option<u64>")]
     pub larger_than: Option<ByteSize>,
+    /// Exact project names; glob characters are literal.
     pub project: Vec<String>,
+    /// Project name globs, in addition to `project`.
+    pub project_pattern: Vec<String>,
     /// Exact task names; glob characters are literal.
     pub task: Vec<String>,
     /// Task name globs, in addition to `task`.
@@ -112,6 +118,8 @@ where
     let cache_store = ctx.as_context().create_cache_store();
 
     let projects: Vec<&str> = req.project.iter().map(String::as_str).collect();
+    let project_patterns: Vec<&str> =
+        req.project_pattern.iter().map(String::as_str).collect();
     let tasks: Vec<&str> = req.task.iter().map(String::as_str).collect();
     let task_patterns: Vec<&str> =
         req.task_pattern.iter().map(String::as_str).collect();
@@ -123,7 +131,8 @@ where
         let wrapper = CacheCtxWrapper::new(ctx);
         cache_store
             .get_stats(&CacheStatsArgs {
-                project_name_globs: &projects,
+                project_names: &projects,
+                project_name_globs: &project_patterns,
                 task_names: &tasks,
                 task_name_globs: &task_patterns,
                 dir_globs: &dirs,
@@ -134,7 +143,8 @@ where
     } else {
         cache_store
             .get_stats(&CacheStatsArgs::<()> {
-                project_name_globs: &projects,
+                project_names: &projects,
+                project_name_globs: &project_patterns,
                 task_names: &tasks,
                 task_name_globs: &task_patterns,
                 dir_globs: &[],
@@ -161,6 +171,8 @@ where
     let cache_store = ctx.as_context().create_cache_store();
 
     let projects: Vec<&str> = req.project.iter().map(String::as_str).collect();
+    let project_patterns: Vec<&str> =
+        req.project_pattern.iter().map(String::as_str).collect();
     let tasks: Vec<&str> = req.task.iter().map(String::as_str).collect();
     let task_patterns: Vec<&str> =
         req.task_pattern.iter().map(String::as_str).collect();
@@ -176,7 +188,8 @@ where
                 dry_run: req.dry_run,
                 stale_only: req.stale_only,
                 older_than: req.older_than,
-                project_name_globs: &projects,
+                project_names: &projects,
+                project_name_globs: &project_patterns,
                 task_names: &tasks,
                 task_name_globs: &task_patterns,
                 dir_globs: &dirs,
@@ -191,7 +204,8 @@ where
                 dry_run: req.dry_run,
                 stale_only: false,
                 older_than: req.older_than,
-                project_name_globs: &projects,
+                project_names: &projects,
+                project_name_globs: &project_patterns,
                 task_names: &tasks,
                 task_name_globs: &task_patterns,
                 dir_globs: &[],

@@ -16,9 +16,13 @@ pub struct TaskRunParams {
     /// Glob patterns selecting tasks by name. May be combined with `tasks`.
     #[serde(default)]
     pub task_patterns: Vec<String>,
-    /// Project filter where tasks will be executed.
+    /// Exact names of the projects where tasks will be executed. Glob
+    /// characters are literal; use `project_patterns` to select by glob.
     #[serde(default)]
     pub project: Vec<String>,
+    /// Project name globs, in addition to `project`.
+    #[serde(default)]
+    pub project_patterns: Vec<String>,
     /// Directory filter where tasks will be executed.
     #[serde(default)]
     pub dir: Vec<String>,
@@ -85,9 +89,13 @@ pub struct TaskExecutionSummary {
 pub struct ExecCommandParams {
     /// Command to execute
     pub cmd: Vec<String>,
-    /// Project filter where command will be executed
+    /// Exact names of the projects where the command will be executed. Glob
+    /// characters are literal; use `project_patterns` to select by glob.
     #[serde(default)]
     pub project: Vec<String>,
+    /// Project name globs, in addition to `project`.
+    #[serde(default)]
+    pub project_patterns: Vec<String>,
     /// Directory filter where command will be executed.
     #[serde(default)]
     pub dir: Vec<String>,
@@ -165,5 +173,29 @@ mod tests {
         let params = parse(json!({ "task_patterns": ["t*"] })).unwrap();
         assert!(params.tasks.is_empty());
         assert_eq!(params.task_patterns, ["t*"]);
+    }
+
+    #[test]
+    fn project_is_exact_and_project_patterns_are_separate() {
+        let params = parse(json!({
+            "tasks": ["build"],
+            "project": ["app*"],
+            "project_patterns": ["lib-*"],
+        }))
+        .unwrap();
+        assert_eq!(params.project, ["app*"]);
+        assert_eq!(params.project_patterns, ["lib-*"]);
+    }
+
+    #[test]
+    fn exec_params_take_exact_projects_and_patterns() {
+        let params: ExecCommandParams = serde_json::from_value(json!({
+            "cmd": ["echo"],
+            "project": ["app"],
+            "project_patterns": ["lib-*"],
+        }))
+        .unwrap();
+        assert_eq!(params.project, ["app"]);
+        assert_eq!(params.project_patterns, ["lib-*"]);
     }
 }

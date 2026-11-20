@@ -20,7 +20,13 @@ omni cache stats [OPTIONS]
 
 ### `-p`, `--project`
 
-Filter the cache entries by project name, accepts glob patterns
+Filter the cache entries by exact project name. Glob characters are literal; use --project-pattern to match by glob
+
+- **Required:** No
+
+### `--project-pattern`
+
+Filter the cache entries by project names matching this glob. Repeatable, and may be combined with --project
 
 - **Required:** No
 

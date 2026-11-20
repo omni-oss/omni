@@ -7,7 +7,7 @@ use maps::UnorderedMap;
 use omni_configurations::{
     RedactMode, RedactOverrides, Ui, WorkspaceConfiguration,
 };
-use omni_execution_plan::{MetaOnError, ScmAffectedFilter};
+use omni_execution_plan::{MetaOnError, ProjectSelector, ScmAffectedFilter};
 use omni_retry_config::RetryConfiguration;
 use omni_scm::SelectScm;
 use omni_task_executor::ExecutionConfigBuilder;
@@ -45,9 +45,16 @@ pub struct RunArgs {
     #[arg(
         long,
         short,
-        help = "Filter based on the project name matching the passed argument, accepts glob patterns"
+        help = "Filter to the project with this exact name. Glob characters are literal; use --project-pattern to match by glob"
     )]
     pub project: Vec<String>,
+
+    #[arg(
+        long,
+        value_name = "GLOB",
+        help = "Filter to projects whose name matches this glob. Repeatable, and may be combined with --project"
+    )]
+    pub project_pattern: Vec<String>,
 
     #[arg(
         long,
@@ -203,7 +210,15 @@ impl RunArgs {
         builder.meta_on_error(self.meta_on_error.value());
         builder.meta_error_samples(self.meta_error_samples);
 
-        builder.project_filters(self.project.clone());
+        builder.project_filters(
+            self.project
+                .iter()
+                .map(ProjectSelector::exact)
+                .chain(
+                    self.project_pattern.iter().map(ProjectSelector::pattern),
+                )
+                .collect::<Vec<_>>(),
+        );
         builder.dir_filters(self.dir.clone());
 
         if let Some(max_concurrency) = self.max_concurrency {

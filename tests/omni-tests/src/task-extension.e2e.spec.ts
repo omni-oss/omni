@@ -83,7 +83,7 @@ describe("+task-extension @e2e (base / extends)", () => {
         });
 
         expect(result).toHaveFailed();
-        expect(result).toHaveStderrContaining("no task to execute");
+        expect(result).toHaveStderrContaining("no task named `base-task`");
     });
 
     it("accepts `extends` as a list of task names", async () => {

@@ -80,6 +80,7 @@ fn no_project_found_for_filter_is_a_user_diagnostic() {
     let r = wrapped(ExecutionPlanProviderError::from(
         ExecutionPlanProviderErrorInner::NoProjectFoundForFilter {
             filter: "web*".into(),
+            hint: "check the project filter".into(),
         },
     ));
     let d = find(&r).expect("diagnostic");

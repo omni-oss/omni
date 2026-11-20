@@ -6,8 +6,12 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct CacheStatsParams {
+    /// Exact project names; glob characters are literal.
     #[serde(default)]
     pub project: Vec<String>,
+    /// Project name globs, in addition to `project`.
+    #[serde(default)]
+    pub project_pattern: Vec<String>,
     /// Exact task names; glob characters are literal.
     #[serde(default)]
     pub task: Vec<String>,
@@ -44,8 +48,12 @@ pub struct CachePruneParams {
     pub dry_run: bool,
     #[serde(default)]
     pub stale_only: bool,
+    /// Exact project names; glob characters are literal.
     #[serde(default)]
     pub project: Vec<String>,
+    /// Project name globs, in addition to `project`.
+    #[serde(default)]
+    pub project_pattern: Vec<String>,
     /// Exact task names; glob characters are literal.
     #[serde(default)]
     pub task: Vec<String>,
@@ -97,5 +105,21 @@ mod tests {
         assert_eq!(params.task, ["build*"]);
         assert_eq!(params.task_pattern, ["t*"]);
         assert!(params.dry_run, "dry_run still defaults to true");
+    }
+
+    #[test]
+    fn cache_project_is_exact_and_project_pattern_is_separate() {
+        let stats: CacheStatsParams = serde_json::from_value(
+            json!({ "project": ["app*"], "project_pattern": ["lib-*"] }),
+        )
+        .unwrap();
+        assert_eq!(stats.project, ["app*"]);
+        assert_eq!(stats.project_pattern, ["lib-*"]);
+        let prune: CachePruneParams = serde_json::from_value(
+            json!({ "project": ["app*"], "project_pattern": ["lib-*"] }),
+        )
+        .unwrap();
+        assert_eq!(prune.project, ["app*"]);
+        assert_eq!(prune.project_pattern, ["lib-*"]);
     }
 }

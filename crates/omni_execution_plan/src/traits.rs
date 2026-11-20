@@ -5,7 +5,7 @@ use omni_core::{Project, ProjectGraph, TaskExecutionNode};
 use omni_glob::GlobPatterns;
 use omni_types::OmniPath;
 
-use crate::{Call, ScmAffectedFilter};
+use crate::{Call, ProjectSelector, ScmAffectedFilter};
 
 /// A shared empty include/exclude set to return when a task has no cache info,
 /// so [`Context::get_cache_input_files`] can hand back a reference in that case.
@@ -22,7 +22,7 @@ pub trait ExecutionPlanProvider {
     fn get_execution_plan(
         &self,
         call: &Call,
-        project_filters: &[&str],
+        project_filters: &[ProjectSelector],
         dir_filters: &[&str],
         meta_filter: Option<&str>,
         scm_affected_filter: Option<&ScmAffectedFilter>,

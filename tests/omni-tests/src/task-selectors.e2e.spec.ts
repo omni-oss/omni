@@ -313,3 +313,187 @@ describe("+cache @cache (task selectors on stats and prune)", () => {
         expect(pattern.out).not.toContain("test");
     });
 });
+
+function multiSpec(): WorkspaceSpec {
+    return {
+        workspace: { projects: ["**"] },
+        projects: {
+            "svc/app": { name: "app", tasks: { build: 'echo "build-app"' } },
+            "svc/app2": { name: "app2", tasks: { build: 'echo "build-app2"' } },
+            "svc/lib": { name: "lib", tasks: { build: 'echo "build-lib"' } },
+        },
+    };
+}
+
+describe("+run @e2e (project filters are exact, --project-pattern is a glob)", () => {
+    it("`-p app` runs only the project named `app`", async () => {
+        const ws = makeWorkspace(multiSpec());
+
+        const result = await runOmni(
+            ["run", "build", "-p", "app", "--output-logs", "all"],
+            { cwd: ws.cwd },
+        );
+
+        expect(result).toHaveSucceeded();
+        expect(result).toHaveStderrContaining("app#build");
+        expect(result.stderr).not.toContain("app2#build");
+        expect(result.stderr).not.toContain("lib#build");
+    });
+
+    it("`-p 'app*'` fails and points at --project-pattern", async () => {
+        const ws = makeWorkspace(multiSpec());
+
+        const result = await runOmni(["run", "build", "-p", "app*"], {
+            cwd: ws.cwd,
+        });
+
+        expect(result).not.toHaveSucceeded();
+        expect(result.stderr).toContain("no project found for filter: app*");
+        expect(result.stderr).toContain("--project-pattern");
+    });
+
+    it("`--project-pattern 'app*'` matches by glob", async () => {
+        const ws = makeWorkspace(multiSpec());
+
+        const result = await runOmni(
+            [
+                "run",
+                "build",
+                "--project-pattern",
+                "app*",
+                "--output-logs",
+                "all",
+            ],
+            { cwd: ws.cwd },
+        );
+
+        expect(result).toHaveSucceeded();
+        expect(result).toHaveStderrContaining("app#build");
+        expect(result).toHaveStderrContaining("app2#build");
+        expect(result.stderr).not.toContain("lib#build");
+    });
+
+    it("exact and pattern project selectors combine", async () => {
+        const ws = makeWorkspace(multiSpec());
+
+        const result = await runOmni(
+            [
+                "run",
+                "build",
+                "-p",
+                "lib",
+                "--project-pattern",
+                "app?",
+                "--output-logs",
+                "all",
+            ],
+            { cwd: ws.cwd },
+        );
+
+        expect(result).toHaveSucceeded();
+        expect(result).toHaveStderrContaining("lib#build");
+        expect(result).toHaveStderrContaining("app2#build");
+        expect(result.stderr).not.toContain("app#build");
+    });
+
+    it("an unknown exact project fails even beside a known one", async () => {
+        const ws = makeWorkspace(multiSpec());
+
+        const result = await runOmni(
+            ["run", "build", "-p", "app", "-p", "nope"],
+            { cwd: ws.cwd },
+        );
+
+        expect(result).not.toHaveSucceeded();
+        expect(result.stderr).toContain("no project found for filter: nope");
+    });
+
+    it("`exec -p` is exact and `exec --project-pattern` is a glob", async () => {
+        const ws = makeWorkspace(multiSpec());
+
+        const exact = await runOmni(["exec", "-p", "app", "--", "echo", "hi"], {
+            cwd: ws.cwd,
+        });
+        expect(exact).toHaveSucceeded();
+
+        const glob = await runOmni(["exec", "-p", "app*", "--", "echo", "hi"], {
+            cwd: ws.cwd,
+        });
+        expect(glob).not.toHaveSucceeded();
+        expect(glob.stderr).toContain("--project-pattern");
+    });
+});
+
+describe("+cache @cache (project selectors on stats and prune)", () => {
+    const warm = async (cwd: string) => {
+        expect(
+            await runOmni(["run", "build", "--project-pattern", "*"], { cwd }),
+        ).toHaveSucceeded();
+    };
+
+    it("`stats --project app` is exact; `--project-pattern 'app*'` also matches app2", async () => {
+        const ws = makeWorkspace(multiSpec());
+        await warm(ws.cwd);
+
+        const exact = await runOmni(["cache", "stats", "--project", "app"], {
+            cwd: ws.cwd,
+        });
+        expect(exact).toHaveSucceeded();
+        expect(exact).toOutputContaining("Project: app");
+        expect(exact.out).not.toContain("Project: app2");
+        expect(exact.out).not.toContain("Project: lib");
+
+        const glob = await runOmni(
+            ["cache", "stats", "--project-pattern", "app*"],
+            { cwd: ws.cwd },
+        );
+        expect(glob).toHaveSucceeded();
+        expect(glob).toOutputContaining("Project: app2");
+        expect(glob.out).not.toContain("Project: lib");
+    });
+
+    it("`prune --project 'app*'` deletes nothing; an exact name prunes only that project", async () => {
+        const ws = makeWorkspace(multiSpec());
+        await warm(ws.cwd);
+
+        const glob = await runOmni(
+            ["cache", "prune", "--project", "app*", "--dry-run"],
+            { cwd: ws.cwd },
+        );
+        expect(glob).toHaveSucceeded();
+        expect(glob).toOutputContaining(
+            "No cache entries matched the given filters",
+        );
+
+        const exact = await runOmni(
+            ["cache", "prune", "--project", "lib", "--dry-run"],
+            { cwd: ws.cwd },
+        );
+        expect(exact).toHaveSucceeded();
+        expect(exact).toOutputContaining("lib");
+        expect(exact.out).not.toContain("app");
+    });
+
+    it("an exact project that no longer exists is not an error, even with --dir", async () => {
+        const ws = makeWorkspace(multiSpec());
+        await warm(ws.cwd);
+
+        const result = await runOmni(
+            [
+                "cache",
+                "prune",
+                "--project",
+                "gone",
+                "--dir",
+                "svc/**",
+                "--dry-run",
+            ],
+            { cwd: ws.cwd },
+        );
+
+        expect(result).toHaveSucceeded();
+        expect(result).toOutputContaining(
+            "No cache entries matched the given filters",
+        );
+    });
+});

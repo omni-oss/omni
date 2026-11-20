@@ -27,6 +27,7 @@ where
     ) -> eyre::Result<CacheStatsResult> {
         let req = CacheStatsRequest {
             project: params.project,
+            project_pattern: params.project_pattern,
             task: params.task,
             task_pattern: params.task_pattern,
             ..Default::default()
@@ -59,6 +60,7 @@ where
             dry_run: params.dry_run,
             stale_only: params.stale_only,
             project: params.project,
+            project_pattern: params.project_pattern,
             task: params.task,
             task_pattern: params.task_pattern,
             dir: params.dir,

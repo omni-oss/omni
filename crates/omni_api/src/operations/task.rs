@@ -1,6 +1,8 @@
 use maps::UnorderedMap;
 use omni_context::LoadedContext;
-use omni_execution_plan::{Call, ScmAffectedFilter, TaskSelector};
+use omni_execution_plan::{
+    Call, ProjectSelector, ScmAffectedFilter, TaskSelector,
+};
 use omni_messages::ExecutionEventSubscriber;
 use omni_retry_config::RetryConfiguration;
 use omni_scm::SelectScm;
@@ -23,8 +25,10 @@ pub struct TaskRunFilters {
     pub meta_on_error: omni_task_executor::MetaOnError,
     /// Failing tasks to list per distinct meta error cause.
     pub meta_error_samples: usize,
-    /// Glob patterns to match project names.
+    /// Exact project names; glob characters are literal.
     pub project: Vec<String>,
+    /// Glob patterns to match project names, in addition to `project`.
+    pub project_pattern: Vec<String>,
     /// Glob patterns to match project directories.
     pub dir: Vec<String>,
     /// Maximum number of tasks to run concurrently.
@@ -52,6 +56,7 @@ impl Default for TaskRunFilters {
             meta_on_error: Default::default(),
             meta_error_samples: 3,
             project: vec![],
+            project_pattern: vec![],
             dir: vec![],
             max_concurrency: None,
             dry_run: false,
@@ -194,7 +199,14 @@ pub(crate) fn apply_filters(
     builder.meta_on_error(filters.meta_on_error);
     builder.meta_error_samples(filters.meta_error_samples);
 
-    builder.project_filters(filters.project.clone());
+    builder.project_filters(
+        filters
+            .project
+            .iter()
+            .map(ProjectSelector::exact)
+            .chain(filters.project_pattern.iter().map(ProjectSelector::pattern))
+            .collect::<Vec<_>>(),
+    );
     builder.dir_filters(filters.dir.clone());
 
     if let Some(max_conc) = filters.max_concurrency {

@@ -4,7 +4,7 @@ use omni_core::BatchedExecutionPlan;
 use omni_execution_plan::{
     Call, Context as ContextTrait, DefaultExecutionPlanProvider,
     ExecutionPlanProvider, ExecutionPlanProviderError, MetaErrorOptions,
-    ScmAffectedFilter,
+    ProjectSelector, ScmAffectedFilter,
 };
 use omni_glob::GlobPatterns;
 use omni_types::OmniPath;
@@ -48,7 +48,7 @@ impl<'a, TSys: ContextSys> ExecutionPlanProvider
     fn get_execution_plan(
         &self,
         call: &Call,
-        project_filters: &[&str],
+        project_filters: &[ProjectSelector],
         dir_filters: &[&str],
         meta_filter: Option<&str>,
         scm_affected_filter: Option<&ScmAffectedFilter>,

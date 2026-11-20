@@ -73,12 +73,7 @@ impl<'a, TSys: TaskExecutorSys, S: ExecutionEventSubscriber>
             });
         let plan = provider.get_execution_plan(
             self.config.call(),
-            self.config
-                .project_filters()
-                .iter()
-                .map(|s| s.as_str())
-                .collect::<Vec<_>>()
-                .as_slice(),
+            self.config.project_filters().as_slice(),
             self.config
                 .dir_filters()
                 .iter()
@@ -110,7 +105,7 @@ impl<'a, TSys: TaskExecutorSys, S: ExecutionEventSubscriber>
                 self.config
                     .project_filters()
                     .iter()
-                    .map(|s| s.to_string())
+                    .map(|s| format!("{s:?}"))
                     .collect::<Vec<_>>(),
                 self.config
                     .dir_filters()

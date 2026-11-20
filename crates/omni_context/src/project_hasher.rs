@@ -4,7 +4,9 @@ use derive_new::new;
 use maps::{Map, UnorderedMap, hash::HashMapExt};
 use omni_collector::{CollectConfig, Collector, ProjectTaskInfo};
 use omni_command_config::CommandConfig;
-use omni_execution_plan::{Call, ExecutionPlanProvider, TaskSelector};
+use omni_execution_plan::{
+    Call, ExecutionPlanProvider, ProjectSelector, TaskSelector,
+};
 use omni_glob::{GlobOptions, include_set};
 use omni_hasher::{
     Hasher as _,
@@ -45,7 +47,7 @@ impl<'a, TSys: ContextSys> ProjectHasher<'a, TSys> {
         let plan = execution_plan_provider
             .get_execution_plan(
                 &call,
-                &[project_name],
+                &[ProjectSelector::exact(project_name)],
                 &[],
                 None,
                 None,

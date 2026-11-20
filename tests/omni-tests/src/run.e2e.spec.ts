@@ -60,7 +60,7 @@ describe("+run @exitcode (failure handling)", () => {
         expect(result).toHaveFailed();
     });
 
-    it("a task matching nothing reports the unmatched call and fails", async () => {
+    it("an exact task name matching nothing reports the missing task and fails", async () => {
         const ws = makeWorkspace(singleProjectSpec());
 
         const result = await runOmni(["run", "does-not-exist"], {
@@ -68,7 +68,7 @@ describe("+run @exitcode (failure handling)", () => {
         });
 
         expect(result).toHaveFailed();
-        expect(result).toHaveStderrContaining("no task to execute");
+        expect(result).toHaveStderrContaining("no task named `does-not-exist`");
     });
 });
 
@@ -542,7 +542,14 @@ describe("+run @e2e (filter + dependency combinations)", () => {
         });
 
         const result = await runOmni(
-            ["run", "build", "test", "-p", "app-*", "--output-logs=all"],
+            [
+                "run",
+                "build",
+                "test",
+                "--project-pattern",
+                "app-*",
+                "--output-logs=all",
+            ],
             {
                 cwd: ws.cwd,
             },

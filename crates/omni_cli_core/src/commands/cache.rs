@@ -51,9 +51,16 @@ pub struct StatsArgs {
     #[arg(
         long,
         short,
-        help = "Filter the cache entries by project name, accepts glob patterns"
+        help = "Filter the cache entries by exact project name. Glob characters are literal; use --project-pattern to match by glob"
     )]
     project: Vec<String>,
+
+    #[arg(
+        long,
+        value_name = "GLOB",
+        help = "Filter the cache entries by project names matching this glob. Repeatable, and may be combined with --project"
+    )]
+    project_pattern: Vec<String>,
 
     #[arg(
         long,
@@ -101,9 +108,16 @@ pub struct PruneArgs {
     #[arg(
         long,
         short,
-        help = "Add filter to clear only cache entries belonging to a project that matches the given project name, accepts glob patterns"
+        help = "Add filter to clear only cache entries belonging to the project with this exact name. Glob characters are literal; use --project-pattern to match by glob"
     )]
     project: Vec<String>,
+
+    #[arg(
+        long,
+        value_name = "GLOB",
+        help = "Add filter to clear only cache entries belonging to projects whose name matches this glob. Repeatable, and may be combined with --project"
+    )]
+    project_pattern: Vec<String>,
 
     #[arg(
         long,
@@ -297,6 +311,7 @@ pub async fn run(command: &CacheCommand, ctx: &Context) -> eyre::Result<()> {
             let stats = api
                 .cache_stats(CacheStatsRequest {
                     project: args.project.clone(),
+                    project_pattern: args.project_pattern.clone(),
                     task: args.task.clone(),
                     task_pattern: args.task_pattern.clone(),
                     dir: args.dir.clone(),
@@ -412,6 +427,7 @@ async fn prune(
             older_than: args.older_than,
             larger_than: args.larger_than,
             project: args.project.clone(),
+            project_pattern: args.project_pattern.clone(),
             task: args.task.clone(),
             task_pattern: args.task_pattern.clone(),
             meta: args.meta.clone(),

@@ -14,7 +14,8 @@ use omni_configurations::{
     RemoteCacheConfiguration, RemoteTarget, ScopeConfig,
 };
 use omni_execution_plan::{
-    Call, DefaultExecutionPlanProvider, ExecutionPlanProvider, TaskSelector,
+    Call, DefaultExecutionPlanProvider, ExecutionPlanProvider, ProjectSelector,
+    TaskSelector,
 };
 use omni_hasher::{
     Hasher,
@@ -64,7 +65,7 @@ pub use omni_utils::path::{
     has_globs, path_safe, relpath, remove_globs, topmost_dirs,
 };
 
-use omni_glob::{GlobOptions, GlobPatterns, include_set};
+use omni_glob::GlobPatterns;
 
 use omni_hasher::project_dir_hasher::impls::RealDirHasherError;
 
@@ -717,6 +718,22 @@ fn task_call(task_names: &[&str], task_name_globs: &[&str]) -> Call {
     )
 }
 
+/// The project selectors for a cache filter: exact names and patterns union.
+fn project_call(
+    project_names: &[&str],
+    project_name_globs: &[&str],
+) -> Vec<ProjectSelector> {
+    project_names
+        .iter()
+        .map(|n| ProjectSelector::exact(*n))
+        .chain(
+            project_name_globs
+                .iter()
+                .map(|g| ProjectSelector::pattern(*g)),
+        )
+        .collect()
+}
+
 fn hashtext(text: &str) -> String {
     let x = DefaultHasher::hash(text.as_bytes());
     bs58::encode(x).into_string()
@@ -727,9 +744,11 @@ impl HybridTaskExecutionCacheStore {
     /// and return the set of `project#task` task identifiers that survive all
     /// of them. Used to apply the context-dependent `--dir`/`--meta` filters
     /// to cache entries, which are otherwise only keyed by name.
+    #[allow(clippy::too_many_arguments)]
     fn plan_task_set<TContext: Context>(
         &self,
         context: &TContext,
+        project_names: &[&str],
         project_name_globs: &[&str],
         task_names: &[&str],
         task_name_globs: &[&str],
@@ -743,7 +762,7 @@ impl HybridTaskExecutionCacheStore {
                 .with_allow_missing_exact(true)
                 .get_execution_plan(
                     &call,
-                    project_name_globs,
+                    &project_call(project_names, project_name_globs),
                     dir_globs,
                     meta_filter,
                     None,
@@ -1697,20 +1716,14 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
             return Ok(merged);
         }
 
+        let project_names = args.project_names;
         let project_name_globs = args.project_name_globs;
         let task_names = args.task_names;
         let task_name_globs = args.task_name_globs;
 
         let mut entries = tokio::fs::read_dir(&self.cache_dir).await?;
 
-        let project_glob = {
-            let project_name_globs: &[&str] = if project_name_globs.is_empty() {
-                &["*"]
-            } else {
-                project_name_globs
-            };
-            include_set(project_name_globs, GlobOptions::default())?
-        };
+        let project_glob = NameMatcher::new(project_names, project_name_globs)?;
         let task_glob = NameMatcher::new(task_names, task_name_globs)?;
 
         let mut futs = JoinSet::new();
@@ -1917,6 +1930,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
 
             let allowed = self.plan_task_set(
                 context,
+                args.project_names,
                 args.project_name_globs,
                 args.task_names,
                 args.task_name_globs,
@@ -1964,6 +1978,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
 
         let stats = self
             .get_stats(&CacheStatsArgs::<()> {
+                project_names: args.project_names,
                 project_name_globs: args.project_name_globs,
                 task_names: args.task_names,
                 task_name_globs: args.task_name_globs,
@@ -2006,7 +2021,10 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                     .with_allow_missing_exact(true)
                     .get_execution_plan(
                         &call,
-                        args.project_name_globs,
+                        &project_call(
+                            args.project_names,
+                            args.project_name_globs,
+                        ),
                         args.dir_globs,
                         args.meta_filter,
                         None,

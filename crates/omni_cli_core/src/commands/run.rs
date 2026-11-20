@@ -196,4 +196,27 @@ mod tests {
         let error = parse(&[]).err().expect("no selector must fail");
         assert_eq!(error.kind(), ErrorKind::MissingRequiredArgument);
     }
+
+    #[test]
+    fn project_filters_are_exact_and_patterns_are_separate() {
+        let run = parse(&[
+            "build",
+            "-p",
+            "app*",
+            "--project-pattern",
+            "lib-*",
+            "--project-pattern",
+            "web",
+        ])
+        .unwrap();
+        assert_eq!(run.run.project, ["app*"]);
+        assert_eq!(run.run.project_pattern, ["lib-*", "web"]);
+    }
+
+    #[test]
+    fn project_patterns_may_stand_alone() {
+        let run = parse(&["build", "--project-pattern", "app*"]).unwrap();
+        assert!(run.run.project.is_empty());
+        assert_eq!(run.run.project_pattern, ["app*"]);
+    }
 }

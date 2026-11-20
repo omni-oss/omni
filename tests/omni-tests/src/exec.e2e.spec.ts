@@ -186,7 +186,16 @@ describe("+exec @e2e (combined project & dir filters)", () => {
         // {app, other}. Filters compose as an intersection, so only `app`
         // survives and the command runs exactly once.
         const result = await runOmni(
-            ["exec", "-p", "app*", "--dir", "apps/**", "--", "echo", "hi"],
+            [
+                "exec",
+                "--project-pattern",
+                "app*",
+                "--dir",
+                "apps/**",
+                "--",
+                "echo",
+                "hi",
+            ],
             {
                 cwd: ws.cwd,
             },
@@ -317,7 +326,7 @@ describe("+exec @e2e (dry run with combined filters)", () => {
             [
                 "exec",
                 "--dry-run",
-                "-p",
+                "--project-pattern",
                 "app*",
                 "--dir",
                 "apps/**",
