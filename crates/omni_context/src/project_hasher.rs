@@ -4,7 +4,7 @@ use derive_new::new;
 use maps::{Map, UnorderedMap, hash::HashMapExt};
 use omni_collector::{CollectConfig, Collector, ProjectTaskInfo};
 use omni_command_config::CommandConfig;
-use omni_execution_plan::{Call, ExecutionPlanProvider};
+use omni_execution_plan::{Call, ExecutionPlanProvider, TaskSelector};
 use omni_glob::{GlobOptions, include_set};
 use omni_hasher::{
     Hasher as _,
@@ -27,7 +27,7 @@ impl<'a, TSys: ContextSys> ProjectHasher<'a, TSys> {
     pub async fn hash<T: ExecutionPlanProvider>(
         &self,
         project_name: &str,
-        task_names: &[&str],
+        tasks: &[TaskSelector],
         seed: Option<&str>,
         context: &LoadedContext<TSys>,
         execution_plan_provider: &T,
@@ -36,10 +36,10 @@ impl<'a, TSys: ContextSys> ProjectHasher<'a, TSys> {
 
         let seed =
             DefaultHasher::hash(seed.unwrap_or("DEFAULT_SEED").as_bytes());
-        let call = if task_names.is_empty() {
+        let call = if tasks.is_empty() {
             Call::all_tasks()
         } else {
-            Call::pattern_tasks(task_names.iter().copied())
+            Call::Tasks(tasks.to_vec())
         };
 
         let plan = execution_plan_provider
@@ -196,17 +196,31 @@ impl<'a, TSys: ContextSys> ProjectHasher<'a, TSys> {
 
         let mut hash = Hash::<DefaultHasher>::new(seed);
 
-        let task_matcher = include_set(task_names, GlobOptions::default())?;
+        let select_all = tasks.is_empty()
+            || tasks.iter().any(|s| matches!(s, TaskSelector::All));
+        let exact: std::collections::HashSet<&str> = tasks
+            .iter()
+            .filter_map(|s| match s {
+                TaskSelector::Exact(n) => Some(n.as_str()),
+                _ => None,
+            })
+            .collect();
+        let patterns: Vec<&str> = tasks
+            .iter()
+            .filter_map(|s| match s {
+                TaskSelector::Pattern(p) => Some(p.as_str()),
+                _ => None,
+            })
+            .collect();
+        let task_matcher = include_set(&patterns, GlobOptions::default())?;
 
         let mut digests = task_result_digests
             .values()
             .filter(|d| {
                 d.project_name == project_name
-                    && if !task_matcher.is_empty() {
-                        task_matcher.is_match(&d.task_name)
-                    } else {
-                        true
-                    }
+                    && (select_all
+                        || exact.contains(d.task_name.as_str())
+                        || task_matcher.is_match(&d.task_name))
             })
             .collect::<Vec<_>>();
 
@@ -222,7 +236,7 @@ impl<'a, TSys: ContextSys> ProjectHasher<'a, TSys> {
     pub async fn hash_string<T: ExecutionPlanProvider>(
         &self,
         project_name: &str,
-        task_names: &[&str],
+        tasks: &[TaskSelector],
         seed: Option<&str>,
         context: &LoadedContext<TSys>,
         execution_plan_provider: &T,
@@ -230,7 +244,7 @@ impl<'a, TSys: ContextSys> ProjectHasher<'a, TSys> {
         Ok(bs58::encode(
             self.hash(
                 project_name,
-                task_names,
+                tasks,
                 seed,
                 context,
                 execution_plan_provider,

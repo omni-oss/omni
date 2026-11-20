@@ -1,4 +1,5 @@
 use omni_context::{ContextSys, LoadedContext};
+use omni_execution_plan::TaskSelector;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -23,15 +24,22 @@ pub async fn handle_hash_workspace<TSys: ContextSys>(
 
 /// Compute the hash for a single project.
 ///
-/// If `tasks` is empty all tasks are hashed together; otherwise only the
-/// listed task names are included.
+/// With no selectors all tasks are hashed together. Otherwise only the tasks
+/// named in `tasks` (exact; glob characters are literal) or matching a glob in
+/// `task_patterns` are included. An exact name that is not a task of the
+/// project is an error.
 pub async fn handle_hash_project<TSys: ContextSys>(
     ctx: &LoadedContext<TSys>,
     name: &str,
     tasks: &[String],
+    task_patterns: &[String],
 ) -> eyre::Result<HashResponse> {
-    let task_refs: Vec<&str> = tasks.iter().map(String::as_str).collect();
+    let selectors: Vec<TaskSelector> = tasks
+        .iter()
+        .map(TaskSelector::exact)
+        .chain(task_patterns.iter().map(TaskSelector::pattern))
+        .collect();
     Ok(HashResponse {
-        hash: ctx.get_project_hash_string(name, &task_refs).await?,
+        hash: ctx.get_project_hash_string(name, &selectors).await?,
     })
 }

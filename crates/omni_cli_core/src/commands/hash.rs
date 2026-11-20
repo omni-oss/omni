@@ -44,8 +44,19 @@ pub struct HashProjectCommand {
     #[arg(required = true, help = "Project name")]
     project: String,
 
-    #[arg(long, short = 't', help = "Hash specific task")]
+    #[arg(
+        long,
+        short = 't',
+        help = "Hash only the task with this exact name. Glob characters are literal; use --task-pattern to match by glob"
+    )]
     task: Vec<String>,
+
+    #[arg(
+        long,
+        value_name = "GLOB",
+        help = "Hash only the tasks whose name matches this glob. Repeatable, and may be combined with --task"
+    )]
+    task_pattern: Vec<String>,
 }
 
 pub async fn run(command: &HashCommand, ctx: &Context) -> eyre::Result<()> {
@@ -59,16 +70,25 @@ pub async fn run(command: &HashCommand, ctx: &Context) -> eyre::Result<()> {
                     .await?
             }
             HashSubcommands::Project { ref command } => {
-                api.hash_project(&command.project, &command.task)
-                    .with_subscriber(noop_subscriber())
-                    .await?
+                api.hash_project(
+                    &command.project,
+                    &command.task,
+                    &command.task_pattern,
+                )
+                .with_subscriber(noop_subscriber())
+                .await?
             }
         }
     } else {
         match command.subcommand {
             HashSubcommands::Workspace => api.hash_workspace().await?,
             HashSubcommands::Project { ref command } => {
-                api.hash_project(&command.project, &command.task).await?
+                api.hash_project(
+                    &command.project,
+                    &command.task,
+                    &command.task_pattern,
+                )
+                .await?
             }
         }
     };

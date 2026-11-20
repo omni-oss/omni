@@ -14,7 +14,7 @@ use omni_configurations::{
     RemoteCacheConfiguration, RemoteTarget, ScopeConfig,
 };
 use omni_execution_plan::{
-    Call, DefaultExecutionPlanProvider, ExecutionPlanProvider,
+    Call, DefaultExecutionPlanProvider, ExecutionPlanProvider, TaskSelector,
 };
 use omni_hasher::{
     Hasher,
@@ -40,6 +40,7 @@ use time::OffsetDateTime;
 use tokio::task::JoinSet;
 use tracing::Level;
 
+use crate::cache::name_matcher::NameMatcher;
 use crate::{
     CacheStats, CacheStatsArgs, CachedFileOutput, CachedTaskExecution,
     CachedTaskExecutionHash, Context, FileCacheStats, ProjectCacheStats,
@@ -701,6 +702,21 @@ async fn is_regular_file(path: &Path) -> bool {
         .is_ok_and(|metadata| metadata.is_file())
 }
 
+/// The plan call for a cache task filter: exact names and patterns union, and
+/// neither means every task.
+fn task_call(task_names: &[&str], task_name_globs: &[&str]) -> Call {
+    if task_names.is_empty() && task_name_globs.is_empty() {
+        return Call::all_tasks();
+    }
+    Call::Tasks(
+        task_names
+            .iter()
+            .map(|n| TaskSelector::exact(*n))
+            .chain(task_name_globs.iter().map(|g| TaskSelector::pattern(*g)))
+            .collect(),
+    )
+}
+
 fn hashtext(text: &str) -> String {
     let x = DefaultHasher::hash(text.as_bytes());
     bs58::encode(x).into_string()
@@ -715,18 +731,16 @@ impl HybridTaskExecutionCacheStore {
         &self,
         context: &TContext,
         project_name_globs: &[&str],
+        task_names: &[&str],
         task_name_globs: &[&str],
         dir_globs: &[&str],
         meta_filter: Option<&str>,
     ) -> Result<HashSet<String>, LocalTaskExecutionCacheStoreError> {
-        let call = if task_name_globs.is_empty() {
-            Call::all_tasks()
-        } else {
-            Call::pattern_tasks(task_name_globs.iter().copied())
-        };
+        let call = task_call(task_names, task_name_globs);
 
         let plan =
             DefaultExecutionPlanProvider::new(ContextWrapper::new(context))
+                .with_allow_missing_exact(true)
                 .get_execution_plan(
                     &call,
                     project_name_globs,
@@ -1684,6 +1698,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
         }
 
         let project_name_globs = args.project_name_globs;
+        let task_names = args.task_names;
         let task_name_globs = args.task_name_globs;
 
         let mut entries = tokio::fs::read_dir(&self.cache_dir).await?;
@@ -1696,14 +1711,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
             };
             include_set(project_name_globs, GlobOptions::default())?
         };
-        let task_glob = {
-            let task_name_globs: &[&str] = if task_name_globs.is_empty() {
-                &["*"]
-            } else {
-                task_name_globs
-            };
-            include_set(task_name_globs, GlobOptions::default())?
-        };
+        let task_glob = NameMatcher::new(task_names, task_name_globs)?;
 
         let mut futs = JoinSet::new();
 
@@ -1910,6 +1918,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
             let allowed = self.plan_task_set(
                 context,
                 args.project_name_globs,
+                args.task_names,
                 args.task_name_globs,
                 args.dir_globs,
                 args.meta_filter,
@@ -1956,6 +1965,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
         let stats = self
             .get_stats(&CacheStatsArgs::<()> {
                 project_name_globs: args.project_name_globs,
+                task_names: args.task_names,
                 task_name_globs: args.task_name_globs,
                 ..Default::default()
             })
@@ -1990,13 +2000,10 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
 
             let time_now = SystemTime::now();
 
-            let call = if args.task_name_globs.is_empty() {
-                Call::all_tasks()
-            } else {
-                Call::pattern_tasks(args.task_name_globs.iter().copied())
-            };
+            let call = task_call(args.task_names, args.task_name_globs);
             let plan =
                 DefaultExecutionPlanProvider::new(ContextWrapper::new(context))
+                    .with_allow_missing_exact(true)
                     .get_execution_plan(
                         &call,
                         args.project_name_globs,
@@ -5899,6 +5906,159 @@ mod tests {
             .expect("failed to get cached output");
 
         assert!(cached_output.is_none(), "cached output should not exist");
+    }
+
+    /// Cache a few differently named tasks in one project and return the store.
+    async fn cache_named_tasks(
+        names: &[&str],
+    ) -> (tempfile::TempDir, HybridTaskExecutionCacheStore) {
+        let temp = fixture(&["project1"]).await;
+        let cache = cache_store(temp.path());
+        for name in names {
+            let t = task(name, "project1", temp.path());
+            cache
+                .cache(&new_cache_info(Some(&LOGS_CONTENT), *t.get()))
+                .await
+                .expect("failed to cache");
+        }
+        (temp, cache)
+    }
+
+    async fn stat_tasks(
+        cache: &HybridTaskExecutionCacheStore,
+        exact: &[&str],
+        globs: &[&str],
+    ) -> Vec<String> {
+        let stats = cache
+            .get_stats(&CacheStatsArgs::<()> {
+                task_names: exact,
+                task_name_globs: globs,
+                ..Default::default()
+            })
+            .await
+            .expect("stats");
+        let mut names: Vec<String> = stats
+            .projects
+            .into_iter()
+            .flat_map(|p| p.tasks)
+            .map(|t| t.task_name)
+            .collect();
+        names.sort();
+        names
+    }
+
+    #[tokio::test]
+    async fn stats_task_names_are_exact_and_globs_are_separate() {
+        let (_temp, cache) =
+            cache_named_tasks(&["build", "builder", "b*"]).await;
+
+        assert_eq!(stat_tasks(&cache, &["b*"], &[]).await, ["b*"]);
+        assert_eq!(stat_tasks(&cache, &["build"], &[]).await, ["build"]);
+        assert_eq!(
+            stat_tasks(&cache, &[], &["b*"]).await,
+            ["b*", "build", "builder"]
+        );
+        assert_eq!(
+            stat_tasks(&cache, &["b*"], &["build"]).await,
+            ["b*", "build"]
+        );
+        assert_eq!(
+            stat_tasks(&cache, &[], &[]).await,
+            ["b*", "build", "builder"]
+        );
+        assert!(stat_tasks(&cache, &["missing"], &[]).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn prune_with_an_exact_task_name_removes_only_that_task() {
+        let (temp, cache) =
+            cache_named_tasks(&["build", "builder", "b*"]).await;
+
+        let pruned = cache
+            .prune_caches::<()>(&PruneCacheArgs {
+                task_names: &["build"],
+                dry_run: false,
+                ..Default::default()
+            })
+            .await
+            .expect("prune");
+
+        assert_eq!(pruned.len(), 1);
+        assert_eq!(pruned[0].task_name, "build");
+        assert_eq!(stat_tasks(&cache, &[], &[]).await, ["b*", "builder"]);
+        drop(temp);
+    }
+
+    #[tokio::test]
+    async fn prune_with_a_glob_like_exact_name_does_not_touch_its_neighbours() {
+        let (_temp, cache) =
+            cache_named_tasks(&["build", "builder", "b*"]).await;
+
+        let pruned = cache
+            .prune_caches::<()>(&PruneCacheArgs {
+                task_names: &["b*"],
+                dry_run: false,
+                ..Default::default()
+            })
+            .await
+            .expect("prune");
+
+        assert_eq!(pruned.len(), 1);
+        assert_eq!(pruned[0].task_name, "b*");
+        assert_eq!(stat_tasks(&cache, &[], &[]).await, ["build", "builder"]);
+    }
+
+    #[tokio::test]
+    async fn prune_with_exact_and_pattern_selectors_unions_them() {
+        let (_temp, cache) =
+            cache_named_tasks(&["build", "builder", "lint", "test"]).await;
+
+        let pruned = cache
+            .prune_caches::<()>(&PruneCacheArgs {
+                task_names: &["lint"],
+                task_name_globs: &["build*"],
+                dry_run: false,
+                ..Default::default()
+            })
+            .await
+            .expect("prune");
+
+        assert_eq!(pruned.len(), 3);
+        assert_eq!(stat_tasks(&cache, &[], &[]).await, ["test"]);
+    }
+
+    #[tokio::test]
+    async fn prune_dry_run_with_exact_names_reports_and_deletes_nothing() {
+        let (_temp, cache) = cache_named_tasks(&["build", "builder"]).await;
+
+        let pruned = cache
+            .prune_caches::<()>(&PruneCacheArgs {
+                task_names: &["build"],
+                dry_run: true,
+                ..Default::default()
+            })
+            .await
+            .expect("prune");
+
+        assert_eq!(pruned.len(), 1);
+        assert_eq!(stat_tasks(&cache, &[], &[]).await, ["build", "builder"]);
+    }
+
+    #[tokio::test]
+    async fn prune_with_an_exact_name_that_matches_nothing_deletes_nothing() {
+        let (_temp, cache) = cache_named_tasks(&["build"]).await;
+
+        let pruned = cache
+            .prune_caches::<()>(&PruneCacheArgs {
+                task_names: &["removed-task"],
+                dry_run: false,
+                ..Default::default()
+            })
+            .await
+            .expect("an unknown exact name is not an error here");
+
+        assert!(pruned.is_empty());
+        assert_eq!(stat_tasks(&cache, &[], &[]).await, ["build"]);
     }
 
     #[tokio::test]

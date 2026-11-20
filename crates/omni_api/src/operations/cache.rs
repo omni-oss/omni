@@ -23,7 +23,10 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct CacheStatsRequest {
     pub project: Vec<String>,
+    /// Exact task names; glob characters are literal.
     pub task: Vec<String>,
+    /// Task name globs, in addition to `task`.
+    pub task_pattern: Vec<String>,
     pub dir: Vec<String>,
     pub meta: Option<String>,
 }
@@ -39,7 +42,10 @@ pub struct CachePruneRequest {
     #[schemars(with = "Option<u64>")]
     pub larger_than: Option<ByteSize>,
     pub project: Vec<String>,
+    /// Exact task names; glob characters are literal.
     pub task: Vec<String>,
+    /// Task name globs, in addition to `task`.
+    pub task_pattern: Vec<String>,
     pub meta: Option<String>,
     pub dir: Vec<String>,
     /// If `true`, only compute and return what *would* be pruned — nothing is deleted.
@@ -107,6 +113,8 @@ where
 
     let projects: Vec<&str> = req.project.iter().map(String::as_str).collect();
     let tasks: Vec<&str> = req.task.iter().map(String::as_str).collect();
+    let task_patterns: Vec<&str> =
+        req.task_pattern.iter().map(String::as_str).collect();
     let dirs: Vec<&str> = req.dir.iter().map(String::as_str).collect();
 
     let needs_context = !dirs.is_empty() || req.meta.is_some();
@@ -116,7 +124,8 @@ where
         cache_store
             .get_stats(&CacheStatsArgs {
                 project_name_globs: &projects,
-                task_name_globs: &tasks,
+                task_names: &tasks,
+                task_name_globs: &task_patterns,
                 dir_globs: &dirs,
                 meta_filter: req.meta.as_deref(),
                 context: Some(wrapper),
@@ -126,7 +135,8 @@ where
         cache_store
             .get_stats(&CacheStatsArgs::<()> {
                 project_name_globs: &projects,
-                task_name_globs: &tasks,
+                task_names: &tasks,
+                task_name_globs: &task_patterns,
                 dir_globs: &[],
                 meta_filter: None,
                 context: None,
@@ -152,6 +162,8 @@ where
 
     let projects: Vec<&str> = req.project.iter().map(String::as_str).collect();
     let tasks: Vec<&str> = req.task.iter().map(String::as_str).collect();
+    let task_patterns: Vec<&str> =
+        req.task_pattern.iter().map(String::as_str).collect();
     let dirs: Vec<&str> = req.dir.iter().map(String::as_str).collect();
 
     let needs_context =
@@ -165,7 +177,8 @@ where
                 stale_only: req.stale_only,
                 older_than: req.older_than,
                 project_name_globs: &projects,
-                task_name_globs: &tasks,
+                task_names: &tasks,
+                task_name_globs: &task_patterns,
                 dir_globs: &dirs,
                 meta_filter: req.meta.as_deref(),
                 larger_than: req.larger_than,
@@ -179,7 +192,8 @@ where
                 stale_only: false,
                 older_than: req.older_than,
                 project_name_globs: &projects,
-                task_name_globs: &tasks,
+                task_names: &tasks,
+                task_name_globs: &task_patterns,
                 dir_globs: &[],
                 meta_filter: None,
                 larger_than: req.larger_than,

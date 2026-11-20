@@ -486,7 +486,10 @@ async fn hash_project_returns_non_empty_string() {
     write_workspace(tmp.path());
     let api = make_api(tmp.path());
 
-    let resp = api.hash_project("alpha", &[]).await.expect("project hash");
+    let resp = api
+        .hash_project("alpha", &[], &[])
+        .await
+        .expect("project hash");
     assert!(!resp.hash.is_empty(), "project hash should be non-empty");
 }
 

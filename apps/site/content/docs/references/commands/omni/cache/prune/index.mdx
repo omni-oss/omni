@@ -48,7 +48,13 @@ Add filter to clear only cache entries belonging to a project that matches the g
 
 ### `-t`, `--task`
 
-Add filter to clear only cache entries belonging to a task that matches the given task name, accepts glob patterns
+Add filter to clear only cache entries belonging to the task with this exact name. Glob characters are literal; use --task-pattern to match by glob
+
+- **Required:** No
+
+### `--task-pattern`
+
+Add filter to clear only cache entries belonging to tasks whose name matches this glob. Repeatable, and may be combined with --task
 
 - **Required:** No
 

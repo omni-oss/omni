@@ -32,9 +32,21 @@ pub struct DefaultExecutionPlanProvider<'a, TContext: Context + 'a> {
     /// caller to report as notices.
     #[new(default)]
     excluded: std::sync::Mutex<Vec<MetaFilterError>>,
+    /// Skip the check that every exact task selector names a task in scope.
+    /// Off by default. The cache store turns it on: cache entries outlive the
+    /// tasks that created them, so an exact name for a removed task must still
+    /// be usable to find (and prune) its entries.
+    #[new(default)]
+    allow_missing_exact: bool,
 }
 
 impl<'a, TContext: Context + 'a> DefaultExecutionPlanProvider<'a, TContext> {
+    /// See the `allow_missing_exact` field.
+    pub fn with_allow_missing_exact(mut self, allow: bool) -> Self {
+        self.allow_missing_exact = allow;
+        self
+    }
+
     pub fn with_meta_error_options(
         mut self,
         options: MetaErrorOptions,
@@ -232,6 +244,9 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
         project_filters: &[&str],
         dir_filters: &[&str],
     ) -> Result<(), ExecutionPlanProviderError> {
+        if self.allow_missing_exact {
+            return Ok(());
+        }
         let Call::Tasks(selectors) = call else {
             return Ok(());
         };
@@ -699,6 +714,22 @@ mod tests {
         meta_filter: Option<&str>,
         ignore_deps: bool,
     ) -> Result<Vec<String>, ExecutionPlanProviderError> {
+        plan_with_options(
+            call,
+            project_filters,
+            meta_filter,
+            ignore_deps,
+            false,
+        )
+    }
+
+    fn plan_with_options(
+        call: &Call,
+        project_filters: &[&str],
+        meta_filter: Option<&str>,
+        ignore_deps: bool,
+        allow_missing_exact: bool,
+    ) -> Result<Vec<String>, ExecutionPlanProviderError> {
         let task = || {
             Task::new(
                 Some(CommandConfig::Shell("echo".into())),
@@ -725,15 +756,17 @@ mod tests {
             projects: vec![project],
             patterns: GlobPatterns::default(),
         };
-        let plan = DefaultExecutionPlanProvider::new(ctx).get_execution_plan(
-            call,
-            project_filters,
-            &[],
-            meta_filter,
-            None,
-            ignore_deps,
-            false,
-        )?;
+        let plan = DefaultExecutionPlanProvider::new(ctx)
+            .with_allow_missing_exact(allow_missing_exact)
+            .get_execution_plan(
+                call,
+                project_filters,
+                &[],
+                meta_filter,
+                None,
+                ignore_deps,
+                false,
+            )?;
         let mut names: Vec<String> = plan
             .into_iter()
             .flatten()
@@ -854,5 +887,24 @@ mod tests {
             TaskSelector::pattern("bu*"),
         ]);
         assert_eq!(planned(&call), vec!["build"]);
+    }
+
+    #[test]
+    fn allow_missing_exact_turns_the_check_off_and_plans_nothing_for_it() {
+        for ignore_deps in [true, false] {
+            let call = Call::Tasks(vec![
+                TaskSelector::exact("removed"),
+                TaskSelector::exact("build"),
+            ]);
+            assert!(
+                plan_with_options(&call, &[], None, ignore_deps, false)
+                    .is_err()
+            );
+            // The existing task is still planned; the missing one just is not.
+            assert_eq!(
+                plan_with_options(&call, &[], None, ignore_deps, true).unwrap(),
+                vec!["build"]
+            );
+        }
     }
 }

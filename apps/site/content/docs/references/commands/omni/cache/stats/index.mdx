@@ -26,7 +26,13 @@ Filter the cache entries by project name, accepts glob patterns
 
 ### `-t`, `--task`
 
-Filter the cache entries by task name, accepts glob patterns
+Filter the cache entries by exact task name. Glob characters are literal; use --task-pattern to match by glob
+
+- **Required:** No
+
+### `--task-pattern`
+
+Filter the cache entries by task names matching this glob. Repeatable, and may be combined with --task
 
 - **Required:** No
 

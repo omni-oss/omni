@@ -28,6 +28,7 @@ where
         let req = CacheStatsRequest {
             project: params.project,
             task: params.task,
+            task_pattern: params.task_pattern,
             ..Default::default()
         };
         let stats = self.make_api()?.cache_stats(req).await?;
@@ -59,6 +60,7 @@ where
             stale_only: params.stale_only,
             project: params.project,
             task: params.task,
+            task_pattern: params.task_pattern,
             dir: params.dir,
             larger_than: params.larger_than,
             meta: params.meta,

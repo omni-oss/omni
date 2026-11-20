@@ -1,6 +1,7 @@
 mod args;
 mod cached_output;
 pub mod impls;
+mod name_matcher;
 mod stats;
 mod traits;
 mod types;

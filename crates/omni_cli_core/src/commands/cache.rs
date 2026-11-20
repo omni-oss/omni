@@ -58,9 +58,16 @@ pub struct StatsArgs {
     #[arg(
         long,
         short,
-        help = "Filter the cache entries by task name, accepts glob patterns"
+        help = "Filter the cache entries by exact task name. Glob characters are literal; use --task-pattern to match by glob"
     )]
     task: Vec<String>,
+
+    #[arg(
+        long,
+        value_name = "GLOB",
+        help = "Filter the cache entries by task names matching this glob. Repeatable, and may be combined with --task"
+    )]
+    task_pattern: Vec<String>,
 
     #[arg(
         long,
@@ -101,9 +108,16 @@ pub struct PruneArgs {
     #[arg(
         long,
         short,
-        help = "Add filter to clear only cache entries belonging to a task that matches the given task name, accepts glob patterns"
+        help = "Add filter to clear only cache entries belonging to the task with this exact name. Glob characters are literal; use --task-pattern to match by glob"
     )]
     task: Vec<String>,
+
+    #[arg(
+        long,
+        value_name = "GLOB",
+        help = "Add filter to clear only cache entries belonging to tasks whose name matches this glob. Repeatable, and may be combined with --task"
+    )]
+    task_pattern: Vec<String>,
 
     #[arg(
         long,
@@ -284,6 +298,7 @@ pub async fn run(command: &CacheCommand, ctx: &Context) -> eyre::Result<()> {
                 .cache_stats(CacheStatsRequest {
                     project: args.project.clone(),
                     task: args.task.clone(),
+                    task_pattern: args.task_pattern.clone(),
                     dir: args.dir.clone(),
                     meta: args.meta.clone(),
                 })
@@ -398,6 +413,7 @@ async fn prune(
             larger_than: args.larger_than,
             project: args.project.clone(),
             task: args.task.clone(),
+            task_pattern: args.task_pattern.clone(),
             meta: args.meta.clone(),
             dir: args.dir.clone(),
             dry_run: true,

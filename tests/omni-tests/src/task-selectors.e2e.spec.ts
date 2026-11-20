@@ -141,34 +141,175 @@ describe("+cache @cache (internal all-tasks selection)", () => {
     });
 });
 
-describe("+hash @e2e (project hash with no -t covers all tasks)", () => {
-    it("matches the hash from the glob `-t '*'`", async () => {
+describe("+hash @e2e (project hash selectors)", () => {
+    const hashProject = (cwd: string, ...extra: string[]) =>
+        runOmni(["hash", "-r", "project", "app", ...extra], { cwd });
+
+    it("no selector and `--task-pattern '*'` hash every task alike", async () => {
         const ws = makeWorkspace(spec());
 
-        const all = await runOmni(["hash", "-r", "project", "app"], {
-            cwd: ws.cwd,
-        });
-        const star = await runOmni(
-            ["hash", "-r", "project", "app", "-t", "*"],
-            { cwd: ws.cwd },
-        );
+        const all = await hashProject(ws.cwd);
+        const star = await hashProject(ws.cwd, "--task-pattern", "*");
 
         expect(all).toHaveSucceeded();
         expect(star).toHaveSucceeded();
         expect(all.stdout).toBe(star.stdout);
     });
 
-    it("differs from a single-task hash", async () => {
+    it("`-t '*'` is exact: it hashes only the task named `*`", async () => {
         const ws = makeWorkspace(spec());
 
-        const all = await runOmni(["hash", "-r", "project", "app"], {
+        const all = await hashProject(ws.cwd);
+        const exactStar = await hashProject(ws.cwd, "-t", "*");
+
+        expect(exactStar).toHaveSucceeded();
+        expect(exactStar.stdout).not.toBe(all.stdout);
+    });
+
+    it("`-t build` and `--task-pattern build` select the same task", async () => {
+        const ws = makeWorkspace(spec());
+
+        const exact = await hashProject(ws.cwd, "-t", "build");
+        const pattern = await hashProject(ws.cwd, "--task-pattern", "build");
+        const all = await hashProject(ws.cwd);
+
+        expect(exact).toHaveSucceeded();
+        expect(exact.stdout).toBe(pattern.stdout);
+        expect(exact.stdout).not.toBe(all.stdout);
+    });
+
+    it("a glob passed to `-t` fails and points at --task-pattern", async () => {
+        const ws = makeWorkspace(spec());
+
+        const result = await hashProject(ws.cwd, "-t", "bu*");
+
+        expect(result).not.toHaveSucceeded();
+        expect(result.stderr).toContain("no task named `bu*`");
+        expect(result.stderr).toContain("--task-pattern");
+    });
+
+    it("an unknown exact task name fails", async () => {
+        const ws = makeWorkspace(spec());
+
+        const result = await hashProject(ws.cwd, "-t", "nope");
+
+        expect(result).not.toHaveSucceeded();
+        expect(result.stderr).toContain("no task named `nope`");
+    });
+});
+
+describe("+cache @cache (task selectors on stats and prune)", () => {
+    const warm = async (cwd: string) => {
+        expect(
+            await runOmni(["run", "--task-pattern", "*"], { cwd }),
+        ).toHaveSucceeded();
+    };
+
+    it("`stats -t build*` is exact and matches nothing", async () => {
+        const ws = makeWorkspace(spec());
+        await warm(ws.cwd);
+
+        const stats = await runOmni(["cache", "stats", "-t", "build*"], {
             cwd: ws.cwd,
         });
-        const build = await runOmni(
-            ["hash", "-r", "project", "app", "-t", "build"],
+
+        expect(stats).toHaveSucceeded();
+        expect(stats.out).not.toContain("- Task: build");
+    });
+
+    it("`stats -t '*'` is exact and lists only the task named `*`", async () => {
+        const ws = makeWorkspace(spec());
+        await warm(ws.cwd);
+
+        const stats = await runOmni(["cache", "stats", "-t", "*"], {
+            cwd: ws.cwd,
+        });
+
+        expect(stats).toHaveSucceeded();
+        expect(stats).toOutputContaining("- Task: *");
+        expect(stats.out).not.toContain("- Task: build");
+        expect(stats.out).not.toContain("- Task: test");
+    });
+
+    it("`stats --task-pattern 'bu*'` matches by glob", async () => {
+        const ws = makeWorkspace(spec());
+        await warm(ws.cwd);
+
+        const stats = await runOmni(
+            ["cache", "stats", "--task-pattern", "bu*"],
             { cwd: ws.cwd },
         );
 
-        expect(all.stdout).not.toBe(build.stdout);
+        expect(stats).toHaveSucceeded();
+        expect(stats).toOutputContaining("- Task: build");
+        expect(stats.out).not.toContain("- Task: test");
+    });
+
+    it("`prune -t build*` deletes nothing; an exact name prunes only that task", async () => {
+        const ws = makeWorkspace(spec());
+        await warm(ws.cwd);
+
+        const glob = await runOmni(
+            ["cache", "prune", "-t", "build*", "--dry-run"],
+            { cwd: ws.cwd },
+        );
+        expect(glob).toHaveSucceeded();
+        expect(glob).toOutputContaining(
+            "No cache entries matched the given filters",
+        );
+
+        const exact = await runOmni(
+            ["cache", "prune", "-t", "build", "--dry-run"],
+            { cwd: ws.cwd },
+        );
+        expect(exact).toHaveSucceeded();
+        expect(exact).toOutputContaining("build");
+        expect(exact.out).not.toContain("test");
+    });
+
+    it("an exact name for a task that no longer exists is not an error", async () => {
+        const ws = makeWorkspace(spec());
+        await warm(ws.cwd);
+
+        // Plan-based filters (--dir) must tolerate a name with no live task.
+        const result = await runOmni(
+            ["cache", "prune", "-t", "gone", "--dir", "svc/**", "--dry-run"],
+            { cwd: ws.cwd },
+        );
+
+        expect(result).toHaveSucceeded();
+        expect(result).toOutputContaining(
+            "No cache entries matched the given filters",
+        );
+    });
+
+    it("plan-based filters keep exact and pattern selectors apart", async () => {
+        const ws = makeWorkspace(spec());
+        await warm(ws.cwd);
+
+        const exact = await runOmni(
+            ["cache", "prune", "-t", "bu*", "--dir", "svc/**", "--dry-run"],
+            { cwd: ws.cwd },
+        );
+        expect(exact).toHaveSucceeded();
+        expect(exact).toOutputContaining(
+            "No cache entries matched the given filters",
+        );
+
+        const pattern = await runOmni(
+            [
+                "cache",
+                "prune",
+                "--task-pattern",
+                "bu*",
+                "--dir",
+                "svc/**",
+                "--dry-run",
+            ],
+            { cwd: ws.cwd },
+        );
+        expect(pattern).toHaveSucceeded();
+        expect(pattern).toOutputContaining("build");
+        expect(pattern.out).not.toContain("test");
     });
 });
