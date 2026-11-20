@@ -46,6 +46,17 @@ pub enum CacheEnabledSource {
 }
 
 impl CacheEnabledSource {
+    /// The kebab-case name used in serialized output.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::HostFallback => "host-fallback",
+            Self::ActivationDefaults => "activation-defaults",
+            Self::Plugin => "plugin",
+            Self::ProjectExplicit => "project-explicit",
+            Self::TaskExplicit => "task-explicit",
+        }
+    }
+
     /// Whether a person wrote it in configuration. Only authored sources can
     /// make a contradiction an error; every other source demotes instead.
     pub fn is_authored(self) -> bool {
@@ -118,6 +129,22 @@ mod tests {
 
     fn decided(value: bool, source: CacheEnabledSource) -> CacheEnabled {
         CacheEnabled { value, source }
+    }
+
+    #[test]
+    fn as_str_matches_the_serialized_name() {
+        for source in [
+            HostFallback,
+            ActivationDefaults,
+            Plugin,
+            ProjectExplicit,
+            TaskExplicit,
+        ] {
+            assert_eq!(
+                serde_json::to_value(source).unwrap(),
+                serde_json::Value::String(source.as_str().into())
+            );
+        }
     }
 
     #[test]

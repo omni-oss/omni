@@ -724,6 +724,10 @@ where
                         .cache_info
                         .as_ref()
                         .is_some_and(|ci| ci.cache_enabled),
+                    cache_source: ctx
+                        .cache_info
+                        .as_ref()
+                        .map(|ci| ci.cache_enabled_source),
                     no_cache: self.no_cache,
                 };
                 let deps = if self.ignore_dependencies {
