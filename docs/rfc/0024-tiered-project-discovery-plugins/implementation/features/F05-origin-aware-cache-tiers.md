@@ -2,8 +2,9 @@
 
 **Type:** feature · **Size:** L · **Depends on:** R04, B04 · **Unblocks:** F06 (final digest inputs), F09
 
-Slice 1 ([F05.1](F05.1-origin-tagged-enablement.md)) records each task's origin; the
-contradiction rule and demotion causes (F05.2) remain unimplemented.
+Slice 1 ([F05.1](F05.1-origin-tagged-enablement.md)) records each task's origin; slice 2
+([F05.2 part 1](F05.2-contradiction-detector.md)) adds the contradiction detector and
+`deciding_source`. Wiring the error into planning remains unimplemented.
 
 ## Problem
 
