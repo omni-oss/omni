@@ -263,7 +263,7 @@ tasks:
     }
   F03.2:
     {
-      owner: "OpenCode (part 1 parser merged; part 2 dependency wiring pending PR review)",
+      owner: "OpenCode (parser merged #116; dependency wiring merged #117)",
       title: "Scoped reference schema, parser/formatter",
       parent: F03,
       kind: code,
@@ -291,7 +291,7 @@ tasks:
     }
   F05.1:
     {
-      owner: "OpenCode (origin-tagged enablement; pending PR review)",
+      owner: "OpenCode (origin-tagged enablement; merged #115)",
       title: "Origin-tagged cache enablement through CacheInfo",
       parent: F05,
       kind: code,
@@ -301,7 +301,7 @@ tasks:
     }
   F05.2:
     {
-      owner: "OpenCode (part 1 detector and deciding_source pending PR review; planner wiring follows)",
+      owner: "OpenCode (part 1 detector and deciding_source merged #130; planner wiring follows)",
       title: "Explicit-contradiction error and deciding_source",
       parent: F05,
       kind: code,
@@ -321,7 +321,7 @@ tasks:
     }
   F06.2:
     {
-      owner: "OpenCode (canonical digest; pending PR review)",
+      owner: "OpenCode (canonical digest; merged #114)",
       title: "Canonical digest function + golden vectors",
       parent: F06,
       kind: code,
@@ -389,7 +389,7 @@ tasks:
     }
   F08.5:
     {
-      owner: "OpenCode (batches 1 and 2 merged #112/#113; batch 3 install-reader leases pending independent review)",
+      owner: "OpenCode (batches merged #112/#113/#131)",
       title: "Migrate existing contributors to reference API",
       parent: F08,
       kind: code,
