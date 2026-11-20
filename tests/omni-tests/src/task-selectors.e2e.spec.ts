@@ -6,6 +6,8 @@
  * literally named `*`.
  */
 
+import { rmSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 
 import { makeWorkspace, runOmni, type WorkspaceSpec } from "@/harness";
@@ -493,6 +495,46 @@ describe("+cache @cache (project selectors on stats and prune)", () => {
 
         expect(result).toHaveSucceeded();
         expect(result).toOutputContaining(
+            "No cache entries matched the given filters",
+        );
+    });
+
+    it("entries of a removed project: matched by exact name or --stale-only, not with --dir", async () => {
+        const ws = makeWorkspace(multiSpec());
+        await warm(ws.cwd);
+        // The project disappears from the workspace; its cache entries stay.
+        rmSync(ws.path("svc/lib"), { recursive: true, force: true });
+
+        const exact = await runOmni(
+            ["cache", "prune", "--project", "lib", "--dry-run"],
+            { cwd: ws.cwd },
+        );
+        expect(exact).toHaveSucceeded();
+        expect(exact).toOutputContaining("lib");
+
+        // With --stale-only the entries have no current digest, so they are stale.
+        const stale = await runOmni(
+            ["cache", "prune", "--project", "lib", "--stale-only", "--dry-run"],
+            { cwd: ws.cwd },
+        );
+        expect(stale).toHaveSucceeded();
+        expect(stale).toOutputContaining("lib");
+
+        // --dir matches only projects present in the workspace.
+        const byDir = await runOmni(
+            [
+                "cache",
+                "prune",
+                "--project",
+                "lib",
+                "--dir",
+                "svc/**",
+                "--dry-run",
+            ],
+            { cwd: ws.cwd },
+        );
+        expect(byDir).toHaveSucceeded();
+        expect(byDir).toOutputContaining(
             "No cache entries matched the given filters",
         );
     });
