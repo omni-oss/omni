@@ -388,7 +388,7 @@ tasks:
     }
   F08.5:
     {
-      owner: "OpenCode (batch 1 merged #112; batch 2 runtime leases pending review; install contributors follow-up)",
+      owner: "OpenCode (batches 1 and 2 merged #112/#113; batch 3 install-reader leases pending independent review)",
       title: "Migrate existing contributors to reference API",
       parent: F08,
       kind: code,

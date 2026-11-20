@@ -21,6 +21,9 @@ use system_traits::impls::RealSys;
 use tempfile::TempDir;
 use url::Url;
 
+#[path = "support/install_leases.rs"]
+mod install_leases;
+
 fn git(cwd: &Path, args: &[&str]) -> String {
     let output = Command::new("git")
         .args(args)
