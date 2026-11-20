@@ -23,6 +23,39 @@ use bridge_rpc_core::{
 
 const TEST_PATH: &str = "test_path";
 
+/// Lets one helper wait on RPCs with different transport and service types.
+#[async_trait]
+trait Running: Sync {
+    async fn is_running(&self) -> bool;
+}
+
+#[async_trait]
+impl<T, S> Running for BridgeRpc<T, S>
+where
+    T: bridge_rpc_core::Transport + Sync,
+    S: Service + Sync,
+{
+    async fn is_running(&self) -> bool {
+        BridgeRpc::is_running(self).await
+    }
+}
+
+/// Waits until every RPC has started running. A fixed sleep after spawning
+/// them fails on a slow runner with `NotRunning`; this waits for the condition
+/// and fails loudly if it never holds.
+async fn wait_until_running(rpcs: &[&dyn Running]) {
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    for rpc in rpcs {
+        while !rpc.is_running().await {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "an RPC did not start running in time"
+            );
+            tokio::task::yield_now().await;
+        }
+    }
+}
+
 /// Creates an RPC whose transport is connected to two raw duplex streams
 /// that the test controls directly (no length-prefix framing is added by
 /// the helper – the helpers below do that).
@@ -97,8 +130,7 @@ async fn test_ping() {
     let (rpc1, rpc2) = create_mirror_rpcs();
 
     let runner = run_rpcs!(rpc1, rpc2);
-
-    sleep(Duration::from_millis(1)).await;
+    wait_until_running(&[&rpc1 as &dyn Running, &rpc2]).await;
 
     let result1 = rpc1
         .ping(Duration::from_millis(100))
@@ -125,8 +157,7 @@ async fn test_request() {
     let (rpc1, rpc2) = create_mirror_rpcs();
 
     let runner = run_rpcs!(rpc1, rpc2);
-
-    sleep(Duration::from_millis(1)).await;
+    wait_until_running(&[&rpc1 as &dyn Running, &rpc2]).await;
 
     let request_data = create_data();
     let serialized_data =
@@ -218,8 +249,7 @@ async fn test_response() {
     );
 
     let runner = run_rpcs!(rpc1, rpc2);
-
-    sleep(Duration::from_millis(1)).await;
+    wait_until_running(&[&rpc1 as &dyn Running, &rpc2]).await;
 
     let mut active_request = rpc1
         .request("test_path")
@@ -467,7 +497,7 @@ async fn test_rpc_continues_processing_valid_requests_after_bad_frame() {
 async fn test_concurrent_requests() {
     let (rpc1, rpc2) = create_mirror_rpcs();
     let runner = run_rpcs!(rpc1, rpc2);
-    sleep(Duration::from_millis(5)).await;
+    wait_until_running(&[&rpc1 as &dyn Running, &rpc2]).await;
 
     const N: usize = 100;
 
@@ -533,7 +563,7 @@ async fn test_concurrent_requests() {
 async fn test_bidirectional_simultaneous_requests() {
     let (rpc1, rpc2) = create_mirror_rpcs();
     let runner = run_rpcs!(rpc1, rpc2);
-    sleep(Duration::from_millis(5)).await;
+    wait_until_running(&[&rpc1 as &dyn Running, &rpc2]).await;
 
     let data1 = RpcData {
         message: "from_rpc1".into(),
@@ -614,7 +644,7 @@ async fn test_bidirectional_simultaneous_requests() {
 async fn test_multi_chunk_body_streaming() {
     let (rpc1, rpc2) = create_mirror_rpcs();
     let runner = run_rpcs!(rpc1, rpc2);
-    sleep(Duration::from_millis(5)).await;
+    wait_until_running(&[&rpc1 as &dyn Running, &rpc2]).await;
 
     const NUM_CHUNKS: usize = 5;
     const CHUNK_SIZE: usize = 128;
@@ -688,7 +718,7 @@ async fn test_empty_body_request_and_response() {
         EmptyBodyService::new(),
     );
     let runner = run_rpcs!(rpc1, rpc2);
-    sleep(Duration::from_millis(5)).await;
+    wait_until_running(&[&rpc1 as &dyn Running, &rpc2]).await;
 
     // No body chunks — send Start then End immediately.
     let active = rpc1
@@ -717,7 +747,7 @@ async fn test_empty_body_request_and_response() {
 async fn test_large_payload_round_trip() {
     let (rpc1, rpc2) = create_mirror_rpcs();
     let runner = run_rpcs!(rpc1, rpc2);
-    sleep(Duration::from_millis(5)).await;
+    wait_until_running(&[&rpc1 as &dyn Running, &rpc2]).await;
 
     // 512 KB with a deterministic pattern so we can detect corruption.
     let large_data: Vec<u8> =
@@ -789,7 +819,7 @@ async fn test_custom_response_status_code() {
         CustomStatusService::new(),
     );
     let runner = run_rpcs!(rpc1, rpc2);
-    sleep(Duration::from_millis(5)).await;
+    wait_until_running(&[&rpc1 as &dyn Running, &rpc2]).await;
 
     let active = rpc1
         .request(TEST_PATH)
@@ -816,7 +846,7 @@ async fn test_custom_response_status_code() {
 async fn test_many_sequential_requests() {
     let (rpc1, rpc2) = create_mirror_rpcs();
     let runner = run_rpcs!(rpc1, rpc2);
-    sleep(Duration::from_millis(5)).await;
+    wait_until_running(&[&rpc1 as &dyn Running, &rpc2]).await;
 
     const N: usize = 100;
     for i in 0..N {
@@ -898,7 +928,7 @@ async fn test_server_response_error_propagates_to_client() {
         ErrorResponseService::new(),
     );
     let runner = run_rpcs!(rpc1, rpc2);
-    sleep(Duration::from_millis(5)).await;
+    wait_until_running(&[&rpc1 as &dyn Running, &rpc2]).await;
 
     let active = rpc1
         .request(TEST_PATH)
@@ -958,7 +988,7 @@ async fn test_service_returning_err_propagates_to_client() {
         FailingService::new(),
     );
     let runner = run_rpcs!(rpc1, rpc2);
-    sleep(Duration::from_millis(5)).await;
+    wait_until_running(&[&rpc1 as &dyn Running, &rpc2]).await;
 
     let ended = rpc1
         .request(TEST_PATH)
@@ -1038,7 +1068,7 @@ async fn test_client_request_error_is_observed_by_server() {
         ObservingService::new(observed.clone()),
     );
     let runner = run_rpcs!(rpc1, rpc2);
-    sleep(Duration::from_millis(5)).await;
+    wait_until_running(&[&rpc1 as &dyn Running, &rpc2]).await;
 
     let mut active = rpc1
         .request(TEST_PATH)

@@ -142,6 +142,13 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
     }
 
     #[inline(always)]
+    /// Whether [`run`](Self::run) has started and not yet been closed, so
+    /// requests no longer fail with `NotRunning`. Lets callers (and tests) wait
+    /// for startup instead of sleeping for a guessed duration.
+    pub async fn is_running(&self) -> bool {
+        self.frame_transporter.lock().await.is_some()
+    }
+
     pub fn get_client_handle(&self) -> Arc<ClientHandle> {
         self.client_handle.clone()
     }
