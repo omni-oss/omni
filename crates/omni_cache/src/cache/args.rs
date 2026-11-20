@@ -17,9 +17,15 @@ pub struct PruneCacheArgs<'a, TContext: Context = ()> {
     /// recomputed digest. Requires `context` to be set.
     pub stale_only: bool,
     pub older_than: Option<Duration>,
-    /// If not empty, only prune cache for these projects. Otherwise, prune all projects.
+    /// Exact project names to prune; glob characters are literal. Combined with
+    /// `project_name_globs` as a union. When both are empty, prune all projects.
+    pub project_names: &'a [&'a str],
+    /// Project name globs to prune, in addition to `project_names`.
     pub project_name_globs: &'a [&'a str],
-    /// If not empty, only prune cache for these tasks. Otherwise, prune all tasks.
+    /// Exact task names to prune; glob characters are literal. Combined with
+    /// `task_name_globs` as a union. When both are empty, prune all tasks.
+    pub task_names: &'a [&'a str],
+    /// Task name globs to prune, in addition to `task_names`.
     pub task_name_globs: &'a [&'a str],
     /// If not empty, only prune cache for projects residing in these directories. Otherwise, prune all directories.
     /// Requires `context` to be set, and only matches tasks present in the current workspace.
@@ -38,9 +44,15 @@ pub struct PruneCacheArgs<'a, TContext: Context = ()> {
 
 #[derive(new, Default)]
 pub struct CacheStatsArgs<'a, TContext: Context = ()> {
-    /// If not empty, only report stats for these projects. Otherwise, report all projects.
+    /// Exact project names to report; glob characters are literal. Combined with
+    /// `project_name_globs` as a union. When both are empty, report all projects.
+    pub project_names: &'a [&'a str],
+    /// Project name globs to report, in addition to `project_names`.
     pub project_name_globs: &'a [&'a str],
-    /// If not empty, only report stats for these tasks. Otherwise, report all tasks.
+    /// Exact task names to report; glob characters are literal. Combined with
+    /// `task_name_globs` as a union. When both are empty, report all tasks.
+    pub task_names: &'a [&'a str],
+    /// Task name globs to report, in addition to `task_names`.
     pub task_name_globs: &'a [&'a str],
     /// If not empty, only report stats for projects residing in these directories.
     /// Requires `context` to be set, and only matches tasks present in the current workspace.

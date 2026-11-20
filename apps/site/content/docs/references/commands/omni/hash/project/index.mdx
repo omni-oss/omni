@@ -30,7 +30,13 @@ Project name
 
 ### `-t`, `--task`
 
-Hash specific task
+Hash only the task with this exact name. Glob characters are literal; use --task-pattern to match by glob
+
+- **Required:** No
+
+### `--task-pattern`
+
+Hash only the tasks whose name matches this glob. Repeatable, and may be combined with --task
 
 - **Required:** No
 

@@ -54,7 +54,13 @@ How many failing tasks to list per distinct --meta error cause
 
 ### `-p`, `--project`
 
-Filter based on the project name matching the passed argument, accepts glob patterns
+Filter to the project with this exact name. Glob characters are literal; use --project-pattern to match by glob
+
+- **Required:** No
+
+### `--project-pattern`
+
+Filter to projects whose name matches this glob. Repeatable, and may be combined with --project
 
 - **Required:** No
 

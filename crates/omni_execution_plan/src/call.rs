@@ -69,3 +69,42 @@ impl std::fmt::Debug for TaskSelector {
         }
     }
 }
+
+/// How a project filter picks project names. `Exact` and `Pattern` are
+/// separate paths so a name containing glob characters can be selected
+/// literally. No selectors means every project.
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ProjectSelector {
+    /// Matches the project with exactly this name.
+    Exact(String),
+    /// Matches project names against this glob.
+    Pattern(String),
+}
+
+impl ProjectSelector {
+    pub fn exact(name: impl Into<String>) -> Self {
+        Self::Exact(name.into())
+    }
+
+    pub fn pattern(glob: impl Into<String>) -> Self {
+        Self::Pattern(glob.into())
+    }
+}
+
+impl std::fmt::Debug for ProjectSelector {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Exact(n) => write!(f, "exact:{n}"),
+            Self::Pattern(p) => write!(f, "{p}"),
+        }
+    }
+}
+
+impl std::fmt::Display for ProjectSelector {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Exact(n) => f.write_str(n),
+            Self::Pattern(p) => write!(f, "{p} (pattern)"),
+        }
+    }
+}

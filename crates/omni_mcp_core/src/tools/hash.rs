@@ -30,7 +30,7 @@ where
     ) -> eyre::Result<HashResult> {
         let response = self
             .make_api()?
-            .hash_project(&params.name, &params.tasks)
+            .hash_project(&params.name, &params.tasks, &params.task_patterns)
             .await?;
         Ok(HashResult {
             hash: response.hash,

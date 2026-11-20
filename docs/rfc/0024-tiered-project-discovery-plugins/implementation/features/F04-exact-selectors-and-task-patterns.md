@@ -3,6 +3,24 @@
 **Type:** feature (user-visible, pre-v1 migration) · **Size:** M
 **Depends on:** R06 (hard), F03 (for alias-aware matching; exact/pattern split can ship first)
 
+## Status
+
+Implemented, pending PR review, under the approved [plan](F04-selector-plan.md) (hard break,
+planner-level check). Medium risk: no cache, capability or stored-data change.
+
+- `omni run` positional tasks are exact; `--task-pattern <glob>` (repeatable) selects by glob;
+  at least one of the two is required. The MCP `task_run` tool does the same with `tasks`
+  (exact) and `task_patterns`.
+- The planner rejects an exact selector that names no task in the project and directory scope
+  (`plan.exact_task_not_found`), on both the dependency and ignore-dependencies paths. It runs
+  before the meta and affected narrowing, so a task those later exclude is not "missing". A
+  name that looks like a glob gets a hint to use `--task-pattern`.
+- **Migration:** `omni run 'build*'` becomes `omni run --task-pattern 'build*'`. A script that
+  passed a glob positionally now fails with that hint instead of running a set of tasks.
+- Not changed: `hash` and `cache` take their own task lists (`-t`, project hash/stats), which
+  are globs for internal all-tasks callers and are a separate surface. Aliases stay out of
+  the executable node maps. Whether those surfaces should also be exact is a follow-up.
+
 ## Goal
 
 Positional tasks become **exact** names. A repeatable `--task-pattern` flag (and matching

@@ -3,7 +3,9 @@ use getset::{CloneGetters, CopyGetters, Getters};
 use maps::UnorderedMap;
 
 use omni_configurations::RedactOverrides;
-use omni_execution_plan::{Call, MetaOnError, ScmAffectedFilter};
+use omni_execution_plan::{
+    Call, MetaOnError, ProjectSelector, ScmAffectedFilter,
+};
 use omni_retry_config::RetryConfiguration;
 use omni_task_output_logs::LogsDisplay;
 
@@ -24,10 +26,10 @@ pub struct ExecutionConfig {
     #[builder(default)]
     with_dependents: bool,
 
-    /// Glob pattern to filter the projects
+    /// Exact project names and project name globs to filter the projects
     #[builder(default)]
     #[getset(get = "pub")]
-    project_filters: Vec<String>,
+    project_filters: Vec<ProjectSelector>,
 
     /// Filter the projects/tasks based on the meta configuration
     #[builder(default)]

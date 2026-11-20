@@ -335,18 +335,20 @@ where
 
     /// Compute the hash for a single project.
     ///
-    /// If `tasks` is empty all tasks are included; otherwise only the listed
-    /// task names are hashed.
+    /// With no selectors all tasks are included. `tasks` are exact names and
+    /// `task_patterns` are globs; together they select the tasks hashed.
     pub async fn hash_project(
         &self,
         name: &str,
         tasks: &[String],
+        task_patterns: &[String],
     ) -> eyre::Result<HashResponse> {
         let mut ctx = self.ctx.lock().await;
         crate::operations::hash::handle_hash_project(
             ctx.ensure_loaded().await?,
             name,
             tasks,
+            task_patterns,
         )
         .await
     }

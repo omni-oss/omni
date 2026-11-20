@@ -13,7 +13,7 @@ use omni_configurations::{
     WorkspaceConfiguration,
 };
 use omni_core::{Project, ProjectGraph, ProjectGraphError, TaskExecutionNode};
-use omni_execution_plan::DefaultExecutionPlanProvider;
+use omni_execution_plan::{DefaultExecutionPlanProvider, TaskSelector};
 use omni_glob::GlobPatterns;
 use omni_hasher::impls::DefaultHash;
 use omni_task_context::CacheInfo;
@@ -179,27 +179,21 @@ impl<TSys: ContextSys> LoadedContext<TSys> {
     pub async fn get_project_hash(
         &self,
         project_name: &str,
-        task_names: &[&str],
+        tasks: &[TaskSelector],
     ) -> Result<DefaultHash, LoadedContextError> {
         let cache_dir = self.cache_dir();
         let hasher = self.get_project_hasher(&cache_dir)?;
         let execution_plan_provider = self.get_execution_plan_provider();
 
         Ok(hasher
-            .hash(
-                project_name,
-                task_names,
-                None,
-                self,
-                &execution_plan_provider,
-            )
+            .hash(project_name, tasks, None, self, &execution_plan_provider)
             .await?)
     }
 
     pub async fn get_project_hash_string(
         &self,
         project_name: &str,
-        task_names: &[&str],
+        tasks: &[TaskSelector],
     ) -> Result<String, LoadedContextError> {
         let cache_dir = self.cache_dir();
         let hasher = self.get_project_hasher(&cache_dir)?;
@@ -208,7 +202,7 @@ impl<TSys: ContextSys> LoadedContext<TSys> {
         Ok(hasher
             .hash_string(
                 project_name,
-                task_names,
+                tasks,
                 None,
                 self,
                 &execution_plan_provider,

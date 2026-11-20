@@ -11,22 +11,28 @@ description: "Execute specified task in projects"
 ## Usage
 
 ```bash
-omni run [OPTIONS] <task>
+omni run [OPTIONS] [task]
 ```
 
 ---
 
 ## Positional arguments
 
-### `<task>`
+### `[task]`
 
-The task to run
+Exact name of a task to run. Glob characters are literal; use --task-pattern to select by glob. At least one task or --task-pattern is required
 
-- **Required:** Yes
+- **Required:** No
 
 ---
 
 ## Options
+
+### `--task-pattern`
+
+Run every task whose name matches this glob. Repeatable, and may be combined with exact task names. At least one task or --task-pattern is required
+
+- **Required:** No
 
 ### `-i`, `--ignore-dependencies`, `ignore-deps`
 
@@ -114,7 +120,13 @@ How many failing tasks to list per distinct --meta error cause
 
 ### `-p`, `--project`
 
-Filter based on the project name matching the passed argument, accepts glob patterns
+Filter to the project with this exact name. Glob characters are literal; use --project-pattern to match by glob
+
+- **Required:** No
+
+### `--project-pattern`
+
+Filter to projects whose name matches this glob. Repeatable, and may be combined with --project
 
 - **Required:** No
 
@@ -245,7 +257,7 @@ Which cached task output logs to replay: all, failed, or never. Overrides --outp
 ## Examples
 
 ```bash
-omni run [OPTIONS] <task>
+omni run [OPTIONS] [task]
 ```
 
 ---

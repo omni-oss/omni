@@ -16,28 +16,67 @@ use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
 use crate::{
     MetaFilterCollector, MetaFilterError, MetaFilterErrorLimits, ProjectFilter,
-    ScmAffectedFilter, TaskFilter, TaskSelector,
+    ProjectSelector, ScmAffectedFilter, TaskFilter, TaskSelector,
 };
 
+/// Matches project names against exact names and globs. `None` from
+/// [`ProjectMatcher::new`] means no selectors, so every project matches.
+#[derive(Clone)]
+struct ProjectMatcher {
+    exact: Arc<HashSet<String>>,
+    patterns: Option<Arc<GlobSet>>,
+}
+
+impl ProjectMatcher {
+    fn new(
+        selectors: &[ProjectSelector],
+    ) -> Result<Option<Self>, FilterErrorInner> {
+        if selectors.is_empty() {
+            return Ok(None);
+        }
+        let exact = selectors
+            .iter()
+            .filter_map(|s| match s {
+                ProjectSelector::Exact(n) => Some(n.clone()),
+                ProjectSelector::Pattern(_) => None,
+            })
+            .collect();
+        let patterns: Vec<&str> = selectors
+            .iter()
+            .filter_map(|s| match s {
+                ProjectSelector::Pattern(p) => Some(p.as_str()),
+                ProjectSelector::Exact(_) => None,
+            })
+            .collect();
+        Ok(Some(Self {
+            exact: Arc::new(exact),
+            patterns: if patterns.is_empty() {
+                None
+            } else {
+                Some(
+                    include_set(&patterns, GlobOptions::default())
+                        .map_err(FilterErrorInner::Glob)?,
+                )
+            },
+        }))
+    }
+
+    fn is_match(&self, name: &str) -> bool {
+        self.exact.contains(name)
+            || self.patterns.as_ref().is_some_and(|p| p.is_match(name))
+    }
+}
+
 pub struct DefaultProjectFilter {
-    project_matcher: Option<Arc<GlobSet>>,
-    fast_path_include_all: bool,
+    project_matcher: Option<ProjectMatcher>,
 }
 
 impl DefaultProjectFilter {
-    pub fn new(project_filters: &[&str]) -> Result<Self, FilterError> {
-        let project_matcher = if project_filters.is_empty() {
-            None
-        } else {
-            Some(
-                include_set(project_filters, GlobOptions::default())
-                    .map_err(FilterErrorInner::Glob)?,
-            )
-        };
-
+    pub fn new(
+        project_filters: &[ProjectSelector],
+    ) -> Result<Self, FilterError> {
         Ok(Self {
-            project_matcher,
-            fast_path_include_all: project_filters.is_empty(),
+            project_matcher: ProjectMatcher::new(project_filters)?,
         })
     }
 }
@@ -49,10 +88,6 @@ impl ProjectFilter for DefaultProjectFilter {
         &self,
         project: &Project,
     ) -> Result<bool, Self::Error> {
-        if self.fast_path_include_all {
-            return Ok(true);
-        }
-
         if let Some(matcher) = &self.project_matcher {
             Ok(matcher.is_match(&project.name))
         } else {
@@ -72,7 +107,7 @@ where
     meta_filter_source: Option<String>,
     collector: Option<MetaFilterCollector>,
     dir_matcher: Option<Arc<GlobSet>>,
-    project_matcher: Option<Arc<GlobSet>>,
+    project_matcher: Option<ProjectMatcher>,
     get_task_meta: TGetTaskMetaFn,
 }
 
@@ -83,7 +118,7 @@ where
 {
     pub fn new(
         task_filters: &[TaskSelector],
-        project_filters: &[&str],
+        project_filters: &[ProjectSelector],
         dir_filters: &[&str],
         workspace_root_dir: &Path,
         meta_filter: Option<&str>,
@@ -121,14 +156,7 @@ where
             })
             .transpose()?;
 
-        let project_matcher = if project_filters.is_empty() {
-            None
-        } else {
-            Some(
-                include_set(project_filters, GlobOptions::default())
-                    .map_err(FilterErrorInner::Glob)?,
-            )
-        };
+        let project_matcher = ProjectMatcher::new(project_filters)?;
 
         let string = workspace_root_dir.to_string_lossy();
         let workspace_root_dir_str: Cow<str> = {
@@ -510,7 +538,7 @@ mod tests {
 
         let filter = DefaultTaskFilter::new(
             &[TaskSelector::pattern("test")],
-            &["project1"],
+            &[crate::ProjectSelector::pattern("project1")],
             &[],
             Path::new(""),
             Some("a == -1"),

@@ -19,7 +19,8 @@ use crate::{
     Call, Context, DefaultProjectFilter, DefaultTaskFilter,
     DefaultTaskScmAffectedFilter, ExecutionPlanProvider, FilterError,
     MetaErrorOptions, MetaFilterError, MetaOnError, ProjectFilter as _,
-    ProjectFilterExt as _, ScmAffectedFilter, TaskFilter as _, TaskSelector,
+    ProjectFilterExt as _, ProjectSelector, ScmAffectedFilter, TaskFilter as _,
+    TaskSelector,
 };
 
 #[derive(Debug, new)]
@@ -32,9 +33,21 @@ pub struct DefaultExecutionPlanProvider<'a, TContext: Context + 'a> {
     /// caller to report as notices.
     #[new(default)]
     excluded: std::sync::Mutex<Vec<MetaFilterError>>,
+    /// Skip the check that every exact task selector names a task in scope.
+    /// Off by default. The cache store turns it on: cache entries outlive the
+    /// tasks that created them, so an exact name for a removed task must still
+    /// be usable to find (and prune) its entries.
+    #[new(default)]
+    allow_missing_exact: bool,
 }
 
 impl<'a, TContext: Context + 'a> DefaultExecutionPlanProvider<'a, TContext> {
+    /// See the `allow_missing_exact` field.
+    pub fn with_allow_missing_exact(mut self, allow: bool) -> Self {
+        self.allow_missing_exact = allow;
+        self
+    }
+
     pub fn with_meta_error_options(
         mut self,
         options: MetaErrorOptions,
@@ -73,7 +86,7 @@ impl<'a, TContext: Context> ExecutionPlanProvider
     fn get_execution_plan(
         &self,
         call: &Call,
-        project_filters: &[&str],
+        project_filters: &[ProjectSelector],
         dir_filters: &[&str],
         meta_filter: Option<&str>,
         affected_scm_filter: Option<&ScmAffectedFilter>,
@@ -105,7 +118,7 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
     fn get_execution_plan_ignored_dependencies(
         &self,
         call: &Call,
-        project_filters: &[&str],
+        project_filters: &[ProjectSelector],
         dir_filters: &[&str],
         meta_filter: Option<&str>,
         affected_scm_filter: Option<&ScmAffectedFilter>,
@@ -114,11 +127,9 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
         // Simple case: just get all matching tasks in one batch
         let projects = pf.filter_projects(self.context.projects());
 
-        if !project_filters.is_empty() && projects.is_empty() {
-            Err(ExecutionPlanProviderErrorInner::NoProjectFoundForFilter {
-                filter: project_filters.join(", "),
-            })?;
-        }
+        self.check_project_selectors(project_filters)?;
+
+        self.check_exact_selectors(call, project_filters, dir_filters)?;
 
         let filtered = match call {
             Call::Command { command, args } => {
@@ -221,11 +232,134 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
         Ok(vec![filtered])
     }
 
+    /// Every exact project selector must name a project, and the selectors
+    /// together must match at least one. With `allow_missing_exact`, exact names
+    /// that match nothing are tolerated (cache entries outlive projects), but a
+    /// glob that matches nothing is still an error.
+    fn check_project_selectors(
+        &self,
+        project_filters: &[ProjectSelector],
+    ) -> Result<(), ExecutionPlanProviderError> {
+        if project_filters.is_empty() {
+            return Ok(());
+        }
+        let projects = self.context.projects();
+        if !self.allow_missing_exact {
+            for selector in project_filters {
+                if let ProjectSelector::Exact(name) = selector
+                    && !projects.iter().any(|p| p.name == *name)
+                {
+                    return Err(
+                        ExecutionPlanProviderErrorInner::NoProjectFoundForFilter {
+                            filter: name.clone(),
+                            hint: exact_project_hint(name),
+                        }
+                        .into(),
+                    );
+                }
+            }
+        }
+        // Every glob must match a project on its own, so a typo in a pattern is
+        // not hidden by an exact name that exists beside it. Exact names are
+        // checked above (and skipped for the cache store).
+        for selector in project_filters {
+            if matches!(selector, ProjectSelector::Exact(_)) {
+                continue;
+            }
+            let pf = DefaultProjectFilter::new(std::slice::from_ref(selector))?;
+            if !projects
+                .iter()
+                .any(|p| pf.should_include_project(p).unwrap_or(false))
+            {
+                return Err(
+                    ExecutionPlanProviderErrorInner::NoProjectFoundForFilter {
+                        filter: selector.to_string(),
+                        hint: "check the project filter against the `name` in each project configuration".to_string(),
+                    }
+                    .into(),
+                );
+            }
+        }
+        Ok(())
+    }
+
+    /// Every exact selector must name a task in the project and directory scope.
+    /// Checked before the meta and affected narrowing, so a task those filters
+    /// later exclude is not reported as missing.
+    fn check_exact_selectors(
+        &self,
+        call: &Call,
+        project_filters: &[ProjectSelector],
+        dir_filters: &[&str],
+    ) -> Result<(), ExecutionPlanProviderError> {
+        if self.allow_missing_exact {
+            return Ok(());
+        }
+        let Call::Tasks(selectors) = call else {
+            return Ok(());
+        };
+        let exact: Vec<&String> = selectors
+            .iter()
+            .filter_map(|s| match s {
+                TaskSelector::Exact(n) => Some(n),
+                _ => None,
+            })
+            .collect();
+        if exact.is_empty() {
+            return Ok(());
+        }
+
+        // One filter for the project and directory scope, applied once per
+        // project through its first task (the scope does not depend on the
+        // task). Each exact name is then a map lookup in the in-scope projects.
+        let scope = DefaultTaskFilter::new(
+            &[],
+            project_filters,
+            dir_filters,
+            self.context.root_dir(),
+            None,
+            |_| None,
+        )?;
+        let mut in_scope: Vec<&omni_core::Project> = vec![];
+        for project in self.context.projects() {
+            let Some((task_name, task)) = project.tasks.iter().next() else {
+                continue;
+            };
+            let node = TaskExecutionNode::new(
+                task_name.clone(),
+                task.exec.clone(),
+                task.retry_exec.clone(),
+                project.name.clone(),
+                project.dir.clone(),
+                vec![],
+                task.enabled.clone(),
+                task.interactive,
+                task.persistent,
+                task.retry.clone(),
+            );
+            if scope.should_include_task(&node)? {
+                in_scope.push(project);
+            }
+        }
+        for name in exact {
+            if !in_scope.iter().any(|p| p.tasks.contains_key(name.as_str())) {
+                return Err(
+                    ExecutionPlanProviderErrorInner::ExactTaskNotFound {
+                        task: name.clone(),
+                        hint: exact_task_hint(name),
+                    }
+                    .into(),
+                );
+            }
+        }
+        Ok(())
+    }
+
     fn get_task_filter(
         &'a self,
         use_project_meta: bool,
         task_names: &[TaskSelector],
-        project_filters: &[&str],
+        project_filters: &[ProjectSelector],
         dir_filters: &[&str],
         meta_filter: Option<&str>,
     ) -> Result<
@@ -281,25 +415,15 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
     fn get_execution_plan_with_dependencies(
         &self,
         call: &Call,
-        project_filters: &[&str],
+        project_filters: &[ProjectSelector],
         dir_filters: &[&str],
         meta_filter: Option<&str>,
         affected_scm_filter: Option<&ScmAffectedFilter>,
         with_dependents: bool,
     ) -> Result<BatchedExecutionPlan, ExecutionPlanProviderError> {
-        let pf = DefaultProjectFilter::new(project_filters)?;
+        self.check_project_selectors(project_filters)?;
 
-        if !project_filters.is_empty()
-            && !self
-                .context
-                .projects()
-                .iter()
-                .any(|p| pf.should_include_project(p).unwrap_or(false))
-        {
-            Err(ExecutionPlanProviderErrorInner::NoProjectFoundForFilter {
-                filter: project_filters.join(", "),
-            })?;
-        }
+        self.check_exact_selectors(call, project_filters, dir_filters)?;
 
         let mut project_graph = self
             .context
@@ -388,6 +512,32 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
     }
 }
 
+/// Positional task names used to be globs. If the name looks like one, point at
+/// the flag that still selects by pattern.
+fn exact_task_hint(name: &str) -> String {
+    if name.contains(['*', '?', '[', ']', '{', '}', '!']) {
+        format!(
+            "positional task names are exact; to select by glob use `--task-pattern '{name}'`"
+        )
+    } else {
+        "check the name against the tasks defined in the project configurations"
+            .to_string()
+    }
+}
+
+/// Project names used to be globs. If the name looks like one, point at the
+/// flag that still selects by pattern.
+fn exact_project_hint(name: &str) -> String {
+    if name.contains(['*', '?', '[', ']', '{', '}', '!']) {
+        format!(
+            "project names are exact; to select by glob use `--project-pattern '{name}'`"
+        )
+    } else {
+        "check the name against the `name` in each project configuration"
+            .to_string()
+    }
+}
+
 fn temp_task_name(prefix: &str, command: &str, args: &[String]) -> String {
     // utilize default hasher so that the hash is consistent across platforms and versions
     let mut hasher = ahash::AHasher::default();
@@ -463,13 +613,20 @@ pub(crate) enum ExecutionPlanProviderErrorInner {
 
     /// No project matches the project filter.
     #[error("no project found for filter: {filter}")]
-    #[diagnostic(
-        code = "plan.no_project_found_for_filter",
-        hint = "check the project filter `{filter}` against the `name` in each project configuration"
-    )]
+    #[diagnostic(code = "plan.no_project_found_for_filter", hint = "{hint}")]
     NoProjectFoundForFilter {
         #[diagnostic(detail)]
         filter: String,
+        hint: String,
+    },
+
+    /// An exact task selector names no task in the selected projects.
+    #[error("no task named `{task}` in the selected projects and directories")]
+    #[diagnostic(code = "plan.exact_task_not_found", hint = "{hint}")]
+    ExactTaskNotFound {
+        #[diagnostic(detail)]
+        task: String,
+        hint: String,
     },
 
     #[error(transparent)]
@@ -608,7 +765,28 @@ mod tests {
         }
     }
 
-    fn planned(call: &Call) -> Vec<String> {
+    fn plan_with(
+        call: &Call,
+        project_filters: &[ProjectSelector],
+        meta_filter: Option<&str>,
+        ignore_deps: bool,
+    ) -> Result<Vec<String>, ExecutionPlanProviderError> {
+        plan_with_options(
+            call,
+            project_filters,
+            meta_filter,
+            ignore_deps,
+            false,
+        )
+    }
+
+    fn plan_with_options(
+        call: &Call,
+        project_filters: &[ProjectSelector],
+        meta_filter: Option<&str>,
+        ignore_deps: bool,
+        allow_missing_exact: bool,
+    ) -> Result<Vec<String>, ExecutionPlanProviderError> {
         let task = || {
             Task::new(
                 Some(CommandConfig::Shell("echo".into())),
@@ -636,15 +814,37 @@ mod tests {
             patterns: GlobPatterns::default(),
         };
         let plan = DefaultExecutionPlanProvider::new(ctx)
-            .get_execution_plan(call, &[], &[], None, None, true, false)
-            .unwrap();
+            .with_allow_missing_exact(allow_missing_exact)
+            .get_execution_plan(
+                call,
+                project_filters,
+                &[],
+                meta_filter,
+                None,
+                ignore_deps,
+                false,
+            )?;
         let mut names: Vec<String> = plan
             .into_iter()
             .flatten()
             .map(|n| n.task_name().to_string())
             .collect();
         names.sort();
-        names
+        Ok(names)
+    }
+
+    fn planned(call: &Call) -> Vec<String> {
+        plan_with(call, &[], None, true).unwrap()
+    }
+
+    fn missing_task(error: ExecutionPlanProviderError) -> (String, String) {
+        match error.0 {
+            ExecutionPlanProviderErrorInner::ExactTaskNotFound {
+                task,
+                hint,
+            } => (task, hint),
+            other => panic!("expected ExactTaskNotFound, got {other:?}"),
+        }
     }
 
     #[test]
@@ -672,5 +872,345 @@ mod tests {
             TaskSelector::pattern("te*"),
         ]);
         assert_eq!(planned(&call), vec!["*", "test"]);
+    }
+
+    #[test]
+    fn an_exact_task_that_exists_nowhere_is_an_error_on_both_plan_paths() {
+        for ignore_deps in [true, false] {
+            let error = plan_with(
+                &Call::exact_tasks(["missing"]),
+                &[],
+                None,
+                ignore_deps,
+            )
+            .unwrap_err();
+            let (task, hint) = missing_task(error);
+            assert_eq!(task, "missing");
+            assert!(!hint.contains("--task-pattern"), "{hint}");
+        }
+    }
+
+    #[test]
+    fn a_glob_like_exact_name_that_matches_nothing_points_at_task_pattern() {
+        let error = plan_with(&Call::exact_tasks(["bui*"]), &[], None, true)
+            .unwrap_err();
+        let (task, hint) = missing_task(error);
+        assert_eq!(task, "bui*");
+        assert!(hint.contains("--task-pattern 'bui*'"), "{hint}");
+    }
+
+    #[test]
+    fn every_exact_selector_must_exist_even_beside_ones_that_do() {
+        let call = Call::Tasks(vec![
+            TaskSelector::exact("build"),
+            TaskSelector::exact("nope"),
+        ]);
+        let error = plan_with(&call, &[], None, true).unwrap_err();
+        assert_eq!(missing_task(error).0, "nope");
+    }
+
+    #[test]
+    fn a_task_excluded_by_a_later_filter_is_not_missing() {
+        // The meta filter removes every task; the exact task still exists.
+        let planned =
+            plan_with(&Call::exact_tasks(["build"]), &[], Some("false"), true)
+                .unwrap();
+        assert!(planned.is_empty());
+    }
+
+    #[test]
+    fn an_exact_task_must_exist_within_the_project_scope() {
+        assert_eq!(
+            plan_with(
+                &Call::exact_tasks(["build"]),
+                &[ProjectSelector::exact("app")],
+                None,
+                true
+            )
+            .unwrap(),
+            vec!["build"]
+        );
+    }
+
+    #[test]
+    fn a_pattern_that_matches_nothing_is_not_a_missing_task_error() {
+        assert!(
+            plan_with(&Call::pattern_tasks(["zzz*"]), &[], None, true)
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn duplicate_exact_and_pattern_selectors_are_planned_once() {
+        let call = Call::Tasks(vec![
+            TaskSelector::exact("build"),
+            TaskSelector::exact("build"),
+            TaskSelector::pattern("bu*"),
+        ]);
+        assert_eq!(planned(&call), vec!["build"]);
+    }
+
+    #[test]
+    fn allow_missing_exact_turns_the_check_off_and_plans_nothing_for_it() {
+        for ignore_deps in [true, false] {
+            let call = Call::Tasks(vec![
+                TaskSelector::exact("removed"),
+                TaskSelector::exact("build"),
+            ]);
+            assert!(
+                plan_with_options(&call, &[], None, ignore_deps, false)
+                    .is_err()
+            );
+            // The existing task is still planned; the missing one just is not.
+            assert_eq!(
+                plan_with_options(&call, &[], None, ignore_deps, true).unwrap(),
+                vec!["build"]
+            );
+        }
+    }
+
+    fn plan_projects(
+        selectors: &[ProjectSelector],
+        ignore_deps: bool,
+        allow_missing_exact: bool,
+    ) -> Result<Vec<String>, ExecutionPlanProviderError> {
+        plan_projects_call(
+            &Call::exact_tasks(["build"]),
+            selectors,
+            ignore_deps,
+            allow_missing_exact,
+        )
+    }
+
+    /// Four projects that each have `build`; `lib` also has `libonly`.
+    fn plan_projects_call(
+        call: &Call,
+        selectors: &[ProjectSelector],
+        ignore_deps: bool,
+        allow_missing_exact: bool,
+    ) -> Result<Vec<String>, ExecutionPlanProviderError> {
+        let task = || {
+            Task::new(
+                Some(CommandConfig::Shell("echo".into())),
+                None,
+                vec![],
+                None,
+                TeraExprBoolean::Boolean(true),
+                false,
+                false,
+                vec![],
+                Default::default(),
+            )
+        };
+        let projects = ["app", "app2", "app*", "lib"]
+            .into_iter()
+            .map(|name| {
+                let mut p = omni_core::Project::new(
+                    name,
+                    format!("/ws/{name}").into(),
+                    vec![],
+                    Default::default(),
+                );
+                p.tasks.insert("build".to_string(), task());
+                if name == "lib" {
+                    p.tasks.insert("libonly".to_string(), task());
+                }
+                p
+            })
+            .collect();
+        let ctx = FixtureContext {
+            projects,
+            patterns: GlobPatterns::default(),
+        };
+        let plan = DefaultExecutionPlanProvider::new(ctx)
+            .with_allow_missing_exact(allow_missing_exact)
+            .get_execution_plan(
+                call,
+                selectors,
+                &[],
+                None,
+                None,
+                ignore_deps,
+                false,
+            )?;
+        let mut names: Vec<String> = plan
+            .into_iter()
+            .flatten()
+            .map(|n| format!("{}#{}", n.project_name(), n.task_name()))
+            .collect();
+        names.sort();
+        Ok(names)
+    }
+
+    fn missing_project(error: ExecutionPlanProviderError) -> (String, String) {
+        match error.0 {
+            ExecutionPlanProviderErrorInner::NoProjectFoundForFilter {
+                filter,
+                hint,
+            } => (filter, hint),
+            other => panic!("expected NoProjectFoundForFilter, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn an_exact_project_name_selects_only_that_project() {
+        for ignore_deps in [true, false] {
+            assert_eq!(
+                plan_projects(
+                    &[ProjectSelector::exact("app")],
+                    ignore_deps,
+                    false
+                )
+                .unwrap(),
+                ["app#build"]
+            );
+        }
+    }
+
+    #[test]
+    fn a_glob_like_exact_project_name_never_matches_its_neighbours() {
+        assert_eq!(
+            plan_projects(&[ProjectSelector::exact("app*")], true, false)
+                .unwrap(),
+            ["app*#build"]
+        );
+        assert_eq!(
+            plan_projects(&[ProjectSelector::pattern("app*")], true, false)
+                .unwrap(),
+            ["app#build", "app*#build", "app2#build"]
+        );
+    }
+
+    #[test]
+    fn exact_and_pattern_project_selectors_union() {
+        assert_eq!(
+            plan_projects(
+                &[
+                    ProjectSelector::exact("lib"),
+                    ProjectSelector::pattern("app[0-9]"),
+                ],
+                true,
+                false
+            )
+            .unwrap(),
+            ["app2#build", "lib#build"]
+        );
+    }
+
+    #[test]
+    fn an_exact_project_that_does_not_exist_is_an_error_even_beside_ones_that_do()
+     {
+        for ignore_deps in [true, false] {
+            let error = plan_projects(
+                &[
+                    ProjectSelector::exact("app"),
+                    ProjectSelector::exact("nope"),
+                ],
+                ignore_deps,
+                false,
+            )
+            .unwrap_err();
+            let (filter, hint) = missing_project(error);
+            assert_eq!(filter, "nope");
+            assert!(!hint.contains("--project-pattern"), "{hint}");
+        }
+    }
+
+    #[test]
+    fn a_glob_like_exact_project_that_matches_nothing_points_at_project_pattern()
+     {
+        let error =
+            plan_projects(&[ProjectSelector::exact("ap*x")], true, false)
+                .unwrap_err();
+        let (filter, hint) = missing_project(error);
+        assert_eq!(filter, "ap*x");
+        assert!(hint.contains("--project-pattern 'ap*x'"), "{hint}");
+    }
+
+    #[test]
+    fn a_pattern_that_matches_no_project_is_still_an_error() {
+        for allow in [false, true] {
+            let error =
+                plan_projects(&[ProjectSelector::pattern("zzz*")], true, allow)
+                    .unwrap_err();
+            missing_project(error);
+        }
+    }
+
+    #[test]
+    fn allow_missing_exact_tolerates_an_unknown_exact_project() {
+        assert!(
+            plan_projects(&[ProjectSelector::exact("gone")], true, true)
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(
+            plan_projects(
+                &[
+                    ProjectSelector::exact("gone"),
+                    ProjectSelector::exact("lib")
+                ],
+                false,
+                true
+            )
+            .unwrap(),
+            ["lib#build"]
+        );
+    }
+
+    #[test]
+    fn every_project_glob_must_match_even_beside_an_exact_name_that_exists() {
+        for allow in [false, true] {
+            for ignore_deps in [true, false] {
+                let error = plan_projects(
+                    &[
+                        ProjectSelector::exact("app"),
+                        ProjectSelector::pattern("zzz*"),
+                    ],
+                    ignore_deps,
+                    allow,
+                )
+                .unwrap_err();
+                assert_eq!(missing_project(error).0, "zzz* (pattern)");
+            }
+        }
+    }
+
+    #[test]
+    fn an_exact_task_must_exist_in_the_selected_projects_not_just_anywhere() {
+        let call = Call::exact_tasks(["libonly"]);
+        for ignore_deps in [true, false] {
+            // `libonly` exists, but only in `lib`, which `app` does not select.
+            let error = plan_projects_call(
+                &call,
+                &[ProjectSelector::exact("app")],
+                ignore_deps,
+                false,
+            )
+            .unwrap_err();
+            match error.0 {
+                ExecutionPlanProviderErrorInner::ExactTaskNotFound {
+                    task,
+                    ..
+                } => assert_eq!(task, "libonly"),
+                other => panic!("expected ExactTaskNotFound, got {other:?}"),
+            }
+            assert_eq!(
+                plan_projects_call(
+                    &call,
+                    &[ProjectSelector::exact("lib")],
+                    ignore_deps,
+                    false
+                )
+                .unwrap(),
+                ["lib#libonly"]
+            );
+            // With no project filter it is found anywhere.
+            assert_eq!(
+                plan_projects_call(&call, &[], ignore_deps, false).unwrap(),
+                ["lib#libonly"]
+            );
+        }
     }
 }

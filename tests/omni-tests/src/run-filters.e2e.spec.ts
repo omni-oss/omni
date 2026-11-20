@@ -834,7 +834,7 @@ describe("+run-filters @e2e (combined filters)", () => {
             [
                 "run",
                 "build",
-                "-p",
+                "--project-pattern",
                 "api*",
                 "--dir",
                 "svc/**",
@@ -931,11 +931,23 @@ describe("+run-filters @e2e (combined filters)", () => {
         expect(byDir).toOutputContaining("BUILD-TOOL");
     });
 
-    it("a `--dir` glob matching nothing reports the no-task error (non-zero)", async () => {
+    it("a `--dir` glob matching nothing reports the missing task (non-zero)", async () => {
         const ws = makeWorkspace(distinctBuildsSpec());
 
         const result = await runOmni(
             ["run", "build", "--dir", "does-not-exist/**"],
+            { cwd: ws.cwd },
+        );
+
+        expect(result).toHaveFailed();
+        expect(result).toHaveStderrContaining("no task named `build`");
+    });
+
+    it("a pattern selector with a `--dir` glob matching nothing still reports no task to execute", async () => {
+        const ws = makeWorkspace(distinctBuildsSpec());
+
+        const result = await runOmni(
+            ["run", "--task-pattern", "build", "--dir", "does-not-exist/**"],
             { cwd: ws.cwd },
         );
 

@@ -160,7 +160,7 @@ describe("+cross @perf (large workspace)", () => {
 describe("+cross @e2e @exitcode (empty workspace)", () => {
     // A valid workspace with zero discovered projects must degrade gracefully:
     // listing yields nothing rather than erroring, and a `run` cleanly reports
-    // that there is nothing to execute.
+    // that there is nothing to execute (or, for an exact name, no such task).
     it("lists nothing and fails `run` with no task to execute", async () => {
         const ws = makeWorkspace({ workspace: { projects: ["**"] } });
 
@@ -177,9 +177,15 @@ describe("+cross @e2e @exitcode (empty workspace)", () => {
         expect(jsonList).toHaveSucceeded();
         expect(JSON.parse(jsonList.stdout)).toEqual([]);
 
-        const run = await runOmni(["run", "build"], { cwd: ws.cwd });
-        expect(run).toHaveFailed();
-        expect(run).toHaveStderrContaining("no task to execute");
+        const exact = await runOmni(["run", "build"], { cwd: ws.cwd });
+        expect(exact).toHaveFailed();
+        expect(exact).toHaveStderrContaining("no task named `build`");
+
+        const pattern = await runOmni(["run", "--task-pattern", "build"], {
+            cwd: ws.cwd,
+        });
+        expect(pattern).toHaveFailed();
+        expect(pattern).toHaveStderrContaining("no task to execute");
     });
 });
 
@@ -274,14 +280,13 @@ describe("+cross @cache (run + exec coexistence)", () => {
     });
 });
 
-describe("+cross @cli (task selector glob matching)", () => {
+describe("+cross @cli (task selector matching)", () => {
     // Task selectors are compiled into a `GlobSet` (see
-    // crates/omni_execution_plan/src/filter.rs: DefaultTaskFilter), so `run`
-    // matches task names as glob patterns rather than literal strings. A
-    // wildcard like `bui*` therefore expands to `build`, an exact name matches
-    // itself, and a pattern matching nothing yields the executor's
-    // "no task to execute" error.
-    it("matches task selectors as glob patterns, not literal strings", async () => {
+    // crates/omni_execution_plan/src/filter.rs: DefaultTaskFilter) only for
+    // `--task-pattern`. Positional task names are exact (F04): a wildcard like
+    // `bui*` is a literal name, an exact name matches itself, and a pattern
+    // matching nothing yields the executor's "no task to execute" error.
+    it("positional tasks are exact names and --task-pattern matches globs", async () => {
         const ws = makeWorkspace({
             workspace: { projects: ["**"] },
             projects: {
@@ -289,10 +294,17 @@ describe("+cross @cli (task selector glob matching)", () => {
             },
         });
 
-        // A glob wildcard expands to the matching task and runs it.
-        const glob = await runOmni(["run", "bui*", "--output-logs=all"], {
-            cwd: ws.cwd,
-        });
+        // A glob passed positionally is an exact name, so it fails with a hint.
+        const positional = await runOmni(["run", "bui*"], { cwd: ws.cwd });
+        expect(positional).toHaveFailed();
+        expect(positional).toHaveStderrContaining("--task-pattern");
+        expect(positional.stdout).not.toContain("BUILT");
+
+        // `--task-pattern` expands the glob to the matching task and runs it.
+        const glob = await runOmni(
+            ["run", "--task-pattern", "bui*", "--output-logs=all"],
+            { cwd: ws.cwd },
+        );
         expect(glob).toHaveSucceeded();
         expect(glob).toOutputContaining("BUILT");
 
@@ -304,7 +316,9 @@ describe("+cross @cli (task selector glob matching)", () => {
         expect(literal).toOutputContaining("BUILT");
 
         // A pattern that matches no task name fails with the executor error.
-        const unmatched = await runOmni(["run", "nope*"], { cwd: ws.cwd });
+        const unmatched = await runOmni(["run", "--task-pattern", "nope*"], {
+            cwd: ws.cwd,
+        });
         expect(unmatched).toHaveFailed();
         expect(unmatched).toHaveStderrContaining("no task to execute");
         expect(unmatched.stdout).not.toContain("BUILT");
