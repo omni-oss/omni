@@ -1,8 +1,9 @@
 /**
- * RFC 0024 R06 parity: the planner now takes explicit exact/pattern/all task
- * selectors. Positional CLI inputs are still globs, and the internal
- * "all tasks" callers (cache stats/prune/staleness, project hashing) must keep
- * selecting every task, including a task literally named `*`.
+ * RFC 0024 R06/F04: the planner takes explicit exact/pattern/all task
+ * selectors. Positional CLI inputs are exact names and `--task-pattern`
+ * selects by glob. The internal "all tasks" callers (cache stats/prune/
+ * staleness, project hashing) must keep selecting every task, including a task
+ * literally named `*`.
  */
 
 import { describe, expect, it } from "vitest";
@@ -25,8 +26,8 @@ function spec(): WorkspaceSpec {
     };
 }
 
-describe("+run @e2e (positional tasks stay globs)", () => {
-    it("`run '*'` still expands to every task", async () => {
+describe("+run @e2e (positional tasks are exact, --task-pattern is a glob)", () => {
+    it("`run '*'` runs only the task literally named `*`", async () => {
         const ws = makeWorkspace(spec());
 
         const result = await runOmni(["run", "*", "--output-logs", "all"], {
@@ -34,26 +35,77 @@ describe("+run @e2e (positional tasks stay globs)", () => {
         });
 
         expect(result).toHaveSucceeded();
+        expect(result).toHaveStderrContaining("app#*");
+        expect(result.stderr).not.toContain("app#build");
+        expect(result.stderr).not.toContain("app#test");
+    });
+
+    it("`--task-pattern '*'` expands to every task", async () => {
+        const ws = makeWorkspace(spec());
+
+        const result = await runOmni(
+            ["run", "--task-pattern", "*", "--output-logs", "all"],
+            { cwd: ws.cwd },
+        );
+
+        expect(result).toHaveSucceeded();
         expect(result).toHaveStderrContaining("app#build");
         expect(result).toHaveStderrContaining("app#test");
         expect(result).toHaveStderrContaining("app#*");
     });
 
-    it("`run 'bu*'` still matches by glob", async () => {
+    it("`--task-pattern 'bu*'` matches by glob", async () => {
         const ws = makeWorkspace(spec());
 
-        const result = await runOmni(["run", "bu*"], { cwd: ws.cwd });
+        const result = await runOmni(["run", "--task-pattern", "bu*"], {
+            cwd: ws.cwd,
+        });
 
         expect(result).toHaveSucceeded();
         expect(result).toHaveStderrContaining("app#build");
         expect(result.stderr).not.toContain("app#test");
+    });
+
+    it("exact and pattern selectors combine", async () => {
+        const ws = makeWorkspace(spec());
+
+        const result = await runOmni(
+            ["run", "build", "--task-pattern", "te*"],
+            { cwd: ws.cwd },
+        );
+
+        expect(result).toHaveSucceeded();
+        expect(result).toHaveStderrContaining("app#build");
+        expect(result).toHaveStderrContaining("app#test");
+        expect(result.stderr).not.toContain("app#*");
+    });
+
+    it("`run 'bu*'` fails and points at --task-pattern", async () => {
+        const ws = makeWorkspace(spec());
+
+        const result = await runOmni(["run", "bu*"], { cwd: ws.cwd });
+
+        expect(result).not.toHaveSucceeded();
+        expect(result.stderr).toContain("no task named `bu*`");
+        expect(result.stderr).toContain("--task-pattern");
+    });
+
+    it("an unknown exact name fails", async () => {
+        const ws = makeWorkspace(spec());
+
+        const result = await runOmni(["run", "nope"], { cwd: ws.cwd });
+
+        expect(result).not.toHaveSucceeded();
+        expect(result.stderr).toContain("no task named `nope`");
     });
 });
 
 describe("+cache @cache (internal all-tasks selection)", () => {
     it("plan-based `cache stats --dir` with no -t lists every cached task", async () => {
         const ws = makeWorkspace(spec());
-        expect(await runOmni(["run", "*"], { cwd: ws.cwd })).toHaveSucceeded();
+        expect(
+            await runOmni(["run", "--task-pattern", "*"], { cwd: ws.cwd }),
+        ).toHaveSucceeded();
 
         const stats = await runOmni(["cache", "stats", "--dir", "svc/**"], {
             cwd: ws.cwd,
@@ -67,7 +119,9 @@ describe("+cache @cache (internal all-tasks selection)", () => {
 
     it("`prune --stale-only` plans all tasks and keeps fresh entries", async () => {
         const ws = makeWorkspace(spec());
-        expect(await runOmni(["run", "*"], { cwd: ws.cwd })).toHaveSucceeded();
+        expect(
+            await runOmni(["run", "--task-pattern", "*"], { cwd: ws.cwd }),
+        ).toHaveSucceeded();
 
         const before = await runOmni(["cache", "stats"], { cwd: ws.cwd });
         expect(before).toOutputContaining("- Task: *");

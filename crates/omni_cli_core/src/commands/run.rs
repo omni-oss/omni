@@ -2,6 +2,7 @@ use std::process::ExitCode;
 
 use clap::Args;
 use clap_utils::EnumValueAdapter;
+use omni_execution_plan::TaskSelector;
 use omni_task_executor::{ExecutionConfigBuilder, Force};
 
 use crate::{
@@ -17,8 +18,18 @@ use super::{OutputOptions, utils::resolve_subscriber};
 
 #[derive(Args)]
 pub struct RunCommand {
-    #[arg(required = true, help = "The task to run")]
+    #[arg(
+        required_unless_present = "task_pattern",
+        help = "Exact name of a task to run. Glob characters are literal; use --task-pattern to select by glob"
+    )]
     pub task: Vec<String>,
+
+    #[arg(
+        long,
+        value_name = "GLOB",
+        help = "Run every task whose name matches this glob. Repeatable, and may be combined with exact task names"
+    )]
+    pub task_pattern: Vec<String>,
 
     #[arg(
         long,
@@ -96,7 +107,14 @@ pub async fn run(
         .no_cache(command.no_cache)
         .no_remote_cache(command.no_remote_cache)
         .force(command.force.value())
-        .call(Call::pattern_tasks(&command.task));
+        .call(Call::Tasks(
+            command
+                .task
+                .iter()
+                .map(TaskSelector::exact)
+                .chain(command.task_pattern.iter().map(TaskSelector::pattern))
+                .collect(),
+        ));
 
     command
         .run
@@ -131,4 +149,51 @@ pub async fn run(
     }
 
     Ok(exit_code(&results))
+}
+
+#[cfg(test)]
+mod tests {
+    use clap::{Parser, error::ErrorKind};
+
+    use super::*;
+
+    #[derive(Parser)]
+    struct TestCli {
+        #[command(flatten)]
+        run: RunCommand,
+    }
+
+    fn parse(args: &[&str]) -> Result<RunCommand, clap::Error> {
+        let mut argv = vec!["run"];
+        argv.extend_from_slice(args);
+        TestCli::try_parse_from(argv).map(|cli| cli.run)
+    }
+
+    #[test]
+    fn positional_tasks_are_kept_verbatim() {
+        let run = parse(&["build*", "a#b"]).unwrap();
+        assert_eq!(run.task, ["build*", "a#b"]);
+        assert!(run.task_pattern.is_empty());
+    }
+
+    #[test]
+    fn task_patterns_repeat_and_may_stand_alone() {
+        let run = parse(&["--task-pattern", "build*", "--task-pattern", "t*"])
+            .unwrap();
+        assert!(run.task.is_empty());
+        assert_eq!(run.task_pattern, ["build*", "t*"]);
+    }
+
+    #[test]
+    fn exact_and_pattern_selectors_mix() {
+        let run = parse(&["lint", "--task-pattern", "test*"]).unwrap();
+        assert_eq!(run.task, ["lint"]);
+        assert_eq!(run.task_pattern, ["test*"]);
+    }
+
+    #[test]
+    fn some_selector_is_required() {
+        let error = parse(&[]).err().expect("no selector must fail");
+        assert_eq!(error.kind(), ErrorKind::MissingRequiredArgument);
+    }
 }

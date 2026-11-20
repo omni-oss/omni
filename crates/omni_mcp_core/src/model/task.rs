@@ -8,8 +8,14 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct TaskRunParams {
-    /// Tasks to run.
+    /// Exact names of tasks to run. Glob characters are literal; use
+    /// `task_patterns` to select by glob. At least one of `tasks` and
+    /// `task_patterns` is required.
+    #[serde(default)]
     pub tasks: Vec<String>,
+    /// Glob patterns selecting tasks by name. May be combined with `tasks`.
+    #[serde(default)]
+    pub task_patterns: Vec<String>,
     /// Project filter where tasks will be executed.
     #[serde(default)]
     pub project: Vec<String>,
@@ -141,5 +147,23 @@ mod tests {
             parse(json!({ "tasks": ["test"], "force": value.clone() }))
                 .expect_err(&format!("{value} should be rejected"));
         }
+    }
+
+    #[test]
+    fn tasks_are_exact_and_patterns_are_separate() {
+        let params = parse(json!({
+            "tasks": ["build*"],
+            "task_patterns": ["test*"],
+        }))
+        .unwrap();
+        assert_eq!(params.tasks, ["build*"]);
+        assert_eq!(params.task_patterns, ["test*"]);
+    }
+
+    #[test]
+    fn patterns_alone_are_accepted() {
+        let params = parse(json!({ "task_patterns": ["t*"] })).unwrap();
+        assert!(params.tasks.is_empty());
+        assert_eq!(params.task_patterns, ["t*"]);
     }
 }

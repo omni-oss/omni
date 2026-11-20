@@ -160,3 +160,18 @@ fn registry_accepts_the_declared_prefixes() {
         panic!("invalid code registry:\n{}", msgs.join("\n"));
     }
 }
+
+#[test]
+fn exact_task_not_found_is_a_user_diagnostic_with_a_hint() {
+    let r = wrapped(ExecutionPlanProviderError::from(
+        ExecutionPlanProviderErrorInner::ExactTaskNotFound {
+            task: "build*".into(),
+            hint: "use --task-pattern".into(),
+        },
+    ));
+    let d = find(&r).expect("diagnostic");
+    assert_eq!(d.code(), "plan.exact_task_not_found");
+    assert_eq!(d.audience(), Audience::User);
+    assert_eq!(d.details().unwrap()["task"], "build*");
+    assert_eq!(d.hints().len(), 1);
+}

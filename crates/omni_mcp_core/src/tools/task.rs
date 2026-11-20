@@ -31,6 +31,11 @@ where
         if let Some(retry) = &params.retry {
             retry.check_layer()?;
         }
+        if params.tasks.is_empty() && params.task_patterns.is_empty() {
+            return Err(eyre::eyre!(
+                "specify at least one task in `tasks` (exact names) or `task_patterns` (globs)"
+            ));
+        }
         let include_logs = params.include_logs.unwrap_or_default();
         let filters = TaskRunFilters {
             meta: params.meta,
@@ -44,8 +49,8 @@ where
             ..Default::default()
         };
         let req = TaskRunRequest {
-            tasks: params.tasks,
-            exact_tasks: vec![],
+            tasks: params.task_patterns,
+            exact_tasks: params.tasks,
             ignore_dependencies: params.ignore_dependencies,
             force: params.force,
             filters,
