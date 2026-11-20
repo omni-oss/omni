@@ -1,6 +1,6 @@
 # F04: exact selectors plan
 
-**Status:** proposed; awaiting approval before implementation.
+**Status:** approved and implemented in this batch (task selectors for `run` and MCP `task_run`). The `hash`/`cache` and project-filter parts are planned in [F04.2](F04.2-hash-cache-selectors-plan.md) and [F04.3](F04.3-project-filter-plan.md), awaiting approval.
 **Kind / risk:** Medium / Medium. User-visible, pre-v1 breaking change to how `omni run` reads task arguments; no cache, capability or persisted-data change.
 
 ## Goal
