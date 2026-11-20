@@ -108,7 +108,7 @@ pub struct PruneArgs {
     #[arg(
         long,
         short,
-        help = "Add filter to clear only cache entries belonging to the project with this exact name. Glob characters are literal; use --project-pattern to match by glob"
+        help = "Add filter to clear only cache entries belonging to the project with this exact name. Glob characters are literal; use --project-pattern to match by glob Entries of projects that no longer exist can be matched only without --dir, --meta and --stale-only."
     )]
     project: Vec<String>,
 
@@ -122,7 +122,7 @@ pub struct PruneArgs {
     #[arg(
         long,
         short,
-        help = "Add filter to clear only cache entries belonging to the task with this exact name. Glob characters are literal; use --task-pattern to match by glob"
+        help = "Add filter to clear only cache entries belonging to the task with this exact name. Glob characters are literal; use --task-pattern to match by glob Entries of tasks that no longer exist can be matched only without --dir, --meta and --stale-only."
     )]
     task: Vec<String>,
 

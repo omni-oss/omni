@@ -6041,7 +6041,10 @@ mod tests {
             .await
             .expect("prune");
 
-        assert_eq!(pruned.len(), 3);
+        let mut names: Vec<&str> =
+            pruned.iter().map(|e| e.task_name.as_str()).collect();
+        names.sort();
+        assert_eq!(names, ["build", "builder", "lint"]);
         assert_eq!(stat_tasks(&cache, &[], &[]).await, ["test"]);
     }
 

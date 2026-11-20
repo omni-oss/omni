@@ -105,7 +105,7 @@ impl<'a, TSys: TaskExecutorSys, S: ExecutionEventSubscriber>
                 self.config
                     .project_filters()
                     .iter()
-                    .map(|s| format!("{s:?}"))
+                    .map(|s| s.to_string())
                     .collect::<Vec<_>>(),
                 self.config
                     .dir_filters()
