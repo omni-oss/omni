@@ -3,7 +3,11 @@
 **Type:** feature (shared infrastructure) · **Size:** L · **Depends on:** none
 
 Design prerequisite: [F08.1 lease, GC and reference protocol](F08.1-lease-gc-reference-protocol.md).
-Slices F08.2-F08.5 remain unimplemented.
+**Status: done.** F08.1 ([#108](https://github.com/omni-oss/omni/pull/108)), F08.2 ([#109](https://github.com/omni-oss/omni/pull/109)),
+F08.4 ([#110](https://github.com/omni-oss/omni/pull/110)), F08.3 ([#111](https://github.com/omni-oss/omni/pull/111)) and F08.5
+([#112](https://github.com/omni-oss/omni/pull/112), [#113](https://github.com/omni-oss/omni/pull/113),
+[#131](https://github.com/omni-oss/omni/pull/131)) are merged. Open: store `VERSION` compatibility (D1),
+reference-driven retention (D3) and `.pending` cleanup (D7).
 
 ## Problem
 

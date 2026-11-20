@@ -37,34 +37,22 @@ The package-level waves further down are a coarse summary; the task graph supers
 
 ## Status
 
-Bug fixes B01-B04 and refactors R01-R08 are merged.
-F01 and F02 are merged in the
-[first feature batch](features/F01-F02-batch.md)
-([PR #101](https://github.com/omni-oss/omni/pull/101)).
-F03.1 and F06.1 are merged in the
-[prerequisite audit batch](features/F03-F06-audit-batch.md)
-([PR #103](https://github.com/omni-oss/omni/pull/103)).
-F08.1 and F10.1 are merged in the
-[design batch](features/F08-F10-design-batch.md)
-([PR #108](https://github.com/omni-oss/omni/pull/108)).
-F08.2's [process-held lease primitive](features/F08.2-lease-primitive.md)
-is merged ([PR #109](https://github.com/omni-oss/omni/pull/109)).
-F08.4's [atomic reference API and lockfile publication](features/F08.4-atomic-reference-api.md)
-is merged ([PR #110](https://github.com/omni-oss/omni/pull/110)).
-F08.3's [lease-aware prune](features/F08.3-gc-honors-leases.md)
-is merged ([PR #111](https://github.com/omni-oss/omni/pull/111)).
-The [first F08.5 batch](features/F08.5-staged-installs.md) (staged installs and explicit
-reference modes) is merged ([PR #112](https://github.com/omni-oss/omni/pull/112)). Its
-second batch gives runtime readers (generators, tools, projection sync, packs) leases
-and is merged (#113). Batch 3 protects install manifest readers and is merged (#131);
-the existing store compatibility decisions remain open.
-F06.2's [canonical digest function](features/F06.2-canonical-digest.md) is merged, unused until
-F06.3. F05.1's [origin-tagged cache enablement](features/F05.1-origin-tagged-enablement.md) is merged.
-F05.2's [contradiction detector](features/F05.2-contradiction-detector.md) (part 1, not wired into
-planning) is implemented, pending PR review. F03.2's
-[escape-aware reference parser](features/F03.2-reference-parser.md) is merged and parses
-`dependencies`/`with`. Other runtime code for F03-F10,
-and plugins (P), remains unimplemented.
+Bug fixes B01-B04 and refactors R01-R08 are merged. Of the standalone features, **F01, F02
+and F08 are done**; F03, F05, F06 and F10 are partly done; F04 is in review; F07 and F09 are not started. The per-feature status is in the
+[features table](#features-new-capability-useful-on-its-own), and the merged batches are:
+
+- F01 and F02: the [first feature batch](features/F01-F02-batch.md) ([#101](https://github.com/omni-oss/omni/pull/101)).
+- F03.1 and F06.1 (audits): the [prerequisite audit batch](features/F03-F06-audit-batch.md) ([#103](https://github.com/omni-oss/omni/pull/103)).
+- F08.1 and F10.1 (designs): the [design batch](features/F08-F10-design-batch.md) ([#108](https://github.com/omni-oss/omni/pull/108)).
+- F08.2 [lease primitive](features/F08.2-lease-primitive.md) ([#109](https://github.com/omni-oss/omni/pull/109)), F08.4 [atomic references and lockfile](features/F08.4-atomic-reference-api.md) ([#110](https://github.com/omni-oss/omni/pull/110)), F08.3 [lease-aware prune](features/F08.3-gc-honors-leases.md) ([#111](https://github.com/omni-oss/omni/pull/111)).
+- F08.5 [migrating callers](features/F08.5-staged-installs.md): staged installs and explicit reference modes ([#112](https://github.com/omni-oss/omni/pull/112)), leases for runtime readers ([#113](https://github.com/omni-oss/omni/pull/113)), leases for install manifest readers ([#131](https://github.com/omni-oss/omni/pull/131)).
+- F06.2 [canonical digest function](features/F06.2-canonical-digest.md) ([#114](https://github.com/omni-oss/omni/pull/114)); it is not wired into any cache key until F06.3.
+- F05.1 [origin-tagged cache enablement](features/F05.1-origin-tagged-enablement.md) ([#115](https://github.com/omni-oss/omni/pull/115)).
+- F03.2 [escape-aware reference parser](features/F03.2-reference-parser.md) ([#116](https://github.com/omni-oss/omni/pull/116)) and its use in task `dependencies`/`with` ([#117](https://github.com/omni-oss/omni/pull/117)).
+
+Open decisions that remain: store `VERSION` compatibility (D1), reference-driven retention
+(D3), `.pending` cleanup (D7), and the F10.2 decisions (D2, D5, D9). Plugins (P) are not
+started; they wait on the F03, F05 and F06 wiring.
 
 Known gaps carried forward from the merged refactors:
 
@@ -104,18 +92,18 @@ Known gaps carried forward from the merged refactors:
 
 ### Features (new capability useful on its own)
 
-| ID                                                        | Title                                                   | Depends on       | Size |
-| --------------------------------------------------------- | ------------------------------------------------------- | ---------------- | ---- |
-| [F01](features/F01-duplicate-explicit-file-diagnostic.md) | Reject duplicate explicit project files at one root     | none             | S    |
-| [F02](features/F02-protect-plugin-control-files.md)       | Projection guardrails for `plugin.omni.*`               | none             | XS   |
-| [F03](features/F03-scoped-task-references.md)             | Structured scoped task identity and root references     | R05, R06         | L    |
-| [F04](features/F04-exact-selectors-and-task-patterns.md)  | Exact positional selectors and `--task-pattern`         | R06, F03 (alias) | M    |
-| [F05](features/F05-origin-aware-cache-tiers.md)           | Origin-aware cache enablement and activation `defaults` | R04, B04         | L    |
-| [F06](features/F06-effective-semantic-digest.md)          | Per-task effective semantic digest in cache keys        | R03, R05, B01    | XL   |
-| [F07](features/F07-conflict-detection-and-provenance.md)  | Composition conflict detection and provenance           | R04, R07         | L    |
-| [F08](features/F08-source-acquisition-leases.md)          | Remote-source acquisition leases and atomic references  | none             | L    |
-| [F09](features/F09-eligibility-inspection.md)             | Cache-eligibility and provenance inspection (CLI/MCP)   | B04, F05         | M    |
-| [F10](features/F10-captured-input-view.md)                | Captured, containment-checked input view                | R02              | L    |
+| ID                                                        | Title                                                   | Depends on       | Size | Status                                                                                                                                                                                                                                                                                 |
+| --------------------------------------------------------- | ------------------------------------------------------- | ---------------- | ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [F01](features/F01-duplicate-explicit-file-diagnostic.md) | Reject duplicate explicit project files at one root     | none             | S    | Done ([#101](https://github.com/omni-oss/omni/pull/101))                                                                                                                                                                                                                               |
+| [F02](features/F02-protect-plugin-control-files.md)       | Projection guardrails for `plugin.omni.*`               | none             | XS   | Done ([#101](https://github.com/omni-oss/omni/pull/101))                                                                                                                                                                                                                               |
+| [F03](features/F03-scoped-task-references.md)             | Structured scoped task identity and root references     | R05, R06         | L    | Partly done: F03.1 audit ([#103](https://github.com/omni-oss/omni/pull/103)), F03.2 parser and `dependencies`/`with` ([#116](https://github.com/omni-oss/omni/pull/116), [#117](https://github.com/omni-oss/omni/pull/117)). Root lowering (F03.3) and the `alias` key are not started |
+| [F04](features/F04-exact-selectors-and-task-patterns.md)  | Exact positional selectors and `--task-pattern`         | R06, F03 (alias) | M    | In review ([#134](https://github.com/omni-oss/omni/pull/134)): task, project, `hash` and `cache` selectors                                                                                                                                                                             |
+| [F05](features/F05-origin-aware-cache-tiers.md)           | Origin-aware cache enablement and activation `defaults` | R04, B04         | L    | Partly done: F05.1 origin tiers ([#115](https://github.com/omni-oss/omni/pull/115)). The contradiction detector and `deciding_source` are merged ([#130](https://github.com/omni-oss/omni/pull/130)); wiring the error into planning needs approval                                                               |
+| [F06](features/F06-effective-semantic-digest.md)          | Per-task effective semantic digest in cache keys        | R03, R05, B01    | XL   | Partly done: F06.1 audit ([#103](https://github.com/omni-oss/omni/pull/103)), F06.2 digest function ([#114](https://github.com/omni-oss/omni/pull/114)). F06.3 (cache-key plumbing, High risk) is not started                                                                          |
+| [F07](features/F07-conflict-detection-and-provenance.md)  | Composition conflict detection and provenance           | R04, R07         | L    | Not started (needs an approved plan)                                                                                                                                                                                                                                                   |
+| [F08](features/F08-source-acquisition-leases.md)          | Remote-source acquisition leases and atomic references  | none             | L    | Done: F08.1-F08.5 ([#108](https://github.com/omni-oss/omni/pull/108)-[#113](https://github.com/omni-oss/omni/pull/113), [#131](https://github.com/omni-oss/omni/pull/131)). Decisions D1, D3 and D7 are still open                                                                     |
+| [F09](features/F09-eligibility-inspection.md)             | Cache-eligibility and provenance inspection (CLI/MCP)   | B04, F05         | M    | Not started                                                                                                                                                                                                                                                                            |
+| [F10](features/F10-captured-input-view.md)                | Captured, containment-checked input view                | R02              | L    | Partly done: F10.1 design ([#108](https://github.com/omni-oss/omni/pull/108)). F10.2-F10.3 wait on decisions D2, D5 and D9                                                                                                                                                             |
 
 Size: XS < half a day, S ≈ 1-2 days, M ≈ 3-5 days, L ≈ 1-2 weeks, XL > 2 weeks
 (split before starting; the file suggests slices).
