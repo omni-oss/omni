@@ -20,14 +20,14 @@ use super::{OutputOptions, utils::resolve_subscriber};
 pub struct RunCommand {
     #[arg(
         required_unless_present = "task_pattern",
-        help = "Exact name of a task to run. Glob characters are literal; use --task-pattern to select by glob"
+        help = "Exact name of a task to run. Glob characters are literal; use --task-pattern to select by glob. At least one task or --task-pattern is required"
     )]
     pub task: Vec<String>,
 
     #[arg(
         long,
         value_name = "GLOB",
-        help = "Run every task whose name matches this glob. Repeatable, and may be combined with exact task names"
+        help = "Run every task whose name matches this glob. Repeatable, and may be combined with exact task names. At least one task or --task-pattern is required"
     )]
     pub task_pattern: Vec<String>,
 
