@@ -5,7 +5,7 @@
 
 ## Status
 
-Implemented, pending PR review, under the approved [plan](F04-selector-plan.md) (hard break,
+Merged in [#134](https://github.com/omni-oss/omni/pull/134), under the approved [plan](F04-selector-plan.md) (hard break,
 planner-level check). Medium risk: no cache, capability or stored-data change.
 
 - `omni run` positional tasks are exact; `--task-pattern <glob>` (repeatable) selects by glob;
