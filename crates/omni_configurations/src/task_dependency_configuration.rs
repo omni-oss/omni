@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::fmt::Display;
+use std::path::PathBuf;
 use std::str::FromStr;
 
 use garde::Validate;
@@ -9,14 +10,47 @@ use serde::de::Error;
 use serde::{Deserialize, Serialize};
 use strum::EnumIs;
 
+use omni_core::TaskDependency;
+use omni_path_utils::ProjectRootId;
 use omni_types::{ReferenceError, ReferenceSurface, TaskReference};
 
 #[derive(Debug, Clone, PartialEq, Eq, EnumIs, Validate)]
 #[garde(allow_unvalidated)]
 pub enum TaskDependencyConfiguration {
-    Own { task: String },
-    ExplicitProject { project: String, task: String },
-    Upstream { task: String },
+    Own {
+        task: String,
+    },
+    ExplicitProject {
+        project: String,
+        task: String,
+    },
+    Upstream {
+        task: String,
+    },
+    /// An internal reference resolved against the final runnable projects.
+    ProjectRoot {
+        project_root: ProjectRootId,
+        task: String,
+        origin: TaskReferenceOrigin,
+    },
+}
+
+/// The declaration that contributed an internal reference. Set it before
+/// composition so inheritance cannot substitute the consuming task's origin.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TaskReferenceOrigin {
+    pub task: String,
+    pub file: Option<PathBuf>,
+}
+
+impl Display for TaskReferenceOrigin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "task `{}`", self.task)?;
+        if let Some(file) = &self.file {
+            write!(f, " in `{}`", file.display())?;
+        }
+        Ok(())
+    }
 }
 
 impl FromStr for TaskDependencyConfiguration {
@@ -59,6 +93,12 @@ impl TaskDependencyConfiguration {
                 (false, Some(project), task)
             }
             Self::Upstream { task } => (true, None, task),
+            Self::ProjectRoot { .. } => {
+                return Err(ReferenceError::NotAllowed {
+                    surface: ReferenceSurface::DependencyOrWith,
+                    reason: "use an internal project root in handwritten configuration",
+                });
+            }
         };
         TaskReference::from_raw_components(
             upstream,
@@ -71,6 +111,12 @@ impl TaskDependencyConfiguration {
 
 impl Display for TaskDependencyConfiguration {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Self::ProjectRoot {
+            project_root, task, ..
+        } = self
+        {
+            return write!(f, "task `{task}` at project root `{project_root}`");
+        }
         match self.to_reference() {
             Ok(reference) => reference.format().fmt(f),
             // Variants are public, so a value built by hand can be invalid.
@@ -91,6 +137,7 @@ impl TaskDependencyConfiguration {
         match self {
             TaskDependencyConfiguration::Own { task }
             | TaskDependencyConfiguration::ExplicitProject { task, .. }
+            | TaskDependencyConfiguration::ProjectRoot { task, .. }
             | TaskDependencyConfiguration::Upstream { task } => task,
         }
     }
@@ -98,27 +145,37 @@ impl TaskDependencyConfiguration {
     pub fn project(&self) -> Option<&str> {
         match self {
             TaskDependencyConfiguration::Own { .. }
+            | TaskDependencyConfiguration::ProjectRoot { .. }
             | TaskDependencyConfiguration::Upstream { .. } => None,
             TaskDependencyConfiguration::ExplicitProject {
                 project, ..
             } => Some(project),
         }
     }
-}
 
-impl From<TaskDependencyConfiguration> for omni_core::TaskDependency {
-    fn from(val: TaskDependencyConfiguration) -> Self {
-        match val {
-            TaskDependencyConfiguration::Own { task } => {
-                omni_core::TaskDependency::Own { task }
+    pub(crate) fn lower<E>(
+        self,
+        resolve_root: impl FnOnce(
+            &ProjectRootId,
+            &str,
+            &TaskReferenceOrigin,
+        ) -> Result<String, E>,
+    ) -> Result<TaskDependency, E> {
+        Ok(match self {
+            Self::Own { task } => TaskDependency::Own { task },
+            Self::ExplicitProject { project, task } => {
+                TaskDependency::ExplicitProject { project, task }
             }
-            TaskDependencyConfiguration::ExplicitProject { project, task } => {
-                omni_core::TaskDependency::ExplicitProject { project, task }
+            Self::Upstream { task } => TaskDependency::Upstream { task },
+            Self::ProjectRoot {
+                project_root,
+                task,
+                origin,
+            } => {
+                let project = resolve_root(&project_root, &task, &origin)?;
+                TaskDependency::ExplicitProject { project, task }
             }
-            TaskDependencyConfiguration::Upstream { task } => {
-                omni_core::TaskDependency::Upstream { task }
-            }
-        }
+        })
     }
 }
 
@@ -321,10 +378,42 @@ mod tests {
     #[test]
     fn object_form_is_strict() {
         assert!(parse(r#"{"task":"a","extra":1}"#).is_err());
+        assert!(
+            parse(r#"{"project_root":"packages/shared","task":"a"}"#).is_err()
+        );
         assert!(parse(r#"{"task":"a","task":"b"}"#).is_err());
         assert!(parse(r#"{"project":"p"}"#).is_err());
         assert!(parse(r#"{"project":"","task":"a"}"#).is_err());
         assert!(parse(r#"{"task":""}"#).is_err());
+    }
+
+    #[test]
+    fn internal_roots_require_normalized_paths_and_have_no_config_encoding() {
+        use omni_path_utils::WorkspacePath;
+
+        for root in [
+            "../shared",
+            "/shared",
+            "packages/../shared",
+            "packages//shared",
+        ] {
+            assert!(WorkspacePath::parse(root).is_err(), "{root}");
+        }
+        let reference = TaskDependencyConfiguration::ProjectRoot {
+            project_root: ProjectRootId::new(
+                WorkspacePath::parse("packages/shared").unwrap(),
+            ),
+            task: "watch".into(),
+            origin: TaskReferenceOrigin {
+                task: "run".into(),
+                file: None,
+            },
+        };
+        assert!(serde_json::to_string(&reference).is_err());
+        assert_eq!(
+            reference.to_string(),
+            "task `watch` at project root `packages/shared`"
+        );
     }
 
     #[test]

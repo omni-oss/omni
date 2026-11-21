@@ -146,31 +146,21 @@ fn resolve_task_extensions(
 /// fields stay omitted through task inheritance.
 pub(crate) fn resolve_task_layer_extensions(
     tasks: &mut DictConfig<TaskLayer>,
-) -> Result<(), TaskExtensionError> {
-    let needs_resolution = tasks.values().any(|task| match task {
-        TaskLayer::LongForm(long_form) => {
-            long_form.base == Some(true) || long_form.extends.is_some()
-        }
-        TaskLayer::ShortForm(_) | TaskLayer::Alias(_) => false,
-    });
-
-    if !needs_resolution {
-        return Ok(());
+) -> Result<bool, TaskExtensionError> {
+    if !tasks.values().any(TaskLayer::needs_extension_resolution) {
+        return Ok(false);
     }
 
     let mut aliases = Vec::new();
     let nodes = tasks
         .iter()
         .filter_map(|(name, task)| {
-            let Some(task) = task.clone().into_long_form(name) else {
+            let Some(task) = task.clone().into_declarations(name) else {
                 aliases.push((name.clone(), task.clone()));
                 return None;
             };
-            let extends = task
-                .extends
-                .as_ref()
-                .map(SingleOrMany::to_vec)
-                .unwrap_or_default();
+            let extends =
+                task.extends().map(SingleOrMany::to_vec).unwrap_or_default();
 
             Some(TaskExtensionNode {
                 name: name.clone(),
@@ -186,19 +176,15 @@ pub(crate) fn resolve_task_layer_extensions(
     map.clear();
 
     for node in resolved {
-        if node.task.base == Some(true) {
+        if node.task.base() {
             continue;
         }
 
-        let mut task = node.task;
-        task.base = None;
-        task.extends = None;
-
-        map.insert(node.name, TaskLayer::LongForm(Box::new(task)));
+        map.insert(node.name, TaskLayer::Composed(node.task));
     }
     map.extend(aliases);
 
-    Ok(())
+    Ok(true)
 }
 
 fn map_graph_error(error: ExtensionGraphError) -> TaskExtensionError {

@@ -148,6 +148,7 @@ fn codes_are_registered_in_the_catalog() {
         "workspace.extends_outside_workspace",
         "workspace.project_config_not_found",
         "workspace.invalid_redact",
+        "workspace.invalid_task_root_reference",
     ] {
         assert!(
             omni_codes::get(code).is_some(),

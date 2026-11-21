@@ -273,6 +273,7 @@ tasks:
     }
   F03.3:
     {
+      owner: "OpenCode",
       title: "Root-reference lowering after composition",
       parent: F03,
       kind: code,

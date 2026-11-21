@@ -7208,6 +7208,7 @@ dependencies = [
  "omni_file_data_serde",
  "omni_glob",
  "omni_glob_config",
+ "omni_path_utils",
  "omni_projection_configurations",
  "omni_redact",
  "omni_retry_config",

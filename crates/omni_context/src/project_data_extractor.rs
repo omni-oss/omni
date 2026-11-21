@@ -6,15 +6,16 @@ use env::{
     CommandExpansionConfig, ExpansionError, expand_into_with_command_config,
 };
 use env_loader::EnvLoaderError;
-use maps::{Map, UnorderedMap};
+use maps::{Map, OrderedMap, UnorderedMap};
 use merge::Merge as _;
 use omni_config_types::MergeSingleOrMany;
 use omni_configurations::{
-    FinalizedProject, LoadedLayer, MetaConfiguration, RedactPolicy,
-    WorkspaceConfiguration,
+    FinalizedProject, LoadedLayer, MetaConfiguration, ProjectConfiguration,
+    RedactPolicy, WorkspaceConfiguration,
 };
 use omni_core::{ExtensionGraph, ExtensionGraphError, Project, Task};
 use omni_glob_config::MergeGlobConfig;
+use omni_path_utils::{ProjectRootId, WorkspacePath};
 use omni_task_context::CacheInfo;
 use omni_task_output_logs::OutputLogsConfiguration;
 use omni_types::{OmniPath, OmniPathError};
@@ -44,6 +45,77 @@ fn config_file_inputs(
     let mut files = extension_graph.get_transitive_extendee_ids(&id)?;
     files.push(id);
     Ok(files)
+}
+
+struct RunnableProjectRoots<'a>(
+    // None marks an ambiguous root; no insertion order can choose its project.
+    UnorderedMap<ProjectRootId, Option<&'a ProjectConfiguration>>,
+);
+
+impl<'a> RunnableProjectRoots<'a> {
+    fn new(
+        workspace_root: &Path,
+        projects: impl Iterator<Item = &'a FinalizedProject>,
+    ) -> Self {
+        let mut roots = UnorderedMap::default();
+        for project in projects {
+            let config = &project.config;
+            let dir = config.dir.path().expect("path should be resolved");
+            // Unrepresentable native paths cannot be named by a ProjectRootId.
+            // They remain available through ordinary project-name references.
+            let Ok(path) = WorkspacePath::from_os_path(workspace_root, dir)
+            else {
+                continue;
+            };
+            roots
+                .entry(ProjectRootId::new(path))
+                .and_modify(|entry| *entry = None)
+                .or_insert(Some(config));
+        }
+        Self(roots)
+    }
+
+    fn resolve(
+        &self,
+        root: &ProjectRootId,
+        task: &str,
+    ) -> Result<String, &'static str> {
+        match self.0.get(root) {
+            None => Err("no runnable project has this root"),
+            Some(None) => Err("multiple runnable projects have this root"),
+            Some(Some(config)) if !config.tasks.as_map().contains_key(task) => {
+                Err("the runnable project has no task with this name")
+            }
+            Some(Some(config)) => Ok(config.name.clone()),
+        }
+    }
+}
+
+fn lower_tasks(
+    config: &ProjectConfiguration,
+    roots: &RunnableProjectRoots<'_>,
+) -> Result<OrderedMap<String, Task>, ProjectDataExtractorErrorInner> {
+    config
+        .tasks
+        .iter()
+        .map(|(task_name, task)| {
+            let lowered = task.clone().into_long_form(task_name).into_task(
+                |field, root, target, origin| {
+                    roots.resolve(root, target).map_err(|reason| {
+                        ProjectDataExtractorErrorInner::InvalidTaskRootReference {
+                            field,
+                            location: format!("{}#{task_name}", config.name),
+                            contributor: origin.to_string().into_boxed_str(),
+                            root: root.to_string(),
+                            task: target.to_owned(),
+                            reason,
+                        }
+                    })
+                },
+            )?;
+            Ok((task_name.clone(), lowered))
+        })
+        .collect()
 }
 
 #[derive(new)]
@@ -104,8 +176,6 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
 
         let root_dir = self.root_dir.to_string_lossy().to_string();
 
-        let (ws_vars, ws_vars_os) = self.get_ws_vars_vars()?;
-
         self.workspace_configuration
             .redact
             .check(true)
@@ -119,6 +189,15 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
         let filtered = project_configs
             .iter()
             .filter(|p| is_runnable_project(&p.config, &project_paths));
+        // Lower every task before any environment is loaded, so an invalid
+        // reference fails without running command substitutions.
+        let project_roots =
+            RunnableProjectRoots::new(self.root_dir, filtered.clone());
+        let lowered_tasks = filtered
+            .clone()
+            .map(|finalized| lower_tasks(&finalized.config, &project_roots))
+            .collect::<Result<Vec<_>, _>>()?;
+        let (ws_vars, ws_vars_os) = self.get_ws_vars_vars()?;
 
         let ws_extras = maps::map![
             "WORKSPACE_DIR".to_string() => root_dir.clone(),
@@ -131,7 +210,7 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
             "PLATFORM_BINARY_FORMAT".to_string() => target_lexicon::HOST.binary_format.to_string(),
         ];
 
-        for finalized in filtered {
+        for (finalized, tasks) in filtered.zip(lowered_tasks) {
             let project_config = &finalized.config;
             tracing::debug!(
                 project_configuration = ?project_config,
@@ -281,16 +360,11 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
                     },
                 );
 
-                let task_meta = task.meta();
-
-                let task_meta = if let Some(meta) = task_meta {
-                    let meta = meta.clone();
-                    let mut project_meta = project_meta.clone();
-                    project_meta.merge(meta);
-                    project_meta
-                } else {
-                    project_meta.clone()
-                };
+                let task_meta = finalized
+                    .task_meta
+                    .get(name)
+                    .expect("every task has an effective meta")
+                    .clone();
 
                 if let Some(task_redact) = task.redact() {
                     task_redact.check(false).map_err(|message| {
@@ -323,15 +397,7 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
                 project_config.name.clone(),
                 dir.to_path_buf(),
                 project_config.dependencies.to_vec_inner(),
-                project_config
-                    .tasks
-                    .iter()
-                    .map(|(task_name, v)| {
-                        let mapped: Task = v.clone().get_task(task_name);
-
-                        (task_name.clone(), mapped)
-                    })
-                    .collect(),
+                tasks,
             ));
         }
 
@@ -407,6 +473,26 @@ pub(crate) enum ProjectDataExtractorErrorInner {
     #[diagnostic(skip)]
     OmniPath(#[from] OmniPathError),
 
+    /// An internal task reference did not resolve in the final runnable projects.
+    #[error(
+        "invalid task reference in `{field}` of `{location}` to `{task}` at project root `{root}` (contributed by {contributor}): {reason}"
+    )]
+    #[diagnostic(code = "workspace.invalid_task_root_reference")]
+    InvalidTaskRootReference {
+        #[diagnostic(detail)]
+        field: &'static str,
+        #[diagnostic(detail)]
+        location: String,
+        #[diagnostic(detail)]
+        contributor: Box<str>,
+        #[diagnostic(detail)]
+        root: String,
+        #[diagnostic(detail)]
+        task: String,
+        #[diagnostic(detail)]
+        reason: &'static str,
+    },
+
     /// A `redact` configuration is invalid.
     ///
     /// The `redact` block of a workspace, project or task failed validation.
@@ -425,10 +511,13 @@ pub(crate) enum ProjectDataExtractorErrorInner {
 
 #[cfg(test)]
 mod tests {
-    use omni_path_utils::{ProjectRootId, WorkspacePath};
-
     use super::*;
     use crate::LogicalProjectKey;
+    use omni_configurations::{
+        TaskDependencyConfiguration, TaskLayer, TaskReferenceOrigin,
+    };
+    use omni_core::TaskDependency;
+    use system_traits::impls::RealSys;
 
     fn layer(file: &str, extends: &[&str]) -> LoadedLayer {
         let mut l = LoadedLayer {
@@ -491,13 +580,286 @@ mod tests {
         assert!(inputs.is_empty());
     }
 
+    const EXTENDS_TEMPLATE: &str = r#"{"extends":"template"}"#;
+
+    fn root_reference_fixture(
+        target_layers: &[(&str, &str, bool)],
+        run: &str,
+        later_layer: Option<&str>,
+    ) -> Result<ProjectDataExtractions, ProjectDataExtractorError> {
+        root_reference_fixture_with_workspace(
+            target_layers,
+            run,
+            later_layer,
+            r#"{"projects":["**"]}"#,
+        )
+    }
+
+    fn root_reference_fixture_with_workspace(
+        target_layers: &[(&str, &str, bool)],
+        run: &str,
+        later_layer: Option<&str>,
+        workspace: &str,
+    ) -> Result<ProjectDataExtractions, ProjectDataExtractorError> {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let configured_layer = |dir: &str, file: &str, json: &str| {
+            let dir = root.join(dir);
+            std::fs::create_dir_all(&dir).unwrap();
+            LoadedLayer {
+                file: dir.join(file).into(),
+                dir: dir.into(),
+                layer: serde_json::from_str(json).unwrap(),
+            }
+        };
+        let mut app = configured_layer(
+            "app",
+            "base.omni.yaml",
+            r#"{"tasks":{"template":{"base":true}}}"#,
+        );
+        let origin = TaskReferenceOrigin {
+            task: "template".into(),
+            file: Some(app.file.path().unwrap().to_owned()),
+        };
+        let TaskLayer::LongForm(template) =
+            &mut app.layer.tasks.as_mut().unwrap().as_map_mut()["template"]
+        else {
+            panic!("expected a normal task template");
+        };
+        let project_root = ProjectRootId::new(
+            WorkspacePath::parse("packages/shared").unwrap(),
+        );
+        let reference = |task: &str| TaskDependencyConfiguration::ProjectRoot {
+            project_root: project_root.clone(),
+            task: task.into(),
+            origin: origin.clone(),
+        };
+        template.dependencies =
+            Some(ListConfig::append(vec![reference("build")]));
+        template.with = Some(ListConfig::append(vec![reference("watch")]));
+        app.merge(configured_layer(
+            "app",
+            "project.omni.yaml",
+            &format!(r#"{{"name":"app","tasks":{{"run":{run}}}}}"#),
+        ));
+        if let Some(later_layer) = later_layer {
+            app.merge(configured_layer(
+                "app",
+                "project.omni.yaml",
+                later_layer,
+            ));
+        }
+
+        let mut discovered = vec![app.file.path().unwrap().to_owned()];
+        let mut layers = vec![app];
+        for &(file, json, is_discovered) in target_layers {
+            let target = configured_layer("packages/shared", file, json);
+            if is_discovered {
+                discovered.push(target.file.path().unwrap().to_owned());
+            }
+            layers.push(target);
+        }
+        let graph = ExtensionGraph::from_nodes(layers.clone()).unwrap();
+        let finalized = layers
+            .into_iter()
+            .map(|layer| layer.finalize_composed().unwrap())
+            .collect::<Vec<_>>();
+        let workspace = serde_json::from_str(workspace).unwrap();
+        let mut env_loader = EnvLoader::new(RealSys, root.to_owned(), vec![]);
+        ProjectDataExtractor::new(
+            &RealSys,
+            root,
+            &mut env_loader,
+            false,
+            &workspace,
+        )
+        .extract_all(&finalized, &discovered, &graph)
+    }
+
+    #[test]
+    fn inherited_root_dependencies_and_with_follow_the_final_project_name() {
+        for name in ["shared", "renamed-shared"] {
+            let json = format!(
+                r#"{{"name":"{name}","tasks":{{"build":"echo","watch":"echo"}}}}"#
+            );
+            let data = root_reference_fixture(
+                &[("project.omni.yaml", &json, true)],
+                EXTENDS_TEMPLATE,
+                None,
+            )
+            .unwrap();
+            let run = &data.projects[0].tasks["run"];
+            let named = |task: &str| TaskDependency::ExplicitProject {
+                project: name.into(),
+                task: task.into(),
+            };
+            assert_eq!(run.dependencies, vec![named("build")]);
+            assert_eq!(run.siblings, vec![named("watch")]);
+        }
+    }
+
+    #[test]
+    fn replaced_root_references_are_not_looked_up() {
+        let data = root_reference_fixture(
+            &[],
+            EXTENDS_TEMPLATE,
+            Some(
+                r#"{"tasks":{"run":{"dependencies":{"replace":[]},"with":{"replace":[]}}}}"#,
+            ),
+        )
+        .unwrap();
+        let run = &data.projects[0].tasks["run"];
+        assert!(run.dependencies.is_empty());
+        assert!(run.siblings.is_empty());
+    }
+
+    #[test]
+    fn a_later_append_does_not_bring_back_a_replaced_root_reference() {
+        let data = root_reference_fixture(
+            &[],
+            r#"{"extends":"template","dependencies":{"replace":[]},"with":{"replace":[]}}"#,
+            Some(
+                r#"{"tasks":{"run":{"dependencies":{"append":["lint"]},"with":{"append":["format"]}}}}"#,
+            ),
+        )
+        .unwrap();
+        let run = &data.projects[0].tasks["run"];
+        let own = |task: &str| TaskDependency::Own { task: task.into() };
+        assert_eq!(run.dependencies, vec![own("lint")]);
+        assert_eq!(run.siblings, vec![own("format")]);
+    }
+
+    #[test]
+    fn surviving_root_references_require_a_runnable_target_task() {
+        let missing_task = root_reference_fixture(
+            &[(
+                "project.omni.yaml",
+                r#"{"name":"renamed","tasks":{"build":"echo","watch":{"base":true}}}"#,
+                true,
+            )],
+            EXTENDS_TEMPLATE,
+            None,
+        )
+        .unwrap_err();
+        let message = missing_task.to_string();
+        for detail in [
+            "app#run",
+            "`with`",
+            "watch",
+            "packages/shared",
+            "no task",
+            "contributed by task `template`",
+            "base.omni.yaml",
+        ] {
+            assert!(message.contains(detail), "{message}");
+        }
+
+        for targets in [
+            &[(
+                "project.omni.yaml",
+                r#"{"name":"shared","base":true}"#,
+                true,
+            )][..],
+            &[("project.omni.yaml", r#"{"name":"shared"}"#, false)][..],
+            &[],
+        ] {
+            let error = root_reference_fixture(targets, EXTENDS_TEMPLATE, None)
+                .unwrap_err();
+            assert!(
+                error.to_string().contains("no runnable project"),
+                "{error}"
+            );
+        }
+    }
+
+    #[test]
+    fn invalid_root_is_rejected_before_workspace_command_expansion() {
+        let workspace = r#"{"projects":["**"],"env":{"vars":{"PROBE":"$(omni-f03-nonexistent-expansion-probe)"}}}"#;
+        let check = |targets: &[(&str, &str, bool)]| {
+            root_reference_fixture_with_workspace(
+                targets,
+                EXTENDS_TEMPLATE,
+                None,
+                workspace,
+            )
+            .unwrap_err()
+            .kind()
+        };
+        assert_eq!(
+            check(&[]),
+            ProjectDataExtractorErrorKind::InvalidTaskRootReference
+        );
+        // With valid references the workspace command does reach expansion.
+        assert_eq!(
+            check(&[(
+                "project.omni.yaml",
+                r#"{"name":"shared","tasks":{"build":"echo","watch":"echo"}}"#,
+                true,
+            )]),
+            ProjectDataExtractorErrorKind::CommandExpansion,
+        );
+    }
+
+    #[test]
+    fn a_root_reference_does_not_choose_between_multiple_runnable_projects() {
+        let error = root_reference_fixture(
+            &[
+                (
+                    "first.omni.yaml",
+                    r#"{"name":"first","tasks":{"build":"echo"}}"#,
+                    true,
+                ),
+                (
+                    "second.omni.yaml",
+                    r#"{"name":"second","tasks":{"build":"echo"}}"#,
+                    true,
+                ),
+            ],
+            EXTENDS_TEMPLATE,
+            None,
+        )
+        .unwrap_err();
+        assert!(
+            error.to_string().contains("multiple runnable projects"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn lowered_root_references_reach_the_real_task_graph_and_its_cycle_check() {
+        let graph = |back_edge: &str| {
+            let shared = format!(
+                r#"{{"name":"shared","tasks":{{"build":{{"exec":"echo"{back_edge}}},"watch":"echo"}}}}"#
+            );
+            let data = root_reference_fixture(
+                &[("project.omni.yaml", &shared, true)],
+                EXTENDS_TEMPLATE,
+                None,
+            )
+            .unwrap();
+            omni_core::ProjectGraph::from_projects(data.projects)
+                .unwrap()
+                .get_task_execution_graph()
+        };
+
+        let acyclic =
+            graph("").expect("a lowered reference is an ordinary edge");
+        assert_eq!(acyclic.count(), 3);
+
+        let cyclic = graph(r#","dependencies":["app#run"]"#)
+            .err()
+            .expect("a cycle closed through a root reference");
+        assert_eq!(
+            cyclic.kind(),
+            omni_core::TaskExecutionGraphErrorKind::CycleDetected
+        );
+    }
+
     /// F05.1: the origin of each task's `cache.enabled` reaches `CacheInfo`, and
     /// the value is exactly what the extractor computed before origins existed.
     #[test]
     fn extraction_carries_the_origin_of_cache_enablement() {
         use omni_configurations::{CacheEnabledSource, ProjectLayer};
-        use system_traits::impls::RealSys;
-
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().to_path_buf();
         std::fs::create_dir_all(root.join("app")).unwrap();
@@ -539,5 +901,54 @@ mod tests {
         let own = &infos["app#own"];
         assert!(own.cache_enabled);
         assert_eq!(own.cache_enabled_source, CacheEnabledSource::TaskExplicit);
+    }
+
+    /// The extractor reads the effective task `meta` computed at finalization.
+    /// Merging the project `meta` with the task's merged `meta` here instead
+    /// would bring back the entry that the earlier declaration replaced.
+    #[test]
+    fn extraction_reads_the_effective_task_meta() {
+        use omni_configurations::ProjectLayer;
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().to_path_buf();
+        std::fs::create_dir_all(root.join("app")).unwrap();
+        let file = root.join("app/project.omni.yaml");
+        let file = file.to_str().unwrap();
+        let declare = |json: &str| LoadedLayer {
+            layer: serde_json::from_str::<ProjectLayer>(json).unwrap(),
+            ..layer(file, &[])
+        };
+        let mut composed = declare(
+            r#"{"name":"app","meta":{"tags":["project"]},"tasks":{
+                "plain":"echo",
+                "own":{"exec":"x","meta":{"tags":{"replace":[]}}}}}"#,
+        );
+        composed.merge(declare(
+            r#"{"tasks":{"own":{"meta":{"tags":{"append":["task"]}}}}}"#,
+        ));
+        let graph = ExtensionGraph::from_nodes(vec![composed.clone()]).unwrap();
+        let finalized = composed.finalize_composed().unwrap();
+
+        let workspace: WorkspaceConfiguration =
+            serde_json::from_str(r#"{"projects":["**"]}"#)
+                .expect("a minimal workspace is valid");
+        let mut env_loader = EnvLoader::new(RealSys, root.clone(), vec![]);
+        let data = ProjectDataExtractor::new(
+            &RealSys,
+            &root,
+            &mut env_loader,
+            false,
+            &workspace,
+        )
+        .extract_all(&[finalized], &[PathBuf::from(file)], &graph)
+        .unwrap();
+
+        let tags = |task: &str| {
+            data.task_meta_configs[task].0.as_map()["tags"]
+                .clone()
+                .into_json()
+        };
+        assert_eq!(tags("app#own"), serde_json::json!(["task"]));
+        assert_eq!(tags("app#plain"), serde_json::json!(["project"]));
     }
 }

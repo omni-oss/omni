@@ -13,6 +13,7 @@
 //! [`crate::ProjectConfiguration`].
 
 use std::path::Path;
+use std::sync::Arc;
 
 use config_utils::{DictConfig, DynValue, ListConfig, Replace};
 use enum_map::EnumMap;
@@ -166,13 +167,52 @@ pub struct TaskLongFormLayer {
     pub retry: Option<RetryConfiguration>,
 }
 
-/// A task as written: a bare command or a long-form block. Short form is kept
-/// as written; promoting it to long form is left to finalization.
+/// The ordered declarations of a composed task. The graphs can share immutable
+/// declarations when they clone an extension closure.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TaskDeclarations(Vec<Arc<TaskLongFormLayer>>);
+
+impl Merge for TaskDeclarations {
+    fn merge(&mut self, other: Self) {
+        self.0.extend(other.0);
+    }
+}
+
+impl TaskDeclarations {
+    fn one(task: Box<TaskLongFormLayer>) -> Self {
+        Self(vec![Arc::from(task)])
+    }
+
+    pub(crate) fn base(&self) -> bool {
+        self.0.last().and_then(|task| task.base) == Some(true)
+    }
+
+    pub(crate) fn extends(&self) -> Option<&SingleOrMany<String>> {
+        self.0.iter().rev().find_map(|task| task.extends.as_ref())
+    }
+
+    fn fold(
+        self,
+        mut visit: impl FnMut(&TaskLongFormLayer),
+    ) -> TaskLongFormLayer {
+        let mut task = TaskLongFormLayer::default();
+        for declaration in self.0 {
+            visit(&declaration);
+            task.merge(Arc::unwrap_or_clone(declaration));
+        }
+        task
+    }
+}
+
+/// A parsed task or the ordered declarations produced by composing it.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(untagged)]
 pub enum TaskLayer {
     ShortForm(CommandConfig),
     LongForm(Box<TaskLongFormLayer>),
+    /// Intermediate state only. Raw files cannot declare a sequence of layers.
+    #[serde(skip)]
+    Composed(TaskDeclarations),
     /// Another name for a canonical task, not a task of its own. It cannot be
     /// parsed yet (the `alias` key is still rejected); it exists so
     /// composition can already apply the atomic normal/alias rules.
@@ -214,14 +254,27 @@ impl<'a> Deserialize<'a> for TaskLayer {
 /// every other pair.
 impl Merge for TaskLayer {
     fn merge(&mut self, other: Self) {
-        match (self, other) {
-            (TaskLayer::LongForm(a), TaskLayer::LongForm(b)) => a.merge(*b),
-            (this, other) => *this = other,
+        match (&*self, &other) {
+            (
+                Self::LongForm(_) | Self::Composed(_),
+                Self::LongForm(_) | Self::Composed(_),
+            ) => {
+                // Neither operand needs a shorthand name.
+                self.merge_named(other, "");
+            }
+            _ => *self = other,
         }
     }
 }
 
 impl TaskLayer {
+    /// Resolve this task to a long-form layer without applying inherited
+    /// project settings. An alias has no long form.
+    pub fn into_long_form(self, name: &str) -> Option<TaskLongFormLayer> {
+        self.into_declarations(name)
+            .map(|declarations| declarations.fold(|_| {}))
+    }
+
     /// Compose a higher layer's declaration of task `name` over this one.
     ///
     /// Two normal tasks merge field by field whatever their written form; a
@@ -237,16 +290,19 @@ impl TaskLayer {
                 *self = other
             }
             (this, other) => {
-                let mut base = this
-                    .clone()
-                    .into_long_form(name)
+                let right = other
+                    .into_declarations(name)
                     .expect("alias pairs are handled above");
-                base.merge(
-                    other
-                        .into_long_form(name)
-                        .expect("alias pairs are handled above"),
-                );
-                *this = TaskLayer::LongForm(Box::new(base));
+                if let TaskLayer::Composed(left) = this {
+                    left.merge(right);
+                } else {
+                    let mut left = this
+                        .clone()
+                        .into_declarations(name)
+                        .expect("alias pairs are handled above");
+                    left.merge(right);
+                    *this = TaskLayer::Composed(left);
+                }
             }
         }
     }
@@ -436,6 +492,9 @@ pub struct FinalizedProject {
     /// value always equals what `task_cache` resolves; this adds the origin,
     /// which `Replace<bool>` loses once layers are merged.
     pub task_cache_enabled: maps::Map<String, CacheEnabled>,
+    /// Each task's effective `meta`: the project's, with every declaration of
+    /// the task replayed over it. Empty for `base` projects.
+    pub task_meta: maps::Map<String, MetaConfiguration>,
 }
 
 /// Why a composed project cannot be finalized.
@@ -462,50 +521,56 @@ impl LoadedLayer {
         }
         let mut task_cache = maps::Map::default();
         let mut task_cache_enabled = maps::Map::default();
-        if layer.base != Some(true) {
-            if let Some(tasks) = layer.tasks.as_mut() {
-                crate::task_extension::resolve_task_layer_extensions(tasks)?;
-            }
-            let project_cache = layer.cache.clone();
-            let project_enabled = project_cache
+        let mut task_meta = maps::Map::default();
+        let tasks = if layer.base == Some(true) {
+            layer.tasks.take().map(finalize_tasks).unwrap_or_default()
+        } else if let Some(mut tasks) = layer.tasks.take() {
+            let resolved_extensions =
+                crate::task_extension::resolve_task_layer_extensions(
+                    &mut tasks,
+                )?;
+            let project_enabled = layer
+                .cache
                 .as_ref()
                 .and_then(|cache| cache.enabled.as_ref())
                 .map(|enabled| *enabled.as_ref());
-            let project_effective =
-                project_cache.clone().unwrap_or_default().finalize();
-            for (name, task) in layer.tasks.iter().flat_map(|t| t.iter()) {
-                let effective = match task {
-                    TaskLayer::LongForm(task) if task.cache.is_some() => {
-                        let mut cache = project_cache.clone();
-                        merge::option::recurse(&mut cache, task.cache.clone());
-                        cache.unwrap_or_default().finalize()
-                    }
-                    _ => project_effective.clone(),
-                };
-                task_cache.insert(name.clone(), effective);
-
-                let task_enabled = match task {
-                    TaskLayer::LongForm(task) => task
-                        .cache
-                        .as_ref()
-                        .and_then(|cache| cache.enabled.as_ref())
-                        .map(|enabled| *enabled.as_ref()),
-                    _ => None,
-                };
+            finalize_tasks_with(tasks, |name, task| {
+                let mut cache = layer.cache.clone();
+                let mut meta = layer.meta.clone();
+                // Fold the task's own settings and its effective project
+                // settings from the same declarations, in the same order.
+                let task =
+                    task.finalize_with(resolved_extensions, |patch| {
+                        merge::option::recurse(&mut cache, patch.cache.clone());
+                        merge::option::recurse(&mut meta, patch.meta.clone());
+                    })?;
+                let task_enabled = task
+                    .cache()
+                    .and_then(|cache| cache.enabled.as_ref())
+                    .map(|enabled| *enabled.as_ref());
+                task_cache.insert(
+                    name.to_owned(),
+                    cache.unwrap_or_default().finalize(),
+                );
+                task_meta.insert(name.to_owned(), meta.unwrap_or_default());
                 task_cache_enabled.insert(
-                    name.clone(),
+                    name.to_owned(),
                     CacheEnabled::from_authored(
                         task_enabled,
                         project_enabled,
                         HANDWRITTEN_TASK_FALLBACK,
                     ),
                 );
-            }
-        }
+                Some(task)
+            })
+        } else {
+            DictConfig::default()
+        };
         Ok(FinalizedProject {
-            config: layer.finalize(file, dir)?,
+            config: layer.finalize_with_tasks(file, dir, tasks)?,
             task_cache,
             task_cache_enabled,
+            task_meta,
         })
     }
 }
@@ -587,49 +652,84 @@ impl TaskLongFormLayer {
 }
 
 impl TaskLayer {
-    /// Canonical long-form patch of this task, as
-    /// [`TaskConfiguration::into_long_form`] but with every other field left
-    /// absent: a short form is its command plus the implicit upstream
-    /// dependency on its own name.
-    ///
-    /// `None` for an alias, which is not a normal task.
-    pub fn into_long_form(self, name: &str) -> Option<TaskLongFormLayer> {
+    pub(crate) fn into_declarations(
+        self,
+        name: &str,
+    ) -> Option<TaskDeclarations> {
         Some(match self {
             TaskLayer::Alias(_) => return None,
-            TaskLayer::LongForm(long_form) => *long_form,
-            TaskLayer::ShortForm(command) => TaskLongFormLayer {
-                exec: Some(Replace::new(command)),
-                dependencies: Some(ListConfig::append(vec![
-                    TaskDependencyConfiguration::Upstream {
-                        task: name.to_string(),
-                    },
-                ])),
-                ..Default::default()
-            },
+            TaskLayer::Composed(declarations) => declarations,
+            TaskLayer::LongForm(long_form) => TaskDeclarations::one(long_form),
+            TaskLayer::ShortForm(command) => {
+                TaskDeclarations::one(Box::new(TaskLongFormLayer {
+                    exec: Some(Replace::new(command)),
+                    dependencies: Some(ListConfig::append(vec![
+                        TaskDependencyConfiguration::Upstream {
+                            task: name.to_string(),
+                        },
+                    ])),
+                    ..Default::default()
+                }))
+            }
         })
+    }
+
+    pub(crate) fn needs_extension_resolution(&self) -> bool {
+        match self {
+            Self::LongForm(task) => {
+                task.base == Some(true) || task.extends.is_some()
+            }
+            Self::Composed(task) => task.base() || task.extends().is_some(),
+            Self::ShortForm(_) | Self::Alias(_) => false,
+        }
     }
 
     /// Finalize keeping the written form: a short form stays short. An alias
     /// has no eager task form yet and yields `None`.
     pub fn finalize(self) -> Option<TaskConfiguration> {
-        match self {
+        self.finalize_with(false, |_| {})
+    }
+
+    fn finalize_with(
+        self,
+        resolved_extensions: bool,
+        mut visit: impl FnMut(&TaskLongFormLayer),
+    ) -> Option<TaskConfiguration> {
+        let mut task = match self {
             TaskLayer::ShortForm(command) => {
-                Some(TaskConfiguration::ShortForm(command))
+                return Some(TaskConfiguration::ShortForm(command));
             }
-            TaskLayer::LongForm(long_form) => Some(
-                TaskConfiguration::LongForm(Box::new(long_form.finalize())),
-            ),
-            TaskLayer::Alias(_) => None,
+            TaskLayer::LongForm(long_form) => {
+                visit(&long_form);
+                *long_form
+            }
+            TaskLayer::Composed(declarations) => declarations.fold(visit),
+            TaskLayer::Alias(_) => return None,
+        };
+        if resolved_extensions {
+            task.base = None;
+            task.extends = None;
         }
+        Some(TaskConfiguration::long_form(task.finalize()))
     }
 }
 
 fn finalize_tasks(
     tasks: DictConfig<TaskLayer>,
 ) -> DictConfig<TaskConfiguration> {
-    let finalize = |map: maps::Map<String, TaskLayer>| {
+    finalize_tasks_with(tasks, |_, layer| layer.finalize())
+}
+
+fn finalize_tasks_with(
+    tasks: DictConfig<TaskLayer>,
+    mut task: impl FnMut(&str, TaskLayer) -> Option<TaskConfiguration>,
+) -> DictConfig<TaskConfiguration> {
+    let mut finalize = |map: maps::Map<String, TaskLayer>| {
         map.into_iter()
-            .filter_map(|(k, v)| Some((k, v.finalize()?)))
+            .filter_map(|(k, v)| {
+                let task = task(&k, v)?;
+                Some((k, task))
+            })
             .collect()
     };
     match tasks {
@@ -648,9 +748,19 @@ impl ProjectLayer {
     /// configuration. `file` and `dir` are the concrete project's own file and
     /// directory.
     pub fn finalize(
+        mut self,
+        file: OmniPath,
+        dir: OmniPath,
+    ) -> Result<ProjectConfiguration, MissingProjectName> {
+        let tasks = self.tasks.take().map(finalize_tasks).unwrap_or_default();
+        self.finalize_with_tasks(file, dir, tasks)
+    }
+
+    fn finalize_with_tasks(
         self,
         file: OmniPath,
         dir: OmniPath,
+        tasks: DictConfig<TaskConfiguration>,
     ) -> Result<ProjectConfiguration, MissingProjectName> {
         Ok(ProjectConfiguration {
             file,
@@ -667,7 +777,7 @@ impl ProjectLayer {
             output_logs: self.output_logs,
             meta: self.meta.unwrap_or_default(),
             redact: self.redact.unwrap_or_default(),
-            tasks: self.tasks.map(finalize_tasks).unwrap_or_default(),
+            tasks,
         })
     }
 }
@@ -824,6 +934,21 @@ mod tests {
         assert_eq!(l.base, None);
     }
 
+    #[test]
+    fn task_declarations_stay_out_of_the_config_format() {
+        let first = serde_json::json!({"dependencies": {"replace": []}});
+        let mut task: TaskLayer =
+            serde_json::from_value(first.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&task).unwrap(), first);
+
+        let append = serde_json::json!({"append": ["lint"]});
+        let other = serde_json::json!({"dependencies": append});
+        task.merge_named(serde_json::from_value(other).unwrap(), "build");
+        assert!(serde_json::to_value(&task).is_err());
+        let finalized = serde_json::to_value(task.finalize().unwrap()).unwrap();
+        assert_eq!(finalized["dependencies"], append);
+    }
+
     /// Replaying layers equals merging the eager types, for the fields whose
     /// eager defaults are the identity of the merge.
     #[test]
@@ -871,19 +996,21 @@ mod tests {
         keys.sort();
         ekeys.sort();
         assert_eq!(keys, ekeys);
-        let TaskLayer::LongForm(t) = &lt.as_map()["t"] else {
+        let TaskLayer::Composed(declarations) = &lt.as_map()["t"] else {
             panic!()
         };
+        assert_eq!(declarations.0.len(), 2);
+        let t = declarations.clone().fold(|_| {}).finalize();
         let crate::TaskConfiguration::LongForm(et) = &e.tasks.as_map()["t"]
         else {
             panic!()
         };
         assert_eq!(t.exec, et.exec);
         assert_eq!(
-            t.dependencies.clone().unwrap().into_vec(),
+            t.dependencies.into_vec(),
             et.dependencies.clone().into_vec()
         );
-        assert_eq!(t.cache.as_ref().unwrap().enabled, et.cache.enabled);
+        assert_eq!(t.cache.enabled, et.cache.enabled);
     }
 
     fn finalized(json: &str) -> ProjectConfiguration {

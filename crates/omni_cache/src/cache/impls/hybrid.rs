@@ -5416,6 +5416,44 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn keyed_revision_avoids_old_success_after_upgrade_and_rollback() {
+        let temp = fixture(&["project1"]).await;
+        let dir = temp.path();
+        let cache = cache_store(dir);
+        let old = task("task", "project1", dir);
+        let old_logs = bytes::Bytes::from_static(b"old result");
+        cache
+            .cache(&new_cache_info(Some(&old_logs), *old.get()))
+            .await
+            .unwrap();
+
+        for (revision, logs) in [
+            ("task-declarations-upgrade-1", "corrected result"),
+            ("task-declarations-rollback-1", "rollback result"),
+        ] {
+            let upgraded = task_with_mut("task", "project1", dir, |task| {
+                let key = "OMNI_TASK_CONFIG_REVISION".to_string();
+                task.env_vars.insert(key.clone(), revision.to_string());
+                task.input_env_cache_keys.push(key);
+            });
+            assert!(cache.get(upgraded.get()).await.unwrap().is_none());
+            let log_bytes = bytes::Bytes::from_static(logs.as_bytes());
+            cache
+                .cache(&new_cache_info(Some(&log_bytes), *upgraded.get()))
+                .await
+                .unwrap();
+            let hit = cache.get(upgraded.get()).await.unwrap().unwrap();
+            assert_eq!(read_string(&hit.logs_path.unwrap()).await, logs);
+        }
+
+        let original = cache.get(old.get()).await.unwrap().unwrap();
+        assert_eq!(
+            read_string(&original.logs_path.unwrap()).await,
+            "old result"
+        );
+    }
+
+    #[tokio::test]
     async fn test_cached_log_content() {
         let temp = fixture(&["project1"]).await;
         let dir = temp.path();
