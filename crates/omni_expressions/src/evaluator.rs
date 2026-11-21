@@ -142,12 +142,27 @@ impl Error {
                 E::NoSuchKey(key) => ErrorClass::MissingKey {
                     key: key.to_string(),
                 },
-                E::NoSuchOverload(_)
-                | E::UnexpectedType { .. }
-                | E::ValuesNotComparable(_, _)
-                | E::UnsupportedBinaryOperator(_, _, _) => {
+                E::NoSuchOverload(_) | E::UnexpectedType { .. } => {
                     ErrorClass::TypeMismatch {
                         detail: e.to_string(),
+                    }
+                }
+                E::ValuesNotComparable(left, right) => {
+                    ErrorClass::TypeMismatch {
+                        detail: format!(
+                            "cannot compare {} and {}",
+                            left.type_of(),
+                            right.type_of()
+                        ),
+                    }
+                }
+                E::UnsupportedBinaryOperator(op, left, right) => {
+                    ErrorClass::TypeMismatch {
+                        detail: format!(
+                            "operator `{op}` does not accept {} and {}",
+                            left.type_of(),
+                            right.type_of()
+                        ),
                     }
                 }
                 _ => ErrorClass::Other,

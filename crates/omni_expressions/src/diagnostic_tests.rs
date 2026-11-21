@@ -85,6 +85,7 @@ fn runtime_failures_are_coded_without_values() {
             .evaluate_bool(&ctx)
             .map(|_| ())
             .unwrap_err();
+        assert!(!format!("{:?}", err.class()).contains(secret), "{expr}");
         let r = wrapped(err);
         let d = find(&r).expect("diagnostic");
         assert_eq!(d.code(), "expression.execution_failed", "{expr}");
