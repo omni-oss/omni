@@ -11,11 +11,11 @@ invalid project config, an unknown project or an invalid filter. Scripts that
 test for `$? -eq 1` on these errors will now see `2`. Test for non-zero, or
 match on the error code (below).
 
-| Code | Meaning                                                                      |
-| ---- | ---------------------------------------------------------------------------- |
-| `0`  | Success                                                                      |
-| `1`  | Failure: task failure, environment, internal or un-migrated errors           |
-| `2`  | User error: bad arguments, config or expression (also clap usage errors)     |
+| Code | Meaning                                                                  |
+| ---- | ------------------------------------------------------------------------ |
+| `0`  | Success                                                                  |
+| `1`  | Failure: task failure, environment, internal or un-migrated errors       |
+| `2`  | User error: bad arguments, config or expression (also clap usage errors) |
 
 The exit status of a forwarded task process is never remapped.
 
