@@ -1,0 +1,77 @@
+---
+title: "Errors, exit codes and the code catalog"
+description: "Exit codes, the error output format, and how to look up an error code"
+---
+
+## Migration note: exit code `2` (potentially breaking)
+
+Errors that carry a user-audience diagnostic now exit with `2` instead of `1`.
+This covers problems you can fix yourself, such as a missing generator, an
+invalid project config, an unknown project or an invalid filter. Scripts that
+test for `$? -eq 1` on these errors will now see `2`. Test for non-zero, or
+match on the error code (below).
+
+| Code | Meaning                                                                      |
+| ---- | ---------------------------------------------------------------------------- |
+| `0`  | Success                                                                      |
+| `1`  | Failure: task failure, environment, internal or un-migrated errors           |
+| `2`  | User error: bad arguments, config or expression (also clap usage errors)     |
+
+The exit status of a forwarded task process is never remapped.
+
+## Error format
+
+Errors render on stderr as a code, a message and optional hints:
+
+```text
+error[meta.filter_failed]: meta filter failed to evaluate for 1 task(s)
+  hint: `knd` is not defined for this task. Did you mean `kind`?
+```
+
+Use `--error-format json` (or `OMNI_ERROR_FORMAT=json`) for one JSON object on
+stderr:
+
+```json
+{
+    "kind": "meta.filter_failed",
+    "audience": "user",
+    "message": "meta filter failed to evaluate for 1 task(s)",
+    "context": ["planning tasks for `test`"],
+    "causes": [],
+    "hints": ["`knd` is not defined for this task. Did you mean `kind`?"]
+}
+```
+
+Errors without a code print `{"message": "...", "context": [...]}` and exit `1`.
+
+Match on `kind`, the stable code, and on `audience`. Never match on message
+text: it can change between releases.
+
+## Messages that changed
+
+To keep user content (secrets, commands, values) out of summaries, these no
+longer echo it:
+
+- Env file parse errors: path plus line and column, not the offending line.
+- `empty program with args`: the argument count, not the arguments.
+- Generator and tool conditions (`did not evaluate to a boolean`, `if`
+  condition): no expression text or result.
+- Input validation (`value is invalid for input ...`,
+  `invalid boolean expression result`): no input value, expression or result.
+- Generator `command failed`: the program name only, not the command line.
+- Config and expression parse errors: location only, not the parser message or
+  source line.
+- Unreadable remote-cache config:
+  `failed to open remote caching config at '<path>'`.
+
+## Code catalog
+
+The catalog is generated from the codes registered in the binary, so it always
+matches your version:
+
+```bash
+omni code list                    # all codes
+omni code list --format md        # Markdown table
+omni code list --format json      # for scripts
+omni code explain <code>          # what a code means and how to fix it
+```
