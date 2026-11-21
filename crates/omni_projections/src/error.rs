@@ -3,8 +3,9 @@ use std::path::PathBuf;
 
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, omni_diagnostic::Diagnostic)]
 #[error(transparent)]
+#[diagnostic(forward)]
 pub struct ProjectionError(pub(crate) ProjectionErrorInner);
 
 impl ProjectionError {
@@ -29,22 +30,33 @@ impl<T: Into<ProjectionErrorInner>> From<T> for ProjectionError {
     }
 }
 
-#[derive(Debug, thiserror::Error, EnumDiscriminants)]
+#[derive(
+    Debug, thiserror::Error, EnumDiscriminants, omni_diagnostic::Diagnostic,
+)]
 #[strum_discriminants(vis(pub), name(ProjectionErrorKind))]
 pub(crate) enum ProjectionErrorInner {
     #[error(transparent)]
+    #[diagnostic(delegate)]
     Custom(#[from] eyre::Report),
 
     #[error(transparent)]
+    #[diagnostic(skip)]
     Io(#[from] std::io::Error),
 
     #[error(transparent)]
+    #[diagnostic(skip)]
     Json(#[from] serde_json::Error),
 
     #[error(transparent)]
+    #[diagnostic(skip)]
     Hasher(#[from] omni_hasher::HasherError),
 
+    /// Projection preflight found conflicting destinations.
     #[error("{0}")]
+    #[diagnostic(
+        code = "projections.destination_conflict",
+        hint = "resolve the reported destination collisions or choose another destination, then retry projection sync"
+    )]
     Conflicts(ConflictReport),
 }
 
@@ -158,6 +170,10 @@ mod tests {
 
         let err = ProjectionError::conflicts(report);
         assert_eq!(err.kind(), ProjectionErrorKind::Conflicts);
+        let report = eyre::Report::new(err);
+        let diagnostic = omni_diagnostic::find(&report).unwrap();
+        assert_eq!(diagnostic.code(), "projections.destination_conflict");
+        assert_eq!(diagnostic.audience(), omni_diagnostic::Audience::User);
     }
 
     #[test]

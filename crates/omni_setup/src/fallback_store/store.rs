@@ -1,7 +1,7 @@
 use std::any::Any;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, RwLock, Weak};
+use std::sync::{Arc, Mutex, MutexGuard, RwLock, Weak};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use dashmap::DashMap;
@@ -73,6 +73,8 @@ pub struct Store {
     pub creds: CredMap,
     pub backing: Option<PathBuf>, // the backing file, if any
     pub self_ref: RwLock<SelfRef>,
+    key_creation: Mutex<()>,
+    save_on_drop: bool,
 }
 
 impl std::fmt::Debug for Store {
@@ -88,14 +90,16 @@ impl std::fmt::Debug for Store {
 
 impl Drop for Store {
     fn drop(&mut self) {
-        if self.backing.is_none() {
+        if self.backing.is_none() || !self.save_on_drop {
             tracing::debug!("dropping store {self:?}")
         } else {
             tracing::debug!("Saving store {self:?} on drop...");
             match self.save() {
                 Ok(_) => tracing::debug!("Save of store {self:?} completed"),
-                Err(e) => {
-                    tracing::error!("Save of store {self:?} failed: {e:?}")
+                Err(_) => {
+                    tracing::error!(
+                        "could not save the fallback credential store"
+                    )
                 }
             }
         }
@@ -107,7 +111,7 @@ impl Store {
     ///
     /// The default configuration is empty with no backing file.
     pub fn new() -> Result<Arc<Self>> {
-        Ok(Self::new_internal(DashMap::new(), None))
+        Ok(Self::new_internal(DashMap::new(), None, false))
     }
 
     /// Create a new store with a user-specified configuration.
@@ -145,6 +149,17 @@ impl Store {
         Ok(Self::new_internal(
             Self::load_credentials(path)?,
             Some(path.to_path_buf()),
+            true,
+        ))
+    }
+
+    /// Encrypted cache setup saves keys explicitly. Never rewrite the
+    /// snapshot on shutdown: another process may have saved a newer key.
+    pub(crate) fn open_for_remote_cache(path: &Path) -> Result<Arc<Self>> {
+        Ok(Self::new_internal(
+            Self::load_credentials(path)?,
+            Some(path.to_path_buf()),
+            false,
         ))
     }
 
@@ -152,24 +167,34 @@ impl Store {
     ///
     /// This is a no-op if there is no backing file.
     ///
-    /// Yes, stores will save themselves to their backing file
-    /// when they go out of scope (i.e., are dropped).
-    /// But using this entry to take a snapshot can save
-    /// you from crashes or let you pass the store state
-    /// off to another process.
+    /// The remote-cache store calls this explicitly before using a new key.
+    /// Stores opened by `new_with_backing` also save when dropped.
     pub fn save(&self) -> Result<()> {
-        if self.backing.is_none() {
+        let Some(path) = &self.backing else {
             return Ok(());
         };
         let content = rmp_serde::to_vec(&self.creds)
             .map_err(|e| PlatformFailure(Box::from(e)))?;
-        std::fs::write(self.backing.as_ref().unwrap(), content)
+        super::key_file::publish(path, &content)
             .map_err(|e| PlatformFailure(Box::from(e)))?;
         Ok(())
     }
 
+    /// Serializes key lookup, creation and persistence in this process only.
+    pub(crate) fn lock_key_creation(&self) -> Result<MutexGuard<'_, ()>> {
+        self.key_creation.lock().map_err(|_| {
+            PlatformFailure(Box::new(std::io::Error::other(
+                "fallback credential creation lock was poisoned",
+            )))
+        })
+    }
+
     /// Create a store with the given credentials and backing file.
-    pub fn new_internal(creds: CredMap, backing: Option<PathBuf>) -> Arc<Self> {
+    fn new_internal(
+        creds: CredMap,
+        backing: Option<PathBuf>,
+        save_on_drop: bool,
+    ) -> Arc<Self> {
         let store = Store {
             id: format!(
                 "Crate version {}, Instantiated at {}",
@@ -184,6 +209,8 @@ impl Store {
             self_ref: RwLock::new(SelfRef {
                 inner_store: Weak::new(),
             }),
+            key_creation: Mutex::new(()),
+            save_on_drop,
         };
         tracing::debug!("Created new store: {store:?}");
         let result = Arc::new(store);

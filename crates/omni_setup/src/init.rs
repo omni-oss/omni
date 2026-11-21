@@ -2,7 +2,10 @@ use bon::Builder;
 use directories::ProjectDirs;
 use tracing::Level;
 
-use crate::fallback_store;
+use crate::{
+    fallback_store,
+    secret_key::{SecretKeyError, SecretKeyErrorInner},
+};
 
 #[derive(Builder, Default, Debug)]
 pub struct InitConfig {
@@ -54,38 +57,36 @@ pub fn initialize(config: InitConfig) -> eyre::Result<()> {
                 }
             }
             _ => {
-                return erye::erye!(
-                    "Unsupported platform, omni_setup only supports macOS, Windows and Linux"
-                );
+                Err(keyring_core::Error::NoDefaultStore)?;
             }
         }
     };
 
-    if let Err(keyring_core::Error::PlatformFailure(error)) = result {
-        tracing::error!(%error, "keyring_store_platform_failure");
+    Ok(initialize_store(result, init_fallback)?)
+}
+
+fn initialize_store(
+    native: keyring_core::Result<()>,
+    fallback: impl FnOnce() -> Result<(), SecretKeyError>,
+) -> Result<(), SecretKeyError> {
+    if native.is_err() {
+        // Platform errors can carry backend data. Log the recovery only.
         tracing::warn!(
-            "Using fallback store due to keyring store platform failure"
+            "Native credential store unavailable; trying the fallback store"
         );
-        init_fallback()?;
-    } else {
-        tracing::trace!("initialized_omni_setup");
+        fallback()?;
     }
 
+    tracing::trace!("initialized_omni_setup");
     Ok(())
 }
 
-fn init_fallback() -> keyring_core::Result<()> {
-    if let Some(project_dirs) = ProjectDirs::from("com", "omni-oss", "omni") {
-        let backing_file = project_dirs.config_dir().join("keystore");
-        let keystore = fallback_store::Store::new_with_backing(&backing_file)?;
-        keyring_core::set_default_store(keystore);
-        tracing::trace!("initialized_omni_setup");
-    } else {
-        tracing::error!(
-            "Failed to initialize fallback keyring store, no project config folder was determined"
-        );
-    }
-
+fn init_fallback() -> Result<(), SecretKeyError> {
+    let project_dirs = ProjectDirs::from("com", "omni-oss", "omni")
+        .ok_or(SecretKeyErrorInner::Keyring)?;
+    let backing_file = project_dirs.config_dir().join("keystore");
+    let keystore = fallback_store::Store::open_for_remote_cache(&backing_file)?;
+    keyring_core::set_default_store(keystore);
     Ok(())
 }
 
@@ -94,4 +95,53 @@ pub fn deinitialize() -> eyre::Result<()> {
     keyring_core::unset_default_store();
     tracing::trace!("deinitialized_omni_setup");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unavailable_native_store_tries_fallback_for_non_platform_errors() {
+        let mut used_fallback = false;
+        initialize_store(Err(keyring_core::Error::NoDefaultStore), || {
+            used_fallback = true;
+            Ok(())
+        })
+        .unwrap();
+        assert!(used_fallback);
+    }
+
+    #[test]
+    fn failed_fallback_reports_an_environment_error_without_backend_text() {
+        let native_secret = "native-backend-sentinel";
+        let fallback_secret = "fallback-backend-sentinel";
+        let error = initialize_store(
+            Err(keyring_core::Error::PlatformFailure(Box::new(
+                std::io::Error::other(native_secret),
+            ))),
+            || {
+                Err(SecretKeyError::from(keyring_core::Error::NoStorageAccess(
+                    Box::new(std::io::Error::other(fallback_secret)),
+                )))
+            },
+        )
+        .unwrap_err();
+        let report = eyre::Report::new(error);
+        let diagnostic =
+            omni_diagnostic::DiagnosticReport::from_report(&report).unwrap();
+        assert_eq!(
+            diagnostic.to_json()["kind"],
+            "remote_cache.keyring_unavailable"
+        );
+        assert_eq!(diagnostic.exit_code(), 1);
+        for output in [
+            format!("{report:?}"),
+            diagnostic.to_text(),
+            diagnostic.to_json().to_string(),
+        ] {
+            assert!(!output.contains(native_secret));
+            assert!(!output.contains(fallback_secret));
+        }
+    }
 }
