@@ -10,6 +10,7 @@ pub fn validate_value(
     context_values: &omni_tera::Context,
     validators: &[ValidateConfiguration],
     value_name: Option<&str>,
+    secret: bool,
 ) -> Result<(), Error> {
     omni_input_schema::validate_value(
         input_name,
@@ -17,6 +18,7 @@ pub fn validate_value(
         context_values,
         validators,
         value_name,
+        secret,
     )
     .map_err(Into::into)
 }

@@ -47,6 +47,7 @@ pub fn password<'a>(
                 context_values,
                 validators,
                 validation_value_name,
+                true,
             )
         });
     Ok(question.build())
@@ -69,6 +70,7 @@ pub fn text<'a>(
                 context_values,
                 validators,
                 validation_value_name,
+                input.base.secret,
             )
         });
     let default_value = input
@@ -218,6 +220,7 @@ pub fn multi_select_string<'a>(
                 context_values,
                 validators,
                 validation_value_name,
+                input.base.secret,
             )
         });
 
@@ -274,6 +277,7 @@ pub fn multi_select_integer<'a>(
                 context_values,
                 validators,
                 validation_value_name,
+                input.base.secret,
             )
         });
 
@@ -320,6 +324,7 @@ pub fn multi_select_float<'a>(
                 context_values,
                 validators,
                 validation_value_name,
+                input.base.secret,
             )
         });
 
@@ -356,6 +361,7 @@ pub fn integer_number<'a>(
                     context_values,
                     validators,
                     validation_value_name,
+                    input.base.secret,
                 )
             } else {
                 Err("value is not an integer".to_string())
@@ -388,6 +394,7 @@ pub fn float_number<'a>(
                     context_values,
                     validators,
                     validation_value_name,
+                    input.base.secret,
                 )
             } else {
                 Err("value is not a float".to_string())
@@ -457,6 +464,7 @@ fn validate_for_requestty<T: std::fmt::Debug + Serialize + 'static>(
     context_values: &omni_tera::Context,
     validators: &[ValidateConfiguration],
     validation_value_name: Option<&str>,
+    secret: bool,
 ) -> Result<(), String> {
     tracing::debug!(
         validator_count = validators.len(),
@@ -471,6 +479,7 @@ fn validate_for_requestty<T: std::fmt::Debug + Serialize + 'static>(
         context_values,
         validators,
         validation_value_name,
+        secret,
     );
     if let Err(err) = result {
         if let Some(error_message) = err.invalid_value_message() {
