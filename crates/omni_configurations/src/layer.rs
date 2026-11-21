@@ -1110,7 +1110,6 @@ mod tests {
         for d in &docs[1..] {
             e.merge(eager(d));
         }
-        e.resolve_task_extensions().unwrap();
         let got = composed(&docs).config;
         // Operators are folded differently (`Value` vs `Append`), so compare
         // effective values. `logs` is the documented divergence.
@@ -1127,24 +1126,31 @@ mod tests {
             got.cache.output.files.normalize(),
             e.cache.output.files.normalize()
         );
+        // Tasks (template resolution is covered in `task_extension`): the
+        // `tpl` template is dropped and `t` inherits it.
+        let mut names = got.tasks.keys().cloned().collect::<Vec<_>>();
+        names.sort();
+        assert_eq!(names, ["s", "t", "u"]);
+        let t = got.tasks.as_map()["t"].clone().into_long_form("t");
         assert_eq!(
-            got.tasks.keys().collect::<Vec<_>>().len(),
-            e.tasks.keys().count()
+            t.exec,
+            Some(Replace::new(CommandConfig::Shell("b".into())))
         );
-        for (name, task) in got.tasks.iter().filter(|(n, _)| *n != "s") {
-            let (a, b) = (
-                task.clone().into_long_form(name),
-                e.tasks.as_map()[name].clone().into_long_form(name),
-            );
-            assert_eq!(a.exec, b.exec, "{name}");
-            assert_eq!(a.env, b.env, "{name}");
-            assert_eq!(
-                a.dependencies.into_vec(),
-                b.dependencies.into_vec(),
-                "{name}"
-            );
-            assert_eq!(a.cache.output.logs, b.cache.output.logs, "{name}");
-        }
+        assert_eq!(
+            t.env
+                .vars
+                .as_ref()
+                .unwrap()
+                .to_map_inner()
+                .get("X")
+                .cloned(),
+            Some("1".to_string())
+        );
+        assert_eq!(
+            t.dependencies.into_vec(),
+            vec![TaskDependencyConfiguration::Upstream { task: "t".into() }]
+        );
+        assert!(!t.cache.output.logs);
         // Documented correction (RFC 0024 §17.9): a long form over a short form
         // keeps the shorthand's implicit upstream dependency instead of
         // replacing the whole task.
@@ -1203,6 +1209,29 @@ mod tests {
         let files = out.task_cache["t"].key.files.clone().normalize();
         assert_eq!(files.exclude.len(), 1);
         assert_eq!(files.include.len(), 2);
+    }
+
+    #[test]
+    fn extendee_ids_normalize_forms() {
+        use omni_core::ExtensionGraphNode;
+
+        let ids = |json: &str| {
+            LoadedLayer {
+                layer: layer(json),
+                ..Default::default()
+            }
+            .extendee_ids()
+            .to_vec()
+        };
+        assert_eq!(
+            ids(r#"{"name":"p","extends":"a.yaml"}"#),
+            [OmniPath::new("a.yaml")]
+        );
+        assert_eq!(
+            ids(r#"{"name":"p","extends":["a.yaml","b.yaml"]}"#),
+            [OmniPath::new("a.yaml"), OmniPath::new("b.yaml")]
+        );
+        assert!(ids(r#"{"name":"p"}"#).is_empty());
     }
 
     #[test]

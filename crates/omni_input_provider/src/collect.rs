@@ -315,6 +315,7 @@ async fn process_pre_filled_value<
         ctx,
         validators,
         config.validation_value_name,
+        !omni_input_schema::secret_paths(input).is_empty(),
     );
     match result {
         Ok(()) => Ok(value),
@@ -383,6 +384,7 @@ async fn get_raw_input_value<
             ctx,
             validators,
             config.validation_value_name,
+            !omni_input_schema::secret_paths(input).is_empty(),
         );
 
         if let Err(err) = validation_result {
@@ -1351,6 +1353,28 @@ mod tests {
             jv(result.get("cfg").unwrap()),
             json!({"key": "native-value", "extra": true}),
         );
+    }
+
+    #[tokio::test]
+    async fn object_with_a_secret_field_never_renders_its_validator_message() {
+        let input = parse(json!({
+            "type": "object",
+            "name": "cfg",
+            "fields": [{"type": "string", "name": "token", "secret": true}],
+            "validators": [{
+                "condition": "false",
+                "error_message": "bad cfg {{ value }}"
+            }]
+        }));
+        let provider = NativeObjectProvider::new(
+            &[],
+            &[("cfg", json!({"token": "hunter2"}))],
+        );
+        let err = collect(&[input], &empty(), &empty(), &cfg(false), &provider)
+            .await
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(!text.contains("hunter2"), "{text}");
     }
 
     #[tokio::test]
