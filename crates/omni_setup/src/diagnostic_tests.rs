@@ -20,11 +20,15 @@ fn report(err: SetupRemoteCachingConfigError) -> eyre::Report {
 
 #[test]
 fn invalid_access_is_a_user_diagnostic_without_the_server_message() {
-    let r = report(SetupRemoteCachingConfigError::from(
-        SetupRemoteCachingConfigErrorInner::InvalidAccess(eyre::eyre!(
-            "tenant acme-secret-token was rejected"
-        )),
-    ));
+    let probe = omni_remote_cache_client::ValidateAccessResult::new(
+        false,
+        Some("tenant acme-secret-token was rejected".into()),
+    );
+    let error = SetupRemoteCachingConfigError::from(
+        crate::setup_remote_caching_config::check_access(&probe).unwrap_err(),
+    );
+    assert!(!format!("{error:?}").contains("acme-secret-token"));
+    let r = report(error);
     let d = find(&r).expect("diagnostic");
     assert_eq!(d.code(), "remote_cache.invalid_access");
     assert_eq!(d.audience(), Audience::User);
@@ -40,7 +44,7 @@ fn invalid_access_is_a_user_diagnostic_without_the_server_message() {
 }
 
 #[test]
-fn a_crypto_failure_keeps_its_cause_chain() {
+fn an_io_failure_keeps_its_cause_chain() {
     let r = report(SetupRemoteCachingConfigError::from(
         SetupRemoteCachingConfigErrorInner::Io(std::io::Error::other(
             "disk on fire",
@@ -50,6 +54,18 @@ fn a_crypto_failure_keeps_its_cause_chain() {
     assert!(
         chain.iter().any(|c| c.contains("disk on fire")),
         "{chain:?}"
+    );
+}
+
+#[test]
+fn a_crypto_failure_keeps_its_cause_chain() {
+    let error = CryptoError::from(CryptoErrorInner::FailedToSeal(eyre::eyre!(
+        "crypto cause sentinel"
+    )));
+    let r = report(SetupRemoteCachingConfigError::from(error));
+    assert!(
+        r.chain()
+            .any(|cause| cause.to_string() == "crypto cause sentinel")
     );
 }
 
