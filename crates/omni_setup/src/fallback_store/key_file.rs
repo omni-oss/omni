@@ -451,7 +451,12 @@ mod windows {
             let staged_acl = dacl(&staged);
             assert!(staged_acl.starts_with("D:P"));
             assert!(!staged_acl.contains(";;;WD)"));
-
+            // The staged file itself, not just the requested descriptor,
+            // must grant the creating account.
+            assert!(
+                staged_acl.contains(&format!(";;;{sid})")),
+                "staged DACL {staged_acl} lacks the creating user {sid}"
+            );
             let existing = parent.path().join("keystore");
             let existing_acl = Descriptor::from_sddl(
                 "D:P(A;;FA;;;OW)(A;;FR;;;BA)(A;;FA;;;SY)S:P(ML;;NRNW;;;ME)",
