@@ -135,6 +135,26 @@ describe("+command @e2e (shell string keeps single-quoted arg intact)", () => {
     });
 });
 
+describe("+command @e2e (invalid shell syntax)", () => {
+    it("preserves the shell syntax diagnostic through task execution", async () => {
+        const ws = makeWorkspace({
+            workspace: { projects: ["**"] },
+            projects: {
+                app: { name: "app", tasks: { cmd: "echo 'unterminated" } },
+            },
+        });
+
+        const result = await runOmni(["run", "cmd", "--error-format=text"], {
+            cwd: ws.cwd,
+        });
+
+        expect(result.exitCode).toBe(2);
+        expect(result).toHaveStderrContaining(
+            "error[command.invalid_shell_syntax]",
+        );
+    });
+});
+
 describe("+command @e2e (argv form passes spaced element verbatim)", () => {
     it("never re-splits an argv element that contains spaces", async () => {
         const ws = makeWorkspace(argvSpec());
