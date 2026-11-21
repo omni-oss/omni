@@ -39,7 +39,7 @@ impl Evaluator {
                         name: name.to_string(),
                     }
                 }
-                e => ErrorInner::ExecutionError(e),
+                e => ErrorInner::execution_failed(e),
             })?;
 
         match result {
@@ -134,7 +134,7 @@ impl Error {
             ErrorInner::NonBool { got } => {
                 ErrorClass::NonBool { got: got.clone() }
             }
-            ErrorInner::ExecutionError(e) => match e {
+            ErrorInner::ExecutionError { cause: e, .. } => match e {
                 E::UndeclaredReference(name) => ErrorClass::MissingReference {
                     name: name.to_string(),
                     is_call: false,
@@ -154,6 +154,26 @@ impl Error {
             },
             _ => ErrorClass::Other,
         }
+    }
+}
+
+impl ErrorInner {
+    fn execution_failed(cause: cel::ExecutionError) -> Self {
+        use cel::ExecutionError as E;
+        let class = match &cause {
+            E::NoSuchKey(_) => "missing_key",
+            E::DivisionByZero(_) | E::RemainderByZero(_) => "division_by_zero",
+            E::Overflow(..) => "overflow",
+            E::IndexOutOfBounds(_) => "index_out_of_bounds",
+            E::NoSuchOverload(_)
+            | E::ValuesNotComparable(..)
+            | E::UnsupportedBinaryOperator(..)
+            | E::UnsupportedIndex(..)
+            | E::UnsupportedKeyType(_)
+            | E::UnexpectedType { .. } => "type_mismatch",
+            _ => "other",
+        };
+        Self::ExecutionError { class, cause }
     }
 }
 
@@ -179,9 +199,18 @@ pub enum ErrorInner {
     )]
     ParseError(cel::ParseErrors),
 
-    #[error(transparent)]
-    #[diagnostic(skip)]
-    ExecutionError(#[from] cel::ExecutionError),
+    /// The expression failed while running. The cel error is kept only for
+    /// classification; its message can quote values, so it is never displayed.
+    #[error("expression failed at runtime: {class}")]
+    #[diagnostic(
+        code = "expression.execution_failed",
+        hint = "check that the values the expression reads exist and have the expected types"
+    )]
+    ExecutionError {
+        #[diagnostic(detail)]
+        class: &'static str,
+        cause: cel::ExecutionError,
+    },
 
     #[error(transparent)]
     #[diagnostic(delegate)]
