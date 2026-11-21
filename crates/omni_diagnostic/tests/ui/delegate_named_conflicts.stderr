@@ -1,0 +1,41 @@
+error: `skip` and `delegate` take no other attributes
+ --> tests/ui/delegate_named_conflicts.rs:6:44
+  |
+6 |     #[diagnostic(delegate = source, code = "sample.unreadable")]
+  |                                            ^^^^^^^^^^^^^^^^^^^
+
+error: use only one of `skip`, `delegate` and `forward`
+  --> tests/ui/delegate_named_conflicts.rs:10:37
+   |
+10 |     #[diagnostic(delegate = source, forward)]
+   |                                     ^^^^^^^
+
+error: use only one of `skip`, `delegate` and `forward`
+  --> tests/ui/delegate_named_conflicts.rs:14:24
+   |
+14 |     #[diagnostic(skip, delegate = source)]
+   |                        ^^^^^^^^
+
+error: `skip` and `delegate` take no other attributes
+  --> tests/ui/delegate_named_conflicts.rs:18:37
+   |
+18 |     #[diagnostic(delegate = source, stable, related = "sample.other")]
+   |                                     ^^^^^^
+
+error: `skip` and `delegate` take no other attributes
+  --> tests/ui/delegate_named_conflicts.rs:18:55
+   |
+18 |     #[diagnostic(delegate = source, stable, related = "sample.other")]
+   |                                                       ^^^^^^^^^^^^^^
+
+error: `skip` and `delegate` take no other attributes
+  --> tests/ui/delegate_named_conflicts.rs:25:22
+   |
+25 |         #[diagnostic(detail)]
+   |                      ^^^^^^
+
+error: duplicate `diagnostic` attribute
+  --> tests/ui/delegate_named_conflicts.rs:33:28
+   |
+33 |     #[diagnostic(delegate, delegate = source)]
+   |                            ^^^^^^^^^^^^^^^^^

@@ -1,0 +1,17 @@
+error: `delegate = field` requires a variant with named fields
+ --> tests/ui/delegate_named_wrong_shape.rs:6:29
+  |
+6 |     #[diagnostic(delegate = _0)]
+  |                             ^^
+
+error: `delegate = field` requires a variant with named fields
+  --> tests/ui/delegate_named_wrong_shape.rs:10:29
+   |
+10 |     #[diagnostic(delegate = source)]
+   |                             ^^^^^^
+
+error: `delegate = field` is only allowed on enum variants with named fields
+  --> tests/ui/delegate_named_wrong_shape.rs:16:25
+   |
+16 | #[diagnostic(delegate = source)]
+   |                         ^^^^^^

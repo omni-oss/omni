@@ -28,10 +28,15 @@ pub struct Attrs {
     pub body: Option<Path>,
     pub forward: Option<Span>,
     pub skip: Option<Span>,
-    pub delegate: Option<Span>,
+    pub delegate: Option<DelegateAttr>,
     pub no_register: Option<Span>,
-    pub stable: bool,
+    pub stable: Option<Span>,
     pub related: Vec<LitStr>,
+}
+
+pub struct DelegateAttr {
+    pub span: Span,
+    pub field: Option<Ident>,
 }
 
 fn set_once<T>(
@@ -92,14 +97,20 @@ pub fn parse_attrs(attrs: &[Attribute]) -> syn::Result<Attrs> {
                 }
                 Some("skip") => set_once(&mut a.skip, m.path.span(), &m),
                 Some("delegate") => {
-                    set_once(&mut a.delegate, m.path.span(), &m)
+                    let field = if m.input.peek(Token![=]) {
+                        Some(m.value()?.parse()?)
+                    } else {
+                        None
+                    };
+                    let value = DelegateAttr { span: m.path.span(), field };
+                    set_once(&mut a.delegate, value, &m)
                 }
                 Some("related") => {
                     a.related.push(m.value()?.parse()?);
                     Ok(())
                 }
                 Some("stable") => {
-                    a.stable = true;
+                    a.stable = Some(m.path.span());
                     Ok(())
                 }
                 Some("no_register") => {

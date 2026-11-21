@@ -1,0 +1,5 @@
+error: `delegate` references unknown field `missing`
+ --> tests/ui/delegate_unknown_field.rs:6:29
+  |
+6 |     #[diagnostic(delegate = missing)]
+  |                             ^^^^^^^
