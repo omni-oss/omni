@@ -170,7 +170,13 @@ fn secret_validator_condition_errors_do_not_expose_the_candidate() {
 
     let secret = "validator-secret-sentinel";
     let value = ValueBag::from_str(secret).to_owned();
-    for condition in ["{{ throw(message=value) }}", "{{ value }}"] {
+    for (condition, expected_kind) in [
+        ("{{ throw(message=value) }}", crate::error::ErrorKind::Tera),
+        (
+            "{{ value }}",
+            crate::error::ErrorKind::InvalidBooleanExpressionResult,
+        ),
+    ] {
         let validators: [ValidateConfiguration; 1] = serde_json::from_value(
             serde_json::json!([{ "condition": condition }]),
         )
@@ -184,8 +190,12 @@ fn secret_validator_condition_errors_do_not_expose_the_candidate() {
             true,
         )
         .unwrap_err();
+        assert_eq!(err.kind(), expected_kind);
         assert!(!format!("{err:?}").contains(secret));
         let r = Err::<(), _>(err).wrap_err("validating inputs").unwrap_err();
-        assert!(!rendered(&r).contains(secret));
+        assert!(r.chain().all(|cause| !cause.to_string().contains(secret)));
+        if find(&r).is_some() {
+            assert!(!rendered(&r).contains(secret));
+        }
     }
 }

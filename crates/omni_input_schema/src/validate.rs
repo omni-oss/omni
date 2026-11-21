@@ -329,7 +329,7 @@ pub fn validate_value(
                     if secret {
                         // A Tera error (including `throw`) can carry rendered
                         // values in its message or causes.
-                        omni_tera::Error::msg(
+                        omni_tera::Error::message(
                             "could not evaluate validator condition for secret input",
                         )
                     } else {
