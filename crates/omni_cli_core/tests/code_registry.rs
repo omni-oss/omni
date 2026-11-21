@@ -13,6 +13,28 @@ fn registry_is_valid() {
 }
 
 #[test]
+fn linked_prefix_owners_are_documented() {
+    let guide = include_str!("../../../docs/patterns/diagnostic-prefixes.md");
+    let documented: std::collections::BTreeMap<_, _> = guide
+        .lines()
+        .filter_map(|line| {
+            line.strip_prefix("| `")?
+                .strip_suffix("` |")?
+                .split_once("` | `")
+        })
+        .collect();
+    for registration in omni_codes::registrations() {
+        for prefix in registration.prefixes {
+            assert_eq!(
+                documented.get(prefix).copied(),
+                Some(registration.crate_name),
+                "update docs/patterns/diagnostic-prefixes.md for `{prefix}`",
+            );
+        }
+    }
+}
+
+#[test]
 fn surviving_notice_sites_are_registered() {
     for (code, level, essential) in [
         ("redact.disabled", NoticeLevel::Warn, true),
