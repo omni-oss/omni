@@ -1178,6 +1178,63 @@ describe(
         tags: ["mcp", "generator", "input"],
     },
     () => {
+        it("keeps secret values out of validator results", async () => {
+            const secret = "validator-secret-sentinel";
+            const ws = makeWorkspace({
+                workspace: {
+                    projects: ["**"],
+                    generators: [{ source: "local", path: "generators/**" }],
+                },
+                projects: {
+                    "generators/secret/generator.omni.yaml": {
+                        name: "secret",
+                        display_name: "Secret",
+                        description: "Secret validator fixture",
+                        inputs: [
+                            {
+                                type: "string",
+                                name: "token",
+                                message: "Token",
+                                secret: true,
+                                validators: [
+                                    {
+                                        condition: false,
+                                        error_message: "{{ value }} is invalid",
+                                    },
+                                ],
+                            },
+                        ],
+                        actions: [],
+                    },
+                },
+                files: { ".omni/sources/generator/.keep": "" },
+            });
+            const { client } = await connectMcp({ cwd: ws.cwd });
+            const result = await client.callTool({
+                name: "generator_validate_input",
+                arguments: {
+                    name: "secret",
+                    input_values: { token: secret },
+                    use_defaults: false,
+                },
+            });
+            const data = getContent<{
+                valid: boolean;
+                errors: Array<{ input_name: string; message: string }>;
+            }>(result);
+
+            expect(data.valid).toBe(false);
+            expect(data.errors).toEqual([
+                {
+                    input_name: "token",
+                    message: expect.stringContaining(
+                        "value does not pass validation",
+                    ),
+                },
+            ]);
+            expect(JSON.stringify(result)).not.toContain(secret);
+        });
+
         it("valid=true when an explicit value is provided for the required input", async () => {
             const ws = makeWorkspace(scaffoldGeneratorSpec());
             const { client } = await connectMcp({ cwd: ws.cwd });

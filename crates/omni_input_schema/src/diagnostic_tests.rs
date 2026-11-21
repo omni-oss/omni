@@ -163,3 +163,29 @@ fn secret_input_never_renders_its_error_message_template() {
     .unwrap_err();
     assert!(err.to_string().contains("hunter2 is too short"));
 }
+
+#[test]
+fn secret_validator_condition_errors_do_not_expose_the_candidate() {
+    use crate::base::ValidateConfiguration;
+
+    let secret = "validator-secret-sentinel";
+    let value = ValueBag::from_str(secret).to_owned();
+    for condition in ["{{ throw(message=value) }}", "{{ value }}"] {
+        let validators: [ValidateConfiguration; 1] = serde_json::from_value(
+            serde_json::json!([{ "condition": condition }]),
+        )
+        .unwrap();
+        let err = crate::validate_value(
+            "token",
+            &value,
+            &omni_tera::Context::new(),
+            &validators,
+            None,
+            true,
+        )
+        .unwrap_err();
+        assert!(!format!("{err:?}").contains(secret));
+        let r = Err::<(), _>(err).wrap_err("validating inputs").unwrap_err();
+        assert!(!rendered(&r).contains(secret));
+    }
+}

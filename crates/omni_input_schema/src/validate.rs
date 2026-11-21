@@ -324,8 +324,26 @@ pub fn validate_value(
                         input_name, index
                     ),
                     &eval_ctx,
-                )?;
+                )
+                .map_err(|err| {
+                    if secret {
+                        // A Tera error (including `throw`) can carry rendered
+                        // values in its message or causes.
+                        omni_tera::Error::msg(
+                            "could not evaluate validator condition for secret input",
+                        )
+                    } else {
+                        err
+                    }
+                })?;
                 let result = result.trim();
+                if secret && !matches!(result, "true" | "false") {
+                    return Err(ErrorInner::InvalidBooleanExpressionResult {
+                        result: String::new(),
+                        expression: String::new(),
+                    }
+                    .into());
+                }
                 validate_boolean_expression_result(result, r.as_str())?;
                 result != "true"
             }
