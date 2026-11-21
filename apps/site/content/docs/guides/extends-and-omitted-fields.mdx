@@ -133,9 +133,9 @@ list. With an extended list `[x, y]`, `append: [a]` then `merge: [b]` gives
 
 ### Avoid reusing old cache entries
 
-If this correction changes a task's `meta` or an environment variable that is
-not listed in `cache.key.env`, the task can produce different output under the
-same cache key. For each affected task, set a fresh environment value and
+If this correction or a change in extension order changes a task's `meta` or
+an environment variable not listed in `cache.key.env`, the task can produce
+different output under the same cache key. For each affected task, set a fresh environment value and
 include its name in `cache.key.env`. Add these settings to the existing task:
 
 ```yaml
@@ -162,10 +162,19 @@ files is rejected, and the error names the file. The published JSON schema
 still lists `name` as required for every file, so an editor using it may flag
 a nameless extending file even though omni accepts it.
 
+## Extension order and conflicts
+
+Omni applies each ancestor before any entry that extends it, and applies a
+shared ancestor only once. Each `extends` list also sets the relative order
+of its direct bases. This applies to both project files and task templates.
+For example, if `child` extends `base`, `extends: [base, child]` is valid but
+`extends: [child, base]` is not. If two lists impose opposite orders on the
+same bases, Omni reports `project.extends_order_conflict`. Reorder the lists
+to agree, or remove redundant entries. If a corrected order changes a task's
+effective settings, see [Avoid reusing old cache entries](#avoid-reusing-old-cache-entries).
+
 ## What did not change
 
-- The order files are applied in, including for several `extends` entries and
-  files reached through more than one path.
 - What `append`, `prepend`, `replace` and `merge` do on lists and
   dictionaries. Only the point where a task's declarations are applied
   changed, as described above.
