@@ -131,6 +131,7 @@ fn new_codes_are_registered_in_the_catalog() {
         "project.cyclic_dependency",
         "project.cycle_detected",
         "project.extends_cycle",
+        "project.extends_order_conflict",
         "task.not_found",
         "task.cycle_detected",
         "task.persistent_dependency",

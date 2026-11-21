@@ -215,6 +215,7 @@ fn validate_single<E: InputProfile>(
         ctx,
         &input.base().validators,
         config.validation_value_name,
+        input.base().secret,
     )
     .map_err(|e| {
         if e.kind() == ErrorKind::InvalidValue {
@@ -307,6 +308,7 @@ pub fn validate_value(
     ctx: &omni_tera::Context,
     validators: &[ValidateConfiguration],
     value_name: Option<&str>,
+    secret: bool,
 ) -> Result<(), Error> {
     for (index, validator) in validators.iter().enumerate() {
         let mut eval_ctx = ctx.clone();
@@ -330,18 +332,24 @@ pub fn validate_value(
         };
 
         if is_error {
-            let error_message = validator
-                .error_message
-                .as_ref()
-                .map(|expr| {
-                    omni_tera::one_off(expr, "validator_expr", &eval_ctx)
-                })
-                .unwrap_or_else(|| {
-                    Ok(format!(
-                        "condition '{}' evaluated to false",
-                        validator.condition
-                    ))
-                })?;
+            // A secret value must never reach a message: the template may
+            // render it, so it is not evaluated at all.
+            let error_message = if secret {
+                Ok("value does not pass validation".to_string())
+            } else {
+                validator
+                    .error_message
+                    .as_ref()
+                    .map(|expr| {
+                        omni_tera::one_off(expr, "validator_expr", &eval_ctx)
+                    })
+                    .unwrap_or_else(|| {
+                        Ok(format!(
+                            "condition '{}' evaluated to false",
+                            validator.condition
+                        ))
+                    })
+            }?;
             Err(ErrorInner::InvalidValue {
                 input_name: input_name.to_string(),
                 value: value.clone(),

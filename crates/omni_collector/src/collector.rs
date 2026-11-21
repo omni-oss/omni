@@ -270,8 +270,13 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
         }
 
         if !hash_input.args.is_empty() {
+            // Sorted by key: map insertion order can vary between runs (e.g.
+            // after a dictionary merge) and must not change the digest.
+            let mut entries = hash_input.args.iter().collect::<Vec<_>>();
+            entries.sort_by(|a, b| a.0.cmp(b.0));
+
             let mut buff = vec![];
-            for (key, value) in hash_input.args.iter() {
+            for (key, value) in entries {
                 buff.push(format!("{key}={value:?}"));
             }
 
@@ -1235,6 +1240,38 @@ mod tests {
             .iter()
             .cloned()
             .collect()
+    }
+
+    #[tokio::test]
+    async fn args_digest_ignores_insertion_order() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let config = CollectConfig {
+            digests: true,
+            ..Default::default()
+        };
+        let digest_for = |keys: &[&str]| {
+            let mut project = Project::new(root, "proj");
+            for k in keys {
+                project.args.insert(k.to_string(), serde_json::json!(*k));
+            }
+            let cache_dir = fresh_cache_dir(root);
+            async move {
+                collect_one(root, &cache_dir, &project, &config)
+                    .await
+                    .digest
+                    .expect("digest")
+            }
+        };
+        let sorted = digest_for(&["a", "b", "z"]).await;
+        assert_eq!(sorted, digest_for(&["z", "a", "b"]).await);
+        assert_eq!(sorted, digest_for(&["b", "z", "a"]).await);
+        // Golden: already-sorted args keep the digest they had before the
+        // sort was added.
+        assert_eq!(
+            format!("{sorted:?}"),
+            "[139, 1, 205, 89, 86, 86, 43, 127, 36, 107, 5, 172, 144, 116, 114, 166, 72, 128, 51, 10, 56, 172, 28, 56, 115, 141, 238, 238, 36, 211, 58, 209]"
+        );
     }
 
     #[tokio::test]

@@ -129,3 +129,37 @@ fn summaries_never_echo_input_values_or_rendered_expressions() {
     assert!(!all.contains("{{ value }}"), "{all}");
     assert!(all.contains("input.invalid_boolean_result"), "{all}");
 }
+
+#[test]
+fn secret_input_never_renders_its_error_message_template() {
+    use crate::base::ValidateConfiguration;
+    use omni_config_types::MaybeExpr;
+
+    let value = ValueBag::from_str("hunter2").to_owned();
+    let validators = [ValidateConfiguration {
+        condition: MaybeExpr::Value(false),
+        error_message: Some("{{ value }} is too short".to_string()),
+    }];
+    let err = crate::validate_value(
+        "token",
+        &value,
+        &omni_tera::Context::new(),
+        &validators,
+        None,
+        true,
+    )
+    .unwrap_err();
+    let r = Err::<(), _>(err).wrap_err("validating inputs").unwrap_err();
+    assert!(!rendered(&r).contains("hunter2"), "{}", rendered(&r));
+
+    let err = crate::validate_value(
+        "token",
+        &value,
+        &omni_tera::Context::new(),
+        &validators,
+        None,
+        false,
+    )
+    .unwrap_err();
+    assert!(err.to_string().contains("hunter2 is too short"));
+}

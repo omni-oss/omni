@@ -31,6 +31,26 @@ fn invalid_access_is_a_user_diagnostic_without_the_server_message() {
     assert_eq!(d.details(), None);
     assert_eq!(d.hints().len(), 1);
     assert!(!d.hints().join(" ").contains("acme-secret-token"));
+    let chain = r
+        .chain()
+        .map(|e| e.to_string())
+        .collect::<Vec<_>>()
+        .join(" | ");
+    assert!(!chain.contains("acme-secret-token"), "{chain}");
+}
+
+#[test]
+fn a_crypto_failure_keeps_its_cause_chain() {
+    let r = report(SetupRemoteCachingConfigError::from(
+        SetupRemoteCachingConfigErrorInner::Io(std::io::Error::other(
+            "disk on fire",
+        )),
+    ));
+    let chain = r.chain().map(|e| e.to_string()).collect::<Vec<_>>();
+    assert!(
+        chain.iter().any(|c| c.contains("disk on fire")),
+        "{chain:?}"
+    );
 }
 
 #[test]

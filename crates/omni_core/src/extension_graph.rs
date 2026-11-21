@@ -194,7 +194,7 @@ impl<T: Merge + ExtensionGraphNode> ExtensionGraph<T> {
             }
         })?;
 
-        let node_indices = self.closure_indices(node);
+        let node_indices = self.closure_indices(node)?;
 
         if self.cache_exists_by_path(&node_indices) {
             if !self.cached_path_exists(id) {
@@ -254,18 +254,64 @@ impl<T: Merge + ExtensionGraphNode> ExtensionGraph<T> {
     }
 
     /// The extension closure of `node` in application order: every
-    /// transitive extendee once, ending with `node` itself.
-    fn closure_indices(&self, node: NodeIndex) -> Vec<NodeIndex> {
-        let graph = Reversed(&self.di_graph);
-        let mut bfs = Bfs::new(graph, node);
+    /// transitive extendee once, ancestors before descendants, ending with
+    /// `node` itself. Direct bases keep their listed order; when that
+    /// cannot hold alongside ancestors-first, an error names the entries.
+    fn closure_indices(
+        &self,
+        node: NodeIndex,
+    ) -> ExtensionGraphResult<Vec<NodeIndex>> {
+        let mut order = vec![];
+        let mut seen = HashSet::new();
+        self.visit_bases(node, &mut seen, &mut order);
 
-        let mut node_indices = vec![];
-        while let Some(node) = bfs.next(graph) {
-            node_indices.push(node);
+        let position = order
+            .iter()
+            .enumerate()
+            .map(|(i, ni)| (*ni, i))
+            .collect::<HashMap<_, _>>();
+
+        for &ni in &order {
+            let bases = self.di_graph[ni]
+                .extendee_ids()
+                .iter()
+                .filter_map(|id| self.get_node_index(id).map(|b| (id, b)))
+                .collect::<Vec<_>>();
+
+            for pair in bases.windows(2) {
+                let (first, first_ni) = &pair[0];
+                let (second, second_ni) = &pair[1];
+
+                if position[first_ni] > position[second_ni] {
+                    Err(ExtensionGraphErrorInner::ConflictingOrder {
+                        node: format!("{:?}", self.di_graph[ni].id()),
+                        first: format!("{first:?}"),
+                        second: format!("{second:?}"),
+                    })?;
+                }
+            }
         }
 
-        node_indices.reverse();
-        node_indices
+        Ok(order)
+    }
+
+    fn visit_bases(
+        &self,
+        node: NodeIndex,
+        seen: &mut HashSet<NodeIndex>,
+        order: &mut Vec<NodeIndex>,
+    ) {
+        if !seen.insert(node) {
+            return;
+        }
+
+        for id in self.di_graph[node].extendee_ids() {
+            if let Some(base) = self.get_node_index(id) {
+                self.visit_bases(base, seen, order);
+            }
+        }
+
+        order.push(node);
     }
 
     /// The raw, unmerged nodes of `id`'s extension closure, in the exact
@@ -282,7 +328,7 @@ impl<T: Merge + ExtensionGraphNode> ExtensionGraph<T> {
         })?;
 
         Ok(self
-            .closure_indices(node)
+            .closure_indices(node)?
             .into_iter()
             .map(|ni| &self.di_graph[ni])
             .collect())
@@ -393,6 +439,23 @@ pub(crate) enum ExtensionGraphErrorInner {
         hint = "remove the circular `extends` chain between the project configurations"
     )]
     CyclicDependency { message: String },
+
+    /// A node's listed base order contradicts its bases' own ancestry.
+    #[error(
+        "`{node}` lists `{first}` before `{second}`, but `{second}` must be applied before `{first}`"
+    )]
+    #[diagnostic(
+        code = "project.extends_order_conflict",
+        hint = "reorder the `extends` entries so ancestors are listed before the entries that extend them, or drop the redundant entry"
+    )]
+    ConflictingOrder {
+        #[diagnostic(detail)]
+        node: String,
+        #[diagnostic(detail)]
+        first: String,
+        #[diagnostic(detail)]
+        second: String,
+    },
 
     #[error("node already exists: {message}")]
     #[diagnostic(skip)]
@@ -760,5 +823,67 @@ mod tests {
             graph.raw_layers_by_id(&404).unwrap_err().kind(),
             ExtensionGraphErrorKind::NodeNotFound
         );
+    }
+
+    #[test]
+    fn closure_puts_ancestors_first_for_redundant_listing() {
+        let graph = ExtensionGraph::from_nodes(vec![
+            node(1, &[]),
+            node(2, &[1]),
+            node(3, &[1, 2]),
+            node(4, &[2]),
+        ])
+        .unwrap();
+
+        assert_eq!(raw_ids(&graph, 3), vec![1, 2, 3]);
+        assert_eq!(raw_ids(&graph, 4), vec![1, 2, 4]);
+    }
+
+    #[test]
+    fn conflicting_listed_order_is_reported() {
+        let mut graph = ExtensionGraph::from_nodes(vec![
+            node(1, &[]),
+            node(2, &[1]),
+            node(3, &[2, 1]),
+        ])
+        .unwrap();
+
+        let err = graph.raw_layers_by_id(&3).unwrap_err();
+        assert_eq!(err.kind(), ExtensionGraphErrorKind::ConflictingOrder);
+        let msg = err.to_string();
+        assert!(
+            msg.contains("`3`") && msg.contains("`2`") && msg.contains("`1`")
+        );
+        assert_eq!(
+            graph.process_node_by_id(&3).unwrap_err().kind(),
+            ExtensionGraphErrorKind::ConflictingOrder
+        );
+        assert_eq!(raw_ids(&graph, 2), vec![1, 2]);
+    }
+
+    #[test]
+    fn uneven_shared_ancestors_are_valid() {
+        let graph = ExtensionGraph::from_nodes(vec![
+            node(1, &[]),
+            node(2, &[1]),
+            node(3, &[2]),
+            node(4, &[1]),
+            node(5, &[3, 4]),
+        ])
+        .unwrap();
+
+        assert_eq!(raw_ids(&graph, 5), vec![1, 2, 3, 4, 5]);
+    }
+
+    #[test]
+    fn listed_order_is_valid_for_both_orders_of_independent_bases() {
+        let graph = ExtensionGraph::from_nodes(vec![
+            node(1, &[]),
+            node(2, &[]),
+            node(3, &[2, 1]),
+        ])
+        .unwrap();
+
+        assert_eq!(raw_ids(&graph, 3), vec![2, 1, 3]);
     }
 }
