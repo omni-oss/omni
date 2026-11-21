@@ -9,7 +9,7 @@ use value_bag::{OwnedValueBag, ValueBag};
 use crate::{
     error::Error,
     provider::InputProvider,
-    utils::{validate_boolean_expression_result, validate_value},
+    utils::{validate_boolean_expression_result, validate_value_with_secrecy},
 };
 
 /// Interactively collect values for every active input in `inputs`.
@@ -309,7 +309,7 @@ async fn process_pre_filled_value<
 
     // Run validators; re-ask provider on InvalidValue.
     let validators = input.base().validators.as_slice();
-    let result = validate_value(
+    let result = validate_value_with_secrecy(
         key,
         &value,
         ctx,
@@ -378,7 +378,7 @@ async fn get_raw_input_value<
         };
 
         let validators = input.base().validators.as_slice();
-        let validation_result = validate_value(
+        let validation_result = validate_value_with_secrecy(
             &input.base().name,
             &result,
             ctx,

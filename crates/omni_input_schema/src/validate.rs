@@ -209,7 +209,7 @@ fn validate_single<E: InputProfile>(
     }
 
     // Run per-field validators.
-    validate_value(
+    validate_value_with_secrecy(
         name,
         &typed,
         ctx,
@@ -303,6 +303,19 @@ fn check_allowed<E: InputProfile>(
 }
 
 pub fn validate_value(
+    input_name: &str,
+    value: &OwnedValueBag,
+    ctx: &omni_tera::Context,
+    validators: &[ValidateConfiguration],
+    value_name: Option<&str>,
+) -> Result<(), Error> {
+    validate_value_with_secrecy(
+        input_name, value, ctx, validators, value_name, false,
+    )
+}
+
+/// Use `secret` for inputs whose candidate must not appear in errors.
+pub fn validate_value_with_secrecy(
     input_name: &str,
     value: &OwnedValueBag,
     ctx: &omni_tera::Context,

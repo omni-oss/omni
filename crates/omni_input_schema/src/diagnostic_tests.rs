@@ -140,7 +140,7 @@ fn secret_input_never_renders_its_error_message_template() {
         condition: MaybeExpr::Value(false),
         error_message: Some("{{ value }} is too short".to_string()),
     }];
-    let err = crate::validate_value(
+    let err = crate::validate_value_with_secrecy(
         "token",
         &value,
         &omni_tera::Context::new(),
@@ -158,7 +158,6 @@ fn secret_input_never_renders_its_error_message_template() {
         &omni_tera::Context::new(),
         &validators,
         None,
-        false,
     )
     .unwrap_err();
     assert!(err.to_string().contains("hunter2 is too short"));
@@ -181,7 +180,7 @@ fn secret_validator_condition_errors_do_not_expose_the_candidate() {
             serde_json::json!([{ "condition": condition }]),
         )
         .unwrap();
-        let err = crate::validate_value(
+        let err = crate::validate_value_with_secrecy(
             "token",
             &value,
             &omni_tera::Context::new(),

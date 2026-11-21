@@ -5,7 +5,7 @@ use omni_generator_configurations::Generator;
 use omni_input_provider::{
     AllowedValue, BooleanInput, FloatArrayInput, FloatInput, IntegerArrayInput,
     IntegerInput, StringArrayInput, StringInput, ValidateConfiguration,
-    error::Error, utils::validate_value,
+    error::Error, utils::validate_value_with_secrecy,
 };
 use requestty::Question;
 use serde::Serialize;
@@ -41,6 +41,7 @@ pub fn password<'a>(
     let question = Question::password(name)
         .message(input.base_extra.message.as_str())
         .validate(move |answer, _| {
+            validate_password_choice(input, answer)?;
             validate_for_requestty(
                 &answer.to_string(),
                 name,
@@ -51,6 +52,18 @@ pub fn password<'a>(
             )
         });
     Ok(question.build())
+}
+
+fn validate_password_choice(
+    input: &StringInput<Generator>,
+    answer: &str,
+) -> Result<(), String> {
+    if let Some(allowed) = &input.allowed
+        && !allowed.iter().any(|option| option.value == answer)
+    {
+        return Err("value does not match an allowed option".to_string());
+    }
+    Ok(())
 }
 
 /// Build a text `input` question for a plain string input.
@@ -472,7 +485,7 @@ fn validate_for_requestty<T: std::fmt::Debug + Serialize + 'static>(
         "validate_for_requestty"
     );
     let value = ValueBag::capture_serde1(value).to_owned();
-    let result = validate_value(
+    let result = validate_value_with_secrecy(
         name,
         &value,
         context_values,
@@ -556,6 +569,21 @@ mod tests {
 
     fn value<T>(v: T) -> Option<MaybeExpr<T>> {
         Some(MaybeExpr::Value(v))
+    }
+
+    #[test]
+    fn password_choice_rejects_unlisted_values_without_echoing_them() {
+        let input = StringInput::<Generator> {
+            base: make_base("token"),
+            allowed: Some(vec!["permitted".into()]),
+            default: None,
+            base_extra: make_gen_base("Token"),
+            string_extra: StringExtras::default(),
+        };
+        assert!(super::validate_password_choice(&input, "permitted").is_ok());
+        let error = super::validate_password_choice(&input, "secret-sentinel")
+            .unwrap_err();
+        assert_eq!(error, "value does not match an allowed option");
     }
 
     #[test]
