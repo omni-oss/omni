@@ -14,8 +14,9 @@ combined, so a child's empty `except: []` does not remove entries inherited
 from a file it extends. Defaults apply once, after every file has been
 combined.
 
-This is a behavior change from earlier versions, which filled in defaults for
-each file before combining. Four cases are affected.
+Earlier versions filled in defaults for each file before combining. They could
+also drop a task's `replace` before applying it to inherited settings. The
+examples below show both changes.
 
 ## `cache.output.logs` is no longer reset
 
@@ -93,6 +94,66 @@ another, as before. A bare command over a block replaces the block's command,
 adds the `^build` dependency to the block's `dependencies` list, and keeps the
 other fields.
 
+## A task keeps its `replace` when a later file appends
+
+A task's `dependencies`, `with`, `args`, `meta` and `env.vars` operators are
+applied in the order the files declare them, on top of the task it extends.
+The same holds for the task's `cache.key.env`, `cache.key.files` and
+`cache.output.files` over the project's `cache`, and for a task's `meta` over
+the project's `meta`.
+
+Before, omni merged the task's declarations into one value first and applied
+that to the extended task or the project. A `replace: []` in one file followed
+by `append: [lint]` in a later file collapsed to just `append: [lint]`, so the
+extended task's entries came back. Now the entries stay cleared.
+
+```yaml
+tasks:
+    build-base:
+        base: true
+        dependencies: [codegen]
+    build:
+        extends: build-base
+        dependencies: { replace: [] }
+```
+
+The later file adds `lint`:
+
+```yaml
+tasks:
+    build:
+        dependencies: { append: [lint] }
+```
+
+`build` now depends on `lint` only. It used to depend on `codegen` and `lint`.
+
+A `merge` after an `append` combines by position over the whole inherited
+list. With an extended list `[x, y]`, `append: [a]` then `merge: [b]` gives
+`[b, y, a]`; it used to give `[b, y]`.
+
+### Avoid reusing old cache entries
+
+If this correction changes a task's `meta` or an environment variable that is
+not listed in `cache.key.env`, the task can produce different output under the
+same cache key. For each affected task, set a fresh environment value and
+include its name in `cache.key.env`. Add these settings to the existing task:
+
+```yaml
+env:
+    vars:
+        OMNI_TASK_CONFIG_REVISION: task-declarations-upgrade-1
+cache:
+    key:
+        env:
+            append: [OMNI_TASK_CONFIG_REVISION]
+```
+
+The new key avoids old entries in both local and remote caches. Keep the setting
+in place on all machines that run the affected task. If you roll back, use a
+different value that has never been used, such as `task-declarations-rollback-1`.
+A single `--force all` run is not enough: it skips reading the cache but can
+leave a successful old entry under the same key.
+
 ## `name` can come from an extended file
 
 `name` is required for a finished project, not for every file. A file may leave
@@ -105,7 +166,9 @@ a nameless extending file even though omni accepts it.
 
 - The order files are applied in, including for several `extends` entries and
   files reached through more than one path.
-- `append`, `prepend`, `replace` and `merge` on lists and dictionaries.
+- What `append`, `prepend`, `replace` and `merge` do on lists and
+  dictionaries. Only the point where a task's declarations are applied
+  changed, as described above.
 - `base`: a file's `base: true` is not inherited by the files that extend it.
 - Each side of a glob (`include`, `exclude`) combines on its own.
 - `@project` paths resolve against the directory of the file that wrote them.

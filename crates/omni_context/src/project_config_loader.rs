@@ -516,6 +516,87 @@ mod tests {
         assert_eq!(deps(named(&projects, "app")), ["base", "child"]);
     }
 
+    fn env_vars(p: &FinalizedProject) -> Vec<(String, String)> {
+        let mut vars = p
+            .config
+            .env
+            .vars
+            .to_map_inner()
+            .into_iter()
+            .collect::<Vec<_>>();
+        vars.sort();
+        vars
+    }
+
+    fn pairs(entries: &[(&str, &str)]) -> Vec<(String, String)> {
+        entries
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn project_env_vars_replace_then_child_add_replays_in_order() {
+        let dir = tmp();
+        let root = dir.path();
+        write(
+            root,
+            "lib/a.yaml",
+            "name: a\nbase: true\nenv:\n  vars:\n    A: '1'\n    B: '2'\n",
+        );
+        write(
+            root,
+            "lib/b.yaml",
+            "name: b\nbase: true\nextends: a.yaml\nenv:\n  vars:\n    replace:\n      C: '3'\n",
+        );
+        let app = write(
+            root,
+            "app/project.omni.yaml",
+            "name: app\nextends: ../lib/b.yaml\nenv:\n  vars:\n    D: '4'\n",
+        );
+
+        let projects = compose(root, &[app]).await;
+
+        assert_eq!(
+            env_vars(named(&projects, "app")),
+            pairs(&[("C", "3"), ("D", "4")])
+        );
+    }
+
+    #[tokio::test]
+    async fn project_env_vars_replace_in_one_branch_of_a_diamond() {
+        let dir = tmp();
+        let root = dir.path();
+        write(
+            root,
+            "lib/top.yaml",
+            "name: top\nbase: true\nenv:\n  vars:\n    A: '1'\n",
+        );
+        write(
+            root,
+            "lib/l.yaml",
+            "name: l\nbase: true\nextends: top.yaml\nenv:\n  vars:\n    replace:\n      L: '2'\n",
+        );
+        write(
+            root,
+            "lib/r.yaml",
+            "name: r\nbase: true\nextends: top.yaml\nenv:\n  vars:\n    R: '3'\n",
+        );
+        let app = write(
+            root,
+            "app/project.omni.yaml",
+            "name: app\nextends: [../lib/l.yaml, ../lib/r.yaml]\n",
+        );
+
+        let projects = compose(root, &[app]).await;
+
+        // `top`, then `l` (which replaces `top`'s vars), then `r`.
+        assert_eq!(
+            env_vars(named(&projects, "app")),
+            pairs(&[("L", "2"), ("R", "3")])
+        );
+    }
+
     #[tokio::test]
     async fn multiple_bases_apply_in_order_and_diamond_ancestor_applies_once() {
         let dir = tmp();

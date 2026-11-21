@@ -184,7 +184,7 @@ fn commandless_tasks_stay_valid() {
     let t =
         task(&[&doc(r#"{"description":"d"}"#), &doc(r#"{"enabled":true}"#)]);
     assert_eq!(long(t.clone()).exec, None);
-    assert!(t.get_task("t").exec.is_none());
+    assert!(t.get_task("t").unwrap().exec.is_none());
 }
 
 #[test]

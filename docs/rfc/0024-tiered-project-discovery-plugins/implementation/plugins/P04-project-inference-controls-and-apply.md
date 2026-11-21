@@ -44,4 +44,7 @@ project authors control inferred projects.
   another activation's values; later explicit replacement overrides globally.
 - Applied references survive public alias changes and cache round trips.
 - Rejected plugin `prepend`/`replace` even if later overridden.
+- A finalized config holding a plugin-emitted root reference serializes and
+  inspects cleanly (`ProjectConfigResponse`, `print-config`); see
+  [#141](https://github.com/omni-oss/omni/issues/141).
 - `inference.plugins` allowlist errors with `replace`; stale allowlist ids fail clearly.

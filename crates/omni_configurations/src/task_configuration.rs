@@ -4,6 +4,7 @@ use merge::Merge;
 use omni_command_config::CommandConfig;
 use omni_config_types::{SingleOrMany, TeraExprBoolean};
 use omni_core::Task;
+use omni_path_utils::ProjectRootId;
 use omni_retry_config::RetryConfiguration;
 use omni_task_output_logs::OutputLogsConfiguration;
 use schemars::JsonSchema;
@@ -11,7 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{CacheConfiguration, MetaConfiguration};
 
-use super::TaskDependencyConfiguration;
+use super::{TaskDependencyConfiguration, TaskReferenceOrigin};
 
 #[derive(
     Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, Validate,
@@ -207,10 +208,17 @@ impl TaskConfiguration {
 
 impl TaskConfigurationLongForm {
     /// Lower this long-form configuration into an executable [`Task`].
-    ///
-    /// This is the single lowering path; [`TaskConfiguration::get_task`] reaches
-    /// it via [`TaskConfiguration::into_long_form`].
-    pub fn into_task(self) -> Task {
+    /// The caller resolves root references against the finalized runnable
+    /// projects, given the field (`dependencies` or `with`) and contributor.
+    pub fn into_task<E>(
+        self,
+        mut resolve_root: impl FnMut(
+            &'static str,
+            &ProjectRootId,
+            &str,
+            &TaskReferenceOrigin,
+        ) -> Result<String, E>,
+    ) -> Result<Task, E> {
         let TaskConfigurationLongForm {
             exec: command,
             retry_exec: retry_command,
@@ -224,17 +232,32 @@ impl TaskConfigurationLongForm {
             ..
         } = self;
 
-        Task::new(
+        let mut lower =
+            |field: &'static str,
+             refs: ListConfig<TaskDependencyConfiguration>| {
+                refs.into_vec()
+                    .into_iter()
+                    .map(|reference| {
+                        reference.lower(|root, task, origin| {
+                            resolve_root(field, root, task, origin)
+                        })
+                    })
+                    .collect::<Result<Vec<_>, _>>()
+            };
+        let dependencies = lower("dependencies", dependencies)?;
+        let with = lower("with", with)?;
+
+        Ok(Task::new(
             command.map(|x| x.into_inner()),
             retry_command.map(|x| x.into_inner()),
-            dependencies.iter().cloned().map(Into::into).collect(),
+            dependencies,
             description.map(|e| e.into_inner()),
             enabled.unwrap_or(true.into()),
             interactive.map(|e| e.into_inner()).unwrap_or(false),
             persistent.map(|e| e.into_inner()).unwrap_or(false),
-            with.iter().cloned().map(Into::into).collect(),
+            with,
             retry.unwrap_or_default(),
-        )
+        ))
     }
 }
 
@@ -264,8 +287,17 @@ impl TaskConfiguration {
         }
     }
 
-    pub fn get_task(&self, name: &str) -> Task {
-        self.clone().into_long_form(name).into_task()
+    /// Lower a task without a project catalog. Internal root references require
+    /// [`TaskConfigurationLongForm::into_task`] with a resolver instead.
+    pub fn get_task(&self, name: &str) -> Result<Task, UnresolvedTaskRoot> {
+        self.clone()
+            .into_long_form(name)
+            .into_task(|_, root, task, _| {
+                Err(UnresolvedTaskRoot {
+                    root: root.clone(),
+                    task: task.to_owned(),
+                })
+            })
     }
 
     pub fn cache(&self) -> Option<&CacheConfiguration> {
@@ -311,6 +343,15 @@ impl TaskConfiguration {
             TaskConfiguration::LongForm(long_form) => Some(&long_form.meta),
         }
     }
+}
+
+#[derive(Debug, PartialEq, Eq, thiserror::Error)]
+#[error(
+    "cannot lower internal reference to task `{task}` at project root `{root}` without a project catalog"
+)]
+pub struct UnresolvedTaskRoot {
+    root: ProjectRootId,
+    task: String,
 }
 
 impl Merge for TaskConfigurationLongForm {
@@ -512,8 +553,8 @@ mod tests {
                 });
 
             assert_eq!(
-                short.get_task("build"),
-                expanded.get_task("build"),
+                short.get_task("build").unwrap(),
+                expanded.get_task("build").unwrap(),
                 "short-form and its long-form expansion must lower identically"
             );
         }
@@ -526,7 +567,7 @@ mod tests {
             "cargo build".to_string(),
         ));
 
-        let task = short.get_task("build");
+        let task = short.get_task("build").unwrap();
 
         assert_eq!(
             task.dependencies,
@@ -552,7 +593,37 @@ mod tests {
             ..Default::default()
         });
 
-        assert_ne!(short.get_task("build"), bare.get_task("build"));
+        assert_ne!(
+            short.get_task("build").unwrap(),
+            bare.get_task("build").unwrap()
+        );
+    }
+
+    #[test]
+    fn lowering_without_a_catalog_rejects_an_internal_reference() {
+        let root = ProjectRootId::new(
+            omni_path_utils::WorkspacePath::parse("packages/shared").unwrap(),
+        );
+        let config = TaskConfiguration::long_form(TaskConfigurationLongForm {
+            with: ListConfig::append(vec![
+                TaskDependencyConfiguration::ProjectRoot {
+                    project_root: root.clone(),
+                    task: "watch".into(),
+                    origin: TaskReferenceOrigin {
+                        task: "run".into(),
+                        file: None,
+                    },
+                },
+            ]),
+            ..Default::default()
+        });
+        assert_eq!(
+            config.get_task("run"),
+            Err(UnresolvedTaskRoot {
+                root,
+                task: "watch".into(),
+            })
+        );
     }
 
     #[test]
