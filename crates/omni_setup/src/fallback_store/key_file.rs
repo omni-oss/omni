@@ -55,29 +55,100 @@ mod windows {
 
     use windows_sys::Win32::{
         Foundation::{
-            ERROR_FILE_NOT_FOUND, ERROR_SUCCESS, GENERIC_WRITE,
-            INVALID_HANDLE_VALUE, LocalFree,
+            CloseHandle, ERROR_FILE_NOT_FOUND, ERROR_SUCCESS, GENERIC_WRITE,
+            HANDLE, INVALID_HANDLE_VALUE, LocalFree,
         },
         Security::{
             ACE_HEADER, ACL,
             Authorization::{
+                ConvertSidToStringSidW,
                 ConvertStringSecurityDescriptorToSecurityDescriptorW,
                 GetNamedSecurityInfoW, GetSecurityInfo, SDDL_REVISION_1,
                 SE_FILE_OBJECT,
             },
-            DACL_SECURITY_INFORMATION, GetAce, INHERITED_ACE,
-            InitializeSecurityDescriptor, LABEL_SECURITY_INFORMATION,
-            OWNER_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR,
-            SE_DACL_PROTECTED, SE_SACL_PROTECTED, SECURITY_ATTRIBUTES,
-            SECURITY_DESCRIPTOR, SetSecurityDescriptorControl,
-            SetSecurityDescriptorDacl, SetSecurityDescriptorOwner,
-            SetSecurityDescriptorSacl,
+            DACL_SECURITY_INFORMATION, GetAce, GetTokenInformation,
+            INHERITED_ACE, InitializeSecurityDescriptor,
+            LABEL_SECURITY_INFORMATION, OWNER_SECURITY_INFORMATION,
+            PSECURITY_DESCRIPTOR, SE_DACL_PROTECTED, SE_SACL_PROTECTED,
+            SECURITY_ATTRIBUTES, SECURITY_DESCRIPTOR,
+            SetSecurityDescriptorControl, SetSecurityDescriptorDacl,
+            SetSecurityDescriptorOwner, SetSecurityDescriptorSacl, TOKEN_QUERY,
+            TOKEN_USER, TokenUser,
         },
         Storage::FileSystem::{CREATE_NEW, CreateFileW, FILE_ATTRIBUTE_NORMAL},
+        System::Threading::{GetCurrentProcess, OpenProcessToken},
     };
 
-    // Protected DACL: the owner and Local System only, with no inherited ACEs.
-    const PRIVATE_DACL: &str = "D:P(A;;FA;;;OW)(A;;FA;;;SY)";
+    /// A protected DACL for a new store: the creating account and Local
+    /// System only, with no inherited ACEs. Use the token's user SID rather
+    /// than `OW`: an elevated administrator's default owner can be the
+    /// Administrators group, which an unelevated run of the same account
+    /// cannot use.
+    fn private_dacl() -> io::Result<String> {
+        let mut token: HANDLE = null_mut();
+        // SAFETY: The pseudo-handle is valid and `token` is writable.
+        if unsafe {
+            OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token)
+        } == 0
+        {
+            return Err(io::Error::last_os_error());
+        }
+        let result = (|| {
+            let mut needed = 0;
+            // SAFETY: A null buffer asks Win32 for the required size.
+            unsafe {
+                GetTokenInformation(
+                    token,
+                    TokenUser,
+                    null_mut(),
+                    0,
+                    &mut needed,
+                )
+            };
+            if needed == 0 {
+                return Err(io::Error::last_os_error());
+            }
+            let mut buffer =
+                vec![0u64; (needed as usize).div_ceil(size_of::<u64>())];
+            // SAFETY: The aligned buffer has at least `needed` bytes.
+            if unsafe {
+                GetTokenInformation(
+                    token,
+                    TokenUser,
+                    buffer.as_mut_ptr().cast(),
+                    needed,
+                    &mut needed,
+                )
+            } == 0
+            {
+                return Err(io::Error::last_os_error());
+            }
+            // SAFETY: Success wrote a TOKEN_USER whose SID lives in `buffer`.
+            let sid =
+                unsafe { (*buffer.as_ptr().cast::<TOKEN_USER>()).User.Sid };
+            let mut text = null_mut();
+            // SAFETY: `sid` is valid; `text` receives a LocalAlloc string.
+            if unsafe { ConvertSidToStringSidW(sid, &mut text) } == 0 {
+                return Err(io::Error::last_os_error());
+            }
+            let mut len = 0;
+            // SAFETY: Win32 returned a NUL-terminated UTF-16 string.
+            while unsafe { *text.add(len) } != 0 {
+                len += 1;
+            }
+            // SAFETY: The slice covers exactly the returned string.
+            let sid = String::from_utf16(unsafe {
+                std::slice::from_raw_parts(text, len)
+            });
+            // SAFETY: `text` was allocated by the API with LocalAlloc.
+            unsafe { LocalFree(text.cast()) };
+            let sid = sid.map_err(io::Error::other)?;
+            Ok(format!("D:P(A;;FA;;;{sid})(A;;FA;;;SY)"))
+        })();
+        // SAFETY: `token` came from a successful OpenProcessToken call.
+        unsafe { CloseHandle(token) };
+        result
+    }
 
     fn wide(path: &Path) -> Vec<u16> {
         path.as_os_str().encode_wide().chain([0]).collect()
@@ -139,7 +210,7 @@ mod windows {
         };
         let builder = tempfile::Builder::new();
         if status == ERROR_FILE_NOT_FOUND {
-            let private = Descriptor::from_sddl(PRIVATE_DACL)?;
+            let private = Descriptor::from_sddl(&private_dacl()?)?;
             let staged =
                 builder.make_in(parent, |path| create_new(path, private.0))?;
             return Ok((staged, false));
@@ -363,6 +434,16 @@ mod windows {
             let (mut staged, existing) =
                 stage(parent.path(), &new_path).unwrap();
             assert!(!existing);
+            // A new store must name the creating account, not a group that
+            // an unelevated run of the same account cannot use.
+            let sid = private_dacl().unwrap();
+            let sid = sid
+                .strip_prefix("D:P(A;;FA;;;")
+                .and_then(|rest| rest.strip_suffix(")(A;;FA;;;SY)"))
+                .expect("DACL names the creating user's SID");
+            assert!(
+                sid.starts_with("S-1-5-21-") || sid.starts_with("S-1-12-1-")
+            );
             // Close the exclusive handle before reading security via path.
             staged.write_all(b"replacement").unwrap();
             staged.as_file().sync_all().unwrap();
@@ -437,7 +518,8 @@ mod windows {
                 },
                 0,
             );
-            let plain = Descriptor::from_sddl(PRIVATE_DACL).unwrap();
+            let plain =
+                Descriptor::from_sddl(&private_dacl().unwrap()).unwrap();
             let probe = parent.path().join("inheritance-probe");
             create_new(&probe, plain.0).unwrap();
             assert!(
