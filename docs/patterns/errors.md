@@ -6,7 +6,7 @@ Examples with the diagnostic derive: `crates/env_loader/src/error.rs`, `crates/o
 
 ## Preserve diagnostic codes across wrappers
 
-Diagnostic lookup (`omni_diagnostic::find`) walks the error's cause chain and recognizes only types that registered a lookup, which the `Diagnostic` derive does. `#[error(transparent)]` makes the wrapper stand in for the inner error: it forwards `Display` and also `source()`, but `source()` returns the inner error's *source*, not the inner error. The inner error is a field of the wrapper, not a link in the chain, so it is never visited.
+Diagnostic lookup (`omni_diagnostic::find`) walks the error's cause chain and recognizes only types that registered a lookup, which the `Diagnostic` derive does. `#[error(transparent)]` makes the wrapper stand in for the inner error: it forwards `Display` and also `source()`, but `source()` returns the inner error's _source_, not the inner error. The inner error is a field of the wrapper, not a link in the chain, so it is never visited.
 
 Rust has no reflection, so `find` cannot look inside a type that did not register itself. Changing `find` to check sources more thoroughly would not help.
 
@@ -33,14 +33,15 @@ At the CLI this prints a plain `error: invalid shell syntax` and exits `1`, inst
 
 - For a transparent wrapper over a diagnosable error, derive `Diagnostic` and use `#[diagnostic(forward)]` on a single-field struct or `#[diagnostic(delegate)]` on a single-field enum variant:
 
-  ```rust
-  #[derive(Debug, thiserror::Error, omni_diagnostic::Diagnostic)]
-  #[error(transparent)]
-  #[diagnostic(forward)]
-  pub struct ExecutionPipelineError(#[from] InvalidShellSyntax);
-  ```
+    ```rust
+    #[derive(Debug, thiserror::Error, omni_diagnostic::Diagnostic)]
+    #[error(transparent)]
+    #[diagnostic(forward)]
+    pub struct ExecutionPipelineError(#[from] InvalidShellSyntax);
+    ```
 
-  See [`ProjectConfigLoaderError` and its `LoadConfig` variant](../../crates/omni_context/src/project_config_loader.rs).
+    See [`ProjectConfigLoaderError` and its `LoadConfig` variant](../../crates/omni_context/src/project_config_loader.rs).
+
 - To add context without defining a new diagnostic, give the wrapper its own `#[error("...")]` message and keep the inner error in a named `#[source]` field. That puts the cause in the chain instead of skipping over it.
 
 ### What is and is not checked
