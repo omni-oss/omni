@@ -469,7 +469,6 @@ fn validate_for_requestty<T: std::fmt::Debug + Serialize + 'static>(
     tracing::debug!(
         validator_count = validators.len(),
         ?validation_value_name,
-        ?value,
         "validate_for_requestty"
     );
     let value = ValueBag::capture_serde1(value).to_owned();
@@ -483,8 +482,11 @@ fn validate_for_requestty<T: std::fmt::Debug + Serialize + 'static>(
     );
     if let Err(err) = result {
         if let Some(error_message) = err.invalid_value_message() {
-            tracing::debug!(?err, "validation_failed");
+            tracing::debug!("validation_failed");
             Err(error_message.to_string())
+        } else if secret {
+            tracing::debug!("validation_error");
+            Err("unexpected validation error for secret input".to_string())
         } else {
             tracing::debug!(?err, "validation_error");
             Err(format!("unexpected validation error: {err:?}"))

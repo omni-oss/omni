@@ -7678,6 +7678,7 @@ dependencies = [
 name = "omni_input_schema"
 version = "0.22.0"
 dependencies = [
+ "educe",
  "either",
  "enumset",
  "eyre",

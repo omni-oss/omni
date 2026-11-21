@@ -20,7 +20,8 @@ use crate::InputProfile;
 ///   - value: apache-2.0
 ///     description: "Permissive, patent grant"
 /// ```
-#[derive(Serialize, JsonSchema, Debug, Clone, PartialEq)]
+#[derive(Serialize, JsonSchema, Debug, educe::Educe, PartialEq)]
+#[educe(Clone(bound(T: Clone)))]
 #[serde(bound(
     serialize = "T: Serialize",
     deserialize = "T: Deserialize<'de>"
@@ -92,7 +93,10 @@ where
 /// `TOpt` is the per-option extra type from the active `InputProfile`.
 ///
 /// No `Eq` or `Hash` derives — `T` may be `f64`.
-#[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq)]
+#[derive(
+    Serialize, Deserialize, JsonSchema, Debug, educe::Educe, PartialEq,
+)]
+#[educe(Clone(bound(T: Clone)))]
 #[serde(bound(
     serialize = "T: Serialize",
     deserialize = "T: Deserialize<'de>"

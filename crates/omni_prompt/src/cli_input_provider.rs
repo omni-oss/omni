@@ -43,14 +43,15 @@ impl InputProvider<Generator> for CliInputProvider {
         input: &StringInput<Generator>,
         ctx: &omni_tera::Context,
     ) -> Result<String, Error> {
-        let question = if input.string_extra.widget
+        let password = input.string_extra.widget
             == Some(StringWidget::Password)
-            || input.base.secret
-        {
+            || input.base.secret;
+        let select = !password
+            && (input.string_extra.widget == Some(StringWidget::Select)
+                || input.allowed.is_some());
+        let question = if password {
             make::password(input, ctx, self.validation_value_name)?
-        } else if input.string_extra.widget == Some(StringWidget::Select)
-            || input.allowed.is_some()
-        {
+        } else if select {
             make::select_string(input, ctx)?
         } else {
             make::text(input, ctx, self.validation_value_name)?
@@ -60,9 +61,7 @@ impl InputProvider<Generator> for CliInputProvider {
             tokio::task::block_in_place(|| requestty::prompt_one(question))
                 .map_err(|e| eyre::eyre!("prompt error: {e}"))?;
 
-        if input.string_extra.widget == Some(StringWidget::Select)
-            || input.allowed.is_some()
-        {
+        if select {
             // select returns a ListItem; look up the actual value by index
             let idx = answer
                 .as_list_item()

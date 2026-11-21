@@ -7,7 +7,7 @@ use value_bag::{OwnedValueBag, ValueBag};
 
 use crate::base::ValidateConfiguration;
 use crate::error::{Error, ErrorInner, ErrorKind};
-use crate::input::{Input, InputKind};
+use crate::input::{Input, InputKind, secret_paths};
 use crate::profile::InputProfile;
 
 /// A single field-level validation failure.
@@ -215,7 +215,7 @@ fn validate_single<E: InputProfile>(
         ctx,
         &input.base().validators,
         config.validation_value_name,
-        input.base().secret,
+        !secret_paths(input).is_empty(),
     )
     .map_err(|e| {
         if e.kind() == ErrorKind::InvalidValue {
@@ -352,7 +352,11 @@ pub fn validate_value(
             }?;
             Err(ErrorInner::InvalidValue {
                 input_name: input_name.to_string(),
-                value: value.clone(),
+                value: if secret {
+                    ValueBag::empty().to_owned()
+                } else {
+                    value.clone()
+                },
                 error_message,
             })?;
         }
@@ -484,6 +488,36 @@ mod tests {
 
     fn bag_f64(f: f64) -> value_bag::OwnedValueBag {
         ValueBag::capture_serde1(&f).to_owned()
+    }
+
+    #[test]
+    fn object_report_does_not_render_secret_fields() {
+        let input: Input<()> = serde_json::from_value(serde_json::json!({
+            "type": "object",
+            "name": "cfg",
+            "fields": [{"type": "string", "name": "token", "secret": true}],
+            "validators": [{
+                "condition": false,
+                "error_message": "bad token {{ value.token }}"
+            }]
+        }))
+        .unwrap();
+        let mut values = empty_values();
+        values.insert(
+            "cfg".into(),
+            ValueBag::from_serde1(&serde_json::json!({
+                "token": "validator-secret-sentinel"
+            }))
+            .to_owned(),
+        );
+        let report =
+            validate(&[input], &values, &empty_ctx(), &default_config())
+                .unwrap();
+        assert_eq!(report.errors.len(), 1);
+        assert_eq!(
+            report.errors[0].message,
+            "value is invalid for input cfg: value does not pass validation",
+        );
     }
 
     fn base(name: &str) -> BaseInput {
