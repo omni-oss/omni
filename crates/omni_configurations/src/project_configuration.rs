@@ -1,16 +1,12 @@
-use std::path::Path;
-
 use config_utils::{DictConfig, ListConfig, Replace, merge::Merge};
 use garde::Validate;
 use omni_config_types::SingleOrMany;
 use omni_types::OmniPath;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use system_traits::FsReadAsync;
 
 use crate::{
-    CacheConfiguration, MetaConfiguration,
-    utils::{self, fs::LoadConfigError, list_config_default},
+    CacheConfiguration, MetaConfiguration, utils::list_config_default,
 };
 
 use super::TaskConfiguration;
@@ -69,32 +65,6 @@ pub struct ProjectConfiguration {
 
     #[serde(default)]
     pub tasks: DictConfig<TaskConfiguration>,
-}
-
-impl omni_core::ExtensionGraphNode for ProjectConfiguration {
-    type Id = OmniPath;
-
-    fn id(&self) -> &Self::Id {
-        &self.file
-    }
-
-    fn extendee_ids(&self) -> &[Self::Id] {
-        match &self.extends {
-            Some(SingleOrMany::Single(path)) => std::slice::from_ref(path),
-            Some(SingleOrMany::Many(paths)) => paths.as_slice(),
-            None => &[],
-        }
-    }
-}
-
-impl ProjectConfiguration {
-    #[allow(clippy::result_large_err)]
-    pub async fn load<'a>(
-        path: impl Into<&'a Path>,
-        sys: &(impl FsReadAsync + Send + Sync),
-    ) -> Result<Self, LoadConfigError> {
-        utils::fs::load_config_async(path, sys).await
-    }
 }
 
 #[derive(
@@ -267,28 +237,6 @@ mod tests {
         let project: ProjectConfiguration =
             serde_json::from_str(r#"{"name":"p"}"#).unwrap();
         assert_eq!(project.extends, None);
-    }
-
-    #[test]
-    fn test_extendee_ids_normalizes_forms() {
-        use omni_core::ExtensionGraphNode;
-
-        let single: ProjectConfiguration =
-            serde_json::from_str(r#"{"name":"p","extends":"a.yaml"}"#).unwrap();
-        assert_eq!(single.extendee_ids(), &[OmniPath::new("a.yaml")]);
-
-        let many: ProjectConfiguration = serde_json::from_str(
-            r#"{"name":"p","extends":["a.yaml","b.yaml"]}"#,
-        )
-        .unwrap();
-        assert_eq!(
-            many.extendee_ids(),
-            &[OmniPath::new("a.yaml"), OmniPath::new("b.yaml")]
-        );
-
-        let none: ProjectConfiguration =
-            serde_json::from_str(r#"{"name":"p"}"#).unwrap();
-        assert!(none.extendee_ids().is_empty());
     }
 
     #[test]

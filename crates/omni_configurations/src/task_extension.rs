@@ -12,7 +12,7 @@ use thiserror::Error;
 
 omni_codes::prefixes!("task_extension");
 
-use crate::{ProjectConfiguration, TaskConfiguration, TaskLayer};
+use crate::TaskLayer;
 
 #[derive(Debug, Clone)]
 struct TaskExtensionNode<T> {
@@ -49,21 +49,6 @@ impl<T: Merge + Clone + std::fmt::Debug> ExtensionGraphNode
     }
 }
 
-impl ProjectConfiguration {
-    /// Resolve intra-project task extension in place.
-    ///
-    /// Tasks marked `base` become extension-only templates and are dropped from
-    /// the emitted set; tasks with `extends` inherit and override the tasks they
-    /// name. Every task is promoted to its canonical long form before merging so
-    /// extending a short-form task is a lossless structural merge. When no task
-    /// declares `base` or `extends`, the task map is left untouched.
-    pub fn resolve_task_extensions(
-        &mut self,
-    ) -> Result<(), TaskExtensionError> {
-        resolve_task_extensions(&mut self.tasks)
-    }
-}
-
 /// Merge every node into the nodes it extends, in extension order.
 fn resolve_nodes<T: Merge + Clone + std::fmt::Debug>(
     nodes: Vec<TaskExtensionNode<T>>,
@@ -90,60 +75,13 @@ fn resolve_nodes<T: Merge + Clone + std::fmt::Debug>(
     graph.get_or_process_all_nodes().map_err(map_graph_error)
 }
 
-fn resolve_task_extensions(
-    tasks: &mut DictConfig<TaskConfiguration>,
-) -> Result<(), TaskExtensionError> {
-    let needs_resolution = tasks.values().any(|task| match task {
-        TaskConfiguration::LongForm(long_form) => {
-            long_form.base || long_form.extends.is_some()
-        }
-        TaskConfiguration::ShortForm(_) => false,
-    });
-
-    if !needs_resolution {
-        return Ok(());
-    }
-
-    let nodes = tasks
-        .iter()
-        .map(|(name, task)| {
-            let task = task.clone().into_long_form(name);
-            let extends = task
-                .extends
-                .as_ref()
-                .map(SingleOrMany::to_vec)
-                .unwrap_or_default();
-
-            TaskExtensionNode {
-                name: name.clone(),
-                extends,
-                task,
-            }
-        })
-        .collect::<Vec<_>>();
-
-    let resolved = resolve_nodes(nodes)?;
-
-    let map = tasks.as_map_mut();
-    map.clear();
-
-    for node in resolved {
-        if node.task.base {
-            continue;
-        }
-
-        let mut task = node.task;
-        task.base = false;
-        task.extends = None;
-
-        map.insert(node.name, TaskConfiguration::long_form(task));
-    }
-
-    Ok(())
-}
-
-/// [`resolve_task_extensions`] over presence-aware task layers, so omitted
-/// fields stay omitted through task inheritance.
+/// Resolve intra-project task extension in place over presence-aware task
+/// layers, so omitted fields stay omitted through task inheritance.
+///
+/// Tasks marked `base` become extension-only templates and are dropped from
+/// the emitted set; tasks with `extends` inherit and override the tasks they
+/// name. When no task declares `base` or `extends`, the map is left untouched
+/// and `false` is returned.
 pub(crate) fn resolve_task_layer_extensions(
     tasks: &mut DictConfig<TaskLayer>,
 ) -> Result<bool, TaskExtensionError> {
@@ -250,103 +188,75 @@ mod tests {
     use config_utils::Replace;
     use omni_command_config::CommandConfig;
 
-    use super::*;
-    use crate::{TaskConfigurationLongForm, TaskEnvConfiguration};
+    use crate::{
+        FinalizeError, FinalizedProject, LoadedLayer, ProjectLayer,
+        TaskConfiguration, TaskConfigurationLongForm,
+        TaskDependencyConfiguration, TaskExtensionErrorKind,
+    };
 
-    fn tasks(
-        items: Vec<(&str, TaskConfiguration)>,
-    ) -> DictConfig<TaskConfiguration> {
-        let mut map = maps::map![];
-        for (name, task) in items {
-            map.insert(name.to_string(), task);
-        }
-        DictConfig::value(map)
-    }
-
-    fn long(
-        base: bool,
-        extends: Option<Vec<&str>>,
-        exec: Option<&str>,
-    ) -> TaskConfiguration {
-        TaskConfiguration::long_form(TaskConfigurationLongForm {
-            base,
-            extends: extends.map(|e| {
-                SingleOrMany::Many(
-                    e.into_iter().map(|s| s.to_string()).collect(),
-                )
-            }),
-            exec: exec
-                .map(|e| Replace::new(CommandConfig::Shell(e.to_string()))),
+    fn compose(tasks: &str) -> Result<FinalizedProject, FinalizeError> {
+        let layer: ProjectLayer =
+            serde_json::from_str(&format!(r#"{{"name":"p","tasks":{tasks}}}"#))
+                .unwrap();
+        LoadedLayer {
+            layer,
             ..Default::default()
-        })
+        }
+        .finalize_composed()
     }
 
-    fn env_vars(pairs: &[(&str, &str)]) -> TaskEnvConfiguration {
-        let mut map = maps::map![];
-        for (key, value) in pairs {
-            map.insert(key.to_string(), Replace::new(value.to_string()));
-        }
-        TaskEnvConfiguration {
-            vars: Some(DictConfig::value(map)),
+    fn resolve(tasks: &str) -> FinalizedProject {
+        compose(tasks).unwrap()
+    }
+
+    fn extension_error(tasks: &str) -> TaskExtensionErrorKind {
+        match compose(tasks) {
+            Err(FinalizeError::TaskExtension(e)) => e.kind(),
+            _ => panic!("expected a task extension error"),
         }
     }
 
-    fn get_long<'a>(
-        tasks: &'a DictConfig<TaskConfiguration>,
+    fn get_long(
+        project: &FinalizedProject,
         name: &str,
-    ) -> &'a TaskConfigurationLongForm {
-        match tasks.as_map().get(name).expect("task should be present") {
-            TaskConfiguration::LongForm(long_form) => long_form,
-            TaskConfiguration::ShortForm(_) => panic!("expected long form"),
-        }
+    ) -> TaskConfigurationLongForm {
+        project
+            .config
+            .tasks
+            .as_map()
+            .get(name)
+            .expect("task should be present")
+            .clone()
+            .into_long_form(name)
+    }
+
+    fn shell(command: &str) -> Option<Replace<CommandConfig>> {
+        Some(Replace::new(CommandConfig::Shell(command.to_string())))
     }
 
     #[test]
     fn test_fast_path_is_no_op() {
-        let mut t = tasks(vec![
-            ("a", TaskConfiguration::short_form("echo a")),
-            ("b", long(false, None, Some("echo b"))),
-        ]);
-        let original = t.clone();
+        let p = resolve(r#"{"a":"echo a","b":{"exec":"echo b"}}"#);
 
-        resolve_task_extensions(&mut t).unwrap();
-
-        assert_eq!(t, original);
         assert!(matches!(
-            t.as_map().get("a"),
+            p.config.tasks.as_map().get("a"),
             Some(TaskConfiguration::ShortForm(_))
         ));
+        assert_eq!(get_long(&p, "b").exec, shell("echo b"));
     }
 
     #[test]
     fn test_single_extend_overrides_and_drops_base() {
-        let base = TaskConfigurationLongForm {
-            base: true,
-            exec: Some(Replace::new(CommandConfig::Shell("base".to_string()))),
-            env: env_vars(&[("A", "1")]),
-            ..Default::default()
-        };
-
-        let derived = TaskConfigurationLongForm {
-            extends: Some(SingleOrMany::Single("base_task".to_string())),
-            env: env_vars(&[("B", "2")]),
-            ..Default::default()
-        };
-
-        let mut t = tasks(vec![
-            ("base_task", TaskConfiguration::long_form(base)),
-            ("derived", TaskConfiguration::long_form(derived)),
-        ]);
-
-        resolve_task_extensions(&mut t).unwrap();
-
-        assert!(t.as_map().get("base_task").is_none());
-
-        let derived = get_long(&t, "derived");
-        assert_eq!(
-            derived.exec,
-            Some(Replace::new(CommandConfig::Shell("base".to_string())))
+        let p = resolve(
+            r#"{
+            "base_task":{"base":true,"exec":"base","env":{"vars":{"A":"1"}}},
+            "derived":{"extends":"base_task","env":{"vars":{"B":"2"}}}}"#,
         );
+
+        assert!(p.config.tasks.as_map().get("base_task").is_none());
+
+        let derived = get_long(&p, "derived");
+        assert_eq!(derived.exec, shell("base"));
         assert!(!derived.base);
         assert_eq!(derived.extends, None);
 
@@ -357,39 +267,28 @@ mod tests {
 
     #[test]
     fn test_extend_chain() {
-        let mut t = tasks(vec![
-            ("a", long(true, None, Some("a"))),
-            ("b", long(true, Some(vec!["a"]), None)),
-            ("c", long(false, Some(vec!["b"]), None)),
-        ]);
-
-        resolve_task_extensions(&mut t).unwrap();
-
-        assert!(t.as_map().get("a").is_none());
-        assert!(t.as_map().get("b").is_none());
-        let c = get_long(&t, "c");
-        assert_eq!(
-            c.exec,
-            Some(Replace::new(CommandConfig::Shell("a".to_string())))
+        let p = resolve(
+            r#"{"a":{"base":true,"exec":"a"},
+            "b":{"base":true,"extends":["a"]},
+            "c":{"extends":["b"]}}"#,
         );
+
+        assert!(p.config.tasks.as_map().get("a").is_none());
+        assert!(p.config.tasks.as_map().get("b").is_none());
+        assert_eq!(get_long(&p, "c").exec, shell("a"));
     }
 
     #[test]
     fn test_diamond_dedup() {
-        let mut t = tasks(vec![
-            ("a", long(true, None, Some("a"))),
-            ("b", long(true, Some(vec!["a"]), None)),
-            ("c", long(true, Some(vec!["a"]), None)),
-            ("d", long(false, Some(vec!["b", "c"]), None)),
-        ]);
-
-        resolve_task_extensions(&mut t).unwrap();
-
-        let d = get_long(&t, "d");
-        assert_eq!(
-            d.exec,
-            Some(Replace::new(CommandConfig::Shell("a".to_string())))
+        let p = resolve(
+            r#"{"a":{"base":true,"exec":"a"},
+            "b":{"base":true,"extends":["a"]},
+            "c":{"base":true,"extends":["a"]},
+            "d":{"extends":["b","c"]}}"#,
         );
+
+        let d = get_long(&p, "d");
+        assert_eq!(d.exec, shell("a"));
         assert!(!d.base);
         assert_eq!(d.extends, None);
     }
@@ -398,43 +297,35 @@ mod tests {
     fn test_base_marker_does_not_propagate_through_extends() {
         // `base` is a per-declaration template marker, never inherited: a
         // concrete task that extends a `base: true` template must itself be
-        // emitted, not dropped. (Guards against `base` ever adopting the
-        // inherit-on-omit rule used for `extends`.)
-        let mut t = tasks(vec![
-            ("tmpl", long(true, None, Some("tmpl"))),
-            ("concrete", long(false, Some(vec!["tmpl"]), None)),
-        ]);
-
-        resolve_task_extensions(&mut t).unwrap();
+        // emitted, not dropped.
+        let p = resolve(
+            r#"{"tmpl":{"base":true,"exec":"tmpl"},
+            "concrete":{"extends":["tmpl"]}}"#,
+        );
 
         assert!(
-            t.as_map().get("tmpl").is_none(),
+            p.config.tasks.as_map().get("tmpl").is_none(),
             "the base template must be dropped"
         );
-        let concrete = get_long(&t, "concrete");
+        let concrete = get_long(&p, "concrete");
         assert!(!concrete.base, "the extender must not inherit `base`");
-        assert_eq!(
-            concrete.exec,
-            Some(Replace::new(CommandConfig::Shell("tmpl".to_string())))
-        );
+        assert_eq!(concrete.exec, shell("tmpl"));
     }
 
     #[test]
     fn test_empty_extends_applies_no_extension() {
-        // `extends: []` is a real (Some) value that resolves to no extendees,
-        // so the task keeps its own definition and is emitted standalone.
-        let mut t = tasks(vec![
-            ("a", long(true, None, Some("a"))),
-            ("b", long(false, Some(vec![]), Some("b"))),
-        ]);
+        // `extends: []` is a real value that resolves to no extendees, so the
+        // task keeps its own definition and is emitted standalone.
+        let p = resolve(
+            r#"{"a":{"base":true,"exec":"a"},
+            "b":{"extends":[],"exec":"b"}}"#,
+        );
 
-        resolve_task_extensions(&mut t).unwrap();
-
-        assert!(t.as_map().get("a").is_none());
-        let b = get_long(&t, "b");
+        assert!(p.config.tasks.as_map().get("a").is_none());
+        let b = get_long(&p, "b");
         assert_eq!(
             b.exec,
-            Some(Replace::new(CommandConfig::Shell("b".to_string()))),
+            shell("b"),
             "empty extends must not pull in any other task"
         );
         assert_eq!(b.extends, None);
@@ -442,67 +333,43 @@ mod tests {
 
     #[test]
     fn test_cycle_is_rejected() {
-        let mut t = tasks(vec![
-            ("a", long(false, Some(vec!["b"]), None)),
-            ("b", long(false, Some(vec!["a"]), None)),
-        ]);
-
-        let err = resolve_task_extensions(&mut t).unwrap_err();
-        assert_eq!(err.kind(), TaskExtensionErrorKind::Cycle);
+        assert_eq!(
+            extension_error(r#"{"a":{"extends":["b"]},"b":{"extends":["a"]}}"#),
+            TaskExtensionErrorKind::Cycle
+        );
     }
 
     #[test]
     fn test_unknown_extendee_is_rejected() {
-        let mut t =
-            tasks(vec![("a", long(false, Some(vec!["missing"]), Some("a")))]);
-
-        let err = resolve_task_extensions(&mut t).unwrap_err();
-        assert_eq!(err.kind(), TaskExtensionErrorKind::UnknownExtendee);
+        assert_eq!(
+            extension_error(r#"{"a":{"extends":["missing"],"exec":"a"}}"#),
+            TaskExtensionErrorKind::UnknownExtendee
+        );
     }
 
     #[test]
     fn test_extending_non_base_keeps_target() {
-        let mut t = tasks(vec![
-            ("a", long(false, None, Some("a"))),
-            ("b", long(false, Some(vec!["a"]), Some("b"))),
-        ]);
+        let p =
+            resolve(r#"{"a":{"exec":"a"},"b":{"extends":["a"],"exec":"b"}}"#);
 
-        resolve_task_extensions(&mut t).unwrap();
-
-        assert!(t.as_map().get("a").is_some());
-        assert!(t.as_map().get("b").is_some());
-        let b = get_long(&t, "b");
-        assert_eq!(
-            b.exec,
-            Some(Replace::new(CommandConfig::Shell("b".to_string())))
-        );
+        assert!(p.config.tasks.as_map().get("a").is_some());
+        assert!(p.config.tasks.as_map().get("b").is_some());
+        assert_eq!(get_long(&p, "b").exec, shell("b"));
     }
 
     #[test]
     fn test_extending_short_form_base_is_lossless() {
-        let derived = TaskConfigurationLongForm {
-            extends: Some(SingleOrMany::Single("a".to_string())),
-            env: env_vars(&[("B", "2")]),
-            ..Default::default()
-        };
-
-        let mut t = tasks(vec![
-            ("a", TaskConfiguration::short_form("echo a")),
-            ("derived", TaskConfiguration::long_form(derived)),
-        ]);
-
-        resolve_task_extensions(&mut t).unwrap();
-
-        let derived = get_long(&t, "derived");
-        assert_eq!(
-            derived.exec,
-            Some(Replace::new(CommandConfig::Shell("echo a".to_string())))
+        let p = resolve(
+            r#"{"a":"echo a",
+            "derived":{"extends":"a","env":{"vars":{"B":"2"}}}}"#,
         );
+
+        let derived = get_long(&p, "derived");
+        assert_eq!(derived.exec, shell("echo a"));
         // The short-form target's implicit upstream self-dependency survives.
-        let deps = derived.dependencies.to_vec();
-        assert!(deps.iter().any(|d| matches!(
+        assert!(derived.dependencies.to_vec().iter().any(|d| matches!(
             d,
-            crate::TaskDependencyConfiguration::Upstream { task } if task == "a"
+            TaskDependencyConfiguration::Upstream { task } if task == "a"
         )));
     }
 }
