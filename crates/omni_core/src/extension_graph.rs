@@ -337,12 +337,14 @@ impl<T: Merge + ExtensionGraphNode> ExtensionGraph<T> {
             .into_iter()
             .find(|(_, a, b)| component[a.index()] == component[b.index()])
             .expect("a precedence cycle contains a listed-order edge");
-        Err(ExtensionGraphErrorInner::ConflictingOrder {
+        let conflict = ConflictingOrder {
             node: format!("{:?}", self.di_graph[owner].id()),
             first: format!("{:?}", self.di_graph[precedence[first]].id()),
             second: format!("{:?}", self.di_graph[precedence[second]].id()),
-        }
-        .into())
+        };
+        // Keep the public, exhaustive Rust kind enum unchanged. The report
+        // still exposes the more specific diagnostic code.
+        Err(ExtensionGraphError::from(eyre::Report::new(conflict)))
     }
 
     fn visit_bases(
@@ -490,23 +492,6 @@ pub(crate) enum ExtensionGraphErrorInner {
     )]
     CyclicDependency { message: String },
 
-    /// A node's listed base order conflicts with another extension constraint.
-    #[error(
-        "`{node}` lists `{first}` before `{second}`, but `{second}` must be applied before `{first}`"
-    )]
-    #[diagnostic(
-        code = "project.extends_order_conflict",
-        hint = "reorder conflicting `extends` lists to agree with each other and put ancestors before their descendants"
-    )]
-    ConflictingOrder {
-        #[diagnostic(detail)]
-        node: String,
-        #[diagnostic(detail)]
-        first: String,
-        #[diagnostic(detail)]
-        second: String,
-    },
-
     #[error("node already exists: {message}")]
     #[diagnostic(skip)]
     NodeAlreadyExists { message: String },
@@ -518,6 +503,24 @@ pub(crate) enum ExtensionGraphErrorInner {
     #[error(transparent)]
     #[diagnostic(delegate)]
     Unknown(#[from] eyre::Error),
+}
+
+/// A node's listed base order conflicts with another extension constraint.
+#[derive(Debug, thiserror::Error, omni_diagnostic::Diagnostic)]
+#[error(
+    "`{node}` lists `{first}` before `{second}`, but `{second}` must be applied before `{first}`"
+)]
+#[diagnostic(
+    code = "project.extends_order_conflict",
+    hint = "reorder conflicting `extends` lists to agree with each other and put ancestors before their descendants"
+)]
+struct ConflictingOrder {
+    #[diagnostic(detail)]
+    node: String,
+    #[diagnostic(detail)]
+    first: String,
+    #[diagnostic(detail)]
+    second: String,
 }
 
 #[cfg(test)]
@@ -899,15 +902,17 @@ mod tests {
         .unwrap();
 
         let err = graph.raw_layers_by_id(&3).unwrap_err();
-        assert_eq!(err.kind(), ExtensionGraphErrorKind::ConflictingOrder);
+        assert_eq!(err.kind(), ExtensionGraphErrorKind::Unknown);
         let msg = err.to_string();
         assert!(
             msg.contains("`3`") && msg.contains("`2`") && msg.contains("`1`")
         );
-        assert_eq!(
-            graph.process_node_by_id(&3).unwrap_err().kind(),
-            ExtensionGraphErrorKind::ConflictingOrder
-        );
+        for error in [err, graph.process_node_by_id(&3).unwrap_err()] {
+            let report = eyre::Report::new(error);
+            let diagnostic =
+                omni_diagnostic::find(&report).expect("conflict diagnostic");
+            assert_eq!(diagnostic.code(), "project.extends_order_conflict");
+        }
         assert_eq!(raw_ids(&graph, 2), vec![1, 2]);
     }
 
