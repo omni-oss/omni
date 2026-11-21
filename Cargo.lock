@@ -7424,6 +7424,7 @@ dependencies = [
  "omni_codes",
  "omni_diagnostic",
  "serde",
+ "serde_json",
  "strum 0.28.0",
  "test-log",
  "thiserror 2.0.21",

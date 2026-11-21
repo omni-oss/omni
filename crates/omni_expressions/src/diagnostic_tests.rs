@@ -77,6 +77,7 @@ fn runtime_failures_are_coded_without_values() {
     let cases = [
         ("has(meta.a) && meta.a / 0 == 1", "type_mismatch"),
         ("meta.missing == \"x\"", "missing_key"),
+        ("meta[meta.a] == 1", "missing_key"),
         ("meta.a + 1 == 1", "type_mismatch"),
     ];
     for (expr, class) in cases {
@@ -86,6 +87,7 @@ fn runtime_failures_are_coded_without_values() {
             .map(|_| ())
             .unwrap_err();
         assert!(!format!("{:?}", err.class()).contains(secret), "{expr}");
+        assert!(!format!("{err:?}").contains(secret), "{expr}");
         let r = wrapped(err);
         let d = find(&r).expect("diagnostic");
         assert_eq!(d.code(), "expression.execution_failed", "{expr}");
@@ -95,6 +97,21 @@ fn runtime_failures_are_coded_without_values() {
         assert!(!d.to_string().contains(secret));
         assert!(!d.hints().join(" ").contains(secret));
     }
+}
+
+#[test]
+fn unexpected_type_from_cel_has_no_operand_in_class_or_error_output() {
+    let secret = "unexpected-type-sentinel";
+    let cause = cel::ExecutionError::UnexpectedType {
+        got: secret.into(),
+        want: "bool".into(),
+    };
+    let error = Error::from(cause);
+    assert!(!format!("{error:?} {:?}", error.class()).contains(secret));
+    let report = wrapped(error);
+    let diagnostic = find(&report).unwrap();
+    assert_eq!(diagnostic.details().unwrap()["class"], "type_mismatch");
+    assert!(report.chain().all(|e| !e.to_string().contains(secret)));
 }
 
 #[test]
