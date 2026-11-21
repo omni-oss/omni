@@ -515,9 +515,11 @@ pub(crate) fn hint(class: &ErrorClass, keys: &[String]) -> Option<String> {
             }
             Some(h)
         }
-        ErrorClass::MissingKey { key } => Some(format!(
-            "`{key}` is missing in a nested map. Use has(meta.a.{key}) to test for it."
-        )),
+        // CEL can return an evaluated lookup key, not just an identifier.
+        ErrorClass::MissingKey { .. } => Some(
+            "A key is missing in a map. Check that it exists before reading it."
+                .to_string(),
+        ),
         ErrorClass::TypeMismatch { detail } => {
             Some(format!("Operand types differ: {detail}"))
         }
@@ -594,7 +596,30 @@ mod tests {
         assert!(
             hint(&ErrorClass::MissingKey { key: "k".into() }, &[])
                 .unwrap()
-                .contains("has(meta.a.k)")
+                .contains("A key is missing")
         );
+    }
+
+    #[test]
+    fn runtime_lookup_values_and_operands_do_not_appear_in_hints() {
+        let secret = "filter-secret-sentinel";
+        let mut ctx = omni_expressions::Context::default();
+        ctx.add_variable(
+            "meta",
+            std::collections::HashMap::from([("token", secret)]),
+        )
+        .unwrap();
+        for (source, expected) in [
+            ("meta[meta.token] == 1", "A key is missing"),
+            ("meta.token + 1 == 1", "Operand types differ"),
+        ] {
+            let error = omni_expressions::parse(source)
+                .unwrap()
+                .evaluate_bool(&ctx)
+                .unwrap_err();
+            let hint = hint(&error.class(), &[]).unwrap();
+            assert!(hint.contains(expected), "{hint}");
+            assert!(!hint.contains(secret), "{hint}");
+        }
     }
 }

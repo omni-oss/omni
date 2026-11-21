@@ -142,11 +142,12 @@ impl Error {
                 E::NoSuchKey(key) => ErrorClass::MissingKey {
                     key: key.to_string(),
                 },
-                E::NoSuchOverload(_) | E::UnexpectedType { .. } => {
-                    ErrorClass::TypeMismatch {
-                        detail: e.to_string(),
-                    }
-                }
+                E::NoSuchOverload(_) => ErrorClass::TypeMismatch {
+                    detail: e.to_string(),
+                },
+                E::UnexpectedType { .. } => ErrorClass::TypeMismatch {
+                    detail: "an argument has an unexpected type".into(),
+                },
                 E::ValuesNotComparable(left, right) => {
                     ErrorClass::TypeMismatch {
                         detail: format!(
