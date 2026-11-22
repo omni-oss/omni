@@ -1808,13 +1808,16 @@ Slice 0 deviations and remaining checks:
   to resource-specific core builders; namespace-specific builders and scan operations
   remain to be wired in later slices.
 - Byte writes invalidate the LRU rather than warming it. Per-key mutation locks
-  serialize each key's byte writes, streamed writes and deletes through
-  backend publication and LRU updates, so an obsolete stream cannot repopulate
-  after a later mutation. Successful uncontested streams remain cached. Weak lock
+  serialize each key's byte writes and deletes through backend publication and
+  LRU updates. A streamed write only waits for a mutation already in flight and
+  does not hold the lock while its body arrives, so a stalled upload cannot delay
+  a delete or another write of that key (issue #120). The backend decides
+  create-only atomically, and a generation counter, advanced around every key
+  and prefix delete, stops a stream that overlapped a delete from repopulating
+  the LRU. Successful uncontested streams remain cached. Weak lock
   entries are reclaimed on subsequent mutations, rather than retaining every
   historical key. No cache mutex is held across I/O; unrelated keys do not wait
-  for one another's streams. A stalled stream still blocks mutations of that same
-  key until it completes or is cancelled. Coordination is within one LRU instance,
+  for one another's streams. Coordination is within one LRU instance,
   not across separate server processes sharing storage.
   On native servers, deletes run in an owned task retaining the per-key lock
   through backend completion even if the requesting future is cancelled.
