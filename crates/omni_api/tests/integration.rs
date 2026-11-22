@@ -1995,3 +1995,59 @@ async fn local_source_manifests_still_honor_workspace_ignores() {
         "unexpected error: {err}"
     );
 }
+
+#[test]
+fn project_config_response_with_root_references_serializes() {
+    use config_utils::{DictConfig, ListConfig};
+    use omni_configurations::{
+        ProjectConfiguration, TaskConfiguration, TaskConfigurationLongForm,
+        TaskDependencyConfiguration, TaskReferenceOrigin,
+    };
+    use omni_path_utils::{ProjectRootId, WorkspacePath};
+
+    let reference = |task: &str| TaskDependencyConfiguration::ProjectRoot {
+        project_root: ProjectRootId::new(
+            WorkspacePath::parse("packages/shared").unwrap(),
+        ),
+        task: task.into(),
+        origin: TaskReferenceOrigin {
+            task: "run".into(),
+            file: None,
+        },
+    };
+    let mut config: ProjectConfiguration =
+        serde_json::from_str(r#"{"name":"alpha"}"#).unwrap();
+    config.tasks = DictConfig::value(
+        [(
+            "run".to_string(),
+            TaskConfiguration::long_form(TaskConfigurationLongForm {
+                dependencies: ListConfig::append(vec![reference("build")]),
+                with: ListConfig::append(vec![reference("watch")]),
+                ..Default::default()
+            }),
+        )]
+        .into_iter()
+        .collect(),
+    );
+    let resp = ProjectConfigResponse {
+        config,
+        warnings: vec![],
+    };
+
+    // The `print-config` path.
+    for format in [
+        omni_file_data_serde::Format::Yaml,
+        omni_file_data_serde::Format::Json,
+    ] {
+        let mut out = Vec::new();
+        omni_file_data_serde::to_writer(&mut out, &resp.config, format)
+            .expect("print-config output");
+        let text = String::from_utf8(out).unwrap();
+        assert!(text.contains("$internal_project_root"), "{text}");
+        assert!(text.contains("packages/shared"), "{text}");
+    }
+
+    // The API response path, and the printed form is not accepted back.
+    let json = serde_json::to_string(&resp).expect("response");
+    assert!(serde_json::from_str::<ProjectConfigResponse>(&json).is_err());
+}

@@ -242,10 +242,50 @@ impl Serialize for TaskDependencyConfiguration {
     where
         S: serde::Serializer,
     {
+        if let Self::ProjectRoot {
+            project_root,
+            task,
+            origin,
+        } = self
+        {
+            // Inspection-only: the single key is not part of the authorable
+            // syntax, so `Deserialize` rejects this form as user config.
+            return InternalProjectRootOutput {
+                internal_project_root: InternalProjectRootBody {
+                    project_root: project_root.to_string(),
+                    task,
+                    origin: InternalOriginBody {
+                        task: &origin.task,
+                        file: origin.file.as_deref(),
+                    },
+                },
+            }
+            .serialize(s);
+        }
         let reference =
             self.to_reference().map_err(serde::ser::Error::custom)?;
         reference.format().serialize(s)
     }
+}
+
+#[derive(Serialize)]
+struct InternalProjectRootOutput<'a> {
+    #[serde(rename = "$internal_project_root")]
+    internal_project_root: InternalProjectRootBody<'a>,
+}
+
+#[derive(Serialize)]
+struct InternalProjectRootBody<'a> {
+    project_root: String,
+    task: &'a str,
+    origin: InternalOriginBody<'a>,
+}
+
+#[derive(Serialize)]
+struct InternalOriginBody<'a> {
+    task: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    file: Option<&'a std::path::Path>,
 }
 
 impl JsonSchema for TaskDependencyConfiguration {
@@ -409,10 +449,40 @@ mod tests {
                 file: None,
             },
         };
-        assert!(serde_json::to_string(&reference).is_err());
         assert_eq!(
             reference.to_string(),
             "task `watch` at project root `packages/shared`"
+        );
+    }
+
+    #[test]
+    fn internal_root_serializes_as_a_non_authorable_form() {
+        use omni_path_utils::WorkspacePath;
+
+        let reference = TaskDependencyConfiguration::ProjectRoot {
+            project_root: ProjectRootId::new(
+                WorkspacePath::parse("packages/shared").unwrap(),
+            ),
+            task: "watch".into(),
+            origin: TaskReferenceOrigin {
+                task: "run".into(),
+                file: Some("apps/web/project.omni.yaml".into()),
+            },
+        };
+        let json = serde_json::to_string(&reference).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            value,
+            serde_json::json!({"$internal_project_root": {
+                "project_root": "packages/shared",
+                "task": "watch",
+                "origin": {"task": "run", "file": "apps/web/project.omni.yaml"},
+            }})
+        );
+        // The printed form is never accepted back as user config.
+        assert!(parse(&json).is_err());
+        assert!(
+            parse(r#"{"$internal_project_root":{"task":"watch"}}"#).is_err()
         );
     }
 
