@@ -136,6 +136,36 @@ impl<TRoot: OmniPathRoot> OmniPath<TRoot> {
         self.root.is_some() && is_confined_relative(&self.path)
     }
 
+    /// The same path with every component joined by `/`, whatever the host's
+    /// separator. This is the persisted form of a rooted path: it is converted
+    /// back to native separators only when the filesystem is accessed (a `/`
+    /// is accepted by every OS). A path with a drive or root prefix keeps its
+    /// native form.
+    pub fn to_portable(&self) -> Self {
+        use std::path::Component;
+        let mut joined = std::ffi::OsString::new();
+        let mut first = true;
+        for component in self.path.components() {
+            let part = match component {
+                Component::Normal(name) => name,
+                Component::ParentDir => std::ffi::OsStr::new(".."),
+                Component::CurDir => continue,
+                Component::Prefix(_) | Component::RootDir => {
+                    return self.clone();
+                }
+            };
+            if !first {
+                joined.push("/");
+            }
+            joined.push(part);
+            first = false;
+        }
+        Self {
+            path: PathBuf::from(joined),
+            root: self.root,
+        }
+    }
+
     /// Resolves the path relative to the given base
     #[inline(always)]
     pub fn resolve<'a>(
@@ -429,6 +459,27 @@ mod tests {
                 "{ok:?}"
             );
         }
+    }
+
+    #[test]
+    fn to_portable_joins_components_with_forward_slashes() {
+        let p = OmniPath::<Root>::new_rooted(
+            Path::new("dist").join("sub").join("é.js"),
+            Root::Workspace,
+        );
+        let portable = p.to_portable();
+        assert_eq!(portable.to_string(), "@workspace/dist/sub/é.js");
+        assert_eq!(portable.root(), Some(Root::Workspace));
+        let sibling =
+            OmniPath::<Root>::new_rooted("./../shared/x", Root::Project);
+        assert_eq!(sibling.to_portable().to_string(), "@project/../shared/x");
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn to_portable_keeps_a_literal_backslash_off_windows() {
+        let p = OmniPath::<Root>::new_rooted("dist\\a.js", Root::Project);
+        assert_eq!(p.to_portable().to_string(), "@project/dist\\a.js");
     }
 
     #[test]

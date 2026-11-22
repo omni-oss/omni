@@ -297,6 +297,22 @@ at the boundary, not trusted:
 - Restore validates each cached `original_path` from the entry metadata: it must be
   relative, contain no `..`, and stay inside the project root, or the entry is a
   miss. This applies to every restore, whatever the namespace or `verify` mode.
+- **Entry metadata path format (issue #62).** Entry metadata (`cache.meta.bin`,
+  also inside remote artifacts) is positional MessagePack: `CachedTaskExecution`
+  is an array and fields are only appended. The trailing field `path_format`
+  (`u8`, `serde(default)`) marks how paths are encoded: `0` (absent, written
+  before the marker) is *legacy*, `1` is *portable*. New writers store rooted
+  `original_path` values with `/` as the only separator on every OS (for example
+  `@project/dist/a.js`); `cached_path`, `logs_path` and archive member names are
+  flat names written by the cache and never contain a separator. Native
+  separators are used only when the filesystem is accessed. Readers: a *portable*
+  path with a backslash is invalid on Windows and a literal filename character
+  elsewhere; a *legacy* path accepts both separators on Windows, and with a
+  backslash off Windows is ambiguous, so the entry is a miss (never rewritten,
+  never restored under a backslash name). An unknown `path_format` is a miss.
+  This runs together with the confinement checks and does not change digests or
+  cache keys. Older binaries fail to decode the longer array and treat new
+  entries as misses.
 
 The default principal for a key with no configured `principal` is its `api_key_id`,
 so changing `hooks.api_key_id_secret` changes every default principal and orphans

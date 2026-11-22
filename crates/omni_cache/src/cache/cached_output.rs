@@ -61,6 +61,70 @@ pub struct CachedTaskExecution {
     #[new(into)]
     #[serde(default = "default_tries")]
     pub tries: u16,
+
+    /// How the paths in this entry are encoded; see [`PATH_FORMAT_PORTABLE`].
+    ///
+    /// Entry metadata is positional MessagePack (a struct is an array), so
+    /// this field must stay last and fields are only ever appended. Older
+    /// binaries reject the longer array and treat the entry as a miss;
+    /// entries written before the field existed decode to
+    /// [`PATH_FORMAT_LEGACY`] through `serde(default)`. Do not add
+    /// `skip_serializing_if` here: it would change the array length.
+    #[new(value = "PATH_FORMAT_PORTABLE")]
+    #[serde(default)]
+    pub path_format: u8,
+}
+
+/// Entries written before the marker existed. Rooted paths use the writer's
+/// native separator, so a backslash is ambiguous off Windows.
+pub const PATH_FORMAT_LEGACY: u8 = 0;
+
+/// Rooted paths (`original_path`) use `/` as the only separator on every OS.
+/// A backslash is an ordinary filename character, which is invalid on Windows.
+pub const PATH_FORMAT_PORTABLE: u8 = 1;
+
+/// True when `path`, an entry-relative or root-relative path from an entry
+/// with the given `format`, may be used on the host OS.
+///
+/// A marked path accepts `/` only, so a backslash is a literal name off
+/// Windows and an invalid name on Windows. An unmarked path is accepted on
+/// Windows with either separator; elsewhere a backslash is ambiguous (a
+/// Windows separator or a literal name) and is refused rather than guessed.
+pub fn path_format_allows(format: u8, path: &std::path::Path) -> bool {
+    path_format_allows_on(format, path, cfg!(windows))
+}
+
+/// [`path_format_allows`] for an explicit host, so each side can be tested
+/// on any OS.
+pub fn path_format_allows_on(
+    format: u8,
+    path: &std::path::Path,
+    windows: bool,
+) -> bool {
+    let has_backslash = path.as_os_str().as_encoded_bytes().contains(&b'\\');
+    match format {
+        PATH_FORMAT_PORTABLE => !(has_backslash && windows),
+        PATH_FORMAT_LEGACY => !(has_backslash && !windows),
+        _ => false,
+    }
+}
+
+impl CachedTaskExecution {
+    /// True when every path in the entry can be used on the host OS (see
+    /// [`path_format_allows`]). An unknown `path_format` is never valid.
+    pub fn paths_match_host_format(&self) -> bool {
+        self.paths_match_format_on(cfg!(windows))
+    }
+
+    fn paths_match_format_on(&self, windows: bool) -> bool {
+        let ok = |p: &std::path::Path| {
+            path_format_allows_on(self.path_format, p, windows)
+        };
+        self.logs_path.as_deref().is_none_or(ok)
+            && self.files.iter().all(|f| {
+                ok(&f.cached_path) && ok(f.original_path.unresolved_path())
+            })
+    }
 }
 
 #[inline(always)]
