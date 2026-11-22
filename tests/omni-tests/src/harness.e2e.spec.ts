@@ -7,6 +7,8 @@
  * custom matchers are registered.
  */
 
+import { spawnSync } from "node:child_process";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -17,6 +19,8 @@ import {
     runOmni,
     spawnOmniPty,
 } from "@/harness";
+
+import { isolatedHomeEnv } from "./harness/isolated-home";
 
 describe("harness", () => {
     it("runs omni --version and reports a clean exit", async () => {
@@ -81,6 +85,26 @@ describe("harness", () => {
         expect(ws.read("toml-app/project.omni.toml")).toContain(
             'name = "toml-app"',
         );
+    });
+});
+
+describe("isolated home", () => {
+    it("keeps rustup's shims working with the redirected home", (ctx) => {
+        const direct = spawnSync("rustfmt", ["--version"], {
+            timeout: 20_000,
+        });
+        if (direct.error || direct.status !== 0) {
+            ctx.skip(); // rustfmt is not installed on this machine.
+        }
+
+        const isolated = spawnSync("rustfmt", ["--version"], {
+            env: { ...process.env, ...isolatedHomeEnv() },
+            timeout: 20_000,
+        });
+
+        // A redirected HOME alone makes the rustup proxy try to install a
+        // toolchain; the harness keeps RUSTUP_HOME and CARGO_HOME.
+        expect(isolated.status).toBe(0);
     });
 });
 
