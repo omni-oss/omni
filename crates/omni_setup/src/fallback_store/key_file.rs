@@ -50,7 +50,7 @@ mod windows {
             io::{AsRawHandle as _, FromRawHandle as _},
         },
         path::Path,
-        ptr::null_mut,
+        ptr::{null, null_mut},
     };
 
     use windows_sys::Win32::{
@@ -64,18 +64,19 @@ mod windows {
                 ConvertSidToStringSidW,
                 ConvertStringSecurityDescriptorToSecurityDescriptorW,
                 GetNamedSecurityInfoW, GetSecurityInfo, SDDL_REVISION_1,
-                SE_FILE_OBJECT,
+                SE_FILE_OBJECT, SetSecurityInfo,
             },
             DACL_SECURITY_INFORMATION, GetAce, GetTokenInformation,
             INHERITED_ACE, InitializeSecurityDescriptor,
             LABEL_SECURITY_INFORMATION, OWNER_SECURITY_INFORMATION,
-            PSECURITY_DESCRIPTOR, SE_DACL_PROTECTED, SE_SACL_PROTECTED,
-            SECURITY_ATTRIBUTES, SECURITY_DESCRIPTOR,
-            SetSecurityDescriptorControl, SetSecurityDescriptorDacl,
-            SetSecurityDescriptorOwner, SetSecurityDescriptorSacl, TOKEN_QUERY,
+            PSECURITY_DESCRIPTOR, SE_DACL_PROTECTED, SECURITY_ATTRIBUTES,
+            SECURITY_DESCRIPTOR, SetSecurityDescriptorControl,
+            SetSecurityDescriptorDacl, SetSecurityDescriptorOwner, TOKEN_QUERY,
             TOKEN_USER, TokenUser,
         },
-        Storage::FileSystem::{CREATE_NEW, CreateFileW, FILE_ATTRIBUTE_NORMAL},
+        Storage::FileSystem::{
+            CREATE_NEW, CreateFileW, FILE_ATTRIBUTE_NORMAL, WRITE_OWNER,
+        },
         System::Threading::{GetCurrentProcess, OpenProcessToken},
     };
 
@@ -229,12 +230,10 @@ mod windows {
         let copied = copied.as_mut_ptr().cast();
         // SAFETY: `label` is null or backed by the live original descriptor.
         let expected = unsafe { acl_entries(label) }?;
-        let protection = SE_DACL_PROTECTED
-            | if expected.is_empty() {
-                0
-            } else {
-                SE_SACL_PROTECTED
-            };
+        // Do not put the label in the creation descriptor: a creation-time
+        // SACL can require SeSecurityPrivilege. Apply it to the open handle
+        // below, before any key bytes are written.
+        let protection = SE_DACL_PROTECTED;
         const SECURITY_DESCRIPTOR_REVISION: u32 = 1;
         // SAFETY: `copied` points to aligned storage initialized by the
         // first call. The owner and ACLs remain valid through `make_in`.
@@ -246,8 +245,6 @@ mod windows {
             ) == 0
                 || SetSecurityDescriptorOwner(copied, owner, 0) == 0
                 || SetSecurityDescriptorDacl(copied, 1, dacl, 0) == 0
-                || (!expected.is_empty()
-                    && SetSecurityDescriptorSacl(copied, 1, label, 0) == 0)
                 || SetSecurityDescriptorControl(copied, protection, protection)
                     == 0
             {
@@ -257,6 +254,25 @@ mod windows {
         // The same-directory rename keeps the staged file's owner and ACL.
         let staged =
             builder.make_in(parent, |path| create_new(path, copied))?;
+        if !expected.is_empty() {
+            // SAFETY: The handle is live and `label` points into the
+            // original descriptor, which outlives this call.
+            let status = unsafe {
+                SetSecurityInfo(
+                    staged.as_file().as_raw_handle(),
+                    SE_FILE_OBJECT,
+                    LABEL_SECURITY_INFORMATION,
+                    null_mut(),
+                    null_mut(),
+                    null(),
+                    label,
+                )
+            };
+            if status != ERROR_SUCCESS {
+                drop(staged.into_temp_path());
+                return Err(io::Error::from_raw_os_error(status as i32));
+            }
+        }
         // An absent label is also meaningful (implicit medium integrity).
         // Never replace it with an explicit label inherited from the parent.
         if !file_label(staged.as_file()).is_ok_and(|actual| actual == expected)
@@ -340,7 +356,7 @@ mod windows {
         let handle = unsafe {
             CreateFileW(
                 path.as_ptr(),
-                GENERIC_WRITE,
+                GENERIC_WRITE | WRITE_OWNER,
                 0,
                 &security,
                 CREATE_NEW,
