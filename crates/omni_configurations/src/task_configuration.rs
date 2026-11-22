@@ -627,6 +627,30 @@ mod tests {
     }
 
     #[test]
+    fn task_holding_root_references_serializes_and_is_rejected_as_input() {
+        let reference = |task: &str| TaskDependencyConfiguration::ProjectRoot {
+            project_root: ProjectRootId::new(
+                omni_path_utils::WorkspacePath::parse("packages/shared")
+                    .unwrap(),
+            ),
+            task: task.into(),
+            origin: TaskReferenceOrigin {
+                task: "run".into(),
+                file: None,
+            },
+        };
+        let config = TaskConfiguration::long_form(TaskConfigurationLongForm {
+            dependencies: ListConfig::append(vec![reference("build")]),
+            with: ListConfig::append(vec![reference("watch")]),
+            ..Default::default()
+        });
+        let json = serde_json::to_string(&config).unwrap();
+        assert!(json.contains("$internal_project_root"), "{json}");
+        assert!(json.contains("build") && json.contains("watch"), "{json}");
+        assert!(serde_json::from_str::<TaskConfiguration>(&json).is_err());
+    }
+
+    #[test]
     fn test_merge_long_form() {
         let a_tdc = TaskDependencyConfiguration::Own {
             task: "task1".to_string(),

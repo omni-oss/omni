@@ -7,6 +7,8 @@
  * custom matchers are registered.
  */
 
+import { spawnSync } from "node:child_process";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -17,6 +19,8 @@ import {
     runOmni,
     spawnOmniPty,
 } from "@/harness";
+
+import { isolatedHomeEnv } from "./harness/isolated-home";
 
 describe("harness", () => {
     it("runs omni --version and reports a clean exit", async () => {
@@ -81,6 +85,31 @@ describe("harness", () => {
         expect(ws.read("toml-app/project.omni.toml")).toContain(
             'name = "toml-app"',
         );
+    });
+});
+
+describe("isolated config", () => {
+    it("redirects only the config directory, not HOME", () => {
+        // HOME holds the macOS Keychain and rustup/cargo state; redirecting
+        // it broke keyring access and `rustfmt` under CI.
+        const env = isolatedHomeEnv();
+        expect(Object.keys(env)).toEqual(["XDG_CONFIG_HOME"]);
+        expect(env.XDG_CONFIG_HOME).not.toBe(process.env.XDG_CONFIG_HOME);
+    });
+
+    it("keeps rustup's shims working under the isolated environment", (ctx) => {
+        const direct = spawnSync("rustfmt", ["--version"], {
+            timeout: 20_000,
+        });
+        if (direct.error || direct.status !== 0) {
+            ctx.skip(); // rustfmt is not installed on this machine.
+        }
+
+        const isolated = spawnSync("rustfmt", ["--version"], {
+            env: { ...process.env, ...isolatedHomeEnv() },
+            timeout: 20_000,
+        });
+        expect(isolated.status).toBe(0);
     });
 });
 

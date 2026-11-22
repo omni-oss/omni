@@ -44,9 +44,10 @@ use tracing::Level;
 use crate::cache::name_matcher::NameMatcher;
 use crate::{
     CacheStats, CacheStatsArgs, CachedFileOutput, CachedTaskExecution,
-    CachedTaskExecutionHash, Context, FileCacheStats, ProjectCacheStats,
-    PruneCacheArgs, PrunedCacheEntry, StaleStatus, TaskCacheStats,
-    TaskExecutionCacheStore, TaskExecutionInfo, TaskExecutionInfoExt,
+    CachedTaskExecutionHash, Context, FileCacheStats, PATH_FORMAT_PORTABLE,
+    ProjectCacheStats, PruneCacheArgs, PrunedCacheEntry, StaleStatus,
+    TaskCacheStats, TaskExecutionCacheStore, TaskExecutionInfo,
+    TaskExecutionInfoExt,
     impls::{
         cache_archive::archive,
         last_used_db::{LocalLastUsedDb, LocalLastUsedDbError},
@@ -684,10 +685,11 @@ fn restore_paths_are_confined(
     entry: &CachedTaskExecution,
     roots: &omni_types::RootMap,
 ) -> bool {
-    entry
-        .logs_path
-        .as_deref()
-        .is_none_or(omni_types::is_confined_relative)
+    entry.paths_match_host_format()
+        && entry
+            .logs_path
+            .as_deref()
+            .is_none_or(omni_types::is_confined_relative)
         && entry.files.iter().all(|file| {
             omni_types::is_confined_relative(&file.cached_path)
                 && file.original_path.stays_within_workspace(roots)
@@ -1129,7 +1131,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
 
                         cache_output_files.push(CachedFileOutput {
                             cached_path: PathBuf::from(cache_file_name),
-                            original_path: path.clone(),
+                            original_path: path.to_portable(),
                         });
                     }
 
@@ -1156,6 +1158,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                             .dependency_digests
                             .to_vec(),
                         tries: new_cache_info.tries,
+                        path_format: PATH_FORMAT_PORTABLE,
                     };
                     let bytes = rmp_serde::encode::to_vec(&metadata)?;
 
@@ -1817,7 +1820,13 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                         tracing::warn!("ignoring unreadable metadata while computing cache statistics");
                         continue;
                     };
-                    if !cache_meta.logs_path.as_deref().is_none_or(omni_types::is_confined_relative)
+                    // Statistics and pruning only read files under the entry
+                    // directory, so the destination format that gates lookup
+                    // does not apply: an obsolete legacy entry must stay
+                    // discoverable so pruning can reclaim it. An unknown
+                    // marker may belong to a newer writer, so skip it.
+                    if !cache_meta.has_known_path_format()
+                        || !cache_meta.logs_path.as_deref().is_none_or(omni_types::is_confined_relative)
                         || cache_meta.files.iter().any(|f| !omni_types::is_confined_relative(&f.cached_path))
                     {
                         tracing::warn!("ignoring unsafe metadata while computing cache statistics");
@@ -4124,6 +4133,455 @@ mod tests {
         }
     }
 
+    /// Issue #62: a rooted path with a backslash (written by a Windows binary)
+    /// must never restore as a file literally named `dist\\a.js`.
+    #[cfg(not(windows))]
+    #[tokio::test]
+    async fn an_entry_with_a_backslash_path_is_a_miss_on_unix() {
+        use omni_types::{OmniPath, Root};
+
+        let temp = fixture(&["project1"]).await;
+        let cache = cache_store(temp.path());
+        let task = task("task", "project1", temp.path());
+        cache
+            .cache(&new_cache_info(Some(&LOGS_CONTENT), *task.get()))
+            .await
+            .unwrap();
+        rewrite_entry_metadata(&cache, task.get(), |e| {
+            e.path_format = crate::PATH_FORMAT_LEGACY;
+            e.files[0].original_path =
+                OmniPath::new_rooted("dist\\a.js", Root::Project)
+        })
+        .await;
+
+        assert!(cache.get(task.get()).await.unwrap().is_none());
+    }
+
+    /// Rewrites the entry so each file carries one of `paths`, with `format`.
+    async fn set_entry_paths(
+        cache: &HybridTaskExecutionCacheStore,
+        task: &TaskExecutionInfo<'_>,
+        format: u8,
+        paths: &[(&str, omni_types::Root)],
+    ) {
+        let paths: Vec<_> = paths
+            .iter()
+            .map(|(p, r)| omni_types::OmniPath::new_rooted(*p, *r))
+            .collect();
+        rewrite_entry_metadata(cache, task, |e| {
+            let template = e.files[0].clone();
+            e.path_format = format;
+            e.files = paths
+                .iter()
+                .map(|p| CachedFileOutput {
+                    cached_path: template.cached_path.clone(),
+                    original_path: p.clone(),
+                })
+                .collect();
+        })
+        .await;
+    }
+
+    async fn cached_task(
+        dir: &Path,
+    ) -> (
+        HybridTaskExecutionCacheStore,
+        Yoke<TaskExecutionInfo<'static>, Box<TaskExecutionInfoStatic>>,
+    ) {
+        let cache = cache_store(dir);
+        let task = task("task", "project1", dir);
+        cache
+            .cache(&new_cache_info(Some(&LOGS_CONTENT), *task.get()))
+            .await
+            .unwrap();
+        (cache, task)
+    }
+
+    #[tokio::test]
+    async fn new_entries_are_marked_and_new_writers_store_forward_slashes() {
+        let temp = fixture(&["project1"]).await;
+        let (cache, task) = cached_task(temp.path()).await;
+        let collected = cache
+            .collect(
+                &[*task.get()],
+                &CollectConfig {
+                    cache_output_dirs: true,
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        let bytes = std::fs::read(
+            collected[0]
+                .cache_output_dir
+                .as_ref()
+                .unwrap()
+                .join(CACHE_OUTPUT_METADATA_FILE),
+        )
+        .unwrap();
+        let entry: CachedTaskExecution = rmp_serde::from_slice(&bytes).unwrap();
+        assert_eq!(entry.path_format, PATH_FORMAT_PORTABLE);
+        assert!(!entry.files.is_empty());
+        for f in &entry.files {
+            let text = f.original_path.to_string();
+            assert!(text.starts_with("@project/dist/"), "{text}");
+            assert!(!text.contains('\\'), "{text}");
+        }
+    }
+
+    #[tokio::test]
+    async fn marked_and_unmarked_entries_restore_rooted_nested_unicode_paths() {
+        use omni_types::Root;
+
+        for format in [crate::PATH_FORMAT_PORTABLE, crate::PATH_FORMAT_LEGACY] {
+            let temp = fixture(&["project1"]).await;
+            let (cache, task) = cached_task(temp.path()).await;
+            set_entry_paths(
+                &cache,
+                task.get(),
+                format,
+                &[
+                    ("dist/sub/deep/é.js", Root::Project),
+                    ("shared/ü/日本.js", Root::Workspace),
+                ],
+            )
+            .await;
+            let got = cache.get(task.get()).await.unwrap().unwrap();
+            let project = temp.path().join("project1");
+            let resolved: Vec<_> = got
+                .files
+                .iter()
+                .map(|f| f.original_path.path().unwrap().to_path_buf())
+                .collect();
+            assert_eq!(
+                resolved,
+                vec![
+                    project.join("dist").join("sub").join("deep").join("é.js"),
+                    temp.path().join("shared").join("ü").join("日本.js"),
+                ],
+                "format {format}"
+            );
+        }
+    }
+
+    #[cfg(not(windows))]
+    #[tokio::test]
+    async fn backslash_paths_follow_the_marker_off_windows() {
+        use omni_types::Root;
+
+        // Marked: a backslash is a literal filename character.
+        let temp = fixture(&["project1"]).await;
+        let (cache, task) = cached_task(temp.path()).await;
+        set_entry_paths(
+            &cache,
+            task.get(),
+            crate::PATH_FORMAT_PORTABLE,
+            &[("dist/we\\ird.js", Root::Project)],
+        )
+        .await;
+        let got = cache.get(task.get()).await.unwrap().unwrap();
+        assert_eq!(
+            got.files[0].original_path.path().unwrap(),
+            temp.path().join("project1/dist/we\\ird.js")
+        );
+
+        // Unmarked (legacy), in either root, or in other path-bearing fields:
+        // ambiguous, so a miss.
+        for root in [Root::Project, Root::Workspace] {
+            let temp = fixture(&["project1"]).await;
+            let (cache, task) = cached_task(temp.path()).await;
+            set_entry_paths(
+                &cache,
+                task.get(),
+                crate::PATH_FORMAT_LEGACY,
+                &[("dist\\a.js", root)],
+            )
+            .await;
+            assert!(cache.get(task.get()).await.unwrap().is_none());
+        }
+        for edit in [
+            Box::new(|e: &mut CachedTaskExecution| {
+                e.path_format = crate::PATH_FORMAT_LEGACY;
+                e.logs_path = Some(PathBuf::from("a\\b"));
+            }) as Box<dyn Fn(&mut CachedTaskExecution)>,
+            Box::new(|e| {
+                e.path_format = crate::PATH_FORMAT_LEGACY;
+                e.files[0].cached_path = PathBuf::from("a\\b.cache");
+            }),
+        ] {
+            let temp = fixture(&["project1"]).await;
+            let (cache, task) = cached_task(temp.path()).await;
+            rewrite_entry_metadata(&cache, task.get(), |e| edit(e)).await;
+            assert!(cache.get(task.get()).await.unwrap().is_none());
+        }
+    }
+
+    #[tokio::test]
+    async fn an_unknown_path_format_is_a_miss() {
+        let temp = fixture(&["project1"]).await;
+        let (cache, task) = cached_task(temp.path()).await;
+        rewrite_entry_metadata(&cache, task.get(), |e| e.path_format = 200)
+            .await;
+        assert!(cache.get(task.get()).await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn an_unknown_path_format_is_a_miss_even_with_no_paths() {
+        let temp = fixture(&["project1"]).await;
+        let (cache, task) = cached_task(temp.path()).await;
+        rewrite_entry_metadata(&cache, task.get(), |e| {
+            e.logs_path = None;
+            e.files.clear();
+            // Recognized formats stay valid with no paths to check.
+            for format in
+                [crate::PATH_FORMAT_LEGACY, crate::PATH_FORMAT_PORTABLE]
+            {
+                e.path_format = format;
+                assert!(e.paths_match_host_format());
+            }
+            e.path_format = 200;
+            assert!(!e.paths_match_host_format());
+        })
+        .await;
+        assert!(cache.get(task.get()).await.unwrap().is_none());
+    }
+
+    /// A legacy entry whose destination is unusable here is a lookup miss but
+    /// must stay discoverable, or pruning could never reclaim it.
+    #[cfg(not(windows))]
+    #[tokio::test]
+    async fn an_unusable_legacy_entry_can_still_be_pruned() {
+        use omni_types::{OmniPath, Root};
+
+        let temp = fixture(&["project1"]).await;
+        let (cache, task) = cached_task(temp.path()).await;
+        rewrite_entry_metadata(&cache, task.get(), |e| {
+            e.path_format = crate::PATH_FORMAT_LEGACY;
+            e.files[0].original_path =
+                OmniPath::new_rooted("dist\\a.js", Root::Project);
+        })
+        .await;
+        // Do not look the entry up first: a lookup miss discards it, which
+        // is not the case being tested (a task that is no longer requested).
+        let args = CacheStatsArgs::<()> {
+            project_name_globs: &["project1"],
+            ..Default::default()
+        };
+        let stats = cache.get_stats(&args).await.unwrap();
+        assert_eq!(stats.projects.len(), 1);
+        assert_eq!(stats.projects[0].tasks.len(), 1);
+
+        let pruned = cache
+            .prune_caches(&PruneCacheArgs::<()> {
+                project_name_globs: &["project1"],
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!(pruned.len(), 1);
+        cache.force_prune_caches(&pruned).await.unwrap();
+        let after = cache.get_stats(&args).await.unwrap();
+        assert!(after.projects.iter().all(|p| p.tasks.is_empty()));
+    }
+
+    /// An unknown marker may come from a newer writer: never offered to prune.
+    #[tokio::test]
+    async fn an_unknown_path_format_is_not_listed_for_pruning() {
+        let temp = fixture(&["project1"]).await;
+        let (cache, task) = cached_task(temp.path()).await;
+        rewrite_entry_metadata(&cache, task.get(), |e| e.path_format = 200)
+            .await;
+        let stats = cache
+            .get_stats(&CacheStatsArgs::<()> {
+                project_name_globs: &["project1"],
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        assert!(stats.projects.iter().all(|p| p.tasks.is_empty()));
+    }
+
+    #[test]
+    fn path_format_rules_per_host_os() {
+        use crate::cache::cached_output::path_format_allows_on;
+        let plain = Path::new("dist/a.js");
+        let bs = Path::new("dist\\a.js");
+        for windows in [false, true] {
+            assert!(path_format_allows_on(
+                PATH_FORMAT_PORTABLE,
+                plain,
+                windows
+            ));
+            assert!(path_format_allows_on(
+                crate::PATH_FORMAT_LEGACY,
+                plain,
+                windows
+            ));
+        }
+        assert!(path_format_allows_on(PATH_FORMAT_PORTABLE, bs, false));
+        assert!(!path_format_allows_on(PATH_FORMAT_PORTABLE, bs, true));
+        assert!(path_format_allows_on(crate::PATH_FORMAT_LEGACY, bs, true));
+        assert!(!path_format_allows_on(crate::PATH_FORMAT_LEGACY, bs, false));
+        assert!(!path_format_allows_on(9, plain, true));
+    }
+
+    /// The field order of the entry before the format marker existed.
+    #[derive(serde::Serialize)]
+    struct LegacyEntryV0 {
+        project_name: String,
+        task_name: String,
+        task_exec: Option<String>,
+        task_retry_exec: Option<String>,
+        digest: omni_hasher::impls::DefaultHash,
+        dependency_digests: Vec<omni_hasher::impls::DefaultHash>,
+        logs_path: Option<PathBuf>,
+        files: Vec<CachedFileOutput>,
+        exit_code: u32,
+        execution_duration: std::time::Duration,
+        execution_time: OffsetDateTime,
+        tries: u16,
+    }
+
+    #[test]
+    fn legacy_format_bytes_decode_as_unmarked_and_new_bytes_are_one_longer() {
+        let legacy = LegacyEntryV0 {
+            project_name: "p".into(),
+            task_name: "t".into(),
+            task_exec: None,
+            task_retry_exec: None,
+            digest: [3; 32],
+            dependency_digests: vec![],
+            logs_path: Some("logs.cache".into()),
+            files: vec![CachedFileOutput {
+                cached_path: "x.cache".into(),
+                original_path: omni_types::OmniPath::new_rooted(
+                    "dist/a.js",
+                    omni_types::Root::Project,
+                ),
+            }],
+            exit_code: 0,
+            execution_duration: std::time::Duration::ZERO,
+            execution_time: OffsetDateTime::UNIX_EPOCH,
+            tries: 1,
+        };
+        let bytes = rmp_serde::to_vec(&legacy).unwrap();
+        // MessagePack fixarray header: 0x90 | 12 elements.
+        assert_eq!(bytes[0], 0x9c);
+        let decoded: CachedTaskExecution =
+            rmp_serde::from_slice(&bytes).unwrap();
+        assert_eq!(decoded.path_format, crate::PATH_FORMAT_LEGACY);
+        assert_eq!(
+            decoded.files[0].original_path.to_string(),
+            "@project/dist/a.js"
+        );
+
+        // Re-encoding appends exactly one trailing element.
+        let upgraded = rmp_serde::to_vec(&decoded).unwrap();
+        assert_eq!(upgraded[0], 0x9d);
+
+        // An older reader sees a 13-element array where it wants 12.
+        #[derive(serde::Deserialize)]
+        #[allow(dead_code)]
+        struct OldReader(
+            String,
+            String,
+            Option<String>,
+            Option<String>,
+            omni_hasher::impls::DefaultHash,
+            Vec<omni_hasher::impls::DefaultHash>,
+            Option<PathBuf>,
+            Vec<CachedFileOutput>,
+            u32,
+            std::time::Duration,
+            OffsetDateTime,
+            u16,
+        );
+        assert!(rmp_serde::from_slice::<OldReader>(&upgraded).is_err());
+        assert!(rmp_serde::from_slice::<OldReader>(&bytes).is_ok());
+    }
+
+    /// The archive of a real entry whose metadata was edited by `edit`.
+    #[cfg(not(windows))]
+    async fn tampered_archive(
+        edit: impl FnOnce(&mut CachedTaskExecution),
+    ) -> Vec<u8> {
+        let producer = fixture(&["project1"]).await;
+        let (cache, task) = cached_task(producer.path()).await;
+        rewrite_entry_metadata(&cache, task.get(), edit).await;
+        genuine_archive_of_existing(&cache, task.get()).await
+    }
+
+    #[cfg(not(windows))]
+    async fn genuine_archive_of_existing(
+        cache: &HybridTaskExecutionCacheStore,
+        info: &TaskExecutionInfo<'_>,
+    ) -> Vec<u8> {
+        let collected = cache
+            .collect(
+                &[*info],
+                &CollectConfig {
+                    cache_output_dirs: true,
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        let mut out = Vec::new();
+        archive(
+            collected[0].cache_output_dir.as_ref().unwrap(),
+            Cursor::new(&mut out),
+        )
+        .unwrap();
+        out
+    }
+
+    #[cfg(not(windows))]
+    #[tokio::test]
+    async fn a_remote_artifact_follows_the_path_marker_rules() {
+        use omni_types::{OmniPath, Root};
+
+        let cases: Vec<(&str, u8, &str, bool)> = vec![
+            (
+                "legacy backslash",
+                crate::PATH_FORMAT_LEGACY,
+                "dist\\a.js",
+                false,
+            ),
+            ("legacy slash", crate::PATH_FORMAT_LEGACY, "dist/a.js", true),
+            ("marked slash", PATH_FORMAT_PORTABLE, "dist/a.js", true),
+            (
+                "marked literal backslash",
+                PATH_FORMAT_PORTABLE,
+                "dist\\a.js",
+                true,
+            ),
+            ("unknown marker", 9, "dist/a.js", false),
+        ];
+        for (name, format, path, hit) in cases {
+            let artifact = tampered_archive(|e| {
+                e.path_format = format;
+                e.files[0].original_path =
+                    OmniPath::new_rooted(path, Root::Project);
+            })
+            .await;
+            let (url, server) = serve_remote_entry(artifact).await;
+            let victim = fixture(&["project1"]).await;
+            let victim_task = task("task", "project1", victim.path());
+            let got = remote_store(victim.path(), &url)
+                .get(victim_task.get())
+                .await
+                .unwrap();
+            server.abort();
+            assert_eq!(got.is_some(), hit, "{name}");
+            if !hit {
+                assert!(
+                    !victim.path().join("project1/dist\\a.js").exists(),
+                    "{name}"
+                );
+            }
+        }
+    }
+
     /// Serves `body` for every GET and 404 for anything else.
     async fn serve_remote_entry(
         body: Vec<u8>,
@@ -5255,6 +5713,7 @@ mod tests {
             files,
             logs_path: Some(PathBuf::from("logs.cache")),
             exit_code: 1,
+            path_format: crate::PATH_FORMAT_LEGACY,
             ..learned.clone()
         };
         let legacy_bytes = rmp_serde::encode::to_vec(&legacy).expect("enc");

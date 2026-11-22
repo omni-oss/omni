@@ -83,6 +83,7 @@ tokio = { workspace = true }
 omni_context = { workspace = true }
 omni_tracing_subscriber = { workspace = true }
 omni_path_utils = { workspace = true }
+config_utils = { workspace = true }
 omni_input_provider = { workspace = true, features = ["test-utils"] }
 system_traits = { workspace = true, features = [
     "real-sync",

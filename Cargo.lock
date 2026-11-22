@@ -6778,6 +6778,7 @@ dependencies = [
  "async-trait",
  "bridge_rpc_services",
  "bytesize",
+ "config_utils",
  "derive-new",
  "either",
  "eyre",
