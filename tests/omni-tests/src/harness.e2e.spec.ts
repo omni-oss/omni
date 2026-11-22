@@ -88,8 +88,16 @@ describe("harness", () => {
     });
 });
 
-describe("isolated home", () => {
-    it("keeps rustup's shims working with the redirected home", (ctx) => {
+describe("isolated config", () => {
+    it("redirects only the config directory, not HOME", () => {
+        // HOME holds the macOS Keychain and rustup/cargo state; redirecting
+        // it broke keyring access and `rustfmt` under CI.
+        const env = isolatedHomeEnv();
+        expect(Object.keys(env)).toEqual(["XDG_CONFIG_HOME"]);
+        expect(env.XDG_CONFIG_HOME).not.toBe(process.env.XDG_CONFIG_HOME);
+    });
+
+    it("keeps rustup's shims working under the isolated environment", (ctx) => {
         const direct = spawnSync("rustfmt", ["--version"], {
             timeout: 20_000,
         });
@@ -101,9 +109,6 @@ describe("isolated home", () => {
             env: { ...process.env, ...isolatedHomeEnv() },
             timeout: 20_000,
         });
-
-        // A redirected HOME alone makes the rustup proxy try to install a
-        // toolchain; the harness keeps RUSTUP_HOME and CARGO_HOME.
         expect(isolated.status).toBe(0);
     });
 });
