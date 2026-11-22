@@ -69,9 +69,57 @@ fn missing_variables_are_coded_with_the_name() {
 }
 
 #[test]
-fn runtime_failures_stay_uncoded() {
-    assert!(find(&wrapped(eval_error("1 / 0 == 1"))).is_none());
-    assert!(find(&wrapped(eval_error("1 + \"a\" == 1"))).is_none());
+fn runtime_failures_are_coded_without_values() {
+    let secret = "hunter2-secret";
+    let mut ctx = Context::default();
+    ctx.add_variable("meta", std::collections::HashMap::from([("a", secret)]))
+        .unwrap();
+    let cases = [
+        ("has(meta.a) && meta.a / 0 == 1", "type_mismatch"),
+        ("meta.missing == \"x\"", "missing_key"),
+        ("meta[meta.a] == 1", "missing_key"),
+        ("meta.a + 1 == 1", "type_mismatch"),
+    ];
+    for (expr, class) in cases {
+        let err = parse(expr)
+            .unwrap()
+            .evaluate_bool(&ctx)
+            .map(|_| ())
+            .unwrap_err();
+        assert!(!format!("{:?}", err.class()).contains(secret), "{expr}");
+        assert!(!format!("{err:?}").contains(secret), "{expr}");
+        let r = wrapped(err);
+        let d = find(&r).expect("diagnostic");
+        assert_eq!(d.code(), "expression.execution_failed", "{expr}");
+        assert_eq!(d.audience(), Audience::User);
+        assert_eq!(d.details().unwrap()["class"], class, "{expr}");
+        assert!(!format!("{r:#}").contains(secret));
+        assert!(!d.to_string().contains(secret));
+        assert!(!d.hints().join(" ").contains(secret));
+    }
+}
+
+#[test]
+fn unexpected_type_from_cel_has_no_operand_in_class_or_error_output() {
+    let secret = "unexpected-type-sentinel";
+    let cause = cel::ExecutionError::UnexpectedType {
+        got: secret.into(),
+        want: "bool".into(),
+    };
+    let error = Error::from(cause);
+    assert!(!format!("{error:?} {:?}", error.class()).contains(secret));
+    let report = wrapped(error);
+    let diagnostic = find(&report).unwrap();
+    assert_eq!(diagnostic.details().unwrap()["class"], "type_mismatch");
+    assert!(report.chain().all(|e| !e.to_string().contains(secret)));
+}
+
+#[test]
+fn division_by_zero_has_its_own_class() {
+    let r = wrapped(eval_error("1 / 0 == 1"));
+    let d = find(&r).expect("diagnostic");
+    assert_eq!(d.code(), "expression.execution_failed");
+    assert_eq!(d.details().unwrap()["class"], "division_by_zero");
 }
 
 #[test]
@@ -81,6 +129,7 @@ fn new_codes_are_registered_in_the_catalog() {
         "expression.undeclared_reference",
         "expression.not_boolean",
         "expression.variable_not_found",
+        "expression.execution_failed",
     ] {
         assert!(
             omni_codes::get(code).is_some(),

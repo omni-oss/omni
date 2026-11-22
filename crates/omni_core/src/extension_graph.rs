@@ -1,12 +1,13 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeSet, HashMap, HashSet},
     fmt::Debug,
     hash::{DefaultHasher, Hash, Hasher as _},
 };
 
 use merge::Merge;
 use petgraph::{
-    algo::is_cyclic_directed,
+    Direction,
+    algo::{is_cyclic_directed, kosaraju_scc},
     graph::{DiGraph, EdgeIndex, NodeIndex},
     visit::{Bfs, IntoNodeReferences as _, Reversed},
 };
@@ -194,7 +195,7 @@ impl<T: Merge + ExtensionGraphNode> ExtensionGraph<T> {
             }
         })?;
 
-        let node_indices = self.closure_indices(node);
+        let node_indices = self.closure_indices(node)?;
 
         if self.cache_exists_by_path(&node_indices) {
             if !self.cached_path_exists(id) {
@@ -254,18 +255,115 @@ impl<T: Merge + ExtensionGraphNode> ExtensionGraph<T> {
     }
 
     /// The extension closure of `node` in application order: every
-    /// transitive extendee once, ending with `node` itself.
-    fn closure_indices(&self, node: NodeIndex) -> Vec<NodeIndex> {
-        let graph = Reversed(&self.di_graph);
-        let mut bfs = Bfs::new(graph, node);
+    /// transitive extendee once, ancestors before descendants, ending with
+    /// `node` itself. Direct bases keep their listed order; when that
+    /// cannot hold alongside ancestors-first, an error names the entries.
+    fn closure_indices(
+        &self,
+        node: NodeIndex,
+    ) -> ExtensionGraphResult<Vec<NodeIndex>> {
+        let mut order = vec![];
+        let mut seen = HashSet::new();
+        self.visit_bases(node, &mut seen, &mut order);
 
-        let mut node_indices = vec![];
-        while let Some(node) = bfs.next(graph) {
-            node_indices.push(node);
+        let position = order
+            .iter()
+            .enumerate()
+            .map(|(i, ni)| (*ni, i))
+            .collect::<HashMap<_, _>>();
+
+        // Use the previous DFS order to break ties, but let the complete set
+        // of precedence constraints determine which nodes are ready.
+        let mut precedence = DiGraph::<_, ()>::new();
+        for &ni in &order {
+            precedence.add_node(ni);
+        }
+        let mut listed_edges = vec![];
+        for (target, &ni) in order.iter().enumerate() {
+            let target = NodeIndex::new(target);
+            let mut seen_bases = HashSet::new();
+            let bases = self.di_graph[ni]
+                .extendee_ids()
+                .iter()
+                .filter_map(|id| self.get_node_index(id))
+                .filter(|base| seen_bases.insert(*base))
+                .map(|base| NodeIndex::new(position[&base]))
+                .collect::<Vec<_>>();
+
+            for &base in &bases {
+                precedence.add_edge(base, target, ());
+            }
+            for pair in bases.windows(2) {
+                precedence.add_edge(pair[0], pair[1], ());
+                listed_edges.push((ni, pair[0], pair[1]));
+            }
         }
 
-        node_indices.reverse();
-        node_indices
+        let mut incoming = precedence
+            .node_indices()
+            .map(|n| {
+                precedence
+                    .neighbors_directed(n, Direction::Incoming)
+                    .count()
+            })
+            .collect::<Vec<_>>();
+        let mut ready = precedence
+            .node_indices()
+            .filter(|n| incoming[n.index()] == 0)
+            .collect::<BTreeSet<_>>();
+        let mut sorted = Vec::with_capacity(order.len());
+        while let Some(next) = ready.pop_first() {
+            sorted.push(precedence[next]);
+            for dependent in precedence.neighbors(next) {
+                incoming[dependent.index()] -= 1;
+                if incoming[dependent.index()] == 0 {
+                    ready.insert(dependent);
+                }
+            }
+        }
+        if sorted.len() == order.len() {
+            return Ok(sorted);
+        }
+
+        // Ancestry was checked when the graph was built. A cycle here must
+        // include at least one listed-order edge; report one from the cycle.
+        let mut component = vec![0; order.len()];
+        for (i, nodes) in kosaraju_scc(&precedence).into_iter().enumerate() {
+            for n in nodes {
+                component[n.index()] = i;
+            }
+        }
+        let (owner, first, second) = listed_edges
+            .into_iter()
+            .find(|(_, a, b)| component[a.index()] == component[b.index()])
+            .expect("a precedence cycle contains a listed-order edge");
+        let conflict = ConflictingOrder {
+            node: format!("{:?}", self.di_graph[owner].id()),
+            first: format!("{:?}", self.di_graph[precedence[first]].id()),
+            second: format!("{:?}", self.di_graph[precedence[second]].id()),
+        };
+        // Keep the public, exhaustive Rust kind enum unchanged. The report
+        // still exposes the more specific diagnostic code.
+        Err(ExtensionGraphError::from(eyre::Report::new(conflict)))
+    }
+
+    fn visit_bases(
+        &self,
+        node: NodeIndex,
+        seen: &mut HashSet<NodeIndex>,
+        order: &mut Vec<NodeIndex>,
+    ) {
+        if !seen.insert(node) {
+            return;
+        }
+
+        for id in self.di_graph[node].extendee_ids() {
+            if let Some(base) = self.get_node_index(id) {
+                self.visit_bases(base, seen, order);
+            }
+        }
+
+        order.push(node);
     }
 
     /// The raw, unmerged nodes of `id`'s extension closure, in the exact
@@ -282,7 +380,7 @@ impl<T: Merge + ExtensionGraphNode> ExtensionGraph<T> {
         })?;
 
         Ok(self
-            .closure_indices(node)
+            .closure_indices(node)?
             .into_iter()
             .map(|ni| &self.di_graph[ni])
             .collect())
@@ -405,6 +503,24 @@ pub(crate) enum ExtensionGraphErrorInner {
     #[error(transparent)]
     #[diagnostic(delegate)]
     Unknown(#[from] eyre::Error),
+}
+
+/// A node's listed base order conflicts with another extension constraint.
+#[derive(Debug, thiserror::Error, omni_diagnostic::Diagnostic)]
+#[error(
+    "`{node}` lists `{first}` before `{second}`, but `{second}` must be applied before `{first}`"
+)]
+#[diagnostic(
+    code = "project.extends_order_conflict",
+    hint = "reorder conflicting `extends` lists to agree with each other and put ancestors before their descendants"
+)]
+struct ConflictingOrder {
+    #[diagnostic(detail)]
+    node: String,
+    #[diagnostic(detail)]
+    first: String,
+    #[diagnostic(detail)]
+    second: String,
 }
 
 #[cfg(test)]
@@ -760,5 +876,84 @@ mod tests {
             graph.raw_layers_by_id(&404).unwrap_err().kind(),
             ExtensionGraphErrorKind::NodeNotFound
         );
+    }
+
+    #[test]
+    fn closure_puts_ancestors_first_for_redundant_listing() {
+        let graph = ExtensionGraph::from_nodes(vec![
+            node(1, &[]),
+            node(2, &[1]),
+            node(3, &[1, 2]),
+            node(4, &[2]),
+        ])
+        .unwrap();
+
+        assert_eq!(raw_ids(&graph, 3), vec![1, 2, 3]);
+        assert_eq!(raw_ids(&graph, 4), vec![1, 2, 4]);
+    }
+
+    #[test]
+    fn conflicting_listed_order_is_reported() {
+        let mut graph = ExtensionGraph::from_nodes(vec![
+            node(1, &[]),
+            node(2, &[1]),
+            node(3, &[2, 1]),
+        ])
+        .unwrap();
+
+        let err = graph.raw_layers_by_id(&3).unwrap_err();
+        assert_eq!(err.kind(), ExtensionGraphErrorKind::Unknown);
+        let msg = err.to_string();
+        assert!(
+            msg.contains("`3`") && msg.contains("`2`") && msg.contains("`1`")
+        );
+        for error in [err, graph.process_node_by_id(&3).unwrap_err()] {
+            let report = eyre::Report::new(error);
+            let diagnostic =
+                omni_diagnostic::find(&report).expect("conflict diagnostic");
+            assert_eq!(diagnostic.code(), "project.extends_order_conflict");
+        }
+        assert_eq!(raw_ids(&graph, 2), vec![1, 2]);
+    }
+
+    #[test]
+    fn uneven_shared_ancestors_are_valid() {
+        let graph = ExtensionGraph::from_nodes(vec![
+            node(1, &[]),
+            node(2, &[1]),
+            node(3, &[2]),
+            node(4, &[1]),
+            node(5, &[3, 4]),
+        ])
+        .unwrap();
+
+        assert_eq!(raw_ids(&graph, 5), vec![1, 2, 3, 4, 5]);
+    }
+
+    #[test]
+    fn another_branch_can_order_bases_visited_earlier() {
+        let mut graph = ExtensionGraph::from_nodes(vec![
+            node(1, &[]),
+            node(2, &[]),
+            node(3, &[1]),
+            node(4, &[2, 1]),
+            node(5, &[3, 4]),
+        ])
+        .unwrap();
+
+        assert_eq!(raw_ids(&graph, 5), vec![2, 1, 3, 4, 5]);
+        graph.process_node_by_id(&5).unwrap();
+    }
+
+    #[test]
+    fn listed_order_is_valid_for_both_orders_of_independent_bases() {
+        let graph = ExtensionGraph::from_nodes(vec![
+            node(1, &[]),
+            node(2, &[]),
+            node(3, &[2, 1]),
+        ])
+        .unwrap();
+
+        assert_eq!(raw_ids(&graph, 3), vec![2, 1, 3]);
     }
 }

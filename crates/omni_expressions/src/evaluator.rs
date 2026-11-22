@@ -139,21 +139,71 @@ impl Error {
                     name: name.to_string(),
                     is_call: false,
                 },
-                E::NoSuchKey(key) => ErrorClass::MissingKey {
-                    key: key.to_string(),
+                E::NoSuchKey(_) => ErrorClass::MissingKey {
+                    // CEL keys can come from evaluated values, not source.
+                    key: String::new(),
                 },
-                E::NoSuchOverload(_)
-                | E::UnexpectedType { .. }
-                | E::ValuesNotComparable(_, _)
-                | E::UnsupportedBinaryOperator(_, _, _) => {
+                E::NoSuchOverload(_) => ErrorClass::TypeMismatch {
+                    detail: e.to_string(),
+                },
+                E::UnexpectedType { .. } => ErrorClass::TypeMismatch {
+                    detail: "an argument has an unexpected type".into(),
+                },
+                E::ValuesNotComparable(left, right) => {
                     ErrorClass::TypeMismatch {
-                        detail: e.to_string(),
+                        detail: format!(
+                            "cannot compare {} and {}",
+                            left.type_of(),
+                            right.type_of()
+                        ),
+                    }
+                }
+                E::UnsupportedBinaryOperator(op, left, right) => {
+                    ErrorClass::TypeMismatch {
+                        detail: format!(
+                            "operator `{op}` does not accept {} and {}",
+                            left.type_of(),
+                            right.type_of()
+                        ),
                     }
                 }
                 _ => ErrorClass::Other,
             },
             _ => ErrorClass::Other,
         }
+    }
+}
+
+fn execution_class(cause: &cel::ExecutionError) -> &'static str {
+    use cel::ExecutionError as E;
+    match cause {
+        E::NoSuchKey(_) => "missing_key",
+        E::DivisionByZero(_) | E::RemainderByZero(_) => "division_by_zero",
+        E::Overflow(..) => "overflow",
+        E::IndexOutOfBounds(_) => "index_out_of_bounds",
+        E::NoSuchOverload(_)
+        | E::ValuesNotComparable(..)
+        | E::UnsupportedBinaryOperator(..)
+        | E::UnsupportedIndex(..)
+        | E::UnsupportedKeyType(_)
+        | E::UnexpectedType { .. } => "type_mismatch",
+        _ => "other",
+    }
+}
+
+fn execution_details(error: &ErrorInner) -> serde_json::Value {
+    match error {
+        ErrorInner::ExecutionError(cause) => {
+            serde_json::json!({ "class": execution_class(cause) })
+        }
+        _ => serde_json::Value::Null,
+    }
+}
+
+impl From<cel::ExecutionError> for ErrorInner {
+    fn from(error: cel::ExecutionError) -> Self {
+        // A thiserror #[from] would also expose the error as a source.
+        Self::ExecutionError(error)
     }
 }
 
@@ -165,7 +215,7 @@ impl<T: Into<ErrorInner>> From<T> for Error {
 }
 
 #[derive(
-    Debug, thiserror::Error, EnumDiscriminants, new, omni_diagnostic::Diagnostic,
+    thiserror::Error, EnumDiscriminants, new, omni_diagnostic::Diagnostic,
 )]
 #[strum_discriminants(name(ErrorKind), vis(pub))]
 #[error("cel expression error: {inner}")]
@@ -179,9 +229,15 @@ pub enum ErrorInner {
     )]
     ParseError(cel::ParseErrors),
 
-    #[error(transparent)]
-    #[diagnostic(skip)]
-    ExecutionError(#[from] cel::ExecutionError),
+    /// The expression failed while running. The cel error is kept only for
+    /// classification; its message can quote values, so it is never displayed.
+    #[error("expression failed at runtime: {}", execution_class(.0))]
+    #[diagnostic(
+        code = "expression.execution_failed",
+        details = execution_details,
+        hint = "check that the values the expression reads exist and have the expected types"
+    )]
+    ExecutionError(cel::ExecutionError),
 
     #[error(transparent)]
     #[diagnostic(delegate)]
@@ -223,6 +279,35 @@ pub enum ErrorInner {
         #[diagnostic(detail)]
         name: String,
     },
+}
+
+impl std::fmt::Debug for ErrorInner {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::ParseError(error) => {
+                f.debug_tuple("ParseError").field(error).finish()
+            }
+            Self::ExecutionError(error) => f
+                .debug_struct("ExecutionError")
+                .field("class", &execution_class(error))
+                .finish(),
+            Self::Unknown(error) => {
+                f.debug_tuple("Unknown").field(error).finish()
+            }
+            Self::UndeclaredReference { name, is_call } => f
+                .debug_struct("UndeclaredReference")
+                .field("name", name)
+                .field("is_call", is_call)
+                .finish(),
+            Self::NonBool { got } => {
+                f.debug_struct("NonBool").field("got", got).finish()
+            }
+            Self::VariableNotFound { name } => f
+                .debug_struct("VariableNotFound")
+                .field("name", name)
+                .finish(),
+        }
+    }
 }
 
 #[cfg(test)]

@@ -26,19 +26,12 @@ use crate::{
 /// neither read nor write the cache (for example one that can only list or
 /// publish), instead of saving a configuration that fails on every task. A
 /// server that reports none (an older one) is accepted as before.
-fn check_access(
+pub(crate) fn check_access(
     result: &omni_remote_cache_client::ValidateAccessResult,
 ) -> Result<(), SetupRemoteCachingConfigErrorInner> {
     if !result.is_valid {
-        return Err(SetupRemoteCachingConfigErrorInner::InvalidAccess(
-            eyre::Report::msg(
-                result
-                    .message
-                    .as_deref()
-                    .unwrap_or("invalid access")
-                    .to_string(),
-            ),
-        ));
+        // A server-supplied message may echo credentials. Don't retain it.
+        return Err(SetupRemoteCachingConfigErrorInner::InvalidAccess);
     }
     let held = |scope: &str| result.scopes.iter().any(|s| s == scope);
     if !result.scopes.is_empty()
@@ -206,9 +199,11 @@ async fn write_encrypted_config(
 }
 
 #[derive(Debug, thiserror::Error, new, omni_diagnostic::Diagnostic)]
-#[error("failed to setup remote caching: {0}")]
+#[error("failed to setup remote caching")]
 #[diagnostic(forward)]
-pub struct SetupRemoteCachingConfigError(SetupRemoteCachingConfigErrorInner);
+pub struct SetupRemoteCachingConfigError(
+    #[source] SetupRemoteCachingConfigErrorInner,
+);
 
 impl SetupRemoteCachingConfigError {
     #[allow(unused)]
@@ -237,7 +232,7 @@ impl<T: Into<SetupRemoteCachingConfigErrorInner>> From<T>
 #[strum_discriminants(vis(pub), name(SetupRemoteCachingConfigErrorKind))]
 pub(crate) enum SetupRemoteCachingConfigErrorInner {
     /// The remote caching configuration could not be saved.
-    #[error("failed to write remote caching configuration at '{path}': {source}", path = path.display())]
+    #[error("failed to write remote caching configuration at '{path}'", path = path.display())]
     #[diagnostic(code = "remote_cache.config_write_failed", audience = environment, hint = "check disk space and write access to {path:?}, then retry remote caching setup")]
     ConfigWriteFailed {
         #[diagnostic(detail)]
@@ -247,7 +242,7 @@ pub(crate) enum SetupRemoteCachingConfigErrorInner {
     },
 
     /// The plaintext remote caching configuration could not be saved.
-    #[error("failed to save remote caching configuration at '{path}': {source}", path = path.display())]
+    #[error("failed to save remote caching configuration at '{path}'", path = path.display())]
     #[diagnostic(code = "remote_cache.config_save_failed", audience = environment, hint = "check the configuration file format and write access to {path:?}, then retry remote caching setup")]
     ConfigEncodeFailed {
         #[diagnostic(detail)]
@@ -286,7 +281,7 @@ pub(crate) enum SetupRemoteCachingConfigErrorInner {
         code = "remote_cache.invalid_access",
         hint = "check the API key, tenant, organization, workspace and environment codes, then run remote caching setup again"
     )]
-    InvalidAccess(#[source] eyre::Report),
+    InvalidAccess,
 
     /// The credential is valid for the target but cannot use the cache.
     #[error(
@@ -334,8 +329,7 @@ mod diagnostic_tests {
         assert_eq!(diagnostic.code(), "remote_cache.config_write_failed");
         assert_eq!(diagnostic.audience(), Audience::Environment);
         assert_eq!(diagnostic.details().unwrap()["path"], "remote-cache.enc");
-        // The wrapper does not chain its inner error, so the OS cause has to be
-        // in the message itself for the user to see why the write failed.
+        // The cause chain must reach the OS error.
         let chain = report
             .chain()
             .map(|e| e.to_string())
@@ -365,7 +359,7 @@ mod tests {
     fn an_invalid_probe_is_invalid_access() {
         assert!(matches!(
             check_access(&result(false, &[])),
-            Err(Inner::InvalidAccess(_))
+            Err(Inner::InvalidAccess)
         ));
     }
 

@@ -1,0 +1,26 @@
+---
+title: "Task args and the cache key"
+description: "Release note: task args now hash in key order, so merged args no longer cause spurious cache misses"
+---
+
+Configured task `args` are part of a task's cache key. They are now hashed in
+sorted key order instead of map insertion order.
+
+## Why
+
+When a task's `args` gain keys through a merge (for example a template with
+`args: {z}` and a task with `args: {a, b}`), the insertion order of the merged
+keys could differ between runs. The same configuration could then hash
+differently, causing spurious local and remote cache misses.
+
+## What changes for you
+
+- Tasks whose `args` were already in sorted key order keep their digest. Their
+  existing cache entries stay valid. Plain `args` read from one file are
+  already sorted, so most tasks are in this group.
+- Tasks whose merged `args` were not in sorted order get a new, stable digest
+  once. The first run after upgrading is a cache miss, then it hits as normal.
+- Old entries under the previous digest are never matched again. Remove them
+  with `omni cache prune --stale-only`.
+
+No configuration changes are needed.

@@ -9,7 +9,7 @@ use value_bag::{OwnedValueBag, ValueBag};
 use crate::{
     error::Error,
     provider::InputProvider,
-    utils::{validate_boolean_expression_result, validate_value},
+    utils::{validate_boolean_expression_result, validate_value_with_secrecy},
 };
 
 /// Interactively collect values for every active input in `inputs`.
@@ -309,12 +309,13 @@ async fn process_pre_filled_value<
 
     // Run validators; re-ask provider on InvalidValue.
     let validators = input.base().validators.as_slice();
-    let result = validate_value(
+    let result = validate_value_with_secrecy(
         key,
         &value,
         ctx,
         validators,
         config.validation_value_name,
+        !omni_input_schema::secret_paths(input).is_empty(),
     );
     match result {
         Ok(()) => Ok(value),
@@ -377,12 +378,13 @@ async fn get_raw_input_value<
         };
 
         let validators = input.base().validators.as_slice();
-        let validation_result = validate_value(
+        let validation_result = validate_value_with_secrecy(
             &input.base().name,
             &result,
             ctx,
             validators,
             config.validation_value_name,
+            !omni_input_schema::secret_paths(input).is_empty(),
         );
 
         if let Err(err) = validation_result {
@@ -427,8 +429,20 @@ async fn collect_from_object<E: InputProfile + Send + Sync + 'static>(
             }),
         ));
     }
+    // Providers (including prompt-local validators) must see the inherited
+    // secrecy on the typed input itself, not just in the log redactor.
+    let mut secret_fields;
+    let fields = if parent_secret {
+        secret_fields = object_input.fields.clone();
+        for field in &mut secret_fields {
+            field.mark_secret();
+        }
+        &secret_fields
+    } else {
+        &object_input.fields
+    };
     let object = Box::pin(collect_internal(
-        object_input.fields.as_slice(),
+        fields.as_slice(),
         &unordered_map!(),
         context,
         &child_config,
@@ -1351,6 +1365,65 @@ mod tests {
             jv(result.get("cfg").unwrap()),
             json!({"key": "native-value", "extra": true}),
         );
+    }
+
+    #[tokio::test]
+    async fn object_with_a_secret_field_never_renders_its_validator_message() {
+        let input = parse(json!({
+            "type": "object",
+            "name": "cfg",
+            "fields": [{"type": "string", "name": "token", "secret": true}],
+            "validators": [{
+                "condition": "false",
+                "error_message": "bad cfg {{ value }}"
+            }]
+        }));
+        let provider = NativeObjectProvider::new(
+            &[],
+            &[("cfg", json!({"token": "hunter2"}))],
+        );
+        let err = collect(&[input], &empty(), &empty(), &cfg(false), &provider)
+            .await
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(!text.contains("hunter2"), "{text}");
+    }
+
+    #[tokio::test]
+    async fn emulated_object_validators_respect_inherited_secrecy() {
+        for secret in [true, false] {
+            let input: Input<()> = parse(json!({
+                "type": "object",
+                "name": "cfg",
+                "secret": secret,
+                "fields": [{
+                    "type": "object",
+                    "name": "nested",
+                    "fields": [{
+                        "type": "string",
+                        "name": "token",
+                        "validators": [{
+                            "condition": false,
+                            "error_message": "bad token {{ value }}"
+                        }]
+                    }]
+                }]
+            }));
+            let err = collect(
+                &[input],
+                &empty(),
+                &empty(),
+                &cfg(false),
+                &scripted(&[("token", "validator-secret-sentinel")]),
+            )
+            .await
+            .unwrap_err();
+            assert!(err.invalid_value_message().is_some(), "{err}");
+            assert_eq!(
+                format!("{err} {err:?}").contains("validator-secret-sentinel"),
+                !secret,
+            );
+        }
     }
 
     #[tokio::test]

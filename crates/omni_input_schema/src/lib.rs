@@ -50,4 +50,5 @@ pub use profile::InputProfile;
 pub use validate::{
     NameFilter, ValidationConfig, ValidationError, ValidationReport, validate,
     validate_boolean_expression_result, validate_value,
+    validate_value_with_secrecy,
 };

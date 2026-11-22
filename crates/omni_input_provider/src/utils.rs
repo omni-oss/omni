@@ -21,6 +21,26 @@ pub fn validate_value(
     .map_err(Into::into)
 }
 
+/// Use `secret` for inputs whose candidate must not appear in errors.
+pub fn validate_value_with_secrecy(
+    input_name: &str,
+    value: &OwnedValueBag,
+    context_values: &omni_tera::Context,
+    validators: &[ValidateConfiguration],
+    value_name: Option<&str>,
+    secret: bool,
+) -> Result<(), Error> {
+    omni_input_schema::validate_value_with_secrecy(
+        input_name,
+        value,
+        context_values,
+        validators,
+        value_name,
+        secret,
+    )
+    .map_err(Into::into)
+}
+
 pub fn validate_boolean_expression_result(
     result: &str,
     expression: &str,
