@@ -1574,7 +1574,22 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                         // into place, so the shared lock covers just this call.
                         // A prune that holds the exclusive lock makes it wait.
                         let _prune_guard =
-                            CacheLockGuard::acquire_shared(prune_lock).await?;
+                            match CacheLockGuard::acquire_shared(prune_lock)
+                                .await
+                            {
+                                Ok(guard) => guard,
+                                // The remote is optional: not being able to
+                                // lock is a miss, like any other failure to
+                                // restore.
+                                Err(e) => {
+                                    tracing::warn!(
+                                        %digest,
+                                        error = %e,
+                                        "could not lock the cache to restore a remote entry; treating it as a miss"
+                                    );
+                                    return Ok(());
+                                }
+                            };
                         match restore_staged(&output_dir, artifact.bytes, marker, &identity)
                             .await
                         {
