@@ -22,3 +22,33 @@ pub fn build_router() -> Router<ServiceState> {
     ),
 )]
 pub struct V1RootApiDoc;
+
+#[cfg(test)]
+mod tests {
+    use utoipa::OpenApi;
+
+    use super::V1RootApiDoc;
+
+    #[test]
+    fn artifact_listing_exposes_storage_semantics_in_openapi() {
+        let spec = serde_json::to_value(V1RootApiDoc::openapi()).unwrap();
+        let components = &spec["components"];
+        assert!(components["securitySchemes"]["bearer"].is_object());
+
+        let item = &components["schemas"]["CacheItem"]["properties"];
+        let description = |entry: &serde_json::Value| {
+            entry["description"]
+                .as_str()
+                .expect("OpenAPI description is missing")
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+        assert!(description(&item["size"]).contains("trailer and footer"));
+        assert!(description(&item["scope"]).contains("original scope label"));
+        assert!(
+            description(&spec["paths"]["/artifacts"]["get"])
+                .contains("404 Not Found")
+        );
+    }
+}
