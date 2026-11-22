@@ -218,6 +218,12 @@ mod tests {
             return;
         };
         let dir = std::path::PathBuf::from(dir);
+        if std::env::var(ROLE_ENV).as_deref() == Ok("probe") {
+            // Proves only that a copy of the test binary can be started and
+            // run here; no keystore involved.
+            std::fs::write(dir.join("probe-ok"), b"").unwrap();
+            return;
+        }
         let path = dir.join("config").join("keystore");
         let key = if std::env::var(ROLE_ENV).as_deref() == Ok("stale") {
             // Open (and snapshot) the store, then wait for the parent to
@@ -261,45 +267,116 @@ mod tests {
 
     /// A spawned test child that is killed and reaped if the test unwinds
     /// before waiting for it; dropping a `Child` does not stop the process.
-    struct SpawnedChild(std::process::Child);
+    /// Its stdout and stderr go to a file so a failure can show why.
+    struct SpawnedChild {
+        child: std::process::Child,
+        log: std::path::PathBuf,
+    }
 
     impl SpawnedChild {
         fn wait(&mut self) -> std::io::Result<std::process::ExitStatus> {
-            self.0.wait()
+            self.child.wait()
         }
 
         fn try_wait(
             &mut self,
         ) -> std::io::Result<Option<std::process::ExitStatus>> {
-            self.0.try_wait()
+            self.child.try_wait()
         }
 
         fn id(&self) -> u32 {
-            self.0.id()
+            self.child.id()
+        }
+
+        fn output(&self) -> String {
+            std::fs::read_to_string(&self.log)
+                .unwrap_or_else(|e| format!("<no child output: {e}>"))
+        }
+
+        /// Waits and fails with the child's output unless it succeeded.
+        fn wait_ok(&mut self) {
+            let status = self.wait().unwrap();
+            assert!(
+                status.success(),
+                "child {status}; its output:\n{}",
+                self.output()
+            );
         }
     }
 
     impl Drop for SpawnedChild {
         fn drop(&mut self) {
             // Errors mean the child already exited and was reaped.
-            let _ = self.0.kill();
-            let _ = self.0.wait();
+            let _ = self.child.kill();
+            let _ = self.child.wait();
         }
     }
 
     fn spawn_child(dir: &std::path::Path, role: &str) -> SpawnedChild {
-        SpawnedChild(
+        static NEXT: std::sync::atomic::AtomicUsize =
+            std::sync::atomic::AtomicUsize::new(0);
+        let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let log = dir.join(format!("child-{n}.log"));
+        let out = std::fs::File::create(&log).unwrap();
+        let err = out.try_clone().unwrap();
+        let child =
             std::process::Command::new(std::env::current_exe().unwrap())
                 .args(["--exact", "secret_key::tests::keystore_child_process"])
                 .env(DIR_ENV, dir)
                 .env(ROLE_ENV, role)
+                .stdout(out)
+                .stderr(err)
                 .spawn()
-                .unwrap(),
-        )
+                .unwrap();
+        SpawnedChild { child, log }
+    }
+
+    /// `Some(reason)` when this environment cannot run a copy of the test
+    /// binary as a child (for example emulated cross-test runners). A child
+    /// that only writes a file is started first, so a failure here is about
+    /// the environment, not the keystore.
+    fn multiprocess_unavailable() -> Option<&'static str> {
+        static PROBE: std::sync::OnceLock<Option<String>> =
+            std::sync::OnceLock::new();
+        PROBE
+            .get_or_init(|| {
+                let dir = tempfile::tempdir().unwrap();
+                let mut child = spawn_child(dir.path(), "probe");
+                let deadline = std::time::Instant::now()
+                    + std::time::Duration::from_secs(30);
+                let status = loop {
+                    if let Some(status) = child.try_wait().unwrap() {
+                        break Some(status);
+                    }
+                    if std::time::Instant::now() >= deadline {
+                        break None;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(20));
+                };
+                let ok = status.is_some_and(|s| s.success())
+                    && dir.path().join("probe-ok").exists();
+                (!ok).then(|| {
+                    format!(
+                        "a plain child of the test binary did not run (status {status:?}); its output:\n{}",
+                        child.output()
+                    )
+                })
+            })
+            .as_deref()
+    }
+
+    /// Reports why a multi-process test cannot run here. Stable Rust has no
+    /// runtime "skip", so the test returns early.
+    #[allow(clippy::disallowed_macros)]
+    fn skip_multiprocess(reason: &str) {
+        eprintln!("skipping multi-process keystore test: {reason}");
     }
 
     #[test]
     fn concurrent_threads_and_processes_agree_on_one_key() {
+        if let Some(reason) = multiprocess_unavailable() {
+            return skip_multiprocess(reason);
+        }
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("config").join("keystore");
         let children: Vec<_> =
@@ -313,7 +390,7 @@ mod tests {
         let mut keys: Vec<String> =
             threads.into_iter().map(|t| t.join().unwrap()).collect();
         for mut child in children {
-            assert!(child.wait().unwrap().success());
+            child.wait_ok();
         }
         for entry in std::fs::read_dir(dir.path()).unwrap() {
             let entry = entry.unwrap();
@@ -331,9 +408,12 @@ mod tests {
 
     #[test]
     fn fresh_config_dir_key_decrypts_in_a_second_process() {
+        if let Some(reason) = multiprocess_unavailable() {
+            return skip_multiprocess(reason);
+        }
         let dir = tempfile::tempdir().unwrap();
         let mut child = spawn_child(dir.path(), "seal");
-        assert!(child.wait().unwrap().success());
+        child.wait_ok();
         let sealed = std::fs::read_dir(dir.path())
             .unwrap()
             .map(|e| e.unwrap().path())
@@ -353,14 +433,18 @@ mod tests {
         assert_eq!(plain, PLAIN);
     }
 
-    fn wait_for(path: &std::path::Path) {
+    fn wait_for(path: &std::path::Path, child: &SpawnedChild) {
         for _ in 0..1000 {
             if path.exists() {
                 return;
             }
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
-        panic!("timed out waiting for {}", path.display());
+        panic!(
+            "timed out waiting for {}; child output:\n{}",
+            path.display(),
+            child.output()
+        );
     }
 
     fn child_output(dir: &std::path::Path, child: u32) -> String {
@@ -372,18 +456,24 @@ mod tests {
 
     #[test]
     fn stale_snapshot_in_another_process_adopts_the_saved_key() {
+        if let Some(reason) = multiprocess_unavailable() {
+            return skip_multiprocess(reason);
+        }
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("config").join("keystore");
         let mut child = spawn_child(dir.path(), "stale");
-        wait_for(&dir.path().join("ready"));
+        wait_for(&dir.path().join("ready"), &child);
         let saved = fallback_key(&path);
         std::fs::write(dir.path().join("go"), b"").unwrap();
-        assert!(child.wait().unwrap().success());
+        child.wait_ok();
         assert_eq!(child_output(dir.path(), child.id()), saved);
     }
 
     #[test]
     fn another_process_waits_while_the_keystore_lock_is_held() {
+        if let Some(reason) = multiprocess_unavailable() {
+            return skip_multiprocess(reason);
+        }
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("config").join("keystore");
         let store =
@@ -393,9 +483,10 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(500));
         assert!(
             child.try_wait().unwrap().is_none(),
-            "child ignored the lock"
+            "child ignored the lock; its output:\n{}",
+            child.output()
         );
         drop(held);
-        assert!(child.wait().unwrap().success());
+        child.wait_ok();
     }
 }
