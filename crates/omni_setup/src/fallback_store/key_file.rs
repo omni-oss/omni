@@ -382,7 +382,13 @@ mod windows {
                 )
             };
             assert_eq!(status, ERROR_SUCCESS);
-            let descriptor = Descriptor(descriptor);
+            dacl_text(&Descriptor(descriptor))
+        }
+
+        /// The DACL of `descriptor` as SDDL. Windows prints well-known
+        /// accounts by alias (for example `LA` for the built-in
+        /// Administrator), so compare texts produced the same way.
+        fn dacl_text(descriptor: &Descriptor) -> String {
             let (mut text, mut length) = (null_mut(), 0);
             // SAFETY: The descriptor and both output pointers are valid.
             assert_ne!(
@@ -406,6 +412,28 @@ mod windows {
             // SAFETY: Win32 allocated the string with the local allocator.
             unsafe { LocalFree(text.cast()) };
             result
+        }
+
+        /// Sets the mandatory label on an existing file. Creating a file
+        /// with an explicit SACL needs `SeSecurityPrivilege`, which CI does
+        /// not hold, but labeling an owned file afterwards does not.
+        fn set_label(path: &Path, sddl: &str) {
+            let descriptor = Descriptor::from_sddl(sddl).unwrap();
+            let path = wide(path);
+            // SAFETY: The NUL-terminated path and descriptor live through
+            // the call.
+            assert_ne!(
+                unsafe {
+                    SetFileSecurityW(
+                        path.as_ptr(),
+                        LABEL_SECURITY_INFORMATION,
+                        descriptor.0,
+                    )
+                },
+                0,
+                "setting the label failed: {}",
+                io::Error::last_os_error(),
+            );
         }
 
         #[test]
@@ -452,20 +480,21 @@ mod windows {
             assert!(staged_acl.starts_with("D:P"));
             assert!(!staged_acl.contains(";;;WD)"));
             // The staged file itself, not just the requested descriptor,
-            // must grant the creating account.
-            assert!(
-                staged_acl.contains(&format!(";;;{sid})")),
-                "staged DACL {staged_acl} lacks the creating user {sid}"
+            // must carry the creating account's DACL.
+            let expected = dacl_text(
+                &Descriptor::from_sddl(&private_dacl().unwrap()).unwrap(),
             );
+            assert_eq!(staged_acl, expected, "creating user {sid}");
             let existing = parent.path().join("keystore");
             let existing_acl = Descriptor::from_sddl(
-                "D:P(A;;FA;;;OW)(A;;FR;;;BA)(A;;FA;;;SY)S:P(ML;;NRNW;;;ME)",
+                "D:P(A;;FA;;;OW)(A;;FR;;;BA)(A;;FA;;;SY)",
             )
             .unwrap();
             create_new(&existing, existing_acl.0)
                 .unwrap()
                 .write_all(b"original")
                 .unwrap();
+            set_label(&existing, "S:(ML;;NRNW;;;ME)");
             let before = dacl(&existing);
             let label = file_label(&File::open(&existing).unwrap()).unwrap();
             assert!(
@@ -509,37 +538,30 @@ mod windows {
         #[test]
         fn unlabeled_store_cannot_be_replaced_with_an_inherited_low_label() {
             let parent = tempfile::tempdir().unwrap();
-            let low_parent =
-                Descriptor::from_sddl("S:(ML;OICI;NW;;;LW)").unwrap();
-            let parent_wide = wide(parent.path());
-            // SAFETY: The NUL-terminated path and descriptor live through the call.
-            assert_ne!(
-                unsafe {
-                    SetFileSecurityW(
-                        parent_wide.as_ptr(),
-                        LABEL_SECURITY_INFORMATION,
-                        low_parent.0,
-                    )
-                },
-                0,
-            );
+            // Create the existing store first, while the parent has no label,
+            // so it is genuinely unlabeled.
+            let destination = parent.path().join("keystore");
             let plain =
                 Descriptor::from_sddl(&private_dacl().unwrap()).unwrap();
+            create_new(&destination, plain.0)
+                .unwrap()
+                .write_all(b"existing")
+                .unwrap();
+            assert!(
+                file_label(&File::open(&destination).unwrap())
+                    .unwrap()
+                    .is_empty()
+            );
+
+            // Now give the parent an inheritable low label; new children
+            // inherit it, an existing file does not.
+            set_label(parent.path(), "S:(ML;OICI;NW;;;LW)");
             let probe = parent.path().join("inheritance-probe");
             create_new(&probe, plain.0).unwrap();
             assert!(
                 !file_label(&File::open(&probe).unwrap()).unwrap().is_empty()
             );
             std::fs::remove_file(probe).unwrap();
-
-            let destination = parent.path().join("keystore");
-            let unlabeled =
-                Descriptor::from_sddl("D:P(A;;FA;;;OW)(A;;FA;;;SY)S:P")
-                    .unwrap();
-            create_new(&destination, unlabeled.0)
-                .unwrap()
-                .write_all(b"existing")
-                .unwrap();
             assert!(
                 file_label(&File::open(&destination).unwrap())
                     .unwrap()
