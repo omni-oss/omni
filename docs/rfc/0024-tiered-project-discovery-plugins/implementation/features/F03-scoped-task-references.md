@@ -107,7 +107,8 @@ Deferred, with the reason:
 - Public-name lookup. The resolver checks `config.tasks`; plugin-origin
   references must bind to the originating activation instead.
 - Serializing a finalized config that still holds a root reference. Nothing
-  produces one yet; `ProjectConfigResponse` fails on it until a producer exists.
+  produces one yet. It serializes as an internal, non-authorable
+  `$internal_project_root` form that user config rejects.
   Tracked in [#141](https://github.com/omni-oss/omni/issues/141) and in P04.3's
   acceptance criteria.
 - Cache identity. Cache keys do not cover `meta` or unkeyed environment variables.

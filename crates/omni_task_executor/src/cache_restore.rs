@@ -74,6 +74,9 @@ impl Restore {
                 .strip_prefix(workspace)
                 .map_err(|_| unsafe_path())?
                 .to_path_buf();
+            if !marker_allows_destination(entry.path_format, &relative) {
+                return Err(unsafe_path());
+            }
             let (parents, name) = destination(&root, &anchors, &relative)?;
             let parent = parents.last().expect("root is retained");
             match parent.symlink_metadata(&name) {
@@ -106,6 +109,30 @@ impl Restore {
             write_output(&output.source, &parents, &name)?;
         }
         Ok(())
+    }
+}
+
+/// Whether the entry's path-format marker allows this *resolved* destination.
+///
+/// On Windows the destination has already been resolved to native `\`
+/// separators, so a backslash is always a separator here and says nothing
+/// about the stored form. That form is checked before resolution (see
+/// `CachedTaskExecution::paths_match_host_format`); only the marker itself
+/// can be validated at this point. Elsewhere a backslash in the resolved
+/// path is a literal name, which a legacy (unmarked) entry cannot vouch for.
+fn marker_allows_destination(format: u8, relative: &Path) -> bool {
+    marker_allows_destination_on(format, relative, cfg!(windows))
+}
+
+fn marker_allows_destination_on(
+    format: u8,
+    relative: &Path,
+    windows: bool,
+) -> bool {
+    if windows {
+        omni_cache::path_format_allows_on(format, Path::new(""), true)
+    } else {
+        omni_cache::path_format_allows_on(format, relative, false)
     }
 }
 
@@ -262,6 +289,43 @@ fn unsafe_path() -> io::Error {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn marked_entry_restores_a_resolved_native_windows_destination() {
+        use omni_cache::{PATH_FORMAT_LEGACY, PATH_FORMAT_PORTABLE};
+        // On Windows the destination was resolved to native separators before
+        // the marker is consulted, so nested outputs of a *marked* entry must
+        // still be allowed; only the marker itself is validated there.
+        let resolved = Path::new("packages\\a\\dist\\a.js");
+        assert!(super::marker_allows_destination_on(
+            PATH_FORMAT_PORTABLE,
+            resolved,
+            true
+        ));
+        assert!(super::marker_allows_destination_on(
+            PATH_FORMAT_LEGACY,
+            resolved,
+            true
+        ));
+        assert!(!super::marker_allows_destination_on(9, resolved, true));
+    }
+
+    #[test]
+    fn off_windows_only_a_marked_entry_may_name_a_backslash_file() {
+        use omni_cache::{PATH_FORMAT_LEGACY, PATH_FORMAT_PORTABLE};
+        let literal = Path::new("dist\\a.js");
+        assert!(super::marker_allows_destination_on(
+            PATH_FORMAT_PORTABLE,
+            literal,
+            false
+        ));
+        assert!(!super::marker_allows_destination_on(
+            PATH_FORMAT_LEGACY,
+            literal,
+            false
+        ));
+        assert!(!super::marker_allows_destination_on(9, literal, false));
+    }
     use super::*;
 
     fn entry(source: &Path, destination: &Path) -> CachedTaskExecution {
@@ -281,6 +345,7 @@ mod tests {
             execution_duration: std::time::Duration::ZERO,
             execution_time: time::OffsetDateTime::UNIX_EPOCH,
             tries: 1,
+            path_format: omni_cache::PATH_FORMAT_LEGACY,
         }
     }
 
@@ -317,6 +382,61 @@ mod tests {
         assert_eq!(std::fs::read(&path).unwrap(), b"cached");
         std::fs::write(path, b"modified").unwrap();
         assert_eq!(std::fs::read(source.path()).unwrap(), b"cached");
+    }
+
+    /// Issue #62: a legacy entry that names `dist\\a.js` must not create a
+    /// file with a literal backslash in its name.
+    #[cfg(not(windows))]
+    #[test]
+    fn legacy_backslash_destination_is_rejected_not_restored_literally() {
+        let root = tempfile::tempdir().unwrap();
+        let source = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(source.path(), b"cached").unwrap();
+        let path = root.path().join("dist\\a.js");
+        let prepared =
+            Restore::prepare(root.path(), &entry(source.path(), &path))
+                .and_then(Restore::write);
+        assert!(prepared.is_err());
+        assert!(!path.exists());
+        assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn marked_nested_unicode_outputs_restore_and_existing_files_are_kept() {
+        for format in [
+            omni_cache::PATH_FORMAT_PORTABLE,
+            omni_cache::PATH_FORMAT_LEGACY,
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let source = tempfile::NamedTempFile::new().unwrap();
+            std::fs::write(source.path(), b"cached").unwrap();
+            let fresh = root.path().join("app/dist/sub/é.js");
+            let existing = root.path().join("shared/ü.js");
+            std::fs::create_dir_all(existing.parent().unwrap()).unwrap();
+            std::fs::write(&existing, b"local").unwrap();
+            let mut e = entry(source.path(), &fresh);
+            e.path_format = format;
+            let mut second = e.files[0].clone();
+            second.original_path = omni_types::OmniPath::new(&existing);
+            e.files.push(second);
+            Restore::prepare(root.path(), &e).unwrap().write().unwrap();
+            assert_eq!(std::fs::read(&fresh).unwrap(), b"cached");
+            assert_eq!(std::fs::read(&existing).unwrap(), b"local");
+        }
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn marked_backslash_destination_is_a_literal_name_off_windows() {
+        let root = tempfile::tempdir().unwrap();
+        let source = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(source.path(), b"cached").unwrap();
+        let path = root.path().join("dist\\a.js");
+        let mut e = entry(source.path(), &path);
+        e.path_format = omni_cache::PATH_FORMAT_PORTABLE;
+        Restore::prepare(root.path(), &e).unwrap().write().unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"cached");
+        assert!(!root.path().join("dist").exists());
     }
 
     #[cfg(any(unix, windows))]

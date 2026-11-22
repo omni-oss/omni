@@ -1,0 +1,47 @@
+---
+title: "Portable paths in task cache entries"
+description: "Release note: cache entries store output paths with / separators; upgrade every machine that shares a cache together"
+---
+
+Task cache entries now store the rooted output paths they restore (for example
+`@project/dist/a.js`) with `/` as the only separator, on every operating
+system. Previously an entry written on Windows could keep `\` separators. On
+Linux and macOS a backslash is an ordinary filename character, so restoring
+such an entry could create a file literally named `dist\a.js` instead of
+`dist/a.js`.
+
+## Upgrade every machine that shares a cache together
+
+- Older binaries treat entries written by this version as cache misses. They do
+  not fail; the task runs again. This applies to a local cache directory shared
+  by several versions and to a remote cache used by CI and developer machines.
+- New binaries still read entries written by older binaries.
+    - Windows accepts both separators in old entries.
+    - Linux and macOS treat an old entry whose output path contains a backslash as
+      a cache miss, because it cannot be told apart from a literal filename. The
+      task runs again and writes a new entry. Old entries without a backslash are
+      still used.
+- Cache keys (digests) do not change, so no key is invalidated by this change.
+
+## Path portability is not artifact portability
+
+Portable paths only make the stored path unambiguous. They do not make outputs
+interchangeable between platforms. A task that produces platform-specific
+files (native binaries, toolchain output) still needs a cache identity or
+isolation that separates Windows, Linux and macOS, for example by including the
+platform in the task's cache inputs.
+
+## Entry format
+
+Entry metadata gained a trailing `path_format` field: `0` (or absent) is a
+legacy entry, `1` is the portable format described above. A marked path with a
+backslash is invalid on Windows and a literal name elsewhere. An unknown value
+makes the entry a miss. Paths that are absolute, use `..` to leave the
+workspace, or are otherwise unsafe are still rejected as before.
+
+## Rollback
+
+To roll back, downgrade the binaries. Entries written by this version become
+cache misses for the older binaries, and the older binaries write entries in the
+old format. There is no data migration. Clean up unused entries with
+`omni cache prune`.

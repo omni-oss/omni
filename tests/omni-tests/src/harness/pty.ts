@@ -30,6 +30,7 @@ import { Terminal } from "@xterm/headless";
 import { onTestFinished } from "vitest";
 
 import { resolveOmniBin } from "./binary";
+import { isolatedHomeEnv } from "./isolated-home";
 import { normalize } from "./normalize";
 
 /** Named keys recognized by {@link PtySession.press}, mapped to control bytes. */
@@ -167,7 +168,10 @@ function buildEnv(options: SpawnOmniPtyOptions): Record<string, string> {
     for (const [key, value] of Object.entries(base)) {
         if (typeof value === "string") merged[key] = value;
     }
-    for (const [key, value] of Object.entries(options.env ?? {})) {
+    for (const [key, value] of Object.entries({
+        ...isolatedHomeEnv(),
+        ...options.env,
+    })) {
         if (value !== undefined) merged[key] = value;
     }
     merged.TERM = options.term ?? "xterm-256color";

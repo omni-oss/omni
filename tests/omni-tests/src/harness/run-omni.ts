@@ -8,6 +8,7 @@ import { dirname, join, resolve } from "node:path";
 import { execa, type Options } from "execa";
 
 import { resolveOmniBin } from "./binary";
+import { isolatedHomeEnv } from "./isolated-home";
 import { normalize } from "./normalize";
 
 export interface RunOmniOptions {
@@ -98,10 +99,11 @@ export async function runOmni(
     // Build options conditionally: with exactOptionalPropertyTypes enabled we
     // must not pass `undefined` for optional execa options.
     const sourcesDir = isolatedSourcesDir(options.cwd, options.env);
-    const env =
-        sourcesDir !== undefined
-            ? { ...options.env, OMNI_SOURCES_DIR: sourcesDir }
-            : options.env;
+    const env: Record<string, string | undefined> = {
+        ...isolatedHomeEnv(),
+        ...options.env,
+        ...(sourcesDir !== undefined ? { OMNI_SOURCES_DIR: sourcesDir } : {}),
+    };
     const execaOptions: Options = {
         extendEnv: !options.cleanEnv,
         timeout: options.timeout ?? DEFAULT_TIMEOUT_MS,
@@ -109,7 +111,7 @@ export async function runOmni(
         stripFinalNewline: false,
         all: false,
         ...(options.cwd !== undefined ? { cwd: options.cwd } : {}),
-        ...(env !== undefined ? { env } : {}),
+        env,
         ...(options.input !== undefined ? { input: options.input } : {}),
     };
 
