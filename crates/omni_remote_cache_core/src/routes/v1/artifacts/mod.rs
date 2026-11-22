@@ -18,7 +18,7 @@ use axum_extra::routing::RouterExt;
 use utoipa::{
     Modify, OpenApi,
     openapi::{
-        self, ComponentsBuilder,
+        self,
         security::{HttpAuthScheme, HttpBuilder, SecurityScheme},
     },
 };
@@ -61,17 +61,14 @@ struct SecurityAddon;
 
 impl Modify for SecurityAddon {
     fn modify(&self, openapi: &mut openapi::OpenApi) {
-        openapi.components = Some(
-            ComponentsBuilder::new()
-                .security_scheme(
-                    "bearer",
-                    SecurityScheme::Http(
-                        HttpBuilder::new()
-                            .scheme(HttpAuthScheme::Bearer)
-                            .build(),
-                    ),
-                )
-                .build(),
-        )
+        openapi
+            .components
+            .get_or_insert_default()
+            .add_security_scheme(
+                "bearer",
+                SecurityScheme::Http(
+                    HttpBuilder::new().scheme(HttpAuthScheme::Bearer).build(),
+                ),
+            )
     }
 }

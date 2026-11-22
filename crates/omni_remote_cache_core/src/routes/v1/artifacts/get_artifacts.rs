@@ -53,15 +53,20 @@ pub struct GetArtifactsQuery {
 )]
 pub struct CacheItem {
     pub digest: String,
+    /// Stored object size in bytes, including the provenance trailer and
+    /// footer when present. An individual artifact GET reports only the
+    /// artifact payload size in `Content-Length`.
     pub size: u64,
-    /// The scope segment, for entries of an isolated namespace
+    /// Storage path segment for an isolated entry; omitted for shared entries.
+    /// If the segment is hashed (`h-...`), it is not a valid substitute for
+    /// the original scope label in the `scope` query parameter.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scope: Option<String>,
 }
 
 #[utoipa::path(
     get,
-    description = "List artifacts",
+    description = "List stored objects in the selected namespace. Listings do not validate provenance: objects with a missing or invalid trailer, or a trailer that does not match the namespace, can appear here but return `404 Not Found` when requested individually.",
     path = "",
     params(
         ("X-OMNI-TENANT" = String, Header, description = "Tenant code"),
