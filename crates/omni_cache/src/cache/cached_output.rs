@@ -116,11 +116,20 @@ impl CachedTaskExecution {
         self.paths_match_format_on(cfg!(windows))
     }
 
+    /// True for a marker this version understands. An unknown one comes from
+    /// a newer writer, so even an entry with no paths is not usable.
+    pub fn has_known_path_format(&self) -> bool {
+        matches!(self.path_format, PATH_FORMAT_LEGACY | PATH_FORMAT_PORTABLE)
+    }
+
     fn paths_match_format_on(&self, windows: bool) -> bool {
         let ok = |p: &std::path::Path| {
             path_format_allows_on(self.path_format, p, windows)
         };
-        self.logs_path.as_deref().is_none_or(ok)
+        // Check the marker first: an entry with no logs and no files would
+        // otherwise pass without `ok` ever running on an unknown marker.
+        self.has_known_path_format()
+            && self.logs_path.as_deref().is_none_or(ok)
             && self.files.iter().all(|f| {
                 ok(&f.cached_path) && ok(f.original_path.unresolved_path())
             })

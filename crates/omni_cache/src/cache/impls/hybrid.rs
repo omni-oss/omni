@@ -1820,7 +1820,12 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                         tracing::warn!("ignoring unreadable metadata while computing cache statistics");
                         continue;
                     };
-                    if !cache_meta.paths_match_host_format()
+                    // Statistics and pruning only read files under the entry
+                    // directory, so the destination format that gates lookup
+                    // does not apply: an obsolete legacy entry must stay
+                    // discoverable so pruning can reclaim it. An unknown
+                    // marker may belong to a newer writer, so skip it.
+                    if !cache_meta.has_known_path_format()
                         || !cache_meta.logs_path.as_deref().is_none_or(omni_types::is_confined_relative)
                         || cache_meta.files.iter().any(|f| !omni_types::is_confined_relative(&f.cached_path))
                     {
@@ -4318,6 +4323,82 @@ mod tests {
         rewrite_entry_metadata(&cache, task.get(), |e| e.path_format = 200)
             .await;
         assert!(cache.get(task.get()).await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn an_unknown_path_format_is_a_miss_even_with_no_paths() {
+        let temp = fixture(&["project1"]).await;
+        let (cache, task) = cached_task(temp.path()).await;
+        rewrite_entry_metadata(&cache, task.get(), |e| {
+            e.logs_path = None;
+            e.files.clear();
+            // Recognized formats stay valid with no paths to check.
+            for format in
+                [crate::PATH_FORMAT_LEGACY, crate::PATH_FORMAT_PORTABLE]
+            {
+                e.path_format = format;
+                assert!(e.paths_match_host_format());
+            }
+            e.path_format = 200;
+            assert!(!e.paths_match_host_format());
+        })
+        .await;
+        assert!(cache.get(task.get()).await.unwrap().is_none());
+    }
+
+    /// A legacy entry whose destination is unusable here is a lookup miss but
+    /// must stay discoverable, or pruning could never reclaim it.
+    #[cfg(not(windows))]
+    #[tokio::test]
+    async fn an_unusable_legacy_entry_can_still_be_pruned() {
+        use omni_types::{OmniPath, Root};
+
+        let temp = fixture(&["project1"]).await;
+        let (cache, task) = cached_task(temp.path()).await;
+        rewrite_entry_metadata(&cache, task.get(), |e| {
+            e.path_format = crate::PATH_FORMAT_LEGACY;
+            e.files[0].original_path =
+                OmniPath::new_rooted("dist\\a.js", Root::Project);
+        })
+        .await;
+        // Do not look the entry up first: a lookup miss discards it, which
+        // is not the case being tested (a task that is no longer requested).
+        let args = CacheStatsArgs::<()> {
+            project_name_globs: &["project1"],
+            ..Default::default()
+        };
+        let stats = cache.get_stats(&args).await.unwrap();
+        assert_eq!(stats.projects.len(), 1);
+        assert_eq!(stats.projects[0].tasks.len(), 1);
+
+        let pruned = cache
+            .prune_caches(&PruneCacheArgs::<()> {
+                project_name_globs: &["project1"],
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!(pruned.len(), 1);
+        cache.force_prune_caches(&pruned).await.unwrap();
+        let after = cache.get_stats(&args).await.unwrap();
+        assert!(after.projects.iter().all(|p| p.tasks.is_empty()));
+    }
+
+    /// An unknown marker may come from a newer writer: never offered to prune.
+    #[tokio::test]
+    async fn an_unknown_path_format_is_not_listed_for_pruning() {
+        let temp = fixture(&["project1"]).await;
+        let (cache, task) = cached_task(temp.path()).await;
+        rewrite_entry_metadata(&cache, task.get(), |e| e.path_format = 200)
+            .await;
+        let stats = cache
+            .get_stats(&CacheStatsArgs::<()> {
+                project_name_globs: &["project1"],
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        assert!(stats.projects.iter().all(|p| p.tasks.is_empty()));
     }
 
     #[test]

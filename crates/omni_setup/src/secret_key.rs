@@ -226,7 +226,15 @@ mod tests {
                 crate::fallback_store::Store::open_for_remote_cache(&path)
                     .unwrap();
             std::fs::write(dir.join("ready"), b"").unwrap();
+            // Bounded: if the parent panics before signalling, exit instead
+            // of polling forever.
+            let deadline =
+                std::time::Instant::now() + std::time::Duration::from_secs(30);
             while !dir.join("go").exists() {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "parent never signalled"
+                );
                 std::thread::sleep(std::time::Duration::from_millis(10));
             }
             get_secret_key("svc", "usr", store).unwrap()
@@ -251,13 +259,43 @@ mod tests {
         std::fs::write(dir.join(name), out).unwrap();
     }
 
-    fn spawn_child(dir: &std::path::Path, role: &str) -> std::process::Child {
-        std::process::Command::new(std::env::current_exe().unwrap())
-            .args(["--exact", "secret_key::tests::keystore_child_process"])
-            .env(DIR_ENV, dir)
-            .env(ROLE_ENV, role)
-            .spawn()
-            .unwrap()
+    /// A spawned test child that is killed and reaped if the test unwinds
+    /// before waiting for it; dropping a `Child` does not stop the process.
+    struct SpawnedChild(std::process::Child);
+
+    impl SpawnedChild {
+        fn wait(&mut self) -> std::io::Result<std::process::ExitStatus> {
+            self.0.wait()
+        }
+
+        fn try_wait(
+            &mut self,
+        ) -> std::io::Result<Option<std::process::ExitStatus>> {
+            self.0.try_wait()
+        }
+
+        fn id(&self) -> u32 {
+            self.0.id()
+        }
+    }
+
+    impl Drop for SpawnedChild {
+        fn drop(&mut self) {
+            // Errors mean the child already exited and was reaped.
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+
+    fn spawn_child(dir: &std::path::Path, role: &str) -> SpawnedChild {
+        SpawnedChild(
+            std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", "secret_key::tests::keystore_child_process"])
+                .env(DIR_ENV, dir)
+                .env(ROLE_ENV, role)
+                .spawn()
+                .unwrap(),
+        )
     }
 
     #[test]
