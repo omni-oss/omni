@@ -23,19 +23,12 @@ use crate::{
 /// neither read nor write the cache (for example one that can only list or
 /// publish), instead of saving a configuration that fails on every task. A
 /// server that reports none (an older one) is accepted as before.
-fn check_access(
+pub(crate) fn check_access(
     result: &omni_remote_cache_client::ValidateAccessResult,
 ) -> Result<(), SetupRemoteCachingConfigErrorInner> {
     if !result.is_valid {
-        return Err(SetupRemoteCachingConfigErrorInner::InvalidAccess(
-            eyre::Report::msg(
-                result
-                    .message
-                    .as_deref()
-                    .unwrap_or("invalid access")
-                    .to_string(),
-            ),
-        ));
+        // A server-supplied message may echo credentials. Don't retain it.
+        return Err(SetupRemoteCachingConfigErrorInner::InvalidAccess);
     }
     let held = |scope: &str| result.scopes.iter().any(|s| s == scope);
     if !result.scopes.is_empty()
@@ -267,15 +260,12 @@ pub(crate) enum SetupRemoteCachingConfigErrorInner {
     Custom(#[from] eyre::Report),
 
     /// The remote cache server rejected the access details.
-    ///
-    /// The server's message is deliberately not a `#[source]`: it comes from an
-    /// external server and could echo credentials.
     #[error("invalid access")]
     #[diagnostic(
         code = "remote_cache.invalid_access",
         hint = "check the API key, tenant, organization, workspace and environment codes, then run remote caching setup again"
     )]
-    InvalidAccess(eyre::Report),
+    InvalidAccess,
 
     /// The credential is valid for the target but cannot use the cache.
     #[error(
@@ -353,7 +343,7 @@ mod tests {
     fn an_invalid_probe_is_invalid_access() {
         assert!(matches!(
             check_access(&result(false, &[])),
-            Err(Inner::InvalidAccess(_))
+            Err(Inner::InvalidAccess)
         ));
     }
 

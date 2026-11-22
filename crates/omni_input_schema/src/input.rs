@@ -16,7 +16,10 @@ use crate::profile::InputProfile;
 // Instead it has associated types that are used as fields, and those associated types
 // already have constraints on them so adding them here is redundant.
 
-#[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq)]
+#[derive(
+    Serialize, Deserialize, JsonSchema, Debug, educe::Educe, PartialEq,
+)]
+#[educe(Clone(bound(false)))]
 #[serde(bound(deserialize = "", serialize = ""), deny_unknown_fields)]
 #[schemars(bound(deserialize = "", serialize = ""))]
 pub struct BooleanInput<E: InputProfile = ()> {
@@ -29,7 +32,10 @@ pub struct BooleanInput<E: InputProfile = ()> {
     pub boolean_extra: E::Boolean,
 }
 
-#[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq)]
+#[derive(
+    Serialize, Deserialize, JsonSchema, Debug, educe::Educe, PartialEq,
+)]
+#[educe(Clone(bound(false)))]
 #[serde(bound(deserialize = "", serialize = ""), deny_unknown_fields)]
 #[schemars(bound(deserialize = "", serialize = ""))]
 pub struct StringInput<E: InputProfile = ()> {
@@ -43,7 +49,10 @@ pub struct StringInput<E: InputProfile = ()> {
     pub string_extra: E::String,
 }
 
-#[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq)]
+#[derive(
+    Serialize, Deserialize, JsonSchema, Debug, educe::Educe, PartialEq,
+)]
+#[educe(Clone(bound(false)))]
 #[serde(bound(deserialize = "", serialize = ""), deny_unknown_fields)]
 #[schemars(bound(deserialize = "", serialize = ""))]
 pub struct IntegerInput<E: InputProfile = ()> {
@@ -58,7 +67,10 @@ pub struct IntegerInput<E: InputProfile = ()> {
     pub default: Option<MaybeExpr<i64>>,
 }
 
-#[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq)]
+#[derive(
+    Serialize, Deserialize, JsonSchema, Debug, educe::Educe, PartialEq,
+)]
+#[educe(Clone(bound(false)))]
 #[serde(bound(deserialize = "", serialize = ""), deny_unknown_fields)]
 #[schemars(bound(deserialize = "", serialize = ""))]
 pub struct FloatInput<E: InputProfile = ()> {
@@ -73,7 +85,10 @@ pub struct FloatInput<E: InputProfile = ()> {
     pub numeric_extra: E::Numeric,
 }
 
-#[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq)]
+#[derive(
+    Serialize, Deserialize, JsonSchema, Debug, educe::Educe, PartialEq,
+)]
+#[educe(Clone(bound(false)))]
 #[serde(bound(deserialize = "", serialize = ""), deny_unknown_fields)]
 #[schemars(bound(deserialize = "", serialize = ""))]
 pub struct StringArrayInput<E: InputProfile = ()> {
@@ -89,7 +104,10 @@ pub struct StringArrayInput<E: InputProfile = ()> {
     pub default: Option<Vec<String>>,
 }
 
-#[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq)]
+#[derive(
+    Serialize, Deserialize, JsonSchema, Debug, educe::Educe, PartialEq,
+)]
+#[educe(Clone(bound(false)))]
 #[serde(bound(deserialize = "", serialize = ""), deny_unknown_fields)]
 #[schemars(bound(deserialize = "", serialize = ""))]
 pub struct IntegerArrayInput<E: InputProfile = ()> {
@@ -105,7 +123,10 @@ pub struct IntegerArrayInput<E: InputProfile = ()> {
     pub default: Option<Vec<i64>>,
 }
 
-#[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq)]
+#[derive(
+    Serialize, Deserialize, JsonSchema, Debug, educe::Educe, PartialEq,
+)]
+#[educe(Clone(bound(false)))]
 #[serde(bound(deserialize = "", serialize = ""), deny_unknown_fields)]
 #[schemars(bound(deserialize = "", serialize = ""))]
 pub struct FloatArrayInput<E: InputProfile = ()> {
@@ -124,7 +145,10 @@ pub struct FloatArrayInput<E: InputProfile = ()> {
 /// Nested object: a group of typed fields returned as one JSON object value.
 /// Available immediately for tools / plugins / MCP (`Input<()>`).
 /// Gated for generators via `SUPPORTED` until group-prompting is implemented.
-#[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq)]
+#[derive(
+    Serialize, Deserialize, JsonSchema, Debug, educe::Educe, PartialEq,
+)]
+#[educe(Clone(bound(false)))]
 #[serde(bound(deserialize = "", serialize = ""), deny_unknown_fields)]
 #[schemars(bound(deserialize = "", serialize = ""))]
 pub struct ObjectInput<E: InputProfile = ()> {
@@ -168,8 +192,9 @@ pub enum InputValue {
 ///
 /// `Eq` and `Hash` are **not** derived — `Float` / `FloatArray` carry `f64`.
 #[derive(
-    Serialize, Deserialize, Debug, Clone, PartialEq, EnumDiscriminants,
+    Serialize, Deserialize, Debug, educe::Educe, PartialEq, EnumDiscriminants,
 )]
+#[educe(Clone(bound(false)))]
 #[serde(
     tag = "type",
     rename_all = "kebab-case",
@@ -193,6 +218,20 @@ pub enum Input<E: InputProfile = ()> {
 }
 
 impl<E: InputProfile> Input<E> {
+    /// Marks this input as secret, including when secrecy is inherited.
+    pub fn mark_secret(&mut self) {
+        let base = match self {
+            Self::Boolean(input) => &mut input.base,
+            Self::String(input) => &mut input.base,
+            Self::Integer(input) => &mut input.base,
+            Self::Float(input) => &mut input.base,
+            Self::StringArray(input) => &mut input.base,
+            Self::IntegerArray(input) => &mut input.base,
+            Self::FloatArray(input) => &mut input.base,
+            Self::Object(input) => &mut input.base,
+        };
+        base.secret = true;
+    }
     /// The data-type discriminant of this input, presentation-free.
     pub fn kind(&self) -> InputKind {
         self.discriminant()

@@ -7,7 +7,7 @@ use value_bag::{OwnedValueBag, ValueBag};
 
 use crate::base::ValidateConfiguration;
 use crate::error::{Error, ErrorInner, ErrorKind};
-use crate::input::{Input, InputKind};
+use crate::input::{Input, InputKind, secret_paths};
 use crate::profile::InputProfile;
 
 /// A single field-level validation failure.
@@ -209,13 +209,13 @@ fn validate_single<E: InputProfile>(
     }
 
     // Run per-field validators.
-    validate_value(
+    validate_value_with_secrecy(
         name,
         &typed,
         ctx,
         &input.base().validators,
         config.validation_value_name,
-        input.base().secret,
+        !secret_paths(input).is_empty(),
     )
     .map_err(|e| {
         if e.kind() == ErrorKind::InvalidValue {
@@ -308,6 +308,19 @@ pub fn validate_value(
     ctx: &omni_tera::Context,
     validators: &[ValidateConfiguration],
     value_name: Option<&str>,
+) -> Result<(), Error> {
+    validate_value_with_secrecy(
+        input_name, value, ctx, validators, value_name, false,
+    )
+}
+
+/// Use `secret` for inputs whose candidate must not appear in errors.
+pub fn validate_value_with_secrecy(
+    input_name: &str,
+    value: &OwnedValueBag,
+    ctx: &omni_tera::Context,
+    validators: &[ValidateConfiguration],
+    value_name: Option<&str>,
     secret: bool,
 ) -> Result<(), Error> {
     for (index, validator) in validators.iter().enumerate() {
@@ -324,8 +337,26 @@ pub fn validate_value(
                         input_name, index
                     ),
                     &eval_ctx,
-                )?;
+                )
+                .map_err(|err| {
+                    if secret {
+                        // A Tera error (including `throw`) can carry rendered
+                        // values in its message or causes.
+                        omni_tera::Error::message(
+                            "could not evaluate validator condition for secret input",
+                        )
+                    } else {
+                        err
+                    }
+                })?;
                 let result = result.trim();
+                if secret && !matches!(result, "true" | "false") {
+                    return Err(ErrorInner::InvalidBooleanExpressionResult {
+                        result: String::new(),
+                        expression: String::new(),
+                    }
+                    .into());
+                }
                 validate_boolean_expression_result(result, r.as_str())?;
                 result != "true"
             }
@@ -352,7 +383,11 @@ pub fn validate_value(
             }?;
             Err(ErrorInner::InvalidValue {
                 input_name: input_name.to_string(),
-                value: value.clone(),
+                value: if secret {
+                    ValueBag::empty().to_owned()
+                } else {
+                    value.clone()
+                },
                 error_message,
             })?;
         }
@@ -484,6 +519,36 @@ mod tests {
 
     fn bag_f64(f: f64) -> value_bag::OwnedValueBag {
         ValueBag::capture_serde1(&f).to_owned()
+    }
+
+    #[test]
+    fn object_report_does_not_render_secret_fields() {
+        let input: Input<()> = serde_json::from_value(serde_json::json!({
+            "type": "object",
+            "name": "cfg",
+            "fields": [{"type": "string", "name": "token", "secret": true}],
+            "validators": [{
+                "condition": false,
+                "error_message": "bad token {{ value.token }}"
+            }]
+        }))
+        .unwrap();
+        let mut values = empty_values();
+        values.insert(
+            "cfg".into(),
+            ValueBag::from_serde1(&serde_json::json!({
+                "token": "validator-secret-sentinel"
+            }))
+            .to_owned(),
+        );
+        let report =
+            validate(&[input], &values, &empty_ctx(), &default_config())
+                .unwrap();
+        assert_eq!(report.errors.len(), 1);
+        assert_eq!(
+            report.errors[0].message,
+            "value is invalid for input cfg: value does not pass validation",
+        );
     }
 
     fn base(name: &str) -> BaseInput {

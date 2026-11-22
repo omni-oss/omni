@@ -7424,6 +7424,7 @@ dependencies = [
  "omni_codes",
  "omni_diagnostic",
  "serde",
+ "serde_json",
  "strum 0.28.0",
  "test-log",
  "thiserror 2.0.21",
@@ -7678,6 +7679,7 @@ dependencies = [
 name = "omni_input_schema"
 version = "0.22.0"
 dependencies = [
+ "educe",
  "either",
  "enumset",
  "eyre",

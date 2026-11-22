@@ -140,7 +140,7 @@ fn secret_input_never_renders_its_error_message_template() {
         condition: MaybeExpr::Value(false),
         error_message: Some("{{ value }} is too short".to_string()),
     }];
-    let err = crate::validate_value(
+    let err = crate::validate_value_with_secrecy(
         "token",
         &value,
         &omni_tera::Context::new(),
@@ -158,8 +158,43 @@ fn secret_input_never_renders_its_error_message_template() {
         &omni_tera::Context::new(),
         &validators,
         None,
-        false,
     )
     .unwrap_err();
     assert!(err.to_string().contains("hunter2 is too short"));
+}
+
+#[test]
+fn secret_validator_condition_errors_do_not_expose_the_candidate() {
+    use crate::base::ValidateConfiguration;
+
+    let secret = "validator-secret-sentinel";
+    let value = ValueBag::from_str(secret).to_owned();
+    for (condition, expected_kind) in [
+        ("{{ throw(message=value) }}", crate::error::ErrorKind::Tera),
+        (
+            "{{ value }}",
+            crate::error::ErrorKind::InvalidBooleanExpressionResult,
+        ),
+    ] {
+        let validators: [ValidateConfiguration; 1] = serde_json::from_value(
+            serde_json::json!([{ "condition": condition }]),
+        )
+        .unwrap();
+        let err = crate::validate_value_with_secrecy(
+            "token",
+            &value,
+            &omni_tera::Context::new(),
+            &validators,
+            None,
+            true,
+        )
+        .unwrap_err();
+        assert_eq!(err.kind(), expected_kind);
+        assert!(!format!("{err:?}").contains(secret));
+        let r = Err::<(), _>(err).wrap_err("validating inputs").unwrap_err();
+        assert!(r.chain().all(|cause| !cause.to_string().contains(secret)));
+        if find(&r).is_some() {
+            assert!(!rendered(&r).contains(secret));
+        }
+    }
 }

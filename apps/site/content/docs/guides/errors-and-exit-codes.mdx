@@ -56,8 +56,10 @@ longer echo it:
 - `empty program with args`: the argument count, not the arguments.
 - Generator and tool conditions (`did not evaluate to a boolean`, `if`
   condition): no expression text or result.
-- Input validation (`value is invalid for input ...`,
-  `invalid boolean expression result`): no input value, expression or result.
+- Input validation: if a validator evaluates to `false` for a secret input,
+  Omni uses a fixed failure message instead of rendering `error_message`.
+  Non-secret validators can still include the value in a custom message.
+  Invalid boolean expressions omit the expression and result.
 - Generator `command failed`: the program name only, not the command line.
 - Config and expression parse errors: location only, not the parser message or
   source line.
