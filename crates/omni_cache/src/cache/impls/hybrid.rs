@@ -960,18 +960,16 @@ impl HybridTaskExecutionCacheStore {
     }
 }
 
-/// Whether `output_dir` still holds what the upload was queued for: a complete
-/// successful entry that was built here (an entry restored from the remote
-/// carries an origin marker and is never uploaded). The caller holds the shared
-/// prune lock, so a prune cannot change the answer while it archives.
-async fn still_uploadable(output_dir: &Path) -> bool {
-    let Ok(bytes) =
-        read_metadata_bounded(&output_dir.join(CACHE_OUTPUT_METADATA_FILE))
-            .await
-    else {
-        return false;
-    };
-    rmp_serde::decode::from_slice::<CachedTaskExecution>(&bytes)
+/// Whether `output_dir` still holds what the upload was queued for: a complete,
+/// valid, successful entry that was built here (an entry restored from the
+/// remote carries an origin marker and is never uploaded). Completeness is the
+/// same check a restore applies, including that every file the metadata names is
+/// present, so a prune that failed partway cannot leave something that archives
+/// as a whole entry. The caller holds the shared prune lock, so a prune cannot
+/// change the answer while it archives.
+async fn still_uploadable(output_dir: &Path, identity: &EntryIdentity) -> bool {
+    read_validated_entry(output_dir, identity)
+        .await
         .is_ok_and(|entry| entry.exit_code == 0)
         && super::origin::read_marker(output_dir).await.is_none()
 }
@@ -1224,7 +1222,11 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                     )
                     .await
             {
-                cached_results.push((execution_hash, output_dir.to_path_buf()));
+                cached_results.push((
+                    execution_hash,
+                    output_dir.to_path_buf(),
+                    EntryIdentity::of(&result),
+                ));
             }
         }
         // Local publication is done. The replacement lock only serializes
@@ -1286,7 +1288,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
             let upload_slots = Arc::new(tokio::sync::Semaphore::new(8));
             let cap = conf.size_cap(Some(&probe));
             let label = conf.scope_label();
-            for (hash, output_dir) in cached_results {
+            for (hash, output_dir, identity) in cached_results {
                 let client = self.client().clone();
                 let conf = conf.clone();
                 let label = label.clone();
@@ -1324,7 +1326,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                             let _prune_guard =
                                 CacheLockGuard::acquire_shared(prune_lock)
                                     .await?;
-                            if !still_uploadable(&output_dir).await {
+                            if !still_uploadable(&output_dir, &identity).await {
                                 tracing::debug!(%digest, "the cache entry changed or was removed before upload; skipping the upload");
                                 return Ok(false);
                             }
@@ -4652,27 +4654,23 @@ mod tests {
         let temp = fixture(&["project1"]).await;
         let cache = cache_store(temp.path());
         let task = task("task", "project1", temp.path());
-        let dir_of = |cache: &HybridTaskExecutionCacheStore| {
-            let task = *task.get();
-            let cache = cache.clone();
-            async move {
-                cache
-                    .collect(
-                        &[task],
-                        &CollectConfig {
-                            cache_output_dirs: true,
-                            ..Default::default()
-                        },
-                    )
-                    .await
-                    .unwrap()[0]
-                    .cache_output_dir
-                    .clone()
-                    .unwrap()
-            }
-        };
-        let dir = dir_of(&cache).await;
-        assert!(!still_uploadable(&dir).await, "nothing published yet");
+        let collected = cache
+            .collect(
+                &[*task.get()],
+                &CollectConfig {
+                    digests: true,
+                    cache_output_dirs: true,
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        let dir = collected[0].cache_output_dir.clone().unwrap();
+        let identity = EntryIdentity::of(&collected[0]);
+        assert!(
+            !still_uploadable(&dir, &identity).await,
+            "nothing published yet"
+        );
 
         cache
             .cache(&new_cache_info_with_exit_code(
@@ -4683,7 +4681,7 @@ mod tests {
             .await
             .unwrap();
         assert!(
-            !still_uploadable(&dir).await,
+            !still_uploadable(&dir, &identity).await,
             "a failed result must never take the create-only remote slot"
         );
 
@@ -4691,7 +4689,27 @@ mod tests {
             .cache(&new_cache_info(Some(&LOGS_CONTENT), *task.get()))
             .await
             .unwrap();
-        assert!(still_uploadable(&dir).await, "a local success qualifies");
+        assert!(
+            still_uploadable(&dir, &identity).await,
+            "a local success qualifies"
+        );
+
+        // A prune that failed partway can leave the metadata behind with
+        // some of the files it names gone: that is not a whole entry.
+        let cached_file = std::fs::read_dir(&dir)
+            .unwrap()
+            .flatten()
+            .map(|e| e.path())
+            .find(|p| p.extension().is_some_and(|e| e == "cache"))
+            .expect("the entry holds cached files");
+        let kept = std::fs::read(&cached_file).unwrap();
+        std::fs::remove_file(&cached_file).unwrap();
+        assert!(
+            !still_uploadable(&dir, &identity).await,
+            "an entry with a missing file must not be archived"
+        );
+        std::fs::write(&cached_file, kept).unwrap();
+        assert!(still_uploadable(&dir, &identity).await);
 
         std::fs::write(
             dir.join(".omni-origin-remote"),
@@ -4699,7 +4717,7 @@ mod tests {
         )
         .unwrap();
         assert!(
-            !still_uploadable(&dir).await,
+            !still_uploadable(&dir, &identity).await,
             "a restored entry is never re-uploaded"
         );
     }
