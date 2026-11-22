@@ -960,6 +960,20 @@ impl HybridTaskExecutionCacheStore {
     }
 }
 
+/// Whether `output_dir` still holds what the upload was queued for: a complete,
+/// valid, successful entry that was built here (an entry restored from the
+/// remote carries an origin marker and is never uploaded). Completeness is the
+/// same check a restore applies, including that every file the metadata names is
+/// present, so a prune that failed partway cannot leave something that archives
+/// as a whole entry. The caller holds the shared prune lock, so a prune cannot
+/// change the answer while it archives.
+async fn still_uploadable(output_dir: &Path, identity: &EntryIdentity) -> bool {
+    read_validated_entry(output_dir, identity)
+        .await
+        .is_ok_and(|entry| entry.exit_code == 0)
+        && super::origin::read_marker(output_dir).await.is_none()
+}
+
 const LOGS_CACHE_FILE: &str = "logs.cache";
 const CACHE_OUTPUT_METADATA_FILE: &str = "cache.meta.bin";
 const LAST_USED_TIMESTAMPS_DB_FILE: &str = "last-used-timestamps.db";
@@ -1020,13 +1034,12 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
 
         // Hold a shared prune lock for the duration of publishing so a
         // concurrent prune cannot delete an entry we are renaming into place.
-        // Multiple publishers share the lock and never block each other.
+        // Multiple publishers share the lock and never block each other. It is
+        // released before the network uploads; see below.
         let local_dir = self.local_partition().await.dir.clone();
-        let _prune_guard = CacheLockGuard::acquire_shared(lock_file_path(
-            &local_dir,
-            PRUNE_LOCK_FILE,
-        ))
-        .await?;
+        let prune_lock = lock_file_path(&local_dir, PRUNE_LOCK_FILE);
+        let _prune_guard =
+            CacheLockGuard::acquire_shared(prune_lock.clone()).await?;
         // Lock order everywhere: prune (shared), then replacement (exclusive).
         // Readers that discard invalid entries use the same lock as publishers.
         let _replace_guard = CacheLockGuard::acquire_exclusive(lock_file_path(
@@ -1209,12 +1222,20 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                     )
                     .await
             {
-                cached_results.push((execution_hash, output_dir.to_path_buf()));
+                cached_results.push((
+                    execution_hash,
+                    output_dir.to_path_buf(),
+                    EntryIdentity::of(&result),
+                ));
             }
         }
         // Local publication is done. The replacement lock only serializes
-        // in-place replacement, so it must not be held across network uploads.
+        // in-place replacement, and the prune lock only has to keep a prune
+        // from deleting an entry mid-write. Neither may be held across network
+        // uploads, or a prune would wait for every transfer; each upload takes
+        // the prune lock again just while it builds its archive.
         drop(_replace_guard);
+        drop(_prune_guard);
 
         if !cached_results.is_empty()
             && let RemoteConfig::Enabled(conf) = &self.remote_config
@@ -1267,13 +1288,14 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
             let upload_slots = Arc::new(tokio::sync::Semaphore::new(8));
             let cap = conf.size_cap(Some(&probe));
             let label = conf.scope_label();
-            for (hash, output_dir) in cached_results {
+            for (hash, output_dir, identity) in cached_results {
                 let client = self.client().clone();
                 let conf = conf.clone();
                 let label = label.clone();
                 let digest = bs58::encode(hash.digest).into_string();
                 let upload_slots = upload_slots.clone();
                 let signer = signer.clone();
+                let prune_lock = prune_lock.clone();
 
                 tasks.spawn(async move {
                     let _permit = upload_slots
@@ -1293,7 +1315,23 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                             buffer: Vec::new(),
                             cap,
                         };
-                        archive(&output_dir, &mut artifact)?;
+                        {
+                            // A prune may have removed the entry since it was
+                            // queued, and must not remove it halfway through
+                            // the read: a partial archive would take the
+                            // create-only slot for this digest. Hold the lock
+                            // for the read only, and check again what the
+                            // queue checked: a failed result may have been
+                            // published at this digest in the meantime.
+                            let _prune_guard =
+                                CacheLockGuard::acquire_shared(prune_lock)
+                                    .await?;
+                            if !still_uploadable(&output_dir, &identity).await {
+                                tracing::debug!(%digest, "the cache entry changed or was removed before upload; skipping the upload");
+                                return Ok(false);
+                            }
+                            archive(&output_dir, &mut artifact)?;
+                        }
 
                         let artifact = Bytes::from(artifact.buffer);
                         let signature = match &signer {
@@ -1340,12 +1378,13 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                             }
                         }
 
-                        Ok::<_, LocalTaskExecutionCacheStoreError>(())
+                        Ok::<_, LocalTaskExecutionCacheStoreError>(true)
                     }
                     .await;
 
                     match upload {
-                        Ok(()) => tracing::debug!(%digest, "Remote cache upload accepted"),
+                        Ok(true) => tracing::debug!(%digest, "Remote cache upload accepted"),
+                        Ok(false) => {}
                         Err(e) => tracing::warn!(%digest, error = %e, "Remote cache upload failed; local result retained"),
                     }
                 });
@@ -1377,11 +1416,12 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
 
         let collected = self.collect(projects, &config).await?;
         let partition = self.local_partition().await;
-        let _prune_guard = CacheLockGuard::acquire_shared(lock_file_path(
-            &partition.dir,
-            PRUNE_LOCK_FILE,
-        ))
-        .await?;
+        let prune_lock = lock_file_path(&partition.dir, PRUNE_LOCK_FILE);
+        // Held through the local checks and the final read of the entries. It
+        // is released while remote transfers run (see below), so a prune never
+        // waits for a download.
+        let mut _prune_guard =
+            Some(CacheLockGuard::acquire_shared(prune_lock.clone()).await?);
         let _replace_guard = CacheLockGuard::acquire_exclusive(lock_file_path(
             &partition.dir,
             REPLACE_LOCK_FILE,
@@ -1406,8 +1446,9 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
             // entry is looked at or written.
             let untrusted = partition.untrusted;
             let probe = self.probe(conf).await.clone();
-            // Restores and removals share the prune lock like publishers do, so
-            // a prune never deletes an entry that is being renamed into place.
+            // Marker-based removals below run under the prune lock held above.
+            // Each restore takes it again only around the staging directory and
+            // the publishing rename.
             for project in &collected {
                 let output_dir = project
                     .cache_output_dir
@@ -1461,6 +1502,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                 let probe = probe.clone();
                 let label = label.clone();
                 let identity = EntryIdentity::of(project);
+                let prune_lock = prune_lock.clone();
 
                 tasks.spawn(async move {
                     let _permit = download_slots
@@ -1543,6 +1585,27 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                             verified_by: verified_by
                                 .filter(|_| conf.signing.verify == EffectiveVerify::Require),
                         };
+                        // The transfer is over. A prune must not delete the
+                        // staging directory or the entry while it is renamed
+                        // into place, so the shared lock covers just this call.
+                        // A prune that holds the exclusive lock makes it wait.
+                        let _prune_guard =
+                            match CacheLockGuard::acquire_shared(prune_lock)
+                                .await
+                            {
+                                Ok(guard) => guard,
+                                // The remote is optional: not being able to
+                                // lock is a miss, like any other failure to
+                                // restore.
+                                Err(e) => {
+                                    tracing::warn!(
+                                        %digest,
+                                        error = %e,
+                                        "could not lock the cache to restore a remote entry; treating it as a miss"
+                                    );
+                                    return Ok(());
+                                }
+                            };
                         match restore_staged(&output_dir, artifact.bytes, marker, &identity)
                             .await
                         {
@@ -1579,11 +1642,15 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
             // Repair and the marker-based discards above are done. Downloads
             // publish new entries with an atomic no-replace rename, so they must
             // not hold the replacement lock: a slow transfer would otherwise
-            // block every other lookup in the partition. The shared prune lock
-            // stays, as before, so a prune never deletes an entry that is being
-            // renamed into place.
+            // block every other lookup in the partition. Nor do they hold the
+            // prune lock: a prune would otherwise wait for every transfer of
+            // every running build. Staging directories are created and renamed
+            // inside the restore, which takes the shared lock itself.
             drop(_replace_guard);
+            _prune_guard = None;
             let results = tasks.join_all().await;
+            _prune_guard =
+                Some(CacheLockGuard::acquire_shared(prune_lock).await?);
 
             for result in results {
                 result?;
@@ -4580,6 +4647,225 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[tokio::test]
+    async fn an_upload_is_skipped_unless_the_entry_is_still_a_local_success() {
+        let temp = fixture(&["project1"]).await;
+        let cache = cache_store(temp.path());
+        let task = task("task", "project1", temp.path());
+        let collected = cache
+            .collect(
+                &[*task.get()],
+                &CollectConfig {
+                    digests: true,
+                    cache_output_dirs: true,
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        let dir = collected[0].cache_output_dir.clone().unwrap();
+        let identity = EntryIdentity::of(&collected[0]);
+        assert!(
+            !still_uploadable(&dir, &identity).await,
+            "nothing published yet"
+        );
+
+        cache
+            .cache(&new_cache_info_with_exit_code(
+                Some(&LOGS_CONTENT),
+                *task.get(),
+                1,
+            ))
+            .await
+            .unwrap();
+        assert!(
+            !still_uploadable(&dir, &identity).await,
+            "a failed result must never take the create-only remote slot"
+        );
+
+        cache
+            .cache(&new_cache_info(Some(&LOGS_CONTENT), *task.get()))
+            .await
+            .unwrap();
+        assert!(
+            still_uploadable(&dir, &identity).await,
+            "a local success qualifies"
+        );
+
+        // A prune that failed partway can leave the metadata behind with
+        // some of the files it names gone: that is not a whole entry.
+        let cached_file = std::fs::read_dir(&dir)
+            .unwrap()
+            .flatten()
+            .map(|e| e.path())
+            .find(|p| p.extension().is_some_and(|e| e == "cache"))
+            .expect("the entry holds cached files");
+        let kept = std::fs::read(&cached_file).unwrap();
+        std::fs::remove_file(&cached_file).unwrap();
+        assert!(
+            !still_uploadable(&dir, &identity).await,
+            "an entry with a missing file must not be archived"
+        );
+        std::fs::write(&cached_file, kept).unwrap();
+        assert!(still_uploadable(&dir, &identity).await);
+
+        std::fs::write(
+            dir.join(".omni-origin-remote"),
+            "v1 origin=shared verified_by=none\n",
+        )
+        .unwrap();
+        assert!(
+            !still_uploadable(&dir, &identity).await,
+            "a restored entry is never re-uploaded"
+        );
+    }
+
+    /// A server that holds one kind of request open until released. `GET`
+    /// answers `body`, `PUT` reads its body and answers `204`, and the access
+    /// probe answers `scopes`. `started` fires when the held request arrives
+    /// and `gate` lets it finish.
+    async fn serve_gated(
+        held: &'static str,
+        body: Vec<u8>,
+        scopes: &'static str,
+        started: Arc<tokio::sync::Notify>,
+        gate: Arc<tokio::sync::Notify>,
+    ) -> (String, tokio::task::JoinHandle<()>) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener =
+            tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            loop {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut header = Vec::new();
+                while !header.ends_with(b"\r\n\r\n") {
+                    header.push(socket.read_u8().await.unwrap());
+                }
+                let header = String::from_utf8(header).unwrap();
+                let length = header
+                    .lines()
+                    .find_map(|line| {
+                        let (name, value) = line.split_once(':')?;
+                        name.eq_ignore_ascii_case("content-length")
+                            .then(|| value.trim().parse::<usize>().unwrap())
+                    })
+                    .unwrap_or(0);
+                socket.read_exact(&mut vec![0u8; length]).await.unwrap();
+                let verb = header.split_whitespace().next().unwrap();
+                let response = if header.starts_with("HEAD /v1/artifacts?") {
+                    format!("HTTP/1.1 204 No Content\r\nx-omni-scopes: {scopes}\r\nx-omni-principal-id: ci\r\nx-omni-scope: pr-9\r\nConnection: close\r\n\r\n").into_bytes()
+                } else {
+                    if verb == held {
+                        started.notify_one();
+                        gate.notified().await;
+                    }
+                    if verb == "GET" {
+                        let mut head = format!(
+                            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                            body.len()
+                        )
+                        .into_bytes();
+                        head.extend_from_slice(&body);
+                        head
+                    } else {
+                        b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_vec()
+                    }
+                };
+                socket.write_all(&response).await.unwrap();
+            }
+        });
+        (url, server)
+    }
+
+    /// While a transfer is in flight a prune, which needs the exclusive prune
+    /// lock, must be able to run. Returns once it did and the transfer was let
+    /// go.
+    async fn prune_lock_is_free_during_transfer(
+        lock: PathBuf,
+        started: Arc<tokio::sync::Notify>,
+        gate: Arc<tokio::sync::Notify>,
+    ) {
+        tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            started.notified(),
+        )
+        .await
+        .expect("the transfer should start");
+        let guard = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            CacheLockGuard::acquire_exclusive(lock),
+        )
+        .await
+        .expect("a prune must not wait for a transfer in flight")
+        .unwrap();
+        drop(guard);
+        gate.notify_one();
+    }
+
+    #[tokio::test]
+    async fn a_prune_is_not_blocked_by_a_download_in_flight() {
+        let temp = fixture(&["project1"]).await;
+        let task = task("task", "project1", temp.path());
+        let body = genuine_archive(&temp, task.get()).await;
+        let started = Arc::new(tokio::sync::Notify::new());
+        let gate = Arc::new(tokio::sync::Notify::new());
+        let (url, server) = serve_gated(
+            "GET",
+            body,
+            "read:artifacts",
+            started.clone(),
+            gate.clone(),
+        )
+        .await;
+        let store = remote_store(temp.path(), &url);
+        let lock =
+            lock_file_path(&store.local_partition().await.dir, PRUNE_LOCK_FILE);
+
+        let tasks = [*task.get()];
+        let (got, ()) = tokio::join!(
+            store.get_many(&tasks),
+            prune_lock_is_free_during_transfer(lock, started, gate),
+        );
+        server.abort();
+        assert!(
+            got.unwrap()[0].is_some(),
+            "the entry published by the download must be served"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_prune_is_not_blocked_by_an_upload_in_flight() {
+        let temp = fixture(&["project1"]).await;
+        let task = task("task", "project1", temp.path());
+        let started = Arc::new(tokio::sync::Notify::new());
+        let gate = Arc::new(tokio::sync::Notify::new());
+        let (url, server) = serve_gated(
+            "PUT",
+            Vec::new(),
+            "write:artifacts",
+            started.clone(),
+            gate.clone(),
+        )
+        .await;
+        let mut store = remote_store(temp.path(), &url);
+        if let RemoteConfig::Enabled(conf) = &mut store.remote_config {
+            conf.push = true;
+            conf.scope = ScopeConfig::Literal("pr-9".into());
+        }
+        let lock =
+            lock_file_path(&store.local_partition().await.dir, PRUNE_LOCK_FILE);
+        let logs = LOGS_CONTENT.clone();
+        let info = new_cache_info(Some(&logs), *task.get());
+
+        let (cached, ()) = tokio::join!(
+            store.cache(&info),
+            prune_lock_is_free_during_transfer(lock, started, gate),
+        );
+        server.abort();
+        cached.unwrap();
     }
 
     /// Serves `body` for every GET and 404 for anything else.

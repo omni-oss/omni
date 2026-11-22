@@ -31,8 +31,10 @@ pub struct LruCached<T: RemoteCacheStorageBackend> {
     // Weak entries track only live same-key mutations. Never hold this map
     // or the cache mutex across an await.
     mutations: Mutex<MutationLocks>,
-    // Bumped around every prefix delete. A streamed write that started before
-    // a bump must not cache its bytes, or it could resurrect a purged entry.
+    // Bumped around every delete, of a key or a prefix. A streamed write that
+    // started before a bump must not cache its bytes, or it could resurrect a
+    // deleted entry. This is what lets a streamed write run without holding
+    // the mutation lock while its body arrives.
     purges: Arc<AtomicU64>,
 }
 
@@ -224,8 +226,14 @@ where
         key: &str,
         value: WriteStream,
     ) -> Result<SaveOutcome, Error> {
-        let mutation = self.mutation_lock(container, key);
-        let _mutation = mutation.lock().await;
+        // Wait for a mutation already in flight, so an upload requested after
+        // a delete is ordered after it, but do not hold the lock while the
+        // body arrives: a client can take as long as it likes, and holding it
+        // would stall every delete and write of this key behind it. The
+        // backend makes the create-only decision atomically, and the
+        // generation check below keeps a delete that overlaps this upload
+        // from being undone by a stale cache insert.
+        drop(self.mutation_lock(container, key).lock().await);
         self.cache().pop(&self.cache_key(container, key));
         // `None` means the upload exceeded the cacheable size and the
         // captured bytes were dropped.
@@ -301,19 +309,14 @@ where
         let cache_key = self.cache_key(container, key);
         let container = container.clone();
         let key = key.to_string();
+        let purges = self.purges.clone();
         let delete = async move {
             // Own the guard through removal completion, even if the caller
             // drops its JoinHandle while filesystem work is still running.
             let _guard = guard;
-            cached
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .pop(&cache_key);
+            purge_key(&cached, &purges, &cache_key);
             let result = inner.delete(&container, &key).await;
-            cached
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .pop(&cache_key);
+            purge_key(&cached, &purges, &cache_key);
             result
         };
         #[cfg(not(target_arch = "wasm32"))]
@@ -339,6 +342,18 @@ where
 
         self.inner.size(container, key).await
     }
+}
+
+/// Drops one cached entry and advances the generation in the same critical
+/// section, so a streamed write that started earlier cannot re-insert it.
+fn purge_key(
+    cached: &Mutex<Cache>,
+    purges: &AtomicU64,
+    key: &(String, String),
+) {
+    let mut cache = cached.lock().unwrap_or_else(PoisonError::into_inner);
+    purges.fetch_add(1, Ordering::SeqCst);
+    cache.pop(key);
 }
 
 /// Drops every cached entry whose object path starts with `prefix`.

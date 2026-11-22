@@ -151,18 +151,17 @@ async fn obsolete_stream_cannot_repopulate_after_a_byte_write_or_delete() {
                     .map(|_| ())
             }
         };
-        tokio::pin!(mutation);
-        // Poll while the stream is paused *after* backend publication. Without
-        // mutation coordination this completes, allowing stale LRU repopulation.
-        assert!(futures::poll!(&mut mutation).is_pending());
+        // The stream is paused *after* backend publication. The mutation no
+        // longer waits for it; the generation check is what stops the stream
+        // from re-populating the cache with stale bytes afterwards.
+        tokio::time::timeout(Duration::from_secs(5), mutation)
+            .await
+            .unwrap()
+            .unwrap();
         resume.notify_one();
         tokio::time::timeout(Duration::from_secs(5), stream)
             .await
             .unwrap()
-            .unwrap()
-            .unwrap();
-        tokio::time::timeout(Duration::from_secs(5), mutation)
-            .await
             .unwrap()
             .unwrap();
         let expected = if delete {
@@ -267,7 +266,7 @@ async fn cancelled_delete_keeps_the_lock_until_backend_removal_finishes() {
 }
 
 #[tokio::test]
-async fn a_byte_write_after_a_stalled_stream_conflicts_and_is_never_cached() {
+async fn a_byte_write_after_a_published_stream_conflicts_and_is_never_cached() {
     let committed = Arc::new(Notify::new());
     let resume = Arc::new(Notify::new());
     let inner = Arc::new(InMemoryBackend::new());
@@ -296,11 +295,18 @@ async fn a_byte_write_after_a_stalled_stream_conflicts_and_is_never_cached() {
         .await
         .unwrap();
 
-    // No delete involved: a competing create of the same key must wait for the
-    // stalled stream, then lose the race.
-    let competing = cache.save_if_absent(&container, "d", Bytes::from("bytes"));
-    tokio::pin!(competing);
-    assert!(futures::poll!(&mut competing).is_pending());
+    // The stream is already published in the backend, so a competing create
+    // loses at once instead of waiting for the stalled stream to return.
+    assert_eq!(
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            cache.save_if_absent(&container, "d", Bytes::from("bytes")),
+        )
+        .await
+        .unwrap()
+        .unwrap(),
+        SaveOutcome::AlreadyExists
+    );
     resume.notify_one();
     assert_eq!(
         tokio::time::timeout(Duration::from_secs(5), stream)
@@ -309,13 +315,6 @@ async fn a_byte_write_after_a_stalled_stream_conflicts_and_is_never_cached() {
             .unwrap()
             .unwrap(),
         SaveOutcome::Stored
-    );
-    assert_eq!(
-        tokio::time::timeout(Duration::from_secs(5), competing)
-            .await
-            .unwrap()
-            .unwrap(),
-        SaveOutcome::AlreadyExists
     );
     assert_eq!(
         inner.get(&container, "d").await.unwrap(),
@@ -412,5 +411,121 @@ async fn get_range_is_served_from_a_cached_streamed_entry() {
             .await
             .unwrap(),
         Some(Bytes::from("bc"))
+    );
+}
+
+/// A cache whose backend publishes streams without pausing, plus the backend
+/// itself so tests can act behind the cache's back.
+fn open_cache() -> (Arc<LruCached<PausedStreamBackend>>, Arc<InMemoryBackend>) {
+    let inner = Arc::new(InMemoryBackend::new());
+    let resume = Arc::new(Notify::new());
+    resume.notify_one();
+    let cache = Arc::new(LruCached::new(
+        PausedStreamBackend {
+            inner: inner.clone(),
+            committed: Arc::new(Notify::new()),
+            resume,
+            delete_pause: None,
+        },
+        NonZeroUsize::new(10).unwrap(),
+    ));
+    (cache, inner)
+}
+
+/// An upload whose body is still arriving: send chunks through the returned
+/// sender and drop it to finish the body.
+fn trickling_upload() -> (
+    futures::channel::mpsc::Sender<Result<Bytes, Error>>,
+    WriteStream,
+) {
+    let (tx, rx) = futures::channel::mpsc::channel(4);
+    (tx, Box::pin(rx))
+}
+
+#[tokio::test]
+async fn a_trickling_upload_does_not_block_a_delete_or_another_write() {
+    let (cache, inner) = open_cache();
+    let container = Container::parse("ns/ci").unwrap();
+    let (mut tx, body) = trickling_upload();
+    let writer = cache.clone();
+    let c = container.clone();
+    let upload = tokio::spawn(async move {
+        writer.save_stream_if_absent(&c, "d", body).await
+    });
+    tx.try_send(Ok(Bytes::from("slow"))).unwrap();
+    tokio::task::yield_now().await;
+
+    tokio::time::timeout(Duration::from_secs(5), cache.delete(&container, "d"))
+        .await
+        .expect("a delete must not wait for a trickling upload")
+        .unwrap();
+    // Another writer of the same key is not held either, and it wins: the
+    // trickling upload only decides at its end, and create-only still holds.
+    assert_eq!(
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            cache.save_if_absent(&container, "d", Bytes::from("fast")),
+        )
+        .await
+        .expect("a write must not wait for a trickling upload")
+        .unwrap(),
+        SaveOutcome::Stored
+    );
+
+    drop(tx);
+    assert_eq!(
+        tokio::time::timeout(Duration::from_secs(5), upload)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap(),
+        SaveOutcome::AlreadyExists
+    );
+    assert_eq!(
+        inner.get(&container, "d").await.unwrap(),
+        Some(Bytes::from("fast"))
+    );
+    assert_eq!(
+        cache.get(&container, "d").await.unwrap(),
+        Some(Bytes::from("fast")),
+        "the losing upload's bytes must never be served"
+    );
+}
+
+#[tokio::test]
+async fn an_upload_that_overlaps_a_delete_is_not_cached() {
+    let (cache, inner) = open_cache();
+    let container = Container::parse("ns/ci").unwrap();
+    let (mut tx, body) = trickling_upload();
+    let writer = cache.clone();
+    let c = container.clone();
+    let upload = tokio::spawn(async move {
+        writer.save_stream_if_absent(&c, "d", body).await
+    });
+    tx.try_send(Ok(Bytes::from("late"))).unwrap();
+    tokio::task::yield_now().await;
+
+    cache.delete(&container, "d").await.unwrap();
+    drop(tx);
+    assert_eq!(
+        tokio::time::timeout(Duration::from_secs(5), upload)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap(),
+        SaveOutcome::Stored
+    );
+    // The object was published after the delete, so it is the live entry.
+    assert_eq!(
+        cache.get(&container, "d").await.unwrap(),
+        Some(Bytes::from("late"))
+    );
+    // But it must not have been cached: removing it behind the cache's back
+    // is observed, which a stale cache insert would hide.
+    inner.delete(&container, "d").await.unwrap();
+    assert_eq!(
+        cache.get(&container, "d").await.unwrap(),
+        None,
+        "an upload that overlapped a delete must not repopulate the cache"
     );
 }

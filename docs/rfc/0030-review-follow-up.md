@@ -70,11 +70,20 @@ existing PR authorization, after independent review; no history rewrite needed.
   exclusive replacement lock is released before any remote download or upload, so a
   slow transfer never blocks another run's lookups (regression test:
   `a_slow_download_does_not_block_an_unrelated_local_hit`). The shared prune lock is
-  still held across transfers, as it was before, so a prune cannot delete an entry
-  being renamed into place; it blocks only a prune.
+  likewise not held across transfers (issue #129): a restore takes it only around its
+  staging directory and publishing rename, an upload only while it builds its archive
+  (an entry a prune removed in between is skipped), and `get_many` takes it again for
+  the final read of the entries. A prune therefore never waits for a transfer
+  (regression tests: `a_prune_is_not_blocked_by_a_download_in_flight` and
+  `a_prune_is_not_blocked_by_an_upload_in_flight`).
 - Archive hardening was delegated as a bounded, single-file slice. Parent inspected
   the result, added mixed PAX-size/extension compatibility coverage, and ran combined checks.
-  Raw overhead counts toward 8 GiB; validation/extraction uses three passes.
+  Raw overhead counts toward 8 GiB; validation/extraction uses three passes. Measured for issue #128 (release build, a
+  6,000-file entry of 212 MiB expanded, 35 MiB compressed): a restore takes about
+  0.98 s, of which the validation pass is about 0.21 s and the raw preflight, which
+  cannot be merged, about 0.26 s. Merging validation into extraction would save about a
+  fifth at best, and would write untrusted content before it is fully checked, so the
+  three passes stay.
 - Combined `cargo test` passed (491 tests) for cache, executor, storage core, memory backend,
   setup and configurations. Scoped fmt and core/executor test clippy pass; setup
   production clippy passes. Setup test clippy remains blocked by its pre-existing
