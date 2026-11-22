@@ -187,4 +187,177 @@ mod tests {
         );
         drop(store);
     }
+
+    const DIR_ENV: &str = "OMNI_KEYSTORE_TEST_DIR";
+    const ROLE_ENV: &str = "OMNI_KEYSTORE_TEST_ROLE";
+
+    fn fallback_key(path: &std::path::Path) -> String {
+        let store =
+            crate::fallback_store::Store::open_for_remote_cache(path).unwrap();
+        get_secret_key("svc", "usr", store).unwrap()
+    }
+
+    fn aead_key(secret: &str) -> ring::aead::LessSafeKey {
+        let digest = digest::digest(&digest::SHA256, secret.as_bytes());
+        ring::aead::LessSafeKey::new(
+            ring::aead::UnboundKey::new(
+                &ring::aead::AES_256_GCM,
+                digest.as_ref(),
+            )
+            .unwrap(),
+        )
+    }
+
+    const NONCE: [u8; 12] = [7; 12];
+    const PLAIN: &[u8] = b"remote cache config";
+
+    /// Runs only as a child of the multi-process tests below.
+    #[test]
+    fn keystore_child_process() {
+        let Ok(dir) = std::env::var(DIR_ENV) else {
+            return;
+        };
+        let dir = std::path::PathBuf::from(dir);
+        let path = dir.join("config").join("keystore");
+        let key = if std::env::var(ROLE_ENV).as_deref() == Ok("stale") {
+            // Open (and snapshot) the store, then wait for the parent to
+            // save a key before asking for one.
+            let store =
+                crate::fallback_store::Store::open_for_remote_cache(&path)
+                    .unwrap();
+            std::fs::write(dir.join("ready"), b"").unwrap();
+            while !dir.join("go").exists() {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            get_secret_key("svc", "usr", store).unwrap()
+        } else {
+            fallback_key(&path)
+        };
+        let out = match std::env::var(ROLE_ENV).as_deref() {
+            Ok("seal") => {
+                let mut data = PLAIN.to_vec();
+                aead_key(&key)
+                    .seal_in_place_append_tag(
+                        ring::aead::Nonce::assume_unique_for_key(NONCE),
+                        ring::aead::Aad::empty(),
+                        &mut data,
+                    )
+                    .unwrap();
+                data
+            }
+            _ => key.into_bytes(),
+        };
+        let name = format!("out-{}", std::process::id());
+        std::fs::write(dir.join(name), out).unwrap();
+    }
+
+    fn spawn_child(dir: &std::path::Path, role: &str) -> std::process::Child {
+        std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "secret_key::tests::keystore_child_process"])
+            .env(DIR_ENV, dir)
+            .env(ROLE_ENV, role)
+            .spawn()
+            .unwrap()
+    }
+
+    #[test]
+    fn concurrent_threads_and_processes_agree_on_one_key() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config").join("keystore");
+        let children: Vec<_> =
+            (0..6).map(|_| spawn_child(dir.path(), "key")).collect();
+        let threads: Vec<_> = (0..6)
+            .map(|_| {
+                let path = path.clone();
+                std::thread::spawn(move || fallback_key(&path))
+            })
+            .collect();
+        let mut keys: Vec<String> =
+            threads.into_iter().map(|t| t.join().unwrap()).collect();
+        for mut child in children {
+            assert!(child.wait().unwrap().success());
+        }
+        for entry in std::fs::read_dir(dir.path()).unwrap() {
+            let entry = entry.unwrap();
+            if entry.file_name().to_string_lossy().starts_with("out-") {
+                keys.push(
+                    String::from_utf8(std::fs::read(entry.path()).unwrap())
+                        .unwrap(),
+                );
+            }
+        }
+        assert_eq!(keys.len(), 12);
+        assert!(keys.iter().all(|k| *k == keys[0]), "keys diverged");
+        assert_eq!(fallback_key(&path), keys[0]);
+    }
+
+    #[test]
+    fn fresh_config_dir_key_decrypts_in_a_second_process() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut child = spawn_child(dir.path(), "seal");
+        assert!(child.wait().unwrap().success());
+        let sealed = std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .find(|p| {
+                p.file_name().unwrap().to_string_lossy().starts_with("out-")
+            })
+            .unwrap();
+        let mut data = std::fs::read(sealed).unwrap();
+        let key = fallback_key(&dir.path().join("config").join("keystore"));
+        let plain = aead_key(&key)
+            .open_in_place(
+                ring::aead::Nonce::assume_unique_for_key(NONCE),
+                ring::aead::Aad::empty(),
+                &mut data,
+            )
+            .unwrap();
+        assert_eq!(plain, PLAIN);
+    }
+
+    fn wait_for(path: &std::path::Path) {
+        for _ in 0..1000 {
+            if path.exists() {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        panic!("timed out waiting for {}", path.display());
+    }
+
+    fn child_output(dir: &std::path::Path, child: u32) -> String {
+        String::from_utf8(
+            std::fs::read(dir.join(format!("out-{child}"))).unwrap(),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn stale_snapshot_in_another_process_adopts_the_saved_key() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config").join("keystore");
+        let mut child = spawn_child(dir.path(), "stale");
+        wait_for(&dir.path().join("ready"));
+        let saved = fallback_key(&path);
+        std::fs::write(dir.path().join("go"), b"").unwrap();
+        assert!(child.wait().unwrap().success());
+        assert_eq!(child_output(dir.path(), child.id()), saved);
+    }
+
+    #[test]
+    fn another_process_waits_while_the_keystore_lock_is_held() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config").join("keystore");
+        let store =
+            crate::fallback_store::Store::open_for_remote_cache(&path).unwrap();
+        let held = store.lock_key_creation().unwrap();
+        let mut child = spawn_child(dir.path(), "key");
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        assert!(
+            child.try_wait().unwrap().is_none(),
+            "child ignored the lock"
+        );
+        drop(held);
+        assert!(child.wait().unwrap().success());
+    }
 }

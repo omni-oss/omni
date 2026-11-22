@@ -18,6 +18,14 @@ use keyring_core::{
     attributes::parse_attributes,
 };
 
+/// Holds the in-process mutex and the cross-process file lock; both are
+/// released on drop, including on every error path.
+pub(crate) struct KeyCreationGuard<'a> {
+    // Field order: release the file lock before the process mutex.
+    _file: Option<std::fs::File>,
+    _process: MutexGuard<'a, ()>,
+}
+
 /// The stored data for a credential
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CredValue {
@@ -180,13 +188,36 @@ impl Store {
         Ok(())
     }
 
-    /// Serializes key lookup, creation and persistence in this process only.
-    pub(crate) fn lock_key_creation(&self) -> Result<MutexGuard<'_, ()>> {
-        self.key_creation.lock().map_err(|_| {
+    /// Serializes key lookup, creation and persistence across threads and
+    /// processes, then refreshes the in-memory credentials from disk so a
+    /// key another process just saved is seen instead of overwritten.
+    ///
+    /// Fails after a bounded wait instead of blocking forever.
+    pub(crate) fn lock_key_creation(&self) -> Result<KeyCreationGuard<'_>> {
+        let process = self.key_creation.lock().map_err(|_| {
             PlatformFailure(Box::new(std::io::Error::other(
                 "fallback credential creation lock was poisoned",
             )))
-        })
+        })?;
+        let file = match &self.backing {
+            Some(path) => Some(
+                super::lock::acquire(path, super::lock::LOCK_TIMEOUT)
+                    .map_err(|e| PlatformFailure(Box::from(e)))?,
+            ),
+            None => None,
+        };
+        let guard = KeyCreationGuard {
+            _file: file,
+            _process: process,
+        };
+        if let Some(path) = &self.backing {
+            let fresh = Self::load_credentials(path)?;
+            self.creds.clear();
+            for (id, values) in fresh {
+                self.creds.insert(id, values);
+            }
+        }
+        Ok(guard)
     }
 
     /// Create a store with the given credentials and backing file.
