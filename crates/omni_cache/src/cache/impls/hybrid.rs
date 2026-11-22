@@ -4501,6 +4501,7 @@ mod tests {
     }
 
     /// The archive of a real entry whose metadata was edited by `edit`.
+    #[cfg(not(windows))]
     async fn tampered_archive(
         edit: impl FnOnce(&mut CachedTaskExecution),
     ) -> Vec<u8> {
@@ -4510,6 +4511,7 @@ mod tests {
         genuine_archive_of_existing(&cache, task.get()).await
     }
 
+    #[cfg(not(windows))]
     async fn genuine_archive_of_existing(
         cache: &HybridTaskExecutionCacheStore,
         info: &TaskExecutionInfo<'_>,
