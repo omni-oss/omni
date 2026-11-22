@@ -134,22 +134,39 @@ where
                 self.local_only
                     .contains(&format!("{}#{}", i.project_name, i.task_name))
             });
-        let mut cached_items = if remote.is_empty() {
-            Vec::new()
-        } else {
+        // The two stores use separate partitions and locks, so they are
+        // queried at the same time. Local-only tasks never fall back to the
+        // store that talks to the remote: without a local store they simply
+        // miss. Both passes run to completion so an error in one never
+        // cancels the other halfway through a restore.
+        let from_remote = async {
+            if remote.is_empty() {
+                return Ok(Vec::new());
+            }
             self.store.get_many(&remote).await.map_err(|e| {
-                CacheManagerErrorInner::GetCacheFailed { source: e.into() }
-            })?
+                CacheManagerError::from(
+                    CacheManagerErrorInner::GetCacheFailed { source: e.into() },
+                )
+            })
         };
-        // Local-only tasks never fall back to the store that talks to the
-        // remote: without a local store they simply miss.
-        if !local.is_empty()
-            && let Some(local_store) = &self.local_store
-        {
-            cached_items.extend(local_store.get_many(&local).await.map_err(
-                |e| CacheManagerErrorInner::GetCacheFailed { source: e.into() },
-            )?);
-        }
+        let from_local = async {
+            match &self.local_store {
+                Some(local_store) if !local.is_empty() => {
+                    local_store.get_many(&local).await.map_err(|e| {
+                        CacheManagerError::from(
+                            CacheManagerErrorInner::GetCacheFailed {
+                                source: e.into(),
+                            },
+                        )
+                    })
+                }
+                _ => Ok(Vec::new()),
+            }
+        };
+        let (from_remote, from_local) =
+            futures::future::join(from_remote, from_local).await;
+        let mut cached_items = from_remote?;
+        cached_items.extend(from_local?);
 
         if cached_items.is_empty() {
             return Ok(unordered_map!());
@@ -258,22 +275,37 @@ where
                         i.task.project_name, i.task.task_name
                     ))
                 });
-            let mut cached_items = if remote.is_empty() {
-                Vec::new()
-            } else {
+            // Concurrent for the same reason as in `get_cached_results`.
+            let to_remote = async {
+                if remote.is_empty() {
+                    return Ok(Vec::new());
+                }
                 self.store.cache_many(&remote).await.map_err(|e| {
-                    CacheManagerErrorInner::CacheFailed { source: e.into() }
-                })?
+                    CacheManagerError::from(
+                        CacheManagerErrorInner::CacheFailed {
+                            source: e.into(),
+                        },
+                    )
+                })
             };
-            if !local.is_empty()
-                && let Some(local_store) = &self.local_store
-            {
-                cached_items.extend(
-                    local_store.cache_many(&local).await.map_err(|e| {
-                        CacheManagerErrorInner::CacheFailed { source: e.into() }
-                    })?,
-                );
-            }
+            let to_local = async {
+                match &self.local_store {
+                    Some(local_store) if !local.is_empty() => {
+                        local_store.cache_many(&local).await.map_err(|e| {
+                            CacheManagerError::from(
+                                CacheManagerErrorInner::CacheFailed {
+                                    source: e.into(),
+                                },
+                            )
+                        })
+                    }
+                    _ => Ok(Vec::new()),
+                }
+            };
+            let (to_remote, to_local) =
+                futures::future::join(to_remote, to_local).await;
+            let mut cached_items = to_remote?;
+            cached_items.extend(to_local?);
 
             Ok(cached_items
                 .into_iter()
@@ -572,6 +604,9 @@ mod tests {
         puts: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
         /// When set, every lookup is a hit with this exit code.
         hit_exit_code: Option<u32>,
+        /// When set, every call waits here until the other store arrives, so a
+        /// sequential caller would never get past it.
+        rendezvous: Option<std::sync::Arc<tokio::sync::Barrier>>,
     }
 
     #[async_trait::async_trait]
@@ -583,6 +618,9 @@ mod tests {
             infos: &[omni_cache::NewCacheInfo<'a>],
         ) -> Result<Vec<omni_cache::CachedTaskExecutionHash<'a>>, Self::Error>
         {
+            if let Some(barrier) = &self.rendezvous {
+                barrier.wait().await;
+            }
             let mut out = Vec::new();
             for info in infos {
                 self.puts.lock().unwrap().push(format!(
@@ -603,6 +641,9 @@ mod tests {
             infos: &[omni_cache::TaskExecutionInfo],
         ) -> Result<Vec<Option<omni_cache::CachedTaskExecution>>, Self::Error>
         {
+            if let Some(barrier) = &self.rendezvous {
+                barrier.wait().await;
+            }
             for info in infos {
                 self.gets
                     .lock()
@@ -765,6 +806,69 @@ mod tests {
             got.sort();
             assert_eq!(got, expected, "{exit_code} {force:?}");
         }
+    }
+
+    #[tokio::test]
+    async fn the_remote_and_local_stores_are_queried_and_written_concurrently()
+    {
+        // Each store waits for the other, so a sequential caller hangs.
+        let barrier = std::sync::Arc::new(tokio::sync::Barrier::new(2));
+        let spy = || SpyStore {
+            rendezvous: Some(barrier.clone()),
+            ..SpyStore::default()
+        };
+        let manager = super::CacheManager::<
+            SpyStore,
+            system_traits::impls::RealSys,
+        >::builder()
+        .store(spy())
+        .maybe_local_store(Some(spy()))
+        .local_only(["p#release".to_string()].into())
+        .sys(system_traits::impls::RealSys)
+        .root_dir(PathBuf::new())
+        .cache_dir(PathBuf::new())
+        .build();
+        let nodes = [named("p", "release", &[]), named("p", "lint", &[])];
+        let contexts: Vec<Cow<'_, TaskContext<'_>>> = nodes
+            .iter()
+            .map(|node| {
+                Cow::Owned(TaskContext {
+                    node,
+                    dependency_hashes: vec![],
+                    env_vars: Arc::new(Default::default()),
+                    cache_info: Some(Cow::Owned(info(true))),
+                    output_logs: None,
+                    template_context: Default::default(),
+                })
+            })
+            .collect();
+        let limit = std::time::Duration::from_secs(5);
+
+        tokio::time::timeout(limit, manager.get_cached_results(&contexts))
+            .await
+            .expect("the two stores must be queried at the same time")
+            .unwrap();
+
+        let results: Vec<_> = nodes
+            .iter()
+            .zip(&contexts)
+            .map(|(node, ctx)| super::TaskResultContext::Completed {
+                task_context: ctx.as_ref(),
+                result: omni_process::TaskChildProcessResult::new(
+                    node.clone(),
+                    0u32,
+                    std::time::Duration::ZERO,
+                    None::<bytes::Bytes>,
+                ),
+                tries: 1,
+            })
+            .collect();
+        let cached =
+            tokio::time::timeout(limit, manager.cache_results(&results))
+                .await
+                .expect("the two stores must be written at the same time")
+                .unwrap();
+        assert_eq!(cached.len(), 2, "both stores' results are returned");
     }
 
     #[tokio::test]
