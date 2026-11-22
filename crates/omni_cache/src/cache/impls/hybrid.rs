@@ -960,6 +960,22 @@ impl HybridTaskExecutionCacheStore {
     }
 }
 
+/// Whether `output_dir` still holds what the upload was queued for: a complete
+/// successful entry that was built here (an entry restored from the remote
+/// carries an origin marker and is never uploaded). The caller holds the shared
+/// prune lock, so a prune cannot change the answer while it archives.
+async fn still_uploadable(output_dir: &Path) -> bool {
+    let Ok(bytes) =
+        read_metadata_bounded(&output_dir.join(CACHE_OUTPUT_METADATA_FILE))
+            .await
+    else {
+        return false;
+    };
+    rmp_serde::decode::from_slice::<CachedTaskExecution>(&bytes)
+        .is_ok_and(|entry| entry.exit_code == 0)
+        && super::origin::read_marker(output_dir).await.is_none()
+}
+
 const LOGS_CACHE_FILE: &str = "logs.cache";
 const CACHE_OUTPUT_METADATA_FILE: &str = "cache.meta.bin";
 const LAST_USED_TIMESTAMPS_DB_FILE: &str = "last-used-timestamps.db";
@@ -1299,19 +1315,17 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                         };
                         {
                             // A prune may have removed the entry since it was
-                            // published, and must not remove it halfway through
+                            // queued, and must not remove it halfway through
                             // the read: a partial archive would take the
                             // create-only slot for this digest. Hold the lock
-                            // for the read only.
+                            // for the read only, and check again what the
+                            // queue checked: a failed result may have been
+                            // published at this digest in the meantime.
                             let _prune_guard =
                                 CacheLockGuard::acquire_shared(prune_lock)
                                     .await?;
-                            if !tokio::fs::try_exists(
-                                output_dir.join(CACHE_OUTPUT_METADATA_FILE),
-                            )
-                            .await?
-                            {
-                                tracing::debug!(%digest, "the cache entry was removed before upload; skipping the upload");
+                            if !still_uploadable(&output_dir).await {
+                                tracing::debug!(%digest, "the cache entry changed or was removed before upload; skipping the upload");
                                 return Ok(false);
                             }
                             archive(&output_dir, &mut artifact)?;
@@ -4631,6 +4645,63 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[tokio::test]
+    async fn an_upload_is_skipped_unless_the_entry_is_still_a_local_success() {
+        let temp = fixture(&["project1"]).await;
+        let cache = cache_store(temp.path());
+        let task = task("task", "project1", temp.path());
+        let dir_of = |cache: &HybridTaskExecutionCacheStore| {
+            let task = *task.get();
+            let cache = cache.clone();
+            async move {
+                cache
+                    .collect(
+                        &[task],
+                        &CollectConfig {
+                            cache_output_dirs: true,
+                            ..Default::default()
+                        },
+                    )
+                    .await
+                    .unwrap()[0]
+                    .cache_output_dir
+                    .clone()
+                    .unwrap()
+            }
+        };
+        let dir = dir_of(&cache).await;
+        assert!(!still_uploadable(&dir).await, "nothing published yet");
+
+        cache
+            .cache(&new_cache_info_with_exit_code(
+                Some(&LOGS_CONTENT),
+                *task.get(),
+                1,
+            ))
+            .await
+            .unwrap();
+        assert!(
+            !still_uploadable(&dir).await,
+            "a failed result must never take the create-only remote slot"
+        );
+
+        cache
+            .cache(&new_cache_info(Some(&LOGS_CONTENT), *task.get()))
+            .await
+            .unwrap();
+        assert!(still_uploadable(&dir).await, "a local success qualifies");
+
+        std::fs::write(
+            dir.join(".omni-origin-remote"),
+            "v1 origin=shared verified_by=none\n",
+        )
+        .unwrap();
+        assert!(
+            !still_uploadable(&dir).await,
+            "a restored entry is never re-uploaded"
+        );
     }
 
     /// A server that holds one kind of request open until released. `GET`
