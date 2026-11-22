@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use eyre::WrapErr;
-use omni_diagnostic::{Audience, find};
+use omni_diagnostic::{Audience, DiagnosticReport, find};
 use system_traits::impls::InMemorySys;
 
 use crate::{
@@ -123,12 +123,6 @@ fn plumbing_failures_stay_uncoded() {
     .into();
     assert!(find(&crypto).is_none());
 
-    let key: eyre::Report = SecretKeyError::from(
-        SecretKeyErrorInner::MachineId(eyre::eyre!("no id")),
-    )
-    .into();
-    assert!(find(&key).is_none());
-
     let io = report(SetupRemoteCachingConfigError::from(
         SetupRemoteCachingConfigErrorInner::Io(std::io::Error::other("x")),
     ));
@@ -141,11 +135,50 @@ fn plumbing_failures_stay_uncoded() {
 }
 
 #[test]
+fn keyring_diagnostic_survives_setup_without_backend_data() {
+    let sentinel = "credential-backend-sentinel";
+    let key_error = SecretKeyError::from(keyring_core::Error::NoStorageAccess(
+        Box::new(std::io::Error::other(sentinel)),
+    ));
+    let report = report(SetupRemoteCachingConfigError::from(key_error));
+    let rendered = DiagnosticReport::from_report(&report).unwrap();
+    assert_eq!(rendered.exit_code(), 1);
+    assert_eq!(
+        rendered.to_json()["kind"],
+        "remote_cache.keyring_unavailable"
+    );
+    for output in [
+        format!("{report:?}"),
+        rendered.to_text(),
+        rendered.to_json().to_string(),
+    ] {
+        assert!(!output.contains(sentinel));
+    }
+    assert!(
+        report
+            .chain()
+            .all(|cause| !cause.to_string().contains(sentinel))
+    );
+}
+
+#[test]
+fn machine_identifier_diagnostic_survives_config_loading() {
+    let key_error = SecretKeyError::from(SecretKeyErrorInner::MachineId);
+    let report =
+        eyre::Report::new(GetRemoteCachingConfigError::from(key_error));
+    let diagnostic = find(&report).unwrap();
+    assert_eq!(diagnostic.code(), "remote_cache.machine_id_unavailable");
+    assert_eq!(diagnostic.audience(), Audience::Environment);
+}
+
+#[test]
 fn codes_are_registered_in_the_catalog() {
     for code in [
         "remote_cache.invalid_access",
         "remote_cache.insufficient_scopes",
         "remote_cache.config_unreadable",
+        "remote_cache.keyring_unavailable",
+        "remote_cache.machine_id_unavailable",
     ] {
         assert!(
             omni_codes::get(code).is_some(),

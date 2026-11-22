@@ -2,9 +2,10 @@ use crate::{
     SetupSys,
     util::{env, get_service_and_user},
 };
-use std::path::Path;
+use std::{path::Path, sync::Arc};
 
 use derive_new::new;
+use keyring_core::api::CredentialStore;
 use omni_configurations::{
     RemoteCacheConfiguration, RemoteCacheSettings, RemoteTarget, ScopeConfig,
 };
@@ -14,7 +15,9 @@ use omni_remote_cache_client::{
 use strum::{EnumDiscriminants, EnumIs, IntoDiscriminant as _};
 
 use crate::{
-    crypto, derive_key::derive_key_from_seed, secret_key::get_secret_key,
+    crypto,
+    derive_key::derive_key_from_seed,
+    secret_key::{default_store, get_secret_key},
 };
 
 /// Decides whether a probe result can be saved.
@@ -142,28 +145,14 @@ pub async fn setup_remote_caching_config_async<TClient: RemoteCacheClient>(
         })?;
 
     if encrypt {
-        let (service, user) = get_service_and_user(None, Some(user))?;
-        let secret_key = get_secret_key(
-            &service,
-            &user,
-            keyring_core::get_default_store()
-                .expect("default store is not set"),
-        )?;
-        let salt = env!("OMNI_SECRET_SALT", "remote-cache")?;
-        let derived_key = derive_key_from_seed(&secret_key, salt.as_bytes());
-
-        let encrypted = crypto::encrypt(
-            rmp_serde::to_vec(&remote_config)?.as_slice(),
-            &derived_key[..],
-        )?;
-        sys.fs_write_async(remote_config_path, &encrypted)
-            .await
-            .map_err(|source| {
-                SetupRemoteCachingConfigErrorInner::ConfigWriteFailed {
-                    path: remote_config_path.to_path_buf(),
-                    source,
-                }
-            })?;
+        write_encrypted_config(
+            user,
+            remote_config_path,
+            &remote_config,
+            default_store()?,
+            sys,
+        )
+        .await?;
     } else {
         omni_file_data_serde::write_async(
             remote_config_path,
@@ -179,6 +168,33 @@ pub async fn setup_remote_caching_config_async<TClient: RemoteCacheClient>(
         })?;
     }
 
+    Ok(())
+}
+
+async fn write_encrypted_config(
+    user: &str,
+    path: &Path,
+    config: &RemoteCacheConfiguration,
+    store: Arc<CredentialStore>,
+    sys: &impl SetupSys,
+) -> Result<(), SetupRemoteCachingConfigError> {
+    let (service, user) = get_service_and_user(None, Some(user))?;
+    // The fallback key must be saved before any encrypted bytes are published.
+    let secret_key = get_secret_key(&service, &user, store)?;
+    let salt = env!("OMNI_SECRET_SALT", "remote-cache")?;
+    let derived_key = derive_key_from_seed(&secret_key, salt.as_bytes());
+    let encrypted = crypto::encrypt(
+        rmp_serde::to_vec(config)?.as_slice(),
+        &derived_key[..],
+    )?;
+    sys.fs_write_async(path, &encrypted)
+        .await
+        .map_err(|source| {
+            SetupRemoteCachingConfigErrorInner::ConfigWriteFailed {
+                path: path.to_path_buf(),
+                source,
+            }
+        })?;
     Ok(())
 }
 
@@ -378,5 +394,59 @@ mod tests {
     #[test]
     fn a_server_that_reports_no_scopes_is_accepted_as_before() {
         assert!(check_access(&result(true, &[])).is_ok());
+    }
+
+    #[tokio::test]
+    async fn encrypted_setup_preserves_config_when_fallback_cannot_save() {
+        use super::*;
+        use system_traits::{FsCreateDirAllAsync, FsRead, FsWriteAsync};
+
+        let dir = tempfile::tempdir().unwrap();
+        let parent = dir.path().join("store-dir");
+        let backing = parent.join("keystore");
+        let store =
+            crate::fallback_store::Store::open_for_remote_cache(&backing)
+                .unwrap();
+        std::fs::write(&parent, "blocks creation of the store directory")
+            .unwrap();
+
+        let sys = system_traits::impls::InMemorySys::default();
+        let path = Path::new("workspace/remote-cache.omni.enc");
+        sys.fs_create_dir_all_async(path.parent().unwrap())
+            .await
+            .unwrap();
+        sys.fs_write_async(path, b"previous config").await.unwrap();
+
+        let config = RemoteCacheConfiguration {
+            api_key: "test-key".into(),
+            api_base_url: "https://cache.invalid".into(),
+            tenant_code: "tenant".into(),
+            organization_code: "org".into(),
+            workspace_code: "ws".into(),
+            environment_code: None,
+            push: false,
+            target: Default::default(),
+            scope: Default::default(),
+            max_artifact_size: None,
+            signing_key: None,
+            verify: None,
+            trusted_keys: None,
+        };
+        // Retrying in the same process must not reuse an unpublished key.
+        for _ in 0..2 {
+            let error = write_encrypted_config(
+                "test-user",
+                path,
+                &config,
+                store.clone(),
+                &sys,
+            )
+            .await
+            .unwrap_err();
+            let report = eyre::Report::new(error);
+            let diagnostic = omni_diagnostic::find(&report).unwrap();
+            assert_eq!(diagnostic.code(), "remote_cache.keyring_unavailable");
+            assert_eq!(sys.fs_read(path).unwrap().as_ref(), b"previous config");
+        }
     }
 }

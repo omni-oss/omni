@@ -69,6 +69,18 @@ fn validation_failures_are_aggregated_structurally() {
 }
 
 #[test]
+fn a_single_validation_failure_keeps_the_aggregate_diagnostic() {
+    let r = report(ContextErrorInner::ValidationError(
+        vec![duplicate("web")].into(),
+    ));
+    let json = DiagnosticReport::from_report(&r).unwrap().to_json();
+    assert_eq!(json["kind"], "workspace.validation_failed");
+    let errors = json["details"]["errors"].as_array().unwrap();
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors[0]["code"], "workspace.duplicate_project_name");
+}
+
+#[test]
 fn workspace_not_found_is_a_user_diagnostic() {
     let r = report(ContextErrorInner::FailedToFindWorkspaceConfiguration);
     let d = find(&r).expect("diagnostic");

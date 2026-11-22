@@ -3,10 +3,13 @@ use std::collections::HashSet;
 use omni_derive_support::{CodeInfoTokens, code_info, doc_parts};
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote};
-use syn::{Data, DeriveInput, Fields, Ident, LitStr, spanned::Spanned};
+use syn::{
+    Data, DeriveInput, Fields, Ident, LitStr, ext::IdentExt, spanned::Spanned,
+};
 
 use crate::attrs::{
-    Attrs, AudienceAttr, parse_attrs, parse_field_attrs, valid_code,
+    Attrs, AudienceAttr, DelegateAttr, parse_attrs, parse_field_attrs,
+    valid_code,
 };
 
 type Errs = Option<syn::Error>;
@@ -50,6 +53,14 @@ pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
     match &input.data {
         Data::Struct(s) => {
             let mut a = ty_attrs;
+            if let Some(field) =
+                a.delegate.as_ref().and_then(|d| d.field.as_ref())
+            {
+                return Err(syn::Error::new(
+                    field.span(),
+                    "`delegate = field` is only allowed on enum variants with named fields",
+                ));
+            }
             a.no_register = None;
             if let Some(v) = build_variant(
                 quote!(Self),
@@ -383,7 +394,10 @@ fn reject_on_enum(a: &Attrs, errs: &mut Errs) {
     if let Some(s) = a.forward {
         push(errs, syn::Error::new(s, msg));
     }
-    for s in [a.skip, a.delegate].into_iter().flatten() {
+    for s in [a.skip, a.delegate.as_ref().map(|d| d.span)]
+        .into_iter()
+        .flatten()
+    {
         push(errs, syn::Error::new(s, msg));
     }
 }
@@ -430,12 +444,6 @@ fn build_variant(
         binds.push(bind);
     }
 
-    let pat = match fields {
-        Fields::Named(_) => quote!(#path { #(#binds),* }),
-        Fields::Unnamed(_) => quote!(#path ( #(#binds),* )),
-        Fields::Unit => quote!(#path),
-    };
-
     let audience = attrs
         .audience
         .map(|(a, _)| a)
@@ -444,8 +452,8 @@ fn build_variant(
 
     if attrs.skip.is_some() || attrs.delegate.is_some() {
         return non_owning_variant(
-            pat,
-            &binds,
+            path,
+            fields,
             audience,
             &attrs,
             detail_span,
@@ -453,6 +461,12 @@ fn build_variant(
             errs,
         );
     }
+
+    let pat = match fields {
+        Fields::Named(_) => quote!(#path { #(#binds),* }),
+        Fields::Unnamed(_) => quote!(#path ( #(#binds),* )),
+        Fields::Unit => quote!(#path),
+    };
 
     if let Some(fspan) = attrs.forward {
         let mut conflict = |span: Option<Span>| {
@@ -550,7 +564,7 @@ fn build_variant(
         details_fn: attrs.details,
         detail_fields,
         body_fn: attrs.body,
-        stable: attrs.stable,
+        stable: attrs.stable.is_some(),
         related: attrs.related,
         docs,
     }))
@@ -559,18 +573,22 @@ fn build_variant(
 /// `skip` and `delegate`: variants with no code of their own. They take no
 /// other attribute.
 fn non_owning_variant(
-    pat: TokenStream,
-    binds: &[Ident],
+    path: TokenStream,
+    fields: &Fields,
     audience: AudienceAttr,
     attrs: &Attrs,
     detail_span: Option<Span>,
     docs: (String, String),
     errs: &mut Errs,
 ) -> syn::Result<Option<Variant>> {
-    let chosen: Vec<Span> = [attrs.skip, attrs.delegate, attrs.forward]
-        .into_iter()
-        .flatten()
-        .collect();
+    let chosen: Vec<Span> = [
+        attrs.skip,
+        attrs.delegate.as_ref().map(|d| d.span),
+        attrs.forward,
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
     if chosen.len() > 1 {
         push(
             errs,
@@ -599,22 +617,21 @@ fn non_owning_variant(
     conflict(attrs.details.as_ref().map(|p| p.span()));
     conflict(attrs.body.as_ref().map(|p| p.span()));
     conflict(detail_span);
+    if attrs.delegate.as_ref().is_some_and(|d| d.field.is_some()) {
+        conflict(attrs.stable);
+        conflict(attrs.related.first().map(|r| r.span()));
+    }
 
-    let delegate = match attrs.delegate {
-        Some(span) => {
-            if binds.len() != 1 {
-                push(
-                    errs,
-                    syn::Error::new(
-                        span,
-                        "`delegate` requires exactly one field",
-                    ),
-                );
+    let (pat, delegate) = if let Some(attr) = &attrs.delegate {
+        match delegate_pattern(&path, fields, attr) {
+            Ok((pat, bind)) => (pat, Some(bind)),
+            Err(e) => {
+                push(errs, e);
                 return Ok(None);
             }
-            Some(binds[0].clone())
         }
-        None => None,
+    } else {
+        (quote!(#path { .. }), None)
     };
     Ok(Some(Variant {
         idx: 0,
@@ -633,6 +650,49 @@ fn non_owning_variant(
         related: Vec::new(),
         docs,
     }))
+}
+
+fn delegate_pattern(
+    path: &TokenStream,
+    fields: &Fields,
+    attr: &DelegateAttr,
+) -> syn::Result<(TokenStream, Ident)> {
+    if let Some(target) = &attr.field {
+        let Fields::Named(named) = fields else {
+            return Err(syn::Error::new(
+                target.span(),
+                "`delegate = field` requires a variant with named fields",
+            ));
+        };
+        let field = named
+            .named
+            .iter()
+            .filter_map(|f| f.ident.as_ref())
+            .find(|id| id.unraw() == target.unraw())
+            .ok_or_else(|| {
+                syn::Error::new(
+                    target.span(),
+                    format!("`delegate` references unknown field `{target}`"),
+                )
+            })?;
+        // Bind only the selected field. A selected field named `__out` must
+        // not shadow the output writer in `render_body`.
+        let bind = format_ident!(
+            "__omni_diagnostic_selected_field",
+            span = Span::mixed_site()
+        );
+        Ok((quote!(#path { #field: #bind, .. }), bind))
+    } else if fields.len() != 1 {
+        Err(syn::Error::new(
+            attr.span,
+            "`delegate` requires exactly one field",
+        ))
+    } else if let Some(field) = fields.iter().find_map(|f| f.ident.as_ref()) {
+        Ok((quote!(#path { #field }), field.clone()))
+    } else {
+        let bind = format_ident!("_0");
+        Ok((quote!(#path(#bind)), bind))
+    }
 }
 
 /// Rewrites `{0}` to `{_0}` (our tuple bindings) and checks every referenced

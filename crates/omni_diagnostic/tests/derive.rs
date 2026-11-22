@@ -335,6 +335,13 @@ enum PublicInner {
     #[error(transparent)]
     #[diagnostic(delegate)]
     Custom(#[from] eyre::Report),
+
+    #[error("failed to load project after {prior}")]
+    #[diagnostic(delegate = source)]
+    LoadProject {
+        prior: InnerErr,
+        source: eyre::Report,
+    },
 }
 
 fn public(inner: PublicInner) -> eyre::Report {
@@ -376,6 +383,29 @@ fn delegate_sees_through_wrap_err_and_ignores_plain_reports() {
     assert_eq!(d.details().unwrap()["name"], "web");
 
     let plain = public(PublicInner::Custom(eyre::eyre!("boom")));
+    assert!(find(&plain).is_none());
+}
+
+#[test]
+fn named_delegate_looks_up_only_the_selected_field() {
+    use eyre::WrapErr;
+
+    let source = Err::<(), _>(unknown()).wrap_err("loading").unwrap_err();
+    let r = public(PublicInner::LoadProject {
+        prior: InnerErr,
+        source,
+    });
+    let d = find(&r).expect("diagnostic in the selected report");
+    assert_eq!(d.to_string(), "failed to load project after inner failure");
+    assert_eq!(d.code(), "sample.unknown_project");
+    assert_eq!(d.audience(), Audience::User);
+    assert_eq!(d.details().unwrap()["name"], "web");
+    assert_eq!(d.hints().len(), 2);
+
+    let plain = public(PublicInner::LoadProject {
+        prior: InnerErr,
+        source: eyre::eyre!("boom"),
+    });
     assert!(find(&plain).is_none());
 }
 

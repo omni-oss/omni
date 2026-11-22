@@ -1,6 +1,6 @@
 use crate::{
     SetupSys,
-    secret_key::get_secret_key,
+    secret_key::{default_store, get_secret_key},
     util::{env, get_service_and_user},
 };
 use std::path::{Path, PathBuf};
@@ -24,12 +24,7 @@ pub async fn get_remote_caching_config_async(
             .map_err(|e| unreadable(remote_config_path, e))?;
 
         let (service, user) = get_service_and_user(None, Some(user))?;
-        let key = get_secret_key(
-            &service,
-            &user,
-            keyring_core::get_default_store()
-                .expect("default store is not set"),
-        )?;
+        let key = get_secret_key(&service, &user, default_store()?)?;
         let decrypted = crypto::decrypt(&file[..], key.as_bytes())
             .map_err(|e| unreadable(remote_config_path, e))?;
 
@@ -53,12 +48,7 @@ pub fn get_remote_caching_config(
             .fs_read(remote_config_path)
             .map_err(|e| unreadable(remote_config_path, e))?;
         let (service, user) = get_service_and_user(None, Some(user))?;
-        let key = get_secret_key(
-            &service,
-            &user,
-            keyring_core::get_default_store()
-                .expect("default store is not set"),
-        )?;
+        let key = get_secret_key(&service, &user, default_store()?)?;
         let salt = env!("OMNI_SECRET_SALT", "remote-cache")?;
         let derived_key = derive_key_from_seed(&key, salt.as_bytes());
         let decrypted = crypto::decrypt(&file[..], &derived_key[..])

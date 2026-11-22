@@ -309,7 +309,7 @@ describe("+context @config @exitcode (validation)", () => {
 });
 
 describe("+context @config (errors & env files)", () => {
-    it("reports an actionable error for invalid config", async () => {
+    it("preserves the invalid project config diagnostic through workspace loading", async () => {
         const ws = makeWorkspace({ workspace: { projects: ["**"] } });
         // Schema-violating / malformed YAML in a project file.
         ws.write(
@@ -317,11 +317,15 @@ describe("+context @config (errors & env files)", () => {
             "name: bad\ntasks:\n  build: [oops: not\n",
         );
 
-        const result = await runOmni(["-q", "run", "build"], {
-            cwd: ws.cwd,
-        });
+        const result = await runOmni(
+            ["-q", "run", "build", "--error-format=text"],
+            {
+                cwd: ws.cwd,
+            },
+        );
 
-        expect(result).toHaveFailed();
+        expect(result.exitCode).toBe(2);
+        expect(result).toHaveStderrContaining("error[config.load_failed]");
         // The parse error should name the offending location, not just panic.
         expect(result.stderr).toMatch(/line \d+/);
     });

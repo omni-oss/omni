@@ -804,7 +804,10 @@ describe("+projection @e2e", { tags: ["projection"] }, () => {
         const ws = makeWorkspace(collidingRulesWorkspace());
 
         const result = await runOmni(["projection", "sync"], { cwd: ws.cwd });
-        expect(result).toHaveFailed();
+        expect(result).toHaveExitCode(2);
+        expect(result).toHaveStderrContaining(
+            "error[projections.destination_conflict]",
+        );
         expect(result).toHaveStderrContaining("collision");
 
         // A self-contradictory plan writes nothing.

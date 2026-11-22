@@ -384,6 +384,12 @@ error[meta_filter.evaluation]: meta filter failed to evaluate for 500 task(s)
 The `[code]` suffix is new and is the only change to the RFC 0020 text layout.
 Tests that assert on substrings from RFC 0020 are unaffected.
 
+**Workspace validation.** For one or more validation failures, the top-level
+code (`kind` in JSON) stays `workspace.validation_failed`. Each failure has its
+own code in `details.errors`, including `details.errors[0].code` when only one
+failure occurs. Promoting that code to the top level for a single failure
+would break consumers that dispatch on the aggregate code.
+
 ### 4.5 Non-fatal reports (out of scope)
 
 `Diagnostic` describes **errors** only. v1 has no `Severity`, no
@@ -452,6 +458,7 @@ pub enum ProjectFilterError {
 | variant           | `forward`                                | Variant has exactly one field implementing `Diagnostic`; all methods delegate to it.                                                                                                                                                                                          |
 | variant           | `skip`                                   | Variant carries no diagnostic (I/O, serialization, internal plumbing). It is a plain error: lookup ignores it and `reportable()` is `false`.                                                                                                                                  |
 | variant           | `delegate`                               | Variant has exactly one field: an error, or an `eyre::Report`, that may carry its own diagnostic. It is looked up in that field (a report's whole cause chain is searched, so context added with `wrap_err` does not hide it); if there is none the variant is a plain error. |
+| variant           | `delegate = source`                      | Selects the named field `source` for the same lookup as bare `delegate`, ignoring the other fields for delegation. |
 | type              | `no_register`                            | Skip registration (for diagnostics only ever constructed by hand).                                                                                                                                                                                                            |
 
 **Generated code**
@@ -484,8 +491,9 @@ pub enum ProjectFilterError {
 
 - Every variant needs `code`, `forward`, `delegate` or `skip`; a missing one is
   an error, so a new variant cannot silently become uncoded. `skip` and
-  `delegate` take no other attribute and cannot be combined with each other or
-  with `forward`.
+  either form of `delegate` take no other diagnostic attributes and cannot be
+  combined with each other or with `forward`. A target in `delegate = field`
+  must name an existing field on an enum variant with named fields.
 - Codes must match `^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$`.
 - Codes are unique within the type.
 - Every `{field}` in a `hint` must exist on that variant.

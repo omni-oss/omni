@@ -1,4 +1,5 @@
 mod credential;
+mod key_file;
 mod store;
 
 pub use store::Store;

@@ -15,6 +15,10 @@ Keeping this up to date: change this page in the same PR that adds, removes or u
 
 ## Quality tools
 
+`omni_setup` uses the Rust multiplatform test preset so its fallback-keystore
+access-control tests run on native Windows CI. Run them locally on Windows
+with `cargo test -p omni_setup fallback_store::key_file`.
+
 - Rust: `cargo fmt`, `cargo clippy`, `cargo test`; benchmarks use criterion (`crates/omni_bench`).
 - TypeScript: `oxfmt` (`oxfmt.config.ts`), `oxlint` (`oxlint.config.ts`), `tsc`, `vitest` (`vitest.workspace.ts`).
 

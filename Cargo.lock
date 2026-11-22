@@ -7885,6 +7885,7 @@ dependencies = [
  "eyre",
  "omni_codes",
  "omni_constants",
+ "omni_diagnostic",
  "omni_glob",
  "omni_hasher",
  "omni_notice",
@@ -8297,12 +8298,14 @@ dependencies = [
  "serde",
  "strum 0.28.0",
  "system_traits",
+ "tempfile",
  "thiserror 2.0.21",
  "time",
  "tokio 1.54.1",
  "tracing",
  "uuid",
  "windows-native-keyring-store",
+ "windows-sys 0.61.2",
  "zbus-secret-service-keyring-store",
 ]
 
