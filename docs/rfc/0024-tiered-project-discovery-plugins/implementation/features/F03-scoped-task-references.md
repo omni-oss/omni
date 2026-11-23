@@ -5,8 +5,11 @@
 Audit prerequisite: [F03.1 identity and parser inventory](F03.1-identity-parser-audit.md).
 The escape-aware parser/formatter ([F03.2 part 1](F03.2-reference-parser.md)) is
 merged and now parses `dependencies`/`with` ([part 2](F03.2-reference-parser.md#part-2-wiring-into-dependencies-and-with)); root lowering
-(F03.3) is implemented on this branch and awaits review; plugin-scoped variants remain unimplemented. F03.1 ([#103](https://github.com/omni-oss/omni/pull/103)),
-F03.2 part 1 ([#116](https://github.com/omni-oss/omni/pull/116)) and part 2 ([#117](https://github.com/omni-oss/omni/pull/117)) are merged.
+(F03.3) is done for internal references ([#143](https://github.com/omni-oss/omni/pull/143)).
+F03.1 ([#103](https://github.com/omni-oss/omni/pull/103)), F03.2 part 1
+([#116](https://github.com/omni-oss/omni/pull/116)) and part 2
+([#117](https://github.com/omni-oss/omni/pull/117)) are merged. The handwritten
+`alias` key and plugin-scoped variants remain pending.
 
 ## Problem
 
@@ -106,23 +109,18 @@ Deferred, with the reason:
 
 - Public-name lookup. The resolver checks `config.tasks`; plugin-origin
   references must bind to the originating activation instead.
-- Serializing a finalized config that still holds a root reference. Nothing
-  produces one yet. It serializes as an internal, non-authorable
-  `$internal_project_root` form that user config rejects.
-  Tracked in [#141](https://github.com/omni-oss/omni/issues/141) and in P04.3's
-  acceptance criteria.
+- Producing root references from plugin contributions. A finalized config that still
+  holds one can already serialize it as an internal, non-authorable
+  `$internal_project_root` object ([#147](https://github.com/omni-oss/omni/pull/147)).
+  P04.3 still owns the plugin integration.
 - Cache identity. Cache keys do not cover `meta` or unkeyed environment variables.
   [F06.3](F06-effective-semantic-digest.md) owns the semantic digest. The user guide documents a fresh keyed environment
   value to avoid stale local and remote entries on upgrade and rollback.
-- The eager `resolve_task_extensions` path (`ProjectConfiguration::load`) still
-  merges before inheriting. The loader uses the layer path. Tracked in
-  [#142](https://github.com/omni-oss/omni/issues/142).
-- `args` key order is random after a dictionary merge and is hashed unsorted
-  (`omni_collector/src/collector.rs`). This predates the slice and is not yet
-  reproduced. Tracked in [#140](https://github.com/omni-oss/omni/issues/140).
-- `ExtensionGraph` can apply a descendant before its ancestor, so `extends` order
-  can undo an override. Tracked in
-  [#139](https://github.com/omni-oss/omni/issues/139).
+
+Merged follow-ups: [#144](https://github.com/omni-oss/omni/pull/144) removed the
+eager project loader and sorted argument keys before hashing.
+[#144](https://github.com/omni-oss/omni/pull/144) and
+[#146](https://github.com/omni-oss/omni/pull/146) fixed extension precedence.
 
 The type and its lowering land together. Undo both together and use a fresh
 cache revision value for affected tasks on rollback.

@@ -49,6 +49,7 @@ and F08 are done**; F03, F05, F06 and F10 are partly done; F04 is done; F07 and 
 - F06.2 [canonical digest function](features/F06.2-canonical-digest.md) ([#114](https://github.com/omni-oss/omni/pull/114)); it is not wired into any cache key until F06.3.
 - F05.1 [origin-tagged cache enablement](features/F05.1-origin-tagged-enablement.md) ([#115](https://github.com/omni-oss/omni/pull/115)).
 - F03.2 [escape-aware reference parser](features/F03.2-reference-parser.md) ([#116](https://github.com/omni-oss/omni/pull/116)) and its use in task `dependencies`/`with` ([#117](https://github.com/omni-oss/omni/pull/117)).
+- F03.3 [internal root-reference lowering](features/F03-scoped-task-references.md#f033-implementation-slice) ([#143](https://github.com/omni-oss/omni/pull/143)).
 
 Open decisions that remain: store `VERSION` compatibility (D1), reference-driven retention
 (D3), `.pending` cleanup (D7), and the F10.2 decisions (D2, D5, D9). Plugins (P) are not
@@ -97,7 +98,7 @@ Known gaps carried forward from the merged refactors:
 | --------------------------------------------------------- | ------------------------------------------------------- | ---------------- | ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [F01](features/F01-duplicate-explicit-file-diagnostic.md) | Reject duplicate explicit project files at one root     | none             | S    | Done ([#101](https://github.com/omni-oss/omni/pull/101))                                                                                                                                                                                                                                                              |
 | [F02](features/F02-protect-plugin-control-files.md)       | Projection guardrails for `plugin.omni.*`               | none             | XS   | Done ([#101](https://github.com/omni-oss/omni/pull/101))                                                                                                                                                                                                                                                              |
-| [F03](features/F03-scoped-task-references.md)             | Structured scoped task identity and root references     | R05, R06         | L    | Partly done: F03.1 audit ([#103](https://github.com/omni-oss/omni/pull/103)), F03.2 parser and `dependencies`/`with` ([#116](https://github.com/omni-oss/omni/pull/116), [#117](https://github.com/omni-oss/omni/pull/117)). Root lowering (F03.3) is implemented and awaiting review; the `alias` key is not started |
+| [F03](features/F03-scoped-task-references.md)             | Structured scoped task identity and root references     | R05, R06         | L    | Partly done: F03.1–F03.3 are merged for their scoped deliverables. The handwritten `alias` key and plugin-scoped variants remain pending |
 | [F04](features/F04-exact-selectors-and-task-patterns.md)  | Exact positional selectors and `--task-pattern`         | R06, F03 (alias) | M    | Done ([#134](https://github.com/omni-oss/omni/pull/134)): task, project, `hash` and `cache` selectors                                                                                                                                                                                                                 |
 | [F05](features/F05-origin-aware-cache-tiers.md)           | Origin-aware cache enablement and activation `defaults` | R04, B04         | L    | Partly done: F05.1 origin tiers ([#115](https://github.com/omni-oss/omni/pull/115)). The contradiction detector and `deciding_source` are merged ([#130](https://github.com/omni-oss/omni/pull/130)); wiring the error into planning needs approval                                                                   |
 | [F06](features/F06-effective-semantic-digest.md)          | Per-task effective semantic digest in cache keys        | R03, R05, B01    | XL   | Partly done: F06.1 audit ([#103](https://github.com/omni-oss/omni/pull/103)), F06.2 digest function ([#114](https://github.com/omni-oss/omni/pull/114)). F06.3 (cache-key plumbing, High risk) is not started                                                                                                         |
@@ -149,7 +150,10 @@ targets.
 - Every behavior correction ships with its migration note and old/new fixture.
 - Run the repository's normal Rust test, clippy and schema-regeneration commands for the
   touched crates; schema/serde parity matters for config-type changes.
-- Update this README's table (add a `Status` column or tick marks) as packages land.
+- Update the relevant package status and briefing in the same PR that implements it.
+  Mark the accepted slice done and link its implementation PR once it has a URL. If
+  acceptance is only partial, list what shipped and what remains instead of marking
+  the whole package done. A completed slice unblocks dependent work only after merge.
 
 ## Part 2: the plugin features
 

@@ -3,6 +3,8 @@
 Second half of the [implementation plan](../README.md). The groundwork packages
 (B/R/F, in the sibling folders) must land first. These `P` packages build the plugin
 system itself, in the order of [RFC §13.3 phases 2-5](../../013.00-implementation-plan.md#133-phases).
+Record completion in the implementation PR using the
+[shared status rules](../README.md#recommended-prcommit-hygiene).
 
 **Rule that does not bend:** no plugin-specific host, adapter or runtime work starts
 until its groundwork gate (below) is merged. Several gates are in the RFC's own text:
