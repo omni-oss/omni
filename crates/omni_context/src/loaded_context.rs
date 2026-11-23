@@ -110,6 +110,20 @@ impl<TSys: ContextSys> LoadedContext<TSys> {
             .get(&format!("{project_name}#{task_name}"))
     }
 
+    /// The file that supplied the resolved task's authored `cache.enabled`.
+    /// Defaults and tasks without a known declaring file return `None`.
+    pub fn cache_enabled_file(
+        &self,
+        project_name: &str,
+        task_name: &str,
+    ) -> Option<&Path> {
+        self.extracted
+            .cache_enabled_files
+            .get(project_name)?
+            .get(task_name)
+            .and_then(|file| file.path().ok())
+    }
+
     pub fn get_output_logs(
         &self,
         project_name: &str,

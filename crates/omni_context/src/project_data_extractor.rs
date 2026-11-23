@@ -1,4 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use config_utils::{IntoInner as _, ListConfig};
 use derive_new::new;
@@ -172,6 +175,7 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
         let mut task_meta_configs = maps::unordered_map![];
         let mut task_env_var_overrides = maps::unordered_map![];
         let mut cache_infos = maps::unordered_map![];
+        let mut cache_enabled_files: CacheEnabledFiles = maps::unordered_map![];
         let mut output_logs_configs = maps::unordered_map![];
         let mut redact_policies = maps::unordered_map![];
 
@@ -311,6 +315,13 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
                     .task_cache_enabled
                     .get(name)
                     .expect("every task has an effective cache enablement");
+                if let Some(file) = finalized.task_cache_enabled_file.get(name)
+                {
+                    cache_enabled_files
+                        .entry(project_config.name.clone())
+                        .or_default()
+                        .insert(name.to_owned(), Arc::clone(file));
+                }
 
                 let use_defaults = cache.key.defaults.unwrap_or(true);
 
@@ -409,7 +420,7 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
             ));
         }
 
-        Ok(ProjectDataExtractions::new(
+        let mut extracted = ProjectDataExtractions::new(
             projects,
             cache_infos,
             task_env_var_overrides,
@@ -417,14 +428,22 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
             task_meta_configs,
             output_logs_configs,
             redact_policies,
-        ))
+        );
+        extracted.cache_enabled_files = cache_enabled_files;
+        Ok(extracted)
     }
 }
+
+type CacheEnabledFiles =
+    UnorderedMap<String, UnorderedMap<String, Arc<OmniPath>>>;
 
 #[derive(Debug, Clone, PartialEq, new, Serialize, Deserialize)]
 pub struct ProjectDataExtractions {
     pub projects: Vec<Project>,
     pub cache_infos: UnorderedMap<String, CacheInfo>,
+    #[new(default)]
+    #[serde(skip)]
+    pub(crate) cache_enabled_files: CacheEnabledFiles,
     pub task_env_var_overrides: UnorderedMap<String, Map<String, String>>,
     pub project_meta_configs: UnorderedMap<String, MetaConfiguration>,
     pub task_meta_configs: UnorderedMap<String, MetaConfiguration>,
@@ -865,21 +884,21 @@ mod tests {
 
     /// F05.1: the origin of each task's `cache.enabled` reaches `CacheInfo`, and
     /// the value is exactly what the extractor computed before origins existed.
-    #[test]
-    fn extraction_carries_the_origin_of_cache_enablement() {
+    #[tokio::test]
+    async fn extraction_carries_the_origin_of_cache_enablement() {
         use omni_configurations::{CacheEnabledSource, ProjectLayer};
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().to_path_buf();
         std::fs::create_dir_all(root.join("app")).unwrap();
         let file = root.join("app/project.omni.yaml");
         let file = file.to_str().unwrap();
+        std::fs::write(
+            file,
+            "name: app\ncache:\n  enabled: false\ntasks:\n  inherits: echo\n  own:\n    exec: x\n    cache:\n      enabled: true\n",
+        )
+        .unwrap();
         let layer = LoadedLayer {
-            layer: serde_json::from_str::<ProjectLayer>(
-                r#"{"name":"app","cache":{"enabled":false},"tasks":{
-                    "inherits":"echo",
-                    "own":{"exec":"x","cache":{"enabled":true}}}}"#,
-            )
-            .unwrap(),
+            layer: ProjectLayer::load(Path::new(file), &RealSys).await.unwrap(),
             ..layer(file, &[])
         };
         let graph = ExtensionGraph::from_nodes(vec![layer.clone()]).unwrap();
@@ -889,7 +908,7 @@ mod tests {
             serde_json::from_str(r#"{"projects":["**"]}"#)
                 .expect("a minimal workspace is valid");
         let mut env_loader = EnvLoader::new(RealSys, root.clone(), vec![]);
-        let infos = ProjectDataExtractor::new(
+        let extracted = ProjectDataExtractor::new(
             &RealSys,
             &root,
             &mut env_loader,
@@ -897,8 +916,8 @@ mod tests {
             &workspace,
         )
         .extract_all(&[finalized], &[PathBuf::from(file)], &graph)
-        .unwrap()
-        .cache_infos;
+        .unwrap();
+        let infos = &extracted.cache_infos;
 
         let inherits = &infos["app#inherits"];
         assert!(!inherits.cache_enabled);
@@ -909,6 +928,18 @@ mod tests {
         let own = &infos["app#own"];
         assert!(own.cache_enabled);
         assert_eq!(own.cache_enabled_source, CacheEnabledSource::TaskExplicit);
+        for task in ["inherits", "own"] {
+            assert_eq!(
+                extracted.cache_enabled_files["app"][task].path().unwrap(),
+                Path::new(file)
+            );
+        }
+        assert!(
+            serde_json::to_value(extracted)
+                .unwrap()
+                .get("cache_enabled_files")
+                .is_none()
+        );
     }
 
     /// The extractor reads the effective task `meta` computed at finalization.

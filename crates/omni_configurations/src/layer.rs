@@ -63,24 +63,36 @@ pub struct CacheKeyLayer {
     pub files: Option<MergeGlobConfig<OmniPath>>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, Merge)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CacheLayer {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[merge(strategy = merge::option::recurse)]
     pub key: Option<CacheKeyLayer>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[merge(strategy = merge::option::recurse)]
     pub enabled: Option<Replace<bool>>,
 
+    /// File backing the authored `enabled` setting, if loaded from disk.
+    #[serde(skip)]
+    pub enabled_file: Option<Arc<OmniPath>>,
+
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[merge(strategy = merge::option::recurse)]
     pub remote: Option<Replace<bool>>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[merge(strategy = merge::option::recurse)]
     pub output: Option<TaskOutputLayer>,
+}
+
+impl Merge for CacheLayer {
+    fn merge(&mut self, other: Self) {
+        if other.enabled.is_some() {
+            self.enabled_file = other.enabled_file;
+        }
+        merge::option::recurse(&mut self.enabled, other.enabled);
+        merge::option::recurse(&mut self.key, other.key);
+        merge::option::recurse(&mut self.remote, other.remote);
+        merge::option::recurse(&mut self.output, other.output);
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, Merge)]
@@ -419,23 +431,37 @@ impl ProjectLayer {
         path: impl Into<&'a Path>,
         sys: &(impl FsReadAsync + Send + Sync),
     ) -> Result<Self, LoadConfigError> {
-        utils::fs::load_config_async(path, sys).await
+        let path = path.into();
+        let mut layer: Self = utils::fs::load_config_async(path, sys).await?;
+        let file = Arc::new(OmniPath::from(path.to_path_buf()));
+        layer
+            .authored_cache_layers()
+            .filter(|cache| cache.enabled.is_some())
+            .for_each(|cache| cache.enabled_file = Some(Arc::clone(&file)));
+        Ok(layer)
     }
 
     /// Resolve the layer's `@project` cache glob patterns against the
     /// directory of the file it was read from. This is a per-layer origin: it
     /// stays with the layer when it is composed into another project.
     pub fn resolve_origin_paths(&mut self, bases: &EnumMap<Root, &Path>) {
-        if let Some(cache) = self.cache.as_mut() {
+        for cache in self.authored_cache_layers() {
             cache.resolve_project_paths(bases);
         }
-        for task in self.tasks.iter_mut().flat_map(|t| t.values_mut()) {
-            if let TaskLayer::LongForm(task) = task
-                && let Some(cache) = task.cache.as_mut()
-            {
-                cache.resolve_project_paths(bases);
-            }
-        }
+    }
+
+    fn authored_cache_layers(
+        &mut self,
+    ) -> impl Iterator<Item = &mut CacheLayer> {
+        self.cache.iter_mut().chain(
+            self.tasks
+                .iter_mut()
+                .flat_map(|tasks| tasks.values_mut())
+                .filter_map(|task| match task {
+                    TaskLayer::LongForm(task) => task.cache.as_mut(),
+                    _ => None,
+                }),
+        )
     }
 }
 
@@ -492,6 +518,9 @@ pub struct FinalizedProject {
     /// value always equals what `task_cache` resolves; this adds the origin,
     /// which `Replace<bool>` loses once layers are merged.
     pub task_cache_enabled: maps::Map<String, CacheEnabled>,
+    /// Files that supplied effective authored `cache.enabled` settings.
+    /// Defaults and declarations without a loaded file have no entry.
+    pub task_cache_enabled_file: maps::Map<String, Arc<OmniPath>>,
     /// Each task's effective `meta`: the project's, with every declaration of
     /// the task replayed over it. Empty for `base` projects.
     pub task_meta: maps::Map<String, MetaConfiguration>,
@@ -521,6 +550,7 @@ impl LoadedLayer {
         }
         let mut task_cache = maps::Map::default();
         let mut task_cache_enabled = maps::Map::default();
+        let mut task_cache_enabled_file = maps::Map::default();
         let mut task_meta = maps::Map::default();
         let tasks = if layer.base == Some(true) {
             layer.tasks.take().map(finalize_tasks).unwrap_or_default()
@@ -548,6 +578,14 @@ impl LoadedLayer {
                     .cache()
                     .and_then(|cache| cache.enabled.as_ref())
                     .map(|enabled| *enabled.as_ref());
+                if let Some(file) = cache
+                    .as_ref()
+                    .filter(|cache| cache.enabled.is_some())
+                    .and_then(|cache| cache.enabled_file.as_ref())
+                {
+                    task_cache_enabled_file
+                        .insert(name.to_owned(), Arc::clone(file));
+                }
                 task_cache.insert(
                     name.to_owned(),
                     cache.unwrap_or_default().finalize(),
@@ -570,6 +608,7 @@ impl LoadedLayer {
             config: layer.finalize_with_tasks(file, dir, tasks)?,
             task_cache,
             task_cache_enabled,
+            task_cache_enabled_file,
             task_meta,
         })
     }

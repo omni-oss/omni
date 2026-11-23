@@ -767,6 +767,46 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn cache_enablement_keeps_the_deciding_file_through_inheritance() {
+        let dir = tmp();
+        let root = dir.path();
+        let base = write(
+            root,
+            "shared/base.yaml",
+            "name: base\nbase: true\ncache:\n  enabled: false\ntasks:\n  tpl:\n    base: true\n    exec: x\n    cache:\n      enabled: true\n",
+        );
+        let app = write(
+            root,
+            "app/project.omni.yaml",
+            "name: app\nextends: ../shared/base.yaml\ncache:\n  output:\n    logs: false\ntasks:\n  plain: x\n  inherited:\n    extends: tpl\n  overridden:\n    extends: tpl\n    cache:\n      enabled: true\n",
+        );
+        let no_setting = write(
+            root,
+            "fallback/project.omni.yaml",
+            "name: fallback\ntasks:\n  plain: x\n",
+        );
+        let projects = loaded(root, &[app.clone(), no_setting]).await;
+        let composed = named(&projects.projects, "app");
+        for (task, value, file) in [
+            ("plain", false, base.as_path()),
+            ("inherited", true, base.as_path()),
+            ("overridden", true, app.as_path()),
+        ] {
+            assert_eq!(composed.task_cache_enabled[task].value, value);
+            assert_eq!(
+                composed.task_cache_enabled_file[task].path().unwrap(),
+                file
+            );
+        }
+        assert!(!composed.task_cache_enabled_file.contains_key("tpl"));
+        assert!(
+            named(&projects.projects, "fallback")
+                .task_cache_enabled_file
+                .is_empty()
+        );
+    }
+
+    #[tokio::test]
     async fn raw_layers_follow_closure_order_and_apply_a_diamond_once() {
         let dir = tmp();
         let root = dir.path();
