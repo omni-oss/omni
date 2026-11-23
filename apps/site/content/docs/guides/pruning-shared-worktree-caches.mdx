@@ -23,6 +23,15 @@ Omni cannot discover unrelated repositories or other machines using the
 same directory. If a relevant linked checkout cannot be evaluated, prune
 fails before deleting entries.
 
+Neither mode runs environment command substitutions. `--orphan` skips
+environment evaluation, and `--stale` fails if it encounters a command
+substitution while loading values for hashing.
+
 **Upgrading:** replace `--stale-only` with `--stale` in scripts. The old
 flag is no longer accepted. Use `--orphan` separately to remove entries
 for tasks that no longer exist. Neither command removes remote entries.
+
+Rust callers using `CachePruneRequest` struct literals must set `orphan`
+or use `..Default::default()`. To confirm an orphan or stale preview, use
+`cache_confirm_prune` rather than `cache_force_prune` so Omni rechecks the
+selection before deleting.

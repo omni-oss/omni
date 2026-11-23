@@ -22,9 +22,12 @@ use omni_process::{
 };
 use omni_redact::Redactor;
 use omni_retry_config::{RetryConfiguration, RetryPolicy};
-use omni_task_context::{TaskContext, TaskContextProviderExt as _};
+use omni_task_context::{
+    TaskContext, TaskContextProviderExt as _,
+    cache_status::{DependencyOutcome, OwnFacts, derive_status},
+};
 use omni_task_output_logs::{EffectiveOutputLogs, LogsDisplay};
-use omni_types::{OmniPath, Root, RootMap, enum_map};
+use omni_types::{Root, RootMap, enum_map};
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 use tracing::Level;
 
@@ -32,7 +35,6 @@ use crate::{
     CacheStatus, OnFailure, SkipReason, TaskDetails, TaskExecutionResult,
     TaskExecutorSys,
     cache_manager::{CacheManager, TaskResultContext, is_cache_eligible},
-    cache_status::{DependencyOutcome, OwnFacts, derive_status},
     task_context_provider::DefaultTaskContextProvider,
 };
 
@@ -284,57 +286,6 @@ where
         }
 
         Ok(true)
-    }
-
-    #[tracing::instrument(level = Level::DEBUG, skip_all)]
-    fn expand_templates<'a>(
-        &self,
-        task_contexts: impl IntoIterator<Item = &'a TaskContext<'a>>,
-    ) -> Result<Vec<Cow<'a, TaskContext<'a>>>, BatchExecutorError> {
-        let mut new_task_contexts = vec![];
-
-        for task_ctx in task_contexts {
-            if let Some(ci) = task_ctx.cache_info.as_ref() {
-                let has_template = |files: &[omni_types::OmniPath]| {
-                    files.iter().any(|fi| omni_path_contains_byte(fi, b'{'))
-                };
-
-                if has_template(&ci.cache_output_files.include)
-                    || has_template(&ci.cache_output_files.exclude)
-                    || has_template(&ci.key_input_files.include)
-                    || has_template(&ci.key_input_files.exclude)
-                {
-                    let mut new_ci = ci.as_ref().clone();
-                    let ctx = &task_ctx.template_context;
-
-                    let expand = |files: &[omni_types::OmniPath]| {
-                        files
-                            .iter()
-                            .map(|file| expand_omni_path(file, ctx))
-                            .collect::<Result<Vec<_>, _>>()
-                    };
-
-                    new_ci.cache_output_files.include =
-                        expand(&ci.cache_output_files.include)?;
-                    new_ci.cache_output_files.exclude =
-                        expand(&ci.cache_output_files.exclude)?;
-                    new_ci.key_input_files.include =
-                        expand(&ci.key_input_files.include)?;
-                    new_ci.key_input_files.exclude =
-                        expand(&ci.key_input_files.exclude)?;
-
-                    let mut new_ctx = task_ctx.clone();
-                    new_ctx.cache_info = Some(Cow::Owned(new_ci));
-                    new_task_contexts.push(Cow::Owned(new_ctx));
-                } else {
-                    new_task_contexts.push(Cow::Borrowed(task_ctx));
-                }
-            } else {
-                new_task_contexts.push(Cow::Borrowed(task_ctx));
-            }
-        }
-
-        Ok(new_task_contexts)
     }
 
     fn assign_task_details(
@@ -713,19 +664,7 @@ where
         task_contexts
             .iter()
             .map(|ctx| {
-                let own = OwnFacts {
-                    has_command: ctx.node.task_exec_config().is_some(),
-                    persistent: ctx.node.persistent(),
-                    cache_enabled: ctx
-                        .cache_info
-                        .as_ref()
-                        .is_some_and(|ci| ci.cache_enabled),
-                    cache_source: ctx
-                        .cache_info
-                        .as_ref()
-                        .map(|ci| ci.cache_enabled_source),
-                    no_cache: self.no_cache,
-                };
+                let own = OwnFacts::of(ctx, self.no_cache);
                 let deps = if self.ignore_dependencies {
                     &[][..]
                 } else {
@@ -759,7 +698,10 @@ where
         let tmp_task_contexts = ctx_provider
             .get_task_contexts(batch, self.ignore_dependencies)
             .map_err(BatchExecutorErrorInner::new_cant_get_task_contexts)?;
-        let mut task_contexts = self.expand_templates(&tmp_task_contexts)?;
+        let mut task_contexts = tmp_task_contexts
+            .iter()
+            .map(TaskContext::expand_cache_paths)
+            .collect::<Result<Vec<_>, _>>()?;
 
         let statuses =
             self.derive_cache_statuses(&task_contexts, overall_results);
@@ -885,29 +827,6 @@ fn redact_error<S: ExecutionEventSubscriber>(
         Ok(unchanged) => unchanged,
         Err(redacted) => BatchExecutorErrorInner::Redacted(redacted).into(),
     }
-}
-
-fn omni_path_contains_byte(path: &OmniPath, byte: u8) -> bool {
-    path.unresolved_path()
-        .as_os_str()
-        .as_encoded_bytes()
-        .contains(&byte)
-}
-
-fn expand_omni_path(
-    path: &OmniPath,
-    context: &omni_tera::Context,
-) -> omni_tera::Result<OmniPath> {
-    let text = path.unresolved_path().to_str().unwrap_or("");
-    let root = path.root();
-
-    let expanded = omni_tera::one_off(text, "path", context)?;
-
-    Ok(if let Some(root) = root {
-        OmniPath::new_rooted(expanded, root)
-    } else {
-        OmniPath::new(expanded)
-    })
 }
 
 /// Drives every future in `futures` to completion while keeping at most

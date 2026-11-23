@@ -67,6 +67,13 @@ pub struct Context<TSys: ContextSys = RealSysSync> {
 
 pub type UnloadedContext<TSys = RealSysSync> = Context<TSys>;
 
+#[derive(Clone, Copy, Debug)]
+enum LoadEnvironment {
+    Normal,
+    DefinitionsOnly,
+    ReadOnly,
+}
+
 impl<TSys: ContextSys> Context<TSys> {
     #[allow(clippy::result_large_err)]
     pub fn new(
@@ -420,7 +427,9 @@ impl<TSys: ContextSys> Context<TSys> {
         let start = std::time::Instant::now();
         let project_paths = self.discover_project_paths().await?;
 
-        let result = self.into_loaded_impl(project_paths).await;
+        let result = self
+            .into_loaded_impl(project_paths, LoadEnvironment::Normal)
+            .await;
 
         tracing::debug!(
             "{}",
@@ -446,7 +455,9 @@ impl<TSys: ContextSys> Context<TSys> {
         .discover_project_files_with_walker(walker)
         .await?;
 
-        let result = self.into_loaded_impl(project_paths).await;
+        let result = self
+            .into_loaded_impl(project_paths, LoadEnvironment::Normal)
+            .await;
 
         tracing::debug!(
             "{}",
@@ -461,6 +472,7 @@ impl<TSys: ContextSys> Context<TSys> {
     async fn into_loaded_impl(
         self,
         project_paths: Vec<DiscoveredPath>,
+        environment: LoadEnvironment,
     ) -> Result<LoadedContext<TSys>, ContextError> {
         let LoadedProjectConfigs {
             configs: project_configs,
@@ -470,6 +482,9 @@ impl<TSys: ContextSys> Context<TSys> {
         } = self.load_discovered_project_configs(project_paths).await?;
 
         let mut env_loader = self.create_env_loader();
+        if matches!(environment, LoadEnvironment::ReadOnly) {
+            env_loader = env_loader.without_commands(self.current_dir()?);
+        }
 
         tracing::trace!(
             inherit_env_vars = self.inherit_env_vars,
@@ -477,14 +492,24 @@ impl<TSys: ContextSys> Context<TSys> {
             "extacting_project_data",
         );
 
-        let extractions = ProjectDataExtractor::new(
+        let extractor = ProjectDataExtractor::new(
             self.sys(),
             &self.root_dir,
             &mut env_loader,
             self.inherit_env_vars,
             self.workspace_configuration(),
-        )
-        .extract_all(&project_configs, &project_paths, &xt_graph)?;
+        );
+        let mut extractor =
+            if matches!(environment, LoadEnvironment::DefinitionsOnly) {
+                extractor.definitions_only()
+            } else {
+                extractor
+            };
+        let extractions = extractor.extract_all(
+            &project_configs,
+            &project_paths,
+            &xt_graph,
+        )?;
 
         tracing::trace!("extacted_project_data");
 
@@ -604,10 +629,27 @@ impl<TSys: ContextSys> Context<TSys> {
         &self.cache_source
     }
 
+    /// Load definitions without environment evaluation, or read environment
+    /// values for hashing with command substitution forbidden.
+    #[allow(clippy::result_large_err)]
+    pub async fn into_loaded_for_cache_prune(
+        self,
+        needs_digests: bool,
+    ) -> Result<LoadedContext<TSys>, ContextError> {
+        let project_paths = self.discover_project_paths().await?;
+        let environment = if needs_digests {
+            LoadEnvironment::ReadOnly
+        } else {
+            LoadEnvironment::DefinitionsOnly
+        };
+        self.into_loaded_impl(project_paths, environment).await
+    }
+
     /// Other workspaces in the Git worktree family that may use this cache.
     /// Explicit cache paths could have been supplied in any sibling checkout.
     pub async fn load_cache_peer_workspaces(
         &self,
+        needs_digests: bool,
     ) -> eyre::Result<Vec<LoadedContext<TSys>>> {
         use eyre::WrapErr as _;
 
@@ -677,11 +719,12 @@ impl<TSys: ContextSys> Context<TSys> {
             if resolution.resolve(&root, &self.sys)?.0 != self.cache_dir {
                 continue;
             }
-            let working_dir = self
-                .working_dir
-                .as_ref()
-                .and_then(|dir| dir.strip_prefix(&self.root_dir).ok())
-                .map(|relative| root.join(relative));
+            let current = self.current_dir()?;
+            let working_dir =
+                Some(match current.strip_prefix(&self.root_dir) {
+                    Ok(relative) => root.join(relative),
+                    Err(_) => root.clone(),
+                });
             let peer = Self::new_with_cache_resolution(
                 self.sys.clone(),
                 self.env.clone(),
@@ -697,7 +740,7 @@ impl<TSys: ContextSys> Context<TSys> {
             .wrap_err_with(|| {
                 format!("cannot configure peer workspace {}", root.display())
             })?
-            .into_loaded()
+            .into_loaded_for_cache_prune(needs_digests)
             .await
             .wrap_err_with(|| {
                 format!("cannot load peer workspace {}", root.display())

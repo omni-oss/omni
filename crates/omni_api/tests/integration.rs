@@ -7,8 +7,9 @@
 use std::path::{Path, PathBuf};
 
 use omni_api::{
-    EnvRequest, OmniApi, ProjectConfigResponse, ProjectListEntry,
-    ProjectListRequest, ProjectSelector, SchemaKind, handle_config_schema,
+    CachePruneRequest, EnvRequest, OmniApi, ProjectConfigResponse,
+    ProjectListEntry, ProjectListRequest, ProjectSelector, SchemaKind,
+    handle_config_schema,
 };
 use omni_messages::NoopSubscriber;
 use omni_tracing_subscriber::TracingConfig;
@@ -48,6 +49,26 @@ fn make_api(dir: &Path) -> OmniApi<RealSys, NoopSubscriber> {
     .with_sources_dir(Some(dir.join(".omni/sources/store")))
     .expect("sources dir");
     OmniApi::new_with_sys(ctx, NoopSubscriber)
+}
+
+#[tokio::test]
+async fn cache_prune_rejects_conflicting_inventory_modes() {
+    let root = tempfile::tempdir().unwrap();
+    write_workspace(root.path());
+    let api = make_api(root.path());
+    let error = api
+        .cache_prune(CachePruneRequest {
+            orphan: true,
+            stale_only: true,
+            ..Default::default()
+        })
+        .await
+        .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("orphan pruning cannot be combined with stale")
+    );
 }
 
 // ── config_schema (no workspace needed) ──────────────────────────────────────

@@ -11,6 +11,7 @@ eyre = { workspace = true }
 thiserror = { workspace = true }
 strum = { workspace = true }
 serde = { workspace = true }
+schemars = { workspace = true }
 derive-new = { workspace = true }
 derive_builder = { workspace = true }
 globset = { workspace = true }

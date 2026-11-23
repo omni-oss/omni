@@ -26,7 +26,9 @@ use omni_remote_cache_client::{
 };
 use omni_task_context::{
     DefaultTaskContextProvider, DependencyHash, EnvVars,
-    TaskContextProviderExt, TaskHashProvider, collect_dependency_hashes,
+    TaskContextProviderExt, TaskHashProvider,
+    cache_status::{DependencyOutcome, OwnFacts, derive_status},
+    collect_dependency_hashes,
 };
 use omni_types::OmniPath;
 use serde::{Deserialize, Serialize};
@@ -311,21 +313,31 @@ impl HybridTaskExecutionCacheStore {
         let mut hashes = unordered_map!();
         if args.stale_only {
             let mut forwarded = unordered_map!();
-            let plan =
+            let mut statuses = unordered_map!();
+            // A valid selector may match projects in one checkout only.
+            let projects =
+                NameMatcher::new(args.project_names, args.project_name_globs)?;
+            let selected = context
+                .projects()
+                .iter()
+                .filter(|project| projects.is_match(&project.name))
+                .map(|project| ProjectSelector::exact(&project.name))
+                .collect::<Vec<_>>();
+            let plan = if selected.is_empty() {
+                Vec::new()
+            } else {
                 DefaultExecutionPlanProvider::new(ContextWrapper::new(context))
                     .with_allow_missing_exact(true)
                     .get_execution_plan(
                         &task_call(args.task_names, args.task_name_globs),
-                        &project_call(
-                            args.project_names,
-                            args.project_name_globs,
-                        ),
+                        &selected,
                         &[],
                         None,
                         None,
                         false,
                         false,
-                    )?;
+                    )?
+            };
             let config = CollectConfig {
                 digests: true,
                 ..Default::default()
@@ -336,8 +348,13 @@ impl HybridTaskExecutionCacheStore {
                     ContextWrapper::new(context),
                 );
                 let contexts = provider.get_task_contexts(&batch, false)?;
+                let contexts = contexts
+                    .iter()
+                    .map(omni_task_context::TaskContext::expand_cache_paths)
+                    .collect::<Result<Vec<_>, _>>()?;
                 let mut infos = Vec::new();
                 let mut batch_forwarded = Vec::new();
+                let mut batch_statuses = Vec::new();
                 for context in &contexts {
                     let node = context.node;
                     if node.task_exec_config().is_none()
@@ -347,14 +364,28 @@ impl HybridTaskExecutionCacheStore {
                             node.full_task_name().to_owned(),
                             node.dependencies().to_vec(),
                         ));
-                    } else if !node.persistent()
-                        && context
-                            .cache_info
-                            .as_ref()
-                            .is_some_and(|info| info.cache_enabled)
-                        && let Some(info) = context.execution_info()
-                    {
-                        infos.push(info);
+                    } else {
+                        let status = derive_status(
+                            OwnFacts::of(context, false),
+                            node.dependencies(),
+                            &|name| {
+                                if let Some(deps) = forwarded.get(name) {
+                                    DependencyOutcome::Transparent(deps)
+                                } else if let Some(status) = statuses.get(name)
+                                {
+                                    DependencyOutcome::Status(status)
+                                } else {
+                                    DependencyOutcome::Unreusable
+                                }
+                            },
+                        );
+                        if status.provides_reusable_hash()
+                            && let Some(info) = context.execution_info()
+                        {
+                            infos.push(info);
+                        }
+                        batch_statuses
+                            .push((node.full_task_name().to_owned(), status));
                     }
                 }
                 let results = self.collect(&infos, &config).await?;
@@ -374,6 +405,7 @@ impl HybridTaskExecutionCacheStore {
                     .collect::<Vec<_>>();
                 hashes.extend(batch_hashes);
                 forwarded.extend(batch_forwarded);
+                statuses.extend(batch_statuses);
             }
         }
         for project in context.projects() {
@@ -2522,10 +2554,10 @@ pub(crate) enum LocalTaskExecutionCacheStoreErrorInner {
     TaskContextProvider(#[from] omni_task_context::TaskContextProviderError),
 
     #[error(
-        "cannot evaluate task enablement while checking stale cache entries: {0}"
+        "cannot evaluate task configuration while checking stale cache entries: {0}"
     )]
     #[diagnostic(skip)]
-    TaskEnablement(#[from] omni_tera::Error),
+    TaskTemplate(#[from] omni_tera::Error),
 
     #[error(transparent)]
     #[diagnostic(skip)]

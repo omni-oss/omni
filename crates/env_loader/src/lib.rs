@@ -40,7 +40,7 @@ pub fn load<'a, TSys: EnvLoaderSys>(
     config: &'a EnvConfig<'a>,
     sys: TSys,
 ) -> Result<Arc<Map<String, String>>, EnvLoaderError> {
-    load_internal::<TSys, DefaultEnvCache<TSys>>(config, sys, None)
+    load_internal::<TSys, DefaultEnvCache<TSys>>(config, sys, None, None)
 }
 
 pub fn load_with_caching<'a, TSys, TCache>(
@@ -52,21 +52,36 @@ where
     TSys: EnvLoaderSys,
     TCache: EnvCache,
 {
-    load_internal::<TSys, TCache>(config, sys, Some(&mut cache))
+    load_internal::<TSys, TCache>(config, sys, Some(&mut cache), None)
+}
+
+/// Read another invocation's environment without running commands from it.
+/// Use a fresh cache dedicated to this mode.
+pub fn load_with_caching_read_only<TSys: EnvLoaderSys, TCache: EnvCache>(
+    config: &EnvConfig<'_>,
+    sys: TSys,
+    cache: &mut TCache,
+    invocation_dir: &Path,
+) -> Result<Arc<Map<String, String>>, EnvLoaderError> {
+    load_internal(config, sys, Some(cache), Some(invocation_dir))
 }
 
 fn load_internal<'a, TSys, TCache>(
     config: &'a EnvConfig<'a>,
     sys: TSys,
     mut cache: Option<&mut TCache>,
+    read_only_invocation: Option<&Path>,
 ) -> Result<Arc<Map<String, String>>, EnvLoaderError>
 where
     TSys: EnvLoaderSys,
     TCache: EnvCache,
 {
-    let cwd = sys
-        .env_current_dir()
-        .map_err(|_| EnvLoaderErrorInner::CantLoadCurrentDir)?;
+    let cwd = match read_only_invocation {
+        Some(dir) => dir.to_path_buf(),
+        None => sys
+            .env_current_dir()
+            .map_err(|_| EnvLoaderErrorInner::CantLoadCurrentDir)?,
+    };
     let start_dir = config.start_dir.unwrap_or(&cwd);
 
     if let Some(cached_ref) = cache.as_mut()
@@ -117,8 +132,11 @@ where
 
     let env_vars_os = vars_os(&env);
 
-    let command_expansion_cfg =
-        CommandExpansionConfig::new_enabled(start_dir.as_path(), &env_vars_os);
+    let command_expansion_cfg = if read_only_invocation.is_some() {
+        CommandExpansionConfig::Forbidden
+    } else {
+        CommandExpansionConfig::new_enabled(start_dir.as_path(), &env_vars_os)
+    };
 
     for dir in start_dir.ancestors().collect::<Vec<_>>() {
         tracing::trace!("Looking for env files in dir: {:?}", dir);
@@ -193,9 +211,13 @@ where
                     extra_envs: Some(&env),
                 },
             )
-            .map_err(|err| EnvLoaderErrorInner::CantParseEnv {
-                path: file.to_string_lossy().to_string(),
-                err,
+            .map_err(|err| {
+                let path = file.to_string_lossy().into_owned();
+                if err.is_command_forbidden() {
+                    EnvLoaderErrorInner::CommandSubstitutionForbidden { path }
+                } else {
+                    EnvLoaderErrorInner::CantParseEnv { path, err }
+                }
             })?;
 
             if let Some(matcher) = &config.matcher

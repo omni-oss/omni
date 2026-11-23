@@ -4,7 +4,6 @@ mod batch_executor;
 mod cache_contradiction;
 mod cache_manager;
 mod cache_restore;
-mod cache_status;
 mod cache_store_provider;
 mod config;
 mod execution_plan_provider;
@@ -24,11 +23,11 @@ pub use cache_contradiction::{
     CacheContradiction, ContradictionNode, ContradictionRole,
     find_explicit_contradictions,
 };
-pub use cache_status::CacheStatus;
 pub use config::*;
 pub use executor::*;
 pub use force::*;
 pub use omni_execution_plan::{Call, MetaOnError};
+pub use omni_task_context::cache_status::CacheStatus;
 pub use on_failure::*;
 pub use result::*;
 pub use sys::*;

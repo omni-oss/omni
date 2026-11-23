@@ -1,4 +1,10 @@
-import { readFileSync, rmSync, statSync, utimesSync } from "node:fs";
+import {
+    existsSync,
+    readFileSync,
+    rmSync,
+    statSync,
+    utimesSync,
+} from "node:fs";
 import { join } from "node:path";
 
 import { execa } from "execa";
@@ -193,6 +199,157 @@ describe("automatic Git worktree cache sharing", { tags: ["caching"] }, () => {
             "No cache entries matched the given filters",
         );
     });
+
+    it("keeps templated cache paths current when a project glob matches only one worktree", async (ctx) => {
+        await skipUnlessGitCliAvailable(ctx);
+        const { ws, primary, linked } = await fixture();
+        ws.write("primary/app/project.omni.yaml", {
+            name: "app-web",
+            cache: {
+                key: { defaults: false, files: ["input.txt"] },
+                output: { files: ["{{ args.artifact }}"] },
+            },
+            tasks: {
+                build: {
+                    exec: "node build.cjs",
+                    args: { artifact: "artifact.txt" },
+                },
+            },
+        });
+        ws.write("linked/app/project.omni.yaml", { name: "other" });
+        expect(
+            await runOmni(["run", "build"], { cwd: primary }),
+        ).toHaveSucceeded();
+        const prune = await runOmni(
+            [
+                "cache",
+                "prune",
+                "--stale",
+                "--project-pattern",
+                "app-*",
+                "--yes",
+            ],
+            { cwd: primary },
+        );
+        expect(prune).toHaveSucceeded();
+        expect(prune).toOutputContaining(
+            "No cache entries matched the given filters",
+        );
+        expect(
+            await runOmni(["run", "build"], { cwd: primary }),
+        ).toHaveStderrContaining("Cache hit for task 'app-web#build'");
+        const invalid = await runOmni(
+            [
+                "cache",
+                "prune",
+                "--stale",
+                "--project-pattern",
+                "[",
+                "--dry-run",
+            ],
+            { cwd: linked },
+        );
+        expect(invalid.failed).toBe(true);
+    });
+
+    it("keeps an entry when a dependency makes the task uncacheable", async (ctx) => {
+        await skipUnlessGitCliAvailable(ctx);
+        const { ws, primary } = await fixture();
+        const project = (cacheEnabled: boolean) => ({
+            name: "app",
+            cache: { key: { defaults: false, files: ["input.txt"] } },
+            tasks: {
+                source: {
+                    exec: "node -e \"console.log('source')\"",
+                    cache: { enabled: cacheEnabled },
+                },
+                aggregate: { dependencies: ["source"] },
+                build: { exec: "node build.cjs", dependencies: ["aggregate"] },
+            },
+        });
+        ws.write("primary/app/project.omni.yaml", project(true));
+        ws.write("linked/app/project.omni.yaml", project(true));
+        expect(
+            await runOmni(["run", "build"], { cwd: primary }),
+        ).toHaveSucceeded();
+        ws.write("primary/app/project.omni.yaml", project(false));
+        ws.write("linked/app/project.omni.yaml", project(false));
+        const prune = await runOmni(
+            ["cache", "prune", "--stale", "--task", "build", "--yes"],
+            { cwd: primary },
+        );
+        expect(prune).toHaveSucceeded();
+        expect(prune).toOutputContaining(
+            "No cache entries matched the given filters",
+        );
+        ws.write("primary/app/project.omni.yaml", project(true));
+        expect(
+            await runOmni(["run", "build"], { cwd: primary }),
+        ).toHaveStderrContaining("Cache hit for task 'app#build'");
+    });
+
+    it.for(["workspace", "dot-env", "project", "task"] as const)(
+        "does not execute %s environment commands while scanning a peer",
+        async (scope, ctx) => {
+            await skipUnlessGitCliAvailable(ctx);
+            const { ws, primary, linked } = await fixture();
+            expect(
+                await runOmni(["run", "build"], { cwd: primary }),
+            ).toHaveSucceeded();
+            const vars = { PRUNE_PROBE: "$(node prune-probe.cjs)" };
+            const script =
+                'require("node:fs").writeFileSync("prune-ran", "unexpected");';
+            ws.write("linked/prune-probe.cjs", script);
+            ws.write("linked/app/prune-probe.cjs", script);
+            switch (scope) {
+                case "workspace":
+                    ws.write("linked/workspace.omni.yaml", {
+                        projects: ["app/**"],
+                        env: { vars },
+                    });
+                    break;
+                case "dot-env":
+                    ws.write(
+                        "linked/.env",
+                        `PRUNE_PROBE=${vars.PRUNE_PROBE}\n`,
+                    );
+                    break;
+                case "project":
+                    ws.write("linked/app/project.omni.yaml", {
+                        name: "app",
+                        env: { vars },
+                        tasks: { build: "node build.cjs" },
+                    });
+                    break;
+                case "task":
+                    ws.write("linked/app/project.omni.yaml", {
+                        name: "app",
+                        tasks: {
+                            build: { exec: "node build.cjs", env: { vars } },
+                        },
+                    });
+                    break;
+            }
+            const orphan = await runOmni(
+                ["cache", "prune", "--orphan", "--dry-run"],
+                { cwd: primary },
+            );
+            expect(orphan).toHaveSucceeded();
+            const stale = await runOmni(
+                ["cache", "prune", "--stale", "--yes"],
+                { cwd: primary },
+            );
+            expect(stale.failed).toBe(true);
+            expect(stale.stderr).toContain(
+                "command substitution is not allowed",
+            );
+            expect(existsSync(join(linked, "prune-ran"))).toBe(false);
+            expect(existsSync(join(linked, "app", "prune-ran"))).toBe(false);
+            expect(
+                await runOmni(["run", "build"], { cwd: primary }),
+            ).toHaveStderrContaining("Cache hit for task 'app#build'");
+        },
+    );
 
     it("restores shared artifacts locally and isolates equal-mtime hash indexes", async (ctx) => {
         await skipUnlessGitCliAvailable(ctx);

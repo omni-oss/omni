@@ -116,6 +116,9 @@ impl Expansion {
                 CommandExpansionConfig::Disabled => {
                     expanded = text.to_string();
                 }
+                CommandExpansionConfig::Forbidden => {
+                    return Err(ExpansionErrorInner::CommandForbidden.into());
+                }
                 CommandExpansionConfig::Enabled { cwd, env_vars } => {
                     let mut cmd = Command::new(program);
 
@@ -150,6 +153,8 @@ impl Expansion {
 pub enum CommandExpansionConfig<'a> {
     #[default]
     Disabled,
+    /// Reject command substitutions rather than keeping their literal text.
+    Forbidden,
     Enabled {
         #[new(into)]
         cwd: &'a Path,
@@ -540,6 +545,12 @@ pub struct ExpansionError {
     inner: ExpansionErrorInner,
 }
 
+impl ExpansionError {
+    pub(crate) fn is_command_forbidden(&self) -> bool {
+        self.kind.is_command_forbidden()
+    }
+}
+
 impl<T: Into<ExpansionErrorInner>> From<T> for ExpansionError {
     fn from(inner: T) -> Self {
         let inner = inner.into();
@@ -554,6 +565,10 @@ impl<T: Into<ExpansionErrorInner>> From<T> for ExpansionError {
 pub enum ExpansionErrorInner {
     #[error(transparent)]
     Io(#[from] std::io::Error),
+    #[error(
+        "environment command substitution is not allowed while inventorying a cache"
+    )]
+    CommandForbidden,
 }
 
 #[cfg(test)]

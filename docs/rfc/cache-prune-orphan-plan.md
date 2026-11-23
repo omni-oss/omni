@@ -35,13 +35,18 @@ settling their contract, and independently review the integrated result.
   unreadable checkout has no tasks.
 - For `--orphan`, build the inventory from all finalized projects and their named task
   definitions, including disabled tasks. Do not build an execution plan or hash
-  inputs. Do not count declaration-only projects loaded solely as templates.
+  inputs or load environment files. Do not count declaration-only projects
+  loaded solely as templates.
 - For `--stale`, use each checkout's own configuration, inputs, and dependency
   digests with the existing current-digest calculation. A stale entry must
   have at least one current task definition, and no matching current digest.
   Keep an entry when any digest matches or a relevant definition cannot
-  produce a digest.
-  Abort deletion if computing a required digest fails. This still measures
+  produce a digest. Use the executor's cache path expansion and transitive
+  cache eligibility rules. Resolve a valid project pattern separately in each
+  checkout, where it may match no projects.
+  Abort deletion if computing a required digest fails. Environment loading is
+  read-only: command substitutions are rejected, not evaluated or hashed
+  literally. This still measures
   freshness for the prune invocation's environment, not every environment or
   argument combination future builds might use.
 - Replace the CLI flag `--stale-only` with `--stale` and provide no alias.

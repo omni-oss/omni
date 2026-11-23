@@ -164,7 +164,7 @@ where
 /// Compute (and optionally delete) prunable cache entries.
 ///
 /// When `req.dry_run == true` no entries are deleted. Use
-/// [`handle_cache_confirm_prune`] to recheck a preview before deletion.
+/// [`crate::OmniApi::cache_confirm_prune`] to recheck a preview before deletion.
 pub async fn handle_cache_prune<TSys>(
     ctx: &LoadedContext<TSys>,
     req: CachePruneRequest,
@@ -172,11 +172,15 @@ pub async fn handle_cache_prune<TSys>(
 where
     TSys: TaskExecutorSys + Clone,
 {
-    handle_cache_prune_inner(ctx, req, None).await
+    if req.orphan || req.stale_only {
+        handle_cache_prune_unloaded(ctx.as_context(), req, None).await
+    } else {
+        handle_cache_prune_inner(ctx, req, None).await
+    }
 }
 
 pub(crate) async fn handle_cache_confirm_prune<TSys>(
-    ctx: &LoadedContext<TSys>,
+    ctx: &Context<TSys>,
     mut req: CachePruneRequest,
     entries: Vec<PrunedCacheEntry>,
 ) -> eyre::Result<CachePruneResponse>
@@ -185,11 +189,11 @@ where
 {
     req.dry_run = false;
     let approved = entries.into_iter().map(|entry| entry.entry_dir).collect();
-    handle_cache_prune_inner(ctx, req, Some(&approved)).await
+    handle_cache_prune_unloaded(ctx, req, Some(&approved)).await
 }
 
-async fn handle_cache_prune_inner<TSys>(
-    ctx: &LoadedContext<TSys>,
+pub(crate) async fn handle_cache_prune_unloaded<TSys>(
+    ctx: &Context<TSys>,
     req: CachePruneRequest,
     approved: Option<&HashSet<PathBuf>>,
 ) -> eyre::Result<CachePruneResponse>
@@ -203,15 +207,26 @@ where
             "orphan pruning cannot be combined with stale, directory, or metadata filters"
         );
     }
-    // The API can keep a loaded context across calls, including an interactive
-    // preview. Rebuild it before classifying anything for these modes.
-    let refreshed;
+    // Load a fresh, non-executing view even if the API already held a loaded
+    // context from the preview or another command.
     let ctx = if req.orphan || req.stale_only {
-        refreshed = ctx.as_context().reload()?.into_loaded().await?;
-        &refreshed
+        ctx.reload()?
+            .into_loaded_for_cache_prune(req.stale_only)
+            .await?
     } else {
-        ctx
+        ctx.clone().into_loaded().await?
     };
+    handle_cache_prune_inner(&ctx, req, approved).await
+}
+
+async fn handle_cache_prune_inner<TSys>(
+    ctx: &LoadedContext<TSys>,
+    req: CachePruneRequest,
+    approved: Option<&HashSet<PathBuf>>,
+) -> eyre::Result<CachePruneResponse>
+where
+    TSys: TaskExecutorSys + Clone,
+{
     let cache_store = ctx.as_context().create_cache_store();
 
     let projects: Vec<&str> = req.project.iter().map(String::as_str).collect();
@@ -240,7 +255,10 @@ where
     };
     let mut inventory = PruneInventory::default();
     if req.orphan || req.stale_only {
-        let peers = ctx.as_context().load_cache_peer_workspaces().await?;
+        let peers = ctx
+            .as_context()
+            .load_cache_peer_workspaces(req.stale_only)
+            .await?;
         for workspace in std::iter::once(ctx).chain(&peers) {
             // Hashing needs the workspace root and hash index, but must not
             // probe the remote or require access to a remote partition.
