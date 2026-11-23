@@ -93,7 +93,8 @@ impl Expansion {
                 let value = vars.get(key);
                 let expand_result: String;
 
-                let allow_empty = mode == FallbackMode::UnsetOrEmpty;
+                // `${VAR-word}` keeps an empty value; `${VAR:-word}` replaces it.
+                let allow_empty = mode == FallbackMode::Unset;
 
                 expanded = replace_at(
                     text,
@@ -667,6 +668,42 @@ mod tests {
         let expanded = expand(text, &envs);
 
         assert_eq!(expanded, "DEFAULT_VALUE");
+    }
+
+    #[test]
+    fn fallback_treats_an_empty_value_like_posix() {
+        let envs = maps::map!["EMPTY".to_string() => String::new(), "SET".to_string() => "v".to_string()];
+        for (text, want) in [
+            ("${EMPTY:-d}", "d"),
+            ("${EMPTY-d}", ""),
+            ("${UNSET:-d}", "d"),
+            ("${UNSET-d}", "d"),
+            ("${SET:-d}", "v"),
+            ("${SET-d}", "v"),
+        ] {
+            assert_eq!(expand(text, &envs), want, "{text}");
+        }
+    }
+
+    #[test]
+    fn forbidden_rejects_a_command_in_the_fallback_of_an_empty_value() {
+        let envs = maps::map!["EMPTY".to_string() => String::new()];
+        let error = expand_with_command_config(
+            "${EMPTY:-$(echo x)}",
+            &envs,
+            &CommandExpansionConfig::Forbidden,
+        )
+        .expect_err("must reject");
+        assert!(error.is_command_forbidden());
+        assert_eq!(
+            expand_with_command_config(
+                "${EMPTY-$(echo x)}",
+                &envs,
+                &CommandExpansionConfig::Forbidden,
+            )
+            .unwrap(),
+            ""
+        );
     }
 
     #[test]
