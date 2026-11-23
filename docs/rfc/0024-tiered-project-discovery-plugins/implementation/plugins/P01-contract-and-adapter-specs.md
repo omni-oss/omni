@@ -35,7 +35,7 @@ the groundwork code. Output goes in new docs/fixtures, not Rust.
    and `--package`), option schema.
 5. **Budget/counter design:** counter ownership and lifetimes, per-root logical
    limits, transport batching, split-attempt accounting, pass retries. Candidate values
-   only; calibration happens in P15.
+   only; calibration happens in P15. See the [P01.5 design](P01.5-budget-accounting.md).
 6. **Path/permission profile:** discovery read-only capability profile and how
    containment-at-access maps to F10.
 

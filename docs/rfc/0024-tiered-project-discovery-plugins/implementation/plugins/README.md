@@ -14,6 +14,9 @@ cache-eligibility fixes (B01, B04, F05) come before everything here.
 
 ### Phase A: contract, configuration and composition (no runtime)
 
+P01.5 is done: the [budget-accounting design](P01.5-budget-accounting.md) specifies
+counter ownership, lifetimes and worked checks. The rest of P01 remains pending.
+
 | ID                                                 | Title                                                                       | Groundwork gate                        | Size |
 | -------------------------------------------------- | --------------------------------------------------------------------------- | -------------------------------------- | ---- |
 | [P01](P01-contract-and-adapter-specs.md)           | Close the specification gaps (contract, fixtures, adapters)                 | none (can start now, in parallel)      | L    |

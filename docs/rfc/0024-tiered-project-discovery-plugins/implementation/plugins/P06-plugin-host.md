@@ -14,6 +14,7 @@ registry supplied by the composition root and imports no concrete builtins or en
 - [§6.1 lifecycle, dispositions, partitions, transactions](../../006.00-hooks-and-lifecycle.md#61-hook-namespaces-and-lifecycle)
 - [§6.1 claims and queries](../../006.01-claims-and-queries.md)
 - [§8.1 shared safeguards](../../008.00-performance-and-shared-safeguards.md#81-shared-safeguards), [§8.4](../../008.03-tier-specific-enforcement.md)
+- [P01.5 budget accounting](P01.5-budget-accounting.md)
 - [§12.6 hook dispatch](../../012.00-rust-trait-sketches.md)
 
 ## Slices
