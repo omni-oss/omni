@@ -29,9 +29,14 @@ note, CLI/JSON and MCP.
 3. Aggregated single informational note per run (already in B04); per-task detail on
    request.
 4. Schema/docs updates.
+5. List explicit cache contradictions without applying F05.2's planning error
+   to the inspection command. Report the checked plan and any conditions that
+   were not evaluated.
 
 ## Acceptance
 
 - Snapshot tests for each status variant in CLI JSON and MCP.
+- Inspection can report both declaring files for an authored contradiction
+  without failing the inspection or executing task commands.
 - Redaction applied; no file contents in output.
 - Disabling output channels doesn't change execution.

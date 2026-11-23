@@ -4,6 +4,7 @@ use derive_new::new;
 use maps::{Map, UnorderedMap};
 use omni_configurations::MetaConfiguration;
 use omni_core::TaskExecutionNode;
+use omni_hasher::impls::DefaultHash;
 use omni_task_output_logs::OutputLogsConfiguration;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
@@ -33,15 +34,15 @@ impl<'a> PreparedTaskContext<'a> {
         hash_provider: &impl TaskHashProvider,
         ignore_dependencies: bool,
     ) -> TaskContext<'a> {
-        let dependency_hashes = if !ignore_dependencies {
-            self.node
-                .dependencies()
-                .iter()
-                .flat_map(|dep| hash_provider.get_dependency_hashes(dep))
-                .collect()
-        } else {
-            vec![]
-        };
+        let dependency_hashes =
+            resolve_hashes(self.node, hash_provider, ignore_dependencies);
+        self.into_context(dependency_hashes)
+    }
+
+    fn into_context(
+        self,
+        dependency_hashes: Vec<DefaultHash>,
+    ) -> TaskContext<'a> {
         TaskContext {
             node: self.node,
             env_vars: self.env_vars,
@@ -51,6 +52,20 @@ impl<'a> PreparedTaskContext<'a> {
             template_context: self.template_context,
         }
     }
+}
+
+fn resolve_hashes(
+    node: &TaskExecutionNode,
+    hash_provider: &impl TaskHashProvider,
+    ignore_dependencies: bool,
+) -> Vec<DefaultHash> {
+    if ignore_dependencies {
+        return vec![];
+    }
+    node.dependencies()
+        .iter()
+        .flat_map(|dep| hash_provider.get_dependency_hashes(dep))
+        .collect()
 }
 
 #[derive(new)]
@@ -75,8 +90,10 @@ impl<'a, THashProvider: TaskHashProvider, TContext: Context>
         node: &'a TaskExecutionNode,
         ignore_dependencies: bool,
     ) -> Result<TaskContext<'a>, Self::Error> {
-        Ok(prepare_task_context(&self.context, node)?
-            .finish(&self.hash_provider, ignore_dependencies))
+        let (prepared, hashes) = prepare_with(&self.context, node, || {
+            resolve_hashes(node, &self.hash_provider, ignore_dependencies)
+        })?;
+        Ok(prepared.into_context(hashes))
     }
 }
 
@@ -86,6 +103,15 @@ pub fn prepare_task_context<'a>(
     context: &'a impl Context,
     node: &'a TaskExecutionNode,
 ) -> Result<PreparedTaskContext<'a>, TaskContextProviderError> {
+    let (prepared, ()) = prepare_with(context, node, || ())?;
+    Ok(prepared)
+}
+
+fn prepare_with<'a, T>(
+    context: &'a impl Context,
+    node: &'a TaskExecutionNode,
+    before_template: impl FnOnce() -> T,
+) -> Result<(PreparedTaskContext<'a>, T), TaskContextProviderError> {
     let env_vars = context
         .get_task_env_vars(node)
         .map_err(|e| TaskContextProviderErrorInner::ContextError(e.into()))?
@@ -105,6 +131,9 @@ pub fn prepare_task_context<'a>(
         .get_output_logs(node.project_name(), node.task_name())
         .copied();
 
+    // The default provider historically resolves hashes before asking the
+    // context for override args. Public implementations can share state.
+    let result = before_template();
     let template_context = create_template_context(
         &env_vars,
         meta,
@@ -112,13 +141,16 @@ pub fn prepare_task_context<'a>(
         context.get_task_override_args(node.project_name(), node.task_name()),
     );
 
-    Ok(PreparedTaskContext {
-        node,
-        env_vars,
-        cache_info,
-        output_logs,
-        template_context,
-    })
+    Ok((
+        PreparedTaskContext {
+            node,
+            env_vars,
+            cache_info,
+            output_logs,
+            template_context,
+        },
+        result,
+    ))
 }
 
 fn create_template_context<'a>(
@@ -236,17 +268,16 @@ mod diagnostic_tests {
 
 #[cfg(test)]
 mod preparation_tests {
-    use std::{cell::Cell, convert::Infallible};
-
-    use omni_config_types::TeraExprBoolean;
-    use omni_hasher::impls::DefaultHash;
+    use std::{cell::Cell, convert::Infallible, rc::Rc};
 
     use super::*;
+    use omni_config_types::TeraExprBoolean;
 
     #[derive(Default)]
     struct Inputs {
         env_reads: Cell<usize>,
         args: UnorderedMap<String, serde_json::Value>,
+        hashes_before_args: Option<Rc<Cell<usize>>>,
     }
 
     impl Context for Inputs {
@@ -294,12 +325,15 @@ mod preparation_tests {
             _: &str,
             _: &str,
         ) -> Option<&UnorderedMap<String, serde_json::Value>> {
+            if let Some(hashes) = &self.hashes_before_args {
+                assert_eq!(hashes.get(), 1);
+            }
             Some(&self.args)
         }
     }
 
     #[derive(Default)]
-    struct Hashes(Cell<usize>);
+    struct Hashes(Rc<Cell<usize>>);
 
     impl TaskHashProvider for Hashes {
         fn get_task_hash(&self, name: &str) -> Option<DefaultHash> {
@@ -307,6 +341,30 @@ mod preparation_tests {
             self.0.set(self.0.get() + 1);
             Some(DefaultHash::default())
         }
+    }
+
+    #[test]
+    fn default_provider_requests_hashes_before_override_args() {
+        let node = TaskExecutionNode::new(
+            "check",
+            None,
+            None,
+            "app",
+            ".",
+            vec!["app#build".into()],
+            TeraExprBoolean::Boolean(true),
+            false,
+            false,
+            Default::default(),
+        );
+        let hashes = Hashes::default();
+        let inputs = Inputs {
+            hashes_before_args: Some(Rc::clone(&hashes.0)),
+            ..Default::default()
+        };
+        let provider = DefaultTaskContextProvider::new(hashes, inputs);
+        let context = provider.get_task_context(&node, false).unwrap();
+        assert_eq!(context.dependency_hashes.len(), 1);
     }
 
     #[test]
