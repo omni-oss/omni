@@ -7,7 +7,6 @@ use omni_cache::{CachedTaskExecution, TaskExecutionCacheStore};
 use omni_command_config::{
     Command, CommandConfig, resolve_command, resolve_command_with,
 };
-use omni_config_types::TeraExprBoolean;
 use omni_configurations::{RedactCategory, RedactOverrides};
 use omni_context::LoadedContext;
 use omni_core::TaskExecutionNode;
@@ -446,10 +445,7 @@ where
                 continue;
             }
 
-            let should_run = evaluate_bool_expr(
-                task_ctx.node.enabled(),
-                &task_ctx.template_context,
-            )?;
+            let should_run = task_ctx.is_enabled()?;
             if !should_run {
                 new_results.insert(
                     task_ctx.node.full_task_name().to_string(),
@@ -889,27 +885,6 @@ fn redact_error<S: ExecutionEventSubscriber>(
         Ok(unchanged) => unchanged,
         Err(redacted) => BatchExecutorErrorInner::Redacted(redacted).into(),
     }
-}
-
-fn evaluate_bool_expr(
-    expr: &TeraExprBoolean,
-    context: &omni_tera::Context,
-) -> omni_tera::Result<bool> {
-    Ok(match expr {
-        TeraExprBoolean::Boolean(b) => *b,
-        TeraExprBoolean::Expr(expr) => {
-            let normal = expr.as_str().trim().to_lowercase();
-            match normal.as_str() {
-                "true" | "yes" | "y" | "1" => return Ok(true),
-                "false" | "no" | "n" | "0" => return Ok(false),
-                _ => {}
-            }
-
-            let result = omni_tera::one_off(expr.as_str(), "expr", context)?;
-
-            result.trim().to_lowercase() == "true"
-        }
-    })
 }
 
 fn omni_path_contains_byte(path: &OmniPath, byte: u8) -> bool {

@@ -604,6 +604,109 @@ impl<TSys: ContextSys> Context<TSys> {
         &self.cache_source
     }
 
+    /// Other workspaces in the Git worktree family that may use this cache.
+    /// Explicit cache paths could have been supplied in any sibling checkout.
+    pub async fn load_cache_peer_workspaces(
+        &self,
+    ) -> eyre::Result<Vec<LoadedContext<TSys>>> {
+        use eyre::WrapErr as _;
+
+        let Some(family) = omni_scm::discover_checkout_family(&self.root_dir)?
+        else {
+            if !matches!(self.cache_source, CacheDirectorySource::LocalDefault)
+            {
+                eyre::bail!(
+                    "orphan and stale pruning with a custom cache directory requires a discoverable Git worktree"
+                );
+            }
+            return Ok(Vec::new());
+        };
+        let relative = self.root_dir.strip_prefix(&family.checkout_root)?;
+        let explicit =
+            matches!(self.cache_source, CacheDirectorySource::Explicit);
+        let mut peers = Vec::new();
+        for checkout in family.roots {
+            if checkout == family.checkout_root {
+                continue;
+            }
+            let root = checkout.join(relative);
+            let mut has_workspace = false;
+            for name in
+                omni_constants::config_file_names(constants::WORKSPACE_OMNI)
+            {
+                let file = root.join(name);
+                if self.sys.fs_exists(&file)? {
+                    if !self.sys.fs_is_file(&file)? {
+                        eyre::bail!(
+                            "not a workspace configuration file: {}",
+                            file.display()
+                        );
+                    }
+                    has_workspace = true;
+                }
+            }
+            if !has_workspace {
+                continue;
+            }
+            let root = self.sys.fs_canonicalize(&root)?;
+            if !root.starts_with(&checkout) {
+                eyre::bail!(
+                    "peer workspace is outside its Git worktree: {}",
+                    root.display()
+                );
+            }
+            let layout =
+                omni_scm::discover_checkout(&root)?.ok_or_else(|| {
+                    eyre::eyre!(
+                        "cannot discover Git worktree for {}",
+                        root.display()
+                    )
+                })?;
+            if layout.checkout_root != checkout {
+                eyre::bail!(
+                    "peer workspace belongs to a different Git checkout: {}",
+                    root.display()
+                );
+            }
+            let resolution = CacheResolutionState::new(
+                &root,
+                explicit.then(|| self.cache_dir()),
+                &self.sys,
+                |_| Ok(Some(layout)),
+            );
+            if resolution.resolve(&root, &self.sys)?.0 != self.cache_dir {
+                continue;
+            }
+            let working_dir = self
+                .working_dir
+                .as_ref()
+                .and_then(|dir| dir.strip_prefix(&self.root_dir).ok())
+                .map(|relative| root.join(relative));
+            let peer = Self::new_with_cache_resolution(
+                self.sys.clone(),
+                self.env.clone(),
+                &root,
+                self.inherit_env_vars,
+                &self.env_root_dir_marker,
+                self.override_env_files.clone(),
+                &self.tracing_config,
+                resolution,
+                self.sources_explicit.clone(),
+                working_dir,
+            )
+            .wrap_err_with(|| {
+                format!("cannot configure peer workspace {}", root.display())
+            })?
+            .into_loaded()
+            .await
+            .wrap_err_with(|| {
+                format!("cannot load peer workspace {}", root.display())
+            })?;
+            peers.push(peer);
+        }
+        Ok(peers)
+    }
+
     /// The remote-source store root, resolved from `--sources-dir`, the
     /// worktree configuration, or the per-user default.
     /// Resolved on first use, not at construction: most commands never touch the

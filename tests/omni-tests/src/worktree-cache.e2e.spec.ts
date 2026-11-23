@@ -1,10 +1,15 @@
-import { readFileSync, statSync, utimesSync } from "node:fs";
+import { readFileSync, rmSync, statSync, utimesSync } from "node:fs";
 import { join } from "node:path";
 
 import { execa } from "execa";
 import { describe, expect, it } from "vitest";
 
-import { makeWorkspace, runOmni, skipUnlessGitCliAvailable } from "@/harness";
+import {
+    makeWorkspace,
+    resolveOmniBin,
+    runOmni,
+    skipUnlessGitCliAvailable,
+} from "@/harness";
 import { cleanPath } from "@/utils";
 
 async function fixture() {
@@ -54,6 +59,141 @@ async function cacheDir(cwd: string, args: string[] = []) {
 }
 
 describe("automatic Git worktree cache sharing", { tags: ["caching"] }, () => {
+    it("keeps both worktrees' current entries in a custom cache and prunes an old digest", async (ctx) => {
+        await skipUnlessGitCliAvailable(ctx);
+        const { ws, primary, linked } = await fixture();
+        ws.write("primary/worktree.omni.yaml", {
+            cache: { dir: "../shared/cache" },
+        });
+        const run = (cwd: string, ...args: string[]) => runOmni(args, { cwd });
+        expect(await run(primary, "run", "build")).toHaveSucceeded();
+        ws.write("primary/app/input.txt", "new primary input");
+        ws.write("linked/app/input.txt", "different linked input");
+        expect(await run(primary, "run", "build")).toHaveSucceeded();
+        expect(await run(linked, "run", "build")).toHaveSucceeded();
+
+        const prune = await run(linked, "cache", "prune", "--stale", "--yes");
+        expect(prune).toHaveSucceeded();
+        expect(prune).toOutputContaining("Pruned 1 cache entries");
+        for (const cwd of [primary, linked]) {
+            expect(await run(cwd, "run", "build")).toHaveStderrContaining(
+                "Cache hit for task 'app#build'",
+            );
+        }
+    });
+
+    it("preserves a peer's disabled task and refuses deletion after a peer load failure", async (ctx) => {
+        await skipUnlessGitCliAvailable(ctx);
+        const { ws, primary, linked } = await fixture();
+        const run = (cwd: string, ...args: string[]) => runOmni(args, { cwd });
+        expect(await run(primary, "run", "build")).toHaveSucceeded();
+        ws.write("primary/app/project.omni.yaml", { name: "app" });
+        ws.write("linked/app/project.omni.yaml", {
+            name: "app",
+            tasks: { build: { enabled: false } },
+        });
+        const pruneArgs = ["cache", "prune", "--orphan", "--task", "build"];
+        const live = await run(primary, ...pruneArgs, "--dry-run");
+        expect(live).toHaveSucceeded();
+        expect(live).toOutputContaining(
+            "No cache entries matched the given filters",
+        );
+
+        ws.write("linked/app/project.omni.yaml", "name: [");
+        const failed = await run(primary, ...pruneArgs, "--yes");
+        expect(failed.failed).toBe(true);
+        expect(failed.stderr).toContain("cannot load peer workspace");
+
+        ws.write("linked/worktree.omni.yaml", {
+            cache: { dir: "private-cache" },
+        });
+        const separateCache = await run(primary, ...pruneArgs, "--dry-run");
+        expect(separateCache).toHaveSucceeded();
+        expect(separateCache).toOutputContaining("would prune 1 cache entries");
+        rmSync(join(linked, "worktree.omni.yaml"));
+
+        ws.write("linked/app/project.omni.yaml", { name: "app" });
+        const preview = await run(primary, ...pruneArgs, "--dry-run");
+        expect(preview).toHaveSucceeded();
+        expect(preview).toOutputContaining("would prune 1 cache entries");
+        const prune = await run(primary, ...pruneArgs, "--yes");
+        expect(prune).toHaveSucceeded();
+        expect(prune).toOutputContaining("Pruned 1 cache entries");
+    });
+
+    it("rejects conflicting or retired flags before loading a workspace", async () => {
+        const ws = makeWorkspace({ files: {} });
+        const conflict = await runOmni(
+            ["cache", "prune", "--stale", "--orphan"],
+            { cwd: ws.cwd },
+        );
+        expect(conflict.failed).toBe(true);
+        expect(conflict.stderr).toContain("cannot be used with");
+        const retired = await runOmni(["cache", "prune", "--stale-only"], {
+            cwd: ws.cwd,
+        });
+        expect(retired.failed).toBe(true);
+        expect(retired.stderr).toContain("unexpected argument '--stale-only'");
+    });
+
+    it("rechecks the peer task inventory after interactive confirmation", async (ctx) => {
+        await skipUnlessGitCliAvailable(ctx);
+        const { ws, primary, linked } = await fixture();
+        expect(
+            await runOmni(["run", "build"], { cwd: primary }),
+        ).toHaveSucceeded();
+        const peerConfig = ws.read("linked/app/project.omni.yaml");
+        ws.write("primary/app/project.omni.yaml", { name: "app" });
+        ws.write("linked/app/project.omni.yaml", { name: "app" });
+
+        const child = execa(resolveOmniBin(), ["cache", "prune", "--orphan"], {
+            cwd: primary,
+            stdin: "pipe",
+            timeout: 10_000,
+        });
+        let preview = "";
+        child.stdout?.on("data", (chunk: Buffer) => {
+            preview += chunk.toString();
+            if (preview.includes("[y/N]") && !child.stdin?.writableEnded) {
+                ws.write("linked/app/project.omni.yaml", peerConfig);
+                child.stdin?.end("y\n");
+            }
+        });
+        const result = await child;
+        expect(preview).toContain("Project: app");
+        expect(result.stdout).toContain("Pruned 0 cache entries");
+        expect(
+            await runOmni(["run", "build"], { cwd: linked }),
+        ).toHaveStderrContaining("Cache hit for task 'app#build'");
+    });
+
+    it("keeps a digest that uses a commandless dependency's forwarded hash", async (ctx) => {
+        await skipUnlessGitCliAvailable(ctx);
+        const { ws, primary, linked } = await fixture();
+        const project = {
+            name: "app",
+            cache: { key: { defaults: false, files: ["input.txt"] } },
+            tasks: {
+                source: "node -e \"console.log('source')\"",
+                aggregate: { dependencies: ["source"] },
+                build: { exec: "node build.cjs", dependencies: ["aggregate"] },
+            },
+        };
+        ws.write("primary/app/project.omni.yaml", project);
+        ws.write("linked/app/project.omni.yaml", project);
+        expect(
+            await runOmni(["run", "build"], { cwd: primary }),
+        ).toHaveSucceeded();
+        const stale = await runOmni(
+            ["cache", "prune", "--stale", "--task", "build", "--dry-run"],
+            { cwd: linked },
+        );
+        expect(stale).toHaveSucceeded();
+        expect(stale).toOutputContaining(
+            "No cache entries matched the given filters",
+        );
+    });
+
     it("restores shared artifacts locally and isolates equal-mtime hash indexes", async (ctx) => {
         await skipUnlessGitCliAvailable(ctx);
         const { ws, primary, linked, git } = await fixture();

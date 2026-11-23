@@ -48,6 +48,10 @@ pub struct CachePruneParams {
     pub dry_run: bool,
     #[serde(default)]
     pub stale_only: bool,
+    /// Entries for tasks absent from all cache-sharing worktrees. Conflicts
+    /// with stale_only, dir and meta.
+    #[serde(default)]
+    pub orphan: bool,
     /// Exact project names; glob characters are literal.
     #[serde(default)]
     pub project: Vec<String>,

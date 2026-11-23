@@ -503,16 +503,15 @@ describe("+cache @cache (prune filters)", () => {
         );
     });
 
-    it("`--stale-only` keeps fresh (unchanged) entries", async () => {
+    it("`--stale` keeps fresh (unchanged) entries", async () => {
         const ws = makeWorkspace(singleProjectSpec());
 
         await seedCache(ws, ["build"]);
 
         // Inputs are unchanged, so the cached entry is fresh and not pruned.
-        const dry = await runOmni(
-            ["cache", "prune", "--stale-only", "--dry-run"],
-            { cwd: ws.cwd },
-        );
+        const dry = await runOmni(["cache", "prune", "--stale", "--dry-run"], {
+            cwd: ws.cwd,
+        });
         expect(dry).toHaveSucceeded();
         expect(dry).toOutputContaining(
             "No cache entries matched the given filters",
@@ -645,21 +644,14 @@ describe("+cache @cache (combined filters)", () => {
         expect(dry.stdout).not.toContain("Project: other");
     });
 
-    it("`prune --stale-only --older-than` applies both staleness gates", async () => {
+    it("`prune --stale --older-than` applies both staleness gates", async () => {
         const ws = makeWorkspace(singleProjectSpec());
 
         await seedCache(ws, ["build"]);
 
         // Entry is fresh and younger than 1h, so neither gate matches it.
         const dry = await runOmni(
-            [
-                "cache",
-                "prune",
-                "--stale-only",
-                "--older-than",
-                "1h",
-                "--dry-run",
-            ],
+            ["cache", "prune", "--stale", "--older-than", "1h", "--dry-run"],
             { cwd: ws.cwd },
         );
 

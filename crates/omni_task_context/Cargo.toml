@@ -18,6 +18,7 @@ omni_glob = { workspace = true, features = ["serde"] }
 tracing = { workspace = true }
 maps = { workspace = true }
 omni_core = { workspace = true }
+omni_config_types = { workspace = true }
 omni_types = { workspace = true }
 omni_hasher = { workspace = true }
 omni_tera = { workspace = true }

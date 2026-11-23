@@ -1,11 +1,12 @@
-use std::time::Duration;
+use std::{collections::HashSet, path::PathBuf, time::Duration};
 
 use bytesize::ByteSize;
 use derive_new::new;
 use maps::UnorderedMap;
 use omni_cache::{
     CacheStats, CacheStatsArgs, Context as CacheContext, PruneCacheArgs,
-    PrunedCacheEntry, TaskExecutionCacheStore,
+    PruneInventory, PrunedCacheEntry, TaskExecutionCacheStore,
+    impls::{HybridTaskExecutionCacheStore, RemoteConfig},
 };
 use omni_configurations::MetaConfiguration;
 use omni_context::{
@@ -39,6 +40,9 @@ pub struct CacheStatsRequest {
 pub struct CachePruneRequest {
     /// Only prune cache entries whose digest is stale.
     pub stale_only: bool,
+    /// Only prune entries for tasks absent from every cache-sharing worktree.
+    #[serde(default)]
+    pub orphan: bool,
     /// Only prune entries older than this duration.
     pub older_than: Option<Duration>,
     /// Only prune entries larger than this byte size.
@@ -159,8 +163,8 @@ where
 
 /// Compute (and optionally delete) prunable cache entries.
 ///
-/// When `req.dry_run == true` the returned entries are not deleted; pass them
-/// to [`handle_cache_force_prune`] to actually remove them.
+/// When `req.dry_run == true` no entries are deleted. Use
+/// [`handle_cache_confirm_prune`] to recheck a preview before deletion.
 pub async fn handle_cache_prune<TSys>(
     ctx: &LoadedContext<TSys>,
     req: CachePruneRequest,
@@ -168,6 +172,46 @@ pub async fn handle_cache_prune<TSys>(
 where
     TSys: TaskExecutorSys + Clone,
 {
+    handle_cache_prune_inner(ctx, req, None).await
+}
+
+pub(crate) async fn handle_cache_confirm_prune<TSys>(
+    ctx: &LoadedContext<TSys>,
+    mut req: CachePruneRequest,
+    entries: Vec<PrunedCacheEntry>,
+) -> eyre::Result<CachePruneResponse>
+where
+    TSys: TaskExecutorSys + Clone,
+{
+    req.dry_run = false;
+    let approved = entries.into_iter().map(|entry| entry.entry_dir).collect();
+    handle_cache_prune_inner(ctx, req, Some(&approved)).await
+}
+
+async fn handle_cache_prune_inner<TSys>(
+    ctx: &LoadedContext<TSys>,
+    req: CachePruneRequest,
+    approved: Option<&HashSet<PathBuf>>,
+) -> eyre::Result<CachePruneResponse>
+where
+    TSys: TaskExecutorSys + Clone,
+{
+    if req.orphan
+        && (req.stale_only || !req.dir.is_empty() || req.meta.is_some())
+    {
+        eyre::bail!(
+            "orphan pruning cannot be combined with stale, directory, or metadata filters"
+        );
+    }
+    // The API can keep a loaded context across calls, including an interactive
+    // preview. Rebuild it before classifying anything for these modes.
+    let refreshed;
+    let ctx = if req.orphan || req.stale_only {
+        refreshed = ctx.as_context().reload()?.into_loaded().await?;
+        &refreshed
+    } else {
+        ctx
+    };
     let cache_store = ctx.as_context().create_cache_store();
 
     let projects: Vec<&str> = req.project.iter().map(String::as_str).collect();
@@ -178,43 +222,44 @@ where
         req.task_pattern.iter().map(String::as_str).collect();
     let dirs: Vec<&str> = req.dir.iter().map(String::as_str).collect();
 
-    let needs_context =
-        req.stale_only || !dirs.is_empty() || req.meta.is_some();
-
-    let entries = if needs_context {
-        let wrapper = CacheCtxWrapper::new(ctx);
-        cache_store
-            .prune_caches(&PruneCacheArgs {
-                dry_run: req.dry_run,
-                stale_only: req.stale_only,
-                older_than: req.older_than,
-                project_names: &projects,
-                project_name_globs: &project_patterns,
-                task_names: &tasks,
-                task_name_globs: &task_patterns,
-                dir_globs: &dirs,
-                meta_filter: req.meta.as_deref(),
-                larger_than: req.larger_than,
-                context: Some(wrapper),
-            })
-            .await?
-    } else {
-        cache_store
-            .prune_caches(&PruneCacheArgs::<()> {
-                dry_run: req.dry_run,
-                stale_only: false,
-                older_than: req.older_than,
-                project_names: &projects,
-                project_name_globs: &project_patterns,
-                task_names: &tasks,
-                task_name_globs: &task_patterns,
-                dir_globs: &[],
-                meta_filter: None,
-                larger_than: req.larger_than,
-                context: None,
-            })
-            .await?
+    let mut args = PruneCacheArgs {
+        dry_run: req.dry_run,
+        stale_only: req.stale_only,
+        orphan: req.orphan,
+        inventory: None,
+        approved,
+        older_than: req.older_than,
+        project_names: &projects,
+        project_name_globs: &project_patterns,
+        task_names: &tasks,
+        task_name_globs: &task_patterns,
+        dir_globs: &dirs,
+        meta_filter: req.meta.as_deref(),
+        larger_than: req.larger_than,
+        context: Some(CacheCtxWrapper::new(ctx)),
     };
+    let mut inventory = PruneInventory::default();
+    if req.orphan || req.stale_only {
+        let peers = ctx.as_context().load_cache_peer_workspaces().await?;
+        for workspace in std::iter::once(ctx).chain(&peers) {
+            // Hashing needs the workspace root and hash index, but must not
+            // probe the remote or require access to a remote partition.
+            let hash_store = HybridTaskExecutionCacheStore::new(
+                workspace.as_context().cache_dir(),
+                workspace.root_dir(),
+                RemoteConfig::new_disabled(),
+            );
+            hash_store
+                .observe_prune_workspace(
+                    &mut inventory,
+                    &CacheCtxWrapper::new(workspace),
+                    &args,
+                )
+                .await?;
+        }
+        args.inventory = Some(&inventory);
+    }
+    let entries = cache_store.prune_caches(&args).await?;
 
     Ok(CachePruneResponse {
         entries,
@@ -222,7 +267,7 @@ where
     })
 }
 
-/// Delete the entries returned by a previous [`handle_cache_prune`] call.
+/// Delete entries without rechecking their selection criteria.
 pub async fn handle_cache_force_prune<TSys>(
     ctx: &Context<TSys>,
     entries: Vec<PrunedCacheEntry>,

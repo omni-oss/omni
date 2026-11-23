@@ -2,7 +2,6 @@ use std::{
     collections::HashSet,
     path::{Path, PathBuf},
     sync::{Arc, OnceLock},
-    time::SystemTime,
 };
 
 use bytes::Bytes;
@@ -26,8 +25,8 @@ use omni_remote_cache_client::{
     RemoteAccessArgs, RemoteCacheClient, RemoteCacheClientError,
 };
 use omni_task_context::{
-    DefaultTaskContextProvider, EnvVars, TaskContextProviderExt,
-    TaskHashProvider,
+    DefaultTaskContextProvider, DependencyHash, EnvVars,
+    TaskContextProviderExt, TaskHashProvider, collect_dependency_hashes,
 };
 use omni_types::OmniPath;
 use serde::{Deserialize, Serialize};
@@ -45,8 +44,8 @@ use crate::cache::name_matcher::NameMatcher;
 use crate::{
     CacheStats, CacheStatsArgs, CachedFileOutput, CachedTaskExecution,
     CachedTaskExecutionHash, Context, FileCacheStats, PATH_FORMAT_PORTABLE,
-    ProjectCacheStats, PruneCacheArgs, PrunedCacheEntry, StaleStatus,
-    TaskCacheStats, TaskExecutionCacheStore, TaskExecutionInfo,
+    ProjectCacheStats, PruneCacheArgs, PruneInventory, PrunedCacheEntry,
+    StaleStatus, TaskCacheStats, TaskExecutionCacheStore, TaskExecutionInfo,
     TaskExecutionInfoExt,
     impls::{
         cache_archive::archive,
@@ -301,6 +300,92 @@ impl std::io::Write for CappedWriter {
 }
 
 impl HybridTaskExecutionCacheStore {
+    /// Add one checkout's observations. Use the store for that checkout so
+    /// input paths and the hash index are rooted in the correct workspace.
+    pub async fn observe_prune_workspace<TContext: Context>(
+        &self,
+        inventory: &mut PruneInventory,
+        context: &TContext,
+        args: &PruneCacheArgs<'_, TContext>,
+    ) -> Result<(), LocalTaskExecutionCacheStoreError> {
+        let mut hashes = unordered_map!();
+        if args.stale_only {
+            let mut forwarded = unordered_map!();
+            let plan =
+                DefaultExecutionPlanProvider::new(ContextWrapper::new(context))
+                    .with_allow_missing_exact(true)
+                    .get_execution_plan(
+                        &task_call(args.task_names, args.task_name_globs),
+                        &project_call(
+                            args.project_names,
+                            args.project_name_globs,
+                        ),
+                        &[],
+                        None,
+                        None,
+                        false,
+                        false,
+                    )?;
+            let config = CollectConfig {
+                digests: true,
+                ..Default::default()
+            };
+            for batch in plan {
+                let provider = DefaultTaskContextProvider::new(
+                    HashProvider::new(&hashes, &forwarded),
+                    ContextWrapper::new(context),
+                );
+                let contexts = provider.get_task_contexts(&batch, false)?;
+                let mut infos = Vec::new();
+                let mut batch_forwarded = Vec::new();
+                for context in &contexts {
+                    let node = context.node;
+                    if node.task_exec_config().is_none()
+                        || !context.is_enabled()?
+                    {
+                        batch_forwarded.push((
+                            node.full_task_name().to_owned(),
+                            node.dependencies().to_vec(),
+                        ));
+                    } else if !node.persistent()
+                        && context
+                            .cache_info
+                            .as_ref()
+                            .is_some_and(|info| info.cache_enabled)
+                        && let Some(info) = context.execution_info()
+                    {
+                        infos.push(info);
+                    }
+                }
+                let results = self.collect(&infos, &config).await?;
+                let batch_hashes = results
+                    .into_iter()
+                    .map(|result| {
+                        (
+                            format!(
+                                "{}#{}",
+                                result.task.project_name, result.task.task_name
+                            ),
+                            result
+                                .digest
+                                .expect("collection requested a digest"),
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                hashes.extend(batch_hashes);
+                forwarded.extend(batch_forwarded);
+            }
+        }
+        for project in context.projects() {
+            for name in project.tasks.keys() {
+                let digest =
+                    hashes.get(&format!("{}#{name}", project.name)).copied();
+                inventory.observe(&project.name, name, digest);
+            }
+        }
+        Ok(())
+    }
+
     pub fn new(
         cache_dir: impl Into<PathBuf>,
         ws_root_dir: impl Into<PathBuf>,
@@ -2033,6 +2118,22 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
         &self,
         args: &PruneCacheArgs<'_, TContext>,
     ) -> Result<Vec<PrunedCacheEntry>, Self::Error> {
+        if args.orphan
+            && (args.stale_only
+                || !args.dir_globs.is_empty()
+                || args.meta_filter.is_some())
+        {
+            return Err(
+                LocalTaskExecutionCacheStoreErrorInner::ConflictingPruneFilters
+                    .into(),
+            );
+        }
+        if (args.orphan || args.stale_only) && args.inventory.is_none() {
+            return Err(
+                LocalTaskExecutionCacheStoreErrorInner::MissingPruneInventory
+                    .into(),
+            );
+        }
         if !self.is_view {
             // Each partition is a store of its own with its own lock, so a
             // prune holds exactly the lock of the entries it deletes.
@@ -2070,118 +2171,29 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
         // `--dir` and `--meta` are "context-dependent" filters: matching a
         // cached entry requires resolving the owning project's directory and
         // meta configuration from the *current* workspace, which only the
-        // loaded context knows. `--stale-only` likewise needs the context to
-        // recompute fresh digests. Whenever any of these is requested we build
-        // a single execution plan (which already applies project/task/dir/meta
-        // filtering) and derive from it:
-        //   * `allowed_tasks` - the set of `project#task` that survive the
-        //     dir/meta filters, used to gate which entries may be pruned, and
-        //   * `hashes` - the current fresh digest per task, used by
-        //     `--stale-only` to keep entries that are still fresh.
-        let needs_dir_or_meta_filter =
-            !args.dir_globs.is_empty() || args.meta_filter.is_some();
-        let needs_plan = args.stale_only || needs_dir_or_meta_filter;
+        // loaded context knows. The worktree inventory is independent of
+        // these filters: a digest in another checkout can still protect a
+        // cache entry even when that checkout's metadata differs.
+        let allowed_tasks =
+            if !args.dir_globs.is_empty() || args.meta_filter.is_some() {
+                let context = args.context.as_ref().ok_or_else(|| {
+                    LocalTaskExecutionCacheStoreError::from(
+                        LocalTaskExecutionCacheStoreErrorInner::MissingContext,
+                    )
+                })?;
 
-        let (allowed_tasks, hashes) = if needs_plan {
-            let context = args.context.as_ref().ok_or_else(|| {
-                LocalTaskExecutionCacheStoreError::from(
-                    LocalTaskExecutionCacheStoreErrorInner::MissingContext,
-                )
-            })?;
-
-            let time_now = SystemTime::now();
-
-            let call = task_call(args.task_names, args.task_name_globs);
-            let plan =
-                DefaultExecutionPlanProvider::new(ContextWrapper::new(context))
-                    .with_allow_missing_exact(true)
-                    .get_execution_plan(
-                        &call,
-                        &project_call(
-                            args.project_names,
-                            args.project_name_globs,
-                        ),
-                        args.dir_globs,
-                        args.meta_filter,
-                        None,
-                        false,
-                        false,
-                    )?;
-
-            let total_task = plan.iter().map(|b| b.len()).sum();
-
-            let mut allowed_tasks = if needs_dir_or_meta_filter {
-                Some(HashSet::with_capacity(total_task))
+                Some(self.plan_task_set(
+                    context,
+                    args.project_names,
+                    args.project_name_globs,
+                    args.task_names,
+                    args.task_name_globs,
+                    args.dir_globs,
+                    args.meta_filter,
+                )?)
             } else {
                 None
             };
-
-            let mut hashes = unordered_map!(cap: total_task);
-            let collect_cfg = CollectConfig {
-                digests: true,
-                ..Default::default()
-            };
-
-            for batch in plan {
-                if let Some(allowed) = &mut allowed_tasks {
-                    for node in &batch {
-                        allowed.insert(format!(
-                            "{}#{}",
-                            node.project_name(),
-                            node.task_name()
-                        ));
-                    }
-                }
-
-                // Fresh digests are only needed for `--stale-only`; skip the
-                // (potentially expensive) collection otherwise.
-                if !args.stale_only {
-                    continue;
-                }
-
-                let hash_provider = HashProvider::new(&hashes);
-                let task_ctx_provider = DefaultTaskContextProvider::new(
-                    hash_provider,
-                    ContextWrapper::new(context),
-                );
-                let contexts =
-                    task_ctx_provider.get_task_contexts(&batch, false)?;
-
-                let exec_infos = contexts
-                    .iter()
-                    .flat_map(|c| c.execution_info())
-                    .collect::<Vec<_>>();
-
-                let results = self.collect(&exec_infos, &collect_cfg).await?;
-                let mut t_hashes = unordered_map!(cap: batch.len());
-
-                for result in results {
-                    let hash = result.digest.expect("should be some");
-
-                    let task_full_name = format!(
-                        "{}#{}",
-                        result.task.project_name, result.task.task_name
-                    );
-                    t_hashes.insert(task_full_name, hash);
-                }
-
-                hashes.extend(t_hashes);
-            }
-
-            let hashes = if args.stale_only {
-                tracing::debug!(
-                    "getting hashes for stale elapsed time: {:?}",
-                    time_now.elapsed().unwrap()
-                );
-                Some(hashes)
-            } else {
-                None
-            };
-
-            (allowed_tasks, hashes)
-        } else {
-            (None, None)
-        };
 
         for project in stats.projects {
             for task in project.tasks {
@@ -2213,10 +2225,26 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                     continue;
                 }
 
-                if args.stale_only
-                    && let Some(hashes) = &hashes
-                    && let Some(hash) = hashes.get(&task_full_name)
-                    && task.digest == *hash
+                if let Some(inventory) = args.inventory {
+                    if args.stale_only
+                        && !inventory.is_stale(
+                            &project.project_name,
+                            &task.task_name,
+                            &task.digest,
+                        )
+                    {
+                        continue;
+                    }
+                    if args.orphan
+                        && !inventory
+                            .is_orphan(&project.project_name, &task.task_name)
+                    {
+                        continue;
+                    }
+                }
+                if args
+                    .approved
+                    .is_some_and(|paths| !paths.contains(&task.entry_dir))
                 {
                     continue;
                 }
@@ -2236,7 +2264,9 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
             // Already holding the exclusive prune lock; use the inner helper to
             // avoid re-acquiring it (which would deadlock).
             self.force_prune_inner(&entries).await?;
-            self.prune_stale_staging_dirs(STALE_STAGING_AGE).await;
+            if !args.orphan && args.approved.is_none() {
+                self.prune_stale_staging_dirs(STALE_STAGING_AGE).await;
+            }
         }
 
         Ok(entries)
@@ -2276,11 +2306,21 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
 #[derive(new, Clone, Copy)]
 struct HashProvider<'a> {
     hashes: &'a UnorderedMap<String, DefaultHash>,
+    forwarded: &'a UnorderedMap<String, Vec<String>>,
 }
 
 impl<'a> TaskHashProvider for HashProvider<'a> {
     fn get_task_hash(&self, task_full_name: &str) -> Option<DefaultHash> {
         self.hashes.get(task_full_name).cloned()
+    }
+
+    fn get_dependency_hashes(&self, task_full_name: &str) -> Vec<DefaultHash> {
+        collect_dependency_hashes(task_full_name, |name| {
+            match self.forwarded.get(name) {
+                Some(deps) => DependencyHash::Forward(deps),
+                None => DependencyHash::Direct(self.get_task_hash(name)),
+            }
+        })
     }
 }
 
@@ -2481,15 +2521,33 @@ pub(crate) enum LocalTaskExecutionCacheStoreErrorInner {
     #[diagnostic(delegate)]
     TaskContextProvider(#[from] omni_task_context::TaskContextProviderError),
 
+    #[error(
+        "cannot evaluate task enablement while checking stale cache entries: {0}"
+    )]
+    #[diagnostic(skip)]
+    TaskEnablement(#[from] omni_tera::Error),
+
     #[error(transparent)]
     #[diagnostic(skip)]
     RemoteCacheServiceClient(#[from] RemoteCacheClientError),
 
     #[error(
-        "a loaded workspace context is required to apply `--stale-only`, `--dir` or `--meta` filters while pruning the cache"
+        "a loaded workspace context is required to apply `--dir` or `--meta` filters while pruning the cache"
     )]
     #[diagnostic(skip)]
     MissingContext,
+
+    #[error(
+        "a complete worktree inventory is required for orphan or stale pruning"
+    )]
+    #[diagnostic(skip)]
+    MissingPruneInventory,
+
+    #[error(
+        "orphan pruning cannot be combined with stale, directory, or metadata filters"
+    )]
+    #[diagnostic(skip)]
+    ConflictingPruneFilters,
 }
 
 #[cfg(test)]

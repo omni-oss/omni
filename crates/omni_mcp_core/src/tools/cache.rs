@@ -59,6 +59,7 @@ where
         let req = CachePruneRequest {
             dry_run: params.dry_run,
             stale_only: params.stale_only,
+            orphan: params.orphan,
             project: params.project,
             project_pattern: params.project_pattern,
             task: params.task,
@@ -73,10 +74,6 @@ where
         let entries_pruned = prune_response.entries.len();
         let bytes_freed: u64 =
             prune_response.entries.iter().map(|e| e.size.as_u64()).sum();
-
-        if !params.dry_run {
-            api.cache_force_prune(prune_response.entries).await?;
-        }
 
         Ok(CachePruneResult {
             dry_run: params.dry_run,

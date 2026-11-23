@@ -369,10 +369,8 @@ where
     /// Compute prunable cache entries.
     ///
     /// When `req.dry_run == true` the entries are computed but not deleted.
-    /// Pass the returned entries to [`cache_force_prune`] to actually remove
-    /// them.
-    ///
-    /// [`cache_force_prune`]: OmniApi::cache_force_prune
+    /// Pass the returned entries to [`Self::cache_confirm_prune`] to recheck
+    /// eligibility before removing them.
     pub async fn cache_prune(
         &self,
         req: CachePruneRequest,
@@ -385,7 +383,23 @@ where
         .await
     }
 
-    /// Delete the entries returned by a previous [`cache_prune`] call.
+    /// Recheck a preview against the current workspace(s) before deleting.
+    pub async fn cache_confirm_prune(
+        &self,
+        req: CachePruneRequest,
+        entries: Vec<PrunedCacheEntry>,
+    ) -> eyre::Result<CachePruneResponse> {
+        let mut ctx = self.ctx.lock().await;
+        crate::operations::cache::handle_cache_confirm_prune(
+            ctx.ensure_loaded().await?,
+            req,
+            entries,
+        )
+        .await
+    }
+
+    /// Delete entries without rechecking their selection criteria. Use
+    /// [`Self::cache_confirm_prune`] for orphan or stale previews.
     ///
     /// [`cache_prune`]: OmniApi::cache_prune
     pub async fn cache_force_prune(

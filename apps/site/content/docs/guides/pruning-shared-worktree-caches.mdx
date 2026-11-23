@@ -1,0 +1,28 @@
+---
+title: "Prune a shared worktree cache"
+description: "Remove obsolete local task results without removing entries another linked checkout still needs."
+---
+
+Use `omni cache prune --orphan --dry-run` after renaming or removing tasks.
+Omni lists entries whose task no longer exists in any linked Git worktree
+using the same cache. A disabled task still counts as defined.
+
+Use `omni cache prune --stale --dry-run` to find old digests for tasks that
+still exist. Omni keeps a digest if it is current in any cache-sharing
+worktree. It also keeps entries when a task is defined but no digest can
+be computed for that definition. The calculation uses the inputs and
+configuration of each checkout and the environment of this invocation;
+it does not enumerate every possible task argument or environment.
+
+After checking the preview, rerun without `--dry-run` to confirm deletion.
+Project, task, age, and size filters can narrow either preview. `--orphan`
+cannot be combined with `--stale`, `--dir`, or `--meta`.
+
+Custom cache paths are supported within a discoverable Git worktree family.
+Omni cannot discover unrelated repositories or other machines using the
+same directory. If a relevant linked checkout cannot be evaluated, prune
+fails before deleting entries.
+
+**Upgrading:** replace `--stale-only` with `--stale` in scripts. The old
+flag is no longer accepted. Use `--orphan` separately to remove entries
+for tasks that no longer exist. Neither command removes remote entries.

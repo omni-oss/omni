@@ -8,19 +8,118 @@ pub struct CheckoutLayout {
     pub primary_checkout_root: Option<PathBuf>,
 }
 
-/// Discover a Git checkout without invoking a VCS process or consulting remotes.
-/// An absent repository is distinct from invalid/unreadable repository metadata.
-pub fn discover_checkout(path: &Path) -> eyre::Result<Option<CheckoutLayout>> {
-    let repo = match gix::discover(path) {
-        Ok(repo) => repo,
+/// Git checkouts sharing one common administrative directory.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CheckoutFamily {
+    pub checkout_root: PathBuf,
+    pub roots: Vec<PathBuf>,
+}
+
+/// Enumerate the current checkout and its Git-registered peers. Unlike cache
+/// path resolution, pruning cannot proceed with a partial family: a missing
+/// or unverifiable worktree is an error, not an empty checkout.
+pub fn discover_checkout_family(
+    path: &Path,
+) -> eyre::Result<Option<CheckoutFamily>> {
+    let Some(repo) = discover_repo(path)? else {
+        return Ok(None);
+    };
+    let Some(root) = repo.workdir() else {
+        return Ok(None);
+    };
+    let checkout_root = std::fs::canonicalize(root)?;
+    let common_dir = std::fs::canonicalize(repo.common_dir())?;
+    let main = if repo.kind() == gix::repository::Kind::LinkedWorkTree {
+        gix::open(&common_dir)?
+    } else {
+        repo.main_repo()?
+    };
+    let mut roots = vec![checkout_root.clone()];
+    if !main.is_bare() {
+        let root = main.workdir().ok_or_else(|| {
+            eyre::eyre!("the primary Git checkout has no worktree")
+        })?;
+        roots.push(verify_worktree_root(root, &common_dir)?);
+    }
+    let worktrees = repo.worktrees()?;
+    // gix omits registrations with a missing or inaccessible `gitdir`
+    // pointer. Do not authorize a prune based on the resulting partial list.
+    match std::fs::read_dir(common_dir.join("worktrees")) {
+        Ok(entries) => {
+            for entry in entries {
+                let entry = entry?;
+                let name = entry.file_name();
+                if entry.metadata()?.is_dir()
+                    && !worktrees.iter().any(|tree| {
+                        tree.git_dir().file_name() == Some(name.as_os_str())
+                    })
+                {
+                    eyre::bail!(
+                        "cannot read Git worktree registration {}",
+                        entry.path().display()
+                    );
+                }
+            }
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+    }
+    for worktree in worktrees {
+        roots.push(verify_worktree_root(
+            &worktree.base()?,
+            &std::fs::canonicalize(worktree.git_dir())?,
+        )?);
+    }
+    roots.sort();
+    roots.dedup();
+    Ok(Some(CheckoutFamily {
+        checkout_root,
+        roots,
+    }))
+}
+
+fn verify_worktree_root(root: &Path, git_dir: &Path) -> eyre::Result<PathBuf> {
+    use eyre::WrapErr as _;
+
+    let root = std::fs::canonicalize(root).wrap_err_with(|| {
+        format!("cannot access Git worktree {}", root.display())
+    })?;
+    let repo = gix::discover(&root)?;
+    if repo
+        .workdir()
+        .map(std::fs::canonicalize)
+        .transpose()?
+        .as_ref()
+        != Some(&root)
+        || std::fs::canonicalize(repo.git_dir())? != git_dir
+    {
+        eyre::bail!(
+            "{} is not a worktree of the expected Git repository",
+            root.display()
+        );
+    }
+    Ok(root)
+}
+
+fn discover_repo(path: &Path) -> eyre::Result<Option<gix::Repository>> {
+    match gix::discover(path) {
+        Ok(repo) => Ok(Some(repo)),
         Err(error)
             if matches!(
                 error.downcast_any_ref::<gix::discover::upwards::Error>(),
                 Some(gix::discover::upwards::Error::NoGitRepository { .. }
                     | gix::discover::upwards::Error::NoGitRepositoryWithinCeiling { .. }
                     | gix::discover::upwards::Error::NoGitRepositoryWithinFs { .. })
-            ) => return Ok(None),
-        Err(error) => return Err(error.into()),
+            ) => Ok(None),
+        Err(error) => Err(error.into()),
+    }
+}
+
+/// Discover a Git checkout without invoking a VCS process or consulting remotes.
+/// An absent repository is distinct from invalid/unreadable repository metadata.
+pub fn discover_checkout(path: &Path) -> eyre::Result<Option<CheckoutLayout>> {
+    let Some(repo) = discover_repo(path)? else {
+        return Ok(None);
     };
     let Some(root) = repo.workdir() else {
         return Ok(None);
@@ -98,6 +197,10 @@ mod tests {
             ],
         );
         let canonical = std::fs::canonicalize(&primary).unwrap();
+        let mut expected_roots = [&primary, &linked, &branched]
+            .map(|root| std::fs::canonicalize(root).unwrap())
+            .to_vec();
+        expected_roots.sort();
         for root in [&primary, &linked, &branched] {
             let layout = discover_checkout(root).unwrap().unwrap();
             assert_eq!(
@@ -105,7 +208,26 @@ mod tests {
                 std::fs::canonicalize(root).unwrap()
             );
             assert_eq!(layout.primary_checkout_root, Some(canonical.clone()));
+            let family = discover_checkout_family(root).unwrap().unwrap();
+            assert_eq!(family.checkout_root, layout.checkout_root);
+            assert_eq!(family.roots, expected_roots);
         }
+        std::fs::rename(&linked, temp.path().join("unavailable")).unwrap();
+        assert!(discover_checkout_family(&primary).is_err());
+    }
+
+    #[test]
+    fn incomplete_worktree_registration_does_not_yield_a_partial_family() {
+        let temp = tempfile::tempdir().unwrap();
+        git(temp.path(), &["init"]);
+        std::fs::create_dir_all(temp.path().join(".git/worktrees/incomplete"))
+            .unwrap();
+        assert!(
+            discover_checkout_family(temp.path())
+                .unwrap_err()
+                .to_string()
+                .contains("cannot read Git worktree registration")
+        );
     }
 
     #[test]
@@ -215,6 +337,8 @@ mod tests {
                 .primary_checkout_root,
             None
         );
+        let family = discover_checkout_family(&linked).unwrap().unwrap();
+        assert_eq!(family.roots, [std::fs::canonicalize(linked).unwrap()]);
     }
 
     #[test]
