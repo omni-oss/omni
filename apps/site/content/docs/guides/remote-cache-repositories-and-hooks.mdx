@@ -273,6 +273,13 @@ invocation count: with `--ignore-dependencies`, or when a dependency is left out
 of the plan, its workspace outputs are used as they are. This only applies when remote caching
 is configured; without it everything is local already.
 
+When remote caching is configured, Omni warns before running a task with
+`cache.remote: false` if a declared dependency was disabled or left out of the
+plan. The warning doesn't check whether the task reads existing files or where
+those files came from. Omni doesn't warn when you explicitly skip dependencies
+with `--ignore-dependencies`. If you need fresh outputs, include and enable
+the dependencies and run with `--no-cache`.
+
 Runs of different trust tiers must not share a writable cache directory: give pull
 request jobs their own cache directory and never restore one they wrote into a job
 that publishes. With remote caching off the cache directory keeps its plain

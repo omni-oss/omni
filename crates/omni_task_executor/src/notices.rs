@@ -39,3 +39,19 @@ pub struct RedactDisabled;
 pub struct CacheDependencyDemoted {
     pub count: usize,
 }
+
+/// A task opted out of remote caching, but dependencies were disabled or absent
+/// from this run. The opt-out does not verify the origin of existing files.
+///
+/// Fix: include and enable the dependencies, and use `--no-cache` if the task
+/// needs freshly built outputs rather than local cache hits.
+#[derive(Notice)]
+#[notice(
+    code = "cache.remote_opt_out_skipped_dependencies",
+    level = warn,
+    message = "{task} has cache.remote: false, but these dependencies were disabled or not scheduled: {dependencies}. Existing outputs are left in place; their origin is not verified."
+)]
+pub struct RemoteOptOutSkippedDependencies {
+    pub task: String,
+    pub dependencies: String,
+}
