@@ -95,7 +95,7 @@ pub struct PruneArgs {
     #[arg(
         long,
         short,
-        help = "Only prune entries whose task is still defined but whose digest is no longer current in any cache-sharing worktree"
+        help = "Only prune entries whose task is still defined but whose digest is no longer current in any cache-sharing worktree. Fails if loading environment values would run a command substitution"
     )]
     stale: bool,
 

@@ -3,7 +3,7 @@
 Status: scope approved; verify discovery and hashing before wiring deletion.
 
 Progress: checkout discovery, peer cache resolution, shared inventory,
-selection and confirmation are implemented. The 81 scoped CLI end-to-end
+selection and confirmation are implemented. The 163 scoped CLI end-to-end
 tests cover different digests in linked checkouts, custom cache paths, a peer
 that uses a different cache, disabled tasks, failed loads, dependency hashes,
 the retired flag, and an inventory change during the confirmation prompt.

@@ -23,9 +23,15 @@ Omni cannot discover unrelated repositories or other machines using the
 same directory. If a relevant linked checkout cannot be evaluated, prune
 fails before deleting entries.
 
+Omni reads each worktree once, before deleting. If another worktree changes
+its inputs and publishes a new entry while a prune runs, that entry can be
+judged by the older view and removed. The cost is a rebuild.
+
 Neither mode runs environment command substitutions. `--orphan` skips
 environment evaluation, and `--stale` fails if it encounters a command
-substitution while loading values for hashing.
+substitution while loading values for hashing. A `.env` file or `env.vars`
+entry that uses `$(...)` therefore makes `--stale` fail, including in a
+single-checkout workspace.
 
 **Upgrading:** replace `--stale-only` with `--stale` in scripts. The old
 flag is no longer accepted. Use `--orphan` separately to remove entries
