@@ -41,7 +41,7 @@ impl CacheStatus {
 
 /// What the task's own configuration says, before dependencies are considered.
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct OwnFacts {
+pub struct OwnFacts {
     pub has_command: bool,
     pub persistent: bool,
     pub cache_enabled: bool,
@@ -49,8 +49,26 @@ pub(crate) struct OwnFacts {
     pub no_cache: bool,
 }
 
+impl OwnFacts {
+    pub fn of(context: &crate::TaskContext<'_>, no_cache: bool) -> Self {
+        Self {
+            has_command: context.node.task_exec_config().is_some(),
+            persistent: context.node.persistent(),
+            cache_enabled: context
+                .cache_info
+                .as_ref()
+                .is_some_and(|info| info.cache_enabled),
+            cache_source: context
+                .cache_info
+                .as_ref()
+                .map(|info| info.cache_enabled_source),
+            no_cache,
+        }
+    }
+}
+
 /// How a dependency counts toward its dependents' eligibility.
-pub(crate) enum DependencyOutcome<'a> {
+pub enum DependencyOutcome<'a> {
     /// A task that ran or was replayed, with its derived status.
     Status(&'a CacheStatus),
     /// A commandless or disabled node: judged by its own dependencies.
@@ -61,7 +79,7 @@ pub(crate) enum DependencyOutcome<'a> {
     Unknown,
 }
 
-pub(crate) fn derive_status<'a>(
+pub fn derive_status<'a>(
     own: OwnFacts,
     dependencies: &[String],
     lookup: &impl Fn(&str) -> DependencyOutcome<'a>,

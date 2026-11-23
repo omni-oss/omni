@@ -14,8 +14,14 @@ type EnvVars = maps::Map<String, String>;
 pub struct PruneCacheArgs<'a, TContext: Context = ()> {
     pub dry_run: bool,
     /// Only prune entries whose cached digest no longer matches the freshly
-    /// recomputed digest. Requires `context` to be set.
-    pub stale_only: bool,
+    /// recomputed digests. Requires a complete `inventory`.
+    pub stale: bool,
+    /// Only prune entries whose task is absent from the complete `inventory`.
+    pub orphan: bool,
+    /// The combined inventory, finalized before any partition is pruned.
+    pub inventory: Option<&'a super::PruneInventory>,
+    /// If supplied, do not delete or report entries outside this preview.
+    pub approved: Option<&'a std::collections::HashSet<std::path::PathBuf>>,
     pub older_than: Option<Duration>,
     /// Exact project names to prune; glob characters are literal. Combined with
     /// `project_name_globs` as a union. When both are empty, prune all projects.
@@ -35,10 +41,7 @@ pub struct PruneCacheArgs<'a, TContext: Context = ()> {
     /// present in the current workspace.
     pub meta_filter: Option<&'a str>,
     pub larger_than: Option<ByteSize>,
-    /// The loaded workspace context. Required whenever `stale_only`,
-    /// `dir_globs`, or `meta_filter` are used, since those filters need the
-    /// current workspace configuration (project directories, meta config and
-    /// cache inputs) to resolve cached entries.
+    /// The current workspace context, required for `dir_globs` or `meta_filter`.
     pub context: Option<TContext>,
 }
 

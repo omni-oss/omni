@@ -1,4 +1,6 @@
 use std::{
+    collections::HashMap,
+    ffi::OsString,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -21,6 +23,7 @@ pub struct EnvLoader<T: EnvCacheSys> {
     root_dir_marker: PathBuf,
     env_files: Vec<PathBuf>,
     working_dir: Option<PathBuf>,
+    read_only_invocation: Option<PathBuf>,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
@@ -42,12 +45,30 @@ impl<T: EnvCacheSys> EnvLoader<T> {
             root_dir_marker,
             env_files,
             working_dir: None,
+            read_only_invocation: None,
         }
     }
 
     pub fn with_working_dir(mut self, working_dir: Option<PathBuf>) -> Self {
         self.working_dir = working_dir;
         self
+    }
+
+    pub(crate) fn without_commands(mut self, invocation_dir: PathBuf) -> Self {
+        self.read_only_invocation = Some(invocation_dir);
+        self
+    }
+
+    pub(crate) fn command_config<'a>(
+        &self,
+        dir: &'a Path,
+        vars: &'a HashMap<OsString, OsString>,
+    ) -> CommandExpansionConfig<'a> {
+        if self.read_only_invocation.is_some() {
+            CommandExpansionConfig::Forbidden
+        } else {
+            CommandExpansionConfig::new_enabled(dir, vars)
+        }
     }
 
     pub fn get_cached(&self, path: &Path) -> Option<Arc<EnvVarsMap>> {
@@ -96,16 +117,25 @@ impl<T: EnvCacheSys> EnvLoader<T> {
             matcher: None,
         };
 
-        if let Some(override_vars) = args.project_env_var_overrides {
-            let mut env = (*env_loader::load_with_caching(
+        let env = if let Some(dir) = &self.read_only_invocation {
+            env_loader::load_with_caching_read_only(
                 &config,
                 self.sys.clone(),
                 &mut self.env_cache,
-            )?)
-            .clone();
+                dir,
+            )?
+        } else {
+            env_loader::load_with_caching(
+                &config,
+                self.sys.clone(),
+                &mut self.env_cache,
+            )?
+        };
+        if let Some(override_vars) = args.project_env_var_overrides {
+            let mut env = (*env).clone();
             let mut override_vars = override_vars.clone();
             let vars = vars_os(&env);
-            let cfg = CommandExpansionConfig::new_enabled(start_dir, &vars);
+            let cfg = self.command_config(start_dir, &vars);
             expand_into_with_command_config(&mut override_vars, &env, &cfg)?;
 
             env.extend(override_vars);
@@ -118,12 +148,6 @@ impl<T: EnvCacheSys> EnvLoader<T> {
 
             Ok(shared_env)
         } else {
-            let env = env_loader::load_with_caching(
-                &config,
-                self.sys.clone(),
-                &mut self.env_cache,
-            )?;
-
             Ok(env)
         }
     }

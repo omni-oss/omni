@@ -46,8 +46,12 @@ fn default_true() -> bool {
 pub struct CachePruneParams {
     #[serde(default = "default_true")]
     pub dry_run: bool,
+    #[serde(default, alias = "stale_only")]
+    pub stale: bool,
+    /// Entries for tasks absent from all cache-sharing worktrees. Conflicts
+    /// with stale, dir and meta.
     #[serde(default)]
-    pub stale_only: bool,
+    pub orphan: bool,
     /// Exact project names; glob characters are literal.
     #[serde(default)]
     pub project: Vec<String>,

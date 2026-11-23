@@ -4,9 +4,7 @@ use std::{
 };
 
 use derive_new::new;
-use env::{
-    CommandExpansionConfig, ExpansionError, expand_into_with_command_config,
-};
+use env::{ExpansionError, expand_into_with_command_config};
 use env_loader::EnvLoaderError;
 use omni_configurations::{
     MetaConfiguration, RedactPolicy, RemoteCacheConfiguration,
@@ -252,10 +250,8 @@ impl<TSys: ContextSys> LoadedContext<TSys> {
                 let mut overrides = overrides.clone();
 
                 let vars = vars_os(&cached);
-                let cfg = CommandExpansionConfig::new_enabled(
-                    task.project_dir(),
-                    &vars,
-                );
+                let cfg =
+                    self.env_loader.command_config(task.project_dir(), &vars);
                 expand_into_with_command_config(&mut overrides, &cached, &cfg)?;
 
                 cached.extend(overrides);

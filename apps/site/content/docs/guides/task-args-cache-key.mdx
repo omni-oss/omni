@@ -21,6 +21,6 @@ differently, causing spurious local and remote cache misses.
 - Tasks whose merged `args` were not in sorted order get a new, stable digest
   once. The first run after upgrading is a cache miss, then it hits as normal.
 - Old entries under the previous digest are never matched again. Remove them
-  with `omni cache prune --stale-only`.
+  with `omni cache prune --stale`.
 
 No configuration changes are needed.

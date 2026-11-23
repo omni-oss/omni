@@ -2,9 +2,7 @@ use std::path::{Path, PathBuf};
 
 use config_utils::{IntoInner as _, ListConfig};
 use derive_new::new;
-use env::{
-    CommandExpansionConfig, ExpansionError, expand_into_with_command_config,
-};
+use env::{ExpansionError, expand_into_with_command_config};
 use env_loader::EnvLoaderError;
 use maps::{Map, OrderedMap, UnorderedMap};
 use merge::Merge as _;
@@ -125,13 +123,22 @@ pub struct ProjectDataExtractor<'a, TSys: EnvCacheSys> {
     env_loader: &'a mut EnvLoader<TSys>,
     inherit_env_vars: bool,
     workspace_configuration: &'a WorkspaceConfiguration,
+    #[new(default)]
+    definitions_only: bool,
 }
 
 impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
+    pub(crate) fn definitions_only(mut self) -> Self {
+        self.definitions_only = true;
+        self
+    }
+
     fn get_ws_vars_vars(
         &self,
     ) -> Result<(EnvVarsMap, EnvVarsOsMap), ProjectDataExtractorError> {
-        if self.workspace_configuration.env.vars.is_empty() {
+        if self.definitions_only
+            || self.workspace_configuration.env.vars.is_empty()
+        {
             return Ok((EnvVarsMap::default(), EnvVarsOsMap::default()));
         }
 
@@ -143,8 +150,7 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
 
         let base_vars_os = vars_os(&base_vars);
 
-        let cfg =
-            CommandExpansionConfig::new_enabled(self.root_dir, &base_vars_os);
+        let cfg = self.env_loader.command_config(self.root_dir, &base_vars_os);
 
         let mut ws_vars = self.workspace_configuration.env.vars.clone();
         expand_into_with_command_config(&mut ws_vars, &base_vars, &cfg)?;
@@ -231,7 +237,7 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
             if !overrides.as_map().is_empty() {
                 project_extras.extend(overrides.to_map_to_inner());
                 if !ws_vars_os.is_empty() {
-                    let cfg = CommandExpansionConfig::new_enabled(
+                    let cfg = self.env_loader.command_config(
                         project_config.dir.path()?,
                         &ws_vars_os,
                     );
@@ -246,11 +252,13 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
             }
 
             // load the env vars for the project
-            _ = self.env_loader.get(&GetVarsArgs {
-                start_dir: Some(dir),
-                project_env_var_overrides: Some(&project_extras),
-                inherit_env_vars: self.inherit_env_vars,
-            })?;
+            if !self.definitions_only {
+                self.env_loader.get(&GetVarsArgs {
+                    start_dir: Some(dir),
+                    project_env_var_overrides: Some(&project_extras),
+                    inherit_env_vars: self.inherit_env_vars,
+                })?;
+            }
 
             let project_output_logs = &project_config.output_logs;
             let project_meta = &project_config.meta;

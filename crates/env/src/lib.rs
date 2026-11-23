@@ -229,6 +229,11 @@ impl EnvParseError {
     pub fn location(&self) -> Option<(usize, usize)> {
         self.0.first_location()
     }
+
+    /// Whether parsing failed because command substitution was forbidden.
+    pub fn is_command_forbidden(&self) -> bool {
+        matches!(&self.0, EnvParseErrorInner::Expansion(err) if err.is_command_forbidden())
+    }
 }
 
 impl std::fmt::Debug for EnvParseError {

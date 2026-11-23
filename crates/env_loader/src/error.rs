@@ -57,6 +57,12 @@ pub(crate) enum EnvLoaderErrorInner {
     )]
     CantParseEnv { path: String, err: EnvParseError },
 
+    #[error(
+        "environment command substitution is not allowed while inventorying a cache (file: {path})"
+    )]
+    #[diagnostic(skip)]
+    CommandSubstitutionForbidden { path: String },
+
     #[error(transparent)]
     #[diagnostic(skip)]
     Io(#[from] std::io::Error),

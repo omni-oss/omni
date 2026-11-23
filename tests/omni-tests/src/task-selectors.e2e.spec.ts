@@ -119,7 +119,7 @@ describe("+cache @cache (internal all-tasks selection)", () => {
         expect(stats).toOutputContaining("- Task: test");
     });
 
-    it("`prune --stale-only` plans all tasks and keeps fresh entries", async () => {
+    it("`prune --stale` plans all tasks and keeps fresh entries", async () => {
         const ws = makeWorkspace(spec());
         expect(
             await runOmni(["run", "--task-pattern", "*"], { cwd: ws.cwd }),
@@ -128,10 +128,9 @@ describe("+cache @cache (internal all-tasks selection)", () => {
         const before = await runOmni(["cache", "stats"], { cwd: ws.cwd });
         expect(before).toOutputContaining("- Task: *");
 
-        const dry = await runOmni(
-            ["cache", "prune", "--stale-only", "--dry-run"],
-            { cwd: ws.cwd },
-        );
+        const dry = await runOmni(["cache", "prune", "--stale", "--dry-run"], {
+            cwd: ws.cwd,
+        });
 
         expect(dry).toHaveSucceeded();
         expect(dry).toOutputContaining(
@@ -499,7 +498,7 @@ describe("+cache @cache (project selectors on stats and prune)", () => {
         );
     });
 
-    it("entries of a removed project: matched by exact name or --stale-only, not with --dir", async () => {
+    it("entries of a removed project are orphaned, not stale", async () => {
         const ws = makeWorkspace(multiSpec());
         await warm(ws.cwd);
         // The project disappears from the workspace; its cache entries stay.
@@ -512,13 +511,21 @@ describe("+cache @cache (project selectors on stats and prune)", () => {
         expect(exact).toHaveSucceeded();
         expect(exact).toOutputContaining("lib");
 
-        // With --stale-only the entries have no current digest, so they are stale.
         const stale = await runOmni(
-            ["cache", "prune", "--project", "lib", "--stale-only", "--dry-run"],
+            ["cache", "prune", "--project", "lib", "--stale", "--dry-run"],
             { cwd: ws.cwd },
         );
         expect(stale).toHaveSucceeded();
-        expect(stale).toOutputContaining("lib");
+        expect(stale).toOutputContaining(
+            "No cache entries matched the given filters",
+        );
+
+        const orphan = await runOmni(
+            ["cache", "prune", "--project", "lib", "--orphan", "--dry-run"],
+            { cwd: ws.cwd },
+        );
+        expect(orphan).toHaveSucceeded();
+        expect(orphan).toOutputContaining("Project: lib");
 
         // --dir matches only projects present in the workspace.
         const byDir = await runOmni(

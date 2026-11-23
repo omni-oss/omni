@@ -67,6 +67,13 @@ pub struct Context<TSys: ContextSys = RealSysSync> {
 
 pub type UnloadedContext<TSys = RealSysSync> = Context<TSys>;
 
+#[derive(Clone, Copy, Debug)]
+enum LoadEnvironment {
+    Normal,
+    DefinitionsOnly,
+    ReadOnly,
+}
+
 impl<TSys: ContextSys> Context<TSys> {
     #[allow(clippy::result_large_err)]
     pub fn new(
@@ -420,7 +427,9 @@ impl<TSys: ContextSys> Context<TSys> {
         let start = std::time::Instant::now();
         let project_paths = self.discover_project_paths().await?;
 
-        let result = self.into_loaded_impl(project_paths).await;
+        let result = self
+            .into_loaded_impl(project_paths, LoadEnvironment::Normal)
+            .await;
 
         tracing::debug!(
             "{}",
@@ -446,7 +455,9 @@ impl<TSys: ContextSys> Context<TSys> {
         .discover_project_files_with_walker(walker)
         .await?;
 
-        let result = self.into_loaded_impl(project_paths).await;
+        let result = self
+            .into_loaded_impl(project_paths, LoadEnvironment::Normal)
+            .await;
 
         tracing::debug!(
             "{}",
@@ -461,6 +472,7 @@ impl<TSys: ContextSys> Context<TSys> {
     async fn into_loaded_impl(
         self,
         project_paths: Vec<DiscoveredPath>,
+        environment: LoadEnvironment,
     ) -> Result<LoadedContext<TSys>, ContextError> {
         let LoadedProjectConfigs {
             configs: project_configs,
@@ -470,6 +482,11 @@ impl<TSys: ContextSys> Context<TSys> {
         } = self.load_discovered_project_configs(project_paths).await?;
 
         let mut env_loader = self.create_env_loader();
+        if matches!(environment, LoadEnvironment::ReadOnly) {
+            // Rooted at the workspace so a nested marker elsewhere cannot move
+            // the environment boundary above it.
+            env_loader = env_loader.without_commands(self.root_dir.clone());
+        }
 
         tracing::trace!(
             inherit_env_vars = self.inherit_env_vars,
@@ -477,14 +494,24 @@ impl<TSys: ContextSys> Context<TSys> {
             "extacting_project_data",
         );
 
-        let extractions = ProjectDataExtractor::new(
+        let extractor = ProjectDataExtractor::new(
             self.sys(),
             &self.root_dir,
             &mut env_loader,
             self.inherit_env_vars,
             self.workspace_configuration(),
-        )
-        .extract_all(&project_configs, &project_paths, &xt_graph)?;
+        );
+        let mut extractor =
+            if matches!(environment, LoadEnvironment::DefinitionsOnly) {
+                extractor.definitions_only()
+            } else {
+                extractor
+            };
+        let extractions = extractor.extract_all(
+            &project_configs,
+            &project_paths,
+            &xt_graph,
+        )?;
 
         tracing::trace!("extacted_project_data");
 
@@ -602,6 +629,142 @@ impl<TSys: ContextSys> Context<TSys> {
 
     pub fn cache_directory_source(&self) -> &CacheDirectorySource {
         &self.cache_source
+    }
+
+    /// Load definitions without environment evaluation, or read environment
+    /// values for hashing with command substitution forbidden.
+    #[allow(clippy::result_large_err)]
+    pub async fn into_loaded_for_cache_prune(
+        self,
+        needs_digests: bool,
+    ) -> Result<LoadedContext<TSys>, ContextError> {
+        let project_paths = self.discover_project_paths().await?;
+        let environment = if needs_digests {
+            LoadEnvironment::ReadOnly
+        } else {
+            LoadEnvironment::DefinitionsOnly
+        };
+        self.into_loaded_impl(project_paths, environment).await
+    }
+
+    /// Other workspaces in the Git worktree family that may use this cache.
+    /// Explicit cache paths could have been supplied in any sibling checkout.
+    pub async fn load_cache_peer_workspaces(
+        &self,
+        needs_digests: bool,
+    ) -> eyre::Result<Vec<LoadedContext<TSys>>> {
+        use eyre::WrapErr as _;
+
+        let Some(family) = omni_scm::discover_checkout_family(&self.root_dir)?
+        else {
+            if !matches!(self.cache_source, CacheDirectorySource::LocalDefault)
+            {
+                eyre::bail!(
+                    "orphan and stale pruning with a custom cache directory requires a discoverable Git worktree"
+                );
+            }
+            return Ok(Vec::new());
+        };
+        let relative = self.root_dir.strip_prefix(&family.checkout_root)?;
+        let explicit =
+            matches!(self.cache_source, CacheDirectorySource::Explicit);
+        let mut peers = Vec::new();
+        for checkout in family.roots {
+            if checkout == family.checkout_root {
+                continue;
+            }
+            let root = checkout.join(relative);
+            let mut has_workspace = false;
+            for name in
+                omni_constants::config_file_names(constants::WORKSPACE_OMNI)
+            {
+                let file = root.join(name);
+                if self.sys.fs_exists(&file)? {
+                    if !self.sys.fs_is_file(&file)? {
+                        eyre::bail!(
+                            "not a workspace configuration file: {}",
+                            file.display()
+                        );
+                    }
+                    has_workspace = true;
+                }
+            }
+            if !has_workspace {
+                // Automatic sharing maps workspaces by relative path, so a
+                // checkout without one does not use this cache. A configured
+                // or explicit cache path can be reached from a workspace that
+                // moved, which cannot be told apart from an unrelated branch.
+                if matches!(
+                    self.cache_source,
+                    CacheDirectorySource::LocalDefault
+                        | CacheDirectorySource::PrimaryDefault
+                ) {
+                    continue;
+                }
+                eyre::bail!(
+                    "cannot tell whether the worktree {} uses this cache: it has no workspace at {}. Remove or update that worktree (for example with `git worktree remove`), or prune without a configured cache path",
+                    checkout.display(),
+                    relative.display()
+                );
+            }
+            let root = self.sys.fs_canonicalize(&root)?;
+            if !root.starts_with(&checkout) {
+                eyre::bail!(
+                    "peer workspace is outside its Git worktree: {}",
+                    root.display()
+                );
+            }
+            let layout =
+                omni_scm::discover_checkout(&root)?.ok_or_else(|| {
+                    eyre::eyre!(
+                        "cannot discover Git worktree for {}",
+                        root.display()
+                    )
+                })?;
+            if layout.checkout_root != checkout {
+                eyre::bail!(
+                    "peer workspace belongs to a different Git checkout: {}",
+                    root.display()
+                );
+            }
+            let resolution = CacheResolutionState::new(
+                &root,
+                explicit.then(|| self.cache_dir()),
+                &self.sys,
+                |_| Ok(Some(layout)),
+            );
+            if resolution.resolve(&root, &self.sys)?.0 != self.cache_dir {
+                continue;
+            }
+            let current = self.current_dir()?;
+            let working_dir =
+                Some(match current.strip_prefix(&self.root_dir) {
+                    Ok(relative) => root.join(relative),
+                    Err(_) => root.clone(),
+                });
+            let peer = Self::new_with_cache_resolution(
+                self.sys.clone(),
+                self.env.clone(),
+                &root,
+                self.inherit_env_vars,
+                &self.env_root_dir_marker,
+                self.override_env_files.clone(),
+                &self.tracing_config,
+                resolution,
+                self.sources_explicit.clone(),
+                working_dir,
+            )
+            .wrap_err_with(|| {
+                format!("cannot configure peer workspace {}", root.display())
+            })?
+            .into_loaded_for_cache_prune(needs_digests)
+            .await
+            .wrap_err_with(|| {
+                format!("cannot load peer workspace {}", root.display())
+            })?;
+            peers.push(peer);
+        }
+        Ok(peers)
     }
 
     /// The remote-source store root, resolved from `--sources-dir`, the

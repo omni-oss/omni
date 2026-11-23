@@ -92,10 +92,17 @@ pub struct StatsArgs {
 
 #[derive(clap::Args, Debug)]
 pub struct PruneArgs {
-    #[arg(long, short, default_value = "false", action = clap::ArgAction::SetTrue, help = "Add filter to clear only stale cache entries")]
-    stale_only: bool,
+    #[arg(
+        long,
+        short,
+        help = "Only prune entries whose task is still defined but whose digest is no longer current in any cache-sharing worktree. Fails if loading environment values would run a command substitution"
+    )]
+    stale: bool,
 
-    #[arg(long, short, help = "Add filter to clear only stale cache entries", value_parser = humantime::parse_duration)]
+    #[arg(long, conflicts_with_all = ["stale", "dir", "meta"], help = "Only prune entries for tasks no longer defined in any cache-sharing worktree")]
+    orphan: bool,
+
+    #[arg(long, short, help = "Only prune entries older than this duration", value_parser = humantime::parse_duration)]
     older_than: Option<Duration>,
 
     #[arg(
@@ -108,7 +115,7 @@ pub struct PruneArgs {
     #[arg(
         long,
         short,
-        help = "Add filter to clear only cache entries belonging to the project with this exact name. Glob characters are literal; use --project-pattern to match by glob. Entries of projects that no longer exist cannot be matched together with --dir or --meta; with --stale-only they have no current digest, so they count as stale and are removed."
+        help = "Only prune entries belonging to a project with this exact name. Glob characters are literal; use --project-pattern to match by glob."
     )]
     project: Vec<String>,
 
@@ -122,7 +129,7 @@ pub struct PruneArgs {
     #[arg(
         long,
         short,
-        help = "Add filter to clear only cache entries belonging to the task with this exact name. Glob characters are literal; use --task-pattern to match by glob. Entries of tasks that no longer exist cannot be matched together with --dir or --meta; with --stale-only they have no current digest, so they count as stale and are removed."
+        help = "Only prune entries belonging to a task with this exact name. Glob characters are literal; use --task-pattern to match by glob."
     )]
     task: Vec<String>,
 
@@ -421,20 +428,20 @@ async fn prune(
     tracing::debug!(?args, "prune");
 
     // Step 1: get the candidate list (always dry-run first).
-    let prune_result = api
-        .cache_prune(CachePruneRequest {
-            stale_only: args.stale_only,
-            older_than: args.older_than,
-            larger_than: args.larger_than,
-            project: args.project.clone(),
-            project_pattern: args.project_pattern.clone(),
-            task: args.task.clone(),
-            task_pattern: args.task_pattern.clone(),
-            meta: args.meta.clone(),
-            dir: args.dir.clone(),
-            dry_run: true,
-        })
-        .await?;
+    let request = CachePruneRequest {
+        stale: args.stale,
+        orphan: args.orphan,
+        older_than: args.older_than,
+        larger_than: args.larger_than,
+        project: args.project.clone(),
+        project_pattern: args.project_pattern.clone(),
+        task: args.task.clone(),
+        task_pattern: args.task_pattern.clone(),
+        meta: args.meta.clone(),
+        dir: args.dir.clone(),
+        dry_run: true,
+    };
+    let prune_result = api.cache_prune(request.clone()).await?;
 
     let pruned = prune_result.entries;
 
@@ -479,7 +486,18 @@ async fn prune(
         println!("Proceeding to prune the cache");
     }
 
-    api.cache_force_prune(pruned).await?;
+    let (pruned_count, project_count) = if args.stale || args.orphan {
+        let confirmed = api.cache_confirm_prune(request, pruned).await?;
+        let projects = confirmed
+            .entries
+            .iter()
+            .map(|entry| entry.project_name.as_str())
+            .collect::<std::collections::HashSet<_>>();
+        (confirmed.entries.len(), projects.len())
+    } else {
+        api.cache_force_prune(pruned).await?;
+        (pruned_count, project_count)
+    };
     println!(
         "{}",
         format!(

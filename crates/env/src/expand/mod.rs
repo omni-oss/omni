@@ -104,7 +104,21 @@ impl Expansion {
                     {
                         value
                     } else {
-                        expand_result = expand(fallback, vars);
+                        // A forbidden mode must also reject a substitution
+                        // hidden in the fallback; other modes keep treating
+                        // fallbacks as plain text.
+                        expand_result = if matches!(
+                            command_expansion_config,
+                            CommandExpansionConfig::Forbidden
+                        ) {
+                            expand_with_command_config(
+                                fallback,
+                                vars,
+                                command_expansion_config,
+                            )?
+                        } else {
+                            expand(fallback, vars)
+                        };
                         &expand_result
                     },
                 );
@@ -115,6 +129,9 @@ impl Expansion {
             } => match command_expansion_config {
                 CommandExpansionConfig::Disabled => {
                     expanded = text.to_string();
+                }
+                CommandExpansionConfig::Forbidden => {
+                    return Err(ExpansionErrorInner::CommandForbidden.into());
                 }
                 CommandExpansionConfig::Enabled { cwd, env_vars } => {
                     let mut cmd = Command::new(program);
@@ -150,6 +167,8 @@ impl Expansion {
 pub enum CommandExpansionConfig<'a> {
     #[default]
     Disabled,
+    /// Reject command substitutions rather than keeping their literal text.
+    Forbidden,
     Enabled {
         #[new(into)]
         cwd: &'a Path,
@@ -540,6 +559,12 @@ pub struct ExpansionError {
     inner: ExpansionErrorInner,
 }
 
+impl ExpansionError {
+    pub(crate) fn is_command_forbidden(&self) -> bool {
+        self.kind.is_command_forbidden()
+    }
+}
+
 impl<T: Into<ExpansionErrorInner>> From<T> for ExpansionError {
     fn from(inner: T) -> Self {
         let inner = inner.into();
@@ -554,6 +579,10 @@ impl<T: Into<ExpansionErrorInner>> From<T> for ExpansionError {
 pub enum ExpansionErrorInner {
     #[error(transparent)]
     Io(#[from] std::io::Error),
+    #[error(
+        "environment command substitution is not allowed while inventorying a cache"
+    )]
+    CommandForbidden,
 }
 
 #[cfg(test)]
@@ -703,6 +732,25 @@ mod tests {
             .expect("should run without error");
 
         assert_eq!(expanded, "$(echo TEST_VALUE)");
+    }
+
+    #[test]
+    fn forbidden_rejects_a_command_in_a_fallback_too() {
+        let envs = maps::map![];
+        let forbidden = CommandExpansionConfig::Forbidden;
+        for text in ["$(echo x)", "${UNSET:-$(echo x)}", "${UNSET:=$(echo x)}"]
+        {
+            let error = expand_with_command_config(text, &envs, &forbidden)
+                .expect_err(text);
+            assert!(error.is_command_forbidden(), "{text}");
+        }
+        // A set variable never evaluates its fallback.
+        let set = maps::map!["SET".to_string() => "v".to_string()];
+        assert_eq!(
+            expand_with_command_config("${SET:-$(echo x)}", &set, &forbidden)
+                .unwrap(),
+            "v"
+        );
     }
 
     #[test]

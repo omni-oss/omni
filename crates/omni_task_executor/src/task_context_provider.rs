@@ -6,8 +6,9 @@ use omni_core::TaskExecutionNode;
 use omni_hasher::impls::DefaultHash;
 use omni_task_context::{
     CacheInfo, Context as ContextTrait,
-    DefaultTaskContextProvider as Implementation, TaskContext,
+    DefaultTaskContextProvider as Implementation, DependencyHash, TaskContext,
     TaskContextProvider, TaskContextProviderError, TaskHashProvider,
+    collect_dependency_hashes,
 };
 
 use crate::{SkipReason, TaskExecutionResult};
@@ -127,26 +128,15 @@ impl<'a> TaskHashProvider for OverallResultsTashHashProvider<'a> {
     }
 
     fn get_dependency_hashes(&self, task_full_name: &str) -> Vec<DefaultHash> {
-        let mut hashes = Vec::new();
-        let mut seen = std::collections::HashSet::new();
-        let mut stack = vec![task_full_name];
-
-        while let Some(name) = stack.pop() {
-            if !seen.insert(name) {
-                continue;
-            }
+        collect_dependency_hashes(task_full_name, |name| {
             match self.overall_results.get(name) {
                 Some(TaskExecutionResult::Skipped {
                     skip_reason: SkipReason::NoCommand | SkipReason::Disabled,
                     task,
                     ..
-                }) => stack.extend(
-                    task.dependencies().iter().rev().map(|d| d.as_str()),
-                ),
-                _ => hashes.extend(self.get_task_hash(name)),
+                }) => DependencyHash::Forward(task.dependencies()),
+                _ => DependencyHash::Direct(self.get_task_hash(name)),
             }
-        }
-
-        hashes
+        })
     }
 }

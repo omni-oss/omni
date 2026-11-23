@@ -1,0 +1,51 @@
+---
+title: "Prune a shared worktree cache"
+description: "Remove obsolete local task results without removing entries another linked checkout still needs."
+---
+
+Use `omni cache prune --orphan --dry-run` after renaming or removing tasks.
+Omni lists entries whose task no longer exists in any linked Git worktree
+using the same cache. A disabled task still counts as defined.
+
+Use `omni cache prune --stale --dry-run` to find old digests for tasks that
+still exist. Omni keeps a digest if it is current in any cache-sharing
+worktree. It also keeps entries when a task is defined but no digest can
+be computed for that definition. The calculation uses the inputs and
+configuration of each checkout and the environment of this invocation;
+it does not enumerate every possible task argument or environment.
+
+After checking the preview, rerun without `--dry-run` to confirm deletion.
+Project, task, age, and size filters can narrow either preview. `--orphan`
+cannot be combined with `--stale`, `--dir`, or `--meta`.
+
+Custom cache paths are supported within a discoverable Git worktree family.
+With a configured cache path, a linked worktree that has no workspace at the
+corresponding path stops the prune, because Omni cannot tell a moved workspace
+from an unrelated branch; remove or update that worktree.
+Omni cannot discover unrelated repositories or other machines using the
+same directory.
+Automatic sharing recognises a linked worktree by the path of its workspace. If a
+workspace moved to another path and its own `worktree.omni.*` points its cache
+at this workspace's default cache directory, Omni cannot see that and may treat
+its tasks as orphaned. Keep such a cache in a dedicated directory instead. If a relevant linked checkout cannot be evaluated, prune
+fails before deleting entries.
+
+Omni reads each worktree once, before deleting. If another worktree changes
+its inputs and publishes a new entry while a prune runs, that entry can be
+judged by the older view and removed. The cost is a rebuild.
+
+Neither mode runs environment command substitutions. `--orphan` skips
+environment evaluation, and `--stale` fails if it encounters a command
+substitution while loading values for hashing, including one inside a
+`${VAR:-...}` fallback. A `.env` file or `env.vars`
+entry that uses `$(...)` therefore makes `--stale` fail, including in a
+single-checkout workspace.
+
+**Upgrading:** replace `--stale-only` with `--stale` in scripts. The old
+flag is no longer accepted. Use `--orphan` separately to remove entries
+for tasks that no longer exist. Neither command removes remote entries.
+
+Rust callers using `CachePruneRequest` struct literals must set `orphan`
+or use `..Default::default()`. To confirm an orphan or stale preview, use
+`cache_confirm_prune` rather than `cache_force_prune` so Omni rechecks the
+selection before deleting.

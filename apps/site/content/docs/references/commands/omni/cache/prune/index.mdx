@@ -18,19 +18,25 @@ omni cache prune [OPTIONS]
 
 ## Options
 
-### `-s`, `--stale-only`
+### `-s`, `--stale`
 
-Add filter to clear only stale cache entries
+Only prune entries whose task is still defined but whose digest is no longer current in any cache-sharing worktree. Fails if loading environment values would run a command substitution
 
 - **Required:** No
 
-- **Default:** `false`
+- **Possible values:** `true`, `false`
+
+### `--orphan`
+
+Only prune entries for tasks no longer defined in any cache-sharing worktree
+
+- **Required:** No
 
 - **Possible values:** `true`, `false`
 
 ### `-o`, `--older-than`
 
-Add filter to clear only stale cache entries
+Only prune entries older than this duration
 
 - **Required:** No
 
@@ -42,7 +48,7 @@ Add filter to clear only cache entries that are larger than the given size
 
 ### `-p`, `--project`
 
-Add filter to clear only cache entries belonging to the project with this exact name. Glob characters are literal; use --project-pattern to match by glob. Entries of projects that no longer exist cannot be matched together with --dir or --meta; with --stale-only they have no current digest, so they count as stale and are removed.
+Only prune entries belonging to a project with this exact name. Glob characters are literal; use --project-pattern to match by glob.
 
 - **Required:** No
 
@@ -54,7 +60,7 @@ Add filter to clear only cache entries belonging to projects whose name matches 
 
 ### `-t`, `--task`
 
-Add filter to clear only cache entries belonging to the task with this exact name. Glob characters are literal; use --task-pattern to match by glob. Entries of tasks that no longer exist cannot be matched together with --dir or --meta; with --stale-only they have no current digest, so they count as stale and are removed.
+Only prune entries belonging to a task with this exact name. Glob characters are literal; use --task-pattern to match by glob.
 
 - **Required:** No
 

@@ -11,6 +11,7 @@ eyre = { workspace = true }
 thiserror = { workspace = true }
 strum = { workspace = true }
 serde = { workspace = true }
+schemars = { workspace = true }
 derive-new = { workspace = true }
 derive_builder = { workspace = true }
 globset = { workspace = true }
@@ -18,6 +19,7 @@ omni_glob = { workspace = true, features = ["serde"] }
 tracing = { workspace = true }
 maps = { workspace = true }
 omni_core = { workspace = true }
+omni_config_types = { workspace = true }
 omni_types = { workspace = true }
 omni_hasher = { workspace = true }
 omni_tera = { workspace = true }
