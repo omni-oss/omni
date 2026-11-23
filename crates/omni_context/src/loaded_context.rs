@@ -114,11 +114,13 @@ impl<TSys: ContextSys> LoadedContext<TSys> {
     /// Defaults and tasks without a known declaring file return `None`.
     pub fn cache_enabled_file(
         &self,
-        task: &TaskExecutionNode,
+        project_name: &str,
+        task_name: &str,
     ) -> Option<&Path> {
         self.extracted
             .cache_enabled_files
-            .get(task.full_task_name())
+            .get(project_name)?
+            .get(task_name)
             .and_then(|file| file.path().ok())
     }
 

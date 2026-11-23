@@ -778,7 +778,7 @@ mod tests {
         let app = write(
             root,
             "app/project.omni.yaml",
-            "name: app\nextends: ../shared/base.yaml\ncache:\n  output:\n    logs: false\ntasks:\n  plain: x\n  inherited:\n    extends: tpl\n  overridden:\n    extends: tpl\n    cache:\n      enabled: false\n",
+            "name: app\nextends: ../shared/base.yaml\ncache:\n  output:\n    logs: false\ntasks:\n  plain: x\n  inherited:\n    extends: tpl\n  overridden:\n    extends: tpl\n    cache:\n      enabled: true\n",
         );
         let no_setting = write(
             root,
@@ -790,7 +790,7 @@ mod tests {
         for (task, value, file) in [
             ("plain", false, base.as_path()),
             ("inherited", true, base.as_path()),
-            ("overridden", false, app.as_path()),
+            ("overridden", true, app.as_path()),
         ] {
             assert_eq!(composed.task_cache_enabled[task].value, value);
             assert_eq!(

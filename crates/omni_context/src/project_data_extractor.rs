@@ -175,7 +175,7 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
         let mut task_meta_configs = maps::unordered_map![];
         let mut task_env_var_overrides = maps::unordered_map![];
         let mut cache_infos = maps::unordered_map![];
-        let mut cache_enabled_files = maps::unordered_map![];
+        let mut cache_enabled_files: CacheEnabledFiles = maps::unordered_map![];
         let mut output_logs_configs = maps::unordered_map![];
         let mut redact_policies = maps::unordered_map![];
 
@@ -318,7 +318,9 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
                 if let Some(file) = finalized.task_cache_enabled_file.get(name)
                 {
                     cache_enabled_files
-                        .insert(full_task_name.clone(), Arc::clone(file));
+                        .entry(project_config.name.clone())
+                        .or_default()
+                        .insert(name.to_owned(), Arc::clone(file));
                 }
 
                 let use_defaults = cache.key.defaults.unwrap_or(true);
@@ -432,13 +434,16 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
     }
 }
 
+type CacheEnabledFiles =
+    UnorderedMap<String, UnorderedMap<String, Arc<OmniPath>>>;
+
 #[derive(Debug, Clone, PartialEq, new, Serialize, Deserialize)]
 pub struct ProjectDataExtractions {
     pub projects: Vec<Project>,
     pub cache_infos: UnorderedMap<String, CacheInfo>,
     #[new(default)]
     #[serde(skip)]
-    pub(crate) cache_enabled_files: UnorderedMap<String, Arc<OmniPath>>,
+    pub(crate) cache_enabled_files: CacheEnabledFiles,
     pub task_env_var_overrides: UnorderedMap<String, Map<String, String>>,
     pub project_meta_configs: UnorderedMap<String, MetaConfiguration>,
     pub task_meta_configs: UnorderedMap<String, MetaConfiguration>,
@@ -923,9 +928,9 @@ mod tests {
         let own = &infos["app#own"];
         assert!(own.cache_enabled);
         assert_eq!(own.cache_enabled_source, CacheEnabledSource::TaskExplicit);
-        for task in ["app#inherits", "app#own"] {
+        for task in ["inherits", "own"] {
             assert_eq!(
-                extracted.cache_enabled_files[task].path().unwrap(),
+                extracted.cache_enabled_files["app"][task].path().unwrap(),
                 Path::new(file)
             );
         }

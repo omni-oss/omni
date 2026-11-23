@@ -1434,6 +1434,57 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn cache_enablement_files_use_separate_project_and_task_names() {
+        let tmp = tmp();
+        let root = tmp.path();
+        std::fs::write(
+            root.join("workspace.omni.yaml"),
+            "projects: ['**/project.omni.yaml']\n",
+        )
+        .unwrap();
+        let first = root.join("first/project.omni.yaml");
+        let second = root.join("second/project.omni.yaml");
+        for (file, config) in [
+            (
+                &first,
+                "name: a\ncache:\n  enabled: true\ntasks:\n  'b#c':\n    exec: echo\n",
+            ),
+            (
+                &second,
+                "name: 'a#b'\ncache:\n  enabled: false\ntasks:\n  c:\n    exec: echo\n",
+            ),
+        ] {
+            std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+            std::fs::write(file, config).unwrap();
+        }
+
+        let loaded = ctx("testing", root, real_sys())
+            .into_loaded()
+            .await
+            .unwrap();
+        assert_eq!(
+            loaded.cache_enabled_file("a", "b#c"),
+            Some(first.as_path())
+        );
+        assert_eq!(
+            loaded.cache_enabled_file("a#b", "c"),
+            Some(second.as_path())
+        );
+
+        std::fs::write(&second, "name: 'a#b'\ntasks:\n  c:\n    exec: echo\n")
+            .unwrap();
+        let loaded = ctx("testing", root, real_sys())
+            .into_loaded()
+            .await
+            .unwrap();
+        assert_eq!(
+            loaded.cache_enabled_file("a", "b#c"),
+            Some(first.as_path())
+        );
+        assert_eq!(loaded.cache_enabled_file("a#b", "c"), None);
+    }
+
+    #[tokio::test]
     async fn test_extractor_resolves_output_logs_project_to_task() {
         use omni_task_output_logs::LogsDisplay;
 
