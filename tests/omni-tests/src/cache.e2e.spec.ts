@@ -807,6 +807,77 @@ describe("+cache @cache (remote setup)", () => {
         expect(config).toContain("workspace_code: test-ws");
     });
 
+    it("warns about a disabled dependency of a remote-cache opt-out", async () => {
+        const ws = makeWorkspace({
+            workspace: { projects: ["**"] },
+            projects: {
+                app: {
+                    name: "app",
+                    tasks: {
+                        build: { exec: "echo build", enabled: false },
+                        prepare: { dependencies: ["build"] },
+                        sign: {
+                            exec: "echo sign",
+                            dependencies: ["prepare"],
+                            cache: { remote: false },
+                        },
+                        test: { exec: "echo test", dependencies: ["build"] },
+                    },
+                },
+            },
+        });
+        const cwd = ws.cwd;
+        const warning =
+            "app#sign has cache.remote: false, but these dependencies were disabled or not scheduled: app#build.";
+        const withoutRemote = await runOmni(["run", "sign", "--no-cache"], {
+            cwd,
+        });
+        expect(withoutRemote).toHaveSucceeded();
+        expect(withoutRemote.stderr).not.toContain(warning);
+
+        const url = await startMockRemoteCache();
+        expect(
+            await runOmni(
+                [
+                    "cache",
+                    "remote",
+                    "setup",
+                    "-b",
+                    url,
+                    "-a",
+                    "test-key",
+                    "-t",
+                    "test-tenant",
+                    "-o",
+                    "test-org",
+                    "-w",
+                    "test-ws",
+                ],
+                { cwd },
+            ),
+        ).toHaveSucceeded();
+
+        const sign = await runOmni(["run", "sign", "--no-cache"], { cwd });
+        expect(sign).toHaveSucceeded();
+        expect(sign).toHaveStderrContaining(warning);
+        expect(sign).toHaveStderrContaining("their origin is not verified");
+
+        const ignored = await runOmni(
+            ["run", "sign", "--no-cache", "--ignore-dependencies"],
+            { cwd },
+        );
+        expect(ignored).toHaveSucceeded();
+        expect(ignored.stderr).not.toContain("their origin is not verified");
+
+        const notOptedOut = await runOmni(["run", "test", "--no-cache"], {
+            cwd,
+        });
+        expect(notOptedOut).toHaveSucceeded();
+        expect(notOptedOut.stderr).not.toContain(
+            "their origin is not verified",
+        );
+    });
+
     it("shares encrypted remote configuration across workspaces using one cache", async () => {
         const first = makeWorkspace(singleProjectSpec());
         const second = makeWorkspace(singleProjectSpec());

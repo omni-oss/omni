@@ -1,4 +1,4 @@
-use std::{borrow::Cow, future::Future, time::Duration};
+use std::{borrow::Cow, collections::HashSet, future::Future, time::Duration};
 
 use futures::stream::{FuturesUnordered, StreamExt as _};
 use maps::{UnorderedMap, unordered_map};
@@ -15,7 +15,7 @@ use omni_messages::{
     CacheHitEvent, ExecutionEventSubscriber, RedactingSubscriber,
     TaskCompletedEvent, TaskFailedEvent, TaskOutputStream,
     TaskOutputStreamEvent, TaskRetryingEvent, TaskSkipReason, TaskSkippedEvent,
-    TaskStartedEvent,
+    TaskStartedEvent, publish::notice,
 };
 use omni_process::{
     ChildProcessError, TaskChildProcess, TaskChildProcessResult,
@@ -35,6 +35,7 @@ use crate::{
     CacheStatus, OnFailure, SkipReason, TaskDetails, TaskExecutionResult,
     TaskExecutorSys,
     cache_manager::{CacheManager, TaskResultContext, is_cache_eligible},
+    notices::RemoteOptOutSkippedDependencies,
     task_context_provider::DefaultTaskContextProvider,
 };
 
@@ -485,6 +486,27 @@ where
             )
             .map_err(|e| redact_error(e, &redacting))?;
 
+            if !self.dry_run
+                && !self.ignore_dependencies
+                && self.context.remote_cache_configuration().is_some()
+                && task_ctx
+                    .cache_info
+                    .as_ref()
+                    .is_some_and(|info| !info.cache_remote)
+            {
+                let skipped =
+                    skipped_output_dependencies(task_ctx.node, overall_results);
+                if !skipped.is_empty() {
+                    notice!(
+                        redacting,
+                        RemoteOptOutSkippedDependencies {
+                            task: task_ctx.node.full_task_name().to_owned(),
+                            dependencies: skipped.join(", "),
+                        }
+                    );
+                }
+            }
+
             let retry_policy = self
                 .resolve_retry(task_ctx)
                 .into_policy()
@@ -763,6 +785,43 @@ where
 
         Ok(new_results)
     }
+}
+
+/// Declared dependencies precede their dependents in earlier batches, so a
+/// missing result means the dependency is out of the plan. Follow results even
+/// through command-less tasks: they may group dependencies that can be skipped.
+fn skipped_output_dependencies<'a>(
+    task: &'a TaskExecutionNode,
+    results: &'a UnorderedMap<String, TaskExecutionResult>,
+) -> Vec<&'a str> {
+    let mut pending: Vec<_> =
+        task.dependencies().iter().map(String::as_str).collect();
+    let mut seen = HashSet::new();
+    let mut skipped = Vec::new();
+    while let Some(name) = pending.pop() {
+        if !seen.insert(name) {
+            continue;
+        }
+        match results.get(name) {
+            None => skipped.push(name),
+            Some(result) => {
+                if matches!(
+                    result,
+                    TaskExecutionResult::Skipped {
+                        skip_reason: SkipReason::Disabled,
+                        ..
+                    }
+                ) {
+                    skipped.push(name);
+                }
+                pending.extend(
+                    result.task().dependencies().iter().map(String::as_str),
+                );
+            }
+        }
+    }
+    skipped.sort_unstable();
+    skipped
 }
 
 /// Resolve a task's [`CommandConfig`] into a concrete argv at execution time,
@@ -1165,11 +1224,48 @@ pub(crate) enum BatchExecutorErrorInner {
 mod tests {
     use std::time::Duration;
 
+    use maps::unordered_map;
+    use omni_core::TaskExecutionNode;
     use omni_retry_config::{Backoff, Jitter, RetryPolicy};
     use omni_task_output_logs::{
         EffectiveOutputLogs, LogsDisplay, OutputLogsConfiguration,
         OutputLogsSplit,
     };
+
+    use super::{SkipReason, TaskExecutionResult, skipped_output_dependencies};
+
+    #[test]
+    fn lists_disabled_and_unplanned_dependencies_once() {
+        let node = |name: &str, deps: &[&str]| {
+            TaskExecutionNode::new(
+                name,
+                None,
+                None,
+                "app",
+                ".",
+                deps.iter().map(|dep| format!("app#{dep}")).collect(),
+                true.into(),
+                false,
+                false,
+                Default::default(),
+            )
+        };
+        let sign = node("sign", &["prepare", "disabled"]);
+        let results = unordered_map! {
+            "app#prepare".to_owned() => TaskExecutionResult::new_skipped(
+                node("prepare", &["absent", "disabled"]),
+                SkipReason::NoCommand,
+            ),
+            "app#disabled".to_owned() => TaskExecutionResult::new_skipped(
+                node("disabled", &[]),
+                SkipReason::Disabled,
+            ),
+        };
+        assert_eq!(
+            skipped_output_dependencies(&sign, &results),
+            ["app#absent", "app#disabled"]
+        );
+    }
 
     /// The built-in default the executor applies when no flag or config sets a
     /// facet.
