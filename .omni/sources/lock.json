@@ -4,17 +4,17 @@
     "git": {
       "https://github.com/cs-clarence/swe-docs": {
         "main": {
-          "pin": "0e22c39dbc934dd54f90c99dc4a85ec30c004c69"
+          "pin": "55c6b99914ac2ec3bf0e3e2f5559c18bcccb2dc6"
         }
       },
       "https://github.com/cs-clarence/swe-skills": {
         "main": {
-          "pin": "ee008d2dcf794c07ec334cf3b4ea39570377e886"
+          "pin": "ec0429ca15c5b405367c29ad24095ffd4697837c"
         }
       },
       "https://github.com/cursor/plugins.git": {
         "main": {
-          "pin": "e58dd043600587dbaf58ba315e7f2b38373eeb43"
+          "pin": "7a583913eb1b8d1a0ee76753d1a2cf072e7b54f9"
         }
       },
       "https://github.com/mattpocock/skills.git": {
