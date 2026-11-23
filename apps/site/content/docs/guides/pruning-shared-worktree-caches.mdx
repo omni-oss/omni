@@ -23,7 +23,11 @@ With a configured cache path, a linked worktree that has no workspace at the
 corresponding path stops the prune, because Omni cannot tell a moved workspace
 from an unrelated branch; remove or update that worktree.
 Omni cannot discover unrelated repositories or other machines using the
-same directory. If a relevant linked checkout cannot be evaluated, prune
+same directory.
+Automatic sharing recognises a linked worktree by the path of its workspace. If a
+workspace moved to another path and its own `worktree.omni.*` points its cache
+at this workspace's default cache directory, Omni cannot see that and may treat
+its tasks as orphaned. Keep such a cache in a dedicated directory instead. If a relevant linked checkout cannot be evaluated, prune
 fails before deleting entries.
 
 Omni reads each worktree once, before deleting. If another worktree changes
