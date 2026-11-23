@@ -19,6 +19,9 @@ Project, task, age, and size filters can narrow either preview. `--orphan`
 cannot be combined with `--stale`, `--dir`, or `--meta`.
 
 Custom cache paths are supported within a discoverable Git worktree family.
+With a configured cache path, a linked worktree that has no workspace at the
+corresponding path stops the prune, because Omni cannot tell a moved workspace
+from an unrelated branch; remove or update that worktree.
 Omni cannot discover unrelated repositories or other machines using the
 same directory. If a relevant linked checkout cannot be evaluated, prune
 fails before deleting entries.
@@ -29,7 +32,8 @@ judged by the older view and removed. The cost is a rebuild.
 
 Neither mode runs environment command substitutions. `--orphan` skips
 environment evaluation, and `--stale` fails if it encounters a command
-substitution while loading values for hashing. A `.env` file or `env.vars`
+substitution while loading values for hashing, including one inside a
+`${VAR:-...}` fallback. A `.env` file or `env.vars`
 entry that uses `$(...)` therefore makes `--stale` fail, including in a
 single-checkout workspace.
 

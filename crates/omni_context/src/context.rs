@@ -702,7 +702,7 @@ impl<TSys: ContextSys> Context<TSys> {
                     continue;
                 }
                 eyre::bail!(
-                    "cannot tell whether the worktree {} uses this cache: it has no workspace at {}",
+                    "cannot tell whether the worktree {} uses this cache: it has no workspace at {}. Remove or update that worktree (for example with `git worktree remove`), or prune without a configured cache path",
                     checkout.display(),
                     relative.display()
                 );
