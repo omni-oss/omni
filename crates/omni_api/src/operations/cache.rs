@@ -39,7 +39,8 @@ pub struct CacheStatsRequest {
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct CachePruneRequest {
     /// Only prune cache entries whose digest is stale.
-    pub stale_only: bool,
+    #[serde(alias = "stale_only")]
+    pub stale: bool,
     /// Only prune entries for tasks absent from every cache-sharing worktree.
     #[serde(default)]
     pub orphan: bool,
@@ -172,7 +173,7 @@ pub async fn handle_cache_prune<TSys>(
 where
     TSys: TaskExecutorSys + Clone,
 {
-    if req.orphan || req.stale_only {
+    if req.orphan || req.stale {
         handle_cache_prune_unloaded(ctx.as_context(), req, None).await
     } else {
         handle_cache_prune_inner(ctx, req, None).await
@@ -200,19 +201,15 @@ pub(crate) async fn handle_cache_prune_unloaded<TSys>(
 where
     TSys: TaskExecutorSys + Clone,
 {
-    if req.orphan
-        && (req.stale_only || !req.dir.is_empty() || req.meta.is_some())
-    {
+    if req.orphan && (req.stale || !req.dir.is_empty() || req.meta.is_some()) {
         eyre::bail!(
             "orphan pruning cannot be combined with stale, directory, or metadata filters"
         );
     }
     // Load a fresh, non-executing view even if the API already held a loaded
     // context from the preview or another command.
-    let ctx = if req.orphan || req.stale_only {
-        ctx.reload()?
-            .into_loaded_for_cache_prune(req.stale_only)
-            .await?
+    let ctx = if req.orphan || req.stale {
+        ctx.reload()?.into_loaded_for_cache_prune(req.stale).await?
     } else {
         ctx.reload()?.into_loaded().await?
     };
@@ -239,7 +236,7 @@ where
 
     let mut args = PruneCacheArgs {
         dry_run: req.dry_run,
-        stale_only: req.stale_only,
+        stale: req.stale,
         orphan: req.orphan,
         inventory: None,
         approved,
@@ -254,10 +251,10 @@ where
         context: Some(CacheCtxWrapper::new(ctx)),
     };
     let mut inventory = PruneInventory::default();
-    if req.orphan || req.stale_only {
+    if req.orphan || req.stale {
         let peers = ctx
             .as_context()
-            .load_cache_peer_workspaces(req.stale_only)
+            .load_cache_peer_workspaces(req.stale)
             .await?;
         for workspace in std::iter::once(ctx).chain(&peers) {
             // Hashing needs the workspace root and hash index, but must not

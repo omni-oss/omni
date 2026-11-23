@@ -376,7 +376,7 @@ where
         req: CachePruneRequest,
     ) -> eyre::Result<CachePruneResponse> {
         let mut ctx = self.ctx.lock().await;
-        if req.orphan || req.stale_only {
+        if req.orphan || req.stale {
             return crate::operations::cache::handle_cache_prune_unloaded(
                 ctx.as_context(),
                 req,

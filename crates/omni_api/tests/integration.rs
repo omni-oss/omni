@@ -59,7 +59,7 @@ async fn cache_prune_rejects_conflicting_inventory_modes() {
     let error = api
         .cache_prune(CachePruneRequest {
             orphan: true,
-            stale_only: true,
+            stale: true,
             ..Default::default()
         })
         .await

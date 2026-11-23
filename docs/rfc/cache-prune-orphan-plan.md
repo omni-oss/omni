@@ -51,7 +51,7 @@ settling their contract, and independently review the integrated result.
   argument combination future builds might use.
 - Replace the CLI flag `--stale-only` with `--stale` and provide no alias.
   Document the breaking CLI rename so scripts can migrate to `--stale`.
-  Keep existing Rust/MCP `stale_only` fields; this is a CLI spelling change.
+  Rename the Rust/MCP field to `stale`; the old `stale_only` name stays as a serde alias for deserialization.
 - A custom cache path works without an override from a discoverable Git
   worktree. Compare resolved paths rather than requiring the default layout.
   For an explicit invocation-level path, conservatively consider every linked

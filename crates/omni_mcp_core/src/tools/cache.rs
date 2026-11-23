@@ -58,7 +58,7 @@ where
     ) -> eyre::Result<CachePruneResult> {
         let req = CachePruneRequest {
             dry_run: params.dry_run,
-            stale_only: params.stale_only,
+            stale: params.stale,
             orphan: params.orphan,
             project: params.project,
             project_pattern: params.project_pattern,

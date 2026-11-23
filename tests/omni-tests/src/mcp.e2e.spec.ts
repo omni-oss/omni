@@ -1559,7 +1559,18 @@ describe(
         tags: ["mcp", "caching"],
     },
     () => {
-        it("rejects combining orphan and stale_only", async () => {
+        it("rejects combining orphan and stale", async () => {
+            const ws = makeWorkspace(singleProjectSpec());
+            const { client } = await connectMcp({ cwd: ws.cwd });
+            await expect(
+                client.callTool({
+                    name: "cache_prune",
+                    arguments: { orphan: true, stale: true },
+                }),
+            ).rejects.toThrow(/orphan pruning cannot be combined with stale/);
+        });
+
+        it("still accepts the retired stale_only argument name", async () => {
             const ws = makeWorkspace(singleProjectSpec());
             const { client } = await connectMcp({ cwd: ws.cwd });
             await expect(

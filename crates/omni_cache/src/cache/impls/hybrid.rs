@@ -311,7 +311,7 @@ impl HybridTaskExecutionCacheStore {
         args: &PruneCacheArgs<'_, TContext>,
     ) -> Result<(), LocalTaskExecutionCacheStoreError> {
         let mut hashes = unordered_map!();
-        if args.stale_only {
+        if args.stale {
             let mut forwarded = unordered_map!();
             let mut statuses = unordered_map!();
             // A valid selector may match projects in one checkout only.
@@ -2187,7 +2187,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
         args: &PruneCacheArgs<'_, TContext>,
     ) -> Result<Vec<PrunedCacheEntry>, Self::Error> {
         if args.orphan
-            && (args.stale_only
+            && (args.stale
                 || !args.dir_globs.is_empty()
                 || args.meta_filter.is_some())
         {
@@ -2196,7 +2196,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                     .into(),
             );
         }
-        if (args.orphan || args.stale_only) && args.inventory.is_none() {
+        if (args.orphan || args.stale) && args.inventory.is_none() {
             return Err(
                 LocalTaskExecutionCacheStoreErrorInner::MissingPruneInventory
                     .into(),
@@ -2294,7 +2294,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                 }
 
                 if let Some(inventory) = args.inventory {
-                    if args.stale_only
+                    if args.stale
                         && !inventory.is_stale(
                             &project.project_name,
                             &task.task_name,

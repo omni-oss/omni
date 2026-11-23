@@ -15,7 +15,7 @@ pub struct PruneCacheArgs<'a, TContext: Context = ()> {
     pub dry_run: bool,
     /// Only prune entries whose cached digest no longer matches the freshly
     /// recomputed digests. Requires a complete `inventory`.
-    pub stale_only: bool,
+    pub stale: bool,
     /// Only prune entries whose task is absent from the complete `inventory`.
     pub orphan: bool,
     /// The combined inventory, finalized before any partition is pruned.

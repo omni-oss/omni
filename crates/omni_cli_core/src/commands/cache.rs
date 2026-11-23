@@ -429,7 +429,7 @@ async fn prune(
 
     // Step 1: get the candidate list (always dry-run first).
     let request = CachePruneRequest {
-        stale_only: args.stale,
+        stale: args.stale,
         orphan: args.orphan,
         older_than: args.older_than,
         larger_than: args.larger_than,
