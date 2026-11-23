@@ -1458,6 +1458,10 @@ mod tests {
             std::fs::write(file, config).unwrap();
         }
 
+        // Discovery canonicalizes paths; a temp directory can use a short
+        // path alias on Windows.
+        let first = first.canonicalize().unwrap();
+        let second = second.canonicalize().unwrap();
         let loaded = ctx("testing", root, real_sys())
             .into_loaded()
             .await
