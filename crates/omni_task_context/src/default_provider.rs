@@ -13,7 +13,7 @@ use crate::{
     TaskHashProvider, task_context::evaluate_enabled,
 };
 
-/// Task inputs that can be prepared before any dependency has run.
+/// Task inputs prepared separately from dependency hashes.
 pub struct PreparedTaskContext<'a> {
     node: &'a TaskExecutionNode,
     env_vars: Arc<EnvVars>,
@@ -98,7 +98,9 @@ impl<'a, THashProvider: TaskHashProvider, TContext: Context>
 }
 
 /// Prepare the task's environment and template inputs without resolving hashes.
-/// The context implementation may run command substitutions while loading env.
+/// Loading the environment may run command substitutions that read earlier
+/// task outputs. Preserve the normal environment-loading timing unless moving
+/// it is known to be safe.
 pub fn prepare_task_context<'a>(
     context: &'a impl Context,
     node: &'a TaskExecutionNode,
