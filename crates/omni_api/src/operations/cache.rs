@@ -214,7 +214,7 @@ where
             .into_loaded_for_cache_prune(req.stale_only)
             .await?
     } else {
-        ctx.clone().into_loaded().await?
+        ctx.reload()?.into_loaded().await?
     };
     handle_cache_prune_inner(&ctx, req, approved).await
 }

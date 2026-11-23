@@ -104,7 +104,21 @@ impl Expansion {
                     {
                         value
                     } else {
-                        expand_result = expand(fallback, vars);
+                        // A forbidden mode must also reject a substitution
+                        // hidden in the fallback; other modes keep treating
+                        // fallbacks as plain text.
+                        expand_result = if matches!(
+                            command_expansion_config,
+                            CommandExpansionConfig::Forbidden
+                        ) {
+                            expand_with_command_config(
+                                fallback,
+                                vars,
+                                command_expansion_config,
+                            )?
+                        } else {
+                            expand(fallback, vars)
+                        };
                         &expand_result
                     },
                 );
@@ -718,6 +732,25 @@ mod tests {
             .expect("should run without error");
 
         assert_eq!(expanded, "$(echo TEST_VALUE)");
+    }
+
+    #[test]
+    fn forbidden_rejects_a_command_in_a_fallback_too() {
+        let envs = maps::map![];
+        let forbidden = CommandExpansionConfig::Forbidden;
+        for text in ["$(echo x)", "${UNSET:-$(echo x)}", "${UNSET:=$(echo x)}"]
+        {
+            let error = expand_with_command_config(text, &envs, &forbidden)
+                .expect_err(text);
+            assert!(error.is_command_forbidden(), "{text}");
+        }
+        // A set variable never evaluates its fallback.
+        let set = maps::map!["SET".to_string() => "v".to_string()];
+        assert_eq!(
+            expand_with_command_config("${SET:-$(echo x)}", &set, &forbidden)
+                .unwrap(),
+            "v"
+        );
     }
 
     #[test]

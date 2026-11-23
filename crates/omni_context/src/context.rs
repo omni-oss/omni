@@ -483,7 +483,9 @@ impl<TSys: ContextSys> Context<TSys> {
 
         let mut env_loader = self.create_env_loader();
         if matches!(environment, LoadEnvironment::ReadOnly) {
-            env_loader = env_loader.without_commands(self.current_dir()?);
+            // Rooted at the workspace so a nested marker elsewhere cannot move
+            // the environment boundary above it.
+            env_loader = env_loader.without_commands(self.root_dir.clone());
         }
 
         tracing::trace!(
@@ -688,7 +690,22 @@ impl<TSys: ContextSys> Context<TSys> {
                 }
             }
             if !has_workspace {
-                continue;
+                // Automatic sharing maps workspaces by relative path, so a
+                // checkout without one does not use this cache. A configured
+                // or explicit cache path can be reached from a workspace that
+                // moved, which cannot be told apart from an unrelated branch.
+                if matches!(
+                    self.cache_source,
+                    CacheDirectorySource::LocalDefault
+                        | CacheDirectorySource::PrimaryDefault
+                ) {
+                    continue;
+                }
+                eyre::bail!(
+                    "cannot tell whether the worktree {} uses this cache: it has no workspace at {}",
+                    checkout.display(),
+                    relative.display()
+                );
             }
             let root = self.sys.fs_canonicalize(&root)?;
             if !root.starts_with(&checkout) {

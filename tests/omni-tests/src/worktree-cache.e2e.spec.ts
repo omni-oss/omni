@@ -127,6 +127,56 @@ describe("automatic Git worktree cache sharing", { tags: ["caching"] }, () => {
         expect(prune).toOutputContaining("Pruned 1 cache entries");
     });
 
+    it("stops when a peer has no workspace and the cache path is configured", async (ctx) => {
+        await skipUnlessGitCliAvailable(ctx);
+        const { ws, primary, linked } = await fixture();
+        ws.write("primary/worktree.omni.yaml", {
+            cache: { dir: "../shared/cache" },
+        });
+        expect(
+            await runOmni(["run", "build"], { cwd: primary }),
+        ).toHaveSucceeded();
+        rmSync(join(linked, "workspace.omni.yaml"));
+        const result = await runOmni(["cache", "prune", "--orphan", "--yes"], {
+            cwd: primary,
+        });
+        expect(result.failed).toBe(true);
+        expect(result.stderr).toContain("cannot tell whether the worktree");
+        expect(
+            await runOmni(["run", "build"], { cwd: primary }),
+        ).toHaveStderrContaining("Cache hit for task 'app#build'");
+    });
+
+    it("does not let an unrelated task with an unevaluable template stop a filtered stale prune", async (ctx) => {
+        await skipUnlessGitCliAvailable(ctx);
+        const { ws, primary } = await fixture();
+        for (const checkout of ["primary", "linked"]) {
+            ws.write(`${checkout}/workspace.omni.yaml`, {
+                projects: ["app/**", "other/**"],
+            });
+            ws.write(`${checkout}/other/project.omni.yaml`, {
+                name: "other",
+                tasks: {
+                    t: { exec: "node -e 0", enabled: "{{ args.missing }}" },
+                },
+            });
+        }
+        expect(
+            await runOmni(["run", "build"], { cwd: primary }),
+        ).toHaveSucceeded();
+        const stale = await runOmni(
+            ["cache", "prune", "--stale", "--dir", "app/**", "--yes"],
+            { cwd: primary },
+        );
+        expect(stale).toHaveSucceeded();
+        expect(stale).toOutputContaining(
+            "No cache entries matched the given filters",
+        );
+        expect(
+            await runOmni(["run", "build"], { cwd: primary }),
+        ).toHaveStderrContaining("Cache hit for task 'app#build'");
+    });
+
     it("rejects conflicting or retired flags before loading a workspace", async () => {
         const ws = makeWorkspace({ files: {} });
         const conflict = await runOmni(

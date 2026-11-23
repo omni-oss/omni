@@ -27,7 +27,7 @@ use omni_remote_cache_client::{
 use omni_task_context::{
     DefaultTaskContextProvider, DependencyHash, EnvVars,
     TaskContextProviderExt, TaskHashProvider,
-    cache_status::{DependencyOutcome, OwnFacts, derive_status},
+    cache_status::{CacheStatus, DependencyOutcome, OwnFacts, derive_status},
     collect_dependency_hashes,
 };
 use omni_types::OmniPath;
@@ -347,19 +347,55 @@ impl HybridTaskExecutionCacheStore {
                     HashProvider::new(&hashes, &forwarded),
                     ContextWrapper::new(context),
                 );
-                let contexts = provider.get_task_contexts(&batch, false)?;
-                let contexts = contexts
-                    .iter()
-                    .map(omni_task_context::TaskContext::expand_cache_paths)
-                    .collect::<Result<Vec<_>, _>>()?;
+                let raw = provider.get_task_contexts(&batch, false)?;
                 let mut infos = Vec::new();
                 let mut batch_forwarded = Vec::new();
                 let mut batch_statuses = Vec::new();
+                // A task whose templates cannot be evaluated here gets no
+                // digest, so its entries (and its dependents') are kept; it
+                // must not stop the prune of unrelated tasks.
+                let unknown = || CacheStatus::Disabled {
+                    deciding_source: None,
+                };
+                let mut contexts = Vec::with_capacity(raw.len());
+                for context in &raw {
+                    match context.expand_cache_paths() {
+                        Ok(expanded) => contexts.push(expanded),
+                        Err(error) => {
+                            tracing::warn!(
+                                task = context.node.full_task_name(),
+                                %error,
+                                "cannot expand cache paths; keeping its entries"
+                            );
+                            batch_statuses.push((
+                                context.node.full_task_name().to_owned(),
+                                unknown(),
+                            ));
+                        }
+                    }
+                }
                 for context in &contexts {
                     let node = context.node;
-                    if node.task_exec_config().is_none()
-                        || !context.is_enabled()?
-                    {
+                    let enabled = if node.task_exec_config().is_none() {
+                        false
+                    } else {
+                        match context.is_enabled() {
+                            Ok(enabled) => enabled,
+                            Err(error) => {
+                                tracing::warn!(
+                                    task = node.full_task_name(),
+                                    %error,
+                                    "cannot evaluate enablement; keeping its entries"
+                                );
+                                batch_statuses.push((
+                                    node.full_task_name().to_owned(),
+                                    unknown(),
+                                ));
+                                continue;
+                            }
+                        }
+                    };
+                    if !enabled {
                         batch_forwarded.push((
                             node.full_task_name().to_owned(),
                             node.dependencies().to_vec(),
