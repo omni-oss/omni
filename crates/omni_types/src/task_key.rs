@@ -357,4 +357,12 @@ mod tests {
         assert_eq!(map.remove("a", "b#c"), Some(3));
         assert!(!map.contains("a", "b#c"));
     }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn a_deserialized_map_of_empty_buckets_is_empty() {
+        let map: TaskMap<u8> = serde_json::from_str(r#"{"p":{}}"#).unwrap();
+        assert!(map.is_empty());
+        assert_eq!(map.len(), 0);
+    }
 }
