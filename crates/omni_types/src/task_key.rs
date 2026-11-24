@@ -66,6 +66,8 @@ pub struct TaskKey {
 }
 
 impl TaskKey {
+    /// Builds a key from names already validated at ingress; it only
+    /// `debug_assert`s. Use [`TaskKey::try_new`] for untrusted names.
     pub fn new(
         project: impl Into<Arc<str>>,
         task: impl Into<Arc<str>>,
@@ -137,6 +139,8 @@ impl<'a> TaskKeyRef<'a> {
         Self { project, task }
     }
 
+    /// Only `debug_assert`s the names (see [`TaskKey::new`]); use
+    /// [`TaskKey::try_new`] for untrusted names.
     pub fn to_owned_key(self) -> TaskKey {
         TaskKey::new(self.project, self.task)
     }

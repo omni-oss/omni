@@ -59,6 +59,13 @@ different keys and does not share cache entries.
   `TaskExecutionGraphReport` (report only, no batch planning) and results as
   `TaskExecutionResultReport`. The graph's internal `node_map` is no longer
   serialized.
+- `TaskExecutionGraphErrorKind` has a new `InvalidName` variant; exhaustive
+  matches must handle it. It is reported with the new diagnostic code
+  `task.invalid_name`.
+- `TaskKey::try_new` (returning `InvalidTaskName`) validates untrusted names;
+  `TaskKey::new` only `debug_assert`s.
+- `TaskExecutionGraphReport::edges` iterates every edge as a `TaskReportEdge`,
+  including `Sibling` edges.
 - `omni_api` `ExecResponse` and `TaskRunResponse` are serialize-only (they no
   longer implement `Deserialize`; this is a deliberate pre-v1 break). They
   serialize as `{"results": [...]}`, not a bare array: decode the `results`

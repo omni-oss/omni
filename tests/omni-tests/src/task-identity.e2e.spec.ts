@@ -636,6 +636,7 @@ describe("+run @e2e (v1 digest parity across run, dry-run, ignore-dependencies a
         const afterChange = await runOmni(["cache", "prune", "--stale", "-d"], {
             cwd: ws.cwd,
         });
+        expect(afterChange).toHaveSucceeded();
         const text = `${afterChange.stdout}\n${afterChange.stderr}`;
         expect(text).toContain("Project: app");
         expect(text).not.toContain("Project: lib");
@@ -724,6 +725,7 @@ describe("+run @e2e (v1 digest parity across run, dry-run, ignore-dependencies a
             ["cache", "prune", "-d", "--project", "a", "--task", "b#c"],
             { cwd: ws.cwd },
         );
+        expect(dry).toHaveSucceeded();
         const text = `${dry.stdout}\n${dry.stderr}`;
         expect(text).toContain("Project: a");
         expect(text).toContain("Task: b#c");

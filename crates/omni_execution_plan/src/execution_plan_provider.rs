@@ -656,6 +656,17 @@ mod tests {
     }
 
     #[test]
+    fn try_task_key_rejects_empty_names_with_invalid_name() {
+        let err = try_task_key("app", "").unwrap_err();
+        assert!(matches!(
+            err.0,
+            ExecutionPlanProviderErrorInner::TaskExecutionGraph(ref e)
+                if e.kind() == omni_core::TaskExecutionGraphErrorKind::InvalidName
+        ));
+        assert!(try_task_key("app", "build").is_ok());
+    }
+
+    #[test]
     fn meta_filter_error_is_found_through_transparent_wrappers() {
         use eyre::WrapErr;
         use omni_diagnostic::DiagnosticReport;
