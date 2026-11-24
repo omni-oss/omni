@@ -1076,6 +1076,9 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
     /// Once an entry's removal starts it finishes while still holding the remote
     /// lock and lease, even if the caller is cancelled.
     ///
+    /// The sweep of abandoned `.pending` leftovers is store-wide and ignores
+    /// the filter; a failure of the sweep is logged and does not stop pruning.
+    ///
     /// A dry run is lock-free and approximate: it reports what a real run would
     /// remove or skip right now.
     pub async fn prune_store_report(
@@ -1084,8 +1087,19 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
         dry_run: bool,
     ) -> Result<PruneReport, Error> {
         let now = SystemTime::now();
-        let reclaimed_pending =
-            reclaim(&self.store_root_path, PENDING_GRACE, dry_run).await?;
+        let reclaimed_pending = match reclaim(
+            &self.store_root_path,
+            PENDING_GRACE,
+            dry_run,
+        )
+        .await
+        {
+            Ok(paths) => paths,
+            Err(error) => {
+                tracing::warn!("could not reclaim pending paths: {error}");
+                Vec::new()
+            }
+        };
         let selected: Vec<StoreEntry> = self
             .store_entries()
             .await?

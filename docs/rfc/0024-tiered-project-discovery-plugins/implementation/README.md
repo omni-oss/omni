@@ -51,7 +51,7 @@ and F08 are done**; F03, F05, F06 and F10 are partly done; F04 is done; F07 and 
 - F03.2 [escape-aware reference parser](features/F03.2-reference-parser.md) ([#116](https://github.com/omni-oss/omni/pull/116)) and its use in task `dependencies`/`with` ([#117](https://github.com/omni-oss/omni/pull/117)).
 - F03.3 [internal root-reference lowering](features/F03-scoped-task-references.md#f033-implementation-slice) ([#143](https://github.com/omni-oss/omni/pull/143)).
 
-- F08.6 [`.pending` cleanup](features/F08.1-lease-gc-reference-protocol.md#f086-pending-cleanup) (D7).
+- F08.6 [`.pending` cleanup](features/F08.1-lease-gc-reference-protocol.md#f086-pending-cleanup) (D7). Leftovers from older omni versions (no lock file) are never reclaimed.
 
 Open decisions that remain: store `VERSION` compatibility (D1), reference-driven retention
 (D3), and the F10.2 decisions (D2, D5, D9). Plugins (P) are not
