@@ -183,48 +183,6 @@ pub fn inspect_nodes(
     }
 }
 
-/// Describe every task of `plan` from configuration alone.
-pub(crate) fn nodes_from_plan<TSys: TaskExecutorSys>(
-    context: &LoadedContext<TSys>,
-    plan: &omni_core::BatchedExecutionPlan,
-) -> Vec<InspectionNode> {
-    plan.iter()
-        .flatten()
-        .map(|node| {
-            let info =
-                context.get_cache_info(node.project_name(), node.task_name());
-            let source =
-                info.map(|i| i.cache_enabled_source).unwrap_or_default();
-            InspectionNode {
-                name: node.full_task_name().to_string(),
-                has_command: node.task_exec_config().is_some(),
-                persistent: node.persistent(),
-                enabled: classify_enabled(node.enabled()),
-                cache_enabled: info.is_some_and(|i| i.cache_enabled),
-                cache_source: source,
-                dependencies: node.dependencies().to_vec(),
-                cache_enabled_file: context
-                    .cache_enabled_file(node.project_name(), node.task_name())
-                    .map(|p| {
-                        p.strip_prefix(context.root_dir())
-                            .unwrap_or(p)
-                            .to_path_buf()
-                    }),
-            }
-        })
-        .collect()
-}
-
-/// The explicit contradictions of a plan, for the planning error.
-pub(crate) fn plan_contradictions<TSys: TaskExecutorSys>(
-    context: &LoadedContext<TSys>,
-    plan: &omni_core::BatchedExecutionPlan,
-    ignore_dependencies: bool,
-) -> Vec<InspectedContradiction> {
-    inspect_nodes(&nodes_from_plan(context, plan), false, ignore_dependencies)
-        .contradictions
-}
-
 /// Plan `config`'s selection and inspect it without running anything.
 pub fn inspect_cache_eligibility<TSys: TaskExecutorSys>(
     context: &LoadedContext<TSys>,
@@ -252,7 +210,32 @@ pub fn inspect_cache_eligibility<TSys: TaskExecutorSys>(
         config.with_dependents(),
     )?;
 
-    let nodes = nodes_from_plan(context, &plan);
+    let nodes = plan
+        .iter()
+        .flatten()
+        .map(|node| {
+            let info =
+                context.get_cache_info(node.project_name(), node.task_name());
+            let source =
+                info.map(|i| i.cache_enabled_source).unwrap_or_default();
+            InspectionNode {
+                name: node.full_task_name().to_string(),
+                has_command: node.task_exec_config().is_some(),
+                persistent: node.persistent(),
+                enabled: classify_enabled(node.enabled()),
+                cache_enabled: info.is_some_and(|i| i.cache_enabled),
+                cache_source: source,
+                dependencies: node.dependencies().to_vec(),
+                cache_enabled_file: context
+                    .cache_enabled_file(node.project_name(), node.task_name())
+                    .map(|p| {
+                        p.strip_prefix(context.root_dir())
+                            .unwrap_or(p)
+                            .to_path_buf()
+                    }),
+            }
+        })
+        .collect::<Vec<_>>();
 
     Ok(inspect_nodes(&nodes, false, config.ignore_dependencies()))
 }

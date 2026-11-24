@@ -116,35 +116,6 @@ impl<'a, TSys: TaskExecutorSys, S: ExecutionEventSubscriber>
             ))?;
         }
 
-        let contradictions = crate::cache_inspection::plan_contradictions(
-            self.context,
-            &plan,
-            self.config.ignore_dependencies(),
-        );
-        if !contradictions.is_empty() {
-            Err(TaskExecutorErrorInner::new_cache_contradiction(
-                contradictions.len(),
-                contradictions
-                    .iter()
-                    .map(|c| {
-                        let file = |f: &Option<std::path::PathBuf>| {
-                            f.as_ref().map_or_else(
-                                || "unknown file".to_string(),
-                                |f| f.display().to_string(),
-                            )
-                        };
-                        format!(
-                            "{} ({}) -> {} ({})",
-                            c.dependent,
-                            file(&c.dependent_file),
-                            c.dependency,
-                            file(&c.dependency_file),
-                        )
-                    })
-                    .collect(),
-            ))?;
-        }
-
         self.subscriber
             .on_execution_plan_ready(ExecutionPlanReadyEvent {
                 total: plan.iter().flatten().count(),
@@ -321,21 +292,6 @@ enum TaskExecutorErrorInner {
         meta_filter: Option<String>,
     },
 
-    /// A task that sets `cache.enabled: true` depends on one that explicitly
-    /// sets it to `false`.
-    #[error(
-        "{count} cache contradiction(s): a task with `cache.enabled: true` depends on a task whose `cache.enabled` is explicitly `false`"
-    )]
-    #[diagnostic(
-        code = "executor.cache_contradiction",
-        hint = "set `cache.enabled: false` on the dependent task too, or enable the cache on the dependency if reusing its result is safe; `omni cache eligibility` lists every contradiction"
-    )]
-    CacheContradiction {
-        count: usize,
-        #[diagnostic(detail = "contradictions")]
-        contradictions: Vec<String>,
-    },
-
     #[error(transparent)]
     #[diagnostic(skip)]
     Join(#[from] tokio::task::JoinError),
@@ -463,24 +419,8 @@ mod diagnostic_tests {
     }
 
     #[test]
-    fn cache_contradiction_is_a_user_diagnostic() {
-        let e: TaskExecutorError =
-            TaskExecutorErrorInner::new_cache_contradiction(
-                1,
-                vec!["a#build (a.yaml) -> a#gen (a.yaml)".into()],
-            )
-            .into();
-        let r = Err::<(), _>(e).wrap_err("running tasks").unwrap_err();
-        let d = find(&r).expect("diagnostic");
-        assert_eq!(d.code(), "executor.cache_contradiction");
-        assert_eq!(d.audience(), Audience::User);
-        assert_eq!(d.hints().len(), 1);
-    }
-
-    #[test]
     fn code_is_registered_in_the_catalog() {
         assert!(omni_codes::get("executor.nothing_to_execute").is_some());
-        assert!(omni_codes::get("executor.cache_contradiction").is_some());
         if let Err(errors) = omni_codes::validate() {
             let msgs: Vec<String> =
                 errors.iter().map(|e| e.to_string()).collect();

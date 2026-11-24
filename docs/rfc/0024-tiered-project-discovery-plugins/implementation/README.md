@@ -155,24 +155,6 @@ targets.
   acceptance is only partial, list what shipped and what remains instead of marking
   the whole package done. A completed slice unblocks dependent work only after merge.
 
-## Decisions for finishing the standalone features
-
-Recorded before the plugin work resumes. Each still needs its own plan and, at High risk,
-approval before it is built.
-
-- **F05.2 planner error:** a hard error, as the RFC specifies. The Omni workspace audit finds
-  no contradictions; other workspaces can be checked with `omni cache eligibility`.
-- **F06.3:** platform stays out of the cache key (users can configure it explicitly); the
-  workspace hash includes the digest; the one-time invalidation ships with a release note.
-  Cache-key versioning and automatic migration need a separate design before v1.
-- **F07:** two PRs, the provenance/metadata redesign first, then conflict detection.
-- **F03:** the `alias` key lands together with its selector plumbing.
-- **F10:** D2 symlinks are configurable and rejected by default (design to follow); D5 macOS
-  returns `Unsupported` until a verified beneath-root open exists; D9 rejects Windows
-  alternate streams and reserved names.
-- **F08 D1:** no store `VERSION` bump now; the gap is accepted. Automatic migration joins the
-  pre-v1 cache-key versioning design. D3 and D7 stay out of F08.
-
 ## Part 2: the plugin features
 
 The plugin-specific packages (P01-P16: configuration, contract, host, inference cache,
