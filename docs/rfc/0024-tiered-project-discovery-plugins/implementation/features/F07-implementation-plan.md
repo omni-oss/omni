@@ -49,6 +49,9 @@ Keep that order, including diamond deduplication and cycle errors, and use it
 to drive composition. Do not change the merge contract for other graph users.
 
 Keep declaration metadata in `omni_configurations` beside the replay logic.
+Use a typed `DeclarationSource` rather than inferring the source kind from
+an optional file path. Keep the relative-path base on `Origin` because both
+source kinds can supply one.
 Use structured identifiers; never key provenance by joined `project#task`
 strings. Carry origin with task declarations through task extension and
 short/long-form transitions. The operation that updates a tracked value
@@ -57,11 +60,15 @@ merge. Start with `cache.enabled`, where the existing consumers can verify
 the result.
 
 ```rust
-// Illustrative: declarations can be file-backed or fileless.
+// Illustrative: the base is a path-resolution input, not source identity.
 struct Origin {
-    id: LayerId,
-    file: Option<Arc<OmniPath>>,
+    source: DeclarationSource,
     base_dir: OmniPath,
+}
+
+enum DeclarationSource {
+    File { path: Arc<OmniPath> },
+    Fileless { id: LayerId },
 }
 
 enum CacheScope {
@@ -88,8 +95,9 @@ fn replace_if_present<T>(
 For the tracked field, the winning value and origin travel together through
 project and task replay; the non-tracked cache fields keep their ordinary
 merge logic. Resolve task > project > host fallback from those results and
-emit effective cache settings and provenance together. A fallback has no
-declaring file. A fileless winner does not reuse a lower layer's file. Remove
+emit effective cache settings and provenance together. A host fallback is
+not a declaration and has no `Origin`. A fileless winner has an `Origin`
+but does not reuse a lower layer's file. Remove
 `CacheLayer.enabled_file`, its special merge, and the stamp in
 `ProjectLayer::load`. Keep `LoadedContext::cache_enabled_file` and current
 F05.2/F09 output stable. **Keep `ProjectConfiguration.file` and `.dir`
@@ -148,6 +156,8 @@ Test the new composition entry with synthetic, already validated contributions
 identified by stable contributor IDs. Treat activation-local application as
 finished input: one contributor's subtraction never edits another's values
 ([C04](../../007.04-composition-golden-fixtures.md#c04--application-subtraction-is-activation-local)).
+Add a typed contributor variant to `DeclarationSource` here, rather than
+encoding contributor identity as a file path or an anonymous fileless ID.
 P-series work will wire its own validation and activation boundaries.
 
 - Disjoint fields combine; semantically equal scalar/task fields coalesce and
