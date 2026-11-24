@@ -1,3 +1,6 @@
+// The fixtures fsync directories, which Windows does not support.
+#![cfg(unix)]
+
 mod common;
 
 use common::fs::Faults;

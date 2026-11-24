@@ -401,6 +401,7 @@ impl IndexStore {
         let dir = self.shards_dir();
         if dir.exists() {
             for (name, _) in self.shard_files()? {
+                self.faults().hit("shard.sync")?;
                 std::fs::File::open(dir.join(name))?.sync_all()?;
             }
             self.fs.sync_dir(&dir)?;

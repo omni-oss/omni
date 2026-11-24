@@ -166,7 +166,7 @@ pub struct Staged {
 }
 
 /// Exclusive same-directory staging, file sync, atomic rename and directory
-/// sync, with failpoints `<tag>.stage`, `<tag>.rename` and
+/// sync, with failpoints `<tag>.stage`, `<tag>.file_sync`, `<tag>.rename` and
 /// `<tag>.parent_sync`.
 #[derive(Clone)]
 pub struct DurableFs {
@@ -233,6 +233,7 @@ impl DurableFs {
             .create_new(true)
             .open(&path)?;
         f.write_all(bytes)?;
+        self.faults.hit(&format!("{tag}.file_sync"))?;
         f.sync_all()?;
         Ok(Staged { path })
     }

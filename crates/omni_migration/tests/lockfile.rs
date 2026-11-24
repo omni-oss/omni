@@ -1,3 +1,6 @@
+// The fixtures fsync directories, which Windows does not support.
+#![cfg(unix)]
+
 mod common;
 
 use std::cell::Cell;
@@ -436,4 +439,26 @@ fn a_wrong_version_at_step_time_is_not_committed() {
     assert_eq!(store.faults().mutations(), w);
     assert!(!store.intent_exists());
     assert_eq!(store.state(), Ok(StoreState::Ready(PINS_V2)));
+}
+
+#[test]
+fn a_file_sync_failure_while_staging_is_not_committed() {
+    for point in ["doc.file_sync", "intent.file_sync"] {
+        let dir = tempdir().unwrap();
+        let store = v1_store(dir.path(), PinsCatalog::two());
+        let plan = store
+            .plan(PINS_V2, Direction::Upgrade, Policy::default())
+            .unwrap();
+        let before = store.document_bytes();
+        store.faults().set(point, Action::Err, 0);
+        assert!(
+            matches!(
+                execute(&store, &plan, || false),
+                Ok(Run::Stopped { last: PINS_V1, .. })
+            ),
+            "{point}"
+        );
+        assert_eq!(store.document_bytes(), before, "{point}");
+        assert!(!store.intent_exists(), "{point}");
+    }
 }

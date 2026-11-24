@@ -1,3 +1,6 @@
+// The fixtures fsync directories, which Windows does not support.
+#![cfg(unix)]
+
 mod common;
 
 use common::fs::{Action, Faults};
@@ -329,4 +332,78 @@ fn recovery_rejects_rollback_evidence_that_changes_the_version() {
     assert_eq!(s.recover_under_guard(), Err(Error::RecoveryBlocked));
     assert!(s.intent_exists());
     assert_eq!(s.shard_bytes().unwrap().len(), 1);
+}
+
+#[test]
+fn unsynced_intent_removal_after_a_durable_commit_still_commits() {
+    let dir = tempdir().unwrap();
+    let s = idx(dir.path(), WITH_INDEX);
+    let plan = drop_plan(&s);
+    s.faults().set("intent.clear.parent_sync", Action::Err, 0);
+    assert_eq!(
+        execute(&s, &plan, || false),
+        Ok(Run::Finished(WITHOUT_INDEX))
+    );
+    assert!(!s.intent_exists());
+    assert_eq!(s.state(), Ok(StoreState::Ready(WITHOUT_INDEX)));
+}
+
+#[test]
+fn backend_support_lost_after_planning_is_caught_with_the_right_outcome() {
+    let ok = BackendSupport::DURABLE_NON_ATOMIC;
+    let lost = BackendSupport::NONE;
+    let original = |s: &IndexStore| s.shard_bytes().unwrap();
+
+    // Probes: begin_migration, preflight, then one per applied step.
+    let dir = tempdir().unwrap();
+    let s = idx(dir.path(), WITH_INDEX);
+    let plan = drop_plan(&s);
+    let shards = original(&s);
+    s.faults().script_probes(&[ok, lost]);
+    let w = s.faults().mutations();
+    assert_eq!(execute(&s, &plan, || false), Err(Error::UnsupportedBackend));
+    assert_eq!(s.faults().mutations(), w);
+    assert!(!s.intent_exists());
+    assert_eq!(original(&s), shards);
+
+    let dir = tempdir().unwrap();
+    let s = idx(dir.path(), WITH_INDEX);
+    let plan = drop_plan(&s);
+    s.faults().script_probes(&[ok, ok, lost]);
+    let w = s.faults().mutations();
+    assert_eq!(
+        execute(&s, &plan, || false),
+        Ok(Run::Stopped {
+            last: WITH_INDEX,
+            error: Error::UnsupportedBackend
+        })
+    );
+    assert_eq!(s.faults().mutations(), w);
+    assert!(!s.intent_exists());
+    assert_eq!(s.state(), Ok(StoreState::Ready(WITH_INDEX)));
+    assert_eq!(original(&s), shards);
+}
+
+#[test]
+fn a_shard_sync_failure_needs_recovery_and_rolls_back() {
+    let dir = tempdir().unwrap();
+    let s = idx(dir.path(), WITHOUT_INDEX);
+    let plan = s
+        .plan(WITH_INDEX, Direction::Downgrade, NON_ATOMIC)
+        .unwrap();
+    s.faults().set("shard.sync", Action::Err, 0);
+    assert!(matches!(
+        execute(&s, &plan, || false),
+        Ok(Run::NeedsRecovery {
+            last_confirmed: WITHOUT_INDEX,
+            attempted: WITH_INDEX,
+            ..
+        })
+    ));
+    s.faults().clear();
+    assert_eq!(s.read_marker_version(), Ok(WITHOUT_INDEX));
+    assert_eq!(s.state(), Ok(StoreState::RecoveryRequired));
+    assert_eq!(s.recover_under_guard(), Ok(IndexRecovered::RolledBack));
+    assert!(s.shard_bytes().unwrap().is_empty());
+    assert_eq!(s.state(), Ok(StoreState::Ready(WITHOUT_INDEX)));
 }
