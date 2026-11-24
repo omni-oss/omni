@@ -547,11 +547,11 @@ mod tests {
     use system_traits::impls::RealSys;
 
     fn layer(file: &str, extends: &[&str]) -> LoadedLayer {
-        let mut l = LoadedLayer {
-            file: PathBuf::from(file).into(),
-            dir: PathBuf::from(file).parent().unwrap().to_path_buf().into(),
-            ..Default::default()
-        };
+        let mut l = LoadedLayer::from_file(
+            PathBuf::from(file).into(),
+            PathBuf::from(file).parent().unwrap().to_path_buf().into(),
+            Default::default(),
+        );
         if !extends.is_empty() {
             l.layer.extends =
                 Some(omni_configurations::types::SingleOrMany::Many(
@@ -633,11 +633,11 @@ mod tests {
         let configured_layer = |dir: &str, file: &str, json: &str| {
             let dir = root.join(dir);
             std::fs::create_dir_all(&dir).unwrap();
-            LoadedLayer {
-                file: dir.join(file).into(),
-                dir: dir.into(),
-                layer: serde_json::from_str(json).unwrap(),
-            }
+            LoadedLayer::from_file(
+                dir.join(file).into(),
+                dir.into(),
+                serde_json::from_str(json).unwrap(),
+            )
         };
         let mut app = configured_layer(
             "app",

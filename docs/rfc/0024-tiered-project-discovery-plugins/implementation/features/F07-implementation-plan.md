@@ -1,6 +1,6 @@
 # F07 implementation plan: composition provenance and conflicts
 
-**Status:** proposed for approval; no implementation started. **Size:** Large.
+**Status:** approved (#164). F07.1 implemented on `feat/f07-provenance-redesign`, awaiting independent review; F07.2 onward not started. **Size:** Large.
 **Risk:** High: composition and location changes can affect task behavior and
 cache keys. The chosen direction is to finish the metadata redesign before
 building conflict detection, rather than ship a parallel provenance walk.

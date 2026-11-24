@@ -286,7 +286,12 @@ fn normal_to_alias_keeps_nothing_of_the_normal_task() {
 #[test]
 fn alias_to_normal_starts_a_distinct_definition() {
     let over = normal(r#"{"description":"only"}"#);
-    assert_eq!(effective(alias("n::build"), over.clone()), over);
+    // Composition attributes a long form to its layer, so compare the task,
+    // not its intermediate representation.
+    assert_eq!(
+        effective(alias("n::build"), over.clone()).into_long_form("t"),
+        over.into_long_form("t")
+    );
     let short = normal(r#""cmd""#);
     assert_eq!(effective(alias("n::build"), short.clone()), short);
 }
@@ -302,10 +307,10 @@ fn a_normal_task_after_an_alias_after_a_normal_task_forgets_the_first() {
         with_task(normal(r#"{"exec":"first","env":{"vars":{"A":"1"}}}"#));
     l.merge(with_task(alias("x")));
     l.merge(with_task(normal(r#"{"description":"d"}"#)));
-    let TaskLayer::LongForm(t) = l.layer.tasks.unwrap().as_map()["t"].clone()
-    else {
-        panic!("long form")
-    };
+    let t = l.layer.tasks.unwrap().as_map()["t"]
+        .clone()
+        .into_long_form("t")
+        .expect("a normal task");
     assert!(t.exec.is_none() && t.env.is_none());
 }
 

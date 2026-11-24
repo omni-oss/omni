@@ -2,8 +2,6 @@
 //! parts of C01 that need no plugins), and its parity with the value the data
 //! extractor already computed.
 
-use std::sync::Arc;
-
 use merge::Merge;
 use omni_configurations::{
     CacheEnabled, CacheEnabledSource, FinalizedProject, LoadedLayer,
@@ -145,28 +143,6 @@ fn every_task_has_an_origin_and_it_agrees_with_the_effective_cache() {
             "the origin changed the value of {task}"
         );
     }
-}
-
-#[test]
-fn replacement_without_a_file_does_not_reuse_the_previous_file() {
-    let mut base: ProjectLayer =
-        serde_json::from_str(r#"{"name":"a","cache":{"enabled":true}}"#)
-            .unwrap();
-    base.cache.as_mut().unwrap().enabled_file =
-        Some(Arc::new(omni_types::OmniPath::new("base.yaml")));
-    let overlay: ProjectLayer = serde_json::from_str(
-        r#"{"cache":{"enabled":false},"tasks":{"t":"echo"}}"#,
-    )
-    .unwrap();
-    base.merge(overlay);
-    let p = LoadedLayer {
-        layer: base,
-        ..Default::default()
-    }
-    .finalize_composed()
-    .unwrap();
-    expect(&p, "t", false, ProjectExplicit);
-    assert!(p.task_cache_enabled_file.is_empty());
 }
 
 #[test]

@@ -132,11 +132,11 @@ impl<'a, TSys: ContextSys> ProjectConfigLoader<'a, TSys> {
                 }
             }
 
-            layers.push(LoadedLayer {
+            layers.push(LoadedLayer::from_file(
                 file,
-                dir: project_dir.into(),
+                project_dir.into(),
                 layer,
-            });
+            ));
         }
 
         Ok(layers)
