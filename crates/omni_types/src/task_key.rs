@@ -128,8 +128,10 @@ impl fmt::Display for TaskKeyRef<'_> {
 }
 
 /// Nested project/task map. Lookups borrow `&str` components and never build
-/// an owned key or a label.
-#[derive(Debug, Clone)]
+/// an owned key or a label. It serializes as `{project: {task: value}}`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(transparent))]
 pub struct TaskMap<V> {
     inner: HashMap<Arc<str>, HashMap<Arc<str>, V>>,
 }

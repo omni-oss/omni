@@ -349,7 +349,9 @@ pub(crate) enum ExtractedDataValidationErrorInner {
     },
 
     /// A task name is empty or contains a NUL character.
-    #[error("invalid task name {task_name:?} in project '{project_name}': {reason}")]
+    #[error(
+        "invalid task name {task_name:?} in project '{project_name}': {reason}"
+    )]
     #[diagnostic(
         code = "workspace.invalid_task_name",
         hint = "rename task {task_name:?} in project `{project_name}` to a non-empty name without NUL characters"
