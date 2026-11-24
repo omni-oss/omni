@@ -609,65 +609,6 @@ fn display_pruned_entries(pruned: &[PrunedCacheEntry]) {
     }
 }
 
-#[cfg(test)]
-mod signing_flag_tests {
-    use clap::Parser;
-
-    use super::*;
-
-    #[derive(Parser)]
-    struct Cli {
-        #[command(flatten)]
-        args: SetupArgs,
-    }
-
-    fn parse(extra: &[&str]) -> Result<Cli, clap::Error> {
-        let mut argv = vec![
-            "t", "-b", "http://h", "-a", "k", "-t", "t", "-o", "o", "-w", "w",
-        ];
-        argv.extend_from_slice(extra);
-        Cli::try_parse_from(argv)
-    }
-
-    #[test]
-    fn a_signing_key_needs_an_id_and_exactly_one_source() {
-        let id = "0123456789abcdef";
-        assert!(parse(&[]).is_ok());
-        assert!(
-            parse(&["--signing-key-id", id, "--signing-key-env", "K"]).is_ok()
-        );
-        assert!(
-            parse(&["--signing-key-id", id, "--signing-key-file", "k"]).is_ok()
-        );
-        assert!(parse(&["--signing-key-id", id]).is_err());
-        assert!(parse(&["--signing-key-env", "K"]).is_err());
-        assert!(parse(&["--signing-key-file", "k"]).is_err());
-        assert!(
-            parse(&[
-                "--signing-key-id",
-                id,
-                "--signing-key-env",
-                "K",
-                "--signing-key-file",
-                "k",
-            ])
-            .is_err()
-        );
-        assert!(parse(&["--verify", "strict"]).is_err());
-        assert!(
-            parse(&[
-                "--verify",
-                "require",
-                "--trusted-key",
-                id,
-                "--trusted-key",
-                "ab"
-            ])
-            .is_ok()
-        );
-    }
-}
-
 async fn eligibility(
     api: &OmniApi<system_traits::impls::RealSys, omni_messages::NoopSubscriber>,
     args: &EligibilityArgs,
@@ -734,4 +675,63 @@ async fn eligibility(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod signing_flag_tests {
+    use clap::Parser;
+
+    use super::*;
+
+    #[derive(Parser)]
+    struct Cli {
+        #[command(flatten)]
+        args: SetupArgs,
+    }
+
+    fn parse(extra: &[&str]) -> Result<Cli, clap::Error> {
+        let mut argv = vec![
+            "t", "-b", "http://h", "-a", "k", "-t", "t", "-o", "o", "-w", "w",
+        ];
+        argv.extend_from_slice(extra);
+        Cli::try_parse_from(argv)
+    }
+
+    #[test]
+    fn a_signing_key_needs_an_id_and_exactly_one_source() {
+        let id = "0123456789abcdef";
+        assert!(parse(&[]).is_ok());
+        assert!(
+            parse(&["--signing-key-id", id, "--signing-key-env", "K"]).is_ok()
+        );
+        assert!(
+            parse(&["--signing-key-id", id, "--signing-key-file", "k"]).is_ok()
+        );
+        assert!(parse(&["--signing-key-id", id]).is_err());
+        assert!(parse(&["--signing-key-env", "K"]).is_err());
+        assert!(parse(&["--signing-key-file", "k"]).is_err());
+        assert!(
+            parse(&[
+                "--signing-key-id",
+                id,
+                "--signing-key-env",
+                "K",
+                "--signing-key-file",
+                "k",
+            ])
+            .is_err()
+        );
+        assert!(parse(&["--verify", "strict"]).is_err());
+        assert!(
+            parse(&[
+                "--verify",
+                "require",
+                "--trusted-key",
+                id,
+                "--trusted-key",
+                "ab"
+            ])
+            .is_ok()
+        );
+    }
 }
