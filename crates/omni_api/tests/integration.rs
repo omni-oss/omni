@@ -2121,3 +2121,51 @@ async fn task_cache_inspect_lists_contradiction_without_running_anything() {
         "inspection must not evaluate environment command substitutions"
     );
 }
+
+#[tokio::test]
+async fn task_run_fails_on_explicit_cache_contradiction_before_running_anything()
+ {
+    use omni_api::{TaskRunFilters, TaskRunRequest};
+
+    let tmp = tempfile::TempDir::new().unwrap();
+    let root = tmp.path();
+    std::fs::write(
+        root.join("workspace.omni.yaml"),
+        "projects:\n  - \"projects/**\"\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(root.join("projects/app")).unwrap();
+    std::fs::write(
+        root.join("projects/app/project.omni.yaml"),
+        "name: app\ntasks:\n  gen:\n    exec: touch marker\n    cache:\n      enabled: false\n  build:\n    exec: touch marker\n    dependencies:\n      - gen\n    cache:\n      enabled: true\n",
+    )
+    .unwrap();
+
+    for dry_run in [false, true] {
+        let api = make_api(root);
+        let err = api
+            .task_run(TaskRunRequest {
+                exact_tasks: vec!["build".into()],
+                filters: TaskRunFilters {
+                    dry_run,
+                    ..Default::default()
+                },
+                ..Default::default()
+            })
+            .await
+            .expect_err("contradiction must fail the plan");
+        let d = omni_diagnostic::find(&err).expect("diagnostic");
+        assert_eq!(d.code(), "executor.cache_contradiction");
+        assert!(!root.join("projects/app/marker").exists());
+    }
+
+    // Without the dependency edge there is nothing to contradict.
+    let api = make_api(root);
+    api.task_run(TaskRunRequest {
+        exact_tasks: vec!["build".into()],
+        ignore_dependencies: true,
+        ..Default::default()
+    })
+    .await
+    .expect("ignored dependency is not judged");
+}
