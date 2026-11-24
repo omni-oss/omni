@@ -32,7 +32,8 @@ pub struct ExecRequest {
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct ExecResponse {
     // Results carry executable nodes, so this response is serialize-only;
-    // read one back as `Vec<TaskExecutionResultReport>`.
+    // the JSON shape is `{"results": [...]}`, so decode the `results` field as
+    // `Vec<TaskExecutionResultReport>` (or a wrapper object with the same shape).
     pub results: Vec<TaskExecutionResult>,
 }
 

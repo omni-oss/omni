@@ -60,7 +60,10 @@ different keys and does not share cache entries.
   `TaskExecutionResultReport`. The graph's internal `node_map` is no longer
   serialized.
 - `omni_api` `ExecResponse` and `TaskRunResponse` are serialize-only (they no
-  longer implement `Deserialize`; this is a deliberate pre-v1 break).
+  longer implement `Deserialize`; this is a deliberate pre-v1 break). They
+  serialize as `{"results": [...]}`, not a bare array: decode the `results`
+  field as `Vec<TaskExecutionResultReport>`, or use a wrapper object with the
+  same shape.
 - `TaskHashProvider`, `derive_status` and the cache-contradiction types take
   `TaskKey` and `TaskKeyRef` instead of joined names.
 
@@ -70,3 +73,8 @@ Install the previous version. Its own entries are still on disk unless you
 pruned them, so it hits them again; entries written by the new version are left
 in place and are not reused. Do not remove them as part of the rollback.
 Project and workspace hashes return to the old values.
+
+Rolling back restores the old cache addressing, but it does not keep execution
+correct for workspaces that rely on the new pair isolation. The previous binary
+treats both `(a#b, c)` and `(a, b#c)` as `a#b#c`, so it can apply one task's
+environment or cache entry to the other.

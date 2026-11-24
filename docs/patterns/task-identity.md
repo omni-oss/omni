@@ -12,8 +12,10 @@ display spelling, never an identity.
   is escaped with the task-reference grammar, so distinct pairs render distinct
   labels. Do not write `format!("{}#{}", ...)` for a task label, and never
   split a label on `#` to recover a project or task.
-- Parse text only at ingress (exact selectors, dependency text), with
-  `TaskReference`. Empty or NUL project and task names are rejected when the
+- Parse text only at ingress, with `TaskReference`. Today that is dependency
+  text. `omni run` task arguments are literal task names within the selected
+  project scope; exact-selector parsing is deferred to the alias slices. Never
+  split a label on `#`. Empty or NUL project and task names are rejected when the
   workspace loads (`workspace.invalid_project_name`, `workspace.invalid_task_name`).
 - Executable nodes (`TaskExecutionNode`) come only from the graph builder and
   the `omni exec` and `--ignore-dependencies` paths in `omni_execution_plan`.
