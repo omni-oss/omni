@@ -1,6 +1,6 @@
 # RFC 0032: Pre-v1 migration infrastructure
 
-**Status:** Proposed. This PR is design only. The Rust below is illustrative, not compiled or shipped.
+**Status:** Approved for slice 1 only (contract-proof harness), by maintainer decision. The Rust below is illustrative, not compiled or shipped. Slices 2 and later still need their own evidence and review.
 **Readers:** Omni maintainers reviewing the contract and contributors who will prototype it.
 
 ## Goal and scope
