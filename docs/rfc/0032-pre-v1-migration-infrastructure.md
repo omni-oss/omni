@@ -38,17 +38,19 @@ Neither F06.3 nor F08 D1 depends on this crate. This PR records their boundary d
 
 - `Version(u32)` is an internal, opaque identifier. An adapter owns stable mappings from on-disk tokens, with separate missing, malformed and well-formed-but-unknown errors (and separate I/O errors). Do not interpret absence as a version, increment integers, infer format from app release, or sort versions numerically. Initialization, if supported, is separate and explicit.
 - A chain is a base version plus an immutable, validated slice of transitions in predecessor order. Each transition has `previous`, `version`, a typed upgrade `StepId` and an optional **separately implemented** downgrade `StepId`. Validate continuity, unique versions (including the base), and unique step IDs, including across directions. Use indices for order and a registry closed over the adapter's typed IDs. No graph, linked heap nodes or dynamic plugins.
+- A store records the **chain identity** it belongs to: a stable, adapter-owned `ChainName` (for example `"pins"`) written in the authoritative state beside the version token. The version token is meaningful only within that chain. The adapter verifies the name during observation, before it can return `Ready(version)`; a missing or malformed name is an observation error like a missing or malformed version, and a well-formed name that differs from the catalog's is `ChainMismatch`. `ChainMismatch` is reserved for this store-name mismatch and is never retried, repaired, planned around or treated as unknown-newer; it refuses ordinary access and explicit planning with zero writes. Because verification happens at observation, the up-to-date path stays one comparison. The catalog additionally exposes a `ChainBinding` (name plus a digest of the validated base, ordered `(previous, version)` pairs and step IDs). The plan binds it, so a plan or catalog built for a different or edited chain (a binding or digest mismatch, at planning and at guarded preflight alike) is `StaleCatalog`, never `ChainMismatch`. The store records only the name, not the digest, so appending a transition keeps existing stores readable.
 - Ordinary access does not migrate. A caller refuses an incompatible newer format, whether recognized as newer by chain order or unrecognized by its adapter. An explicit upgrade must select a higher chain position; an explicit downgrade must select a lower one and have the entire reverse path before any format writes. An equal-version explicit request is `WrongDirection`, not `UpToDate`. Neither planning nor execution treats an upgrade as having an implicit inverse.
 - A caller observes state. It only supplies `Ready(version)` when the adapter has established health, not merely read a version marker when partial state is possible. Observation errors are not healthy states. The caller must obtain a coherent snapshot (for example, use its existing read guard if separate files could change between reads). Once health has been observed, current-version access is one version comparison, returning `UpToDate` without touching the registry, opening a session, allocating, or adding I/O or logging. It is not a lock protecting subsequent ordinary reads; callers still own the consistency of those reads.
 - Planning is deterministic and read-only. Bind the plan to the observed store identity, revision and version, the immutable registry/catalog identity, direction, target and policy. A revision must detect relevant same-version edits, including replacement of a store; define it over the complete authoritative state or use a non-reused generation updated by every cooperating writer. An adapter unable to supply that evidence cannot use the shared runner as sketched. Plans are opaque, in-process values, not user input or replayable serialized jobs.
 - Capabilities belong to each direction's implementation. `atomic` means publication of **that step's logical format/data**, not the entire chain, is old-complete or new-complete on the supported backend. `lossless` means successful conversion preserves all meaningful data; refusal is allowed. `derivable` matters only when lossy: every discarded value can be reconstructed deterministically from retained authoritative inputs (including the needed derivation definition). It does not imply a downgrade implementation exists.
-- Default policy rejects lossy steps, and this sketch also defaults to requiring atomic steps. Derivable loss, irreversible loss and permission to use a non-atomic step are independent opt-ins. No opt-in overrides missing implementation, stale state, unsupported durability, unknown versions or recovery. The non-atomic opt-in shape is a fixture-level proposal, not a CLI or release policy.
+- Capabilities are checked **before a step runs**, against both policy and the backend. Lossless/derivable are properties of the step's code and are declared in the catalog; the backend reports what it can honor (`BackendSupport`) as two separate facts. `durable` (exclusive same-directory staging, file sync, directory sync and atomic replacement of single small files such as intent and marker documents; everything either fixture's commit and recovery protocol needs, atomic or not) is required by **every** step; a backend without it refuses all steps with `UnsupportedBackend`, regardless of `allow_non_atomic`. `atomic_publish` (atomic publication of a step's whole payload, so all data of a step becomes visible together; never small-file replacement) is additionally required by steps declaring `atomic`. A step declaring `atomic` on a backend without `atomic_publish` is **refused** with `UnsupportedBackend`: no degradation to a non-atomic protocol, and `allow_non_atomic` does not override it, because that opt-in covers steps designed as non-atomic, not a weakened atomic one. The check runs at planning on the cached probe, and again at guarded preflight for every planned step on one fresh read-only `probe()` of the backend taken before any format write; it is an error, not `NotCommitted`. Each step's `apply` takes a fresh read-only probe (`probe()`) before staging any write and checks that result, so a mid-chain flip is observable; and a step that discovers the loss mid-chain before mutating returns `NotCommitted(UnsupportedBackend)`. If support is lost after a step began mutating, the outcome is `RecoveryRequired` under the general rule, never `NotCommitted`. The cached probe taken when the session opens is used only for planning, never for preflight, so a support flip after `begin_migration` and before preflight is caught with zero writes even when an earlier step is non-atomic; no probe may write.
+- Default policy rejects lossy steps, and this sketch also defaults to requiring atomic steps. Derivable loss, irreversible loss and permission to use a non-atomic step are independent opt-ins. No opt-in overrides missing implementation, stale state, unsupported durability (`durable`), unknown versions or recovery. The non-atomic opt-in shape is a fixture-level proposal, not a CLI or release policy.
 - The session owns the guard from re-observation through the last step and cleanup. `begin_migration` may acquire or create coordination resources, but may not change the format, data or recovery state. Re-observe under the guard; reject stale state without replanning, even if a peer already reached the target. Recheck all planned IDs, capabilities and policy before any format writes. A data-dependent check on a later step may require the predecessor's actual output. An adapter performs that check on the guarded input before the step mutates it; failure stops at the last committed version, without an automatic inverse.
 - The adapter owns per-step publication, durable commit, recovery evidence and rollback. `Committed` means the next version and its data are durably published. `NotCommitted(error)` means the old version is proven live and healthy, including any local rollback; inert temp files may remain. `RecoveryRequired(error)` means the adapter cannot establish a healthy old or new state; do not infer success from a plausible marker or retry the chain. The runner reports the last **confirmed** version separately from an unresolved step. Recovery is a separate guarded adapter operation. Rollback restores an interrupted or failed operation's prior state; downgrade converts a healthy committed format to an earlier one by an explicit step and policy.
 
 ## Core Rust reference sketch
 
-Helper types such as `Error`, `StoreId`, `Revision` and `CatalogId`, diagnostic plumbing and derives are abbreviated. A `Stamp` is captured as part of the same coherent observation as `Ready`; building or moving it belongs to the caller or the cold path. `gate_access` is only for ordinary access and takes a lazy compatibility check for mismatched versions. It does not construct a migration plan. Explicit planning requires a healthy observation and calls `build_plan` directly, including when the observed version equals the requested target.
+Helper types such as `Error`, `StoreId`, `Revision`, `CatalogId`, `ChainName`, `ChainBinding`, `digest_chain`, diagnostic plumbing and derives are abbreviated. `ChainName` is `Copy` (it is passed by value, including where `build_plan` reads `observed.chain` before moving `observed`). A `Stamp` is captured as part of the same coherent observation as `Ready`; building or moving it belongs to the caller or the cold path. `gate_access` is only for ordinary access and takes a lazy compatibility check for mismatched versions. It does not construct a migration plan. Explicit planning requires a healthy observation and calls `build_plan` directly, including when the observed version equals the requested target.
 
 ```rust
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -63,6 +65,7 @@ enum StoreState {
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Stamp {
     store: StoreId,
+    chain: ChainName,
     revision: Revision,
     version: Version,
 }
@@ -72,6 +75,12 @@ struct StepCapabilities {
     atomic: bool,
     lossless: bool,
     derivable: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct BackendSupport {
+    durable: bool,        // Required by every step.
+    atomic_publish: bool, // Required only by `atomic` steps.
 }
 
 #[derive(Clone, Copy, Default)]
@@ -132,6 +141,11 @@ impl<'a, StepId: Copy + Eq + std::hash::Hash> Chain<'a, StepId> {
         Ok(Self { base, edges })
     }
 
+    // Digest of base, ordered (previous, version) pairs and step IDs.
+    fn binding(&self, name: ChainName) -> ChainBinding {
+        ChainBinding { name, digest: digest_chain(self.base, self.edges) }
+    }
+
     fn index(&self, v: Version) -> Result<usize, Error> {
         if v == self.base {
             return Ok(0);
@@ -152,6 +166,7 @@ struct Step<StepId> {
 struct Plan<StepId> {
     observed: Stamp,
     catalog: CatalogId,
+    binding: ChainBinding,
     direction: Direction,
     target: Version,
     policy: Policy,
@@ -160,6 +175,9 @@ struct Plan<StepId> {
 
 trait Catalog<StepId> {
     fn id(&self) -> CatalogId;
+    fn binding(&self) -> ChainBinding;
+    // Read-only; what this backend can honor, independent of any step.
+    fn backend(&self) -> BackendSupport;
     // Read-only and stable for this catalog/backend; None means not implemented.
     fn capabilities(&self, step: Step<StepId>) -> Option<StepCapabilities>;
 }
@@ -181,6 +199,16 @@ fn gate_access<T>(
     }
 }
 
+fn check_backend(b: BackendSupport, c: StepCapabilities) -> Result<(), Error> {
+    if !b.durable {
+        return Err(Error::UnsupportedBackend); // Every step; no opt-in overrides.
+    }
+    if c.atomic && !b.atomic_publish {
+        return Err(Error::UnsupportedBackend); // Refuse; never degrade.
+    }
+    Ok(())
+}
+
 fn build_plan<StepId: Copy + Eq + std::hash::Hash>(
     chain: &Chain<'_, StepId>,
     catalog: &impl Catalog<StepId>,
@@ -189,10 +217,19 @@ fn build_plan<StepId: Copy + Eq + std::hash::Hash>(
     direction: Direction,
     policy: Policy,
 ) -> Result<Plan<StepId>, Error> {
+    // Name check is defence in depth: observation already verified it.
+    if observed.chain != catalog.binding().name {
+        return Err(Error::ChainMismatch);
+    }
+    // Edited or different chain: binding/digest mismatch, not a store mismatch.
+    if chain.binding(observed.chain) != catalog.binding() {
+        return Err(Error::StaleCatalog);
+    }
     let (a, b) = (chain.index(observed.version)?, chain.index(target)?);
     let mut steps = Vec::new();
     let mut push = |step| {
         let c = catalog.capabilities(step).ok_or(Error::MissingStep)?;
+        check_backend(catalog.backend(), c)?;
         policy.check(c)?;
         steps.push((step, c));
         Ok::<_, Error>(())
@@ -214,7 +251,7 @@ fn build_plan<StepId: Copy + Eq + std::hash::Hash>(
         }
         _ => return Err(Error::WrongDirection), // Includes equal versions.
     }
-    Ok(Plan { observed, catalog: catalog.id(), direction, target, policy, steps })
+    Ok(Plan { observed, catalog: catalog.id(), binding: catalog.binding(), direction, target, policy, steps })
 }
 
 enum StepOutcome {
@@ -235,6 +272,7 @@ trait MigrationStore<StepId> {
 
 trait MigrationSession<StepId>: Catalog<StepId> {
     fn observe(&self) -> Result<GuardedObservation, Error>;
+    fn probe(&self) -> BackendSupport; // fresh, read-only; never the cached backend()
     fn apply(&mut self, step: Step<StepId>) -> StepOutcome;
 }
 
@@ -255,14 +293,18 @@ fn execute<StepId: Copy>(
         GuardedObservation::Ready(_) => return Err(Error::StalePlan),
         GuardedObservation::RecoveryRequired => return Err(Error::Dirty),
     }
-    if session.id() != plan.catalog {
+    if session.id() != plan.catalog || session.binding() != plan.binding {
         return Err(Error::StaleCatalog);
     }
+    // One fresh read-only probe before any format write, not the cached
+    // backend(); every planned step is checked against it.
+    let fresh = session.probe();
     for &(step, expected) in &plan.steps {
         let c = session.capabilities(step).ok_or(Error::MissingStep)?;
         if c != expected {
             return Err(Error::StaleCatalog);
         }
+        check_backend(fresh, c)?;
         plan.policy.check(c)?;
     }
 
@@ -284,7 +326,7 @@ fn execute<StepId: Copy>(
 }
 ```
 
-`CatalogId` binds the immutable chain and the dispatch/capability definition for the selected backend. Nothing external can assemble or edit a `Plan`; only the validated chain and planner make one. Capability preflight describes what can be attempted, not what arbitrary later data can represent.
+`CatalogId` binds the immutable chain and the dispatch/capability definition for the selected backend; `ChainBinding` pins which chain that is. A chain whose digest differs from the catalog's (`StaleCatalog`), or a store whose recorded name differs (`ChainMismatch`), can never produce a plan. Nothing external can assemble or edit a `Plan`; only the validated chain and planner make one. Capability preflight describes what can be attempted, not what arbitrary later data can represent.
 
 Use synchronous fixture sessions first. If an async harness is needed, move the **whole** execution into a blocking worker that acquires and owns the session; never let cancellation of an awaiting task release a guard while a detached writer is still running. Cancellation is cooperative between steps. Dropping an awaiter is not a rollback or an outcome; a successor must observe under coordination after the worker settles. A panic or process death must be safe by protocol, not by running a destructor. The core adds no async runtime dependency.
 
@@ -294,7 +336,7 @@ Both fixtures are invented and run only against temporary directories. The share
 
 ### `LockfileStore`: atomic, possibly refusing downgrade
 
-Use one authoritative JSON document containing version, generation and all data. Example versions are `"pins-v1"` → `Version(7)` and `"pins-v2"` → `Version(42)`. A well-formed tag is `pins-v` followed by one or more ASCII digits; only listed strings are supported. A fresh token or `incarnation` is supplied only at explicit fixture creation; every authoritative writer bumps the document generation without wrap. One non-replaced `.migration.guard` coordinates observation, writes and recovery (all writers must participate, or exclude them offline). Do not lock the inode being replaced or unlink the guard. The real [`Lockfile::save_inner`](../../crates/omni_lockfile/src/lockfile.rs) is an example of single-file publication, **not** this recovery protocol: [`atomic_file::write`](../../crates/omni_utils/src/atomic_file.rs) explicitly does not sync the parent directory.
+Use one authoritative JSON document containing chain name (`"pins"`), version, generation and all data. Example versions are `"pins-v1"` → `Version(7)` and `"pins-v2"` → `Version(42)`. A well-formed tag is `pins-v` followed by one or more ASCII digits; only listed strings are supported. A fresh token or `incarnation` is supplied only at explicit fixture creation; every authoritative writer bumps the document generation without wrap. One non-replaced `.migration.guard` coordinates observation, writes and recovery (all writers must participate, or exclude them offline). Do not lock the inode being replaced or unlink the guard. The real [`Lockfile::save_inner`](../../crates/omni_lockfile/src/lockfile.rs) is an example of single-file publication, **not** this recovery protocol: [`atomic_file::write`](../../crates/omni_utils/src/atomic_file.rs) explicitly does not sync the parent directory.
 
 ```rust
 const PINS_V1: Version = Version(7);
@@ -326,6 +368,7 @@ fn pins_version(tag: Option<&serde_json::Value>) -> Result<Version, Error> {
 struct LockfileStore { root: PathBuf, fs: DurableFixtureFs }
 struct PinsSession<'a> {
     store: &'a LockfileStore,
+    catalog: PinsCatalog, // backend probed once in begin_migration
     _guard: ExclusiveGuard,
 }
 
@@ -333,15 +376,27 @@ impl MigrationStore<PinsStep> for LockfileStore {
     type Session<'a> = PinsSession<'a>;
     fn begin_migration(&self) -> Result<PinsSession<'_>, Error> {
         let guard = self.fs.lock_exclusive(self.root.join(".migration.guard"))?;
-        Ok(PinsSession { store: self, _guard: guard })
+        let catalog = PinsCatalog { backend: self.fs.probe(), binding: pins_binding()? };
+        Ok(PinsSession { store: self, catalog, _guard: guard })
     }
 }
 
 // A pure descriptor: planning can use PinsCatalog without opening a session.
-struct PinsCatalog;
+// `backend` is probed once, read-only, when the store or session is opened (or
+// taken from fixture configuration) and cached for planning only;
+// guarded preflight and `apply` take fresh probe()s. No probe writes.
+struct PinsCatalog { backend: BackendSupport, binding: ChainBinding }
+
+// The binding is computed from the validated chain, never hand-written, so it
+// cannot drift from PINS_EDGES.
+fn pins_binding() -> Result<ChainBinding, Error> {
+    Ok(Chain::new(PINS_V1, PINS_EDGES)?.binding(ChainName::PINS))
+}
 
 impl Catalog<PinsStep> for PinsCatalog {
     fn id(&self) -> CatalogId { PINS_CATALOG }
+    fn binding(&self) -> ChainBinding { self.binding } // from pins_binding(), name "pins"
+    fn backend(&self) -> BackendSupport { self.backend } // cached at open; planning only, never preflight
     fn capabilities(&self, s: Step<PinsStep>) -> Option<StepCapabilities> {
         match (s.from, s.to, s.id) {
             (PINS_V1, PINS_V2, PinsStep::AddNotes)
@@ -354,22 +409,42 @@ impl Catalog<PinsStep> for PinsCatalog {
 }
 
 impl Catalog<PinsStep> for PinsSession<'_> {
-    fn id(&self) -> CatalogId { PinsCatalog.id() }
+    fn id(&self) -> CatalogId { PINS_CATALOG }
+    fn binding(&self) -> ChainBinding { self.catalog.binding() }
+    fn backend(&self) -> BackendSupport { self.catalog.backend() } // cached; planning only, never preflight
     fn capabilities(&self, s: Step<PinsStep>) -> Option<StepCapabilities> {
-        PinsCatalog.capabilities(s)
+        self.catalog.capabilities(s) // pure table; no backend I/O
     }
 }
 
 impl MigrationSession<PinsStep> for PinsSession<'_> {
+    fn probe(&self) -> BackendSupport { self.store.fs.probe() } // fresh, read-only
     fn observe(&self) -> Result<GuardedObservation, Error> {
-        if self.store.has_pending_intent()? {
+        // A pending intent records its ChainName, so recovery stays reachable
+        // even when the document's chain name is unreadable. A foreign store's
+        // intent is ChainMismatch, not this chain's RecoveryRequired.
+        if let Some(name) = self.store.pending_intent_chain()? {
+            if name != ChainName::PINS {
+                return Err(Error::ChainMismatch);
+            }
             return Ok(GuardedObservation::RecoveryRequired);
         }
+        self.store.check_chain_name()?;
         // Read and validate the whole document, not just its version string.
+        // The chain-name check inside read_document is defence in depth;
+        // check_chain_name() already ran.
         Ok(GuardedObservation::Ready(self.store.read_document()?.stamp()))
     }
 
     fn apply(&mut self, s: Step<PinsStep>) -> StepOutcome {
+        // Fresh read-only probe before any write, staging included; the cached
+        // session value cannot see a mid-chain flip.
+        let Some(c) = self.capabilities(s) else {
+            return StepOutcome::NotCommitted(Error::MissingStep);
+        };
+        if let Err(e) = check_backend(self.store.fs.probe(), c) {
+            return StepOutcome::NotCommitted(e);
+        }
         let old = match self.store.read_document() {
             Ok(doc) if doc.version() == s.from => doc,
             Ok(_) => return StepOutcome::RecoveryRequired(Error::UnexpectedVersion),
@@ -403,7 +478,7 @@ impl PinsSession<'_> {
             Ok(stage) => stage,
             Err(e) => return StepOutcome::NotCommitted(e),
         };
-        let intent = Intent::new(old.fingerprint(), next.fingerprint());
+        let intent = Intent::new(ChainName::PINS, old.fingerprint(), next.fingerprint());
         // Each publish uses a same-directory exclusive temp + file sync +
         // replacement rename + parent directory sync; differentiate failures.
         match fs.publish_intent_durably(&intent) {
@@ -426,11 +501,11 @@ impl PinsSession<'_> {
 }
 ```
 
-Here `DurableFixtureFs` is a contract for one explicitly supported, local fixture backend: exclusive same-directory staging, write/flush/file sync, atomic replacement and directory sync (including initial root creation before use). Refuse unsupported backends in preflight. `clear_intent_after_durable_document` reports a failure when removal cannot be established, including an ambiguous unlink; if only the removal's directory sync fails after successful unlink, it may still report success for the **already durable document**, since a resurrected intent can safely block and be resolved on restart. Do not use that allowance before data is durable.
+Here `DurableFixtureFs` is a contract for one explicitly supported, local fixture backend: exclusive same-directory staging, write/flush/file sync, atomic replacement and directory sync (including initial root creation before use). Refuse unsupported backends in preflight: `probe()` reports `durable: false` when exclusive staging, file sync, directory sync or atomic replacement of single small files (intent and marker documents) cannot be confirmed, which refuses every step of both fixtures, and `atomic_publish: false` when atomic publication of a step's whole payload cannot be confirmed, which refuses only the lockfile's atomic steps. Small-file atomic intent and marker publication stays under `durable`; the index fixture runs on `durable: true, atomic_publish: false` with its non-atomic steps allowed. `clear_intent_after_durable_document` reports a failure when removal cannot be established, including an ambiguous unlink; if only the removal's directory sync fails after successful unlink, it may still report success for the **already durable document**, since a resurrected intent can safely block and be resolved on restart. Do not use that allowance before data is durable.
 
 Every writer, including a same-version fixture editor, must refuse pending intents and durably publish its own fresh intent before touching authoritative state. This ensures an earlier intent whose removal was not synced cannot reappear alongside a later write. Keep the guard through this sequence.
 
-The intent contains exact identities of old and replacement documents (generation and content fingerprint). Guarded recovery checks the live, fully validated document against the intent: if it matches either identity, sync it and its parent before resolving and clearing intent; report which was recovered, do not run a downgrade or publish the staged target. If neither matches, or durability cannot be re-established, refuse and retain recovery evidence. Before any document replacement, an absent intent is safe because either publication did not begin or the old document is intact. Missing document or tag with no intent is a missing observation error; invalid JSON or wrong/invalid tag shape is malformed; a syntactically valid unsupported tag is unknown. Strictly decode version-specific payloads; never silently drop unknown fields to make a downgrade pass.
+The intent records the `ChainName` and the exact identities of the old and replacement documents (generation and content fingerprint). An intent whose chain name is missing or unreadable fails closed; it is never treated as no intent. Guarded recovery checks the live, fully validated document against the intent: if it matches either identity, sync it and its parent before resolving and clearing intent; report which was recovered, do not run a downgrade or publish the staged target. If neither matches, or durability cannot be re-established, refuse and retain recovery evidence. Before any document replacement, an absent intent is safe because either publication did not begin or the old document is intact. Missing document or tag with no intent is a missing observation error; invalid JSON or wrong/invalid tag shape is malformed; a syntactically valid unsupported tag is unknown. Strictly decode version-specific payloads; never silently drop unknown fields to make a downgrade pass.
 
 ### `IndexStore`: non-atomic, derivable data
 
@@ -456,6 +531,10 @@ const INDEX_EDGES: &[Transition<IndexStep>] = &[Transition {
 // pure dispatch table. CatalogId binds the chain and derivation/backend.
 impl Catalog<IndexStep> for IndexSession<'_> {
     fn id(&self) -> CatalogId { INDEX_CATALOG }
+    // Computed from the validated chain at session open:
+    // Chain::new(WITH_INDEX, INDEX_EDGES)?.binding(ChainName::INDEX).
+    fn binding(&self) -> ChainBinding { self.binding }
+    fn backend(&self) -> BackendSupport { self.backend } // probed once at open, read-only; planning only, never preflight
     fn capabilities(&self, s: Step<IndexStep>) -> Option<StepCapabilities> {
         match (s.from, s.to, s.id) {
             (WITH_INDEX, WITHOUT_INDEX, IndexStep::DropShards) => {
@@ -470,16 +549,31 @@ impl Catalog<IndexStep> for IndexSession<'_> {
 }
 
 impl MigrationSession<IndexStep> for IndexSession<'_> {
+    fn probe(&self) -> BackendSupport { self.io.probe() } // fresh, read-only
     fn observe(&self) -> Result<GuardedObservation, Error> {
-        if self.io.has_pending_intent()? {
+        // Same order as PinsSession: the intent's recorded ChainName decides first.
+        if let Some(name) = self.io.pending_intent_chain()? {
+            if name != ChainName::INDEX {
+                return Err(Error::ChainMismatch);
+            }
             return Ok(GuardedObservation::RecoveryRequired);
         }
+        self.io.check_chain_name()?;
         // Validate layout, authority, and its relation to the shards. A stamp
         // includes the non-reused root identity and all relevant revisions.
         self.io.observe_clean_layout()
     }
 
     fn apply(&mut self, s: Step<IndexStep>) -> StepOutcome {
+        // Fresh probe before any write: `durable` is required (it covers the
+        // atomic intent and marker documents); these steps are non-atomic so
+        // `atomic_publish` is not. Loss here is NotCommitted.
+        let Some(c) = self.capabilities(s) else {
+            return StepOutcome::NotCommitted(Error::MissingStep);
+        };
+        if let Err(e) = check_backend(self.io.probe(), c) {
+            return StepOutcome::NotCommitted(e);
+        }
         // Load records and verify preconditions without mutations.
         let inputs = match self.io.read_verified_inputs(s.from) {
             Ok(inputs) => inputs,
@@ -508,7 +602,7 @@ impl MigrationSession<IndexStep> for IndexSession<'_> {
 }
 ```
 
-Prewrite failure is `NotCommitted` only if the old layout is still known healthy; an inconsistency or unreadable state fails closed. The durable intent pins authoritative identity and the exact old, target and rollback markers. Version and revision are published together as a small atomic marker document, **after** the shards are verified and synced; that does not make the shard changes atomic.
+Prewrite failure is `NotCommitted` only if the old layout is still known healthy; an inconsistency or unreadable state fails closed. The durable intent pins authoritative identity, records the `ChainName` (so `observe()` can report `RecoveryRequired` even when the document name is unreadable) and the exact old, target and rollback markers. Chain name, version and revision are published together as a small atomic marker document, **after** the shards are verified and synced; that does not make the shard changes atomic.
 
 Recovery validates the authoritative identity and reads the marker under the guard. If it matches the intent's target marker, verify the target shards and sync the marker and directory before clearing intent and confirming the target. Never roll back a target that may already have been acknowledged. If it matches the old marker, restore the **before** layout by rebuilding shards or removing partial ones, verify and sync, and publish the reserved rollback marker (old version, fresh revision). If it already matches the rollback marker, verify and sync the restored layout before clearing intent. Anything else, including a mismatched shard set at a purportedly published target, stays blocked. This is rollback of an unresolved operation, not the plan's reverse step. Use the same cleanup rule as the lockfile fixture once the selected data and marker are durable. A resurrected intent can be resolved without undoing a confirmed commit.
 
@@ -516,17 +610,20 @@ Recovery validates the authoritative identity and reads the marker under the gua
 
 Port this table to fixtures after approval. Count format/data writes separately from guard acquisition and observation. Exercise the real fixture protocol with fault injection, not just a stub that returns the desired enum.
 
-| Case                                 | Given / action                                                                                                                                                                                                                              | Expected evidence                                                                                                                                                                                                                                                                                                                                                                                                 |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Lockfile round trip and refusal      | One v1 pin; upgrade, then explicitly downgrade first with empty notes, then in a separate run with a meaningful v2 note.                                                                                                                    | First round trip preserves the pin and logical data; revisions advance. Second returns `NotCommitted(MeaningfulNotes)` with v2 bytes unchanged and no intent. Ordinary v1 access to v2 fails without any mutation.                                                                                                                                                                                                |
-| Full plan before writes              | Use a three-version chain with nonconsecutive, nonmonotonic IDs. Remove the downgrade on the **second** reverse leg; separately leave it declared but omit the implementation in the catalog.                                               | `NoDowngradePath` versus `MissingStep`; no first reverse write. Exercise duplicate versions/IDs, a disconnected predecessor, unknown source/target and distinct missing/malformed/unknown observations. Compare repeated plans for stable step order and capabilities.                                                                                                                                            |
-| Policy is directional                | Plan `90 → 12`, then separately plan `12 → 90`. Stub a third step marked irreversible for policy checks, including on the second leg of a chain.                                                                                            | Forward needs both non-atomic and derivable-loss opt-ins; reverse only needs non-atomic permission. Neither kind of loss permission grants the other. A failure anywhere in preflight leaves all steps no-write.                                                                                                                                                                                                  |
-| Guarded stale check                  | Plan from v1, then let a peer edit v1 (including an edit restored to the same logical data but with a new generation), replace the store, or reach v2 before execution. Separately change a capability at guarded preflight.                | Stale plan/catalog, no replanning even if target is now current; zero format writes.                                                                                                                                                                                                                                                                                                                              |
-| Lockfile interruption                | Inject failure before intent publication and at document replace, parent sync and intent cleanup. Kill a helper process after publishing intent and after replacing the document.                                                           | Before visible intent, the old document is healthy and unchanged. Uncertain publication never claims commit from the version string. Reopen under the guard; recover a validated old or new document, or stay blocked for mismatched evidence.                                                                                                                                                                    |
-| Non-atomic interruption              | Kill after the first shard is removed with the old marker still present, and again during a rollback run. Separately simulate an intent reappearing after a confirmed commit.                                                               | Observation is dirty despite matching `VERSION`. Ordinary access and runner refuse; guarded recovery can be retried and restores the old healthy layout byte-for-byte for the derivable shards. A normal successful cycle reconstructs the same shards from retained authority. A resurrected intent for a confirmed commit is finalized at the target, not rolled back.                                          |
-| Prefix commit, not chain transaction | In a three-version lockfile fixture, make the first reverse step succeed and the second reject a meaningful field in its guarded input.                                                                                                     | `Stopped` at the middle version; the first step remains committed. Uncertain second publication instead reports `NeedsRecovery` with the middle version only as last confirmed.                                                                                                                                                                                                                                   |
-| Cancellation and concurrency         | Barrier-block the first worker after intent, drop its awaiter, and race a second process for the same guard. Separately request cooperative cancellation at a step boundary.                                                                | The second process cannot mutate while the first writer is live. The first settles before the guard is released; the second re-observes and rejects stale/dirty state as appropriate. Boundary cancellation keeps exactly the committed prefix.                                                                                                                                                                   |
-| Zero-work path                       | Pass already-observed `Ready(target)` with panic-on-access registry and session fakes, plus a cold closure that panics if entered. Separately pass `RecoveryRequired` and request an explicit upgrade or downgrade to the observed version. | Ordinary access returns `UpToDate` with no invocation, allocation, I/O or event; dirty is never accepted as current. Explicit requests fail with `WrongDirection` and no writes. Check allocation/event counts outside timing. Compare the optimized access gate against bare `Version` equality with runtime inputs and consumed outputs (`black_box`); report median/spread and measure adapter I/O separately. |
+| Case                                 | Given / action                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Expected evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Lockfile round trip and refusal      | One v1 pin; upgrade, then explicitly downgrade first with empty notes, then in a separate run with a meaningful v2 note.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | First round trip preserves the pin and logical data; revisions advance. Second returns `NotCommitted(MeaningfulNotes)` with v2 bytes unchanged and no intent. Ordinary v1 access to v2 fails without any mutation.                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Chain identity binding               | Open a store recorded as chain `"index"` with the pins catalog (and the reverse); a store with the chain name missing or malformed; a store whose version token is valid in both chains. Separately build a plan, then present a catalog whose chain was edited (changed step ID or reordered versions) at guarded preflight.                                                                                                                                                                                                                                                                                                                                                           | Observation fails with `ChainMismatch` (or missing/malformed) before `Ready`; ordinary access and planning refuse, zero writes, no recovery attempted. Edited chain is `StaleCatalog` at planning and at preflight (`ChainMismatch` only for the store's name). Appending a transition leaves the recorded name valid and the old store readable.                                                                                                                                                                                                                                                                           |
+| Intent chain name                    | Leave a pending intent and make the document's chain name unreadable or foreign, for each fixture.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Own-chain intent with unreadable name: `RecoveryRequired`; foreign intent name: `ChainMismatch`; zero writes.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| Backend capability gate              | Run the lockfile fixture on a fault backend reporting `durable: true, atomic_publish: false`, with and without `allow_non_atomic`; run the index fixture on the same backend. Separately report `durable: false` and run both fixtures with and without `allow_non_atomic`. Flip the fault backend's live support value to false after `begin_migration` has cached its probe and before guarded preflight (stale cache; the fresh preflight probe must see it), including a mixed chain of a non-atomic step then an atomic step, and inside a later step before it mutates (visible only to that step's fresh `probe()`), using the three-version fixture from the prefix-commit row. | Lockfile upgrade and downgrade fail with `UnsupportedBackend` in both policies, no format write, no intent. Index plans and runs unchanged on the durable, non-atomic backend. With `durable: false`, every step of both fixtures is refused with `UnsupportedBackend` regardless of `allow_non_atomic`, with zero writes. Preflight flip is an error with zero writes, including the mixed chain (non-atomic then atomic step): nothing committed; the in-step flip before the later step mutates is `Stopped { last: middle, error: UnsupportedBackend }` (from `NotCommitted(UnsupportedBackend)`), middle version live. |
+| Full plan before writes              | Use a three-version chain with nonconsecutive, nonmonotonic IDs. Remove the downgrade on the **second** reverse leg; separately leave it declared but omit the implementation in the catalog.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | `NoDowngradePath` versus `MissingStep`; no first reverse write. Exercise duplicate versions/IDs, a disconnected predecessor, unknown source/target and distinct missing/malformed/unknown observations. Compare repeated plans for stable step order and capabilities.                                                                                                                                                                                                                                                                                                                                                      |
+| Policy is directional                | Plan `90 → 12`, then separately plan `12 → 90`. Stub a third step marked irreversible for policy checks, including on the second leg of a chain.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Forward needs both non-atomic and derivable-loss opt-ins; reverse only needs non-atomic permission. Neither kind of loss permission grants the other. A failure anywhere in preflight leaves all steps no-write.                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Guarded stale check                  | Plan from v1, then let a peer edit v1 (including an edit restored to the same logical data but with a new generation), replace the store, or reach v2 before execution. Separately change a capability at guarded preflight.                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Stale plan/catalog, no replanning even if target is now current; zero format writes.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Lockfile interruption                | Inject failure before intent publication and at document replace, parent sync and intent cleanup. Kill a helper process after publishing intent and after replacing the document.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Before visible intent, the old document is healthy and unchanged. Uncertain publication never claims commit from the version string. Reopen under the guard; recover a validated old or new document, or stay blocked for mismatched evidence.                                                                                                                                                                                                                                                                                                                                                                              |
+| Non-atomic interruption              | Kill after the first shard is removed with the old marker still present, and again during a rollback run. Separately simulate an intent reappearing after a confirmed commit.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Observation is dirty despite matching `VERSION`. Ordinary access and runner refuse; guarded recovery can be retried and restores the old healthy layout byte-for-byte for the derivable shards. A normal successful cycle reconstructs the same shards from retained authority. A resurrected intent for a confirmed commit is finalized at the target, not rolled back.                                                                                                                                                                                                                                                    |
+| Prefix commit, not chain transaction | In a three-version lockfile fixture, make the first reverse step succeed and the second reject a meaningful field in its guarded input.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | `Stopped` at the middle version; the first step remains committed. Uncertain second publication instead reports `NeedsRecovery` with the middle version only as last confirmed.                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| Cancellation and concurrency         | Barrier-block the first worker after intent, drop its awaiter, and race a second process for the same guard. Separately request cooperative cancellation at a step boundary.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | The second process cannot mutate while the first writer is live. The first settles before the guard is released; the second re-observes and rejects stale/dirty state as appropriate. Boundary cancellation keeps exactly the committed prefix.                                                                                                                                                                                                                                                                                                                                                                             |
+| Zero-work path                       | Pass already-observed `Ready(target)` with panic-on-access registry and session fakes, plus a cold closure that panics if entered. Separately pass `RecoveryRequired` and request an explicit upgrade or downgrade to the observed version.                                                                                                                                                                                                                                                                                                                                                                                                                                             | Ordinary access returns `UpToDate` with no invocation, allocation, I/O or event; dirty is never accepted as current. Explicit requests fail with `WrongDirection` and no writes. Check allocation/event counts outside timing. Compare the optimized access gate against bare `Version` equality with runtime inputs and consumed outputs (`black_box`); report median/spread and measure adapter I/O separately.                                                                                                                                                                                                           |
 
 ```rust
 // Future fixture test. The panic fakes also fail on metadata, observation
