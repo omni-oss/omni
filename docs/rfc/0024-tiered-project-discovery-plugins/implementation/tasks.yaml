@@ -417,6 +417,8 @@ tasks:
       deps: [R02],
       touches: [docs],
     }
+  # Plan: features/F10-implementation-plan.md. F10.2 spans slices F10.2a-c;
+  # mark it done only when F10.2c lands (or split it per slice).
   F10.2:
     {
       title: "Tracked contained reads/exists/list with limits",
