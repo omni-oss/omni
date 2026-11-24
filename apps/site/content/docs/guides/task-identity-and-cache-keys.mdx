@@ -46,6 +46,11 @@ output routing. They are now fully independent.
 
 No configuration changes are needed for names that are non-empty and NUL free.
 
+This change does not make cache keys portable between operating systems. As
+before, the key for a task that has input files includes each input's path as
+the operating system writes it, so the same task on Windows and on Linux has
+different keys and does not share cache entries.
+
 ## Rust API changes (pre-v1)
 
 - `TaskExecutionNode::new` takes a `TaskKey` and a typed dependency list;
