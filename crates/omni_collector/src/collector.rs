@@ -1439,12 +1439,9 @@ mod tests {
         let command = CommandConfig::shell("echo build");
 
         let with = digests_for(root, &project, &command).await;
-        let plain = digests_for(
-            root,
-            &ordinary_task(root, "proj", "build"),
-            &command,
-        )
-        .await;
+        let plain =
+            digests_for(root, &ordinary_task(root, "proj", "build"), &command)
+                .await;
 
         assert_eq!(with.collector, with.v1_recipe);
         assert_ne!(with.collector, plain.collector);

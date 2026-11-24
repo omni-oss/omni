@@ -534,10 +534,10 @@ fn update_or_insert_scroll_state(
     None
 }
 
-fn get_current_scroll_state<'a>(
+fn get_current_scroll_state(
     active_id: Option<StreamId>,
-    scroll_states: &'a mut UnorderedMap<StreamId, ScrollState>,
-) -> Option<&'a mut ScrollState> {
+    scroll_states: &mut UnorderedMap<StreamId, ScrollState>,
+) -> Option<&mut ScrollState> {
     if let Some(id) = active_id {
         scroll_states.get_mut(&id)
     } else {

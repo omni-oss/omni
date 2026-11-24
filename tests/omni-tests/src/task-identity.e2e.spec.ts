@@ -1,17 +1,12 @@
-/* oxlint-disable vitest/no-standalone-expect -- `pendingCutover` is an alias of `it`/`it.fails` */
 /**
  * RFC 0024 F03.4 slice 0 proof: a canonical task is its raw (project, task)
  * pair. Project `a#b` with task `c` and project `a` with task `b#c` render the
  * same unescaped `a#b#c` label, which the base still uses as an identity in
  * context lookups, result maps, output routing and the cache digest.
  *
- * The first block pins the base behavior of an ordinary undecorated task (it
- * must pass before and after the cutover, except for the digest, which moves
- * with the v1 identity leaf). The second block is the collision fixture: it
- * documents the target behavior and is `it.fails` until the coherent cutover
- * lands, so the suite stays green while still proving, on the base, that the
- * assertions fail for the collision (see the failure notes per test). Flip
- * `pendingCutover` to `it` in the cutover commit.
+ * The first block pins an ordinary undecorated task (schema, label, cache
+ * layout and the v1 digest). The second block is the collision fixture and its
+ * control; both run as ordinary tests since the cutover landed.
  */
 
 import { readFileSync, readdirSync } from "node:fs";
@@ -20,10 +15,6 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { makeWorkspace, runOmni, type Workspace } from "@/harness";
-
-// Set OMNI_IDENTITY_STRICT=1 to run the collision tests as ordinary tests and
-// see the base failures.
-const pendingCutover = process.env.OMNI_IDENTITY_STRICT ? it : it.fails;
 
 const NO_CONFIG_HASH = { key: { defaults: false, files: ["src/**"] } };
 
@@ -225,7 +216,7 @@ describe("+run @e2e (base behavior of an ordinary task is pinned)", () => {
         ]);
     });
 
-    it("keeps its digest for controlled inputs (moves with the v1 leaf)", async () => {
+    it("has the pinned v1 digest for controlled inputs", async () => {
         const ws = ordinary();
         const resultPath = ws.path("result.json");
         await runOmni(
@@ -233,16 +224,16 @@ describe("+run @e2e (base behavior of an ordinary task is pinned)", () => {
             { cwd: ws.cwd },
         );
         const [item] = JSON.parse(readFileSync(resultPath, "utf8"));
-        expect(item.hash).toBe("QJKrdUfv3oyXl5FNHDNXeTg2VEfwDfPPItr1Hw8AlFo=");
+        expect(item.hash).toBe("S9EO0EDusfY8WI5qn+/84yBJaa5rQ+jWMMQ3EcCgkDc=");
     });
 });
 
-function behaviors(names: Names, test: typeof it | typeof it.fails): void {
-    const find = (items: ResultItem[], project: string, task: string) =>
-        items.find(
-            (i) => i.task.project_name === project && i.task.task_name === task,
-        );
+const find = (items: ResultItem[], project: string, task: string) =>
+    items.find(
+        (i) => i.task.project_name === project && i.task.task_name === task,
+    );
 
+function behaviors(names: Names, test: typeof it): void {
     test("both pairs run once with their own env, meta and logs", async () => {
         const ws = collisionWorkspace(names);
         const { items, stdout, stderr } = await runApp(ws);
@@ -312,14 +303,14 @@ describe("+run @e2e (control: distinct labels behave independently)", () => {
 });
 
 describe("+run @e2e (formerly colliding pairs stay independent)", () => {
-    behaviors(COLLIDING, pendingCutover);
+    behaviors(COLLIDING, it);
 });
 
 describe("+run @e2e (same-project tasks keep their own cached logs)", () => {
     // Base defect found by the proof, independent of label collisions:
     // `cache_many` re-associates logs through a project-only map, so a
     // cache hit replays one task's logs for its sibling.
-    pendingCutover("replays each task's own logs on a cache hit", async () => {
+    it("replays each task's own logs on a cache hit", async () => {
         const ws = collisionWorkspace(CONTROL);
         await runApp(ws);
         const second = await runApp(ws, ["--output-cached-logs", "all"]);
@@ -327,5 +318,212 @@ describe("+run @e2e (same-project tasks keep their own cached logs)", () => {
 
         expect(output).toContain("APP-X");
         expect(output).toContain("APP-Y");
+    });
+});
+
+const BASE58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+
+function base58(bytes: Buffer): string {
+    let n = BigInt(`0x${bytes.toString("hex") || "0"}`);
+    let out = "";
+    while (n > 0n) {
+        out = BASE58[Number(n % 58n)] + out;
+        n /= 58n;
+    }
+    for (const byte of bytes) {
+        if (byte !== 0) break;
+        out = `1${out}`;
+    }
+    return out;
+}
+
+function parityWorkspace(opts: { appDependsOnLib: boolean }): Workspace {
+    const cache = { key: { defaults: false, files: ["src/**"] } };
+    return makeWorkspace({
+        workspace: { projects: ["**"] },
+        projects: {
+            lib: { name: "lib", tasks: { gen: { exec: "echo gen", cache } } },
+            app: {
+                name: "app",
+                tasks: {
+                    x: {
+                        exec: "echo x",
+                        cache,
+                        ...(opts.appDependsOnLib
+                            ? { dependencies: ["lib#gen"] }
+                            : {}),
+                    },
+                },
+            },
+        },
+        files: { "lib/src/a.txt": "a", "app/src/b.txt": "b" },
+    });
+}
+
+async function runResult(
+    ws: Workspace,
+    args: string[],
+): Promise<ResultItem[]> {
+    const resultPath = ws.path(`result-${args.join("_")}.json`);
+    const result = await runOmni(
+        ["run", ...args, "--result", resultPath, "--result-format", "json"],
+        { cwd: ws.cwd },
+    );
+    expect(result).toHaveSucceeded();
+    return JSON.parse(readFileSync(resultPath, "utf8")) as ResultItem[];
+}
+
+describe("+run @e2e (v1 digest parity across run, dry-run, ignore-dependencies and cache)", () => {
+    const hashOf = (items: ResultItem[], project: string, task: string) =>
+        find(items, project, task)?.hash;
+
+    it("dry-run computes the digest a real run records, cold and warm", async () => {
+        const ws = parityWorkspace({ appDependsOnLib: true });
+        const dry = await runResult(ws, ["x", "-p", "app", "--dry-run"]);
+        const real = await runResult(ws, ["x", "-p", "app"]);
+        const warmDry = await runResult(ws, ["x", "-p", "app", "--dry-run"]);
+
+        for (const [project, task] of [
+            ["lib", "gen"],
+            ["app", "x"],
+        ]) {
+            expect(hashOf(dry, project, task)).toBeTruthy();
+            expect(hashOf(real, project, task)).toBe(
+                hashOf(dry, project, task),
+            );
+            expect(hashOf(warmDry, project, task)).toBe(
+                hashOf(real, project, task),
+            );
+        }
+    });
+
+    it("--ignore-dependencies yields the digest of the same task authored without dependencies", async () => {
+        const withDeps = parityWorkspace({ appDependsOnLib: true });
+        const ignored = await runResult(withDeps, [
+            "x",
+            "-p",
+            "app",
+            "--ignore-dependencies",
+        ]);
+        const without = parityWorkspace({ appDependsOnLib: false });
+        const plain = await runResult(without, ["x", "-p", "app"]);
+        const normal = await runResult(withDeps, ["x", "-p", "app"]);
+
+        expect(ignored).toHaveLength(1);
+        expect(hashOf(ignored, "app", "x")).toBe(hashOf(plain, "app", "x"));
+        expect(hashOf(ignored, "app", "x")).not.toBe(
+            hashOf(normal, "app", "x"),
+        );
+    });
+
+    it("the collector digest is the cache output address and stale observation agrees", async () => {
+        const ws = parityWorkspace({ appDependsOnLib: true });
+        const items = await runResult(ws, ["x", "-p", "app"]);
+        const digests = items.map((i) =>
+            base58(Buffer.from(i.hash as string, "base64")),
+        );
+
+        const out = ws.path(".omni", "cache");
+        const addressed = new Set<string>();
+        for (const project of readdirSync(out)) {
+            try {
+                for (const d of readdirSync(join(out, project, "output"))) {
+                    addressed.add(d);
+                }
+            } catch {
+                // not a project directory
+            }
+        }
+        expect([...addressed].sort()).toEqual([...digests].sort());
+
+        const stale = await runOmni(["cache", "prune", "--stale", "-d"], {
+            cwd: ws.cwd,
+        });
+        expect(stale).toHaveSucceeded();
+        expect(`${stale.stdout}\n${stale.stderr}`).not.toContain("Project:");
+
+        ws.write("app/src/b.txt", "changed");
+        const afterChange = await runOmni(["cache", "prune", "--stale", "-d"], {
+            cwd: ws.cwd,
+        });
+        const text = `${afterChange.stdout}\n${afterChange.stderr}`;
+        expect(text).toContain("Project: app");
+        expect(text).not.toContain("Project: lib");
+    });
+
+    it("stale observation keeps both formerly colliding pairs fresh and flags only the changed one", async () => {
+        const ws = collisionWorkspace(COLLIDING);
+        await runApp(ws);
+        const fresh = await runOmni(["cache", "prune", "--stale", "-d"], {
+            cwd: ws.cwd,
+        });
+        expect(`${fresh.stdout}\n${fresh.stderr}`).not.toContain("Project:");
+
+        ws.write("p-ab/src/in.txt", "changed");
+        const changed = await runOmni(["cache", "prune", "--stale", "-d"], {
+            cwd: ws.cwd,
+        });
+        const text = `${changed.stdout}\n${changed.stderr}`;
+        expect(text).toContain("Project: a#b");
+        expect(text).toContain("  Task: c");
+        expect(text).not.toContain("Task: b#c");
+    });
+
+    it("cache prune prints the whole raw task name containing a hash", async () => {
+        const ws = collisionWorkspace(COLLIDING);
+        await runApp(ws);
+        const dry = await runOmni(
+            ["cache", "prune", "-d", "--project", "a", "--task", "b#c"],
+            { cwd: ws.cwd },
+        );
+        const text = `${dry.stdout}\n${dry.stderr}`;
+        expect(text).toContain("Project: a");
+        expect(text).toContain("Task: b#c");
+    });
+});
+
+describe("+hash @e2e (workspace input union is per exact project)", () => {
+    it("project `a` does not inherit the inputs of project `a#b`", async () => {
+        const ws = makeWorkspace({
+            workspace: { projects: ["**"] },
+            projects: {
+                "p-a": {
+                    name: "a",
+                    tasks: {
+                        t: {
+                            exec: "echo t",
+                            cache: { key: { defaults: false, files: ["src/**"] } },
+                        },
+                    },
+                },
+                "p-ab": {
+                    name: "a#b",
+                    tasks: {
+                        c: {
+                            exec: "echo c",
+                            cache: { key: { defaults: false, files: ["other/**"] } },
+                        },
+                    },
+                },
+            },
+            files: {
+                "p-a/src/in.txt": "one",
+                "p-a/other/in.txt": "one",
+                "p-ab/other/in.txt": "one",
+            },
+        });
+        const hash = async () => {
+            const r = await runOmni(["hash", "-r", "workspace"], {
+                cwd: ws.cwd,
+            });
+            expect(r).toHaveSucceeded();
+            return r.stdout;
+        };
+        const before = await hash();
+        // `other/**` belongs to project `a#b` only; project `a` must not hash it.
+        ws.write("p-a/other/in.txt", "changed");
+        expect(await hash()).toBe(before);
+        ws.write("p-ab/other/in.txt", "changed");
+        expect(await hash()).not.toBe(before);
     });
 });

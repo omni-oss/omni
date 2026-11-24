@@ -7326,6 +7326,39 @@ mod tests {
     // -- Structured task identity (RFC 0024 F03.4 slice 0) ---------------
 
     #[tokio::test]
+    async fn formerly_colliding_pairs_upload_under_their_own_digests() {
+        let remote = RemoteUploadSpy::new(204).await;
+        let temp = fixture(&["a#b", "a"]).await;
+        let cache = remote.cache(temp.path());
+        let ab = task("c", "a#b", temp.path());
+        let a = task("b#c", "a", temp.path());
+        let logs = LOGS_CONTENT;
+        let infos = [
+            new_cache_info_with_exit_code(Some(&logs), *ab.get(), 0),
+            new_cache_info_with_exit_code(Some(&logs), *a.get(), 0),
+        ];
+        let hashes = cache.cache_many(&infos).await.unwrap();
+        assert_eq!(hashes.len(), 2);
+        let digests = hashes
+            .iter()
+            .map(|h| bs58::encode(h.digest).into_string())
+            .collect::<Vec<_>>();
+        assert_ne!(digests[0], digests[1]);
+
+        let lines = remote.lines.lock().unwrap();
+        let puts: Vec<_> =
+            lines.iter().filter(|l| l.starts_with("PUT")).collect();
+        assert_eq!(puts.len(), 2, "{lines:?}");
+        for digest in &digests {
+            assert_eq!(
+                puts.iter().filter(|l| l.contains(digest.as_str())).count(),
+                1,
+                "exactly one upload for {digest}: {puts:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn cache_many_keeps_each_same_project_tasks_own_logs() {
         let temp = fixture(&["project1"]).await;
         let cache = cache_store(temp.path());

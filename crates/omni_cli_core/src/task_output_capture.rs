@@ -39,7 +39,10 @@ pub fn capture_path(
     scratch_dir
         .join("logs")
         .join(bs58::encode(project.as_bytes()).into_string())
-        .join(format!("{}-{seq}", bs58::encode(task.as_bytes()).into_string()))
+        .join(format!(
+            "{}-{seq}",
+            bs58::encode(task.as_bytes()).into_string()
+        ))
 }
 
 /// Fully drain `reader`. When `to_file` is `Some`, the bytes are written there

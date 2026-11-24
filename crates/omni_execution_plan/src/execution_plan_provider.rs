@@ -12,7 +12,7 @@ use omni_core::{
     TaskExecutionNode, TaskKey,
 };
 use omni_glob::GlobPatterns;
-use omni_types::{OmniPath, task_label};
+use omni_types::OmniPath;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
 use crate::{
@@ -1026,7 +1026,7 @@ mod tests {
         let mut names: Vec<String> = plan
             .into_iter()
             .flatten()
-            .map(|n| task_label(n.project_name(), n.task_name()))
+            .map(|n| omni_types::task_label(n.project_name(), n.task_name()))
             .collect();
         names.sort();
         Ok(names)

@@ -22,11 +22,11 @@ use omni_messages::{
     TaskRetryingEvent, TaskSkipReason, TaskSkippedEvent, TaskStartedEvent,
 };
 use omni_task_output_logs::LogsDisplay;
-use omni_types::TaskMap;
 use omni_term_ui::mux_output_presenter::{
     MuxOutputPresenter as _, MuxOutputPresenterExt as _,
     MuxOutputPresenterStatic,
 };
+use omni_types::TaskMap;
 use owo_colors::OwoColorize as _;
 use parking_lot::Mutex;
 use tiny_gradient::{Gradient, GradientStr as _};

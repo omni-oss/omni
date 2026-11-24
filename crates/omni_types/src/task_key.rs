@@ -58,7 +58,10 @@ pub struct TaskKey {
 }
 
 impl TaskKey {
-    pub fn new(project: impl Into<Arc<str>>, task: impl Into<Arc<str>>) -> Self {
+    pub fn new(
+        project: impl Into<Arc<str>>,
+        task: impl Into<Arc<str>>,
+    ) -> Self {
         let project = project.into();
         let task = task.into();
         debug_assert!(
