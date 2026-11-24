@@ -661,7 +661,21 @@ impl CliSubscriber {
         let captured = self.captures.lock().remove(project, task);
 
         if let Some(captured) = captured {
-            let target = captured.drain.await.ok().and_then(|r| r.ok());
+            let target = match captured.drain.await {
+                Ok(Ok(target)) => Some(target),
+                Ok(Err(e)) => {
+                    tracing::warn!(
+                        "Failed to capture output of task '{task}' in project '{project}': {e}"
+                    );
+                    None
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "Output capture of task '{task}' in project '{project}' did not complete: {e}"
+                    );
+                    None
+                }
+            };
             if let Some(CaptureTarget::File(path)) = target {
                 if task_output_capture::should_display(captured.facet, failed) {
                     self.replay_file(&path).await;
