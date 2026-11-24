@@ -351,6 +351,7 @@ mod tests {
             dir: Default::default(),
             dependencies: Default::default(),
             tasks: Default::default(),
+            aliases: Default::default(),
         }
     }
 

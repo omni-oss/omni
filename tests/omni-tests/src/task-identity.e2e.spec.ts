@@ -675,7 +675,7 @@ describe("+run @e2e (v1 digest parity across run, dry-run, ignore-dependencies a
                     name: "a#b",
                     tasks: { c: task("d-ab", "META-AB") },
                 },
-                "p-a": { name: "a", tasks: { "b#c": task("d-a", "META-A") } },
+                "p-a": { name: "a", tasks: { "b\\#c": task("d-a", "META-A") } },
             },
             files: {
                 "p-ab/d-ab/in.txt": "one",
@@ -749,7 +749,7 @@ describe("+hash @e2e (hash project uses the v1 leaf, formerly colliding pairs di
             workspace: { projects: ["**"] },
             projects: {
                 "p-ab": { name: "a#b", tasks: { c: task() } },
-                "p-a": { name: "a", tasks: { "b#c": task() } },
+                "p-a": { name: "a", tasks: { "b\\#c": task() } },
             },
             files: { "p-ab/src/in.txt": "one", "p-a/src/in.txt": "one" },
         });

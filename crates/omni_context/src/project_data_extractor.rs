@@ -50,7 +50,7 @@ fn config_file_inputs(
 
 struct RunnableProjectRoots<'a>(
     // None marks an ambiguous root; no insertion order can choose its project.
-    UnorderedMap<ProjectRootId, Option<&'a ProjectConfiguration>>,
+    UnorderedMap<ProjectRootId, Option<&'a FinalizedProject>>,
 );
 
 impl<'a> RunnableProjectRoots<'a> {
@@ -71,7 +71,7 @@ impl<'a> RunnableProjectRoots<'a> {
             roots
                 .entry(ProjectRootId::new(path))
                 .and_modify(|entry| *entry = None)
-                .or_insert(Some(config));
+                .or_insert(Some(project));
         }
         Self(roots)
     }
@@ -84,10 +84,13 @@ impl<'a> RunnableProjectRoots<'a> {
         match self.0.get(root) {
             None => Err("no runnable project has this root"),
             Some(None) => Err("multiple runnable projects have this root"),
-            Some(Some(config)) if !config.tasks.as_map().contains_key(task) => {
-                Err("the runnable project has no task with this name")
+            Some(Some(project))
+                if !project.config.tasks.as_map().contains_key(task)
+                    && project.aliases.resolve(task).is_none() =>
+            {
+                Err("the runnable project has no task or alias with this name")
             }
-            Some(Some(config)) => Ok(config.name.clone()),
+            Some(Some(project)) => Ok(project.config.name.clone()),
         }
     }
 }
@@ -415,12 +418,15 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
                 task_meta_configs.insert(project_name, name, task_meta);
             }
 
-            projects.push(Project::new(
-                project_config.name.clone(),
-                dir.to_path_buf(),
-                project_config.dependencies.to_vec_inner(),
-                tasks,
-            ));
+            projects.push(
+                Project::new(
+                    project_config.name.clone(),
+                    dir.to_path_buf(),
+                    project_config.dependencies.to_vec_inner(),
+                    tasks,
+                )
+                .with_aliases(finalized.aliases.clone()),
+            );
         }
 
         let mut extracted = ProjectDataExtractions::new(
@@ -1004,7 +1010,7 @@ mod tests {
         let mut layers = vec![];
         let mut files = vec![];
         for (sub, name, task, who) in
-            [("ab", "a#b", "c", "ab-c"), ("a", "a", "b#c", "a-bc")]
+            [("ab", "a#b", "c", "ab-c"), ("a", "a", "b\\#c", "a-bc")]
         {
             std::fs::create_dir_all(root.join(sub)).unwrap();
             let file = root.join(sub).join("project.omni.yaml");
@@ -1060,5 +1066,50 @@ mod tests {
         };
         assert_eq!(who("a#b", "c"), serde_json::json!("ab-c"));
         assert_eq!(who("a", "b#c"), serde_json::json!("a-bc"));
+    }
+
+    /// RFC 0024 F03.4 slice 2: aliases travel with the project, never become
+    /// tasks or per-task data, and a root reference may name one.
+    #[test]
+    fn aliases_reach_the_project_and_are_not_tasks() {
+        use omni_configurations::ProjectLayer;
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().to_path_buf();
+        std::fs::create_dir_all(root.join("app")).unwrap();
+        let file = root.join("app/project.omni.yaml");
+        let l = LoadedLayer {
+            layer: serde_json::from_value::<ProjectLayer>(serde_json::json!({
+                "name": "app",
+                "tasks": {
+                    "build-native": "make",
+                    "compile": { "alias": "build-native" },
+                    "t": { "dependencies": ["compile"] }
+                }
+            }))
+            .unwrap(),
+            ..layer(file.to_str().unwrap(), &[])
+        };
+        let graph = ExtensionGraph::from_nodes(vec![l.clone()]).unwrap();
+        let finalized = l.finalize_composed().unwrap();
+        let workspace: WorkspaceConfiguration =
+            serde_json::from_str(r#"{"projects":["**"]}"#).unwrap();
+        let mut env_loader = EnvLoader::new(RealSys, root.clone(), vec![]);
+        let data = ProjectDataExtractor::new(
+            &RealSys,
+            &root,
+            &mut env_loader,
+            false,
+            &workspace,
+        )
+        .extract_all(&[finalized], &[file], &graph)
+        .unwrap();
+        let project = &data.projects[0];
+        assert_eq!(project.aliases.resolve("compile"), Some("build-native"));
+        assert!(!project.tasks.contains_key("compile"));
+        assert!(data.cache_infos.get("app", "compile").is_none());
+        assert_eq!(
+            project.canonical_task_name("compile"),
+            Some("build-native")
+        );
     }
 }

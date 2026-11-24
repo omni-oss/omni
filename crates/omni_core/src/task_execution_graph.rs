@@ -367,81 +367,23 @@ impl TaskExecutionGraph {
         for project in projects.iter() {
             for task in project.tasks.iter() {
                 let tname = task.0.as_str();
-                let pname = project.name.as_str();
 
-                for dependency in task.1.dependencies.iter() {
-                    match dependency {
-                        crate::TaskDependency::Own { task } => {
-                            graph.add_edge_by_names(
-                                pname,
-                                tname,
-                                &project.name,
-                                task,
-                                EdgeType::Dependency,
-                            )?;
-                        }
-                        crate::TaskDependency::ExplicitProject {
-                            project,
-                            task,
-                        } => {
-                            graph.add_edge_by_names(
-                                pname,
-                                tname,
-                                project,
-                                task,
-                                EdgeType::Dependency,
-                            )?;
-                        }
-                        crate::TaskDependency::Upstream { task } => {
-                            add_upstream(
-                                project_graph,
-                                &mut graph,
-                                project,
-                                pname,
-                                tname,
-                                task,
-                                EdgeType::Dependency,
-                            )?;
-                        }
-                    };
-                }
-
-                for sibling in task.1.siblings.iter() {
-                    match sibling {
-                        crate::TaskDependency::Own { task } => {
-                            graph.add_edge_by_names(
-                                pname,
-                                tname,
-                                &project.name,
-                                task,
-                                EdgeType::Sibling,
-                            )?;
-                        }
-                        crate::TaskDependency::ExplicitProject {
-                            project,
-                            task,
-                        } => {
-                            graph.add_edge_by_names(
-                                pname,
-                                tname,
-                                project,
-                                task,
-                                EdgeType::Sibling,
-                            )?;
-                        }
-                        crate::TaskDependency::Upstream { task } => {
-                            add_upstream(
-                                project_graph,
-                                &mut graph,
-                                project,
-                                pname,
-                                tname,
-                                task,
-                                EdgeType::Sibling,
-                            )?;
-                        }
-                    };
-                }
+                add_references(
+                    project_graph,
+                    &mut graph,
+                    project,
+                    tname,
+                    &task.1.dependencies,
+                    EdgeType::Dependency,
+                )?;
+                add_references(
+                    project_graph,
+                    &mut graph,
+                    project,
+                    tname,
+                    &task.1.siblings,
+                    EdgeType::Sibling,
+                )?;
             }
         }
 
@@ -449,59 +391,166 @@ impl TaskExecutionGraph {
     }
 }
 
-fn add_upstream(
+/// A reference resolved to the canonical task it names. `alias` is set when
+/// the written name was an alias of its project, not a canonical task.
+struct ResolvedReference {
+    key: TaskKey,
+    alias: bool,
+}
+
+/// The canonical task a public `name` of `project` refers to.
+fn resolve_in(project: &Project, name: &str) -> Option<ResolvedReference> {
+    let canonical = project.canonical_task_name(name)?;
+    Some(ResolvedReference {
+        key: TaskKey::new(project.name.as_str(), canonical),
+        alias: project.is_alias(name),
+    })
+}
+
+/// Collect the first match of `task` in each branch of `project`'s upstream
+/// projects; a project with no such public name adds nothing and the walk
+/// continues into its own predecessors.
+fn collect_upstream(
     project_graph: &ProjectGraph,
-    task_graph: &mut TaskExecutionGraph,
-    project: &&Project,
-    dependent_project_name: &str,
-    dependent_task_name: &str,
+    project: &Project,
     task: &str,
-    edge_type: EdgeType,
+    found: &mut Vec<ResolvedReference>,
 ) -> Result<(), TaskExecutionGraphError> {
     let dependencies =
         project_graph.get_direct_dependencies_by_name(&project.name)?;
+    for (_, p) in dependencies.iter() {
+        match resolve_in(p, task) {
+            Some(resolved) => found.push(resolved),
+            None => collect_upstream(project_graph, p, task, found)?,
+        }
+    }
+    Ok(())
+}
 
-    if dependencies.is_empty() {
-        return Ok(());
+/// Insert the edges of one task's `references` of one kind.
+///
+/// Explicit canonical references keep their slots and multiplicity. An alias
+/// reference collapses into an explicit slot for the same canonical target
+/// whatever the declaration order, and alias references among themselves
+/// collapse to the first. A `^name` reference keeps its existing rule: it adds
+/// no edge when one of the same kind already connects the pair.
+fn add_references(
+    project_graph: &ProjectGraph,
+    graph: &mut TaskExecutionGraph,
+    project: &Project,
+    task_name: &str,
+    references: &[crate::TaskDependency],
+    edge_type: EdgeType,
+) -> Result<(), TaskExecutionGraphError> {
+    enum Step {
+        Direct(Option<ResolvedReference>, String, String),
+        Upstream(Vec<ResolvedReference>),
     }
 
-    for (_, p) in dependencies.iter() {
-        if p.tasks.contains_key(task) {
-            let add = match edge_type {
-                EdgeType::Dependency => !task_graph
-                    .contains_dependency_by_names(
-                        dependent_project_name,
-                        dependent_task_name,
-                        &p.name,
-                        task,
-                    )?,
-                EdgeType::Sibling => !task_graph.contains_sibling_by_names(
-                    dependent_project_name,
-                    dependent_task_name,
-                    &p.name,
-                    task,
+    let mut steps = Vec::with_capacity(references.len());
+    for reference in references {
+        steps.push(match reference {
+            crate::TaskDependency::Own { task } => Step::Direct(
+                resolve_in(project, task),
+                project.name.clone(),
+                task.clone(),
+            ),
+            crate::TaskDependency::ExplicitProject {
+                project: target,
+                task,
+            } => Step::Direct(
+                project_graph
+                    .get_project_by_name(target)
+                    .ok()
+                    .and_then(|p| resolve_in(p, task)),
+                target.clone(),
+                task.clone(),
+            ),
+            crate::TaskDependency::Upstream { task } => {
+                let mut found = vec![];
+                collect_upstream(project_graph, project, task, &mut found)?;
+                Step::Upstream(found)
+            }
+        });
+    }
+
+    let mut explicit = HashSet::new();
+    let mut upstream = HashSet::new();
+    for step in &steps {
+        match step {
+            Step::Direct(Some(resolved), ..) if !resolved.alias => {
+                explicit.insert(resolved.key.clone());
+            }
+            Step::Upstream(found) => {
+                upstream.extend(found.iter().map(|r| r.key.clone()));
+            }
+            Step::Direct(..) => {}
+        }
+    }
+
+    let pname = project.name.as_str();
+    for step in steps {
+        match step {
+            // An unresolved name keeps its literal spelling so the missing
+            // task is reported as before.
+            Step::Direct(None, target_project, target_task) => graph
+                .add_edge_by_names(
+                    pname,
+                    task_name,
+                    &target_project,
+                    &target_task,
+                    edge_type,
                 )?,
-            };
-            if add {
-                task_graph.add_edge_by_names(
-                    dependent_project_name,
-                    dependent_task_name,
-                    &p.name,
-                    task,
+            Step::Direct(Some(resolved), ..) if !resolved.alias => graph
+                .add_edge_by_names(
+                    pname,
+                    task_name,
+                    resolved.key.project(),
+                    resolved.key.task(),
+                    edge_type,
+                )?,
+            Step::Direct(Some(resolved), ..) => {
+                if explicit.contains(&resolved.key)
+                    || upstream.contains(&resolved.key)
+                    || graph.is_connected(
+                        pname,
+                        task_name,
+                        &resolved.key,
+                        edge_type,
+                    )?
+                {
+                    continue;
+                }
+                graph.add_edge_by_names(
+                    pname,
+                    task_name,
+                    resolved.key.project(),
+                    resolved.key.task(),
                     edge_type,
                 )?;
             }
-        } else {
-            add_upstream(
-                project_graph,
-                task_graph,
-                &p,
-                dependent_project_name,
-                dependent_task_name,
-                task,
-                edge_type,
-            )?;
-        };
+            Step::Upstream(found) => {
+                for resolved in found {
+                    if (resolved.alias && explicit.contains(&resolved.key))
+                        || graph.is_connected(
+                            pname,
+                            task_name,
+                            &resolved.key,
+                            edge_type,
+                        )?
+                    {
+                        continue;
+                    }
+                    graph.add_edge_by_names(
+                        pname,
+                        task_name,
+                        resolved.key.project(),
+                        resolved.key.task(),
+                        edge_type,
+                    )?;
+                }
+            }
+        }
     }
     Ok(())
 }
@@ -533,54 +582,32 @@ fn sibling_dependency_cycle_error(
 }
 
 impl TaskExecutionGraph {
+    /// Whether an edge of `edge_type` already runs from `to` (the dependee)
+    /// to `from`. Every connecting edge is considered, so a sibling edge
+    /// cannot hide a dependency edge between the same pair, or the reverse.
     fn has_connected_node(
         &self,
         from: NodeIndex,
         to: NodeIndex,
         edge_type: EdgeType,
     ) -> TaskExecutionGraphResult<bool> {
-        let edge = self.di_graph.find_edge(to, from);
-
-        if let Some(edge) = edge
-            && self.di_graph[edge] == edge_type
-        {
-            return Ok(true);
-        }
-
-        Ok(false)
+        Ok(self
+            .di_graph
+            .edges_connecting(to, from)
+            .any(|e| *e.weight() == edge_type))
     }
 
-    fn contains_dependency_by_names(
-        &self,
-        dependent_project_name: &str,
-        dependent_task_name: &str,
-        dependee_project_name: &str,
-        dependee_task_name: &str,
-    ) -> TaskExecutionGraphResult<bool> {
-        let depedent = self.get_task_index_by_name(
-            dependent_project_name,
-            dependent_task_name,
-        )?;
-        let dependee = self.get_task_index_by_name(
-            dependee_project_name,
-            dependee_task_name,
-        )?;
-
-        self.has_connected_node(depedent, dependee, EdgeType::Dependency)
-    }
-
-    fn contains_sibling_by_names(
+    fn is_connected(
         &self,
         from_project_name: &str,
         from_task_name: &str,
-        to_project_name: &str,
-        to_task_name: &str,
+        to: &TaskKey,
+        edge_type: EdgeType,
     ) -> TaskExecutionGraphResult<bool> {
         let from =
             self.get_task_index_by_name(from_project_name, from_task_name)?;
-        let to = self.get_task_index_by_name(to_project_name, to_task_name)?;
-
-        self.has_connected_node(from, to, EdgeType::Sibling)
+        let to = self.get_task_index_by_name(to.project(), to.task())?;
+        self.has_connected_node(from, to, edge_type)
     }
 
     fn add_edge_by_names(
@@ -1218,6 +1245,7 @@ mod tests {
             dir: Default::default(),
             dependencies: Default::default(),
             tasks: Default::default(),
+            aliases: Default::default(),
         }
     }
 
@@ -2640,5 +2668,297 @@ mod tests {
         let x = report.get_task_by_name("app", "x").unwrap();
         assert_eq!(x.full_task_name, "app#x");
         assert_eq!(x.dependencies, vec![ab.full_task_name.clone()]);
+    }
+}
+
+#[cfg(test)]
+mod alias_tests {
+    use maps::OrderedMap;
+
+    use super::*;
+    use crate::{TaskAliases, TasksBuilder};
+
+    fn aliases(pairs: &[(&str, &str)]) -> TaskAliases {
+        TaskAliases::new(
+            pairs
+                .iter()
+                .map(|(a, c)| (a.to_string(), c.to_string()))
+                .collect::<OrderedMap<_, _>>(),
+        )
+    }
+
+    fn project(
+        name: &str,
+        deps: &[&str],
+        tasks: OrderedMap<String, crate::Task>,
+        alias: &[(&str, &str)],
+    ) -> Project {
+        Project::new(
+            name,
+            PathBuf::new(),
+            deps.iter().map(|d| d.to_string()).collect(),
+            tasks,
+        )
+        .with_aliases(aliases(alias))
+    }
+
+    fn leaf(names: &[&str]) -> OrderedMap<String, crate::Task> {
+        names
+            .iter()
+            .fold(TasksBuilder::new(), |b, n| b.task(*n, "x", |b| b))
+            .build()
+    }
+
+    fn graph(projects: Vec<Project>) -> TaskExecutionGraph {
+        ProjectGraph::from_projects(projects)
+            .unwrap()
+            .get_task_execution_graph()
+            .unwrap()
+    }
+
+    fn deps(g: &TaskExecutionGraph, p: &str, t: &str) -> Vec<String> {
+        g.get_direct_dependencies_ref_by_name(p, t)
+            .unwrap()
+            .into_iter()
+            .map(|(_, n)| n.key().label().into_string())
+            .collect()
+    }
+
+    fn sibling_count(g: &TaskExecutionGraph, p: &str, t: &str) -> usize {
+        let idx = g.get_task_index_by_name(p, t).unwrap();
+        g.di_graph
+            .edges_directed(idx, Direction::Incoming)
+            .filter(|e| *e.weight() == EdgeType::Sibling)
+            .count()
+    }
+
+    /// `web` has canonical `build-native` and alias `compile`; `app` owns the
+    /// dependent task `t` with the given own-dependency names.
+    fn own(refs: &[&str]) -> TaskExecutionGraph {
+        let mut builder = TasksBuilder::new().task("build-native", "x", |b| b);
+        builder = builder.task("t", "x", |mut b| {
+            for r in refs {
+                b = b.own_dependency(*r);
+            }
+            b
+        });
+        graph(vec![project(
+            "web",
+            &[],
+            builder.build(),
+            &[("compile", "build-native")],
+        )])
+    }
+
+    #[test]
+    fn an_alias_reference_makes_a_canonical_edge() {
+        let g = own(&["compile"]);
+        assert_eq!(deps(&g, "web", "t"), ["web#build-native"]);
+    }
+
+    #[test]
+    fn aliases_and_canonical_references_collapse_in_either_order() {
+        for refs in [["compile", "build-native"], ["build-native", "compile"]] {
+            assert_eq!(
+                deps(&own(&refs), "web", "t"),
+                ["web#build-native"],
+                "{refs:?}"
+            );
+        }
+        assert_eq!(deps(&own(&["compile", "compile"]), "web", "t").len(), 1);
+    }
+
+    #[test]
+    fn explicit_canonical_slots_keep_their_multiplicity() {
+        assert_eq!(
+            deps(&own(&["build-native", "build-native"]), "web", "t").len(),
+            2
+        );
+        for refs in [
+            ["build-native", "build-native", "compile"],
+            ["compile", "build-native", "build-native"],
+            ["build-native", "compile", "build-native"],
+        ] {
+            assert_eq!(deps(&own(&refs), "web", "t").len(), 2, "{refs:?}");
+        }
+    }
+
+    #[test]
+    fn an_unknown_name_is_still_a_missing_task() {
+        let t = TasksBuilder::new()
+            .task("t", "x", |b| b.own_dependency("nope"))
+            .build();
+        let err =
+            ProjectGraph::from_projects(vec![project("web", &[], t, &[])])
+                .unwrap()
+                .get_task_execution_graph()
+                .unwrap_err();
+        assert_eq!(err.kind(), TaskExecutionGraphErrorKind::TaskNotFound);
+    }
+
+    fn upstream_fixture(
+        dep_refs: &[&str],
+        with_refs: &[&str],
+    ) -> TaskExecutionGraph {
+        let t = TasksBuilder::new()
+            .task("t", "x", |mut b| {
+                for r in dep_refs {
+                    b = b.upstream_dependency(*r);
+                }
+                for r in with_refs {
+                    b = b.upstream_sibling(*r);
+                }
+                b
+            })
+            .build();
+        graph(vec![
+            project("app", &["lib", "tool", "none"], t, &[]),
+            project("lib", &[], leaf(&["compile"]), &[]),
+            project(
+                "tool",
+                &[],
+                leaf(&["build-native"]),
+                &[("compile", "build-native")],
+            ),
+            project("none", &[], leaf(&["other"]), &[]),
+        ])
+    }
+
+    #[test]
+    fn upstream_projects_bind_a_public_name_independently() {
+        let g = upstream_fixture(&["compile"], &[]);
+        let mut d = deps(&g, "app", "t");
+        d.sort();
+        assert_eq!(d, ["lib#compile", "tool#build-native"]);
+        let g = upstream_fixture(&[], &["compile"]);
+        assert_eq!(sibling_count(&g, "app", "t"), 2);
+    }
+
+    #[test]
+    fn the_upstream_walk_passes_unmatched_projects_and_stops_at_a_match() {
+        let t = TasksBuilder::new()
+            .task("t", "x", |b| b.upstream_dependency("compile"))
+            .build();
+        // app -> mid (no match) -> deep (alias match); mid2 matches, so its
+        // own deeper match is never reached.
+        let g = graph(vec![
+            project("app", &["mid", "mid2"], t, &[]),
+            project("mid", &["deep"], leaf(&["other"]), &[]),
+            project(
+                "deep",
+                &[],
+                leaf(&["build-native"]),
+                &[("compile", "build-native")],
+            ),
+            project("mid2", &["deeper"], leaf(&["compile"]), &[]),
+            project("deeper", &[], leaf(&["compile"]), &[]),
+        ]);
+        let mut d = deps(&g, "app", "t");
+        d.sort();
+        assert_eq!(d, ["deep#build-native", "mid2#compile"]);
+    }
+
+    #[test]
+    fn a_diamond_reaches_one_canonical_target_once() {
+        let t = TasksBuilder::new()
+            .task("t", "x", |b| b.upstream_dependency("compile"))
+            .build();
+        let g = graph(vec![
+            project("app", &["a", "b"], t, &[]),
+            project("a", &["c"], leaf(&["x"]), &[]),
+            project("b", &["c"], leaf(&["x"]), &[]),
+            project(
+                "c",
+                &[],
+                leaf(&["build-native"]),
+                &[("compile", "build-native")],
+            ),
+        ]);
+        assert_eq!(deps(&g, "app", "t"), ["c#build-native"]);
+    }
+
+    #[test]
+    fn an_upstream_alias_collapses_into_an_explicit_canonical_edge() {
+        for order in [true, false] {
+            let t = TasksBuilder::new()
+                .task("t", "x", |b| {
+                    if order {
+                        b.explicit_project_dependency("tool", "build-native")
+                            .upstream_dependency("compile")
+                    } else {
+                        b.upstream_dependency("compile")
+                            .explicit_project_dependency("tool", "build-native")
+                    }
+                })
+                .build();
+            let g = graph(vec![
+                project("app", &["tool"], t, &[]),
+                project(
+                    "tool",
+                    &[],
+                    leaf(&["build-native"]),
+                    &[("compile", "build-native")],
+                ),
+            ]);
+            assert_eq!(deps(&g, "app", "t"), ["tool#build-native"], "{order}");
+        }
+    }
+
+    #[test]
+    fn without_aliases_upstream_still_collapses_only_after_an_explicit_edge() {
+        let build = |explicit_first: bool| {
+            let t = TasksBuilder::new()
+                .task("t", "x", |b| {
+                    if explicit_first {
+                        b.explicit_project_dependency("lib", "compile")
+                            .upstream_dependency("compile")
+                    } else {
+                        b.upstream_dependency("compile")
+                            .explicit_project_dependency("lib", "compile")
+                    }
+                })
+                .build();
+            graph(vec![
+                project("app", &["lib"], t, &[]),
+                project("lib", &[], leaf(&["compile"]), &[]),
+            ])
+        };
+        assert_eq!(deps(&build(true), "app", "t").len(), 1);
+        assert_eq!(deps(&build(false), "app", "t").len(), 2);
+    }
+
+    #[test]
+    fn a_dependency_and_a_with_edge_to_one_target_both_exist() {
+        let g = upstream_fixture(&["compile"], &["compile"]);
+        assert_eq!(deps(&g, "app", "t").len(), 2);
+        assert_eq!(sibling_count(&g, "app", "t"), 2);
+    }
+
+    #[test]
+    fn a_connecting_edge_of_another_kind_does_not_hide_the_requested_one() {
+        let mut g = TaskExecutionGraph::new();
+        let a = TaskExecutionNode::new(
+            TaskKey::new("p", "a"),
+            None,
+            None,
+            "",
+            vec![],
+            Default::default(),
+            false,
+            false,
+            Default::default(),
+        );
+        let mut b = a.clone();
+        b.key = TaskKey::new("p", "b");
+        let ia = g.di_graph.add_node(a);
+        let ib = g.di_graph.add_node(b);
+        g.node_map.insert("p", "a", ia);
+        g.node_map.insert("p", "b", ib);
+        g.add_edge_by_names("p", "a", "p", "b", EdgeType::Dependency)
+            .unwrap();
+        g.add_edge_by_names("p", "a", "p", "b", EdgeType::Sibling)
+            .unwrap();
+        assert!(g.has_connected_node(ia, ib, EdgeType::Dependency).unwrap());
+        assert!(g.has_connected_node(ia, ib, EdgeType::Sibling).unwrap());
     }
 }
