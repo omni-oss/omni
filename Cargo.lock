@@ -7802,6 +7802,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "omni_migration_proof"
+version = "0.0.0"
+dependencies = [
+ "blake3",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "omni_notice"
 version = "0.22.0"
 dependencies = [

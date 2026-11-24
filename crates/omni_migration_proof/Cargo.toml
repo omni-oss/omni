@@ -1,0 +1,21 @@
+[package]
+name = "omni_migration_proof"
+rust-version.workspace = true
+edition.workspace = true
+version = "0.0.0"
+authors.workspace = true
+repository.workspace = true
+publish = false
+description = "Disposable RFC 0032 slice 1 contract-proof harness. Unwired; not for production use."
+
+[dependencies]
+blake3 = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true
