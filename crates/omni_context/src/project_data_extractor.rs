@@ -1020,10 +1020,9 @@ mod tests {
                     "cache": {"enabled": who == "ab-c"},
                 }},
             });
-            layers.push(LoadedLayer {
-                layer: serde_json::from_value::<ProjectLayer>(json).unwrap(),
-                ..layer(file.to_str().unwrap(), &[])
-            });
+            layers.push(layer(file.to_str().unwrap(), &[]).with_layer(
+                serde_json::from_value::<ProjectLayer>(json).unwrap(),
+            ));
             files.push(file);
         }
         let graph = ExtensionGraph::from_nodes(layers.clone()).unwrap();
