@@ -233,7 +233,11 @@ fn base_marker_is_per_declaration() {
 
 #[test]
 fn mixed_alias_and_task_declarations_are_rejected_at_parse() {
-    for bad in [r#"{"alias":"x","exec":"y"}"#, r#"{"alias":"x"}"#] {
+    for bad in [
+        r#"{"alias":"x","exec":"y"}"#,
+        r#"{"exec":"y","alias":"x"}"#,
+        r#"{"alias":1}"#,
+    ] {
         assert!(
             serde_json::from_str::<ProjectLayer>(&project(&[&format!(
                 r#""t":{bad}"#
@@ -244,7 +248,15 @@ fn mixed_alias_and_task_declarations_are_rejected_at_parse() {
     }
 }
 
-// Alias transitions. Aliases cannot be written yet, so they are built in code.
+#[test]
+fn an_alias_only_entry_parses() {
+    let layer: ProjectLayer =
+        serde_json::from_str(&project(&[r#""t":{"alias":"x"}"#])).unwrap();
+    let tasks = layer.tasks.unwrap();
+    assert_eq!(tasks.as_map()["t"], alias("x"));
+}
+
+// Alias transitions on layers built in code.
 
 fn alias(target: &str) -> TaskLayer {
     TaskLayer::Alias(TaskAliasLayer {
@@ -311,7 +323,7 @@ fn a_normal_task_after_an_alias_after_a_normal_task_forgets_the_first() {
 
 #[test]
 fn aliases_survive_task_extension_resolution() {
-    let mut l = with_task(alias("x"));
+    let mut l = with_task(alias("u"));
     if let Some(tasks) = l.layer.tasks.as_mut() {
         tasks
             .as_map_mut()
@@ -324,8 +336,9 @@ fn aliases_survive_task_extension_resolution() {
     let finalized = l.finalize_composed().unwrap();
     let tasks = finalized.config.tasks.as_map();
     assert!(tasks.contains_key("u") && !tasks.contains_key("tpl"));
-    // An alias has no eager task form before F03.
+    // An alias has no eager task form: it lives in the alias index.
     assert!(!tasks.contains_key("t"));
+    assert_eq!(finalized.aliases.resolve("t"), Some("u"));
 }
 
 #[test]

@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 
 use config_utils::DictConfig;
+use maps::OrderedMap;
 use merge::Merge;
 use omni_config_types::SingleOrMany;
 use omni_core::{
@@ -12,7 +13,7 @@ use thiserror::Error;
 
 omni_codes::prefixes!("task_extension");
 
-use crate::TaskLayer;
+use crate::{TaskLayer, task_alias::decode_same_project_reference};
 
 #[derive(Debug, Clone)]
 struct TaskExtensionNode<T> {
@@ -84,29 +85,26 @@ fn resolve_nodes<T: Merge + Clone + std::fmt::Debug>(
 /// and `false` is returned.
 pub(crate) fn resolve_task_layer_extensions(
     tasks: &mut DictConfig<TaskLayer>,
+    aliases: &OrderedMap<String, String>,
 ) -> Result<bool, TaskExtensionError> {
     if !tasks.values().any(TaskLayer::needs_extension_resolution) {
         return Ok(false);
     }
 
-    let mut aliases = Vec::new();
-    let nodes = tasks
-        .iter()
-        .filter_map(|(name, task)| {
-            let Some(task) = task.clone().into_declarations(name) else {
-                aliases.push((name.clone(), task.clone()));
-                return None;
-            };
-            let extends =
-                task.extends().map(SingleOrMany::to_vec).unwrap_or_default();
-
-            Some(TaskExtensionNode {
-                name: name.clone(),
-                extends,
-                task,
+    let nodes =
+        tasks
+            .iter()
+            .filter_map(|(name, task)| {
+                let task = task.clone().into_declarations(name)?;
+                Some(decode_extends(name, task.extends(), aliases).map(
+                    |extends| TaskExtensionNode {
+                        name: name.clone(),
+                        extends,
+                        task,
+                    },
+                ))
             })
-        })
-        .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>, _>>()?;
 
     let resolved = resolve_nodes(nodes)?;
 
@@ -120,9 +118,32 @@ pub(crate) fn resolve_task_layer_extensions(
 
         map.insert(node.name, TaskLayer::Composed(node.task));
     }
-    map.extend(aliases);
-
     Ok(true)
+}
+
+/// Decode the `extends` operands of task `name` at lookup: each is a
+/// same-project reference whose alias, if it is one, resolves to its canonical
+/// task. The stored declaration is not rewritten.
+fn decode_extends(
+    name: &str,
+    extends: Option<&SingleOrMany<String>>,
+    aliases: &OrderedMap<String, String>,
+) -> Result<Vec<String>, TaskExtensionError> {
+    extends
+        .map(SingleOrMany::to_vec)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|spelling| {
+            let decoded = decode_same_project_reference(&spelling).map_err(
+                |message| TaskExtensionErrorInner::InvalidExtendee {
+                    task: name.to_owned(),
+                    extendee: spelling.clone(),
+                    message,
+                },
+            )?;
+            Ok(aliases.get(&decoded).cloned().unwrap_or(decoded))
+        })
+        .collect()
 }
 
 fn map_graph_error(error: ExtensionGraphError) -> TaskExtensionError {
@@ -168,6 +189,23 @@ pub(crate) enum TaskExtensionErrorInner {
         task: String,
         #[diagnostic(detail)]
         extendee: String,
+    },
+
+    /// An `extends` entry is not a valid same-project task name.
+    #[error(
+        "task '{task}' has an invalid `extends` entry '{extendee}': {message}"
+    )]
+    #[diagnostic(
+        code = "task_extension.invalid_extendee",
+        hint = "fix the `extends` entry of `{task}`"
+    )]
+    InvalidExtendee {
+        #[diagnostic(detail)]
+        task: String,
+        #[diagnostic(detail)]
+        extendee: String,
+        #[diagnostic(detail)]
+        message: String,
     },
 
     /// Tasks extend each other in a cycle.
