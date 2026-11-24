@@ -2,10 +2,7 @@ use std::{
     collections::{BTreeMap, HashSet},
     ffi::OsString,
     path::{Path, PathBuf},
-    sync::{
-        Arc,
-        atomic::{AtomicU64, Ordering},
-    },
+    sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -20,7 +17,10 @@ use crate::{
     error::Error,
     lease::{LeaseSet, SourceLease},
     manager::config::RemoteSourceConfig,
-    manager::tree,
+    manager::{
+        pending::{PENDING_GRACE, PendingPath, reclaim},
+        tree,
+    },
     refs::{RefSetData, RefSetDataV1_0_0, RefSetUpdate, RefUpdate},
     source::{LeasedSource, MaterializedSource, RemoteSource, RemoteSourceRef},
     sys::RemoteSourceSys,
@@ -66,10 +66,6 @@ fn check_pin(kind: &str, spec: &SourceSpec, pin: &str) -> Result<(), Error> {
         )))
     }
 }
-
-/// Process-wide counter making pending directory names unique even when a
-/// single process publishes several checkouts at once.
-static PENDING_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// `(kind, locator, selector)`: one lockfile entry.
 type PinKey = (String, String, String);
@@ -628,26 +624,31 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
         pin: &str,
         tree: &Path,
     ) -> Result<(), Error> {
-        let pending = self.new_pending_dir();
-        self.sys.fs_create_dir_all_async(&pending).await?;
-        if let Err(error) = driver.export(ctx, spec, pin, &pending).await {
-            self.remove_tree(&pending).await;
-            return Err(error);
+        match reclaim(&self.store_root_path, PENDING_GRACE, false).await {
+            Ok(paths) if !paths.is_empty() => {
+                tracing::debug!(
+                    "reclaimed {} abandoned pending paths",
+                    paths.len()
+                );
+            }
+            Ok(_) => {}
+            Err(error) => {
+                tracing::warn!("could not reclaim pending paths: {error}");
+            }
         }
+        // Owned guards remove the paths on every exit, including cancellation.
+        let pending_guard = PendingPath::create(&self.store_root_path).await?;
+        let pending = pending_guard.path().to_path_buf();
+        self.sys.fs_create_dir_all_async(&pending).await?;
+        driver.export(ctx, spec, pin, &pending).await?;
         let manifest = {
             let pending = pending.clone();
             tokio::task::spawn_blocking(move || tree::seal(&pending)).await
         };
         let manifest = match manifest {
             Ok(Ok(manifest)) => manifest,
-            Ok(Err(error)) => {
-                self.remove_tree(&pending).await;
-                return Err(error.into());
-            }
-            Err(error) => {
-                self.remove_tree(&pending).await;
-                return Err(Error::custom(error.to_string()));
-            }
+            Ok(Err(error)) => return Err(error.into()),
+            Err(error) => return Err(Error::custom(error.to_string())),
         };
 
         if self.sys.fs_exists_no_err_async(tree).await {
@@ -657,24 +658,14 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
         if let Some(parent) = tree.parent() {
             self.sys.fs_create_dir_all_async(parent).await?;
         }
-        if let Err(error) = self.sys.fs_rename_async(&pending, tree).await {
-            self.remove_tree(&pending).await;
-            return Err(error.into());
-        }
+        self.sys.fs_rename_async(&pending, tree).await?;
         // Published last: until it exists the tree reads as incomplete.
-        let staging = self.new_pending_dir();
-        if let Err(error) = self.sys.fs_write_async(&staging, &manifest).await {
-            let _ = self.sys.fs_remove_file_async(&staging).await;
-            return Err(error.into());
-        }
-        if let Err(error) = self
-            .sys
-            .fs_rename_async(&staging, manifest_path(tree))
-            .await
-        {
-            let _ = self.sys.fs_remove_file_async(&staging).await;
-            return Err(error.into());
-        }
+        let staging_guard = PendingPath::create(&self.store_root_path).await?;
+        let staging = staging_guard.path();
+        self.sys.fs_write_async(staging, &manifest).await?;
+        self.sys
+            .fs_rename_async(staging, manifest_path(tree))
+            .await?;
         Ok(())
     }
 
@@ -873,19 +864,6 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
         self.store_root_path.join(RAW_SEGMENT).join(kind).join(slug)
     }
 
-    fn new_pending_dir(&self) -> PathBuf {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0);
-        let pid = std::process::id();
-        let seq = PENDING_COUNTER.fetch_add(1, Ordering::Relaxed);
-
-        self.store_root_path
-            .join(omni_constants::PENDING_SEGMENT)
-            .join(format!("{pid}-{nanos}-{seq}"))
-    }
-
     fn remote_lock_path(&self, kind: &str, slug: &str) -> PathBuf {
         self.store_root_path
             .join(LOCKS_SEGMENT)
@@ -950,6 +928,9 @@ pub struct PruneReport {
     /// Checkouts that could not be removed. A partial removal leaves an
     /// incomplete tree that the next publish or prune clears.
     pub failed: Vec<PruneFailure>,
+    /// Abandoned `.pending` leftovers of dead publishers: removed, or for a dry
+    /// run what would be.
+    pub reclaimed_pending: Vec<PathBuf>,
 }
 
 #[derive(Debug, Clone)]
@@ -1095,6 +1076,9 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
     /// Once an entry's removal starts it finishes while still holding the remote
     /// lock and lease, even if the caller is cancelled.
     ///
+    /// The sweep of abandoned `.pending` leftovers is store-wide and ignores
+    /// the filter; a failure of the sweep is logged and does not stop pruning.
+    ///
     /// A dry run is lock-free and approximate: it reports what a real run would
     /// remove or skip right now.
     pub async fn prune_store_report(
@@ -1103,6 +1087,19 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
         dry_run: bool,
     ) -> Result<PruneReport, Error> {
         let now = SystemTime::now();
+        let reclaimed_pending = match reclaim(
+            &self.store_root_path,
+            PENDING_GRACE,
+            dry_run,
+        )
+        .await
+        {
+            Ok(paths) => paths,
+            Err(error) => {
+                tracing::warn!("could not reclaim pending paths: {error}");
+                Vec::new()
+            }
+        };
         let selected: Vec<StoreEntry> = self
             .store_entries()
             .await?
@@ -1110,7 +1107,10 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
             .filter(|entry| filter.matches(entry, now))
             .collect();
 
-        let mut report = PruneReport::default();
+        let mut report = PruneReport {
+            reclaimed_pending,
+            ..Default::default()
+        };
         if dry_run {
             for entry in selected {
                 match SourceLease::is_held(

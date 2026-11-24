@@ -36,6 +36,8 @@ struct FakeDriver {
     slug_override: Mutex<Option<String>>,
     /// Fail after writing one file.
     fail_export: Mutex<bool>,
+    /// Never finish exporting (for cancellation).
+    hang_export: Mutex<bool>,
 }
 
 fn snapshot_hash(dir: &Path) -> std::io::Result<String> {
@@ -107,6 +109,9 @@ impl SourceDriver<RealSys> for FakeDriver {
         dest: &Path,
     ) -> Result<(), Error> {
         self.exports.fetch_add(1, Ordering::SeqCst);
+        if *self.hang_export.lock().unwrap() {
+            std::future::pending::<()>().await;
+        }
         let raw = ctx.raw_dir.join(pin);
         for entry in std::fs::read_dir(&raw)? {
             let entry = entry?;
@@ -647,4 +652,84 @@ async fn persisting_never_overwrites_a_pin_another_process_changed() {
     let again: serde_json::Value =
         serde_json::from_slice(&std::fs::read(ws.lockfile()).unwrap()).unwrap();
     assert_eq!(again["sources"]["fake"][&s1.locator]["s2"]["pin"], "later");
+}
+
+fn pending_entries(store: &Path) -> Vec<PathBuf> {
+    std::fs::read_dir(store.join(".pending"))
+        .map(|d| d.flatten().map(|e| e.path()).collect())
+        .unwrap_or_default()
+}
+
+/// An abandoned pending directory: its lock file is old and nobody holds it.
+fn abandoned_pending(store: &Path, name: &str) -> (PathBuf, PathBuf) {
+    let path = store.join(".pending").join(name);
+    std::fs::create_dir_all(path.join("sub")).unwrap();
+    std::fs::write(path.join("sub/f"), "x").unwrap();
+    let lock = store.join(".pending").join(format!("{name}.lock"));
+    let file = std::fs::File::create(&lock).unwrap();
+    file.set_modified(
+        std::time::SystemTime::now() - std::time::Duration::from_secs(3600),
+    )
+    .unwrap();
+    (path, lock)
+}
+
+#[tokio::test]
+async fn a_cancelled_publish_leaves_nothing_pending() {
+    let snaps = snapshots();
+    let ws = Workspace::new();
+    let driver = Arc::new(FakeDriver::default());
+    *driver.hang_export.lock().unwrap() = true;
+    let manager = ws.manager(&driver).await.unwrap();
+    let spec = spec(snaps.path(), "s1");
+
+    let cancelled = tokio::time::timeout(
+        std::time::Duration::from_millis(500),
+        manager.materialize_with("fake", &spec),
+    )
+    .await;
+    assert!(cancelled.is_err(), "the export should still be running");
+    assert_eq!(driver.exports.load(Ordering::SeqCst), 1);
+    let left = pending_entries(&ws.store_root);
+    assert!(left.is_empty(), "{left:?}");
+}
+
+#[tokio::test]
+async fn prune_reclaims_abandoned_pending_paths_and_skips_live_ones() {
+    let ws = Workspace::new();
+    let driver = Arc::new(FakeDriver::default());
+    let manager = ws.manager(&driver).await.unwrap();
+    manager.store_entries().await.unwrap();
+    std::fs::create_dir_all(&ws.store_root).unwrap();
+    let (dead, dead_lock) = abandoned_pending(&ws.store_root, "1-1-0");
+    let (live, live_lock) = abandoned_pending(&ws.store_root, "2-2-0");
+    let held = omni_utils::lock::LockGuard::acquire_exclusive(&live_lock)
+        .await
+        .unwrap();
+    let filter = StorePruneFilter::default();
+
+    let dry = manager.prune_store_report(&filter, true).await.unwrap();
+    assert_eq!(dry.reclaimed_pending, vec![dead.clone()]);
+    assert!(dead.exists() && dead_lock.exists());
+
+    let real = manager.prune_store_report(&filter, false).await.unwrap();
+    assert_eq!(real.reclaimed_pending, vec![dead.clone()]);
+    assert!(!dead.exists() && !dead_lock.exists());
+    assert!(live.exists() && live_lock.exists());
+    drop(held);
+}
+
+#[tokio::test]
+async fn a_publish_reclaims_abandoned_pending_paths() {
+    let snaps = snapshots();
+    let ws = Workspace::new();
+    let driver = Arc::new(FakeDriver::default());
+    let manager = ws.manager(&driver).await.unwrap();
+    let (dead, dead_lock) = abandoned_pending(&ws.store_root, "1-1-0");
+    let spec = spec(snaps.path(), "s1");
+
+    manager.materialize_with("fake", &spec).await.unwrap();
+    assert!(!dead.exists() && !dead_lock.exists());
+    let left = pending_entries(&ws.store_root);
+    assert!(left.is_empty(), "{left:?}");
 }

@@ -39,6 +39,35 @@ impl LockGuard {
         .map_err(io::Error::other)?
     }
 
+    /// Like [`try_acquire_exclusive`](Self::try_acquire_exclusive) but never
+    /// creates the lock file: `None` means contention **or** that the file does
+    /// not exist. For a cleaner probing files it must not resurrect.
+    pub async fn try_acquire_exclusive_existing(
+        lock_path: impl Into<PathBuf>,
+    ) -> io::Result<Option<Self>> {
+        let lock_path = lock_path.into();
+        tokio::task::spawn_blocking(move || {
+            let file = match fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(lock_path)
+            {
+                Ok(file) => file,
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                    return Ok(None);
+                }
+                Err(error) => return Err(error),
+            };
+            match file.try_lock() {
+                Ok(()) => Ok(Some(Self { file })),
+                Err(std::fs::TryLockError::WouldBlock) => Ok(None),
+                Err(std::fs::TryLockError::Error(error)) => Err(error),
+            }
+        })
+        .await
+        .map_err(io::Error::other)?
+    }
+
     /// Acquire an exclusive (writer) lock on `lock_path`, blocking until
     /// it is available. Only one holder may hold the exclusive lock at a
     /// time, and it excludes all shared holders.
