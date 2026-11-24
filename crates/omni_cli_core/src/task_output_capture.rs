@@ -23,12 +23,13 @@ pub fn next_capture_seq() -> u64 {
 }
 
 /// Per-capture file path:
-/// `<scratch>/logs/<bs58(project)>/<bs58(task)>-<seq>`.
+/// `<scratch>/logs/<bs58(project)>/<bs58(task)>-<pid>-<seq>`.
 ///
 /// The base58 of two different names can differ only by case (`aa` and `aH`
 /// encode to `8Qp` and `8QP`), which a case-insensitive filesystem treats as one
-/// file. The unique `seq` keeps every capture file distinct whatever the names,
-/// so two drains never truncate one file. The path is recorded with the capture
+/// file. The unique `pid` and `seq` keep every capture file distinct whatever the
+/// names, even for two omni processes sharing one scratch directory, so two
+/// drains never truncate one file. The path is recorded with the capture
 /// itself, never derived from a label.
 pub fn capture_path(
     scratch_dir: &Path,
@@ -36,11 +37,28 @@ pub fn capture_path(
     task: &str,
     seq: u64,
 ) -> PathBuf {
+    capture_path_for_process(
+        scratch_dir,
+        project,
+        task,
+        std::process::id(),
+        seq,
+    )
+}
+
+/// [`capture_path`] with an explicit process id.
+pub fn capture_path_for_process(
+    scratch_dir: &Path,
+    project: &str,
+    task: &str,
+    pid: u32,
+    seq: u64,
+) -> PathBuf {
     scratch_dir
         .join("logs")
         .join(bs58::encode(project.as_bytes()).into_string())
         .join(format!(
-            "{}-{seq}",
+            "{}-{pid}-{seq}",
             bs58::encode(task.as_bytes()).into_string()
         ))
 }
@@ -49,24 +67,36 @@ pub fn capture_path(
 /// and `File(path)` is returned; otherwise the bytes are discarded and `Sink`
 /// is returned.
 ///
-/// The reader is **always** drained to completion, even on write errors, so the
-/// producing child process can never deadlock waiting for its output to be
-/// consumed.
+/// The reader is **always** drained to completion, even when the file cannot be
+/// created or written, so the producing child process can never deadlock or hit
+/// a broken pipe waiting for its output to be consumed.
 pub async fn drain(
     mut reader: impl AsyncRead + Unpin,
     to_file: Option<PathBuf>,
 ) -> std::io::Result<CaptureTarget> {
     match to_file {
         Some(path) => {
-            if let Some(parent) = path.parent() {
-                tokio::fs::create_dir_all(parent).await?;
+            let file = async {
+                if let Some(parent) = path.parent() {
+                    tokio::fs::create_dir_all(parent).await?;
+                }
+                // Exclusive: a capture file is never shared or truncated.
+                tokio::fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(&path)
+                    .await
             }
-            // Exclusive: a capture file is never shared or truncated.
-            let file = tokio::fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&path)
-                .await?;
+            .await;
+            let file = match file {
+                Ok(file) => file,
+                Err(e) => {
+                    let _ =
+                        tokio::io::copy(&mut reader, &mut tokio::io::sink())
+                            .await;
+                    return Err(e);
+                }
+            };
             let mut writer = BufWriter::new(file);
             let copy_result =
                 tokio::io::copy(&mut reader, &mut writer).await.map(|_| ());
@@ -90,6 +120,8 @@ pub fn should_display(facet: LogsDisplay, failed: bool) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use tokio::io::AsyncWriteExt;
+
     use super::*;
 
     #[test]
@@ -142,6 +174,64 @@ mod tests {
         tokio::fs::write(&path, b"keep").await.unwrap();
         assert!(drain(&b"x"[..], Some(path.clone())).await.is_err());
         assert_eq!(tokio::fs::read(&path).await.unwrap(), b"keep");
+    }
+
+    #[tokio::test]
+    async fn an_open_failure_still_drains_the_reader_to_completion() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("taken");
+        tokio::fs::write(&path, b"keep").await.unwrap();
+        let (mut tx, rx) = tokio::io::duplex(64);
+        let drain = tokio::spawn(drain(rx, Some(path.clone())));
+        // Far more than the pipe buffer: blocks forever unless drained.
+        let payload = vec![7u8; 64 * 1024];
+        tx.write_all(&payload)
+            .await
+            .expect("producer must not block or break");
+        drop(tx);
+        assert!(drain.await.unwrap().is_err());
+        assert_eq!(tokio::fs::read(&path).await.unwrap(), b"keep");
+    }
+
+    #[tokio::test]
+    async fn an_unopenable_parent_still_drains_the_reader() {
+        let dir = tempfile::tempdir().unwrap();
+        let blocker = dir.path().join("file");
+        tokio::fs::write(&blocker, b"x").await.unwrap();
+        let (mut tx, rx) = tokio::io::duplex(64);
+        let drain =
+            tokio::spawn(drain(rx, Some(blocker.join("child").join("out"))));
+        tx.write_all(&vec![1u8; 64 * 1024]).await.unwrap();
+        drop(tx);
+        assert!(drain.await.unwrap().is_err());
+    }
+
+    #[tokio::test]
+    async fn same_named_captures_from_different_processes_do_not_collide() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = capture_path_for_process(dir.path(), "p", "t", 100, 0);
+        let b = capture_path_for_process(dir.path(), "p", "t", 200, 0);
+        assert_ne!(a, b);
+        assert!(matches!(
+            drain(&b"one"[..], Some(a.clone())).await,
+            Ok(CaptureTarget::File(_))
+        ));
+        assert!(matches!(
+            drain(&b"two"[..], Some(b.clone())).await,
+            Ok(CaptureTarget::File(_))
+        ));
+        assert_eq!(tokio::fs::read(&a).await.unwrap(), b"one");
+        assert_eq!(tokio::fs::read(&b).await.unwrap(), b"two");
+        assert_eq!(
+            capture_path(dir.path(), "p", "t", 5),
+            capture_path_for_process(
+                dir.path(),
+                "p",
+                "t",
+                std::process::id(),
+                5
+            )
+        );
     }
 
     #[tokio::test]
