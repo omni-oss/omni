@@ -253,8 +253,13 @@ function behaviors(names: Names, test: typeof it): void {
         const { items, stdout, stderr } = await runApp(ws);
         const output = `${stdout}\n${stderr}`;
 
-        expect(output).toContain("RUN-AB-C mark=env-ab-c arg=default-ab-c");
-        expect(output).toContain("RUN-A-BC mark=env-a-bc arg=default-a-bc");
+        // One marker per pair: the pair ran once, not once per result row.
+        expect(
+            output.split("RUN-AB-C mark=env-ab-c arg=default-ab-c"),
+        ).toHaveLength(2);
+        expect(
+            output.split("RUN-A-BC mark=env-a-bc arg=default-a-bc"),
+        ).toHaveLength(2);
         expect(items).toHaveLength(4);
         expect(
             find(items, names.abProject, names.abTask)?.details.meta.who,
@@ -347,16 +352,20 @@ function behaviors(names: Names, test: typeof it): void {
             expect(result).toHaveFailed();
             const items = JSON.parse(
                 readFileSync(resultPath, "utf8"),
-            ) as (ResultItem & { skip_reason?: string; exit_code?: number })[];
-            const status = (p: string, t: string) => find(items, p, t)?.status;
-            expect(status(names.abProject, names.abTask)).not.toBe("skipped");
-            expect(find(items, names.abProject, names.abTask)?.status).not.toBe(
-                "completed",
-            );
-            expect(status(names.aProject, names.aTask)).toBe("completed");
+            ) as ResultItem[];
+            const row = (p: string, t: string) => {
+                const found = find(items, p, t);
+                expect(found, `result row for ${p}#${t}`).toBeDefined();
+                return found!;
+            };
+            const failed = row(names.abProject, names.abTask);
+            expect(failed.status).toBe("errored");
+            expect(row(names.aProject, names.aTask).status).toBe("completed");
             const skips = onFailure === "skip-dependents";
-            expect(status("app", "x") === "skipped").toBe(skips);
-            expect(status("app", "y")).toBe("completed");
+            expect(row("app", "x").status).toBe(
+                skips ? "skipped" : "completed",
+            );
+            expect(row("app", "y").status).toBe("completed");
             expect(`${result.stdout}\n${result.stderr}`).toContain("APP-Y");
             expect(`${result.stdout}\n${result.stderr}`.includes("APP-X")).toBe(
                 !skips,
@@ -431,6 +440,8 @@ describe("+run @e2e (same-project tasks keep their own cached logs)", () => {
         const second = await runApp(ws, ["--output-cached-logs", "all"]);
         const output = `${second.stdout}\n${second.stderr}`;
 
+        expect(find(second.items, "app", "x")?.cache_hit).toBe(true);
+        expect(find(second.items, "app", "y")?.cache_hit).toBe(true);
         expect(output).toContain("APP-X");
         expect(output).toContain("APP-Y");
     });
@@ -636,12 +647,14 @@ describe("+run @e2e (v1 digest parity across run, dry-run, ignore-dependencies a
         const fresh = await runOmni(["cache", "prune", "--stale", "-d"], {
             cwd: ws.cwd,
         });
+        expect(fresh).toHaveSucceeded();
         expect(`${fresh.stdout}\n${fresh.stderr}`).not.toContain("Project:");
 
         ws.write("p-ab/src/in.txt", "changed");
         const changed = await runOmni(["cache", "prune", "--stale", "-d"], {
             cwd: ws.cwd,
         });
+        expect(changed).toHaveSucceeded();
         const text = `${changed.stdout}\n${changed.stderr}`;
         expect(text).toContain("Project: a#b");
         expect(text).toContain("  Task: c");
@@ -919,8 +932,8 @@ describe("+run @e2e (empty and NUL names are rejected at ingress)", () => {
     });
 });
 
-describe("+run @e2e (a digest-addressed entry from another recipe is never reused)", () => {
-    it("misses, rebuilds under the v1 address and leaves the foreign entry untouched", async () => {
+describe("+run @e2e (an entry stored at a different address is never reused)", () => {
+    it("misses, rebuilds under the v1 address and leaves the entry at the other address untouched", async () => {
         const ws = parityWorkspace({ appDependsOnLib: false });
         const first = await runResult(ws, ["x", "-p", "app"]);
         const digest = base58(Buffer.from(first[0]?.hash as string, "base64"));
@@ -935,7 +948,10 @@ describe("+run @e2e (a digest-addressed entry from another recipe is never reuse
                     return false;
                 }
             }) as string;
-        // Move the v1 entry to a different address, as a legacy digest would.
+        // Different-address check only: the entry is a v1 entry moved to an
+        // arbitrary address, not an entry written by the base binary. True v0
+        // non-reuse against a base-produced entry stays a recorded gap (see
+        // the F03.4 slice 0 plan); no base binary is available to this harness.
         const foreign = "LegacyRecipeDigestFor";
         renameSync(join(projectDir, digest), join(projectDir, foreign));
 
