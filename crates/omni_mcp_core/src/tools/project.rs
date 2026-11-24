@@ -44,10 +44,14 @@ where
     ) -> eyre::Result<ProjectConfigResult> {
         let ctx = self.context()?;
         let selector = params.into_selector(ctx.root_dir())?;
-        let ProjectConfigResponse { config, warnings } =
-            OmniApi::new_with_sys(ctx, NoopSubscriber)
-                .project_config(selector)
-                .await?;
+        let ProjectConfigResponse {
+            config,
+            dir,
+            warnings,
+            ..
+        } = OmniApi::new_with_sys(ctx, NoopSubscriber)
+            .project_config(selector)
+            .await?;
         let tasks = config
             .tasks
             .iter()
@@ -58,7 +62,7 @@ where
             .collect();
         Ok(ProjectConfigResult {
             name: config.name.clone(),
-            dir: config.dir.unresolved_path().to_string_lossy().to_string(),
+            dir: dir.unresolved_path().to_string_lossy().to_string(),
             description: config
                 .description
                 .as_ref()

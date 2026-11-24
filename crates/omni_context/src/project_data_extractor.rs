@@ -61,7 +61,7 @@ impl<'a> RunnableProjectRoots<'a> {
         let mut roots = UnorderedMap::default();
         for project in projects {
             let config = &project.config;
-            let dir = config.dir.path().expect("path should be resolved");
+            let dir = project.dir.path().expect("path should be resolved");
             // Unrepresentable native paths cannot be named by a ProjectRootId.
             // They remain available through ordinary project-name references.
             let Ok(path) = WorkspacePath::from_os_path(workspace_root, dir)
@@ -198,7 +198,7 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
 
         let filtered = project_configs
             .iter()
-            .filter(|p| is_runnable_project(&p.config, &project_paths));
+            .filter(|p| is_runnable_project(p, &project_paths));
         // Lower every task before any environment is loaded, so an invalid
         // reference fails without running command substitutions.
         let project_roots =
@@ -227,8 +227,7 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
                 "processing_project_config",
             );
 
-            let dir =
-                project_config.dir.path().expect("path should be resolved");
+            let dir = finalized.dir.path().expect("path should be resolved");
 
             let mut project_extras = maps::map![
                 "PROJECT_NAME".to_string() => project_config.name.to_string(),
@@ -241,10 +240,9 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
             if !overrides.as_map().is_empty() {
                 project_extras.extend(overrides.to_map_to_inner());
                 if !ws_vars_os.is_empty() {
-                    let cfg = self.env_loader.command_config(
-                        project_config.dir.path()?,
-                        &ws_vars_os,
-                    );
+                    let cfg = self
+                        .env_loader
+                        .command_config(finalized.dir.path()?, &ws_vars_os);
                     expand_into_with_command_config(
                         &mut project_extras,
                         &self.workspace_configuration.env.vars,
@@ -329,7 +327,7 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
                     let mut files = cache.key.files.clone();
                     let additional_files = config_file_inputs(
                         &ConfigLocation::File(
-                            project_config.file.path()?.to_path_buf(),
+                            finalized.file.path()?.to_path_buf(),
                         ),
                         extension_graph,
                     )?;

@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use omni_configurations::ProjectConfiguration;
 use omni_context::{ConfigLocation, Context, ContextSys, ProjectConfigEntry};
+use omni_types::OmniPath;
 use path_clean::clean;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -49,15 +50,26 @@ pub enum ProjectSelector {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ProjectConfigResponse {
     pub config: ProjectConfiguration,
+    /// The project's root directory. Location is not authored configuration,
+    /// so it is not part of the wire shape.
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub dir: OmniPath,
+    /// The config file, `None` for a virtual project. Not on the wire.
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub file: Option<PathBuf>,
     /// Non-fatal notes about the selection, such as other configs sharing
     /// the requested name.
     pub warnings: Vec<String>,
 }
 
 impl ProjectConfigResponse {
-    fn new(config: ProjectConfiguration) -> Self {
+    fn new(entry: ProjectConfigEntry) -> Self {
         Self {
-            config,
+            file: entry.file_path().map(Path::to_path_buf),
+            dir: entry.root_dir,
+            config: entry.config,
             warnings: Vec::new(),
         }
     }
@@ -157,7 +169,7 @@ fn select_by_name(
     }
 
     if let Some((_, entry)) = runnable.pop() {
-        return Ok(ProjectConfigResponse::new(entry.config));
+        return Ok(ProjectConfigResponse::new(entry));
     }
 
     let mut templates = templates.into_iter();
@@ -166,7 +178,7 @@ fn select_by_name(
         .ok_or_else(|| eyre::eyre!("No project named '{}' found", name))?;
     let others = templates.map(|(path, _)| path).collect::<Vec<_>>();
 
-    let mut response = ProjectConfigResponse::new(selected.config);
+    let mut response = ProjectConfigResponse::new(selected);
     if !others.is_empty() {
         response.warnings.push(format!(
             "multiple configurations named '{name}' found; showing {selected_path}. Other matches: {}. Use --path to select one",
@@ -196,7 +208,7 @@ fn select_by_path<TSys: ContextSys>(
                 .file_path()
                 .is_some_and(|file| canonical(file) == path)
         })
-        .map(|entry| ProjectConfigResponse::new(entry.config))
+        .map(ProjectConfigResponse::new)
         .ok_or_else(|| {
             eyre::eyre!("no loaded project configuration at {}", path.display())
         })
@@ -238,10 +250,28 @@ mod tests {
         ProjectConfigEntry::new_virtual(
             serde_json::from_value(serde_json::json!({ "name": name }))
                 .unwrap(),
+            PathBuf::from("/w").join(root).into(),
             LogicalProjectKey::new(ProjectRootId::new(
                 WorkspacePath::parse(root).unwrap(),
             )),
         )
+    }
+
+    #[test]
+    fn the_response_wire_shape_has_no_location_fields() {
+        let response = ProjectConfigResponse::new(virtual_entry("v", "apps/v"));
+
+        assert_eq!(response.dir.path().unwrap(), Path::new("/w/apps/v"));
+        assert_eq!(response.file, None);
+        let json = serde_json::to_value(&response).unwrap();
+        let mut keys = json.as_object().unwrap().keys().collect::<Vec<_>>();
+        keys.sort();
+        assert_eq!(keys, ["config", "warnings"]);
+        let schema =
+            serde_json::to_value(schemars::schema_for!(ProjectConfigResponse))
+                .unwrap();
+        let props = schema["properties"].as_object().unwrap();
+        assert!(!props.contains_key("dir") && !props.contains_key("file"));
     }
 
     #[test]

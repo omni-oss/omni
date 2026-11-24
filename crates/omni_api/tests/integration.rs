@@ -351,9 +351,13 @@ fn by_path(root: &Path, path: &str) -> ProjectSelector {
 }
 
 fn config_file(resp: &ProjectConfigResponse, root: &Path) -> PathBuf {
-    resp.config
-        .file
-        .path()
+    assert_eq!(
+        resp.dir.path().unwrap(),
+        resp.file.as_deref().unwrap().parent().unwrap(),
+        "the project root is the concrete config's directory"
+    );
+    resp.file
+        .as_deref()
         .unwrap()
         .strip_prefix(std::fs::canonicalize(root).unwrap())
         .unwrap()
@@ -2052,6 +2056,8 @@ fn project_config_response_with_root_references_serializes() {
     );
     let resp = ProjectConfigResponse {
         config,
+        dir: Default::default(),
+        file: None,
         warnings: vec![],
     };
 

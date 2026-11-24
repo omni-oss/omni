@@ -1,6 +1,6 @@
 # F07 implementation plan: composition provenance and conflicts
 
-**Status:** approved (#164). F07.1 implemented on `feat/f07-provenance-redesign` (review fixes applied), awaiting independent re-review; F07.2 onward not started. **Size:** Large.
+**Status:** approved (#164). F07.1 implemented and independently reviewed (PASS) on `feat/f07-provenance-redesign`; F07.2 implemented there, awaiting independent review; F07.3 onward not started. **Size:** Large.
 **Risk:** High: composition and location changes can affect task behavior and
 cache keys. The chosen direction is to finish the metadata redesign before
 building conflict detection, rather than ship a parallel provenance walk.
@@ -141,6 +141,22 @@ Audit all constructors and field readers, including tests, before deleting
 the fields. This is an internal representation change with **no config-file
 migration**, but downstream Rust callers using the public fields or struct
 literals need an explicit migration note.
+
+**Implemented (F07.2).** `ProjectConfiguration.file` and `.dir` are removed.
+`FinalizedProject` carries the concrete layer's `file` and `dir` beside the
+authored `config`; `ProjectConfigEntry` carries `root_dir` and `location`
+(`from_finalized`, and `new_virtual(config, root_dir, key)`). The API
+`ProjectConfigResponse` gains non-serialized `dir` and `file` so the MCP
+`project_config` tool and CLI selection keep their values; the wire shape is
+unchanged. Cache-key file inputs still come from the concrete file and its
+extension chain in the same order.
+
+**Migration note for Rust callers (no config-file migration).**
+`ProjectConfiguration { file, dir, .. }` literals lose those two fields.
+Read them from `FinalizedProject::{file, dir}` or `ProjectConfigEntry::{location,
+root_dir}` instead. `ProjectLayer::finalize` no longer takes `file`/`dir`.
+`ProjectConfigEntry::new_virtual` takes the root directory; `from_file` is
+replaced by `from_finalized`.
 
 **Gate:** pin the authored schema and API/MCP JSON shape, file/name selection,
 relative paths from inherited declarations, closure order and diamond behavior,

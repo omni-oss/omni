@@ -604,8 +604,7 @@ impl omni_core::ExtensionGraphNode for LoadedLayer {
 impl LoadedLayer {
     /// Apply defaults and validate this layer alone as an eager configuration.
     pub fn finalize(self) -> Result<ProjectConfiguration, MissingProjectName> {
-        let file = self.file().clone();
-        self.layer.finalize(file, self.dir)
+        self.layer.finalize()
     }
 }
 
@@ -614,6 +613,11 @@ impl LoadedLayer {
 #[derive(Debug, Clone, PartialEq)]
 pub struct FinalizedProject {
     pub config: ProjectConfiguration,
+    /// The concrete (last) layer's file; empty when it has none. Location is
+    /// not part of the authored configuration.
+    pub file: OmniPath,
+    /// The concrete layer's directory: the project's root directory.
+    pub dir: OmniPath,
     /// Effective cache per task name. Empty for `base` projects, which run no
     /// tasks.
     pub task_cache: maps::Map<String, CacheConfiguration>,
@@ -753,7 +757,9 @@ impl LoadedLayer {
             return Err(FinalizeError::ProvenanceMismatch { task });
         }
         Ok(FinalizedProject {
-            config: layer.finalize_with_tasks(file, dir, tasks)?,
+            config: layer.finalize_with_tasks(tasks)?,
+            file,
+            dir,
             task_cache,
             task_cache_enabled,
             task_cache_enabled_file,
@@ -940,26 +946,19 @@ fn finalize_tasks_with(
 
 impl ProjectLayer {
     /// Apply defaults and enforce the required `name`, producing the eager
-    /// configuration. `file` and `dir` are the concrete project's own file and
-    /// directory.
+    /// configuration. The project's location is not part of it.
     pub fn finalize(
         mut self,
-        file: OmniPath,
-        dir: OmniPath,
     ) -> Result<ProjectConfiguration, MissingProjectName> {
         let tasks = self.tasks.take().map(finalize_tasks).unwrap_or_default();
-        self.finalize_with_tasks(file, dir, tasks)
+        self.finalize_with_tasks(tasks)
     }
 
     fn finalize_with_tasks(
         self,
-        file: OmniPath,
-        dir: OmniPath,
         tasks: DictConfig<TaskConfiguration>,
     ) -> Result<ProjectConfiguration, MissingProjectName> {
         Ok(ProjectConfiguration {
-            file,
-            dir,
             base: self.base.unwrap_or(false),
             extends: self.extends,
             name: self.name.ok_or(MissingProjectName)?,
@@ -1242,9 +1241,7 @@ mod tests {
     }
 
     fn finalized(json: &str) -> ProjectConfiguration {
-        layer(json)
-            .finalize(OmniPath::default(), OmniPath::default())
-            .unwrap()
+        layer(json).finalize().unwrap()
     }
 
     #[test]
@@ -1281,9 +1278,7 @@ mod tests {
 
     #[test]
     fn finalize_requires_a_name() {
-        let err = layer(r#"{"base":true}"#)
-            .finalize(OmniPath::default(), OmniPath::default())
-            .unwrap_err();
+        let err = layer(r#"{"base":true}"#).finalize().unwrap_err();
         assert_eq!(err, MissingProjectName);
     }
 

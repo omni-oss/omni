@@ -405,8 +405,9 @@ impl<TSys: ContextSys> Context<TSys> {
             .configs
             .into_iter()
             .map(|project| {
-                let is_discovered = is_discovered(&project.config, &discovered);
-                ProjectConfigEntry::from_file(project.config, is_discovered)
+                let is_discovered = is_discovered(&project, &discovered);
+                ProjectConfigEntry::from_finalized(project, is_discovered)
+                    .expect("path should be resolved")
             })
             .collect();
 

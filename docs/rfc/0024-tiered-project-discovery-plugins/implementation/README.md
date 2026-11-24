@@ -61,7 +61,7 @@ the F03, F05 and F06 wiring.
 Known gaps carried forward from the merged refactors:
 
 - Virtual projects can be represented and guarded (R07.1, R07.3) but discovery cannot
-  build one yet: `ProjectConfiguration.file` is still a required path (F07 or P05).
+  build one yet: a finalized project still requires a concrete file (F07.2 moved `file`/`dir` out of `ProjectConfiguration`; discovery work is P05).
 - The `alias` key is not parsed, so alias transitions (R05) are only tested with
   programmatically built aliases (F03).
 - A project's own config file is listed twice as a cache-key input

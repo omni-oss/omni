@@ -17,12 +17,6 @@ use super::TaskConfiguration;
 #[garde(allow_unvalidated)]
 #[serde(deny_unknown_fields)]
 pub struct ProjectConfiguration {
-    #[serde(default, skip)]
-    pub file: OmniPath,
-
-    #[serde(default, skip)]
-    pub dir: OmniPath,
-
     #[serde(default)]
     #[merge(strategy = config_utils::replace)]
     pub base: bool,
@@ -97,8 +91,6 @@ mod tests {
     #[test]
     fn test_merge_output_logs_project_to_task_semantics() {
         let mut base = ProjectConfiguration {
-            file: OmniPath::default(),
-            dir: OmniPath::default(),
             base: false,
             extends: None,
             name: "base".to_string(),
@@ -115,8 +107,6 @@ mod tests {
         };
 
         let derived = ProjectConfiguration {
-            file: OmniPath::default(),
-            dir: OmniPath::default(),
             base: false,
             extends: None,
             name: "derived".to_string(),
@@ -146,8 +136,6 @@ mod tests {
     #[test]
     fn test_merge_output_logs_none_keeps_base() {
         let mut base = ProjectConfiguration {
-            file: OmniPath::default(),
-            dir: OmniPath::default(),
             base: false,
             extends: None,
             name: "base".to_string(),
