@@ -268,8 +268,9 @@ impl From<TaskExecutionGraphReportRaw> for TaskExecutionGraphReport {
 
 /// One edge of a [`TaskExecutionGraphReport`]. For a `Dependency` edge `from`
 /// is the dependee, scheduled before `to` (the dependent). For a `Sibling`
-/// edge the two tasks are scheduled together; `from` is the task that
-/// declares the sibling and `to` the sibling it joins.
+/// edge the two tasks are scheduled together; `from` is the referenced
+/// sibling and `to` the task that declares it (for example, `watch` declaring
+/// `serve` gives `serve -> watch`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TaskReportEdge<'a> {
     pub from: TaskKeyRef<'a>,
