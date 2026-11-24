@@ -47,7 +47,7 @@ describe(
                 cwd: launch.cwd,
                 shared: true,
             });
-            expect((await client.listTools()).tools).toHaveLength(24);
+            expect((await client.listTools()).tools).toHaveLength(25);
             expect(readdirSync(launch.cwd)).toEqual([]);
         });
 
