@@ -54,7 +54,8 @@ No configuration changes are needed for names that are non-empty and NUL free.
   `TaskExecutionGraphReport` (report only, no batch planning) and results as
   `TaskExecutionResultReport`. The graph's internal `node_map` is no longer
   serialized.
-- `omni_api` `ExecResponse` and `TaskRunResponse` are serialize-only.
+- `omni_api` `ExecResponse` and `TaskRunResponse` are serialize-only (they no
+  longer implement `Deserialize`; this is a deliberate pre-v1 break).
 - `TaskHashProvider`, `derive_status` and the cache-contradiction types take
   `TaskKey` and `TaskKeyRef` instead of joined names.
 
