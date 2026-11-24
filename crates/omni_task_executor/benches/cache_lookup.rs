@@ -19,7 +19,7 @@ use omni_task_executor::{
     ExecutionConfigBuilder, Force, OnFailure, TaskExecutionResult,
     TaskExecutor,
     bench_support::{
-        CacheManagerBuilder, CacheStoreProvider, ContextCacheStoreProvider,
+        CacheManager, CacheStoreProvider, ContextCacheStoreProvider,
         ContextExecutionPlanProvider, DefaultTaskContextProvider,
     },
 };
@@ -111,8 +111,8 @@ fn benches(c: &mut Criterion) {
 
     let mut g = c.benchmark_group("pipeline/cache_lookup");
     for p in &prepared {
-        let overall: maps::UnorderedMap<String, TaskExecutionResult> =
-            maps::unordered_map!();
+        let overall: omni_types::TaskMap<TaskExecutionResult> =
+            omni_types::TaskMap::new();
         let provider = DefaultTaskContextProvider::new(&p.ctx, &overall, None);
         let contexts: Vec<Cow<TaskContext>> = p
             .nodes
@@ -125,14 +125,14 @@ fn benches(c: &mut Criterion) {
             .collect();
 
         let store = ContextCacheStoreProvider::new(&p.ctx).get_cache_store();
-        let cm = CacheManagerBuilder::<HybridTaskExecutionCacheStore, RealSys>::default()
-            .store(store)
-            .sys(p.ctx.sys().clone())
-            .root_dir(p.ctx.root_dir().to_path_buf())
-            .cache_dir(p.ctx.cache_dir())
-            .force(Force::None)
-            .build()
-            .expect("cache manager");
+        let cm =
+            CacheManager::<HybridTaskExecutionCacheStore, RealSys>::builder()
+                .store(store)
+                .sys(p.ctx.sys().clone())
+                .root_dir(p.ctx.root_dir().to_path_buf())
+                .cache_dir(p.ctx.cache_dir())
+                .force(Force::None)
+                .build();
 
         g.bench_with_input(
             BenchmarkId::from_parameter(&p.name),

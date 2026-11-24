@@ -105,9 +105,7 @@ impl<TSys: ContextSys> LoadedContext<TSys> {
         project_name: &str,
         task_name: &str,
     ) -> Option<&CacheInfo> {
-        self.extracted
-            .cache_infos
-            .get(&format!("{project_name}#{task_name}"))
+        self.extracted.cache_infos.get(project_name, task_name)
     }
 
     /// The file that supplied the resolved task's authored `cache.enabled`.
@@ -131,7 +129,7 @@ impl<TSys: ContextSys> LoadedContext<TSys> {
     ) -> Option<&OutputLogsConfiguration> {
         self.extracted
             .output_logs_configs
-            .get(&format!("{project_name}#{task_name}"))
+            .get(project_name, task_name)
     }
 
     /// The resolved redaction policy for a task. Display only.
@@ -140,9 +138,7 @@ impl<TSys: ContextSys> LoadedContext<TSys> {
         project_name: &str,
         task_name: &str,
     ) -> Option<&RedactPolicy> {
-        self.extracted
-            .redact_policies
-            .get(&format!("{project_name}#{task_name}"))
+        self.extracted.redact_policies.get(project_name, task_name)
     }
 
     pub fn get_task_meta_config(
@@ -152,7 +148,7 @@ impl<TSys: ContextSys> LoadedContext<TSys> {
     ) -> Option<&MetaConfiguration> {
         self.extracted
             .task_meta_configs
-            .get(&format!("{project_name}#{task_name}"))
+            .get(project_name, task_name)
     }
 
     pub fn get_project_meta_config(
@@ -253,7 +249,7 @@ impl<TSys: ContextSys> LoadedContext<TSys> {
         let overrides = self
             .extracted
             .task_env_var_overrides
-            .get(task.full_task_name());
+            .get(task.project_name(), task.task_name());
 
         Ok(match (cached, overrides) {
             (None, None) => None,

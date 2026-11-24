@@ -1,7 +1,7 @@
 use std::{borrow::Cow, collections::HashSet, future::Future, time::Duration};
 
 use futures::stream::{FuturesUnordered, StreamExt as _};
-use maps::{UnorderedMap, unordered_map};
+use maps::UnorderedMap;
 use merge::Merge as _;
 use omni_cache::{CachedTaskExecution, TaskExecutionCacheStore};
 use omni_command_config::{
@@ -27,7 +27,7 @@ use omni_task_context::{
     cache_status::{DependencyOutcome, OwnFacts, derive_status},
 };
 use omni_task_output_logs::{EffectiveOutputLogs, LogsDisplay};
-use omni_types::{Root, RootMap, enum_map};
+use omni_types::{Root, RootMap, TaskKeyRef, TaskMap, enum_map};
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 use tracing::Level;
 
@@ -166,7 +166,7 @@ where
 
     fn should_skip_batch_on_error(
         &self,
-        overall_results: &UnorderedMap<String, TaskExecutionResult>,
+        overall_results: &TaskMap<TaskExecutionResult>,
     ) -> bool {
         self.on_failure.is_skip_next_batches()
             && overall_results.values().any(|r| r.is_failure())
@@ -175,25 +175,25 @@ where
     fn skipped_results_due_to_error_for_batch(
         &self,
         batch: &[TaskExecutionNode],
-    ) -> UnorderedMap<String, TaskExecutionResult> {
-        batch
-            .iter()
-            .map(|t| {
-                (
-                    t.full_task_name().to_string(),
-                    TaskExecutionResult::new_skipped(
-                        t.clone(),
-                        SkipReason::PreviousBatchFailure,
-                    ),
-                )
-            })
-            .collect()
+    ) -> TaskMap<TaskExecutionResult> {
+        let mut skipped = TaskMap::new();
+        for t in batch {
+            skipped.insert(
+                t.project_name(),
+                t.task_name(),
+                TaskExecutionResult::new_skipped(
+                    t.clone(),
+                    SkipReason::PreviousBatchFailure,
+                ),
+            );
+        }
+        skipped
     }
 
     fn should_skip_task_on_error(
         &self,
         task_ctx: &TaskContext<'_>,
-        overall_results: &UnorderedMap<String, TaskExecutionResult>,
+        overall_results: &TaskMap<TaskExecutionResult>,
     ) -> Option<String> {
         if self.on_failure.is_continue() {
             return None;
@@ -203,8 +203,12 @@ where
             .node
             .dependencies()
             .iter()
-            .find(|d| overall_results.get(*d).is_some_and(|r| r.is_failure()))
-            .cloned()
+            .find(|d| {
+                overall_results
+                    .get(d.project(), d.task())
+                    .is_some_and(|r| r.is_failure())
+            })
+            .map(|d| d.label().into_string())
     }
 
     /// The task's own retry settings with the run-level override on top.
@@ -340,8 +344,8 @@ where
         &mut self,
         batch: &'a [TaskExecutionNode],
         task_contexts: &'a [Cow<'a, TaskContext<'a>>],
-        overall_results: &'a UnorderedMap<String, TaskExecutionResult>,
-    ) -> Result<UnorderedMap<String, TaskExecutionResult>, BatchExecutorError>
+        overall_results: &'a TaskMap<TaskExecutionResult>,
+    ) -> Result<TaskMap<TaskExecutionResult>, BatchExecutorError>
     where
         's: 'a,
     {
@@ -371,14 +375,14 @@ where
             .await
             .map_err(BatchExecutorErrorInner::new_cant_get_cached_results)?;
 
-        let mut new_results = unordered_map!(cap: task_contexts.len());
+        let mut new_results = TaskMap::new();
         let mut fut_results = Vec::with_capacity(task_contexts.len());
         let mut futs = Vec::with_capacity(task_contexts.len());
 
         for task_ctx in task_contexts {
             if task_ctx.node.task_exec_config().is_none() {
-                new_results.insert(
-                    task_ctx.node.full_task_name().to_string(),
+                new_results.insert_key(
+                    task_ctx.node.key(),
                     TaskExecutionResult::new_skipped(
                         task_ctx.node.clone(),
                         SkipReason::NoCommand,
@@ -399,8 +403,8 @@ where
 
             let should_run = task_ctx.is_enabled()?;
             if !should_run {
-                new_results.insert(
-                    task_ctx.node.full_task_name().to_string(),
+                new_results.insert_key(
+                    task_ctx.node.key(),
                     TaskExecutionResult::new_skipped(
                         task_ctx.node.clone(),
                         SkipReason::Disabled,
@@ -422,8 +426,8 @@ where
             if let Some(failed_dep) =
                 self.should_skip_task_on_error(task_ctx, overall_results)
             {
-                new_results.insert(
-                    task_ctx.node.full_task_name().to_string(),
+                new_results.insert_key(
+                    task_ctx.node.key(),
                     TaskExecutionResult::new_skipped(
                         task_ctx.node.clone(),
                         SkipReason::DependeeTaskFailure,
@@ -444,12 +448,12 @@ where
             }
 
             if let Some(cached_result) = cached_results
-                .get(task_ctx.node.full_task_name())
+                .get(task_ctx.node.project_name(), task_ctx.node.task_name())
                 .filter(|_| is_cache_eligible(task_ctx))
                 && self.replay_cached_results(task_ctx, cached_result).await?
             {
-                new_results.insert(
-                    task_ctx.node.full_task_name().to_string(),
+                new_results.insert_key(
+                    task_ctx.node.key(),
                     TaskExecutionResult::new_completed(
                         cached_result.digest,
                         task_ctx.node.clone(),
@@ -605,8 +609,7 @@ where
             .map_err(BatchExecutorErrorInner::new_cant_cache_results)?;
 
         for fut_result in &fut_results {
-            let fname =
-                fut_result.task_context().node.full_task_name().to_string();
+            let node = fut_result.task_context().node;
             let hash = if self.no_cache
                 // never cache persistent tasks
                 || fut_result.task_context().node.persistent()
@@ -619,9 +622,9 @@ where
             {
                 DefaultHash::default()
             } else {
-                hashes.get(&fname).map(|h| h.digest).ok_or_else(|| {
+                hashes.get(node.project_name(), node.task_name()).map(|h| h.digest).ok_or_else(|| {
                     BatchExecutorErrorInner::new_cant_get_task_hash(
-                        fname.clone(),
+                        node.full_task_name().to_string(),
                     )
                 })
                 .inspect_err(|_| {
@@ -629,7 +632,7 @@ where
                     // can't await here. Use log:: as a fallback.
                     tracing::error!(
                         "Failed to get hash for task '{}', this is a bug, if you see this please report it to the maintainers",
-                        fname
+                        node.full_task_name()
                     );
                 })?
             };
@@ -658,7 +661,7 @@ where
                 ),
             };
 
-            new_results.insert(fname, result);
+            new_results.insert_key(node.key(), result);
         }
 
         Ok(new_results)
@@ -667,9 +670,10 @@ where
     fn derive_cache_statuses(
         &self,
         task_contexts: &[Cow<'_, TaskContext<'_>>],
-        overall_results: &UnorderedMap<String, TaskExecutionResult>,
-    ) -> UnorderedMap<String, CacheStatus> {
-        let lookup = |name: &str| match overall_results.get(name) {
+        overall_results: &TaskMap<TaskExecutionResult>,
+    ) -> TaskMap<CacheStatus> {
+        let lookup = |name: TaskKeyRef<'_>| match overall_results.get_ref(name)
+        {
             Some(TaskExecutionResult::Skipped {
                 skip_reason: SkipReason::NoCommand | SkipReason::Disabled,
                 task,
@@ -683,21 +687,18 @@ where
             None => DependencyOutcome::Unknown,
         };
 
-        task_contexts
-            .iter()
-            .map(|ctx| {
-                let own = OwnFacts::of(ctx, self.no_cache);
-                let deps = if self.ignore_dependencies {
-                    &[][..]
-                } else {
-                    ctx.node.dependencies()
-                };
-                (
-                    ctx.node.full_task_name().to_string(),
-                    derive_status(own, deps, &lookup),
-                )
-            })
-            .collect()
+        let mut statuses = TaskMap::new();
+        for ctx in task_contexts {
+            let own = OwnFacts::of(ctx, self.no_cache);
+            let deps = if self.ignore_dependencies {
+                &[][..]
+            } else {
+                ctx.node.dependencies()
+            };
+            statuses
+                .insert_key(ctx.node.key(), derive_status(own, deps, &lookup));
+        }
+        statuses
     }
 
     #[tracing::instrument(
@@ -708,9 +709,8 @@ where
     pub async fn execute_batch<'a>(
         &mut self,
         batch: &'a [TaskExecutionNode],
-        overall_results: &'a UnorderedMap<String, TaskExecutionResult>,
-    ) -> Result<UnorderedMap<String, TaskExecutionResult>, BatchExecutorError>
-    {
+        overall_results: &'a TaskMap<TaskExecutionResult>,
+    ) -> Result<TaskMap<TaskExecutionResult>, BatchExecutorError> {
         let ctx_provider = DefaultTaskContextProvider::new(
             self.context,
             overall_results,
@@ -729,7 +729,7 @@ where
             self.derive_cache_statuses(&task_contexts, overall_results);
         for ctx in &mut task_contexts {
             let demoted = statuses
-                .get(ctx.node.full_task_name())
+                .get(ctx.node.project_name(), ctx.node.task_name())
                 .is_some_and(|s| s.is_demoted());
             if demoted && let Some(info) = ctx.to_mut().cache_info.as_mut() {
                 info.to_mut().cache_enabled = false;
@@ -752,7 +752,12 @@ where
                 } => Some(CacheStatus::Disabled {
                     deciding_source: None,
                 }),
-                _ => statuses.get(result.task().full_task_name()).cloned(),
+                _ => statuses
+                    .get(
+                        result.task().project_name(),
+                        result.task().task_name(),
+                    )
+                    .cloned(),
             };
             if let Some(status) = status {
                 result.set_cache_status(status);
@@ -760,13 +765,20 @@ where
         }
 
         if self.add_task_details {
-            let task_ctx_map = task_contexts
-                .iter()
-                .map(|t| (t.node.full_task_name(), t))
-                .collect::<UnorderedMap<_, _>>();
+            let mut task_ctx_map = TaskMap::new();
+            for t in &task_contexts {
+                task_ctx_map.insert(
+                    t.node.project_name(),
+                    t.node.task_name(),
+                    t,
+                );
+            }
             let ws_dir = self.context.root_dir();
             for result in new_results.values_mut() {
-                let task_ctx = task_ctx_map.get(result.task().full_task_name());
+                let task_ctx = task_ctx_map.get(
+                    result.task().project_name(),
+                    result.task().task_name(),
+                );
                 let project_dir = task_ctx
                     .map(|t| t.node.project_dir())
                     .expect("should have project dir, if seen please report this as a bug");
@@ -792,18 +804,18 @@ where
 /// through command-less tasks: they may group dependencies that can be skipped.
 fn skipped_output_dependencies<'a>(
     task: &'a TaskExecutionNode,
-    results: &'a UnorderedMap<String, TaskExecutionResult>,
-) -> Vec<&'a str> {
+    results: &'a TaskMap<TaskExecutionResult>,
+) -> Vec<String> {
     let mut pending: Vec<_> =
-        task.dependencies().iter().map(String::as_str).collect();
-    let mut seen = HashSet::new();
+        task.dependencies().iter().map(|d| d.as_ref()).collect();
+    let mut seen: HashSet<TaskKeyRef<'a>> = HashSet::new();
     let mut skipped = Vec::new();
-    while let Some(name) = pending.pop() {
-        if !seen.insert(name) {
+    while let Some(key) = pending.pop() {
+        if !seen.insert(key) {
             continue;
         }
-        match results.get(name) {
-            None => skipped.push(name),
+        match results.get_ref(key) {
+            None => skipped.push(key.label().into_string()),
             Some(result) => {
                 if matches!(
                     result,
@@ -812,10 +824,10 @@ fn skipped_output_dependencies<'a>(
                         ..
                     }
                 ) {
-                    skipped.push(name);
+                    skipped.push(key.label().into_string());
                 }
                 pending.extend(
-                    result.task().dependencies().iter().map(String::as_str),
+                    result.task().dependencies().iter().map(|d| d.as_ref()),
                 );
             }
         }
@@ -1224,13 +1236,13 @@ pub(crate) enum BatchExecutorErrorInner {
 mod tests {
     use std::time::Duration;
 
-    use maps::unordered_map;
-    use omni_core::TaskExecutionNode;
+    use omni_core::{TaskExecutionNode, TaskKey};
     use omni_retry_config::{Backoff, Jitter, RetryPolicy};
     use omni_task_output_logs::{
         EffectiveOutputLogs, LogsDisplay, OutputLogsConfiguration,
         OutputLogsSplit,
     };
+    use omni_types::TaskMap;
 
     use super::{SkipReason, TaskExecutionResult, skipped_output_dependencies};
 
@@ -1238,12 +1250,11 @@ mod tests {
     fn lists_disabled_and_unplanned_dependencies_once() {
         let node = |name: &str, deps: &[&str]| {
             TaskExecutionNode::new(
-                name,
+                TaskKey::new("app", name),
                 None,
                 None,
-                "app",
                 ".",
-                deps.iter().map(|dep| format!("app#{dep}")).collect(),
+                deps.iter().map(|dep| TaskKey::new("app", *dep)).collect(),
                 true.into(),
                 false,
                 false,
@@ -1251,16 +1262,23 @@ mod tests {
             )
         };
         let sign = node("sign", &["prepare", "disabled"]);
-        let results = unordered_map! {
-            "app#prepare".to_owned() => TaskExecutionResult::new_skipped(
+        let mut results = TaskMap::new();
+        results.insert(
+            "app",
+            "prepare",
+            TaskExecutionResult::new_skipped(
                 node("prepare", &["absent", "disabled"]),
                 SkipReason::NoCommand,
             ),
-            "app#disabled".to_owned() => TaskExecutionResult::new_skipped(
+        );
+        results.insert(
+            "app",
+            "disabled",
+            TaskExecutionResult::new_skipped(
                 node("disabled", &[]),
                 SkipReason::Disabled,
             ),
-        };
+        );
         assert_eq!(
             skipped_output_dependencies(&sign, &results),
             ["app#absent", "app#disabled"]

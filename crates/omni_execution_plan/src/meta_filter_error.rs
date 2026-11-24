@@ -117,7 +117,7 @@ impl MetaFilterSample {
     }
 
     fn name(&self) -> String {
-        format!("{}#{}", self.project, self.task)
+        omni_types::task_label(&self.project, &self.task)
     }
 }
 

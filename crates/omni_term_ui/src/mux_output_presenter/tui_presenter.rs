@@ -45,14 +45,14 @@ use crate::mux_output_presenter::{
     task_screen::{
         ScreenAction, ScreenActionsKind, TaskScreen, TaskScreenStatus,
     },
-    utils::TasksMap,
+    utils::{StreamId, StreamIdAllocator, StreamIdExhausted, TasksMap},
 };
 
 type ShutdownTx = Arc<AsyncMutex<Option<oneshot::Sender<()>>>>;
-type Screens = Arc<RwLock<Map<String, TaskScreen>>>;
-type ActiveId = Arc<RwLock<Option<String>>>;
+type Screens = Arc<RwLock<Map<StreamId, TaskScreen>>>;
+type ActiveId = Arc<RwLock<Option<StreamId>>>;
 type InputHandle = Box<dyn MuxOutputPresenterWriter>;
-type Inputs = Arc<AsyncMutex<UnorderedMap<String, InputHandle>>>;
+type Inputs = Arc<AsyncMutex<UnorderedMap<StreamId, InputHandle>>>;
 
 pub struct TuiPresenter {
     screens: Screens,
@@ -61,6 +61,7 @@ pub struct TuiPresenter {
     inputs_task: JoinHandle<Result<(), TuiPresenterError>>,
     ui_task: Arc<AsyncRwLock<Option<JoinHandle<()>>>>,
     ui_shutdown_tx: ShutdownTx,
+    ids: StreamIdAllocator,
 }
 
 impl TuiPresenter {
@@ -69,7 +70,7 @@ impl TuiPresenter {
         let tasks = Arc::new(AsyncMutex::new(TasksMap::default()));
         let active_id = Arc::new(RwLock::new(None));
         let inputs = Arc::new(AsyncMutex::new(UnorderedMap::<
-            String,
+            StreamId,
             InputHandle,
         >::default()));
         let (keys_tx, mut keys_rx) = mpsc::unbounded_channel();
@@ -118,6 +119,7 @@ impl TuiPresenter {
             ui_task: Arc::new(AsyncRwLock::new(Some(ui))),
             inputs,
             inputs_task,
+            ids: StreamIdAllocator::default(),
         }
     }
 
@@ -160,6 +162,10 @@ impl MuxOutputPresenter for TuiPresenter {
         output: Box<dyn MuxOutputPresenterReader>,
         input: Option<Box<dyn MuxOutputPresenterWriter>>,
     ) -> Result<StreamHandle, Self::Error> {
+        // `id` is only the title shown on the tab; every registry below is
+        // keyed by a unique handle, so two streams with one title never share
+        // a screen, input or removal.
+        let stream_id = self.ids.allocate()?;
         let (handle, driver) = stream::handle();
         let (screen_actions_tx, screen_actions_rx) =
             crossbeam_channel::unbounded();
@@ -167,10 +173,10 @@ impl MuxOutputPresenter for TuiPresenter {
         // prepare buffer
         let screen = TaskScreen::new(id.clone(), screen_actions_rx);
         tracing::trace!(id, "buffer_created");
-        self.screens.write().insert(id.clone(), screen);
+        self.screens.write().insert(stream_id, screen);
         tracing::trace!(id, "buffer_inserted");
         if let Some(input) = input {
-            self.inputs.lock().await.insert(id.clone(), input);
+            self.inputs.lock().await.insert(stream_id, input);
             tracing::trace!(id, "input_inserted");
         }
 
@@ -226,11 +232,11 @@ impl MuxOutputPresenter for TuiPresenter {
                         )
                     })?;
 
-                t_tasks.lock().await.remove(&t_id);
+                t_tasks.lock().await.remove(&stream_id);
                 tracing::trace!("{t_id}: task removed");
-                t_screens.write().shift_remove(&t_id);
+                t_screens.write().shift_remove(&stream_id);
                 tracing::trace!("{t_id}: screen removed");
-                t_inputs.lock().await.remove(&t_id);
+                t_inputs.lock().await.remove(&stream_id);
                 tracing::trace!("{t_id}: input removed");
 
                 // signal driver completion
@@ -241,7 +247,7 @@ impl MuxOutputPresenter for TuiPresenter {
             })
         };
 
-        self.tasks.lock().await.insert(id.clone(), join_handle);
+        self.tasks.lock().await.insert(stream_id, join_handle);
         tracing::trace!(id, "task_inserted");
         Ok(handle)
     }
@@ -287,7 +293,7 @@ async fn wait(
 #[derive(Debug, Clone)]
 struct InputEvent {
     key_event: KeyEvent,
-    id: String,
+    id: StreamId,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -313,7 +319,8 @@ fn run_tui(
 ) -> eyre::Result<()> {
     let tick_rate = Duration::from_millis(250);
     let mut last_tick = Instant::now();
-    let mut scroll_states = UnorderedMap::default();
+    let mut scroll_states: UnorderedMap<StreamId, ScrollState> =
+        UnorderedMap::default();
     let mut input_enabled = false;
     let mut scrollbar_state = ScrollbarState::default();
 
@@ -353,12 +360,12 @@ fn run_tui(
         let order = fd.order.clone();
         let active_index = fd.active_index;
         let line_count = fd.line_count;
-        let acting_active_id = fd.active_id.clone();
+        let acting_active_id = fd.active_id;
         let _ = terminal.draw(|f| {
             let state = draw_ui(f, &mut scrollbar_state, fd);
 
-            if let Some(active_id) = acting_active_id.as_deref()
-                && let Some(scroll_state) = scroll_states.get_mut(active_id)
+            if let Some(active_id) = acting_active_id
+                && let Some(scroll_state) = scroll_states.get_mut(&active_id)
             {
                 tracing::trace!(
                     "State for {active_id:?}: {scroll_state:?}, {state:?}"
@@ -382,7 +389,7 @@ fn run_tui(
                     (_, code) if !input_enabled => match code {
                         KeyCode::Char('f') => {
                             update_or_insert_scroll_state(
-                                acting_active_id.as_deref(),
+                                acting_active_id,
                                 &mut scroll_states,
                                 |scroll_state| {
                                     scroll_state.scroll_y = line_count;
@@ -397,7 +404,7 @@ fn run_tui(
                         KeyCode::Down | KeyCode::Char('j') => {
                             tracing::trace!("down_key_pressed");
                             update_or_insert_scroll_state(
-                                acting_active_id.as_deref(),
+                                acting_active_id,
                                 &mut scroll_states,
                                 |scroll_state| {
                                     scroll_state.scroll_y =
@@ -413,7 +420,7 @@ fn run_tui(
                         KeyCode::Up | KeyCode::Char('k') => {
                             tracing::trace!("up_key_pressed");
                             update_or_insert_scroll_state(
-                                acting_active_id.as_deref(),
+                                acting_active_id,
                                 &mut scroll_states,
                                 |scroll_state| {
                                     scroll_state.scroll_y =
@@ -456,11 +463,11 @@ fn run_tui(
                     },
                     x => {
                         if input_enabled
-                            && let Some(active_id) = acting_active_id.as_deref()
+                            && let Some(active_id) = acting_active_id
                         {
                             let input_event = InputEvent {
                                 key_event: key,
-                                id: active_id.to_string(),
+                                id: active_id,
                             };
                             keys_tx.send(input_event)?;
                         } else {
@@ -498,8 +505,8 @@ fn run_tui(
 }
 
 fn update_or_insert_scroll_state(
-    active_id: Option<&str>,
-    scroll_states: &mut UnorderedMap<String, ScrollState>,
+    active_id: Option<StreamId>,
+    scroll_states: &mut UnorderedMap<StreamId, ScrollState>,
     mut update_fn: impl FnMut(&mut ScrollState),
     insert_fn: impl FnOnce() -> ScrollState,
 ) -> Option<ScrollState> {
@@ -517,7 +524,7 @@ fn update_or_insert_scroll_state(
     } else if let Some(active_id) = active_id {
         let scroll_state = insert_fn();
 
-        scroll_states.insert(active_id.to_string(), scroll_state);
+        scroll_states.insert(active_id, scroll_state);
         tracing::trace!(
             "Inserted scroll state for {active_id:?}, new value: {scroll_state:?}"
         );
@@ -527,12 +534,12 @@ fn update_or_insert_scroll_state(
     None
 }
 
-fn get_current_scroll_state<'a>(
-    active_id: Option<&str>,
-    scroll_states: &'a mut UnorderedMap<String, ScrollState>,
-) -> Option<&'a mut ScrollState> {
+fn get_current_scroll_state(
+    active_id: Option<StreamId>,
+    scroll_states: &mut UnorderedMap<StreamId, ScrollState>,
+) -> Option<&mut ScrollState> {
     if let Some(id) = active_id {
-        scroll_states.get_mut(id)
+        scroll_states.get_mut(&id)
     } else {
         None
     }
@@ -546,9 +553,9 @@ enum Compute {
 
 fn compute_active(
     current_index: usize,
-    order: &[String],
+    order: &[StreamId],
     compute: Compute,
-) -> (Option<&String>, usize) {
+) -> (Option<&StreamId>, usize) {
     let order_len = order.len();
     if order_len == 0 {
         return (None, 0);
@@ -570,19 +577,20 @@ fn compute_active(
 
 struct FrameData {
     active_index: usize,
-    active_id: Option<String>,
-    order: Vec<String>,
+    active_id: Option<StreamId>,
+    order: Vec<StreamId>,
+    titles: Vec<String>,
     paragraph: Paragraph<'static>,
     line_count: usize,
     scroll_state: ScrollState,
     input_enabled: bool,
 }
 
-fn get_active_index(order: &[String], active_id: Option<&str>) -> usize {
+fn get_active_index(order: &[StreamId], active_id: Option<StreamId>) -> usize {
     let f_active_id = active_id;
 
     if let Some(id) = f_active_id {
-        order.iter().position(|s| s == id).unwrap_or(0)
+        order.iter().position(|s| *s == id).unwrap_or(0)
     } else {
         0
     }
@@ -592,20 +600,25 @@ fn get_frame_data(
     buffers: &Screens,
     active_id: &ActiveId,
     input_enabled: bool,
-    scroll_states: &UnorderedMap<String, ScrollState>,
+    scroll_states: &UnorderedMap<StreamId, ScrollState>,
     // Viewport geometry so we can ask the parser for only visible lines.
     vp_height: usize,
 ) -> FrameData {
-    let order = buffers.read().keys().rev().cloned().collect::<Vec<_>>();
+    let (order, titles): (Vec<StreamId>, Vec<String>) = buffers
+        .read()
+        .iter()
+        .rev()
+        .map(|(id, screen)| (*id, screen.title.clone()))
+        .unzip();
 
-    let active_id = active_id.read();
+    let active_id = *active_id.read();
     tracing::trace!("active id: {active_id:?}");
-    let active_index = get_active_index(&order, active_id.as_deref());
-    let active_id = order.get(active_index);
+    let active_index = get_active_index(&order, active_id);
+    let active_id = order.get(active_index).copied();
 
     // Resolve scroll offset so we can pass it to paragraph().
     let scroll_offset = if let Some(id) = active_id {
-        let ss = scroll_states.get(id).copied().unwrap_or_default();
+        let ss = scroll_states.get(&id).copied().unwrap_or_default();
         if ss.follow {
             usize::MAX // resolved inside paragraph() after line_count is known
         } else {
@@ -655,8 +668,11 @@ fn get_frame_data(
     };
 
     let scroll_state = if let Some(id) = active_id {
-        tracing::trace!("scroll state for {id}: {:?}", scroll_states.get(id));
-        scroll_states.get(id).copied().unwrap_or_default()
+        tracing::trace!(
+            "scroll state for {id:?}: {:?}",
+            scroll_states.get(&id)
+        );
+        scroll_states.get(&id).copied().unwrap_or_default()
     } else {
         tracing::trace!("no scroll state for active id: {active_id:?}");
         ScrollState::default()
@@ -664,8 +680,9 @@ fn get_frame_data(
 
     FrameData {
         active_index,
-        active_id: active_id.cloned(),
+        active_id,
         order,
+        titles,
         paragraph,
         line_count,
         scroll_state,
@@ -686,7 +703,8 @@ fn draw_ui<'a>(
     scroll_bar_state: &mut ScrollbarState,
     FrameData {
         active_index,
-        order,
+        order: _,
+        titles,
         paragraph,
         line_count,
         scroll_state,
@@ -700,7 +718,7 @@ fn draw_ui<'a>(
         .constraints([Constraint::Length(1), Constraint::Min(10)].as_ref())
         .split(area);
 
-    let items: Vec<Line> = order.iter().map(Line::raw).collect();
+    let items: Vec<Line> = titles.iter().map(Line::raw).collect();
 
     let tabs = ScrollableTabs::new(items)
         .highlight_style(
@@ -913,6 +931,9 @@ pub(crate) enum TuiPresenterErrorInner {
 
     #[error(transparent)]
     StreamDriver(#[from] StreamDriverError),
+
+    #[error(transparent)]
+    StreamIdExhausted(#[from] StreamIdExhausted),
 
     #[error("failed to send action: {0:?}")]
     FailedToSendAction(

@@ -8,7 +8,6 @@
 //! execution time (listed in `unevaluated_conditions`) and for `--no-cache`,
 //! which the inspection does not model.
 
-use std::collections::HashMap;
 use std::path::PathBuf;
 
 use omni_configurations::CacheEnabledSource;
@@ -19,6 +18,7 @@ use omni_task_context::{
     cache_status::{CacheStatus, DependencyOutcome, OwnFacts, derive_status},
     classify_enabled,
 };
+use omni_types::{TaskKey, TaskKeyRef, TaskMap};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -31,13 +31,13 @@ use crate::{
 /// One task of the planned graph, as configuration describes it.
 #[derive(Debug, Clone)]
 pub struct InspectionNode {
-    pub name: String,
+    pub key: TaskKey,
     pub has_command: bool,
     pub persistent: bool,
     pub enabled: StaticEnabled,
     pub cache_enabled: bool,
     pub cache_source: CacheEnabledSource,
-    pub dependencies: Vec<String>,
+    pub dependencies: Vec<TaskKey>,
     pub cache_enabled_file: Option<PathBuf>,
 }
 
@@ -78,12 +78,12 @@ pub fn inspect_nodes(
     no_cache: bool,
     ignore_dependencies: bool,
 ) -> CacheInspection {
-    let mut statuses: HashMap<String, CacheStatus> = HashMap::new();
-    let mut transparent: HashMap<String, Vec<String>> = HashMap::new();
+    let mut statuses: TaskMap<CacheStatus> = TaskMap::new();
+    let mut transparent: TaskMap<Vec<TaskKey>> = TaskMap::new();
     let mut tasks = Vec::with_capacity(nodes.len());
 
     for node in nodes {
-        let deps: &[String] = if ignore_dependencies {
+        let deps: &[TaskKey] = if ignore_dependencies {
             &[]
         } else {
             &node.dependencies
@@ -101,10 +101,10 @@ pub fn inspect_nodes(
                     cache_source: Some(node.cache_source),
                     no_cache,
                 };
-                let lookup = |name: &str| {
-                    if let Some(s) = statuses.get(name) {
+                let lookup = |name: TaskKeyRef<'_>| {
+                    if let Some(s) = statuses.get_ref(name) {
                         DependencyOutcome::Status(s)
-                    } else if let Some(d) = transparent.get(name) {
+                    } else if let Some(d) = transparent.get_ref(name) {
                         DependencyOutcome::Transparent(d)
                     } else {
                         DependencyOutcome::Unknown
@@ -114,13 +114,13 @@ pub fn inspect_nodes(
             };
 
         if !node.has_command || node.enabled == StaticEnabled::Disabled {
-            transparent.insert(node.name.clone(), deps.to_vec());
+            transparent.insert_key(&node.key, deps.to_vec());
         } else {
-            statuses.insert(node.name.clone(), status.clone());
+            statuses.insert_key(&node.key, status.clone());
         }
 
         tasks.push(InspectedTask {
-            task: node.name.clone(),
+            task: node.key.to_string(),
             status,
             cache_enabled_source: node.cache_source.as_str().to_string(),
             condition_unevaluated: node.enabled == StaticEnabled::Conditional,
@@ -130,7 +130,7 @@ pub fn inspect_nodes(
     let contradiction_nodes = nodes
         .iter()
         .map(|n| ContradictionNode {
-            name: n.name.clone(),
+            key: n.key.clone(),
             role: if !n.has_command || n.enabled == StaticEnabled::Disabled {
                 ContradictionRole::Transparent
             } else if n.persistent {
@@ -148,25 +148,25 @@ pub fn inspect_nodes(
             },
         })
         .collect::<Vec<_>>();
-    let files: HashMap<&str, &Option<PathBuf>> = nodes
-        .iter()
-        .map(|n| (n.name.as_str(), &n.cache_enabled_file))
-        .collect();
+    let mut files: TaskMap<&Option<PathBuf>> = TaskMap::new();
+    for n in nodes {
+        files.insert_key(&n.key, &n.cache_enabled_file);
+    }
 
     let contradictions = find_explicit_contradictions(&contradiction_nodes)
         .into_iter()
         .map(|c: CacheContradiction| InspectedContradiction {
             dependent_file: files
-                .get(c.dependent.as_str())
+                .get_ref(c.dependent.as_ref())
                 .and_then(|f| (*f).clone()),
             dependency_file: files
-                .get(c.dependency.as_str())
+                .get_ref(c.dependency.as_ref())
                 .and_then(|f| (*f).clone()),
             message: c.to_string(),
             dependent_source: c.dependent_source.as_str().to_string(),
             dependency_source: c.dependency_source.as_str().to_string(),
-            dependent: c.dependent,
-            dependency: c.dependency,
+            dependent: c.dependent.to_string(),
+            dependency: c.dependency.to_string(),
         })
         .collect();
 
@@ -188,21 +188,15 @@ pub(crate) fn nodes_from_plan<TSys: TaskExecutorSys>(
     context: &LoadedContext<TSys>,
     plan: &omni_core::BatchedExecutionPlan,
 ) -> Vec<InspectionNode> {
-    let ambiguous = ambiguous_names(
-        plan.iter()
-            .flatten()
-            .map(|n| (n.full_task_name(), n.project_name(), n.task_name())),
-    );
     plan.iter()
         .flatten()
-        .filter(|node| !ambiguous.contains(node.full_task_name()))
         .map(|node| {
             let info =
                 context.get_cache_info(node.project_name(), node.task_name());
             let source =
                 info.map(|i| i.cache_enabled_source).unwrap_or_default();
             InspectionNode {
-                name: node.full_task_name().to_string(),
+                key: node.key().clone(),
                 has_command: node.task_exec_config().is_some(),
                 persistent: node.persistent(),
                 enabled: classify_enabled(node.enabled()),
@@ -219,29 +213,6 @@ pub(crate) fn nodes_from_plan<TSys: TaskExecutorSys>(
             }
         })
         .collect()
-}
-
-/// Joined `project#task` names shared by different (project, task) pairs,
-/// for example `a#b` + `c` and `a` + `b#c`. The executor keys results by the
-/// joined name, so such tasks cannot be told apart; they are left out of the
-/// check instead of risking a wrong report.
-fn ambiguous_names<'a>(
-    nodes: impl Iterator<Item = (&'a str, &'a str, &'a str)>,
-) -> std::collections::HashSet<String> {
-    let mut seen: HashMap<&str, (&str, &str)> = HashMap::new();
-    let mut ambiguous = std::collections::HashSet::new();
-    for (full, project, task) in nodes {
-        match seen.get(full) {
-            Some(first) if *first != (project, task) => {
-                ambiguous.insert(full.to_string());
-            }
-            Some(_) => {}
-            None => {
-                seen.insert(full, (project, task));
-            }
-        }
-    }
-    ambiguous
 }
 
 /// The explicit contradictions of a plan, for the planning error.
@@ -299,19 +270,20 @@ mod tests {
         deps: &[&str],
     ) -> InspectionNode {
         InspectionNode {
-            name: name.into(),
+            key: TaskKey::new("p", name),
             has_command: true,
             persistent: false,
             enabled: StaticEnabled::Enabled,
             cache_enabled: enabled,
             cache_source: source,
-            dependencies: deps.iter().map(|s| s.to_string()).collect(),
+            dependencies: deps.iter().map(|s| TaskKey::new("p", *s)).collect(),
             cache_enabled_file: Some(PathBuf::from(format!("{name}.yaml"))),
         }
     }
 
     fn status<'a>(i: &'a CacheInspection, t: &str) -> &'a CacheStatus {
-        &i.tasks.iter().find(|x| x.task == t).unwrap().status
+        let label = format!("p#{t}");
+        &i.tasks.iter().find(|x| x.task == label).unwrap().status
     }
 
     #[test]
@@ -354,8 +326,8 @@ mod tests {
         assert_eq!(
             status(&i, "demoted"),
             &CacheStatus::Demoted {
-                direct_dependency: "uncached".into(),
-                root_cause: "uncached".into()
+                direct_dependency: "p#uncached".into(),
+                root_cause: "p#uncached".into()
             }
         );
         assert!(i.contradictions.is_empty());
@@ -377,7 +349,7 @@ mod tests {
         let i = inspect_nodes(&nodes, false, false);
         assert_eq!(i.contradictions.len(), 1);
         let c = &i.contradictions[0];
-        assert_eq!(c.dependent, "app");
+        assert_eq!(c.dependent, "p#app");
         assert_eq!(c.dependent_file, Some(PathBuf::from("app.yaml")));
         assert_eq!(c.dependency_file, Some(PathBuf::from("dep.yaml")));
         assert_eq!(c.dependency_source, "task-explicit");
@@ -406,7 +378,7 @@ mod tests {
         let i = inspect_nodes(&[off, cond], false, false);
         assert!(i.contradictions.is_empty());
         assert_eq!(status(&i, "cond"), &CacheStatus::Eligible);
-        assert_eq!(i.unevaluated_conditions, vec!["cond".to_string()]);
+        assert_eq!(i.unevaluated_conditions, vec!["p#cond".to_string()]);
     }
 
     #[test]
@@ -430,19 +402,28 @@ mod tests {
     }
 
     #[test]
-    fn colliding_joined_names_are_left_out() {
-        let names = [
-            ("a#b#c", "a#b", "c"),
-            ("a#b#c", "a", "b#c"),
-            ("x#y", "x", "y"),
-        ];
-        let ambiguous = ambiguous_names(names.into_iter());
-        assert!(ambiguous.contains("a#b#c"));
-        assert!(!ambiguous.contains("x#y"));
-        assert!(
-            ambiguous_names([("x#y", "x", "y"), ("x#y", "x", "y")].into_iter())
-                .is_empty()
-        );
+    fn formerly_colliding_pairs_are_both_inspected_under_distinct_labels() {
+        let pair = |project: &str, task: &str, enabled: bool| {
+            let mut n = node("x", enabled, TaskExplicit, &[]);
+            n.key = TaskKey::new(project, task);
+            n.cache_enabled_file =
+                Some(PathBuf::from(format!("{project}.yaml")));
+            n
+        };
+        let mut app = node("app", true, TaskExplicit, &[]);
+        app.dependencies =
+            vec![TaskKey::new("a#b", "c"), TaskKey::new("a", "b#c")];
+        let nodes = [pair("a#b", "c", true), pair("a", "b#c", false), app];
+        let i = inspect_nodes(&nodes, false, false);
+        let labels =
+            i.tasks.iter().map(|t| t.task.as_str()).collect::<Vec<_>>();
+        assert_eq!(labels, [r"a\#b#c", r"a#b\#c", "p#app"]);
+        assert_eq!(i.contradictions.len(), 1);
+        let c = &i.contradictions[0];
+        assert_eq!(c.dependent, "p#app");
+        assert_eq!(c.dependency, r"a#b\#c");
+        assert_eq!(c.dependency_file, Some(PathBuf::from("a.yaml")));
+        assert_eq!(c.dependent_file, Some(PathBuf::from("app.yaml")));
     }
 
     #[test]
@@ -466,7 +447,7 @@ mod tests {
         assert_eq!(
             v,
             serde_json::json!({
-                "task": "a",
+                "task": "p#a",
                 "status": "eligible",
                 "cache_enabled_source": "host-fallback",
                 "condition_unevaluated": false
@@ -503,7 +484,7 @@ mod tests {
                 serde_json::json!({"status": "persistent"}),
                 serde_json::json!({"status": "disabled", "deciding_source": "task-explicit"}),
                 serde_json::json!({"status": "eligible"}),
-                serde_json::json!({"status": "demoted", "direct_dependency": "off", "root_cause": "off"}),
+                serde_json::json!({"status": "demoted", "direct_dependency": "p#off", "root_cause": "p#off"}),
                 serde_json::json!({"status": "write-only-no-cache"}),
             ]
         );

@@ -1,8 +1,7 @@
-use std::{collections::HashSet, path::PathBuf, time::Duration};
+use std::{path::PathBuf, time::Duration};
 
 use bytes::Bytes;
 use derive_new::new;
-use maps::{UnorderedMap, unordered_map};
 use omni_cache::{
     CachedTaskExecution, CachedTaskExecutionHash, NewCacheInfo,
     TaskExecutionCacheStore, TaskExecutionInfoExt as _,
@@ -10,6 +9,7 @@ use omni_cache::{
 use omni_collector::{CollectConfig, Collector, CollectorSys, ProjectTaskInfo};
 use omni_process::TaskChildProcessResult;
 use omni_task_context::TaskContext;
+use omni_types::TaskMap;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
 use crate::Force;
@@ -42,12 +42,12 @@ where
     #[new(default)]
     local_store: Option<TCacheStore>,
 
-    /// `project#task` names that must stay off the remote cache for this run:
-    /// every task that opted out with `cache.remote: false` (or all of them
-    /// under `--no-remote-cache`) and everything they depend on.
+    /// `(project, task)` pairs that must stay off the remote cache for this
+    /// run: every task that opted out with `cache.remote: false` (or all of
+    /// them under `--no-remote-cache`) and everything they depend on.
     #[builder(default)]
     #[new(default)]
-    local_only: HashSet<String>,
+    local_only: TaskMap<()>,
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -113,10 +113,9 @@ where
     pub async fn get_cached_results<'a>(
         &self,
         inputs: &[impl AsRef<TaskContext<'a>>],
-    ) -> Result<UnorderedMap<String, CachedTaskExecution>, CacheManagerError>
-    {
+    ) -> Result<TaskMap<CachedTaskExecution>, CacheManagerError> {
         if self.force.is_all() {
-            return Ok(unordered_map!());
+            return Ok(TaskMap::new());
         }
 
         let inputs = inputs
@@ -126,13 +125,12 @@ where
             .collect::<Vec<_>>();
 
         if inputs.is_empty() {
-            return Ok(unordered_map!());
+            return Ok(TaskMap::new());
         }
 
         let (local, remote): (Vec<_>, Vec<_>) =
             inputs.into_iter().partition(|i| {
-                self.local_only
-                    .contains(&format!("{}#{}", i.project_name, i.task_name))
+                self.local_only.contains(i.project_name, i.task_name)
             });
         // The two stores use separate partitions and locks, so they are
         // queried at the same time. Local-only tasks never fall back to the
@@ -168,33 +166,23 @@ where
         let mut cached_items = from_remote?;
         cached_items.extend(from_local?);
 
-        if cached_items.is_empty() {
-            return Ok(unordered_map!());
+        let mut results = TaskMap::new();
+        for c in cached_items.into_iter().flatten() {
+            if c.exit_code != 0 && self.force.is_failed() {
+                continue;
+            }
+            results.insert(&c.project_name.clone(), &c.task_name.clone(), c);
         }
 
-        Ok(cached_items
-            .into_iter()
-            .filter_map(|c| {
-                let c = c?;
-
-                if c.exit_code != 0 && self.force.is_failed() {
-                    return None;
-                }
-
-                Some((format!("{}#{}", c.project_name, c.task_name), c))
-            })
-            .collect())
+        Ok(results)
     }
 
     pub async fn cache_results<'a>(
         &'a self,
         cache_contexts: &'a [TaskResultContext<'a>],
-    ) -> Result<
-        UnorderedMap<String, CachedTaskExecutionHash<'a>>,
-        CacheManagerError,
-    > {
+    ) -> Result<TaskMap<CachedTaskExecutionHash<'a>>, CacheManagerError> {
         if self.no_cache || cache_contexts.is_empty() {
-            return Ok(unordered_map!());
+            return Ok(TaskMap::new());
         }
 
         let to_cache = cache_contexts
@@ -252,28 +240,26 @@ where
                 )
                 .await?;
 
-            Ok(results
-                .into_iter()
-                .map(|c| {
-                    (
-                        format!("{}#{}", c.task.project_name, c.task.task_name),
-                        CachedTaskExecutionHash {
-                            digest: c
-                                .digest
-                                .expect("should have digest at this point"),
-                            project_name: c.task.project_name,
-                            task_name: c.task.task_name,
-                        },
-                    )
-                })
-                .collect())
+            let mut hashes = TaskMap::new();
+            for c in results {
+                hashes.insert(
+                    c.task.project_name,
+                    c.task.task_name,
+                    CachedTaskExecutionHash {
+                        digest: c
+                            .digest
+                            .expect("should have digest at this point"),
+                        project_name: c.task.project_name,
+                        task_name: c.task.task_name,
+                    },
+                );
+            }
+            Ok(hashes)
         } else {
             let (local, remote): (Vec<_>, Vec<_>) =
                 to_cache.into_iter().partition(|i| {
-                    self.local_only.contains(&format!(
-                        "{}#{}",
-                        i.task.project_name, i.task.task_name
-                    ))
+                    self.local_only
+                        .contains(i.task.project_name, i.task.task_name)
                 });
             // Concurrent for the same reason as in `get_cached_results`.
             let to_remote = async {
@@ -307,10 +293,11 @@ where
             let mut cached_items = to_remote?;
             cached_items.extend(to_local?);
 
-            Ok(cached_items
-                .into_iter()
-                .map(|c| (format!("{}#{}", c.project_name, c.task_name), c))
-                .collect())
+            let mut hashes = TaskMap::new();
+            for c in cached_items {
+                hashes.insert(c.project_name, c.task_name, c);
+            }
+            Ok(hashes)
         }
     }
 }
@@ -330,26 +317,29 @@ pub(crate) fn local_only_closure<'a>(
     opted_out: impl Fn(&omni_core::TaskExecutionNode) -> bool,
     all: bool,
     ignore_dependencies: bool,
-) -> HashSet<String> {
-    let by_name: std::collections::HashMap<
-        &str,
-        &omni_core::TaskExecutionNode,
-    > = nodes.into_iter().map(|n| (n.full_task_name(), n)).collect();
-    let mut closure = HashSet::new();
-    let mut stack: Vec<&omni_core::TaskExecutionNode> = by_name
+) -> TaskMap<()> {
+    let mut by_key: TaskMap<&omni_core::TaskExecutionNode> = TaskMap::new();
+    for node in nodes {
+        by_key.insert(node.project_name(), node.task_name(), node);
+    }
+    let mut closure = TaskMap::new();
+    let mut stack: Vec<&omni_core::TaskExecutionNode> = by_key
         .values()
         .copied()
         .filter(|n| all || opted_out(n))
         .collect();
     while let Some(node) = stack.pop() {
-        if !closure.insert(node.full_task_name().to_string()) {
+        if closure
+            .insert(node.project_name(), node.task_name(), ())
+            .is_some()
+        {
             continue;
         }
         if ignore_dependencies {
             continue;
         }
         for dep in node.dependencies() {
-            if let Some(dep) = by_name.get(dep.as_str()) {
+            if let Some(dep) = by_key.get(dep.project(), dep.task()) {
                 stack.push(dep);
             }
         }
@@ -366,9 +356,9 @@ pub(crate) fn local_only_set<'a>(
     opted_out: impl Fn(&str, &str) -> bool,
     no_remote_cache: bool,
     ignore_dependencies: bool,
-) -> HashSet<String> {
+) -> TaskMap<()> {
     if !remote_enabled {
-        return HashSet::new();
+        return TaskMap::new();
     }
     local_only_closure(
         nodes,
@@ -437,15 +427,15 @@ mod tests {
     use omni_configurations::CacheEnabledSource;
     use omni_core::TaskExecutionNode;
     use omni_task_context::{CacheInfo, TaskContext};
+    use omni_types::{TaskKey, TaskMap};
 
     use super::{is_cache_eligible, local_only_closure, local_only_set};
 
     fn node(persistent: bool) -> TaskExecutionNode {
         TaskExecutionNode::new(
-            "t".to_string(),
+            TaskKey::new("p", "t"),
             Some(CommandConfig::Shell("echo".to_string())),
             None,
-            "p".to_string(),
             PathBuf::from(""),
             vec![],
             TeraExprBoolean::Boolean(true),
@@ -453,6 +443,14 @@ mod tests {
             persistent,
             Default::default(),
         )
+    }
+
+    fn pairs(list: &[(&str, &str)]) -> TaskMap<()> {
+        let mut set = TaskMap::new();
+        for (p, t) in list {
+            set.insert(p, t, ());
+        }
+        set
     }
 
     fn info(enabled: bool) -> CacheInfo {
@@ -483,12 +481,16 @@ mod tests {
 
     fn named(project: &str, task: &str, deps: &[&str]) -> TaskExecutionNode {
         TaskExecutionNode::new(
-            task.to_string(),
+            TaskKey::new(project, task),
             Some(CommandConfig::Shell("echo".to_string())),
             None,
-            project.to_string(),
             PathBuf::from(""),
-            deps.iter().map(|d| d.to_string()).collect(),
+            deps.iter()
+                .map(|d| {
+                    let (p, t) = d.split_once('#').expect("project#task");
+                    TaskKey::new(p, t)
+                })
+                .collect(),
             TeraExprBoolean::Boolean(true),
             false,
             false,
@@ -508,7 +510,8 @@ mod tests {
             all,
             ignore_dependencies,
         )
-        .into_iter()
+        .iter()
+        .map(|(k, _)| k.to_string())
         .collect();
         out.sort();
         out
@@ -572,6 +575,60 @@ mod tests {
     }
 
     #[test]
+    fn an_opted_out_pair_does_not_pull_in_the_formerly_colliding_pair() {
+        let ab = TaskExecutionNode::new(
+            TaskKey::new("a#b", "c"),
+            Some(CommandConfig::Shell("echo".to_string())),
+            None,
+            PathBuf::from(""),
+            vec![],
+            TeraExprBoolean::Boolean(true),
+            false,
+            false,
+            Default::default(),
+        );
+        let a = TaskExecutionNode::new(
+            TaskKey::new("a", "b#c"),
+            Some(CommandConfig::Shell("echo".to_string())),
+            None,
+            PathBuf::from(""),
+            vec![],
+            TeraExprBoolean::Boolean(true),
+            false,
+            false,
+            Default::default(),
+        );
+        let app = TaskExecutionNode::new(
+            TaskKey::new("app", "x"),
+            Some(CommandConfig::Shell("echo".to_string())),
+            None,
+            PathBuf::from(""),
+            vec![TaskKey::new("a#b", "c")],
+            TeraExprBoolean::Boolean(true),
+            false,
+            false,
+            Default::default(),
+        );
+        let nodes = [ab, a, app];
+        let set = local_only_set(
+            &nodes,
+            true,
+            |project, task| project == "app" && task == "x",
+            false,
+            false,
+        );
+        assert!(set.contains("app", "x"));
+        assert!(
+            set.contains("a#b", "c"),
+            "the real dependency is local-only"
+        );
+        assert!(
+            !set.contains("a", "b#c"),
+            "the other pair must still be allowed to use the remote"
+        );
+    }
+
+    #[test]
     fn the_set_is_built_from_the_opt_out_flag_and_only_with_remote_caching() {
         let nodes = [
             named("p", "build", &[]),
@@ -582,7 +639,8 @@ mod tests {
         let set = |remote, all, ignore| {
             let mut v: Vec<String> =
                 local_only_set(&nodes, remote, opted_out, all, ignore)
-                    .into_iter()
+                    .iter()
+                    .map(|(k, _)| k.to_string())
                     .collect();
             v.sort();
             v
@@ -705,7 +763,7 @@ mod tests {
         >::builder()
         .store(remote.clone())
         .maybe_local_store(Some(local.clone()))
-        .local_only(["p#release".to_string(), "p#build".to_string()].into())
+        .local_only(pairs(&[("p", "release"), ("p", "build")]))
         .sys(system_traits::impls::RealSys)
         .root_dir(PathBuf::new())
         .cache_dir(PathBuf::new())
@@ -791,7 +849,7 @@ mod tests {
             >::builder()
             .store(hit(SpyStore::default()))
             .maybe_local_store(Some(hit(SpyStore::default())))
-            .local_only(["p#release".to_string()].into())
+            .local_only(pairs(&[("p", "release")]))
             .force(force)
             .sys(system_traits::impls::RealSys)
             .root_dir(PathBuf::new())
@@ -801,7 +859,8 @@ mod tests {
                 .get_cached_results(&contexts)
                 .await
                 .unwrap()
-                .into_keys()
+                .iter()
+                .map(|(k, _)| k.to_string())
                 .collect();
             got.sort();
             assert_eq!(got, expected, "{exit_code} {force:?}");
@@ -823,7 +882,7 @@ mod tests {
         >::builder()
         .store(spy())
         .maybe_local_store(Some(spy()))
-        .local_only(["p#release".to_string()].into())
+        .local_only(pairs(&[("p", "release")]))
         .sys(system_traits::impls::RealSys)
         .root_dir(PathBuf::new())
         .cache_dir(PathBuf::new())
@@ -880,7 +939,7 @@ mod tests {
             system_traits::impls::RealSys,
         >::builder()
         .store(remote.clone())
-        .local_only(["p#release".to_string()].into())
+        .local_only(pairs(&[("p", "release")]))
         .sys(system_traits::impls::RealSys)
         .root_dir(PathBuf::new())
         .cache_dir(PathBuf::new())

@@ -1,5 +1,4 @@
 use std::{
-    collections::HashSet,
     path::{Path, PathBuf},
     sync::{Arc, OnceLock},
 };
@@ -7,7 +6,7 @@ use std::{
 use bytes::Bytes;
 use bytesize::ByteSize;
 use derive_new::new;
-use maps::{Map, UnorderedMap, unordered_map};
+use maps::UnorderedMap;
 use omni_collector::{CollectConfig, CollectResult, Collector};
 use omni_configurations::{
     RemoteCacheConfiguration, RemoteTarget, ScopeConfig,
@@ -30,7 +29,7 @@ use omni_task_context::{
     cache_status::{CacheStatus, DependencyOutcome, OwnFacts, derive_status},
     collect_dependency_hashes,
 };
-use omni_types::OmniPath;
+use omni_types::{OmniPath, TaskKey, TaskKeyRef, TaskMap};
 use serde::{Deserialize, Serialize};
 use strum::{EnumDiscriminants, EnumIs, IntoDiscriminant as _};
 use system_traits::{
@@ -310,10 +309,10 @@ impl HybridTaskExecutionCacheStore {
         context: &TContext,
         args: &PruneCacheArgs<'_, TContext>,
     ) -> Result<(), LocalTaskExecutionCacheStoreError> {
-        let mut hashes = unordered_map!();
+        let mut hashes: TaskMap<DefaultHash> = TaskMap::new();
         if args.stale {
-            let mut forwarded = unordered_map!();
-            let mut statuses = unordered_map!();
+            let mut forwarded: TaskMap<Vec<TaskKey>> = TaskMap::new();
+            let mut statuses: TaskMap<CacheStatus> = TaskMap::new();
             // A valid selector may match projects in one checkout only.
             let projects =
                 NameMatcher::new(args.project_names, args.project_name_globs)?;
@@ -367,10 +366,8 @@ impl HybridTaskExecutionCacheStore {
                                 %error,
                                 "cannot expand cache paths; keeping its entries"
                             );
-                            batch_statuses.push((
-                                context.node.full_task_name().to_owned(),
-                                unknown(),
-                            ));
+                            batch_statuses
+                                .push((context.node.key().clone(), unknown()));
                         }
                     }
                 }
@@ -387,17 +384,15 @@ impl HybridTaskExecutionCacheStore {
                                     %error,
                                     "cannot evaluate enablement; keeping its entries"
                                 );
-                                batch_statuses.push((
-                                    node.full_task_name().to_owned(),
-                                    unknown(),
-                                ));
+                                batch_statuses
+                                    .push((node.key().clone(), unknown()));
                                 continue;
                             }
                         }
                     };
                     if !enabled {
                         batch_forwarded.push((
-                            node.full_task_name().to_owned(),
+                            node.key().clone(),
                             node.dependencies().to_vec(),
                         ));
                     } else {
@@ -405,9 +400,10 @@ impl HybridTaskExecutionCacheStore {
                             OwnFacts::of(context, false),
                             node.dependencies(),
                             &|name| {
-                                if let Some(deps) = forwarded.get(name) {
+                                if let Some(deps) = forwarded.get_ref(name) {
                                     DependencyOutcome::Transparent(deps)
-                                } else if let Some(status) = statuses.get(name)
+                                } else if let Some(status) =
+                                    statuses.get_ref(name)
                                 {
                                     DependencyOutcome::Status(status)
                                 } else {
@@ -420,8 +416,7 @@ impl HybridTaskExecutionCacheStore {
                         {
                             infos.push(info);
                         }
-                        batch_statuses
-                            .push((node.full_task_name().to_owned(), status));
+                        batch_statuses.push((node.key().clone(), status));
                     }
                 }
                 let results = self.collect(&infos, &config).await?;
@@ -429,9 +424,9 @@ impl HybridTaskExecutionCacheStore {
                     .into_iter()
                     .map(|result| {
                         (
-                            format!(
-                                "{}#{}",
-                                result.task.project_name, result.task.task_name
+                            TaskKey::new(
+                                result.task.project_name,
+                                result.task.task_name,
                             ),
                             result
                                 .digest
@@ -439,15 +434,20 @@ impl HybridTaskExecutionCacheStore {
                         )
                     })
                     .collect::<Vec<_>>();
-                hashes.extend(batch_hashes);
-                forwarded.extend(batch_forwarded);
-                statuses.extend(batch_statuses);
+                for (key, digest) in batch_hashes {
+                    hashes.insert_key(&key, digest);
+                }
+                for (key, deps) in batch_forwarded {
+                    forwarded.insert_key(&key, deps);
+                }
+                for (key, status) in batch_statuses {
+                    statuses.insert_key(&key, status);
+                }
             }
         }
         for project in context.projects() {
             for name in project.tasks.keys() {
-                let digest =
-                    hashes.get(&format!("{}#{name}", project.name)).copied();
+                let digest = hashes.get(&project.name, name).copied();
                 inventory.observe(&project.name, name, digest);
             }
         }
@@ -896,8 +896,7 @@ fn hashtext(text: &str) -> String {
 
 impl HybridTaskExecutionCacheStore {
     /// Build the execution plan with the given project/task/dir/meta filters
-    /// and return the set of `project#task` task identifiers that survive all
-    /// of them. Used to apply the context-dependent `--dir`/`--meta` filters
+    /// and return the set of `(project, task)` pairs that survive all of them. Used to apply the context-dependent `--dir`/`--meta` filters
     /// to cache entries, which are otherwise only keyed by name.
     #[allow(clippy::too_many_arguments)]
     fn plan_task_set<TContext: Context>(
@@ -909,7 +908,7 @@ impl HybridTaskExecutionCacheStore {
         task_name_globs: &[&str],
         dir_globs: &[&str],
         meta_filter: Option<&str>,
-    ) -> Result<HashSet<String>, LocalTaskExecutionCacheStoreError> {
+    ) -> Result<TaskMap<()>, LocalTaskExecutionCacheStoreError> {
         let call = task_call(task_names, task_name_globs);
 
         let plan =
@@ -925,15 +924,10 @@ impl HybridTaskExecutionCacheStore {
                     false,
                 )?;
 
-        let mut set =
-            HashSet::with_capacity(plan.iter().map(|b| b.len()).sum());
+        let mut set = TaskMap::new();
         for batch in plan {
             for node in batch {
-                set.insert(format!(
-                    "{}#{}",
-                    node.project_name(),
-                    node.task_name()
-                ));
+                set.insert(node.project_name(), node.task_name(), ());
             }
         }
 
@@ -1148,12 +1142,14 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
         tracing::trace!(count = cache_infos.len(), "begin_cache_many");
 
         let task_infos = cache_infos.iter().map(|i| i.task).collect::<Vec<_>>();
-        let cache_info_map = cache_infos
-            .iter()
-            .map(|i| {
-                (format!("{}#{}", i.task.project_name, i.task.task_name), *i)
-            })
-            .collect::<UnorderedMap<_, _>>();
+        let mut cache_info_map = TaskMap::new();
+        for info in cache_infos {
+            cache_info_map.insert(
+                info.task.project_name,
+                info.task.task_name,
+                *info,
+            );
+        }
 
         let results = self
             .collect(
@@ -1171,11 +1167,6 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
             results_count = results.len(),
             "collected_results_for_caching"
         );
-
-        let logs_map = cache_infos
-            .iter()
-            .map(|r| (r.task.project_name, r.logs))
-            .collect::<Map<_, _>>();
 
         let mut cache_exec_hashes = Vec::with_capacity(results.len());
 
@@ -1208,15 +1199,12 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                 result.output_files.as_ref().expect("should be some");
 
             let metadata_path = output_dir.join(CACHE_OUTPUT_METADATA_FILE);
-            let log_content = logs_map[&result.task.project_name];
             let digest = result.digest.expect("should be some");
 
-            let tfqn = format!(
-                "{}#{}",
-                result.task.project_name, result.task.task_name
-            );
-            let new_cache_info =
-                cache_info_map.get(&tfqn).expect("should be some");
+            let new_cache_info = cache_info_map
+                .get(result.task.project_name, result.task.task_name)
+                .expect("should be some");
+            let log_content = new_cache_info.logs;
             discard_invalid_entry(output_dir, &EntryIdentity::of(&result))
                 .await?;
 
@@ -2170,10 +2158,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
             for project in stats.projects.iter_mut() {
                 let project_name = project.project_name.clone();
                 project.tasks.retain(|task| {
-                    allowed.contains(&format!(
-                        "{}#{}",
-                        project_name, task.task_name
-                    ))
+                    allowed.contains(&project_name, &task.task_name)
                 });
             }
             stats.projects.retain(|project| !project.tasks.is_empty());
@@ -2280,15 +2265,12 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                     continue;
                 }
 
-                let task_full_name =
-                    format!("{}#{}", project.project_name, task.task_name);
-
                 // When `--dir`/`--meta` are active, only prune entries whose
                 // task survived those filters in the current workspace. Entries
                 // for tasks/projects that no longer exist (orphaned) cannot be
                 // matched by dir/meta and are therefore left untouched.
                 if let Some(allowed) = &allowed_tasks
-                    && !allowed.contains(&task_full_name)
+                    && !allowed.contains(&project.project_name, &task.task_name)
                 {
                     continue;
                 }
@@ -2373,18 +2355,18 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
 
 #[derive(new, Clone, Copy)]
 struct HashProvider<'a> {
-    hashes: &'a UnorderedMap<String, DefaultHash>,
-    forwarded: &'a UnorderedMap<String, Vec<String>>,
+    hashes: &'a TaskMap<DefaultHash>,
+    forwarded: &'a TaskMap<Vec<TaskKey>>,
 }
 
 impl<'a> TaskHashProvider for HashProvider<'a> {
-    fn get_task_hash(&self, task_full_name: &str) -> Option<DefaultHash> {
-        self.hashes.get(task_full_name).cloned()
+    fn get_task_hash(&self, task: TaskKeyRef<'_>) -> Option<DefaultHash> {
+        self.hashes.get_ref(task).cloned()
     }
 
-    fn get_dependency_hashes(&self, task_full_name: &str) -> Vec<DefaultHash> {
-        collect_dependency_hashes(task_full_name, |name| {
-            match self.forwarded.get(name) {
+    fn get_dependency_hashes(&self, task: TaskKeyRef<'_>) -> Vec<DefaultHash> {
+        collect_dependency_hashes(task, |name| {
+            match self.forwarded.get_ref(name) {
                 Some(deps) => DependencyHash::Forward(deps),
                 None => DependencyHash::Direct(self.get_task_hash(name)),
             }
@@ -2473,7 +2455,7 @@ impl<'a, T: Context> omni_task_context::Context for ContextWrapper<'a, T> {
         project_name: &str,
         task_name: &str,
     ) -> Option<&omni_configurations::MetaConfiguration> {
-        self.inner.get_task_meta_config(task_name, project_name)
+        self.inner.get_task_meta_config(project_name, task_name)
     }
 
     fn get_project_meta_config(
@@ -2626,6 +2608,7 @@ mod tests {
     use crate::{NewCacheInfo, cache::impls::HybridTaskExecutionCacheStore};
     use bytes::Bytes;
     use derive_new::new;
+    use maps::Map;
     use omni_command_config::CommandConfig;
     use omni_types::{OmniPath, Root};
     use std::path::Path;
@@ -7339,6 +7322,363 @@ mod tests {
     }
     // End to end security scenarios against the real server router.
     include!("e2e_security.rs");
+
+    // -- Structured task identity (RFC 0024 F03.4 slice 0) ---------------
+
+    #[tokio::test]
+    async fn formerly_colliding_pairs_upload_under_their_own_digests() {
+        let remote = RemoteUploadSpy::new(204).await;
+        let temp = fixture(&["a#b", "a"]).await;
+        let cache = remote.cache(temp.path());
+        let ab = task("c", "a#b", temp.path());
+        let a = task("b#c", "a", temp.path());
+        let logs = LOGS_CONTENT;
+        let infos = [
+            new_cache_info_with_exit_code(Some(&logs), *ab.get(), 0),
+            new_cache_info_with_exit_code(Some(&logs), *a.get(), 0),
+        ];
+        let hashes = cache.cache_many(&infos).await.unwrap();
+        assert_eq!(hashes.len(), 2);
+        let digests = hashes
+            .iter()
+            .map(|h| bs58::encode(h.digest).into_string())
+            .collect::<Vec<_>>();
+        assert_ne!(digests[0], digests[1]);
+
+        let lines = remote.lines.lock().unwrap();
+        let puts: Vec<_> =
+            lines.iter().filter(|l| l.starts_with("PUT")).collect();
+        assert_eq!(puts.len(), 2, "{lines:?}");
+        for digest in &digests {
+            assert_eq!(
+                puts.iter().filter(|l| l.contains(digest.as_str())).count(),
+                1,
+                "exactly one upload for {digest}: {puts:?}"
+            );
+        }
+    }
+
+    /// Serves the archive registered under the digest in the request path,
+    /// 404s every other digest, answers the probe, and records every request
+    /// line (a `PUT` body is drained and acknowledged, so a promotion is seen).
+    async fn serve_artifacts_by_digest(
+        artifacts: std::collections::HashMap<String, Vec<u8>>,
+    ) -> (
+        String,
+        tokio::task::JoinHandle<()>,
+        Arc<std::sync::Mutex<Vec<String>>>,
+    ) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener =
+            tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let lines = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let seen = lines.clone();
+        let server = tokio::spawn(async move {
+            loop {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut head = Vec::new();
+                while !head.ends_with(b"\r\n\r\n") {
+                    head.push(socket.read_u8().await.unwrap());
+                }
+                let head = String::from_utf8(head).unwrap();
+                let line = head.lines().next().unwrap().to_string();
+                seen.lock().unwrap().push(line.clone());
+                let length = head
+                    .lines()
+                    .find_map(|l| {
+                        let (n, v) = l.split_once(':')?;
+                        n.eq_ignore_ascii_case("content-length")
+                            .then(|| v.trim().parse::<usize>().unwrap())
+                    })
+                    .unwrap_or(0);
+                let mut body = vec![0; length];
+                socket.read_exact(&mut body).await.unwrap();
+                let response = if line.starts_with("HEAD /v1/artifacts?") {
+                    b"HTTP/1.1 204 No Content\r\nx-omni-scopes: read:artifacts,write:artifacts,publish:artifacts\r\nConnection: close\r\n\r\n".to_vec()
+                } else if line.starts_with("GET ") {
+                    let digest = line
+                        .split_whitespace()
+                        .nth(1)
+                        .unwrap()
+                        .trim_start_matches("/v1/artifacts/")
+                        .split('?')
+                        .next()
+                        .unwrap()
+                        .to_string();
+                    match artifacts.get(&digest) {
+                        Some(archive) => {
+                            let mut r = format!(
+                                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                                archive.len()
+                            )
+                            .into_bytes();
+                            r.extend_from_slice(archive);
+                            r
+                        }
+                        None => b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_vec(),
+                    }
+                } else {
+                    b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_vec()
+                };
+                socket.write_all(&response).await.unwrap();
+            }
+        });
+        (url, server, lines)
+    }
+
+    fn requested_digests(lines: &[String]) -> Vec<String> {
+        let mut out: Vec<String> = lines
+            .iter()
+            .filter(|l| l.starts_with("GET "))
+            .map(|l| {
+                l.split_whitespace()
+                    .nth(1)
+                    .unwrap()
+                    .trim_start_matches("/v1/artifacts/")
+                    .split('?')
+                    .next()
+                    .unwrap()
+                    .to_string()
+            })
+            .collect();
+        out.sort();
+        out.dedup();
+        out
+    }
+
+    #[tokio::test]
+    async fn formerly_colliding_pairs_restore_from_their_own_remote_v1_digests()
+    {
+        let temp = fixture(&["a#b", "a"]).await;
+        let ab = task("c", "a#b", temp.path());
+        let a = task("b#c", "a", temp.path());
+        let mut served = std::collections::HashMap::new();
+        let mut v1 = Vec::new();
+        for info in [&ab, &a] {
+            let digest = digest_of(&temp, info.get()).await;
+            served.insert(
+                digest.clone(),
+                genuine_archive(&temp, info.get()).await,
+            );
+            v1.push(digest);
+        }
+        v1.sort();
+        assert_ne!(v1[0], v1[1]);
+        // Artifacts a v0 reader would have uploaded: present on the server,
+        // but under digests the v1 reader must never ask for.
+        let v0_only: Vec<String> = (0..2u8)
+            .map(|i| bs58::encode([i; 32]).into_string())
+            .collect();
+        for digest in &v0_only {
+            served.insert(digest.clone(), vec![1, 2, 3]);
+        }
+        let (url, server, lines) = serve_artifacts_by_digest(served).await;
+
+        // Only the remote has the entries: the restore store starts empty.
+        let store = remote_store(temp.path(), &url);
+        assert!(partitions(&store.cache_dir).is_empty());
+        let hits = store.get_many(&[*ab.get(), *a.get()]).await.unwrap();
+        server.abort();
+
+        let first = hits[0].as_ref().expect("a#b / c restored");
+        let second = hits[1].as_ref().expect("a / b#c restored");
+        assert_eq!(
+            (first.project_name.as_str(), first.task_name.as_str()),
+            ("a#b", "c")
+        );
+        assert_eq!(
+            (second.project_name.as_str(), second.task_name.as_str()),
+            ("a", "b#c")
+        );
+        let lines = lines.lock().unwrap().clone();
+        assert_eq!(requested_digests(&lines), v1, "{lines:?}");
+        assert!(
+            !lines.iter().any(|l| l.starts_with("PUT")),
+            "a restore never uploads: {lines:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_remote_that_only_has_v0_artifacts_misses_without_promotion() {
+        let temp = fixture(&["a#b", "a"]).await;
+        let ab = task("c", "a#b", temp.path());
+        let a = task("b#c", "a", temp.path());
+        let archive_ab = genuine_archive(&temp, ab.get()).await;
+        let mut v1 = Vec::new();
+        for info in [&ab, &a] {
+            v1.push(digest_of(&temp, info.get()).await);
+        }
+        v1.sort();
+        // Real, restorable archives, but only under other (v0) digests.
+        let served = (0..2u8)
+            .map(|i| (bs58::encode([i; 32]).into_string(), archive_ab.clone()))
+            .collect();
+        let (url, server, lines) = serve_artifacts_by_digest(served).await;
+
+        let store = remote_store(temp.path(), &url);
+        let hits = store.get_many(&[*ab.get(), *a.get()]).await.unwrap();
+        server.abort();
+
+        assert!(hits.iter().all(Option::is_none), "v0 entries must not hit");
+        let lines = lines.lock().unwrap().clone();
+        assert_eq!(
+            requested_digests(&lines),
+            v1,
+            "zero v0 requests: {lines:?}"
+        );
+        assert!(!lines.iter().any(|l| l.starts_with("PUT")), "{lines:?}");
+        assert!(
+            partitions(&store.cache_dir).is_empty(),
+            "a v0 artifact was promoted into the local cache"
+        );
+    }
+
+    #[tokio::test]
+    async fn cache_many_keeps_each_same_project_tasks_own_logs() {
+        let temp = fixture(&["project1"]).await;
+        let cache = cache_store(temp.path());
+        let tasks = [
+            task("a", "project1", temp.path()),
+            task("b", "project1", temp.path()),
+        ];
+        let logs_a = Bytes::from_static(b"LOGS-A");
+        let logs_b = Bytes::from_static(b"LOGS-B");
+        let infos = [
+            new_cache_info_with_exit_code(Some(&logs_a), *tasks[0].get(), 0),
+            new_cache_info_with_exit_code(Some(&logs_b), *tasks[1].get(), 0),
+        ];
+        cache.cache_many(&infos).await.unwrap();
+
+        let hits = cache
+            .get_many(&[*tasks[0].get(), *tasks[1].get()])
+            .await
+            .unwrap();
+        let read = |hit: &Option<CachedTaskExecution>| {
+            let path = hit
+                .as_ref()
+                .and_then(|h| h.logs_path.clone())
+                .expect("logs replayed");
+            std::fs::read_to_string(path).unwrap()
+        };
+        assert_eq!(read(&hits[0]), "LOGS-A");
+        assert_eq!(read(&hits[1]), "LOGS-B");
+    }
+
+    #[tokio::test]
+    async fn formerly_colliding_pairs_get_separate_entries_and_logs() {
+        let temp = fixture(&["a#b", "a"]).await;
+        let cache = cache_store(temp.path());
+        let ab = task("c", "a#b", temp.path());
+        let a = task("b#c", "a", temp.path());
+        let logs_ab = Bytes::from_static(b"LOGS-AB-C");
+        let logs_a = Bytes::from_static(b"LOGS-A-BC");
+        let infos = [
+            new_cache_info_with_exit_code(Some(&logs_ab), *ab.get(), 0),
+            new_cache_info_with_exit_code(Some(&logs_a), *a.get(), 3),
+        ];
+        cache.cache_many(&infos).await.unwrap();
+
+        let hits = cache.get_many(&[*ab.get(), *a.get()]).await.unwrap();
+        let first = hits[0].as_ref().expect("a#b / c hits");
+        let second = hits[1].as_ref().expect("a / b#c hits");
+        assert_ne!(first.digest, second.digest);
+        assert_eq!(
+            (first.project_name.as_str(), first.task_name.as_str()),
+            ("a#b", "c")
+        );
+        assert_eq!(
+            (second.project_name.as_str(), second.task_name.as_str()),
+            ("a", "b#c")
+        );
+        assert_eq!((first.exit_code, second.exit_code), (0, 3));
+        assert_eq!(
+            std::fs::read_to_string(first.logs_path.as_ref().unwrap()).unwrap(),
+            "LOGS-AB-C"
+        );
+        assert_eq!(
+            std::fs::read_to_string(second.logs_path.as_ref().unwrap())
+                .unwrap(),
+            "LOGS-A-BC"
+        );
+    }
+
+    #[test]
+    fn the_task_context_adapter_forwards_project_then_task_for_meta() {
+        struct Ctx(omni_configurations::MetaConfiguration);
+        impl Context for Ctx {
+            type Error = std::io::Error;
+            fn get_task_env_vars(
+                &self,
+                _: &omni_core::TaskExecutionNode,
+            ) -> Result<Option<Arc<EnvVars>>, Self::Error> {
+                Ok(None)
+            }
+            fn get_cache_info(
+                &self,
+                _: &str,
+                _: &str,
+            ) -> Option<&omni_task_context::CacheInfo> {
+                None
+            }
+            fn get_output_logs(
+                &self,
+                _: &str,
+                _: &str,
+            ) -> Option<&omni_task_output_logs::OutputLogsConfiguration>
+            {
+                None
+            }
+            fn get_task_meta_config(
+                &self,
+                project_name: &str,
+                task_name: &str,
+            ) -> Option<&omni_configurations::MetaConfiguration> {
+                (project_name == "proj" && task_name == "build")
+                    .then_some(&self.0)
+            }
+            fn get_project_meta_config(
+                &self,
+                _: &str,
+            ) -> Option<&omni_configurations::MetaConfiguration> {
+                None
+            }
+            fn get_task_override_args(
+                &self,
+                _: &str,
+                _: &str,
+            ) -> Option<&UnorderedMap<String, serde_json::Value>> {
+                None
+            }
+            fn get_project_graph(
+                &self,
+            ) -> Result<omni_core::ProjectGraph, Self::Error> {
+                unreachable!()
+            }
+            fn projects(&self) -> &[omni_core::Project] {
+                &[]
+            }
+            fn root_dir(&self) -> &Path {
+                Path::new("")
+            }
+        }
+
+        let ctx = Ctx(omni_configurations::MetaConfiguration::default());
+        let wrapper = ContextWrapper::new(&ctx);
+        assert!(
+            omni_task_context::Context::get_task_meta_config(
+                &wrapper, "proj", "build"
+            )
+            .is_some(),
+            "the adapter must forward (project, task) in order"
+        );
+        assert!(
+            omni_task_context::Context::get_task_meta_config(
+                &wrapper, "build", "proj"
+            )
+            .is_none()
+        );
+    }
 }
 
 #[cfg(test)]

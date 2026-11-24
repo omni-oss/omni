@@ -483,6 +483,15 @@ fn escape_into(
     *first = false;
 }
 
+/// Escape a `project#task` pair for display. Infallible; callers guarantee
+/// non-empty, NUL-free components (rejected at ingress).
+pub(crate) fn escape_label_into(out: &mut String, project: &str, task: &str) {
+    let mut first = true;
+    escape_into(out, project, &mut first, false);
+    out.push('#');
+    escape_into(out, task, &mut first, false);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
