@@ -6,11 +6,11 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use crate::core::{BackendSupport, Error};
+use omni_migration::{BackendSupport, Error};
 
 pub const FAILPOINT_ENV: &str = "OMNI_MIG_FAILPOINTS";
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone)]
 pub enum Action {
     /// Fail the operation with an I/O error.
     Err,
@@ -18,9 +18,11 @@ pub enum Action {
     Exit,
     /// Signal `ready`, then block until `release` exists.
     Wait { ready: PathBuf, release: PathBuf },
+    /// Run a callback, then continue. Simulates a peer acting at this point.
+    Hook(Arc<dyn Fn() + Send + Sync>),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 struct Spec {
     action: Action,
     skip: u32,
@@ -129,6 +131,10 @@ impl Faults {
                 Err(Error::Io(format!("injected failure at {name}")))
             }
             Action::Exit => std::process::exit(86),
+            Action::Hook(f) => {
+                f();
+                Ok(())
+            }
             Action::Wait { ready, release } => {
                 std::fs::write(&ready, b"ready")?;
                 while !release.exists() {

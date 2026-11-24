@@ -1,10 +1,10 @@
 mod common;
 
+use common::fs::Faults;
+use common::index::*;
+use common::lockfile::*;
 use common::*;
-use omni_migration_proof::core::*;
-use omni_migration_proof::fs::Faults;
-use omni_migration_proof::index::*;
-use omni_migration_proof::lockfile::*;
+use omni_migration::*;
 use tempfile::tempdir;
 
 fn idx(root: &std::path::Path, v: Version) -> IndexStore {
@@ -40,9 +40,7 @@ fn explicit_requests_to_the_observed_version_are_wrong_direction() {
     let plan = store
         .plan(PINS_V2, Direction::Upgrade, Policy::default())
         .unwrap();
-    store
-        .faults()
-        .set("doc.rename", omni_migration_proof::fs::Action::Err, 0);
+    store.faults().set("doc.rename", common::fs::Action::Err, 0);
     execute(&store, &plan, || false).unwrap();
     for d in [Direction::Upgrade, Direction::Downgrade] {
         assert!(matches!(
@@ -58,7 +56,7 @@ fn policy_is_directional() {
     let down = idx(dir.path(), WITH_INDEX);
     let p = |pol| {
         down.plan(WITHOUT_INDEX, Direction::Upgrade, pol)
-            .map(|p| p.steps.len())
+            .map(|p| p.steps().len())
     };
     assert!(matches!(p(Policy::default()), Err(Error::NonAtomic)));
     assert!(matches!(p(NON_ATOMIC), Err(Error::DerivableLoss)));
@@ -75,7 +73,7 @@ fn policy_is_directional() {
     let up = idx(dir.path(), WITHOUT_INDEX);
     let p = |pol| {
         up.plan(WITH_INDEX, Direction::Downgrade, pol)
-            .map(|p| p.steps.len())
+            .map(|p| p.steps().len())
     };
     assert_eq!(p(NON_ATOMIC), Ok(1));
     assert!(matches!(
@@ -180,8 +178,8 @@ fn full_plan_before_writes() {
     let b = store
         .plan(PINS_V1, Direction::Downgrade, Policy::default())
         .unwrap();
-    assert_eq!(a.steps, b.steps);
-    let order: Vec<_> = a.steps.iter().map(|(s, _)| s.id).collect();
+    assert_eq!(a.steps(), b.steps());
+    let order: Vec<_> = a.steps().iter().map(|(s, _)| s.id).collect();
     assert_eq!(order, [PinsStep::DropTags, PinsStep::BackToPlainPins]);
     // The 2-version catalog does not know v3.
     store.set_catalog(PinsCatalog::two());
@@ -256,20 +254,20 @@ fn chain_identity_is_verified_at_observation() {
 fn dummy_plan() -> Plan<PinsStep> {
     let stamp = Stamp {
         store: StoreId(1000),
-        chain: ChainName::PINS,
+        chain: PINS_CHAIN,
         revision: Revision(1),
         version: PINS_V1,
     };
     let c = PinsCatalog::two();
-    Plan {
-        observed: stamp,
-        catalog: c.id(),
-        binding: c.binding(),
-        direction: Direction::Upgrade,
-        target: PINS_V2,
-        policy: Policy::default(),
-        steps: vec![],
-    }
+    build_plan(
+        &c.chain().unwrap(),
+        &c,
+        stamp,
+        PINS_V2,
+        Direction::Upgrade,
+        Policy::default(),
+    )
+    .unwrap()
 }
 
 #[test]

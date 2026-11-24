@@ -2,10 +2,12 @@ mod common;
 
 use std::cell::Cell;
 
+use common::fs::{Action, DurableFs, Faults};
+use common::lockfile::*;
 use common::*;
-use omni_migration_proof::core::*;
-use omni_migration_proof::fs::{Action, DurableFs, Faults};
-use omni_migration_proof::lockfile::*;
+use omni_migration::*;
+use std::sync::Arc;
+
 use tempfile::tempdir;
 
 fn run(store: &LockfileStore, to: Version, d: Direction) -> Run {
@@ -199,7 +201,7 @@ fn prefix_commit_is_not_a_chain_transaction() {
     let plan = store
         .plan(PINS_V1, Direction::Downgrade, Policy::default())
         .unwrap();
-    assert_eq!(plan.steps.len(), 2);
+    assert_eq!(plan.steps().len(), 2);
     assert_eq!(
         execute(&store, &plan, || false).unwrap(),
         Run::Stopped {
@@ -376,25 +378,62 @@ fn generation_overflow_is_refused_before_staging() {
 }
 
 #[test]
-fn direct_session_apply_never_overwrites_a_pending_intent() {
+fn apply_never_overwrites_an_intent_that_appears_after_observation() {
     let dir = tempdir().unwrap();
     let store = v1_store(dir.path(), PinsCatalog::two());
     let plan = store
         .plan(PINS_V2, Direction::Upgrade, Policy::default())
         .unwrap();
-    store.faults().set("doc.parent_sync", Action::Err, 0);
-    execute(&store, &plan, || false).unwrap();
-    store.faults().clear();
-    let before = std::fs::read(store.intent_path()).unwrap();
-    let mut session = store.begin_migration().unwrap();
-    let step = Step {
-        from: PINS_V2,
-        to: PINS_V1,
-        id: PinsStep::BackToPlainPins,
-    };
-    assert_eq!(
-        session.apply(step),
-        StepOutcome::RecoveryRequired(Error::Dirty)
+    let intent = store.intent_path();
+    store.faults().set(
+        "apply.start",
+        Action::Hook(Arc::new(move || {
+            std::fs::write(&intent, br#"{"chain":"pins","kind":"peer"}"#)
+                .unwrap()
+        })),
+        0,
     );
-    assert_eq!(std::fs::read(store.intent_path()).unwrap(), before);
+    assert!(matches!(
+        execute(&store, &plan, || false),
+        Ok(Run::NeedsRecovery {
+            last_confirmed: PINS_V1,
+            attempted: PINS_V2,
+            error: Error::Dirty,
+        })
+    ));
+    assert_eq!(
+        std::fs::read(store.intent_path()).unwrap(),
+        br#"{"chain":"pins","kind":"peer"}"#
+    );
+}
+
+#[test]
+fn a_wrong_version_at_step_time_is_not_committed() {
+    let dir = tempdir().unwrap();
+    let store = v1_store(dir.path(), PinsCatalog::two());
+    let plan = store
+        .plan(PINS_V2, Direction::Upgrade, Policy::default())
+        .unwrap();
+    let doc = store.doc_path();
+    store.faults().set(
+        "apply.start",
+        Action::Hook(Arc::new(move || {
+            rewrite_doc_at(&doc, |v| {
+                v["version"] = "pins-v2".into();
+                v["body"] = serde_json::json!({"pins": ["a"], "notes": []});
+            })
+        })),
+        0,
+    );
+    let w = store.faults().mutations();
+    assert_eq!(
+        execute(&store, &plan, || false),
+        Ok(Run::Stopped {
+            last: PINS_V1,
+            error: Error::UnexpectedVersion
+        })
+    );
+    assert_eq!(store.faults().mutations(), w);
+    assert!(!store.intent_exists());
+    assert_eq!(store.state(), Ok(StoreState::Ready(PINS_V2)));
 }

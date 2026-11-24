@@ -4,11 +4,11 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
+use common::fs::{DurableFs, FAILPOINT_ENV, Faults};
+use common::index::*;
+use common::lockfile::*;
 use common::*;
-use omni_migration_proof::core::*;
-use omni_migration_proof::fs::{DurableFs, FAILPOINT_ENV, Faults};
-use omni_migration_proof::index::*;
-use omni_migration_proof::lockfile::*;
+use omni_migration::*;
 use tempfile::tempdir;
 
 fn child(scenario: &str, root: &Path, failpoints: &str) -> Command {

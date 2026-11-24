@@ -1,21 +1,26 @@
 [package]
-name = "omni_migration_proof"
+name = "omni_migration"
 rust-version.workspace = true
 edition.workspace = true
 version = "0.0.0"
 authors.workspace = true
 repository.workspace = true
 publish = false
-description = "Disposable RFC 0032 slice 1 contract-proof harness. Unwired; not for production use."
+description = "Storage-agnostic planner and runner for pre-v1 store migrations (RFC 0032). Unwired; not for production use."
 
 [dependencies]
 blake3 = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+criterion = { workspace = true }
 tempfile = { workspace = true }
+
+[[bench]]
+name = "access_gate"
+harness = false
 
 [lints]
 workspace = true
