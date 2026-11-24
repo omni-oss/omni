@@ -970,7 +970,10 @@ mod tests {
         sync::atomic::{AtomicU32, Ordering},
     };
 
+    use omni_command_config::CommandConfig;
+
     use super::*;
+    use crate::identity_leaf::identity_leaf_v1;
 
     #[test]
     fn operands_never_share_a_hash_input_with_a_shell_string() {
@@ -1240,6 +1243,229 @@ mod tests {
             .iter()
             .cloned()
             .collect()
+    }
+
+    /// Test-only copy of `Collector::get_digest` with the identity leaf
+    /// supplied by the caller, so one recipe can be evaluated with the legacy
+    /// joined-label leaf and with the v1 leaf over identical other inputs.
+    async fn recipe_digest(
+        collector: &Collector<'_>,
+        info: &ProjectTaskInfo<'_>,
+        resolved_inputs: &[OmniPath],
+        identity_leaf: DefaultHash,
+    ) -> DefaultHash {
+        let mut tree = collector
+            .dir_hasher
+            .hash_tree::<DefaultHasher>(
+                info.project_name,
+                info.project_dir,
+                resolved_inputs,
+            )
+            .await
+            .expect("hash tree");
+
+        let mut deps = info.dependency_digests.to_vec();
+        deps.sort();
+        for dep in deps {
+            tree.insert(dep);
+        }
+
+        if !info.env_vars.is_empty() {
+            let mut keys = info
+                .input_env_keys
+                .iter()
+                .map(|k| k.as_str())
+                .collect::<Vec<_>>();
+            keys.sort();
+            let lines = keys
+                .into_iter()
+                .map(|k| {
+                    let v = info.env_vars.get(k).map_or("", |v| v.as_str());
+                    format!("{k}={v}")
+                })
+                .collect::<Vec<_>>();
+            tree.insert(DefaultHasher::hash(lines.join("\n").as_bytes()));
+        }
+
+        if !info.args.is_empty() {
+            let mut entries = info.args.iter().collect::<Vec<_>>();
+            entries.sort_by(|a, b| a.0.cmp(b.0));
+            let lines = entries
+                .into_iter()
+                .map(|(k, v)| format!("{k}={v:?}"))
+                .collect::<Vec<_>>();
+            tree.insert(DefaultHasher::hash(lines.join("\n").as_bytes()));
+        }
+
+        let mut globs = info
+            .output_files
+            .iter()
+            .map(|p| p.unresolved_path())
+            .collect::<Vec<_>>();
+        globs.sort();
+        for path in globs {
+            tree.insert(DefaultHasher::hash(path.to_string_lossy().as_bytes()));
+        }
+
+        if let Some(command) = info.task_exec
+            && let Some(input) = command_hash_input("command", command)
+        {
+            tree.insert(DefaultHasher::hash(input.as_bytes()));
+        }
+        if let Some(command) = info.task_retry_exec
+            && let Some(input) = command_hash_input("retry_command", command)
+        {
+            tree.insert(DefaultHasher::hash(input.as_bytes()));
+        }
+
+        tree.insert(identity_leaf);
+        tree.commit();
+        tree.root().expect("root")
+    }
+
+    /// An ordinary undecorated task with controlled inputs, env, args, output
+    /// globs, command and dependency digests.
+    fn ordinary_task(root: &Path, project: &str, task: &str) -> Project {
+        write_file(&root.join(project).join("src/a.txt"), "a");
+        let mut p = Project::new(root, project);
+        p.task_name = task.to_string();
+        p.input_files = vec![OmniPath::new("src/**/*.txt")];
+        p.output_files = vec![OmniPath::new("dist/**")];
+        p.input_env_keys = vec!["MODE".to_string()];
+        p.env_vars.insert("MODE".to_string(), "release".to_string());
+        p.args
+            .insert("profile".to_string(), serde_json::json!("fast"));
+        p.dependency_digests = vec![[2; 32], [1; 32]];
+        p
+    }
+
+    struct Digests {
+        collector: DefaultHash,
+        legacy_recipe: DefaultHash,
+        v1_recipe: DefaultHash,
+    }
+
+    async fn digests_for(
+        root: &Path,
+        project: &Project,
+        command: &CommandConfig,
+    ) -> Digests {
+        let cache_dir = fresh_cache_dir(root);
+        let collector = Collector::new(root, &cache_dir, RealSys);
+        let info = ProjectTaskInfo {
+            task_exec: Some(command),
+            ..project.info()
+        };
+        let result = collector
+            .collect(
+                &[info],
+                &CollectConfig {
+                    digests: true,
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("collect")
+            .into_iter()
+            .next()
+            .expect("one result");
+        let inputs = result.input_files.clone().expect("inputs");
+
+        let legacy_leaf = DefaultHasher::hash(
+            format!("{}#{}", info.project_name, info.task_name).as_bytes(),
+        );
+        let v1_leaf =
+            identity_leaf_v1(info.project_name, info.task_name).expect("leaf");
+
+        Digests {
+            collector: result.digest.expect("digest"),
+            legacy_recipe: recipe_digest(
+                &collector,
+                &info,
+                &inputs,
+                legacy_leaf,
+            )
+            .await,
+            v1_recipe: recipe_digest(&collector, &info, &inputs, v1_leaf).await,
+        }
+    }
+
+    fn hex32(hash: DefaultHash) -> String {
+        hash.iter().map(|b| format!("{b:02x}")).collect()
+    }
+
+    #[tokio::test]
+    async fn legacy_recipe_reproduces_the_base_digest_and_leaf() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let project = ordinary_task(root, "proj", "build");
+        let command = CommandConfig::shell("echo build");
+
+        let digests = digests_for(root, &project, &command).await;
+
+        assert_eq!(
+            hex32(DefaultHasher::hash(b"proj#build")),
+            "3a89953840fde7533a43a03184a9864798d00017163735990a8a93d7caf39338"
+        );
+        assert_eq!(
+            hex32(digests.collector),
+            "3fa673aafe481f2afc40309d8c365eb6a3ef201a2bf718aa1e9262987d5c4d6a"
+        );
+        assert_eq!(digests.collector, digests.legacy_recipe);
+    }
+
+    #[tokio::test]
+    async fn v1_recipe_changes_only_the_identity_leaf() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let project = ordinary_task(root, "proj", "build");
+        let command = CommandConfig::shell("echo build");
+
+        let digests = digests_for(root, &project, &command).await;
+
+        assert_eq!(
+            hex32(identity_leaf_v1("proj", "build").unwrap()),
+            "262db1a029777c8c34df7d061a04e010c943bb983c789b8a302619e8352d111e"
+        );
+        assert_eq!(
+            hex32(digests.v1_recipe),
+            "ccd4438a5d433062a171d637e6dd8e790c57aa4caf8335bc96f7aec0ed251f24"
+        );
+        assert_ne!(digests.v1_recipe, digests.legacy_recipe);
+    }
+
+    /// Two pairs with equal non-identity inputs share a digest on the base
+    /// because both render `a#b#c`; the cutover must split them.
+    #[tokio::test]
+    #[ignore = "fails on the base: the joined-label leaf collides; passes after the F03.4 slice 0 cutover"]
+    async fn formerly_colliding_pairs_have_distinct_digests() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let command = CommandConfig::shell("echo same");
+        let first = ordinary_task(root, "a#b", "c");
+        let second = ordinary_task(root, "a", "b#c");
+
+        let first_digests = digests_for(root, &first, &command).await;
+        let second_digests = digests_for(root, &second, &command).await;
+
+        assert_ne!(first_digests.collector, second_digests.collector);
+    }
+
+    /// Documents the base collision through the test-only recipe, independently
+    /// of the ignored test above, and shows the v1 leaf separates the pair.
+    #[tokio::test]
+    async fn base_recipe_collides_and_v1_recipe_separates_the_pair() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let command = CommandConfig::shell("echo same");
+        let first = ordinary_task(root, "a#b", "c");
+        let second = ordinary_task(root, "a", "b#c");
+
+        let first_digests = digests_for(root, &first, &command).await;
+        let second_digests = digests_for(root, &second, &command).await;
+
+        assert_eq!(first_digests.legacy_recipe, second_digests.legacy_recipe);
+        assert_ne!(first_digests.v1_recipe, second_digests.v1_recipe);
     }
 
     #[tokio::test]
