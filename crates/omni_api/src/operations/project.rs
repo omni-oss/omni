@@ -46,7 +46,8 @@ pub enum ProjectSelector {
 
 // ── Response ──────────────────────────────────────────────────────────────────
 
-/// A selected project configuration.
+/// A selected project configuration. `dir` and `file` are skipped on the
+/// wire, so a deserialized response has an empty `dir` and no `file`.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ProjectConfigResponse {
     pub config: ProjectConfiguration,

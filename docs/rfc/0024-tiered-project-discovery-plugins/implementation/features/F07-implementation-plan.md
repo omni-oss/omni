@@ -156,7 +156,10 @@ extension chain in the same order.
 Read them from `FinalizedProject::{file, dir}` or `ProjectConfigEntry::{location,
 root_dir}` instead. `ProjectLayer::finalize` no longer takes `file`/`dir`.
 `ProjectConfigEntry::new_virtual` takes the root directory; `from_file` is
-replaced by `from_finalized`.
+replaced by `from_finalized`. `FinalizedProject::file` is now an
+`Option<OmniPath>` (`None` for fileless layers). `omni_api::ProjectConfigResponse`
+gained public fields `dir` and `file`, so struct literals and destructuring
+without `..` break.
 
 **Gate:** pin the authored schema and API/MCP JSON shape, file/name selection,
 relative paths from inherited declarations, closure order and diamond behavior,

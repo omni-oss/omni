@@ -46,6 +46,7 @@ omni_config_types = { workspace = true }
 omni_task_output_logs = { workspace = true }
 
 [dev-dependencies]
+omni_types = { workspace = true }
 tempfile = { workspace = true }
 test-log = { workspace = true }
 rstest = { workspace = true }

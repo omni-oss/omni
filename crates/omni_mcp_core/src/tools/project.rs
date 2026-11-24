@@ -44,31 +44,75 @@ where
     ) -> eyre::Result<ProjectConfigResult> {
         let ctx = self.context()?;
         let selector = params.into_selector(ctx.root_dir())?;
-        let ProjectConfigResponse {
-            config,
-            dir,
-            warnings,
-            ..
-        } = OmniApi::new_with_sys(ctx, NoopSubscriber)
+        let response = OmniApi::new_with_sys(ctx, NoopSubscriber)
             .project_config(selector)
             .await?;
-        let tasks = config
-            .tasks
-            .iter()
-            .map(|(name, _task)| TaskSummary {
-                name: name.clone(),
-                description: None,
-            })
-            .collect();
-        Ok(ProjectConfigResult {
-            name: config.name.clone(),
-            dir: dir.unresolved_path().to_string_lossy().to_string(),
-            description: config
-                .description
-                .as_ref()
-                .map(|d| d.as_ref().clone()),
-            tasks,
-            warnings,
+        Ok(project_config_result(response))
+    }
+}
+
+fn project_config_result(
+    response: ProjectConfigResponse,
+) -> ProjectConfigResult {
+    let ProjectConfigResponse {
+        config,
+        dir,
+        warnings,
+        ..
+    } = response;
+    let tasks = config
+        .tasks
+        .iter()
+        .map(|(name, _task)| TaskSummary {
+            name: name.clone(),
+            description: None,
         })
+        .collect();
+    ProjectConfigResult {
+        name: config.name.clone(),
+        dir: dir.unresolved_path().to_string_lossy().to_string(),
+        description: config.description.as_ref().map(|d| d.as_ref().clone()),
+        tasks,
+        warnings,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use omni_types::OmniPath;
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn project_config_result_uses_the_response_dir() {
+        let config = serde_json::from_value(json!({
+            "name": "app",
+            "description": "An app",
+            "tasks": { "build": { "command": "true" } },
+        }))
+        .unwrap();
+        let response = ProjectConfigResponse {
+            config,
+            dir: OmniPath::from(std::path::PathBuf::from("/ws/apps/app")),
+            file: Some(std::path::PathBuf::from(
+                "/ws/apps/app/project.omni.yaml",
+            )),
+            warnings: vec!["note".to_string()],
+        };
+
+        let value =
+            serde_json::to_value(project_config_result(response)).unwrap();
+
+        assert_eq!(
+            value,
+            json!({
+                "name": "app",
+                "dir": "/ws/apps/app",
+                "description": "An app",
+                "tasks": [{ "name": "build", "description": null }],
+                "warnings": ["note"],
+            })
+        );
     }
 }

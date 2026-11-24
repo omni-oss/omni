@@ -325,12 +325,18 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
 
                 let key_input_files = if use_defaults {
                     let mut files = cache.key.files.clone();
-                    let additional_files = config_file_inputs(
-                        &ConfigLocation::File(
-                            finalized.file.path()?.to_path_buf(),
-                        ),
-                        extension_graph,
-                    )?;
+                    let location = match &finalized.file {
+                        Some(file) => Some(ConfigLocation::File(
+                            file.path()?.to_path_buf(),
+                        )),
+                        None => None,
+                    };
+                    let additional_files = match &location {
+                        Some(location) => {
+                            config_file_inputs(location, extension_graph)?
+                        }
+                        None => vec![],
+                    };
 
                     // The project's own config-file ids seed the include side
                     // only; defaults are always includes. The exclude side

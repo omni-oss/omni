@@ -25,13 +25,13 @@ pub struct ProjectConfigEntry {
 impl ProjectConfigEntry {
     /// An entry read from the concrete file of a finalized project.
     ///
-    /// Returns `None` when the project has no file, which discovery never
-    /// produces.
+    /// Returns `None` when the project has no file or its path is unresolved;
+    /// discovery produces neither.
     pub(crate) fn from_finalized(
         project: FinalizedProject,
         discovered: bool,
     ) -> Option<Self> {
-        let file = project.file.path().ok()?.to_path_buf();
+        let file = project.file.as_ref()?.path().ok()?.to_path_buf();
         Some(Self {
             config: project.config,
             root_dir: project.dir,
@@ -73,7 +73,9 @@ pub(crate) fn is_discovered(
     project: &FinalizedProject,
     discovered: &UnorderedSet<&Path>,
 ) -> bool {
-    discovered.contains(project.file.path().expect("path should be resolved"))
+    project.file.as_ref().is_some_and(|file| {
+        discovered.contains(file.path().expect("path should be resolved"))
+    })
 }
 
 pub(crate) fn is_runnable_project(
@@ -144,6 +146,33 @@ mod tests {
         assert_eq!(e.file_path(), Some(Path::new("/w/a/project.omni.yaml")));
         assert_eq!(e.root_dir.path().unwrap(), Path::new("/w/a"));
         assert!(!e.location.is_virtual());
+    }
+
+    #[test]
+    fn fileless_finalized_project_has_no_entry() {
+        let finalized = LoadedLayer::unattributed(
+            serde_json::from_value(serde_json::json!({ "name": "project" }))
+                .unwrap(),
+        )
+        .finalize_composed()
+        .unwrap();
+
+        assert_eq!(finalized.file, None);
+        assert!(ProjectConfigEntry::from_finalized(finalized, true).is_none());
+    }
+
+    #[test]
+    fn fileless_finalized_project_is_not_discovered() {
+        let finalized = LoadedLayer::unattributed(
+            serde_json::from_value(serde_json::json!({ "name": "project" }))
+                .unwrap(),
+        )
+        .finalize_composed()
+        .unwrap();
+        let discovered = UnorderedSet::default();
+
+        assert!(!is_discovered(&finalized, &discovered));
+        assert!(!is_runnable_project(&finalized, &discovered));
     }
 
     #[test]

@@ -613,9 +613,9 @@ impl LoadedLayer {
 #[derive(Debug, Clone, PartialEq)]
 pub struct FinalizedProject {
     pub config: ProjectConfiguration,
-    /// The concrete (last) layer's file; empty when it has none. Location is
+    /// The concrete (last) layer's file; `None` when it has none. Location is
     /// not part of the authored configuration.
-    pub file: OmniPath,
+    pub file: Option<OmniPath>,
     /// The concrete layer's directory: the project's root directory.
     pub dir: OmniPath,
     /// Effective cache per task name. Empty for `base` projects, which run no
@@ -657,7 +657,7 @@ impl LoadedLayer {
         mut self,
     ) -> Result<FinalizedProject, FinalizeError> {
         self.attribute();
-        let file = self.file().clone();
+        let file = self.source.file_path().map(|p| (**p).clone());
         let LoadedLayer {
             dir,
             mut layer,
