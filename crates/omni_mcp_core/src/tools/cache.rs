@@ -5,7 +5,8 @@ use omni_task_executor::TaskExecutorSys;
 
 use crate::{
     model::{
-        CachePruneParams, CachePruneResult, CacheStatsParams, CacheStatsResult,
+        CacheEligibilityParams, CacheEligibilityResult, CachePruneParams,
+        CachePruneResult, CacheStatsParams, CacheStatsResult,
         ProjectCacheStatsSummary, TaskCacheStatsSummary,
     },
     server::OmniMcpServer,
@@ -21,6 +22,37 @@ where
         + Sync
         + 'static,
 {
+    pub(crate) async fn tool_cache_eligibility(
+        &self,
+        params: CacheEligibilityParams,
+    ) -> eyre::Result<CacheEligibilityResult> {
+        if params.tasks.is_empty() && params.task_patterns.is_empty() {
+            return Err(eyre::eyre!(
+                "specify at least one task in `tasks` (exact names) or `task_patterns` (globs)"
+            ));
+        }
+        let req = omni_api::TaskRunRequest {
+            tasks: params.task_patterns,
+            exact_tasks: params.tasks,
+            ignore_dependencies: params.ignore_dependencies,
+            filters: omni_api::TaskRunFilters {
+                meta: params.meta,
+                project: params.project,
+                project_pattern: params.project_patterns,
+                dir: params.dir,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let inspection =
+            self.make_api()?.task_cache_inspect(req).await?.inspection;
+        Ok(CacheEligibilityResult {
+            tasks: inspection.tasks,
+            contradictions: inspection.contradictions,
+            unevaluated_conditions: inspection.unevaluated_conditions,
+        })
+    }
+
     pub(crate) async fn tool_cache_stats(
         &self,
         params: CacheStatsParams,

@@ -38,7 +38,7 @@ The package-level waves further down are a coarse summary; the task graph supers
 ## Status
 
 Bug fixes B01-B04 and refactors R01-R08 are merged. Of the standalone features, **F01, F02
-and F08 are done**; F03, F05, F06 and F10 are partly done; F04 is done; F07 and F09 are not started. The per-feature status is in the
+and F08 are done**; F03, F05, F06 and F10 are partly done; F04 is done; F07 is not started and F09 is done except field provenance. The per-feature status is in the
 [features table](#features-new-capability-useful-on-its-own), and the merged batches are:
 
 - F01 and F02: the [first feature batch](features/F01-F02-batch.md) ([#101](https://github.com/omni-oss/omni/pull/101)).
@@ -104,7 +104,7 @@ Known gaps carried forward from the merged refactors:
 | [F06](features/F06-effective-semantic-digest.md)          | Per-task effective semantic digest in cache keys        | R03, R05, B01    | XL   | Partly done: F06.1 audit ([#103](https://github.com/omni-oss/omni/pull/103)), F06.2 digest function ([#114](https://github.com/omni-oss/omni/pull/114)). F06.3 (cache-key plumbing, High risk) is not started                                                                                                         |
 | [F07](features/F07-conflict-detection-and-provenance.md)  | Composition conflict detection and provenance           | R04, R07         | L    | Not started (needs an approved plan)                                                                                                                                                                                                                                                                                  |
 | [F08](features/F08-source-acquisition-leases.md)          | Remote-source acquisition leases and atomic references  | none             | L    | Done: F08.1-F08.5 ([#108](https://github.com/omni-oss/omni/pull/108)-[#113](https://github.com/omni-oss/omni/pull/113), [#131](https://github.com/omni-oss/omni/pull/131)). Decisions D1, D3 and D7 are still open                                                                                                    |
-| [F09](features/F09-eligibility-inspection.md)             | Cache-eligibility and provenance inspection (CLI/MCP)   | B04, F05         | M    | Partly done: slice 1, the `omni_api` inspection operation. CLI and MCP surfaces pending |
+| [F09](features/F09-eligibility-inspection.md)             | Cache-eligibility and provenance inspection (CLI/MCP)   | B04, F05         | M    | Done except field provenance (needs F07): API operation, `omni cache eligibility` and the `cache_eligibility` MCP tool |
 | [F10](features/F10-captured-input-view.md)                | Captured, containment-checked input view                | R02              | L    | Partly done: F10.1 design ([#108](https://github.com/omni-oss/omni/pull/108)). F10.2-F10.3 wait on decisions D2, D5 and D9                                                                                                                                                                                            |
 
 Size: XS < half a day, S ≈ 1-2 days, M ≈ 3-5 days, L ≈ 1-2 weeks, XL > 2 weeks

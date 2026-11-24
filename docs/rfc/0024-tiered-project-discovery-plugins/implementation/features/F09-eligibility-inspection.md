@@ -1,7 +1,7 @@
 # F09: Cache-eligibility and provenance inspection (CLI/MCP)
 
 **Type:** feature · **Size:** M · **Depends on:** B04, F05 (F07 for field provenance)
-**Status:** slices 1 (API operation) and 2 (CLI) done; MCP (slice 3) not started.
+**Status:** slices 1 (API operation), 2 (CLI) and 3 (MCP) done. Field provenance waits on F07.
 
 ## Goal
 
@@ -55,4 +55,4 @@ note, CLI/JSON and MCP.
    (request: `TaskRunRequest`, selection fields only). `--no-cache` is not modelled, so
    `write-only-no-cache` is not reported yet.
 2. **CLI (done).** `omni cache eligibility -t <task>` (also `--task-pattern`, `-p`, `--project-pattern`, `--dir`, `-m`, `--ignore-dependencies`, `--json`). Text output names tasks, statuses, tiers and the declaring files; `--json` prints the inspection. A JSON test pins every status variant's shape.
-3. **MCP (not started).** A tool with the same output, plus schema and docs updates.
+3. **MCP (done).** Read-only tool `cache_eligibility` (`tasks`, `task_patterns`, `project`, `project_patterns`, `dir`, `meta`, `ignore_dependencies`) returning `tasks`, `contradictions` and `unevaluated_conditions` with the same field names as the CLI JSON. Output carries task names, tiers and workspace-relative declaring files only; no file contents.

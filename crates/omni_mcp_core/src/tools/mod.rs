@@ -68,6 +68,11 @@ pub fn tool_list_for_mode(shared: bool) -> Vec<rmcp::model::Tool> {
             "Return cache hit/miss/size statistics per project and task",
             true,
         ),
+        schemas.typed::<CacheEligibilityParams>(
+            "cache_eligibility",
+            "Report each selected task's cache status (eligible, disabled, persistent, no-command, demoted) with the deciding tier, and list explicit cache.enabled contradictions with their declaring files. Reads configuration only; runs nothing",
+            true,
+        ),
         schemas.typed::<CachePruneParams>(
             "cache_prune",
             "Prune stale cache entries. dry_run=true (default) shows what would be deleted without deleting",
@@ -245,6 +250,18 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn cache_eligibility_is_listed_and_read_only() {
+        let tool = tool_list()
+            .into_iter()
+            .find(|t| t.name == "cache_eligibility")
+            .expect("cache_eligibility is listed");
+        assert_eq!(
+            tool.annotations.as_ref().and_then(|a| a.read_only_hint),
+            Some(true)
+        );
     }
 
     #[test]
