@@ -63,6 +63,16 @@ pub fn capture_path_for_process(
         ))
 }
 
+const MAX_EXISTING_RETRIES: u32 = 16;
+
+/// `<name>-<pid>-<seq>` -> `<name>-<pid>-<seq + 1>`.
+fn next_sequence_path(path: &Path) -> Option<PathBuf> {
+    let name = path.file_name()?.to_str()?;
+    let (head, seq) = name.rsplit_once('-')?;
+    let seq: u64 = seq.parse().ok()?;
+    Some(path.with_file_name(format!("{head}-{}", seq.checked_add(1)?)))
+}
+
 /// Fully drain `reader`. When `to_file` is `Some`, the bytes are written there
 /// and `File(path)` is returned; otherwise the bytes are discarded and `Sink`
 /// is returned.
@@ -76,16 +86,36 @@ pub async fn drain(
 ) -> std::io::Result<CaptureTarget> {
     match to_file {
         Some(path) => {
+            let mut path = path;
             let file = async {
                 if let Some(parent) = path.parent() {
                     tokio::fs::create_dir_all(parent).await?;
                 }
-                // Exclusive: a capture file is never shared or truncated.
-                tokio::fs::OpenOptions::new()
-                    .write(true)
-                    .create_new(true)
-                    .open(&path)
-                    .await
+                let mut attempt = 0;
+                loop {
+                    // Exclusive: a capture file is never shared or truncated.
+                    match tokio::fs::OpenOptions::new()
+                        .write(true)
+                        .create_new(true)
+                        .open(&path)
+                        .await
+                    {
+                        Err(e)
+                            if e.kind()
+                                == std::io::ErrorKind::AlreadyExists
+                                && attempt < MAX_EXISTING_RETRIES =>
+                        {
+                            // A stale file (crash, shared volume): move on to
+                            // the next sequence number.
+                            match next_sequence_path(&path) {
+                                Some(next) => path = next,
+                                None => return Err(e),
+                            }
+                            attempt += 1;
+                        }
+                        other => return other,
+                    }
+                }
             }
             .await;
             let file = match file {
@@ -232,6 +262,23 @@ mod tests {
                 5
             )
         );
+    }
+
+    #[tokio::test]
+    async fn stale_capture_files_are_skipped_by_taking_the_next_sequence() {
+        let dir = tempfile::tempdir().unwrap();
+        let p0 = capture_path_for_process(dir.path(), "p", "t", 7, 0);
+        let p1 = capture_path_for_process(dir.path(), "p", "t", 7, 1);
+        std::fs::create_dir_all(p0.parent().unwrap()).unwrap();
+        std::fs::write(&p0, b"stale0").unwrap();
+        std::fs::write(&p1, b"stale1").unwrap();
+        let p2 = capture_path_for_process(dir.path(), "p", "t", 7, 2);
+
+        let target = drain(&b"fresh"[..], Some(p0.clone())).await.unwrap();
+        assert_eq!(target, CaptureTarget::File(p2.clone()));
+        assert_eq!(std::fs::read(&p2).unwrap(), b"fresh");
+        assert_eq!(std::fs::read(&p0).unwrap(), b"stale0");
+        assert_eq!(std::fs::read(&p1).unwrap(), b"stale1");
     }
 
     #[tokio::test]
