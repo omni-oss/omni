@@ -318,11 +318,12 @@ where
         &self,
         req: TaskRunRequest,
     ) -> eyre::Result<TaskCacheInspectResponse> {
-        let mut ctx = self.ctx.lock().await;
+        let ctx = self.ctx.lock().await;
         crate::operations::task::handle_task_cache_inspect(
-            ctx.ensure_loaded().await?,
+            ctx.as_context(),
             req,
         )
+        .await
     }
 
     /// Execute an arbitrary command in the workspace environment.

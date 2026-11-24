@@ -20,13 +20,13 @@ omni cache eligibility [OPTIONS]
 
 ### `-t`, `--task`
 
-Select the task with this exact name. Glob characters are literal; use --task-pattern to match by glob
+Select the task with this exact name, for example `-t build`. At least one of --task or --task-pattern is required. Glob characters are literal; use --task-pattern to match by glob
 
 - **Required:** No
 
 ### `--task-pattern`
 
-Select tasks whose name matches this glob. Repeatable, and may be combined with --task
+Select tasks whose name matches this glob. At least one of --task or --task-pattern is required. Repeatable, and may be combined with --task
 
 - **Required:** No
 

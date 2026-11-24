@@ -51,7 +51,7 @@ note, CLI/JSON and MCP.
    environment and never fails on a contradiction. Statuses come from the executor's
    `derive_status`; `enabled` classification shares `static_enabled` with
    `TaskContext::is_enabled`. Tasks with a template `enabled` are judged as enabled
-   and listed in `unevaluated_conditions`. Exposed as `OmniApi::task_cache_inspect`
+   and listed in `unevaluated_conditions`. The operation loads a fresh definitions-only context (`Context::into_loaded_definitions_only`), so no environment value is evaluated and no command substitution can run. Exposed as `OmniApi::task_cache_inspect`
    (request: `TaskRunRequest`, selection fields only). `--no-cache` is not modelled, so
    `write-only-no-cache` is not reported yet.
 2. **CLI (done).** `omni cache eligibility -t <task>` (also `--task-pattern`, `-p`, `--project-pattern`, `--dir`, `-m`, `--ignore-dependencies`, `--json`). Text output names tasks, statuses, tiers and the declaring files; `--json` prints the inspection. A JSON test pins every status variant's shape.

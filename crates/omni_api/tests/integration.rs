@@ -2081,7 +2081,7 @@ async fn task_cache_inspect_lists_contradiction_without_running_anything() {
     let root = tmp.path();
     std::fs::write(
         root.join("workspace.omni.yaml"),
-        "projects:\n  - \"projects/**\"\n",
+        "projects:\n  - \"projects/**\"\nenv:\n  vars:\n    PROBE: \"$(touch envmarker)\"\n",
     )
     .unwrap();
     std::fs::create_dir_all(root.join("projects/app")).unwrap();
@@ -2115,4 +2115,9 @@ async fn task_cache_inspect_lists_contradiction_without_running_anything() {
             omni_task_executor::CacheStatus::Demoted { .. }
         )));
     assert!(!root.join("projects/app/marker").exists());
+    assert!(
+        !root.join("envmarker").exists()
+            && !root.join("projects/app/envmarker").exists(),
+        "inspection must not evaluate environment command substitutions"
+    );
 }

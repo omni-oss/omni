@@ -102,14 +102,14 @@ pub struct EligibilityArgs {
     #[arg(
         long,
         short,
-        help = "Select the task with this exact name. Glob characters are literal; use --task-pattern to match by glob"
+        help = "Select the task with this exact name, for example `-t build`. At least one of --task or --task-pattern is required. Glob characters are literal; use --task-pattern to match by glob"
     )]
     task: Vec<String>,
 
     #[arg(
         long,
         value_name = "GLOB",
-        help = "Select tasks whose name matches this glob. Repeatable, and may be combined with --task"
+        help = "Select tasks whose name matches this glob. At least one of --task or --task-pattern is required. Repeatable, and may be combined with --task"
     )]
     task_pattern: Vec<String>,
 
@@ -641,18 +641,18 @@ async fn eligibility(
     for task in &inspection.tasks {
         let value = serde_json::to_value(&task.status)?;
         let status = value["status"].as_str().unwrap_or("unknown");
-        let mut line = format!("{}: {status}", task.task);
-        match &task.status {
-            omni_task_executor::CacheStatus::Disabled {
-                deciding_source: Some(source),
-            } => line.push_str(&format!(" ({source})")),
-            omni_task_executor::CacheStatus::Demoted {
-                direct_dependency,
-                root_cause,
-            } => line.push_str(&format!(
+        let mut line = format!(
+            "{}: {status} (tier: {})",
+            task.task, task.cache_enabled_source
+        );
+        if let omni_task_executor::CacheStatus::Demoted {
+            direct_dependency,
+            root_cause,
+        } = &task.status
+        {
+            line.push_str(&format!(
                 " (dependency {direct_dependency}, root cause {root_cause})"
-            )),
-            _ => {}
+            ));
         }
         if task.condition_unevaluated {
             line.push_str(" [enabled condition not evaluated]");

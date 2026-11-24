@@ -168,16 +168,21 @@ pub struct TaskCacheInspectResponse {
 
 /// Inspect the cache status of the tasks `req` selects without running them.
 /// Only the selection fields of the request apply.
-pub fn handle_task_cache_inspect<TSys>(
-    ctx: &LoadedContext<TSys>,
+///
+/// Loads a fresh definitions-only view, so no environment value is evaluated
+/// and no command substitution can run, even if the API already holds a
+/// fully loaded context.
+pub async fn handle_task_cache_inspect<TSys>(
+    ctx: &omni_context::Context<TSys>,
     req: TaskRunRequest,
 ) -> eyre::Result<TaskCacheInspectResponse>
 where
     TSys: TaskExecutorSys + Clone,
 {
     let config = build_run_config(&req)?;
+    let loaded = ctx.reload()?.into_loaded_definitions_only().await?;
     let inspection =
-        omni_task_executor::inspect_cache_eligibility(ctx, &config)?;
+        omni_task_executor::inspect_cache_eligibility(&loaded, &config)?;
     Ok(TaskCacheInspectResponse { inspection })
 }
 

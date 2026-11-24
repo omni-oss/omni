@@ -647,6 +647,17 @@ impl<TSys: ContextSys> Context<TSys> {
         self.into_loaded_impl(project_paths, environment).await
     }
 
+    /// Load project definitions without evaluating any environment, so no
+    /// command substitution can run. Task environments are unavailable.
+    #[allow(clippy::result_large_err)]
+    pub async fn into_loaded_definitions_only(
+        self,
+    ) -> Result<LoadedContext<TSys>, ContextError> {
+        let project_paths = self.discover_project_paths().await?;
+        self.into_loaded_impl(project_paths, LoadEnvironment::DefinitionsOnly)
+            .await
+    }
+
     /// Other workspaces in the Git worktree family that may use this cache.
     /// Explicit cache paths could have been supplied in any sibling checkout.
     pub async fn load_cache_peer_workspaces(
