@@ -26,7 +26,10 @@ use system_traits::{
 };
 use tracing::Level;
 
-use crate::error::{Error, ErrorInner};
+use crate::{
+    error::{Error, ErrorInner},
+    identity_leaf::identity_leaf_v1,
+};
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct CollectConfig {
@@ -320,9 +323,6 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
             }
         }
 
-        let full_task_name =
-            format!("{}#{}", hash_input.project_name, hash_input.task_name);
-
         if let Some(command) = hash_input.task_exec
             && let Some(command_str) = command_hash_input("command", command)
         {
@@ -335,7 +335,10 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
             tree.insert(DefaultHasher::hash(retry_command_str.as_bytes()));
         }
 
-        tree.insert(DefaultHasher::hash(full_task_name.as_bytes()));
+        tree.insert(
+            identity_leaf_v1(hash_input.project_name, hash_input.task_name)
+                .map_err(|e| ErrorInner::Unknown(eyre::eyre!(e)))?,
+        );
 
         tree.commit();
 
@@ -973,7 +976,6 @@ mod tests {
     use omni_command_config::CommandConfig;
 
     use super::*;
-    use crate::identity_leaf::identity_leaf_v1;
 
     #[test]
     fn operands_never_share_a_hash_input_with_a_shell_string() {
@@ -1307,6 +1309,20 @@ mod tests {
             tree.insert(DefaultHasher::hash(path.to_string_lossy().as_bytes()));
         }
 
+        if !info.output_files_exclude.is_empty() {
+            let mut excludes = info
+                .output_files_exclude
+                .iter()
+                .map(|p| p.unresolved_path())
+                .collect::<Vec<_>>();
+            excludes.sort();
+            for path in excludes {
+                tree.insert(DefaultHasher::hash(
+                    format!("exclude:{}", path.to_string_lossy()).as_bytes(),
+                ));
+            }
+        }
+
         if let Some(command) = info.task_exec
             && let Some(input) = command_hash_input("command", command)
         {
@@ -1395,7 +1411,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn legacy_recipe_reproduces_the_base_digest_and_leaf() {
+    async fn legacy_recipe_still_reproduces_the_base_digest_and_leaf() {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path();
         let project = ordinary_task(root, "proj", "build");
@@ -1408,10 +1424,30 @@ mod tests {
             "3a89953840fde7533a43a03184a9864798d00017163735990a8a93d7caf39338"
         );
         assert_eq!(
-            hex32(digests.collector),
+            hex32(digests.legacy_recipe),
             "3fa673aafe481f2afc40309d8c365eb6a3ef201a2bf718aa1e9262987d5c4d6a"
         );
-        assert_eq!(digests.collector, digests.legacy_recipe);
+        assert_ne!(digests.collector, digests.legacy_recipe);
+    }
+
+    #[tokio::test]
+    async fn recipe_with_output_excludes_matches_the_collector() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let mut project = ordinary_task(root, "proj", "build");
+        project.output_files_exclude = vec![OmniPath::new("dist/tmp/**")];
+        let command = CommandConfig::shell("echo build");
+
+        let with = digests_for(root, &project, &command).await;
+        let plain = digests_for(
+            root,
+            &ordinary_task(root, "proj", "build"),
+            &command,
+        )
+        .await;
+
+        assert_eq!(with.collector, with.v1_recipe);
+        assert_ne!(with.collector, plain.collector);
     }
 
     #[tokio::test]
@@ -1432,12 +1468,12 @@ mod tests {
             "ccd4438a5d433062a171d637e6dd8e790c57aa4caf8335bc96f7aec0ed251f24"
         );
         assert_ne!(digests.v1_recipe, digests.legacy_recipe);
+        assert_eq!(digests.collector, digests.v1_recipe);
     }
 
-    /// Two pairs with equal non-identity inputs share a digest on the base
-    /// because both render `a#b#c`; the cutover must split them.
+    /// Two pairs with equal non-identity inputs shared a digest on the base
+    /// because both rendered `a#b#c`; the v1 leaf splits them.
     #[tokio::test]
-    #[ignore = "fails on the base: the joined-label leaf collides; passes after the F03.4 slice 0 cutover"]
     async fn formerly_colliding_pairs_have_distinct_digests() {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path();
@@ -1451,8 +1487,7 @@ mod tests {
         assert_ne!(first_digests.collector, second_digests.collector);
     }
 
-    /// Documents the base collision through the test-only recipe, independently
-    /// of the ignored test above, and shows the v1 leaf separates the pair.
+    /// Documents the base collision through the test-only recipe and shows the v1 leaf separates the pair.
     #[tokio::test]
     async fn base_recipe_collides_and_v1_recipe_separates_the_pair() {
         let temp = tempfile::tempdir().unwrap();
@@ -1492,11 +1527,10 @@ mod tests {
         let sorted = digest_for(&["a", "b", "z"]).await;
         assert_eq!(sorted, digest_for(&["z", "a", "b"]).await);
         assert_eq!(sorted, digest_for(&["b", "z", "a"]).await);
-        // Golden: already-sorted args keep the digest they had before the
-        // sort was added.
+        // Golden, re-pinned to the identity leaf v1 (RFC 0024 F03.4 slice 0).
         assert_eq!(
             format!("{sorted:?}"),
-            "[139, 1, 205, 89, 86, 86, 43, 127, 36, 107, 5, 172, 144, 116, 114, 166, 72, 128, 51, 10, 56, 172, 28, 56, 115, 141, 238, 238, 36, 211, 58, 209]"
+            "[226, 33, 98, 53, 0, 238, 12, 193, 175, 99, 66, 42, 159, 41, 191, 158, 223, 188, 238, 99, 145, 20, 131, 125, 255, 115, 106, 246, 60, 47, 76, 56]"
         );
     }
 

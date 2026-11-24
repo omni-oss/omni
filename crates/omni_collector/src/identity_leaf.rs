@@ -1,12 +1,13 @@
 //! Task identity leaf v1 (RFC 0024 F03.4 slice 0).
 //!
-//! Not yet part of the production digest: [`crate::Collector`] still inserts
-//! the legacy joined-label leaf until the coherent cutover.
+//! The one identity contribution to a task digest, inserted by
+//! [`crate::Collector`]. It replaced the legacy joined `project#task` leaf; there
+//! is no fallback or promotion of legacy digests.
 
 use omni_hasher::impls::{DefaultHash, hash_parts};
 
 /// Domain separator and recipe version, in that order, ahead of the names.
-pub const IDENTITY_LEAF_V1_PREFIX: &[u8] = b"omni.task-id\0\x01";
+pub(crate) const IDENTITY_LEAF_V1_PREFIX: &[u8] = b"omni.task-id\0\x01";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 #[error("a task name is too long to encode its length")]
@@ -20,7 +21,7 @@ fn len_le(name: &str) -> Result<[u8; 8], IdentityLeafError> {
 
 /// The leaf hash over `prefix || u64_le(len(project)) || project ||
 /// u64_le(len(task)) || task`, streamed without building the preimage.
-pub fn identity_leaf_v1(
+pub(crate) fn identity_leaf_v1(
     project: &str,
     task: &str,
 ) -> Result<DefaultHash, IdentityLeafError> {
