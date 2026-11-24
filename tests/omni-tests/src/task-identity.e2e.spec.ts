@@ -66,8 +66,9 @@ function pairTasks(n: Names) {
             name: n.abProject,
             tasks: {
                 [n.abTask]: {
-                    exec: 'echo "RUN-AB-C mark=$MARK arg=$ARG"',
-                    env: { vars: { MARK: "env-ab-c", ARG: "default-ab-c" } },
+                    exec: 'echo "RUN-AB-C mark=$MARK arg={{ args.who }}"',
+                    args: { who: "default-ab-c" },
+                    env: { vars: { MARK: "env-ab-c" } },
                     meta: { who: "ab-c" },
                     cache: NO_CONFIG_HASH,
                 },
@@ -77,8 +78,9 @@ function pairTasks(n: Names) {
             name: n.aProject,
             tasks: {
                 [n.aTask]: {
-                    exec: 'echo "RUN-A-BC mark=$MARK arg=$ARG"',
-                    env: { vars: { MARK: "env-a-bc", ARG: "default-a-bc" } },
+                    exec: 'echo "RUN-A-BC mark=$MARK arg={{ args.who }}"',
+                    args: { who: "default-a-bc" },
+                    env: { vars: { MARK: "env-a-bc" } },
                     meta: { who: "a-bc" },
                     cache: NO_CONFIG_HASH,
                 },
@@ -96,8 +98,16 @@ function collisionWorkspace(n: Names = COLLIDING): Workspace {
                 name: "app",
                 tasks: {
                     // Existing escaped references address each pair.
-                    x: { exec: 'echo "APP-X"', dependencies: [n.abRef] },
-                    y: { exec: 'echo "APP-Y"', dependencies: [n.aRef] },
+                    x: {
+                        exec: 'echo "APP-X"',
+                        dependencies: [n.abRef],
+                        meta: { who: "app-x" },
+                    },
+                    y: {
+                        exec: 'echo "APP-Y"',
+                        dependencies: [n.aRef],
+                        meta: { who: "app-y" },
+                    },
                 },
             },
         },
@@ -239,8 +249,8 @@ function behaviors(names: Names, test: typeof it): void {
         const { items, stdout, stderr } = await runApp(ws);
         const output = `${stdout}\n${stderr}`;
 
-        expect(output).toContain("RUN-AB-C mark=env-ab-c");
-        expect(output).toContain("RUN-A-BC mark=env-a-bc");
+        expect(output).toContain("RUN-AB-C mark=env-ab-c arg=default-ab-c");
+        expect(output).toContain("RUN-A-BC mark=env-a-bc arg=default-a-bc");
         expect(items).toHaveLength(4);
         expect(
             find(items, names.abProject, names.abTask)?.details.meta.who,
@@ -278,8 +288,100 @@ function behaviors(names: Names, test: typeof it): void {
         const output = `${second.stdout}\n${second.stderr}`;
         expect(second.items).toHaveLength(4);
         expect(second.items.every((i) => i.cache_hit)).toBe(true);
-        expect(output).toContain("RUN-AB-C mark=env-ab-c");
-        expect(output).toContain("RUN-A-BC mark=env-a-bc");
+        expect(output).toContain("RUN-AB-C mark=env-ab-c arg=default-ab-c");
+        expect(output).toContain("RUN-A-BC mark=env-a-bc arg=default-a-bc");
+    });
+
+    test("a failing pair skips only its own consumer", async () => {
+        const ws = makeWorkspace({
+            workspace: { projects: ["**"] },
+            projects: {
+                "p-ab": {
+                    name: names.abProject,
+                    tasks: { [names.abTask]: { exec: "exit 3" } },
+                },
+                "p-a": {
+                    name: names.aProject,
+                    tasks: { [names.aTask]: { exec: 'echo "A-BC-OK"' } },
+                },
+                app: {
+                    name: "app",
+                    tasks: {
+                        x: {
+                            exec: 'echo "APP-X"',
+                            dependencies: [names.abRef],
+                        },
+                        y: { exec: 'echo "APP-Y"', dependencies: [names.aRef] },
+                    },
+                },
+            },
+        });
+        const resultPath = ws.path("result.json");
+        const result = await runOmni(
+            [
+                "run",
+                "x",
+                "y",
+                "-p",
+                "app",
+                "-o",
+                "skip-dependents",
+                "--output-logs",
+                "all",
+                "--result",
+                resultPath,
+                "--result-format",
+                "json",
+            ],
+            { cwd: ws.cwd },
+        );
+        expect(result).toHaveFailed();
+        const items = JSON.parse(
+            readFileSync(resultPath, "utf8"),
+        ) as (ResultItem & { skip_reason?: string; exit_code?: number })[];
+        const status = (p: string, t: string) => find(items, p, t)?.status;
+        expect(status(names.abProject, names.abTask)).not.toBe("skipped");
+        expect(find(items, names.abProject, names.abTask)?.status).not.toBe(
+            "completed",
+        );
+        expect(status(names.aProject, names.aTask)).toBe("completed");
+        expect(status("app", "x")).toBe("skipped");
+        expect(status("app", "y")).toBe("completed");
+        expect(`${result.stdout}\n${result.stderr}`).toContain("APP-Y");
+        expect(`${result.stdout}\n${result.stderr}`).not.toContain("APP-X");
+    });
+
+    test("cache prune --dir/--meta with one pair allowed touches only that pair", async () => {
+        const ws = collisionWorkspace(names);
+        await runApp(ws);
+
+        for (const filter of [
+            ["--dir", "p-ab"],
+            ["--meta", 'who == "ab-c"'],
+            ["--dir", "p-ab", "--meta", 'who == "ab-c"'],
+        ]) {
+            const dry = await runOmni(
+                ["cache", "prune", ...filter, "--dry-run"],
+                { cwd: ws.cwd },
+            );
+            expect(dry).toHaveSucceeded();
+            const text = `${dry.stdout}\n${dry.stderr}`;
+            expect(text).toContain(`Project: ${names.abProject}`);
+            expect(text).not.toContain(`Project: ${names.aProject}\n`);
+            expect(text).not.toContain(`Task: ${names.aTask}`);
+        }
+
+        const pruned = await runOmni(
+            ["cache", "prune", "--meta", 'who == "ab-c"', "--yes"],
+            { cwd: ws.cwd },
+        );
+        expect(pruned).toHaveSucceeded();
+
+        const second = await runApp(ws);
+        const hit = (p: string, t: string) =>
+            find(second.items, p, t)?.cache_hit;
+        expect(hit(names.abProject, names.abTask)).toBe(false);
+        expect(hit(names.aProject, names.aTask)).toBe(true);
     });
 
     test("changing one pair re-runs only its own consumer", async () => {
@@ -335,6 +437,70 @@ function base58(bytes: Buffer): string {
         out = `1${out}`;
     }
     return out;
+}
+
+const B3_IV = [
+    0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c,
+    0x1f83d9ab, 0x5be0cd19,
+];
+const B3_PERM = [2, 6, 3, 10, 7, 0, 4, 13, 1, 11, 12, 5, 9, 14, 15, 8];
+
+/** BLAKE3 of an input of at most 64 bytes (a single chunk of one block). */
+function blake3Small(input: Uint8Array): Buffer {
+    if (input.length > 64) throw new Error("blake3Small: input over 64 bytes");
+    const block = Buffer.alloc(64);
+    block.set(input);
+    let m: number[] = Array.from({ length: 16 }, (_, i) =>
+        block.readUInt32LE(i * 4),
+    );
+    const v: number[] = [
+        ...B3_IV,
+        ...B3_IV.slice(0, 4),
+        0,
+        0,
+        input.length,
+        1 | 2 | 8,
+    ];
+    const at = (xs: number[], i: number) => xs[i] as number;
+    const rotr = (x: number, n: number) => ((x >>> n) | (x << (32 - n))) >>> 0;
+    const g = (
+        a: number,
+        b: number,
+        c: number,
+        d: number,
+        x: number,
+        y: number,
+    ) => {
+        v[a] = (at(v, a) + at(v, b) + at(m, x)) >>> 0;
+        v[d] = rotr(at(v, d) ^ at(v, a), 16);
+        v[c] = (at(v, c) + at(v, d)) >>> 0;
+        v[b] = rotr(at(v, b) ^ at(v, c), 12);
+        v[a] = (at(v, a) + at(v, b) + at(m, y)) >>> 0;
+        v[d] = rotr(at(v, d) ^ at(v, a), 8);
+        v[c] = (at(v, c) + at(v, d)) >>> 0;
+        v[b] = rotr(at(v, b) ^ at(v, c), 7);
+    };
+    for (let round = 0; round < 7; round++) {
+        g(0, 4, 8, 12, 0, 1);
+        g(1, 5, 9, 13, 2, 3);
+        g(2, 6, 10, 14, 4, 5);
+        g(3, 7, 11, 15, 6, 7);
+        g(0, 5, 10, 15, 8, 9);
+        g(1, 6, 11, 12, 10, 11);
+        g(2, 7, 8, 13, 12, 13);
+        g(3, 4, 9, 14, 14, 15);
+        m = B3_PERM.map((i) => at(m, i));
+    }
+    const out = Buffer.alloc(32);
+    for (let i = 0; i < 8; i++)
+        out.writeUInt32LE((at(v, i) ^ at(v, i + 8)) >>> 0, i * 4);
+    return out;
+}
+
+/** `hash project` fold: `b3(b3(seed) || b3(leaf))` for one selected task. */
+function projectHashOf(leaf: Buffer): string {
+    const seed = blake3Small(Buffer.from("DEFAULT_SEED"));
+    return base58(blake3Small(Buffer.concat([seed, blake3Small(leaf)])));
 }
 
 function parityWorkspace(opts: { appDependsOnLib: boolean }): Workspace {
@@ -467,6 +633,62 @@ describe("+run @e2e (v1 digest parity across run, dry-run, ignore-dependencies a
         expect(text).not.toContain("Task: b#c");
     });
 
+    it("run and stale observation agree on a meta-templated cache path for each pair", async () => {
+        const task = (dir: string, mark: string) => ({
+            exec: `echo "${mark}"`,
+            meta: { dir },
+            cache: { key: { defaults: false, files: ["{{ meta.dir }}/**"] } },
+        });
+        const ws = makeWorkspace({
+            workspace: { projects: ["**"] },
+            projects: {
+                "p-ab": {
+                    name: "a#b",
+                    tasks: { c: task("d-ab", "META-AB") },
+                },
+                "p-a": { name: "a", tasks: { "b#c": task("d-a", "META-A") } },
+            },
+            files: {
+                "p-ab/d-ab/in.txt": "one",
+                "p-ab/d-a/in.txt": "one",
+                "p-a/d-a/in.txt": "one",
+                "p-a/d-ab/in.txt": "one",
+            },
+        });
+        const resultPath = ws.path("result.json");
+        const run = await runOmni(
+            [
+                "run",
+                "c",
+                "b#c",
+                "--result",
+                resultPath,
+                "--result-format",
+                "json",
+            ],
+            { cwd: ws.cwd },
+        );
+        expect(run).toHaveSucceeded();
+        const stale = async () => {
+            const r = await runOmni(["cache", "prune", "--stale", "-d"], {
+                cwd: ws.cwd,
+            });
+            expect(r).toHaveSucceeded();
+            return `${r.stdout}\n${r.stderr}`;
+        };
+        expect(await stale()).not.toContain("Project:");
+
+        // Only the templated directory of each pair is an input of that pair.
+        ws.write("p-ab/d-a/in.txt", "unrelated");
+        ws.write("p-a/d-ab/in.txt", "unrelated");
+        expect(await stale()).not.toContain("Project:");
+
+        ws.write("p-a/d-a/in.txt", "changed");
+        const text = await stale();
+        expect(text).toContain("Project: a\n");
+        expect(text).not.toContain("Project: a#b");
+    });
+
     it("cache prune prints the whole raw task name containing a hash", async () => {
         const ws = collisionWorkspace(COLLIDING);
         await runApp(ws);
@@ -477,6 +699,68 @@ describe("+run @e2e (v1 digest parity across run, dry-run, ignore-dependencies a
         const text = `${dry.stdout}\n${dry.stderr}`;
         expect(text).toContain("Project: a");
         expect(text).toContain("Task: b#c");
+    });
+});
+
+describe("+hash @e2e (hash project uses the v1 leaf, formerly colliding pairs differ)", () => {
+    it("matches an independent fold of the run digest and keeps the pairs apart", async () => {
+        expect(blake3Small(Buffer.alloc(0)).toString("hex")).toBe(
+            "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262",
+        );
+
+        const task = () => ({
+            exec: 'echo "same task"',
+            env: { vars: { MARK: "same" } },
+            args: { who: "same" },
+            meta: { who: "same" },
+            cache: NO_CONFIG_HASH,
+        });
+        const ws = makeWorkspace({
+            workspace: { projects: ["**"] },
+            projects: {
+                "p-ab": { name: "a#b", tasks: { c: task() } },
+                "p-a": { name: "a", tasks: { "b#c": task() } },
+            },
+            files: { "p-ab/src/in.txt": "one", "p-a/src/in.txt": "one" },
+        });
+        const resultPath = ws.path("result.json");
+        const run = await runOmni(
+            [
+                "run",
+                "c",
+                "b#c",
+                "--result",
+                resultPath,
+                "--result-format",
+                "json",
+            ],
+            { cwd: ws.cwd },
+        );
+        expect(run).toHaveSucceeded();
+        const items = JSON.parse(
+            readFileSync(resultPath, "utf8"),
+        ) as ResultItem[];
+        const leaf = (project: string, task: string) =>
+            Buffer.from(find(items, project, task)?.hash as string, "base64");
+        expect(leaf("a#b", "c").equals(leaf("a", "b#c"))).toBe(false);
+
+        const hashProject = async (project: string, task: string) => {
+            const r = await runOmni(
+                ["hash", "-r", "project", project, "-t", task],
+                { cwd: ws.cwd },
+            );
+            expect(r).toHaveSucceeded();
+            return r.stdout.trim();
+        };
+        const first = await hashProject("a#b", "c");
+        const second = await hashProject("a", "b#c");
+        expect(first).not.toBe(second);
+        expect(first).toBe(projectHashOf(leaf("a#b", "c")));
+        expect(second).toBe(projectHashOf(leaf("a", "b#c")));
+
+        ws.write("p-ab/src/in.txt", "changed");
+        expect(await hashProject("a#b", "c")).not.toBe(first);
+        expect(await hashProject("a", "b#c")).toBe(second);
     });
 });
 

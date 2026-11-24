@@ -7358,6 +7358,182 @@ mod tests {
         }
     }
 
+    /// Serves the archive registered under the digest in the request path,
+    /// 404s every other digest, answers the probe, and records every request
+    /// line (a `PUT` body is drained and acknowledged, so a promotion is seen).
+    async fn serve_artifacts_by_digest(
+        artifacts: std::collections::HashMap<String, Vec<u8>>,
+    ) -> (
+        String,
+        tokio::task::JoinHandle<()>,
+        Arc<std::sync::Mutex<Vec<String>>>,
+    ) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener =
+            tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let lines = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let seen = lines.clone();
+        let server = tokio::spawn(async move {
+            loop {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut head = Vec::new();
+                while !head.ends_with(b"\r\n\r\n") {
+                    head.push(socket.read_u8().await.unwrap());
+                }
+                let head = String::from_utf8(head).unwrap();
+                let line = head.lines().next().unwrap().to_string();
+                seen.lock().unwrap().push(line.clone());
+                let length = head
+                    .lines()
+                    .find_map(|l| {
+                        let (n, v) = l.split_once(':')?;
+                        n.eq_ignore_ascii_case("content-length")
+                            .then(|| v.trim().parse::<usize>().unwrap())
+                    })
+                    .unwrap_or(0);
+                let mut body = vec![0; length];
+                socket.read_exact(&mut body).await.unwrap();
+                let response = if line.starts_with("HEAD /v1/artifacts?") {
+                    b"HTTP/1.1 204 No Content\r\nx-omni-scopes: read:artifacts,write:artifacts,publish:artifacts\r\nConnection: close\r\n\r\n".to_vec()
+                } else if line.starts_with("GET ") {
+                    let digest = line
+                        .split_whitespace()
+                        .nth(1)
+                        .unwrap()
+                        .trim_start_matches("/v1/artifacts/")
+                        .split('?')
+                        .next()
+                        .unwrap()
+                        .to_string();
+                    match artifacts.get(&digest) {
+                        Some(archive) => {
+                            let mut r = format!(
+                                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                                archive.len()
+                            )
+                            .into_bytes();
+                            r.extend_from_slice(archive);
+                            r
+                        }
+                        None => b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_vec(),
+                    }
+                } else {
+                    b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_vec()
+                };
+                socket.write_all(&response).await.unwrap();
+            }
+        });
+        (url, server, lines)
+    }
+
+    fn requested_digests(lines: &[String]) -> Vec<String> {
+        let mut out: Vec<String> = lines
+            .iter()
+            .filter(|l| l.starts_with("GET "))
+            .map(|l| {
+                l.split_whitespace()
+                    .nth(1)
+                    .unwrap()
+                    .trim_start_matches("/v1/artifacts/")
+                    .split('?')
+                    .next()
+                    .unwrap()
+                    .to_string()
+            })
+            .collect();
+        out.sort();
+        out.dedup();
+        out
+    }
+
+    #[tokio::test]
+    async fn formerly_colliding_pairs_restore_from_their_own_remote_v1_digests()
+    {
+        let temp = fixture(&["a#b", "a"]).await;
+        let ab = task("c", "a#b", temp.path());
+        let a = task("b#c", "a", temp.path());
+        let mut served = std::collections::HashMap::new();
+        let mut v1 = Vec::new();
+        for info in [&ab, &a] {
+            let digest = digest_of(&temp, info.get()).await;
+            served.insert(
+                digest.clone(),
+                genuine_archive(&temp, info.get()).await,
+            );
+            v1.push(digest);
+        }
+        v1.sort();
+        assert_ne!(v1[0], v1[1]);
+        // Artifacts a v0 reader would have uploaded: present on the server,
+        // but under digests the v1 reader must never ask for.
+        let v0_only: Vec<String> = (0..2u8)
+            .map(|i| bs58::encode([i; 32]).into_string())
+            .collect();
+        for digest in &v0_only {
+            served.insert(digest.clone(), vec![1, 2, 3]);
+        }
+        let (url, server, lines) = serve_artifacts_by_digest(served).await;
+
+        // Only the remote has the entries: the restore store starts empty.
+        let store = remote_store(temp.path(), &url);
+        assert!(partitions(&store.cache_dir).is_empty());
+        let hits = store.get_many(&[*ab.get(), *a.get()]).await.unwrap();
+        server.abort();
+
+        let first = hits[0].as_ref().expect("a#b / c restored");
+        let second = hits[1].as_ref().expect("a / b#c restored");
+        assert_eq!(
+            (first.project_name.as_str(), first.task_name.as_str()),
+            ("a#b", "c")
+        );
+        assert_eq!(
+            (second.project_name.as_str(), second.task_name.as_str()),
+            ("a", "b#c")
+        );
+        let lines = lines.lock().unwrap().clone();
+        assert_eq!(requested_digests(&lines), v1, "{lines:?}");
+        assert!(
+            !lines.iter().any(|l| l.starts_with("PUT")),
+            "a restore never uploads: {lines:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_remote_that_only_has_v0_artifacts_misses_without_promotion() {
+        let temp = fixture(&["a#b", "a"]).await;
+        let ab = task("c", "a#b", temp.path());
+        let a = task("b#c", "a", temp.path());
+        let archive_ab = genuine_archive(&temp, ab.get()).await;
+        let mut v1 = Vec::new();
+        for info in [&ab, &a] {
+            v1.push(digest_of(&temp, info.get()).await);
+        }
+        v1.sort();
+        // Real, restorable archives, but only under other (v0) digests.
+        let served = (0..2u8)
+            .map(|i| (bs58::encode([i; 32]).into_string(), archive_ab.clone()))
+            .collect();
+        let (url, server, lines) = serve_artifacts_by_digest(served).await;
+
+        let store = remote_store(temp.path(), &url);
+        let hits = store.get_many(&[*ab.get(), *a.get()]).await.unwrap();
+        server.abort();
+
+        assert!(hits.iter().all(Option::is_none), "v0 entries must not hit");
+        let lines = lines.lock().unwrap().clone();
+        assert_eq!(
+            requested_digests(&lines),
+            v1,
+            "zero v0 requests: {lines:?}"
+        );
+        assert!(!lines.iter().any(|l| l.starts_with("PUT")), "{lines:?}");
+        assert!(
+            partitions(&store.cache_dir).is_empty(),
+            "a v0 artifact was promoted into the local cache"
+        );
+    }
+
     #[tokio::test]
     async fn cache_many_keeps_each_same_project_tasks_own_logs() {
         let temp = fixture(&["project1"]).await;
