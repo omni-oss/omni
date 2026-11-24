@@ -188,8 +188,14 @@ pub(crate) fn nodes_from_plan<TSys: TaskExecutorSys>(
     context: &LoadedContext<TSys>,
     plan: &omni_core::BatchedExecutionPlan,
 ) -> Vec<InspectionNode> {
+    let ambiguous = ambiguous_names(
+        plan.iter()
+            .flatten()
+            .map(|n| (n.full_task_name(), n.project_name(), n.task_name())),
+    );
     plan.iter()
         .flatten()
+        .filter(|node| !ambiguous.contains(node.full_task_name()))
         .map(|node| {
             let info =
                 context.get_cache_info(node.project_name(), node.task_name());
@@ -213,6 +219,29 @@ pub(crate) fn nodes_from_plan<TSys: TaskExecutorSys>(
             }
         })
         .collect()
+}
+
+/// Joined `project#task` names shared by different (project, task) pairs,
+/// for example `a#b` + `c` and `a` + `b#c`. The executor keys results by the
+/// joined name, so such tasks cannot be told apart; they are left out of the
+/// check instead of risking a wrong report.
+fn ambiguous_names<'a>(
+    nodes: impl Iterator<Item = (&'a str, &'a str, &'a str)>,
+) -> std::collections::HashSet<String> {
+    let mut seen: HashMap<&str, (&str, &str)> = HashMap::new();
+    let mut ambiguous = std::collections::HashSet::new();
+    for (full, project, task) in nodes {
+        match seen.get(full) {
+            Some(first) if *first != (project, task) => {
+                ambiguous.insert(full.to_string());
+            }
+            Some(_) => {}
+            None => {
+                seen.insert(full, (project, task));
+            }
+        }
+    }
+    ambiguous
 }
 
 /// The explicit contradictions of a plan, for the planning error.
@@ -398,6 +427,35 @@ mod tests {
         let i = inspect_nodes(&nodes, false, true);
         assert!(i.contradictions.is_empty());
         assert_eq!(status(&i, "app"), &CacheStatus::Eligible);
+    }
+
+    #[test]
+    fn colliding_joined_names_are_left_out() {
+        let names = [
+            ("a#b#c", "a#b", "c"),
+            ("a#b#c", "a", "b#c"),
+            ("x#y", "x", "y"),
+        ];
+        let ambiguous = ambiguous_names(names.into_iter());
+        assert!(ambiguous.contains("a#b#c"));
+        assert!(!ambiguous.contains("x#y"));
+        assert!(
+            ambiguous_names([("x#y", "x", "y"), ("x#y", "x", "y")].into_iter())
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn expression_enabled_dependent_still_contradicts() {
+        let dep = node("dep", false, TaskExplicit, &[]);
+        let mut app = node("app", true, TaskExplicit, &["dep"]);
+        app.enabled = StaticEnabled::Conditional;
+        assert_eq!(
+            inspect_nodes(&[dep, app], false, false)
+                .contradictions
+                .len(),
+            1
+        );
     }
 
     #[test]

@@ -4,8 +4,8 @@
 //! demoted and runs uncached. That is only silent when a default, a plugin or
 //! the host decided one side. When a person wrote *both* sides, the
 //! configuration contradicts itself, and the planner should say so instead.
-//! This module finds those pairs. It only reports; nothing here fails a run or
-//! changes a cache key.
+//! This module finds those pairs. It only reports; the executor decides what to do
+//! with them, and nothing here changes a cache key.
 
 use std::collections::HashSet;
 use std::fmt;
