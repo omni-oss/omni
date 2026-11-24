@@ -6,19 +6,22 @@ use tokio::{io::AsyncReadExt as _, sync::Mutex};
 
 use crate::mux_output_presenter::{
     MuxOutputPresenter, MuxOutputPresenterReader, MuxOutputPresenterWriter,
-    StreamHandle, stream, stream_driver_handle::StreamDriverError,
-    utils::TasksMap,
+    StreamHandle, stream,
+    stream_driver_handle::StreamDriverError,
+    utils::{StreamIdAllocator, StreamIdExhausted, TasksMap},
 };
 
 #[derive(Debug)]
 pub struct StreamPresenter {
     tasks: Arc<Mutex<TasksMap<StreamPresenterError>>>,
+    ids: StreamIdAllocator,
 }
 
 impl StreamPresenter {
     pub fn new() -> Self {
         Self {
             tasks: Arc::new(Mutex::new(TasksMap::default())),
+            ids: StreamIdAllocator::default(),
         }
     }
 }
@@ -47,10 +50,12 @@ impl MuxOutputPresenter for StreamPresenter {
     ) -> Result<StreamHandle, Self::Error> {
         self.clear_closed_tasks().await;
 
+        // The string id is only a title; routing uses a unique handle.
+        let _ = id;
+        let stream_id = self.ids.allocate()?;
         let (handle, driver) = stream::handle();
 
         let join_handle = {
-            let id = id.clone();
             let tasks = self.tasks.clone();
             tokio::spawn(async move {
                 let mut stdout = tokio::io::stdout();
@@ -60,13 +65,13 @@ impl MuxOutputPresenter for StreamPresenter {
 
                 driver.mark_completed().await?;
 
-                tasks.lock().await.remove(&id);
+                tasks.lock().await.remove(&stream_id);
 
                 Ok::<(), Self::Error>(())
             })
         };
 
-        self.tasks.lock().await.insert(id, join_handle);
+        self.tasks.lock().await.insert(stream_id, join_handle);
 
         return Ok(handle);
     }
@@ -130,4 +135,29 @@ pub(crate) enum StreamPresenterErrorInner {
 
     #[error(transparent)]
     StreamDriver(#[from] StreamDriverError),
+
+    #[error(transparent)]
+    StreamIdExhausted(#[from] StreamIdExhausted),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::mux_output_presenter::MuxOutputPresenterExt as _;
+
+    #[tokio::test]
+    async fn two_streams_with_one_title_are_both_tracked_and_joined() {
+        let presenter = StreamPresenter::new();
+        let first = presenter
+            .add_stream_output("a#b#c", std::io::Cursor::new(Vec::<u8>::new()))
+            .await
+            .unwrap();
+        let second = presenter
+            .add_stream_output("a#b#c", std::io::Cursor::new(Vec::<u8>::new()))
+            .await
+            .unwrap();
+        presenter.wait().await.unwrap();
+        first.await.unwrap();
+        second.await.unwrap();
+    }
 }

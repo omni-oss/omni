@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use omni_messages::{
@@ -7,6 +6,7 @@ use omni_messages::{
     TaskOutputStreamEvent, TaskStartedEvent,
 };
 use omni_task_output_logs::LogsDisplay;
+use omni_types::TaskMap;
 
 use crate::notices::{NoticeCollector, NoticePayload};
 use tokio::io::AsyncReadExt as _;
@@ -31,28 +31,28 @@ struct PendingCapture {
 /// stored inline as it arrives.
 ///
 /// After execution call [`McpSubscriber::take_logs`] to retrieve the captured
-/// strings keyed by full task name (`"project#task"`).
+/// strings keyed by `(project, task)`.
 pub struct McpSubscriber {
     /// Global output-log policy used to decide `wants_task_output_stream`.
     include_logs: LogsDisplay,
-    /// In-flight per-task captures (task_id → handle + facet).
-    captures: Arc<Mutex<HashMap<String, PendingCapture>>>,
-    /// Resolved logs per task (task_id → UTF-8 text).
-    logs: Arc<Mutex<HashMap<String, String>>>,
+    /// In-flight per-task captures ((project, task) → handle + facet).
+    captures: Arc<Mutex<TaskMap<PendingCapture>>>,
+    /// Resolved logs per task ((project, task) → UTF-8 text).
+    logs: Arc<Mutex<TaskMap<String>>>,
     /// Notices for this request: deduplicated and bounded.
     notices: Mutex<NoticeCollector>,
-    /// Dry-run commands per task (task_id → redacted command line).
-    commands: Mutex<HashMap<String, String>>,
+    /// Dry-run commands per task ((project, task) → redacted command line).
+    commands: Mutex<TaskMap<String>>,
 }
 
 impl McpSubscriber {
     pub fn new(include_logs: LogsDisplay) -> Self {
         Self {
             include_logs,
-            captures: Arc::new(Mutex::new(HashMap::new())),
-            logs: Arc::new(Mutex::new(HashMap::new())),
+            captures: Arc::new(Mutex::new(TaskMap::new())),
+            logs: Arc::new(Mutex::new(TaskMap::new())),
             notices: Mutex::new(NoticeCollector::new()),
-            commands: Mutex::new(HashMap::new()),
+            commands: Mutex::new(TaskMap::new()),
         }
     }
 
@@ -66,8 +66,8 @@ impl McpSubscriber {
         .finish()
     }
 
-    /// Dry-run command lines keyed by full task name.
-    pub fn take_commands(&self) -> HashMap<String, String> {
+    /// Dry-run command lines keyed by `(project, task)`.
+    pub fn take_commands(&self) -> TaskMap<String> {
         std::mem::take(&mut *self.commands.lock().unwrap())
     }
 
@@ -76,22 +76,22 @@ impl McpSubscriber {
     /// Call this after the API execution completes — at that point every task's
     /// terminal event has fired and all drain handles have been awaited, so the
     /// map is fully populated.
-    pub fn take_logs(&self) -> HashMap<String, String> {
+    pub fn take_logs(&self) -> TaskMap<String> {
         std::mem::take(&mut *self.logs.lock().unwrap())
     }
 
-    /// Await the in-flight drain for `task_id`, then store the text when the
+    /// Await the in-flight drain for the task, then store the text when the
     /// resolved facet says to show it for the given failure state.
-    async fn finish_capture(&self, task_id: &str, failed: bool) {
+    async fn finish_capture(&self, project: &str, task: &str, failed: bool) {
         // Take the capture out of the map before awaiting — this releases the
         // lock so other tasks can proceed concurrently.
-        let capture = self.captures.lock().unwrap().remove(task_id);
+        let capture = self.captures.lock().unwrap().remove(project, task);
 
         if let Some(capture) = capture {
             let bytes = capture.handle.await.unwrap_or_default();
             if capture.facet.should_show(failed) && !bytes.is_empty() {
                 let text = String::from_utf8_lossy(&bytes).into_owned();
-                self.logs.lock().unwrap().insert(task_id.to_string(), text);
+                self.logs.lock().unwrap().insert(project, task, text);
             }
         }
     }
@@ -140,7 +140,11 @@ impl ExecutionEventSubscriber for McpSubscriber {
             let _ = reader.read_to_end(&mut buf).await;
             if !buf.is_empty() {
                 let text = String::from_utf8_lossy(&buf).into_owned();
-                self.logs.lock().unwrap().insert(event.task_id, text);
+                self.logs.lock().unwrap().insert(
+                    &event.project,
+                    &event.task,
+                    text,
+                );
             }
             return;
         }
@@ -153,25 +157,31 @@ impl ExecutionEventSubscriber for McpSubscriber {
             buf
         });
 
-        self.captures
-            .lock()
-            .unwrap()
-            .insert(event.task_id, PendingCapture { handle, facet });
+        self.captures.lock().unwrap().insert(
+            &event.project,
+            &event.task,
+            PendingCapture { handle, facet },
+        );
     }
 
     async fn on_task_started(&self, event: TaskStartedEvent) {
         if let Some(command) = event.command {
-            self.commands.lock().unwrap().insert(event.task_id, command);
+            self.commands.lock().unwrap().insert(
+                &event.project,
+                &event.task,
+                command,
+            );
         }
     }
 
     async fn on_task_completed(&self, event: TaskCompletedEvent) {
         let failed = event.exit_code != 0;
-        self.finish_capture(&event.task_id, failed).await;
+        self.finish_capture(&event.project, &event.task, failed)
+            .await;
     }
 
     async fn on_task_failed(&self, event: TaskFailedEvent) {
-        self.finish_capture(&event.task_id, true).await;
+        self.finish_capture(&event.project, &event.task, true).await;
     }
 }
 
@@ -183,6 +193,14 @@ mod tests {
     use omni_messages::TaskOutputStream;
     use omni_task_output_logs::EffectiveOutputLogs;
     use std::time::Duration;
+
+    /// `project#task` ids name that pair; any other id is `proj`/`task`.
+    fn pair(task_id: &str) -> (String, String) {
+        match task_id.split_once('#') {
+            Some((p, t)) => (p.to_string(), t.to_string()),
+            None => ("proj".to_string(), "task".to_string()),
+        }
+    }
 
     fn facets(new: LogsDisplay, cached: LogsDisplay) -> EffectiveOutputLogs {
         EffectiveOutputLogs { new, cached }
@@ -196,8 +214,8 @@ mod tests {
     ) -> TaskOutputStreamEvent {
         TaskOutputStreamEvent {
             task_id: task_id.to_string(),
-            project: "proj".to_string(),
-            task: "task".to_string(),
+            project: pair(task_id).0,
+            task: pair(task_id).1,
             is_replay,
             is_interactive: false,
             output_logs,
@@ -213,8 +231,8 @@ mod tests {
     fn completed(task_id: &str, exit_code: u32) -> TaskCompletedEvent {
         TaskCompletedEvent {
             task_id: task_id.to_string(),
-            project: "proj".to_string(),
-            task: "task".to_string(),
+            project: pair(task_id).0,
+            task: pair(task_id).1,
             exit_code,
             elapsed: Duration::ZERO,
             cache_hit: false,
@@ -225,18 +243,15 @@ mod tests {
     fn failed(task_id: &str) -> TaskFailedEvent {
         TaskFailedEvent {
             task_id: task_id.to_string(),
-            project: "proj".to_string(),
-            task: "task".to_string(),
+            project: pair(task_id).0,
+            task: pair(task_id).1,
             error: "boom".to_string(),
             tries: 1,
         }
     }
 
-    fn log_of<'a>(
-        logs: &'a HashMap<String, String>,
-        task_id: &str,
-    ) -> Option<&'a str> {
-        logs.get(task_id).map(String::as_str)
+    fn log_of(logs: &TaskMap<String>) -> Option<&str> {
+        logs.get("proj", "task").map(String::as_str)
     }
 
     #[tokio::test]
@@ -245,7 +260,7 @@ mod tests {
         let start = |id: &str, command: &str| TaskStartedEvent {
             task_id: id.into(),
             project: "p".into(),
-            task: "t".into(),
+            task: id.trim_start_matches("p#").into(),
             command: Some(command.into()),
         };
 
@@ -261,8 +276,8 @@ mod tests {
         b.on_task_started(start("p#b", "run alpha bravo")).await;
 
         let commands = sub.take_commands();
-        assert_eq!(commands["p#a"], "run <redacted> bravo");
-        assert_eq!(commands["p#b"], "run alpha <redacted>");
+        assert_eq!(commands.get("p", "a").unwrap(), "run <redacted> bravo");
+        assert_eq!(commands.get("p", "b").unwrap(), "run alpha <redacted>");
     }
 
     #[test]
@@ -325,7 +340,7 @@ mod tests {
         sub.on_task_completed(completed("proj#task", 0)).await;
 
         let logs = sub.take_logs();
-        assert_eq!(log_of(&logs, "proj#task"), Some("OUT"));
+        assert_eq!(log_of(&logs), Some("OUT"));
     }
 
     #[tokio::test]
@@ -356,7 +371,7 @@ mod tests {
         sub.on_task_completed(completed("t", 1)).await;
 
         let logs = sub.take_logs();
-        assert_eq!(log_of(&logs, "t"), Some("ERR"));
+        assert_eq!(log_of(&logs), Some("ERR"));
     }
 
     #[tokio::test]
@@ -372,7 +387,7 @@ mod tests {
         sub.on_task_failed(failed("t")).await;
 
         let logs = sub.take_logs();
-        assert_eq!(log_of(&logs, "t"), Some("ERR"));
+        assert_eq!(log_of(&logs), Some("ERR"));
     }
 
     // The fresh path consults the `new` facet, not `cached`: a `Never` new
@@ -422,7 +437,7 @@ mod tests {
         .await;
 
         let logs = sub.take_logs();
-        assert_eq!(log_of(&logs, "t"), Some("CACHED"));
+        assert_eq!(log_of(&logs), Some("CACHED"));
     }
 
     #[tokio::test]
@@ -469,7 +484,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn logs_are_keyed_by_task_id() {
+    async fn logs_are_keyed_by_project_and_task() {
         let sub = McpSubscriber::new(LogsDisplay::All);
         // A replayed task and a freshly executed one, interleaved.
         sub.on_task_output_stream(stream_event(
@@ -489,8 +504,35 @@ mod tests {
         sub.on_task_completed(completed("b#build", 0)).await;
 
         let logs = sub.take_logs();
-        assert_eq!(log_of(&logs, "a#build"), Some("AAA"));
-        assert_eq!(log_of(&logs, "b#build"), Some("BBB"));
+        assert_eq!(logs.get("a", "build").map(String::as_str), Some("AAA"));
+        assert_eq!(logs.get("b", "build").map(String::as_str), Some("BBB"));
         assert_eq!(logs.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn formerly_colliding_pairs_keep_their_own_logs_and_commands() {
+        let sub = McpSubscriber::new(LogsDisplay::All);
+        for (project, task, bytes) in
+            [("a#b", "c", "FIRST"), ("a", "b#c", "SECOND")]
+        {
+            let mut event = stream_event(
+                r"x",
+                false,
+                facets(LogsDisplay::All, LogsDisplay::All),
+                bytes,
+            );
+            event.project = project.into();
+            event.task = task.into();
+            sub.on_task_output_stream(event).await;
+        }
+        for (project, task) in [("a#b", "c"), ("a", "b#c")] {
+            let mut done = completed("x", 0);
+            done.project = project.into();
+            done.task = task.into();
+            sub.on_task_completed(done).await;
+        }
+        let logs = sub.take_logs();
+        assert_eq!(logs.get("a#b", "c").map(String::as_str), Some("FIRST"));
+        assert_eq!(logs.get("a", "b#c").map(String::as_str), Some("SECOND"));
     }
 }

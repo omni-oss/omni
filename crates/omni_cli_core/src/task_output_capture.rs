@@ -1,4 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::atomic::{AtomicU64, Ordering},
+};
 
 use omni_task_output_logs::LogsDisplay;
 use tokio::io::{AsyncRead, AsyncWriteExt, BufWriter};
@@ -12,13 +15,31 @@ pub enum CaptureTarget {
     Sink,
 }
 
-/// Deterministic per-task capture-file path:
-/// `<scratch>/logs/<bs58(project)>/<bs58(task)>`.
-pub fn capture_path(scratch_dir: &Path, project: &str, task: &str) -> PathBuf {
+static CAPTURE_SEQ: AtomicU64 = AtomicU64::new(0);
+
+/// A process-unique, monotonic capture sequence number.
+pub fn next_capture_seq() -> u64 {
+    CAPTURE_SEQ.fetch_add(1, Ordering::Relaxed)
+}
+
+/// Per-capture file path:
+/// `<scratch>/logs/<bs58(project)>/<bs58(task)>-<seq>`.
+///
+/// The base58 of two different names can differ only by case (`aa` and `aH`
+/// encode to `8Qp` and `8QP`), which a case-insensitive filesystem treats as one
+/// file. The unique `seq` keeps every capture file distinct whatever the names,
+/// so two drains never truncate one file. The path is recorded with the capture
+/// itself, never derived from a label.
+pub fn capture_path(
+    scratch_dir: &Path,
+    project: &str,
+    task: &str,
+    seq: u64,
+) -> PathBuf {
     scratch_dir
         .join("logs")
         .join(bs58::encode(project.as_bytes()).into_string())
-        .join(bs58::encode(task.as_bytes()).into_string())
+        .join(format!("{}-{seq}", bs58::encode(task.as_bytes()).into_string()))
 }
 
 /// Fully drain `reader`. When `to_file` is `Some`, the bytes are written there
@@ -37,7 +58,12 @@ pub async fn drain(
             if let Some(parent) = path.parent() {
                 tokio::fs::create_dir_all(parent).await?;
             }
-            let file = tokio::fs::File::create(&path).await?;
+            // Exclusive: a capture file is never shared or truncated.
+            let file = tokio::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&path)
+                .await?;
             let mut writer = BufWriter::new(file);
             let copy_result =
                 tokio::io::copy(&mut reader, &mut writer).await.map(|_| ());
@@ -64,17 +90,55 @@ mod tests {
     use super::*;
 
     #[test]
-    fn capture_path_is_deterministic_and_nested() {
+    fn capture_path_is_nested_and_unique_per_sequence() {
         let root = Path::new("/scratch");
-        let a = capture_path(root, "proj", "task");
-        let b = capture_path(root, "proj", "task");
-        assert_eq!(a, b);
+        let a = capture_path(root, "proj", "task", 1);
+        assert_eq!(a, capture_path(root, "proj", "task", 1));
         assert!(a.starts_with(Path::new("/scratch").join("logs")));
-        // Different tasks produce different leaf names.
+        assert_ne!(a, capture_path(root, "proj", "task", 2));
         assert_ne!(
-            capture_path(root, "proj", "task-a"),
-            capture_path(root, "proj", "task-b")
+            capture_path(root, "proj", "task-a", 1),
+            capture_path(root, "proj", "task-b", 1)
         );
+    }
+
+    #[test]
+    fn names_whose_encodings_differ_only_by_case_get_distinct_files() {
+        let root = Path::new("/scratch");
+        let (aa, ah) = (
+            bs58::encode(b"aa").into_string(),
+            bs58::encode(b"aH").into_string(),
+        );
+        assert_eq!(aa.to_lowercase(), ah.to_lowercase());
+        let first = capture_path(root, "p", "aa", next_capture_seq());
+        let second = capture_path(root, "p", "aH", next_capture_seq());
+        assert_ne!(
+            first.to_string_lossy().to_lowercase(),
+            second.to_string_lossy().to_lowercase(),
+            "a case-insensitive filesystem must not see one file"
+        );
+    }
+
+    #[tokio::test]
+    async fn two_captures_with_colliding_encodings_keep_their_own_bytes() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = capture_path(dir.path(), "p", "aa", next_capture_seq());
+        let second = capture_path(dir.path(), "p", "aH", next_capture_seq());
+        let one = drain(&b"first"[..], Some(first.clone())).await.unwrap();
+        let two = drain(&b"second"[..], Some(second.clone())).await.unwrap();
+        assert_eq!(one, CaptureTarget::File(first.clone()));
+        assert_eq!(two, CaptureTarget::File(second.clone()));
+        assert_eq!(tokio::fs::read(&first).await.unwrap(), b"first");
+        assert_eq!(tokio::fs::read(&second).await.unwrap(), b"second");
+    }
+
+    #[tokio::test]
+    async fn an_existing_capture_file_is_never_truncated() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("taken");
+        tokio::fs::write(&path, b"keep").await.unwrap();
+        assert!(drain(&b"x"[..], Some(path.clone())).await.is_err());
+        assert_eq!(tokio::fs::read(&path).await.unwrap(), b"keep");
     }
 
     #[tokio::test]

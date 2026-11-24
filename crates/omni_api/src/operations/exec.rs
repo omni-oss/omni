@@ -6,7 +6,7 @@ use omni_task_executor::{
 };
 use omni_task_output_logs::LogsDisplay;
 use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use crate::operations::task::apply_filters;
 
@@ -29,10 +29,10 @@ pub struct ExecRequest {
 // ── Response ──────────────────────────────────────────────────────────────────
 
 /// Results of an `exec` operation.
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Serialize, JsonSchema)]
 pub struct ExecResponse {
-    // `TaskExecutionResult` lives in `omni_task_executor` and does not
-    // implement `JsonSchema`; represent it opaquely here.
+    // Results carry executable nodes, so this response is serialize-only;
+    // read one back as `Vec<TaskExecutionResultReport>`.
     pub results: Vec<TaskExecutionResult>,
 }
 

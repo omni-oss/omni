@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::OnceLock;
@@ -23,6 +22,7 @@ use omni_messages::{
     TaskRetryingEvent, TaskSkipReason, TaskSkippedEvent, TaskStartedEvent,
 };
 use omni_task_output_logs::LogsDisplay;
+use omni_types::TaskMap;
 use omni_term_ui::mux_output_presenter::{
     MuxOutputPresenter as _, MuxOutputPresenterExt as _,
     MuxOutputPresenterStatic,
@@ -220,7 +220,7 @@ enum TaskProgress {
     Indicatif {
         multi: MultiProgress,
         overall: ProgressBar,
-        running: HashMap<String, ProgressBar>,
+        running: TaskMap<ProgressBar>,
     },
     Log,
 }
@@ -235,7 +235,7 @@ impl TaskProgress {
                 TaskProgress::Indicatif {
                     multi,
                     overall,
-                    running: HashMap::new(),
+                    running: TaskMap::new(),
                 }
             }
             None => TaskProgress::Log,
@@ -249,31 +249,39 @@ impl TaskProgress {
         .unwrap_or_else(|_| ProgressStyle::default_spinner())
     }
 
-    fn task_started(&mut self, id: &str) {
+    /// Spinners are routed by `(project, task)`; `label` is only the text.
+    fn task_started(&mut self, project: &str, task: &str, label: &str) {
         if let TaskProgress::Indicatif { multi, running, .. } = self {
             let pb = multi.add(ProgressBar::new_spinner());
             pb.set_style(GeneratorProgress::spinner_style());
             pb.enable_steady_tick(SPINNER_TICK);
-            pb.set_message(id.to_string());
-            running.insert(id.to_string(), pb);
+            pb.set_message(label.to_string());
+            running.insert(project, task, pb);
         }
     }
 
-    fn task_finished(&mut self, id: &str) {
+    fn task_finished(&mut self, project: &str, task: &str) {
         if let TaskProgress::Indicatif {
             overall, running, ..
         } = self
         {
-            if let Some(pb) = running.remove(id) {
+            if let Some(pb) = running.remove(project, task) {
                 pb.finish_and_clear();
             }
             overall.inc(1);
         }
     }
 
-    fn task_retrying(&self, id: &str, attempt: usize, max_retries: usize) {
+    fn task_retrying(
+        &self,
+        project: &str,
+        task: &str,
+        id: &str,
+        attempt: usize,
+        max_retries: usize,
+    ) {
         if let TaskProgress::Indicatif { running, .. } = self
-            && let Some(pb) = running.get(id)
+            && let Some(pb) = running.get(project, task)
         {
             pb.set_message(format!(
                 "{} (retrying: attempt {}/{})",
@@ -308,7 +316,7 @@ impl TaskProgress {
             overall, running, ..
         } = self
         {
-            for (_, pb) in running.drain() {
+            for pb in std::mem::take(running).into_values() {
                 pb.finish_and_clear();
             }
             overall.finish_and_clear();
@@ -409,7 +417,7 @@ pub struct CliSubscriber {
     scratch_dir: PathBuf,
     tasks: Arc<Mutex<JoinSet<()>>>,
     /// In-flight per-task output captures (drain handle + display facet).
-    captures: Arc<Mutex<HashMap<String, CapturedOutput>>>,
+    captures: Arc<Mutex<TaskMap<CapturedOutput>>>,
     /// The single, lazily-probed `MultiProgress` shared by the generator and
     /// task progress renderers (`None` when the terminal cannot render).
     multi: Arc<OnceLock<Option<MultiProgress>>>,
@@ -459,7 +467,7 @@ impl CliSubscriber {
             resolved_mode: Arc::new(OnceLock::new()),
             scratch_dir,
             tasks: Arc::new(Mutex::new(JoinSet::new())),
-            captures: Arc::new(Mutex::new(HashMap::new())),
+            captures: Arc::new(Mutex::new(TaskMap::new())),
             multi: Arc::new(OnceLock::new()),
             generator_progress: Arc::new(Mutex::new(None)),
             task_progress: Arc::new(Mutex::new(None)),
@@ -649,8 +657,8 @@ impl CliSubscriber {
 
     /// Await a captured task's drain, replay its output if the resolved facet
     /// says to, then delete the capture file and advance the progress bar.
-    async fn finish_capture(&self, task_id: &str, failed: bool) {
-        let captured = self.captures.lock().remove(task_id);
+    async fn finish_capture(&self, project: &str, task: &str, failed: bool) {
+        let captured = self.captures.lock().remove(project, task);
 
         if let Some(captured) = captured {
             let target = captured.drain.await.ok().and_then(|r| r.ok());
@@ -662,7 +670,7 @@ impl CliSubscriber {
             }
         }
 
-        self.with_task_progress(|tp| tp.task_finished(task_id));
+        self.with_task_progress(|tp| tp.task_finished(project, task));
     }
 
     /// Replay a capture file to stdout, using `multi.suspend` in `progress`
@@ -684,8 +692,10 @@ impl CliSubscriber {
     pub async fn wait(&self) {
         let _ = self.get_mux().wait().await;
 
-        let remaining: Vec<_> =
-            self.captures.lock().drain().map(|(_, c)| c.drain).collect();
+        let remaining: Vec<_> = std::mem::take(&mut *self.captures.lock())
+            .into_values()
+            .map(|c| c.drain)
+            .collect();
         for handle in remaining {
             let _ = handle.await;
         }
@@ -764,7 +774,9 @@ impl ExecutionEventSubscriber for CliSubscriber {
                 EmitLevel::Result,
             );
         }
-        self.with_task_progress(|tp| tp.task_started(&e.task_id));
+        self.with_task_progress(|tp| {
+            tp.task_started(&e.project, &e.task, &e.task_id)
+        });
     }
 
     async fn on_execution_plan_ready(&self, e: ExecutionPlanReadyEvent) {
@@ -901,6 +913,7 @@ impl ExecutionEventSubscriber for CliSubscriber {
                 &self.scratch_dir,
                 &event.project,
                 &event.task,
+                task_output_capture::next_capture_seq(),
             ))
         };
 
@@ -909,9 +922,11 @@ impl ExecutionEventSubscriber for CliSubscriber {
             task_output_capture::drain(reader, to_file).await
         });
 
-        self.captures
-            .lock()
-            .insert(event.task_id, CapturedOutput { drain, facet });
+        self.captures.lock().insert(
+            &event.project,
+            &event.task,
+            CapturedOutput { drain, facet },
+        );
     }
 
     async fn on_task_completed(&self, e: TaskCompletedEvent) {
@@ -919,7 +934,7 @@ impl ExecutionEventSubscriber for CliSubscriber {
 
         // Drain and (conditionally) replay this task's captured output before
         // printing its status line.
-        self.finish_capture(&e.task_id, failed).await;
+        self.finish_capture(&e.project, &e.task, failed).await;
 
         if e.cache_hit {
             // Cache hit message is already emitted in on_cache_hit.
@@ -954,7 +969,7 @@ impl ExecutionEventSubscriber for CliSubscriber {
     }
 
     async fn on_task_failed(&self, e: TaskFailedEvent) {
-        self.finish_capture(&e.task_id, true).await;
+        self.finish_capture(&e.project, &e.task, true).await;
         self.emit(
             format!("Task '{}' error: {}", e.task_id, e.error)
                 .red()
@@ -992,7 +1007,7 @@ impl ExecutionEventSubscriber for CliSubscriber {
             }
         };
         self.emit(msg.white().dimmed().to_string(), EmitLevel::Info);
-        self.with_task_progress(|tp| tp.task_finished(&e.task_id));
+        self.with_task_progress(|tp| tp.task_finished(&e.project, &e.task));
     }
 
     async fn on_task_retrying(&self, e: TaskRetryingEvent) {
@@ -1007,6 +1022,8 @@ impl ExecutionEventSubscriber for CliSubscriber {
         self.emit(msg.yellow().dimmed().to_string(), EmitLevel::Warn);
         self.with_task_progress(|tp| {
             tp.task_retrying(
+                &e.project,
+                &e.task,
                 &e.task_id,
                 e.attempt as usize,
                 e.max_retries as usize,
@@ -1032,7 +1049,7 @@ impl ExecutionEventSubscriber for CliSubscriber {
         };
         self.emit(msg, EmitLevel::Info);
         // Cache hits emit no terminal event, so advance the aggregate bar here.
-        self.with_task_progress(|tp| tp.task_finished(&e.task_id));
+        self.with_task_progress(|tp| tp.task_finished(&e.project, &e.task));
     }
 
     async fn on_execution_complete(&self, e: ExecutionCompleteEvent) {

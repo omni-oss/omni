@@ -122,10 +122,10 @@ impl Default for TaskRunRequest {
 // ── Response ─────────────────────────────────────────────────────────────────
 
 /// Results of a `run` operation.
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Serialize, JsonSchema)]
 pub struct TaskRunResponse {
-    // `TaskExecutionResult` lives in `omni_task_executor` and does not
-    // implement `JsonSchema`; represent it opaquely here.
+    // Results carry executable nodes, so this response is serialize-only;
+    // read one back as `Vec<TaskExecutionResultReport>`.
     #[schemars(with = "Vec<serde_json::Value>")]
     pub results: Vec<TaskExecutionResult>,
 }

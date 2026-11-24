@@ -4,7 +4,6 @@ use std::{collections::HashMap, time::Duration};
 use base64::Engine;
 use bytesize::ByteSize;
 use clap::Subcommand;
-use itertools::Itertools;
 use omni_api::{
     CachePruneRequest, CacheRemoteSetupRequest, CacheStatsRequest, OmniApi,
 };
@@ -571,24 +570,31 @@ async fn prune(
     Ok(())
 }
 
+/// Group entries by project and then by the raw task name. Task names are not
+/// rejoined with the project or split on `#`, so a task such as `b#c` keeps its
+/// whole spelling.
+fn group_pruned_entries(
+    pruned: &[PrunedCacheEntry],
+) -> HashMap<&str, HashMap<&str, Vec<&PrunedCacheEntry>>> {
+    let mut grouped: HashMap<&str, HashMap<&str, Vec<&PrunedCacheEntry>>> =
+        HashMap::new();
+    for entry in pruned {
+        grouped
+            .entry(entry.project_name.as_str())
+            .or_default()
+            .entry(entry.task_name.as_str())
+            .or_default()
+            .push(entry);
+    }
+    grouped
+}
+
 fn display_pruned_entries(pruned: &[PrunedCacheEntry]) {
-    let grouped = pruned
-        .iter()
-        .into_group_map_by(|p| p.project_name.to_string())
-        .into_iter()
-        .map(|(project_name, entries)| {
-            let entries = entries.into_iter().into_group_map_by(|e| {
-                format!("{}#{}", e.project_name, e.task_name)
-            });
-            (project_name, entries)
-        })
-        .collect::<HashMap<String, HashMap<String, _>>>();
+    let grouped = group_pruned_entries(pruned);
 
     for (project_name, entries) in grouped {
         println!("Project: {}", project_name);
         for (task_name, entries) in entries {
-            let task_name =
-                task_name.split('#').nth(1).expect("should be some");
             println!("  Task: {}", task_name);
             for entry in entries {
                 let hash = base64::engine::general_purpose::STANDARD
@@ -733,5 +739,34 @@ mod signing_flag_tests {
             ])
             .is_ok()
         );
+    }
+}
+
+#[cfg(test)]
+mod pruned_display_tests {
+    use bytesize::ByteSize;
+    use omni_cache::{PrunedCacheEntry, StaleStatus};
+
+    use super::group_pruned_entries;
+
+    fn entry(project: &str, task: &str) -> PrunedCacheEntry {
+        PrunedCacheEntry::new(
+            project.to_string(),
+            task.to_string(),
+            [0; 32],
+            ByteSize::b(1),
+            std::path::PathBuf::from("/x"),
+            StaleStatus::Unknown,
+        )
+    }
+
+    #[test]
+    fn a_task_name_containing_a_hash_keeps_its_whole_spelling() {
+        let entries = [entry("a", "b#c"), entry("a#b", "c"), entry("a", "d")];
+        let grouped = group_pruned_entries(&entries);
+        assert_eq!(grouped["a"]["b#c"].len(), 1);
+        assert_eq!(grouped["a"]["d"].len(), 1);
+        assert_eq!(grouped["a#b"]["c"].len(), 1);
+        assert!(!grouped["a"].contains_key("b"));
     }
 }
