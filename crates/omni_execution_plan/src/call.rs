@@ -42,9 +42,18 @@ impl Call {
 /// paths so a name containing glob characters can be selected literally.
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum TaskSelector {
-    /// Matches the task with exactly this name.
+    /// Matches the task whose canonical name is exactly this. This is the raw
+    /// stored name: aliases are not consulted. Inventory and internally
+    /// generated names (such as `exec`'s synthetic task) use it.
     Exact(String),
-    /// Matches task names against this glob.
+    /// A parsed live exact selector: an optional project qualifier and a task
+    /// name that may be a canonical name or an alias of the project that owns
+    /// the task. Glob characters are literal.
+    Reference {
+        project: Option<String>,
+        task: String,
+    },
+    /// Matches task names (canonical names and aliases) against this glob.
     Pattern(String),
     /// Matches every task.
     All,
@@ -58,12 +67,53 @@ impl TaskSelector {
     pub fn pattern(glob: impl Into<String>) -> Self {
         Self::Pattern(glob.into())
     }
+
+    /// Parse live exact selector input once, at ingress, with the shared
+    /// reference grammar. `project#task` scopes to one project; `\#`, `\:` and
+    /// `\\` write literal characters; wildcard characters are literal. Plugin
+    /// qualification and a leading `^` are rejected.
+    pub fn parse_exact(input: &str) -> Result<Self, ExactSelectorError> {
+        use omni_types::{ReferenceSurface, TaskReference};
+        let fail = |message: String| ExactSelectorError {
+            input: input.to_owned(),
+            message,
+        };
+        let reference =
+            TaskReference::parse(input).map_err(|e| fail(e.to_string()))?;
+        reference
+            .validate_for(ReferenceSurface::ExactSelector)
+            .map_err(|e| fail(e.to_string()))?;
+        if reference.plugin().is_some() {
+            return Err(fail(
+                "plugin scopes are not supported in this version; escape a literal `::` with `\\:\\:`"
+                    .to_owned(),
+            ));
+        }
+        Ok(Self::Reference {
+            project: reference.project().map(str::to_owned),
+            task: reference.task().to_owned(),
+        })
+    }
+}
+
+/// A live exact task selector that does not parse or is not allowed there.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("invalid task selector `{input}`: {message}")]
+pub struct ExactSelectorError {
+    pub input: String,
+    pub message: String,
 }
 
 impl std::fmt::Debug for TaskSelector {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Exact(n) => write!(f, "exact:{n}"),
+            Self::Reference { project, task } => match project {
+                Some(project) => {
+                    write!(f, "exact:{}", omni_types::task_label(project, task))
+                }
+                None => write!(f, "exact:{task}"),
+            },
             Self::Pattern(p) => write!(f, "{p}"),
             Self::All => f.write_str("<all>"),
         }

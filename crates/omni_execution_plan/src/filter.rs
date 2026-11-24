@@ -7,7 +7,7 @@ use std::{
 
 use globset::GlobSet;
 use omni_configurations::MetaConfiguration;
-use omni_core::{Project, TaskExecutionNode};
+use omni_core::{Project, TaskAliases, TaskExecutionNode};
 use omni_expressions::Evaluator;
 use omni_glob::{GlobMatcher, GlobOptions, GlobPatterns, include_set};
 use omni_scm::{Scm, get_scm_implementation};
@@ -103,6 +103,11 @@ where
 {
     task_matcher: Option<Arc<GlobSet>>,
     exact_task_names: HashSet<String>,
+    /// Parsed live exact selectors: `(project qualifier, public task name)`.
+    references: Vec<(Option<String>, String)>,
+    /// Aliases per project, only for projects that have any. Empty in raw
+    /// canonical-name mode.
+    aliases: maps::UnorderedMap<String, TaskAliases>,
     meta_filter: Option<Evaluator>,
     meta_filter_source: Option<String>,
     collector: Option<MetaFilterCollector>,
@@ -127,12 +132,16 @@ where
         let select_all = task_filters.is_empty()
             || task_filters.iter().any(|s| matches!(s, TaskSelector::All));
         let mut exact_task_names = HashSet::new();
+        let mut references = vec![];
         let mut task_patterns: Vec<&str> = vec![];
         if !select_all {
             for selector in task_filters {
                 match selector {
                     TaskSelector::Exact(n) => {
                         exact_task_names.insert(n.clone());
+                    }
+                    TaskSelector::Reference { project, task } => {
+                        references.push((project.clone(), task.clone()));
                     }
                     TaskSelector::Pattern(p) => task_patterns.push(p),
                     TaskSelector::All => {}
@@ -193,10 +202,54 @@ where
             meta_filter_source,
             collector: None,
             exact_task_names,
+            references,
+            aliases: Default::default(),
             project_matcher,
             dir_matcher,
             get_task_meta,
         })
+    }
+
+    /// Resolve live exact selectors and match patterns through these per
+    /// project alias indexes. Without them only canonical names match.
+    pub fn with_aliases(
+        mut self,
+        aliases: maps::UnorderedMap<String, TaskAliases>,
+    ) -> Self {
+        self.aliases = aliases;
+        self
+    }
+
+    fn matches_reference(&self, node: &TaskExecutionNode) -> bool {
+        self.references.iter().any(|(qualifier, task)| {
+            if let Some(qualifier) = qualifier
+                && qualifier != node.project_name()
+            {
+                return false;
+            }
+            task == node.task_name()
+                || self
+                    .aliases
+                    .get(node.project_name())
+                    .and_then(|aliases| aliases.resolve(task))
+                    .is_some_and(|canonical| canonical == node.task_name())
+        })
+    }
+
+    fn matches_pattern(
+        &self,
+        matcher: &GlobSet,
+        node: &TaskExecutionNode,
+    ) -> bool {
+        matcher.is_match(node.task_name())
+            || self
+                .aliases
+                .get(node.project_name())
+                .is_some_and(|aliases| {
+                    aliases.iter().any(|(alias, canonical)| {
+                        canonical == node.task_name() && matcher.is_match(alias)
+                    })
+                })
     }
 
     /// Instead of returning an error for the first task whose meta filter
@@ -252,6 +305,7 @@ where
     ) -> Result<bool, Self::Error> {
         if self.task_matcher.is_none()
             && self.exact_task_names.is_empty()
+            && self.references.is_empty()
             && self.meta_filter.is_none()
             && self.project_matcher.is_none()
             && self.dir_matcher.is_none()
@@ -266,12 +320,17 @@ where
         }
 
         let by_exact = self.exact_task_names.contains(node.task_name());
+        let by_reference =
+            !self.references.is_empty() && self.matches_reference(node);
         let by_pattern = self
             .task_matcher
             .as_ref()
-            .is_some_and(|tm| tm.is_match(node.task_name()));
-        if (self.task_matcher.is_some() || !self.exact_task_names.is_empty())
+            .is_some_and(|tm| self.matches_pattern(tm, node));
+        if (self.task_matcher.is_some()
+            || !self.exact_task_names.is_empty()
+            || !self.references.is_empty())
             && !by_exact
+            && !by_reference
             && !by_pattern
         {
             return Ok(false);

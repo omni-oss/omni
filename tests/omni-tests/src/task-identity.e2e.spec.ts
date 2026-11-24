@@ -64,12 +64,17 @@ const CONTROL: Names = {
     aRef: "a#bc",
 };
 
+/** A raw task name spelled as a declaration key or a live exact selector. */
+function esc(name: string): string {
+    return name.replace(/[\\#]/g, "\\$&");
+}
+
 function pairTasks(n: Names) {
     return {
         "p-ab": {
             name: n.abProject,
             tasks: {
-                [n.abTask]: {
+                [esc(n.abTask)]: {
                     exec: 'echo "RUN-AB-C mark=$MARK arg={{ args.who }}"',
                     args: { who: "default-ab-c" },
                     env: { vars: { MARK: "env-ab-c" } },
@@ -81,7 +86,7 @@ function pairTasks(n: Names) {
         "p-a": {
             name: n.aProject,
             tasks: {
-                [n.aTask]: {
+                [esc(n.aTask)]: {
                     exec: 'echo "RUN-A-BC mark=$MARK arg={{ args.who }}"',
                     args: { who: "default-a-bc" },
                     env: { vars: { MARK: "env-a-bc" } },
@@ -309,11 +314,11 @@ function behaviors(names: Names, test: typeof it): void {
                 projects: {
                     "p-ab": {
                         name: names.abProject,
-                        tasks: { [names.abTask]: { exec: "exit 3" } },
+                        tasks: { [esc(names.abTask)]: { exec: "exit 3" } },
                     },
                     "p-a": {
                         name: names.aProject,
-                        tasks: { [names.aTask]: { exec: 'echo "A-BC-OK"' } },
+                        tasks: { [esc(names.aTask)]: { exec: 'echo "A-BC-OK"' } },
                     },
                     app: {
                         name: "app",
@@ -689,7 +694,7 @@ describe("+run @e2e (v1 digest parity across run, dry-run, ignore-dependencies a
             [
                 "run",
                 "c",
-                "b#c",
+                "b\\#c",
                 "--result",
                 resultPath,
                 "--result-format",
@@ -758,7 +763,7 @@ describe("+hash @e2e (hash project uses the v1 leaf, formerly colliding pairs di
             [
                 "run",
                 "c",
-                "b#c",
+                "b\\#c",
                 "--result",
                 resultPath,
                 "--result-format",
@@ -776,7 +781,7 @@ describe("+hash @e2e (hash project uses the v1 leaf, formerly colliding pairs di
 
         const hashProject = async (project: string, task: string) => {
             const r = await runOmni(
-                ["hash", "-r", "project", project, "-t", task],
+                ["hash", "-r", "project", project, "-t", esc(task)],
                 { cwd: ws.cwd },
             );
             expect(r).toHaveSucceeded();

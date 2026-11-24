@@ -786,6 +786,26 @@ impl TaskExecutionGraph {
             &TaskExecutionNode,
         ) -> Result<bool, eyre::Report>,
     ) -> TaskExecutionGraphResult<BatchedExecutionPlan> {
+        Ok(self
+            .get_batched_execution_selection_impl(
+                filter,
+                with_dependents,
+                with_dependents_filter,
+            )?
+            .1)
+    }
+
+    /// Like [`Self::get_batched_execution_plan_impl`], also returning the tasks
+    /// the filter matched directly, before dependencies or dependents are
+    /// added, sorted by identity.
+    pub fn get_batched_execution_selection_impl(
+        &self,
+        filter: impl Fn(&TaskExecutionNode) -> Result<bool, eyre::Report>,
+        with_dependents: bool,
+        with_dependents_filter: impl Fn(
+            &TaskExecutionNode,
+        ) -> Result<bool, eyre::Report>,
+    ) -> TaskExecutionGraphResult<(Vec<TaskKey>, BatchedExecutionPlan)> {
         // Determine the root nodes. A root node is a node that is not a dependency of any other node
         // Root nodes should always be in the last batch, persistent root nodes should be sorted to the end of the last batch
 
@@ -796,6 +816,14 @@ impl TaskExecutionGraph {
                 possible_roots.insert(node);
             }
         }
+
+        let mut direct = possible_roots
+            .iter()
+            .map(|n| self.di_graph[*n].key.clone())
+            .collect::<Vec<_>>();
+        direct.sort_by(|a, b| {
+            (a.project(), a.task()).cmp(&(b.project(), b.task()))
+        });
 
         let dep_graph = filtered_graph!(&self.di_graph, EdgeType::Dependency);
 
@@ -1021,7 +1049,7 @@ impl TaskExecutionGraph {
             ordered_batches.push(batches.get(&level).unwrap().clone());
         }
 
-        Ok(ordered_batches
+        let plan = ordered_batches
             .into_iter()
             .map(|batch| {
                 batch
@@ -1029,7 +1057,29 @@ impl TaskExecutionGraph {
                     .map(|node| self.di_graph[node].clone())
                     .collect()
             })
-            .collect())
+            .collect();
+        Ok((direct, plan))
+    }
+
+    /// The direct matches and the plan, with or without dependents.
+    #[allow(clippy::type_complexity)]
+    #[tracing::instrument(level = Level::DEBUG, skip_all)]
+    pub fn get_batched_execution_selection(
+        &self,
+        filter: impl Fn(&TaskExecutionNode) -> Result<bool, eyre::Report>,
+        with_dependents: Option<
+            &dyn Fn(&TaskExecutionNode) -> Result<bool, eyre::Report>,
+        >,
+    ) -> TaskExecutionGraphResult<(Vec<TaskKey>, BatchedExecutionPlan)> {
+        match with_dependents {
+            Some(dependents) => self
+                .get_batched_execution_selection_impl(filter, true, dependents),
+            None => {
+                self.get_batched_execution_selection_impl(filter, false, |_| {
+                    Ok(false)
+                })
+            }
+        }
     }
 
     #[tracing::instrument(level = Level::DEBUG, skip_all)]

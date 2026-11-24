@@ -1,10 +1,9 @@
 use derive_new::new;
 use omni_context::{ContextSys, LoadedContext, LoadedContextError};
-use omni_core::BatchedExecutionPlan;
 use omni_execution_plan::{
     Call, Context as ContextTrait, DefaultExecutionPlanProvider,
-    ExecutionPlanProvider, ExecutionPlanProviderError, MetaErrorOptions,
-    ProjectSelector, ScmAffectedFilter,
+    ExecutionPlanProvider, ExecutionPlanProviderError, ExecutionSelection,
+    MetaErrorOptions, ProjectSelector, ScmAffectedFilter,
 };
 use omni_glob::GlobPatterns;
 use omni_types::OmniPath;
@@ -45,7 +44,7 @@ impl<'a, TSys: ContextSys> ExecutionPlanProvider
     type Error = ExecutionPlanProviderError;
 
     #[inline(always)]
-    fn get_execution_plan(
+    fn get_execution_selection(
         &self,
         call: &Call,
         project_filters: &[ProjectSelector],
@@ -54,8 +53,8 @@ impl<'a, TSys: ContextSys> ExecutionPlanProvider
         scm_affected_filter: Option<&ScmAffectedFilter>,
         ignore_deps: bool,
         with_dependents: bool,
-    ) -> Result<BatchedExecutionPlan, Self::Error> {
-        self.inner.get_execution_plan(
+    ) -> Result<ExecutionSelection, Self::Error> {
+        self.inner.get_execution_selection(
             call,
             project_filters,
             dir_filters,

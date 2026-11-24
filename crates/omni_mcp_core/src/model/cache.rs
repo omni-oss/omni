@@ -22,7 +22,8 @@ pub struct CacheStatsParams {
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct CacheEligibilityParams {
-    /// Exact names of tasks to inspect. Glob characters are literal; use
+    /// Exact names of tasks to inspect: a task or an alias, optionally
+    /// `project#task`. Glob characters are literal; use
     /// `task_patterns` to select by glob. At least one of `tasks` and
     /// `task_patterns` is required.
     #[serde(default)]

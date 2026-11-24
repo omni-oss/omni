@@ -526,6 +526,11 @@ where
 /// The raw task name a declaration key spells.
 pub(crate) fn decode_declaration_key(key: &str) -> Result<String, String> {
     use omni_types::{ReferenceError, ReferenceSurface, TaskReference};
+    // Empty and NUL names are rejected with their own diagnostic when the
+    // workspace loads, which names the project.
+    if key.is_empty() || key.contains('\0') {
+        return Ok(key.to_owned());
+    }
     let literal = || {
         TaskReference::own(key)
             .map(|reference| reference.format())

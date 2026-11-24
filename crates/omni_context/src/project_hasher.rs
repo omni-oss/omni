@@ -7,7 +7,6 @@ use omni_command_config::CommandConfig;
 use omni_execution_plan::{
     Call, ExecutionPlanProvider, ProjectSelector, TaskSelector,
 };
-use omni_glob::{GlobOptions, include_set};
 use omni_hasher::{
     Hasher as _,
     impls::{DefaultHash, DefaultHasher},
@@ -44,8 +43,23 @@ impl<'a, TSys: ContextSys> ProjectHasher<'a, TSys> {
             Call::Tasks(tasks.to_vec())
         };
 
-        let plan = execution_plan_provider
-            .get_execution_plan(
+        for selector in tasks {
+            if let TaskSelector::Reference {
+                project: Some(qualifier),
+                task,
+            } = selector
+                && qualifier != project_name
+            {
+                return Err(ProjectHasherErrorInner::SelectorProjectMismatch {
+                    selector: omni_types::task_label(qualifier, task),
+                    project: project_name.to_owned(),
+                }
+                .into());
+            }
+        }
+
+        let selection = execution_plan_provider
+            .get_execution_selection(
                 &call,
                 &[ProjectSelector::exact(project_name)],
                 &[],
@@ -59,6 +73,9 @@ impl<'a, TSys: ContextSys> ProjectHasher<'a, TSys> {
                     eyre::Report::new(e),
                 )
             })?;
+
+        let plan = selection.plan;
+        let direct = selection.direct;
 
         struct ProjectTaskInfoTmp<'a> {
             project_name: &'a str,
@@ -78,7 +95,6 @@ impl<'a, TSys: ContextSys> ProjectHasher<'a, TSys> {
 
         #[derive(Debug, Clone)]
         struct DigestInfo {
-            project_name: String,
             task_name: String,
             digest: DefaultHash,
         }
@@ -188,7 +204,6 @@ impl<'a, TSys: ContextSys> ProjectHasher<'a, TSys> {
                     c.task.task_name,
                     DigestInfo {
                         digest: c.digest.expect("should have value"),
-                        project_name: c.task.project_name.to_string(),
                         task_name: c.task.task_name.to_string(),
                     },
                 );
@@ -197,31 +212,14 @@ impl<'a, TSys: ContextSys> ProjectHasher<'a, TSys> {
 
         let mut hash = Hash::<DefaultHasher>::new(seed);
 
-        let select_all = tasks.is_empty()
-            || tasks.iter().any(|s| matches!(s, TaskSelector::All));
-        let exact: std::collections::HashSet<&str> = tasks
+        // Only the directly matched canonical tasks of this project are
+        // aggregate inputs. Dependency digests already flow in through the
+        // graph, and a dependency-only task is never folded in on its own.
+        let mut digests = direct
             .iter()
-            .filter_map(|s| match s {
-                TaskSelector::Exact(n) => Some(n.as_str()),
-                _ => None,
-            })
-            .collect();
-        let patterns: Vec<&str> = tasks
-            .iter()
-            .filter_map(|s| match s {
-                TaskSelector::Pattern(p) => Some(p.as_str()),
-                _ => None,
-            })
-            .collect();
-        let task_matcher = include_set(&patterns, GlobOptions::default())?;
-
-        let mut digests = task_result_digests
-            .values()
-            .filter(|d| {
-                d.project_name == project_name
-                    && (select_all
-                        || exact.contains(d.task_name.as_str())
-                        || task_matcher.is_match(&d.task_name))
+            .filter(|key| key.project() == project_name)
+            .filter_map(|key| {
+                task_result_digests.get(key.project(), key.task())
             })
             .collect::<Vec<_>>();
 
@@ -317,7 +315,19 @@ pub(crate) enum ProjectHasherErrorInner {
     #[diagnostic(delegate)]
     LoadedContext(#[from] Box<LoadedContextError>),
 
-    #[error(transparent)]
-    #[diagnostic(skip)]
-    Glob(#[from] globset::Error),
+    /// A project-qualified selector names a different project than the one
+    /// being hashed.
+    #[error(
+        "selector `{selector}` names another project than `{project}`, which is being hashed"
+    )]
+    #[diagnostic(
+        code = "workspace.selector_project_mismatch",
+        hint = "drop the project qualifier or use `{project}` as the qualifier"
+    )]
+    SelectorProjectMismatch {
+        #[diagnostic(detail)]
+        selector: String,
+        #[diagnostic(detail)]
+        project: String,
+    },
 }

@@ -8,7 +8,7 @@ use omni_command_config::CommandConfig;
 use omni_config_types::TeraExprBoolean;
 use omni_configurations::MetaConfiguration;
 use omni_core::{
-    BatchedExecutionPlan, Task, TaskDependency, TaskExecutionGraphError,
+    Task, TaskAliases, TaskDependency, TaskExecutionGraphError,
     TaskExecutionNode, TaskKey,
 };
 use omni_glob::GlobPatterns;
@@ -17,10 +17,10 @@ use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
 use crate::{
     Call, Context, DefaultProjectFilter, DefaultTaskFilter,
-    DefaultTaskScmAffectedFilter, ExecutionPlanProvider, FilterError,
-    MetaErrorOptions, MetaFilterError, MetaOnError, ProjectFilter as _,
-    ProjectFilterExt as _, ProjectSelector, ScmAffectedFilter, TaskFilter as _,
-    TaskSelector,
+    DefaultTaskScmAffectedFilter, ExecutionPlanProvider, ExecutionSelection,
+    FilterError, MetaErrorOptions, MetaFilterError, MetaOnError,
+    ProjectFilter as _, ProjectFilterExt as _, ProjectSelector,
+    ScmAffectedFilter, TaskFilter as _, TaskSelector,
 };
 
 #[derive(Debug, new)]
@@ -39,6 +39,11 @@ pub struct DefaultExecutionPlanProvider<'a, TContext: Context + 'a> {
     /// be usable to find (and prune) its entries.
     #[new(default)]
     allow_missing_exact: bool,
+    /// Match stored canonical names only: no alias is resolved and patterns see
+    /// only canonical names. Cache inventory uses it so stored names keep their
+    /// meaning whatever aliases a config declares.
+    #[new(default)]
+    raw_canonical_names: bool,
 }
 
 impl<'a, TContext: Context + 'a> DefaultExecutionPlanProvider<'a, TContext> {
@@ -46,6 +51,27 @@ impl<'a, TContext: Context + 'a> DefaultExecutionPlanProvider<'a, TContext> {
     pub fn with_allow_missing_exact(mut self, allow: bool) -> Self {
         self.allow_missing_exact = allow;
         self
+    }
+
+    /// See the `raw_canonical_names` field.
+    pub fn with_raw_canonical_names(mut self, raw: bool) -> Self {
+        self.raw_canonical_names = raw;
+        self
+    }
+
+    /// Aliases per project, for the projects that declare any. Empty in raw
+    /// canonical-name mode.
+    fn alias_index(&self) -> maps::UnorderedMap<String, TaskAliases> {
+        let mut index = maps::UnorderedMap::default();
+        if self.raw_canonical_names {
+            return index;
+        }
+        for project in self.context.projects() {
+            if !project.aliases.is_empty() {
+                index.insert(project.name.clone(), project.aliases.clone());
+            }
+        }
+        index
     }
 
     pub fn with_meta_error_options(
@@ -83,7 +109,7 @@ impl<'a, TContext: Context> ExecutionPlanProvider
 {
     type Error = ExecutionPlanProviderError;
 
-    fn get_execution_plan(
+    fn get_execution_selection(
         &self,
         call: &Call,
         project_filters: &[ProjectSelector],
@@ -92,7 +118,7 @@ impl<'a, TContext: Context> ExecutionPlanProvider
         affected_scm_filter: Option<&ScmAffectedFilter>,
         ignore_deps: bool,
         with_dependents: bool,
-    ) -> Result<BatchedExecutionPlan, Self::Error> {
+    ) -> Result<ExecutionSelection, Self::Error> {
         if ignore_deps {
             self.get_execution_plan_ignored_dependencies(
                 call,
@@ -131,7 +157,7 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
         dir_filters: &[&str],
         meta_filter: Option<&str>,
         affected_scm_filter: Option<&ScmAffectedFilter>,
-    ) -> Result<BatchedExecutionPlan, ExecutionPlanProviderError> {
+    ) -> Result<ExecutionSelection, ExecutionPlanProviderError> {
         let pf = DefaultProjectFilter::new(project_filters)?;
         // Simple case: just get all matching tasks in one batch
         let projects = pf.filter_projects(self.context.projects());
@@ -239,7 +265,11 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
             }
         };
 
-        Ok(vec![filtered])
+        let direct = filtered.iter().map(|n| n.key().clone()).collect();
+        Ok(ExecutionSelection {
+            direct,
+            plan: vec![filtered],
+        })
     }
 
     /// Every exact project selector must name a project, and the selectors
@@ -308,11 +338,13 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
         let Call::Tasks(selectors) = call else {
             return Ok(());
         };
-        let exact: Vec<&String> = selectors
+        let exact: Vec<&TaskSelector> = selectors
             .iter()
-            .filter_map(|s| match s {
-                TaskSelector::Exact(n) => Some(n),
-                _ => None,
+            .filter(|s| {
+                matches!(
+                    s,
+                    TaskSelector::Exact(_) | TaskSelector::Reference { .. }
+                )
             })
             .collect();
         if exact.is_empty() {
@@ -321,7 +353,8 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
 
         // One filter for the project and directory scope, applied once per
         // project (the scope does not depend on the task). This is a pure
-        // probe: no executable node is built. Each exact name is then a map lookup in the in-scope projects.
+        // probe: no executable node is built. Each exact name is then a map
+        // lookup in the in-scope projects.
         let scope = DefaultTaskFilter::new(
             &[],
             project_filters,
@@ -339,12 +372,34 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
                 in_scope.push(project);
             }
         }
-        for name in exact {
-            if !in_scope.iter().any(|p| p.tasks.contains_key(name.as_str())) {
+        for selector in exact {
+            let (found, spelling) = match selector {
+                TaskSelector::Exact(name) => (
+                    in_scope.iter().any(|p| p.tasks.contains_key(name)),
+                    name.clone(),
+                ),
+                TaskSelector::Reference { project, task } => (
+                    in_scope.iter().any(|p| {
+                        project.as_ref().is_none_or(|q| *q == p.name)
+                            && (self.raw_canonical_names
+                                && p.tasks.contains_key(task)
+                                || !self.raw_canonical_names
+                                    && p.canonical_task_name(task).is_some())
+                    }),
+                    match project {
+                        Some(project) => omni_types::task_label(project, task),
+                        None => omni_types::TaskReference::own(task.clone())
+                            .map(|r| r.format())
+                            .unwrap_or_else(|_| task.clone()),
+                    },
+                ),
+                _ => continue,
+            };
+            if !found {
                 return Err(
                     ExecutionPlanProviderErrorInner::ExactTaskNotFound {
-                        task: name.clone(),
-                        hint: exact_task_hint(name),
+                        hint: exact_task_hint(&spelling),
+                        task: spelling,
                     }
                     .into(),
                 );
@@ -384,6 +439,7 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
                 }
             },
         )?
+        .with_aliases(self.alias_index())
         .collect_meta_errors(self.meta_error.limits);
         Ok(tf)
     }
@@ -418,7 +474,7 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
         meta_filter: Option<&str>,
         affected_scm_filter: Option<&ScmAffectedFilter>,
         with_dependents: bool,
-    ) -> Result<BatchedExecutionPlan, ExecutionPlanProviderError> {
+    ) -> Result<ExecutionSelection, ExecutionPlanProviderError> {
         self.check_project_selectors(project_filters)?;
 
         self.check_exact_selectors(call, project_filters, dir_filters)?;
@@ -473,40 +529,49 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
             None
         };
 
-        let plan = if with_dependents {
+        let passes = |n: &TaskExecutionNode| -> Result<bool, eyre::Report> {
+            Ok(tf.should_include_task(n)?
+                && if let Some(tfscm) = &tfscm {
+                    tfscm.should_include_task(n)?
+                } else {
+                    true
+                })
+        };
+
+        let (direct, plan) = if with_dependents {
+            // The dependents search applies only the task-name predicate, so a
+            // project qualifier scopes the seed, not the traversal.
+            let unqualified = task_names
+                .iter()
+                .map(|selector| match selector {
+                    TaskSelector::Reference { task, .. } => {
+                        TaskSelector::Reference {
+                            project: None,
+                            task: task.clone(),
+                        }
+                    }
+                    other => other.clone(),
+                })
+                .collect::<Vec<_>>();
             let tf_dependents = self.get_task_filter(
                 call.is_command(),
-                &task_names,
+                &unqualified,
                 &[],
                 &[],
                 None,
             )?;
 
-            x_graph.get_batched_execution_plan_with_dependents(
-                |n| {
-                    Ok(tf.should_include_task(n)?
-                        && if let Some(tfscm) = &tfscm {
-                            tfscm.should_include_task(n)?
-                        } else {
-                            true
-                        })
-                },
-                |n| Ok(tf_dependents.should_include_task(n)?),
+            x_graph.get_batched_execution_selection(
+                passes,
+                Some(&|n| Ok(tf_dependents.should_include_task(n)?)),
             )?
         } else {
-            x_graph.get_batched_execution_plan(|n| {
-                Ok(tf.should_include_task(n)?
-                    && if let Some(tfscm) = &tfscm {
-                        tfscm.should_include_task(n)?
-                    } else {
-                        true
-                    })
-            })?
+            x_graph.get_batched_execution_selection(passes, None)?
         };
 
         self.handle_meta_error(tf.take_meta_error())?;
 
-        Ok(plan)
+        Ok(ExecutionSelection { direct, plan })
     }
 }
 
@@ -1220,6 +1285,301 @@ mod tests {
                 plan_projects_call(&call, &[], ignore_deps, false).unwrap(),
                 ["lib#libonly"]
             );
+        }
+    }
+
+    // ── Aliases and live exact selectors (RFC 0024 F03.4 slice 3) ──────────
+
+    fn alias_task(deps: Vec<TaskDependency>) -> Task {
+        Task::new(
+            Some(CommandConfig::Shell("echo".into())),
+            None,
+            deps,
+            None,
+            TeraExprBoolean::Boolean(true),
+            false,
+            false,
+            vec![],
+            Default::default(),
+        )
+    }
+
+    /// `web` (no dependencies) has `build-native` with alias `compile`, and
+    /// `lint`; `api` depends on `web` and has its own `build` that waits for
+    /// `web`'s `compile`, plus a task actually named `compile`.
+    fn alias_projects() -> Vec<omni_core::Project> {
+        let mut web = omni_core::Project::new(
+            "web",
+            "/ws/web".into(),
+            vec![],
+            Default::default(),
+        );
+        web.tasks.insert("build-native".into(), alias_task(vec![]));
+        web.tasks.insert("lint".into(), alias_task(vec![]));
+        web.tasks.insert(
+            "prep".into(),
+            alias_task(vec![TaskDependency::Own {
+                task: "lint".into(),
+            }]),
+        );
+        let web = web.with_aliases(omni_core::TaskAliases::new(
+            [("compile".to_string(), "build-native".to_string())]
+                .into_iter()
+                .collect(),
+        ));
+        let mut api = omni_core::Project::new(
+            "api",
+            "/ws/api".into(),
+            vec!["web".into()],
+            Default::default(),
+        );
+        api.tasks.insert(
+            "build".into(),
+            alias_task(vec![TaskDependency::Upstream {
+                task: "compile".into(),
+            }]),
+        );
+        api.tasks.insert(
+            "compile".into(),
+            alias_task(vec![TaskDependency::Upstream {
+                task: "compile".into(),
+            }]),
+        );
+        vec![web, api]
+    }
+
+    fn select(
+        call: &Call,
+        project_filters: &[ProjectSelector],
+        ignore_deps: bool,
+        with_dependents: bool,
+        raw: bool,
+    ) -> Result<(Vec<String>, Vec<String>), ExecutionPlanProviderError> {
+        let ctx = FixtureContext {
+            projects: alias_projects(),
+            patterns: GlobPatterns::default(),
+        };
+        let selection = DefaultExecutionPlanProvider::new(ctx)
+            .with_raw_canonical_names(raw)
+            .with_allow_missing_exact(raw)
+            .get_execution_selection(
+                call,
+                project_filters,
+                &[],
+                None,
+                None,
+                ignore_deps,
+                with_dependents,
+            )?;
+        let label = |k: &TaskKey| k.label().into_string();
+        let mut direct: Vec<String> =
+            selection.direct.iter().map(label).collect();
+        direct.sort();
+        let mut plan: Vec<String> = selection
+            .plan
+            .iter()
+            .flatten()
+            .map(|n| n.key().label().into_string())
+            .collect();
+        plan.sort();
+        Ok((direct, plan))
+    }
+
+    fn exact(input: &str) -> TaskSelector {
+        TaskSelector::parse_exact(input).unwrap()
+    }
+
+    #[test]
+    fn an_alias_selects_its_canonical_task_once_on_both_plan_paths() {
+        for ignore_deps in [true, false] {
+            for call in [
+                Call::Tasks(vec![exact("compile")]),
+                Call::Tasks(vec![exact("compile"), exact("build-native")]),
+                Call::Tasks(vec![
+                    exact("compile"),
+                    exact("build-native"),
+                    TaskSelector::pattern("comp*"),
+                    TaskSelector::pattern("build-*"),
+                ]),
+            ] {
+                let (direct, plan) = select(
+                    &call,
+                    &[ProjectSelector::exact("web")],
+                    ignore_deps,
+                    false,
+                    false,
+                )
+                .unwrap();
+                assert_eq!(direct, ["web#build-native"], "{call:?}");
+                assert_eq!(plan, ["web#build-native"], "{call:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_pattern_matching_an_alias_selects_the_canonical_task() {
+        let (direct, _) = select(
+            &Call::pattern_tasks(["comp*"]),
+            &[ProjectSelector::exact("web")],
+            true,
+            false,
+            false,
+        )
+        .unwrap();
+        assert_eq!(direct, ["web#build-native"]);
+    }
+
+    #[test]
+    fn a_missing_exact_name_is_not_hidden_by_a_successful_glob() {
+        for ignore_deps in [true, false] {
+            let err = select(
+                &Call::Tasks(vec![
+                    exact("nope"),
+                    TaskSelector::pattern("build-*"),
+                ]),
+                &[],
+                ignore_deps,
+                false,
+                false,
+            )
+            .unwrap_err();
+            let (task, _) = missing_task(err);
+            assert_eq!(task, "nope");
+        }
+    }
+
+    #[test]
+    fn wildcards_in_an_exact_name_stay_literal() {
+        let err =
+            select(&Call::Tasks(vec![exact("comp*")]), &[], true, false, false)
+                .unwrap_err();
+        assert_eq!(missing_task(err).0, "comp*");
+    }
+
+    #[test]
+    fn a_project_qualifier_scopes_one_project_and_the_same_name_may_differ() {
+        // `compile` is an alias in `web` and a real task in `api`.
+        let (direct, _) = select(
+            &Call::Tasks(vec![exact("compile")]),
+            &[],
+            true,
+            false,
+            false,
+        )
+        .unwrap();
+        assert_eq!(direct, ["api#compile", "web#build-native"]);
+        let (direct, _) = select(
+            &Call::Tasks(vec![exact("web#compile")]),
+            &[],
+            true,
+            false,
+            false,
+        )
+        .unwrap();
+        assert_eq!(direct, ["web#build-native"]);
+        let (direct, _) = select(
+            &Call::Tasks(vec![exact("api#compile")]),
+            &[],
+            true,
+            false,
+            false,
+        )
+        .unwrap();
+        assert_eq!(direct, ["api#compile"]);
+        let err = select(
+            &Call::Tasks(vec![exact("web#build")]),
+            &[],
+            true,
+            false,
+            false,
+        )
+        .unwrap_err();
+        assert_eq!(missing_task(err).0, "web#build");
+    }
+
+    #[test]
+    fn the_direct_set_excludes_dependencies_but_the_plan_includes_them() {
+        let (direct, plan) = select(
+            &Call::Tasks(vec![exact("web#prep")]),
+            &[],
+            false,
+            false,
+            false,
+        )
+        .unwrap();
+        assert_eq!(direct, ["web#prep"]);
+        assert_eq!(plan, ["web#lint", "web#prep"]);
+    }
+
+    #[test]
+    fn with_dependents_keeps_the_qualifier_on_the_seed_only() {
+        // `api#compile` waits for `web`'s `compile` alias. Selecting
+        // `web#compile` seeds only `web#build-native`; the dependents walk
+        // applies the name predicate `compile` without the qualifier, so
+        // `api#compile` (another project) joins the plan. `api#build` also
+        // depends on it but its name does not match, so it stays out.
+        let (direct, plan) = select(
+            &Call::Tasks(vec![exact("web#compile")]),
+            &[],
+            false,
+            true,
+            false,
+        )
+        .unwrap();
+        assert_eq!(direct, ["web#build-native"]);
+        assert_eq!(plan, ["api#compile", "web#build-native"]);
+    }
+
+    #[test]
+    fn raw_canonical_mode_never_resolves_an_alias() {
+        let (direct, _) = select(
+            &Call::Tasks(vec![
+                TaskSelector::exact("compile"),
+                TaskSelector::pattern("comp*"),
+            ]),
+            &[ProjectSelector::exact("web")],
+            true,
+            false,
+            true,
+        )
+        .unwrap();
+        assert!(direct.is_empty(), "{direct:?}");
+        let (direct, _) = select(
+            &Call::Tasks(vec![TaskSelector::exact("build-native")]),
+            &[ProjectSelector::exact("web")],
+            true,
+            false,
+            true,
+        )
+        .unwrap();
+        assert_eq!(direct, ["web#build-native"]);
+    }
+
+    #[test]
+    fn parse_exact_follows_the_reference_grammar() {
+        assert_eq!(
+            TaskSelector::parse_exact("a\\#b#c\\:d").unwrap(),
+            TaskSelector::Reference {
+                project: Some("a#b".into()),
+                task: "c:d".into()
+            }
+        );
+        assert_eq!(
+            TaskSelector::parse_exact("lint:fix").unwrap(),
+            TaskSelector::Reference {
+                project: None,
+                task: "lint:fix".into()
+            }
+        );
+        assert_eq!(
+            TaskSelector::parse_exact("\\^up").unwrap(),
+            TaskSelector::Reference {
+                project: None,
+                task: "^up".into()
+            }
+        );
+        for bad in ["^up", "native::build", "a#b#c", "bad\\q", ""] {
+            assert!(TaskSelector::parse_exact(bad).is_err(), "{bad}");
         }
     }
 }

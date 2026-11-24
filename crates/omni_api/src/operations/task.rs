@@ -202,9 +202,13 @@ fn build_run_config(
         .call(Call::Tasks(
             req.tasks
                 .iter()
-                .map(TaskSelector::pattern)
-                .chain(req.exact_tasks.iter().map(TaskSelector::exact))
-                .collect(),
+                .map(|pattern| Ok(TaskSelector::pattern(pattern)))
+                .chain(
+                    req.exact_tasks
+                        .iter()
+                        .map(|name| TaskSelector::parse_exact(name)),
+                )
+                .collect::<Result<Vec<_>, _>>()?,
         ));
 
     if let Some(output_logs) = req.output_logs {

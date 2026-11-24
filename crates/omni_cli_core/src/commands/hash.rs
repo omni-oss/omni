@@ -47,7 +47,7 @@ pub struct HashProjectCommand {
     #[arg(
         long,
         short = 't',
-        help = "Hash only the task with this exact name. Glob characters are literal; use --task-pattern to match by glob"
+        help = "Hash only the task with this exact name (a task or an alias; `project#task` must name this project). Glob characters are literal; use --task-pattern to match by glob"
     )]
     task: Vec<String>,
 

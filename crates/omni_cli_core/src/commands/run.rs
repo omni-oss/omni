@@ -20,7 +20,7 @@ use super::{OutputOptions, utils::resolve_subscriber};
 pub struct RunCommand {
     #[arg(
         required_unless_present = "task_pattern",
-        help = "Exact name of a task to run. Glob characters are literal; use --task-pattern to select by glob. At least one task or --task-pattern is required"
+        help = "Exact name of a task to run: a task or an alias, optionally `project#task` (escape a literal `#` as `\\#`). Glob characters are literal; use --task-pattern to select by glob. At least one task or --task-pattern is required"
     )]
     pub task: Vec<String>,
 
@@ -111,9 +111,14 @@ pub async fn run(
             command
                 .task
                 .iter()
-                .map(TaskSelector::exact)
-                .chain(command.task_pattern.iter().map(TaskSelector::pattern))
-                .collect(),
+                .map(|name| TaskSelector::parse_exact(name))
+                .chain(
+                    command
+                        .task_pattern
+                        .iter()
+                        .map(|pattern| Ok(TaskSelector::pattern(pattern))),
+                )
+                .collect::<Result<Vec<_>, _>>()?,
         ));
 
     command

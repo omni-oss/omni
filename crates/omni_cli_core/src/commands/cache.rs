@@ -101,7 +101,7 @@ pub struct EligibilityArgs {
     #[arg(
         long,
         short,
-        help = "Select the task with this exact name, for example `-t build`. At least one of --task or --task-pattern is required. Glob characters are literal; use --task-pattern to match by glob"
+        help = "Select the task with this exact name (a task or an alias, optionally `project#task`), for example `-t build`. At least one of --task or --task-pattern is required. Glob characters are literal; use --task-pattern to match by glob"
     )]
     task: Vec<String>,
 
