@@ -159,7 +159,7 @@ impl<'a, TSys: ContextSys> ProjectConfigLoader<'a, TSys> {
             .into_iter()
             .map(|composed| {
                 let path = composed
-                    .file
+                    .file()
                     .path()
                     .map(Path::to_path_buf)
                     .unwrap_or_default();
@@ -170,6 +170,9 @@ impl<'a, TSys: ContextSys> ProjectConfigLoader<'a, TSys> {
                         }
                     }
                     FinalizeError::TaskExtension(e) => e.into(),
+                    e @ FinalizeError::ProvenanceMismatch { .. } => {
+                        ProjectConfigLoaderErrorInner::Internal(e.to_string())
+                    }
                 })
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -241,6 +244,10 @@ pub(crate) enum ProjectConfigLoaderErrorInner {
     #[error(transparent)]
     #[diagnostic(delegate)]
     TaskExtension(#[from] TaskExtensionError),
+
+    #[error("{0}")]
+    #[diagnostic(skip)]
+    Internal(String),
 
     #[error("no parent dir found for path: {0}")]
     #[diagnostic(skip)]
@@ -328,8 +335,8 @@ mod tests {
         let layers = layers(root, std::slice::from_ref(&file)).await;
 
         assert_eq!(layers.len(), 1);
-        assert_eq!(layers[0].file, OmniPath::from(file));
-        assert_eq!(layers[0].dir, OmniPath::from(root.join("app")));
+        assert_eq!(layers[0].file(), &OmniPath::from(file));
+        assert_eq!(layers[0].dir(), &OmniPath::from(root.join("app")));
         assert_eq!(layers[0].layer.name.as_deref(), Some("app"));
         assert!(layers[0].layer.cache.is_none());
         assert!(layers[0].layer.tasks.is_none());
@@ -364,7 +371,10 @@ mod tests {
         let layers = layers(root, &[app]).await;
 
         let by_file = |f: &Path| {
-            layers.iter().find(|l| l.file == OmniPath::from(f)).unwrap()
+            layers
+                .iter()
+                .find(|l| l.file() == &OmniPath::from(f))
+                .unwrap()
         };
         let base = by_file(&base);
         let key_files = base
@@ -404,7 +414,7 @@ mod tests {
             .iter()
             .find(|l| l.layer.name.as_deref() == Some("app"))
             .unwrap();
-        assert_eq!(app.dir, OmniPath::from(root.join("app")));
+        assert_eq!(app.dir(), &OmniPath::from(root.join("app")));
         assert_eq!(
             app.layer.extends,
             Some(SingleOrMany::Single(OmniPath::from(
@@ -874,10 +884,10 @@ mod tests {
         let projects = loaded(root, std::slice::from_ref(&app)).await;
         let layers = projects.raw_layers(&app).unwrap();
 
-        assert_eq!(layers[0].file, OmniPath::from(base));
-        assert_eq!(layers[0].dir, OmniPath::from(root.join("shared")));
-        assert_eq!(layers[1].file, OmniPath::from(app));
-        assert_eq!(layers[1].dir, OmniPath::from(root.join("app")));
+        assert_eq!(layers[0].file(), &OmniPath::from(base));
+        assert_eq!(layers[0].dir(), &OmniPath::from(root.join("shared")));
+        assert_eq!(layers[1].file(), &OmniPath::from(app));
+        assert_eq!(layers[1].dir(), &OmniPath::from(root.join("app")));
         let ops = |l: &LoadedLayer| {
             serde_json::to_value(&l.layer.dependencies).unwrap()
         };

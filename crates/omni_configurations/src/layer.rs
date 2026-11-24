@@ -28,8 +28,9 @@ use serde::{Deserialize, Serialize};
 use system_traits::FsReadAsync;
 
 use crate::{
-    CacheConfiguration, CacheEnabled, CacheKeyConfiguration, DeclarationSource,
-    Declared, HANDWRITTEN_TASK_FALLBACK, LoadConfigError, MetaConfiguration,
+    CacheConfiguration, CacheEnabled, CacheEnabledSource,
+    CacheKeyConfiguration, DeclarationSource, Declared,
+    HANDWRITTEN_TASK_FALLBACK, LayerId, LoadConfigError, MetaConfiguration,
     Origin, ProjectConfiguration, ProjectEnvConfiguration, RedactConfiguration,
     TaskConfiguration, TaskConfigurationLongForm, TaskDependencyConfiguration,
     TaskEnvConfiguration, TaskOutputConfiguration, replace_if_present, utils,
@@ -471,13 +472,14 @@ impl ProjectLayer {
 /// a tracked value (`cache.enabled`) and its [`Origin`] only change together.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct LoadedLayer {
-    pub file: OmniPath,
-    pub dir: OmniPath,
-    pub source: DeclarationSource,
+    dir: OmniPath,
+    /// The only record of where the layer came from; the file, if any, is
+    /// derived from it so the two cannot disagree.
+    source: DeclarationSource,
     pub layer: ProjectLayer,
-    /// The winning project-level `cache.enabled` and who declared it. Set by
-    /// composition; leave it `None` when building a layer.
-    pub cache_enabled: Option<Declared<bool>>,
+    /// The winning project-level `cache.enabled` and who declared it.
+    /// Maintained only by composition.
+    pub(crate) cache_enabled: Option<Declared<bool>>,
 }
 
 impl LoadedLayer {
@@ -488,27 +490,49 @@ impl LoadedLayer {
         layer: ProjectLayer,
     ) -> Self {
         Self {
-            source: DeclarationSource::file(file.clone()),
-            file,
+            source: DeclarationSource::file(file),
             dir,
             layer,
             cache_enabled: None,
         }
     }
 
-    /// A layer declared by `source`, with `dir` as its path base.
-    pub fn with_source(
-        source: DeclarationSource,
-        dir: OmniPath,
-        layer: ProjectLayer,
-    ) -> Self {
+    /// A layer with no file, declared by the fileless source `id`.
+    pub fn fileless(id: LayerId, dir: OmniPath, layer: ProjectLayer) -> Self {
         Self {
-            file: OmniPath::default(),
+            source: DeclarationSource::Fileless { id },
             dir,
-            source,
             layer,
             cache_enabled: None,
         }
+    }
+
+    /// A layer nothing can attribute: anonymous source, empty directory.
+    pub fn unattributed(layer: ProjectLayer) -> Self {
+        Self::fileless(LayerId::default(), OmniPath::default(), layer)
+    }
+
+    /// The same declaration source and directory around a different layer.
+    pub fn with_layer(mut self, layer: ProjectLayer) -> Self {
+        self.layer = layer;
+        self
+    }
+
+    /// The file the layer was read from; empty for a fileless layer.
+    pub fn file(&self) -> &OmniPath {
+        static NONE: std::sync::OnceLock<OmniPath> = std::sync::OnceLock::new();
+        match self.source.file_path() {
+            Some(path) => path,
+            None => NONE.get_or_init(OmniPath::default),
+        }
+    }
+
+    pub fn dir(&self) -> &OmniPath {
+        &self.dir
+    }
+
+    pub fn source(&self) -> &DeclarationSource {
+        &self.source
     }
 
     fn origin(&self) -> Arc<Origin> {
@@ -550,7 +574,6 @@ impl Merge for LoadedLayer {
         if other.cache_enabled.is_some() {
             self.cache_enabled = other.cache_enabled;
         }
-        self.file = other.file;
         self.dir = other.dir;
         self.source = other.source;
         self.layer.merge(other.layer);
@@ -561,7 +584,7 @@ impl omni_core::ExtensionGraphNode for LoadedLayer {
     type Id = OmniPath;
 
     fn id(&self) -> &Self::Id {
-        &self.file
+        self.file()
     }
 
     fn extendee_ids(&self) -> &[Self::Id] {
@@ -576,7 +599,8 @@ impl omni_core::ExtensionGraphNode for LoadedLayer {
 impl LoadedLayer {
     /// Apply defaults and validate this layer alone as an eager configuration.
     pub fn finalize(self) -> Result<ProjectConfiguration, MissingProjectName> {
-        self.layer.finalize(self.file, self.dir)
+        let file = self.file().clone();
+        self.layer.finalize(file, self.dir)
     }
 }
 
@@ -610,6 +634,10 @@ pub enum FinalizeError {
     MissingName(#[from] MissingProjectName),
     #[error(transparent)]
     TaskExtension(#[from] crate::TaskExtensionError),
+    #[error(
+        "internal error: replayed `cache.enabled` provenance disagrees with the merged value for task `{task}`"
+    )]
+    ProvenanceMismatch { task: String },
 }
 
 impl LoadedLayer {
@@ -620,8 +648,8 @@ impl LoadedLayer {
         mut self,
     ) -> Result<FinalizedProject, FinalizeError> {
         self.attribute();
+        let file = self.file().clone();
         let LoadedLayer {
-            file,
             dir,
             mut layer,
             cache_enabled: project_declared,
@@ -635,6 +663,7 @@ impl LoadedLayer {
         let mut task_cache_enabled_file = maps::Map::default();
         let mut task_cache_enabled_origin = maps::Map::default();
         let mut task_meta = maps::Map::default();
+        let mut provenance_mismatch: Option<String> = None;
         let tasks = if layer.base == Some(true) {
             layer.tasks.take().map(finalize_tasks).unwrap_or_default()
         } else if let Some(mut tasks) = layer.tasks.take() {
@@ -642,24 +671,19 @@ impl LoadedLayer {
                 crate::task_extension::resolve_task_layer_extensions(
                     &mut tasks,
                 )?;
-            let project_enabled = layer
-                .cache
-                .as_ref()
-                .and_then(|cache| cache.enabled.as_ref())
-                .map(|enabled| *enabled.as_ref());
             finalize_tasks_with(tasks, |name, task| {
                 let mut cache = layer.cache.clone();
                 let mut meta = layer.meta.clone();
                 // Fold the task's own settings and its effective project
                 // settings from the same declarations, in the same order.
-                let mut effective = project_declared.clone();
+                let mut task_declared: Option<Declared<bool>> = None;
                 let task = task.finalize_with(
                     resolved_extensions,
                     |patch, origin| {
                         merge::option::recurse(&mut cache, patch.cache.clone());
                         merge::option::recurse(&mut meta, patch.meta.clone());
                         replace_if_present(
-                            &mut effective,
+                            &mut task_declared,
                             patch
                                 .cache
                                 .as_ref()
@@ -669,44 +693,60 @@ impl LoadedLayer {
                         );
                     },
                 )?;
-                debug_assert_eq!(
-                    effective.as_ref().map(|declared| declared.value),
-                    cache
-                        .as_ref()
-                        .and_then(|cache| cache.enabled.as_ref())
-                        .map(|enabled| *enabled.as_ref()),
-                    "replayed provenance must agree with the merged value"
-                );
-                let task_enabled = task
-                    .cache()
+                // The value and tier the program uses come from the replayed
+                // declarations. The merged value must agree with them.
+                let decided = match (&task_declared, &project_declared) {
+                    (Some(declared), _) => Some((
+                        CacheEnabledSource::TaskExplicit,
+                        declared.clone(),
+                    )),
+                    (None, Some(declared)) => Some((
+                        CacheEnabledSource::ProjectExplicit,
+                        declared.clone(),
+                    )),
+                    (None, None) => None,
+                };
+                let merged = cache
+                    .as_ref()
                     .and_then(|cache| cache.enabled.as_ref())
                     .map(|enabled| *enabled.as_ref());
-                if let Some(declared) = effective {
-                    if let Some(file) = declared.origin.source.file_path() {
-                        task_cache_enabled_file
-                            .insert(name.to_owned(), Arc::clone(file));
-                    }
-                    task_cache_enabled_origin
-                        .insert(name.to_owned(), declared.origin);
+                if decided.as_ref().map(|(_, declared)| declared.value)
+                    != merged
+                {
+                    provenance_mismatch.get_or_insert_with(|| name.to_owned());
                 }
+                let enabled = match decided {
+                    Some((source, declared)) => {
+                        if let Some(file) = declared.origin.source.file_path() {
+                            task_cache_enabled_file
+                                .insert(name.to_owned(), Arc::clone(file));
+                        }
+                        task_cache_enabled_origin
+                            .insert(name.to_owned(), declared.origin);
+                        CacheEnabled {
+                            value: declared.value,
+                            source,
+                        }
+                    }
+                    None => CacheEnabled {
+                        value: HANDWRITTEN_TASK_FALLBACK,
+                        source: CacheEnabledSource::HostFallback,
+                    },
+                };
                 task_cache.insert(
                     name.to_owned(),
                     cache.unwrap_or_default().finalize(),
                 );
                 task_meta.insert(name.to_owned(), meta.unwrap_or_default());
-                task_cache_enabled.insert(
-                    name.to_owned(),
-                    CacheEnabled::from_authored(
-                        task_enabled,
-                        project_enabled,
-                        HANDWRITTEN_TASK_FALLBACK,
-                    ),
-                );
+                task_cache_enabled.insert(name.to_owned(), enabled);
                 Some(task)
             })
         } else {
             DictConfig::default()
         };
+        if let Some(task) = provenance_mismatch {
+            return Err(FinalizeError::ProvenanceMismatch { task });
+        }
         Ok(FinalizedProject {
             config: layer.finalize_with_tasks(file, dir, tasks)?,
             task_cache,
@@ -1221,17 +1261,14 @@ mod tests {
             OmniPath::new("b"),
             layer(r#"{"description":"d"}"#),
         ));
-        assert_eq!(a.file, OmniPath::new("b/p.yaml"));
-        assert_eq!(a.dir, OmniPath::new("b"));
+        assert_eq!(a.file(), &OmniPath::new("b/p.yaml"));
+        assert_eq!(a.dir(), &OmniPath::new("b"));
         assert_eq!(a.layer.name.as_deref(), Some("a"));
         assert_eq!(a.layer.base, None);
     }
 
     fn composed(docs: &[&str]) -> FinalizedProject {
-        let mut it = docs.iter().map(|d| LoadedLayer {
-            layer: layer(d),
-            ..Default::default()
-        });
+        let mut it = docs.iter().map(|d| LoadedLayer::unattributed(layer(d)));
         let mut acc = it.next().unwrap();
         for next in it {
             acc.merge(next);
@@ -1366,12 +1403,9 @@ mod tests {
         use omni_core::ExtensionGraphNode;
 
         let ids = |json: &str| {
-            LoadedLayer {
-                layer: layer(json),
-                ..Default::default()
-            }
-            .extendee_ids()
-            .to_vec()
+            LoadedLayer::unattributed(layer(json))
+                .extendee_ids()
+                .to_vec()
         };
         assert_eq!(
             ids(r#"{"name":"p","extends":"a.yaml"}"#),
@@ -1395,10 +1429,9 @@ mod tests {
 
     #[test]
     fn unknown_task_extendee_fails_composition() {
-        let l = LoadedLayer {
-            layer: layer(r#"{"name":"a","tasks":{"t":{"extends":"gone"}}}"#),
-            ..Default::default()
-        };
+        let l = LoadedLayer::unattributed(layer(
+            r#"{"name":"a","tasks":{"t":{"extends":"gone"}}}"#,
+        ));
         assert!(matches!(
             l.finalize_composed(),
             Err(FinalizeError::TaskExtension(_))

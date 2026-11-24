@@ -9,10 +9,9 @@ use omni_configurations::{
 };
 
 fn layer(json: &str) -> LoadedLayer {
-    LoadedLayer {
-        layer: serde_json::from_str::<ProjectLayer>(json).unwrap(),
-        ..Default::default()
-    }
+    LoadedLayer::unattributed(
+        serde_json::from_str::<ProjectLayer>(json).unwrap(),
+    )
 }
 
 fn compose(docs: &[&str]) -> LoadedLayer {

@@ -646,7 +646,7 @@ mod tests {
         );
         let origin = TaskReferenceOrigin {
             task: "template".into(),
-            file: Some(app.file.path().unwrap().to_owned()),
+            file: Some(app.file().path().unwrap().to_owned()),
         };
         let TaskLayer::LongForm(template) =
             &mut app.layer.tasks.as_mut().unwrap().as_map_mut()["template"]
@@ -677,12 +677,12 @@ mod tests {
             ));
         }
 
-        let mut discovered = vec![app.file.path().unwrap().to_owned()];
+        let mut discovered = vec![app.file().path().unwrap().to_owned()];
         let mut layers = vec![app];
         for &(file, json, is_discovered) in target_layers {
             let target = configured_layer("packages/shared", file, json);
             if is_discovered {
-                discovered.push(target.file.path().unwrap().to_owned());
+                discovered.push(target.file().path().unwrap().to_owned());
             }
             layers.push(target);
         }
@@ -897,10 +897,9 @@ mod tests {
             "name: app\ncache:\n  enabled: false\ntasks:\n  inherits: echo\n  own:\n    exec: x\n    cache:\n      enabled: true\n",
         )
         .unwrap();
-        let layer = LoadedLayer {
-            layer: ProjectLayer::load(Path::new(file), &RealSys).await.unwrap(),
-            ..layer(file, &[])
-        };
+        let layer = layer(file, &[]).with_layer(
+            ProjectLayer::load(Path::new(file), &RealSys).await.unwrap(),
+        );
         let graph = ExtensionGraph::from_nodes(vec![layer.clone()]).unwrap();
         let finalized = layer.finalize_composed().unwrap();
 
@@ -953,9 +952,9 @@ mod tests {
         std::fs::create_dir_all(root.join("app")).unwrap();
         let file = root.join("app/project.omni.yaml");
         let file = file.to_str().unwrap();
-        let declare = |json: &str| LoadedLayer {
-            layer: serde_json::from_str::<ProjectLayer>(json).unwrap(),
-            ..layer(file, &[])
+        let declare = |json: &str| {
+            layer(file, &[])
+                .with_layer(serde_json::from_str::<ProjectLayer>(json).unwrap())
         };
         let mut composed = declare(
             r#"{"name":"app","meta":{"tags":["project"]},"tasks":{
