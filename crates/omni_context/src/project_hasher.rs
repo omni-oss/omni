@@ -1,7 +1,7 @@
 use std::{path::Path, sync::Arc};
 
 use derive_new::new;
-use maps::{Map, UnorderedMap, hash::HashMapExt};
+use maps::Map;
 use omni_collector::{CollectConfig, Collector, ProjectTaskInfo};
 use omni_command_config::CommandConfig;
 use omni_execution_plan::{
@@ -13,7 +13,7 @@ use omni_hasher::{
     impls::{DefaultHash, DefaultHasher},
     project_dir_hasher::Hash,
 };
-use omni_types::OmniPath;
+use omni_types::{OmniPath, TaskMap};
 use strum::{EnumDiscriminants, EnumIs, IntoDiscriminant as _};
 
 use crate::{ContextSys, LoadedContext, LoadedContextError};
@@ -83,7 +83,7 @@ impl<'a, TSys: ContextSys> ProjectHasher<'a, TSys> {
             digest: DefaultHash,
         }
 
-        let mut task_result_digests = UnorderedMap::new();
+        let mut task_result_digests: TaskMap<DigestInfo> = TaskMap::new();
 
         for batch in plan.iter() {
             let mut task_infos_tmp = vec![];
@@ -140,7 +140,7 @@ impl<'a, TSys: ContextSys> ProjectHasher<'a, TSys> {
                         .iter()
                         .filter_map(|d| {
                             task_result_digests
-                                .get(d)
+                                .get(d.project(), d.task())
                                 .map(|x: &DigestInfo| x.digest)
                         })
                         .collect::<Vec<_>>(),
@@ -183,10 +183,9 @@ impl<'a, TSys: ContextSys> ProjectHasher<'a, TSys> {
                     .await?;
 
             for c in collected {
-                let key =
-                    format!("{}#{}", c.task.project_name, c.task.task_name);
                 task_result_digests.insert(
-                    key,
+                    c.task.project_name,
+                    c.task.task_name,
                     DigestInfo {
                         digest: c.digest.expect("should have value"),
                         project_name: c.task.project_name.to_string(),

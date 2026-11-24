@@ -58,7 +58,9 @@ impl<'a, THashProvider: TaskHashProvider, TContext: Context>
         let dependency_hashes = if !ignore_dependencies {
             node.dependencies()
                 .iter()
-                .flat_map(|d| self.hash_provider.get_dependency_hashes(d))
+                .flat_map(|d| {
+                    self.hash_provider.get_dependency_hashes(d.as_ref())
+                })
                 .collect::<Vec<_>>()
         } else {
             vec![]

@@ -19,7 +19,7 @@ use omni_glob_config::MergeGlobConfig;
 use omni_path_utils::{ProjectRootId, WorkspacePath};
 use omni_task_context::CacheInfo;
 use omni_task_output_logs::OutputLogsConfiguration;
-use omni_types::{OmniPath, OmniPathError};
+use omni_types::{OmniPath, OmniPathError, TaskMap, task_label};
 use serde::{Deserialize, Serialize};
 use sets::UnorderedSet;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
@@ -105,7 +105,7 @@ fn lower_tasks(
                     roots.resolve(root, target).map_err(|reason| {
                         ProjectDataExtractorErrorInner::InvalidTaskRootReference {
                             field,
-                            location: format!("{}#{task_name}", config.name),
+                            location: task_label(&config.name, task_name),
                             contributor: origin.to_string().into_boxed_str(),
                             root: root.to_string(),
                             task: target.to_owned(),
@@ -172,12 +172,12 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
     ) -> Result<ProjectDataExtractions, ProjectDataExtractorError> {
         let mut projects = vec![];
         let mut project_meta_configs = maps::unordered_map![];
-        let mut task_meta_configs = maps::unordered_map![];
-        let mut task_env_var_overrides = maps::unordered_map![];
-        let mut cache_infos = maps::unordered_map![];
+        let mut task_meta_configs = TaskMap::new();
+        let mut task_env_var_overrides = TaskMap::new();
+        let mut cache_infos = TaskMap::new();
         let mut cache_enabled_files: CacheEnabledFiles = maps::unordered_map![];
-        let mut output_logs_configs = maps::unordered_map![];
-        let mut redact_policies = maps::unordered_map![];
+        let mut output_logs_configs = TaskMap::new();
+        let mut redact_policies = TaskMap::new();
 
         let project_paths = project_paths
             .iter()
@@ -276,13 +276,15 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
                 .insert(project_config.name.clone(), project_meta.clone());
 
             for (name, task) in project_config.tasks.iter() {
-                let full_task_name =
-                    format!("{}#{}", project_config.name, name);
+                let project_name = project_config.name.as_str();
                 if let Some(env) = task.env()
                     && let Some(vars) = env.vars.as_ref()
                 {
-                    task_env_var_overrides
-                        .insert(full_task_name.clone(), vars.to_map_to_inner());
+                    task_env_var_overrides.insert(
+                        project_name,
+                        name,
+                        vars.to_map_to_inner(),
+                    );
                 }
 
                 let task_output_logs = task.output_logs();
@@ -300,8 +302,7 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
                 };
 
                 if let Some(output_logs) = output_logs {
-                    output_logs_configs
-                        .insert(full_task_name.clone(), output_logs);
+                    output_logs_configs.insert(project_name, name, output_logs);
                 }
 
                 let cache = finalized
@@ -353,7 +354,8 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
                 };
 
                 cache_infos.insert(
-                    full_task_name.clone(),
+                    project_name,
+                    name,
                     CacheInfo {
                         cache_enabled: enabled.value,
                         cache_enabled_source: enabled.source,
@@ -409,11 +411,12 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
                     levels.push(task_redact);
                 }
                 redact_policies.insert(
-                    full_task_name.clone(),
+                    project_name,
+                    name,
                     RedactPolicy::resolve(&levels),
                 );
 
-                task_meta_configs.insert(full_task_name, task_meta);
+                task_meta_configs.insert(project_name, name, task_meta);
             }
 
             projects.push(Project::new(
@@ -444,18 +447,18 @@ type CacheEnabledFiles =
 #[derive(Debug, Clone, PartialEq, new, Serialize, Deserialize)]
 pub struct ProjectDataExtractions {
     pub projects: Vec<Project>,
-    pub cache_infos: UnorderedMap<String, CacheInfo>,
+    pub cache_infos: TaskMap<CacheInfo>,
     #[new(default)]
     #[serde(skip)]
     pub(crate) cache_enabled_files: CacheEnabledFiles,
-    pub task_env_var_overrides: UnorderedMap<String, Map<String, String>>,
+    pub task_env_var_overrides: TaskMap<Map<String, String>>,
     pub project_meta_configs: UnorderedMap<String, MetaConfiguration>,
-    pub task_meta_configs: UnorderedMap<String, MetaConfiguration>,
-    pub output_logs_configs: UnorderedMap<String, OutputLogsConfiguration>,
-    /// Resolved redaction policy per `project#task`. Display only: never
+    pub task_meta_configs: TaskMap<MetaConfiguration>,
+    pub output_logs_configs: TaskMap<OutputLogsConfiguration>,
+    /// Resolved redaction policy per `(project, task)`. Display only: never
     /// hashed and never part of cache keys.
     #[serde(default)]
-    pub redact_policies: UnorderedMap<String, RedactPolicy>,
+    pub redact_policies: TaskMap<RedactPolicy>,
 }
 
 #[derive(Debug, thiserror::Error, omni_diagnostic::Diagnostic)]
@@ -922,13 +925,13 @@ mod tests {
         .unwrap();
         let infos = &extracted.cache_infos;
 
-        let inherits = &infos["app#inherits"];
+        let inherits = infos.get("app", "inherits").unwrap();
         assert!(!inherits.cache_enabled);
         assert_eq!(
             inherits.cache_enabled_source,
             CacheEnabledSource::ProjectExplicit
         );
-        let own = &infos["app#own"];
+        let own = infos.get("app", "own").unwrap();
         assert!(own.cache_enabled);
         assert_eq!(own.cache_enabled_source, CacheEnabledSource::TaskExplicit);
         for task in ["inherits", "own"] {
@@ -986,11 +989,79 @@ mod tests {
         .unwrap();
 
         let tags = |task: &str| {
-            data.task_meta_configs[task].0.as_map()["tags"]
+            data.task_meta_configs.get("app", task).unwrap().0.as_map()["tags"]
                 .clone()
                 .into_json()
         };
-        assert_eq!(tags("app#own"), serde_json::json!(["task"]));
-        assert_eq!(tags("app#plain"), serde_json::json!(["project"]));
+        assert_eq!(tags("own"), serde_json::json!(["task"]));
+        assert_eq!(tags("plain"), serde_json::json!(["project"]));
+    }
+
+    /// RFC 0024 F03.4 slice 0: projects `a#b`/`c` and `a`/`b#c` rendered the
+    /// same joined key, so one task's data replaced the other's.
+    #[tokio::test]
+    async fn formerly_colliding_pairs_keep_their_own_extracted_data() {
+        use omni_configurations::ProjectLayer;
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().to_path_buf();
+        let mut layers = vec![];
+        let mut files = vec![];
+        for (sub, name, task, who) in
+            [("ab", "a#b", "c", "ab-c"), ("a", "a", "b#c", "a-bc")]
+        {
+            std::fs::create_dir_all(root.join(sub)).unwrap();
+            let file = root.join(sub).join("project.omni.yaml");
+            let json = serde_json::json!({
+                "name": name,
+                "tasks": {task: {
+                    "exec": "x",
+                    "env": {"vars": {"WHO": who}},
+                    "meta": {"who": who},
+                    "cache": {"enabled": who == "ab-c"},
+                }},
+            });
+            layers.push(LoadedLayer {
+                layer: serde_json::from_value::<ProjectLayer>(json).unwrap(),
+                ..layer(file.to_str().unwrap(), &[])
+            });
+            files.push(file);
+        }
+        let graph = ExtensionGraph::from_nodes(layers.clone()).unwrap();
+        let finalized = layers
+            .into_iter()
+            .map(|l| l.finalize_composed().unwrap())
+            .collect::<Vec<_>>();
+        let workspace: WorkspaceConfiguration =
+            serde_json::from_str(r#"{"projects":["**"]}"#).unwrap();
+        let mut env_loader = EnvLoader::new(RealSys, root.clone(), vec![]);
+        let data = ProjectDataExtractor::new(
+            &RealSys,
+            &root,
+            &mut env_loader,
+            false,
+            &workspace,
+        )
+        .extract_all(&finalized, &files, &graph)
+        .unwrap();
+
+        let env = |p: &str, t: &str| {
+            data.task_env_var_overrides.get(p, t).unwrap()["WHO"].clone()
+        };
+        assert_eq!(env("a#b", "c"), "ab-c");
+        assert_eq!(env("a", "b#c"), "a-bc");
+        assert!(data.cache_infos.get("a#b", "c").unwrap().cache_enabled);
+        assert!(!data.cache_infos.get("a", "b#c").unwrap().cache_enabled);
+        assert!(data.cache_infos.get("a", "c").is_none());
+        assert_eq!(data.cache_infos.len(), 2);
+        assert_eq!(data.task_meta_configs.len(), 2);
+        assert_eq!(data.output_logs_configs.len(), 0);
+        assert_eq!(data.redact_policies.len(), 2);
+        let who = |p: &str, t: &str| {
+            data.task_meta_configs.get(p, t).unwrap().0.as_map()["who"]
+                .clone()
+                .into_json()
+        };
+        assert_eq!(who("a#b", "c"), serde_json::json!("ab-c"));
+        assert_eq!(who("a", "b#c"), serde_json::json!("a-bc"));
     }
 }

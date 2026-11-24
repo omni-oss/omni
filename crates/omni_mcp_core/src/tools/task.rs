@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use omni_types::TaskMap;
 
 use crate::{
     error::with_notices,
@@ -136,8 +136,8 @@ where
 
 fn summarize_result(
     result: TaskExecutionResult,
-    logs: &mut HashMap<String, String>,
-    commands: &HashMap<String, String>,
+    logs: &mut TaskMap<String>,
+    commands: &TaskMap<String>,
 ) -> TaskExecutionSummary {
     match result {
         TaskExecutionResult::Completed {
@@ -146,7 +146,7 @@ fn summarize_result(
             elapsed,
             ..
         } => {
-            let task_logs = logs.remove(task.full_task_name());
+            let task_logs = logs.remove(task.project_name(), task.task_name());
             TaskExecutionSummary {
                 project: task.project_name().to_string(),
                 task: task.task_name().to_string(),
@@ -154,11 +154,13 @@ fn summarize_result(
                 duration_ms: Some(elapsed.as_millis() as u64),
                 exit_code: Some(exit_code),
                 logs: task_logs,
-                command: commands.get(task.full_task_name()).cloned(),
+                command: commands
+                    .get(task.project_name(), task.task_name())
+                    .cloned(),
             }
         }
         TaskExecutionResult::Errored { task, .. } => {
-            let task_logs = logs.remove(task.full_task_name());
+            let task_logs = logs.remove(task.project_name(), task.task_name());
             TaskExecutionSummary {
                 project: task.project_name().to_string(),
                 task: task.task_name().to_string(),
@@ -166,7 +168,9 @@ fn summarize_result(
                 duration_ms: None,
                 exit_code: None,
                 logs: task_logs,
-                command: commands.get(task.full_task_name()).cloned(),
+                command: commands
+                    .get(task.project_name(), task.task_name())
+                    .cloned(),
             }
         }
         TaskExecutionResult::Skipped {

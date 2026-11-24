@@ -11,6 +11,7 @@ use std::collections::HashSet;
 use std::fmt;
 
 use omni_configurations::CacheEnabledSource;
+use omni_types::{TaskKey, TaskKeyRef, TaskMap};
 
 /// What a task contributes to the contradiction check.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -29,19 +30,19 @@ pub enum ContradictionRole {
 /// One task of the planned graph.
 #[derive(Debug, Clone)]
 pub struct ContradictionNode {
-    pub name: String,
+    pub key: TaskKey,
     pub role: ContradictionRole,
     /// Direct dependencies, in declaration order.
-    pub dependencies: Vec<String>,
+    pub dependencies: Vec<TaskKey>,
 }
 
 /// An authored `cache.enabled: true` task that depends on an authored
 /// `cache.enabled: false` executable task.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CacheContradiction {
-    pub dependent: String,
+    pub dependent: TaskKey,
     pub dependent_source: CacheEnabledSource,
-    pub dependency: String,
+    pub dependency: TaskKey,
     pub dependency_source: CacheEnabledSource,
 }
 
@@ -80,8 +81,10 @@ fn describe(source: CacheEnabledSource) -> &'static str {
 pub fn find_explicit_contradictions(
     nodes: &[ContradictionNode],
 ) -> Vec<CacheContradiction> {
-    let by_name: std::collections::HashMap<&str, &ContradictionNode> =
-        nodes.iter().map(|n| (n.name.as_str(), n)).collect();
+    let mut by_key: TaskMap<&ContradictionNode> = TaskMap::new();
+    for node in nodes {
+        by_key.insert(node.key.project(), node.key.task(), node);
+    }
     let mut found = Vec::new();
 
     for node in nodes {
@@ -96,20 +99,24 @@ pub fn find_explicit_contradictions(
             continue;
         }
 
-        let mut seen = HashSet::new();
-        let mut stack: Vec<&str> =
-            node.dependencies.iter().rev().map(String::as_str).collect();
+        let mut seen: HashSet<TaskKeyRef<'_>> = HashSet::new();
+        let mut stack: Vec<TaskKeyRef<'_>> = node
+            .dependencies
+            .iter()
+            .rev()
+            .map(TaskKey::as_ref)
+            .collect();
         while let Some(name) = stack.pop() {
             if !seen.insert(name) {
                 continue;
             }
-            let Some(dep) = by_name.get(name) else {
+            let Some(dep) = by_key.get_ref(name) else {
                 continue;
             };
             match dep.role {
                 ContradictionRole::Transparent => {
                     stack.extend(
-                        dep.dependencies.iter().rev().map(String::as_str),
+                        dep.dependencies.iter().rev().map(TaskKey::as_ref),
                     );
                 }
                 ContradictionRole::Persistent => {}
@@ -118,9 +125,9 @@ pub fn find_explicit_contradictions(
                     source,
                 } if source.is_authored() => {
                     found.push(CacheContradiction {
-                        dependent: node.name.clone(),
+                        dependent: node.key.clone(),
                         dependent_source,
-                        dependency: dep.name.clone(),
+                        dependency: dep.key.clone(),
                         dependency_source: source,
                     });
                 }
@@ -138,6 +145,14 @@ mod tests {
 
     use super::*;
 
+    /// `name` is `project#task` for a plain pair, or a task of project `p`.
+    fn k(name: &str) -> TaskKey {
+        match name.split_once('#') {
+            Some((p, t)) => TaskKey::new(p, t),
+            None => TaskKey::new("p", name),
+        }
+    }
+
     fn cacheable(
         name: &str,
         enabled: bool,
@@ -145,17 +160,17 @@ mod tests {
         deps: &[&str],
     ) -> ContradictionNode {
         ContradictionNode {
-            name: name.into(),
+            key: k(name),
             role: ContradictionRole::Cacheable { enabled, source },
-            dependencies: deps.iter().map(|d| d.to_string()).collect(),
+            dependencies: deps.iter().map(|d| k(d)).collect(),
         }
     }
 
     fn transparent(name: &str, deps: &[&str]) -> ContradictionNode {
         ContradictionNode {
-            name: name.into(),
+            key: k(name),
             role: ContradictionRole::Transparent,
-            dependencies: deps.iter().map(|d| d.to_string()).collect(),
+            dependencies: deps.iter().map(|d| k(d)).collect(),
         }
     }
 
@@ -222,9 +237,9 @@ mod tests {
         assert_eq!(
             found,
             vec![CacheContradiction {
-                dependent: "a".into(),
+                dependent: k("a"),
                 dependent_source: TaskExplicit,
-                dependency: "c".into(),
+                dependency: k("c"),
                 dependency_source: ProjectExplicit,
             }]
         );
@@ -246,9 +261,9 @@ mod tests {
         let found = find_explicit_contradictions(&[
             cacheable("a", true, TaskExplicit, &["p"]),
             ContradictionNode {
-                name: "p".into(),
+                key: k("p"),
                 role: ContradictionRole::Persistent,
-                dependencies: vec!["c".into()],
+                dependencies: vec![k("c")],
             },
             cacheable("c", false, TaskExplicit, &[]),
         ]);
@@ -267,7 +282,7 @@ mod tests {
         ]);
         let pairs: Vec<_> = found
             .iter()
-            .map(|c| (c.dependent.as_str(), c.dependency.as_str()))
+            .map(|c| (c.dependent.task(), c.dependency.task()))
             .collect();
         assert_eq!(pairs, [("a", "x"), ("a", "y"), ("a", "z"), ("b", "z")]);
     }
@@ -285,9 +300,9 @@ mod tests {
     #[test]
     fn the_message_names_both_tasks_and_who_decided_each() {
         let message = CacheContradiction {
-            dependent: "app#build".into(),
+            dependent: k("app#build"),
             dependent_source: TaskExplicit,
-            dependency: "lib#gen".into(),
+            dependency: k("lib#gen"),
             dependency_source: ProjectExplicit,
         }
         .to_string();
@@ -295,5 +310,28 @@ mod tests {
         assert!(message.contains("lib#gen"));
         assert!(message.contains("set on the task"));
         assert!(message.contains("set on the project"));
+    }
+
+    #[test]
+    fn formerly_colliding_pairs_are_judged_and_named_separately() {
+        let ab = TaskKey::new("a#b", "c");
+        let a = TaskKey::new("a", "b#c");
+        let app = TaskKey::new("app", "x");
+        let node = |key: &TaskKey, enabled, source, deps: &[&TaskKey]| {
+            ContradictionNode {
+                key: key.clone(),
+                role: ContradictionRole::Cacheable { enabled, source },
+                dependencies: deps.iter().map(|d| (*d).clone()).collect(),
+            }
+        };
+        let found = find_explicit_contradictions(&[
+            node(&app, true, TaskExplicit, &[&ab, &a]),
+            node(&ab, true, TaskExplicit, &[]),
+            node(&a, false, TaskExplicit, &[]),
+        ]);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].dependency, a);
+        let message = found[0].to_string();
+        assert!(message.contains(r"depends on 'a#b\#c'"), "{message}");
     }
 }

@@ -7311,6 +7311,7 @@ dependencies = [
  "omni_config_types",
  "omni_diagnostic",
  "omni_retry_config",
+ "omni_types",
  "petgraph",
  "schemars",
  "serde",
@@ -7801,6 +7802,17 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio 1.54.1",
  "url",
+]
+
+[[package]]
+name = "omni_migration_proof"
+version = "0.0.0"
+dependencies = [
+ "blake3",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

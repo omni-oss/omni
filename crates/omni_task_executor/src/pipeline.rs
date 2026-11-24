@@ -1,4 +1,3 @@
-use maps::unordered_map;
 use omni_cache::impls::HybridTaskExecutionCacheStore;
 use omni_context::LoadedContext;
 use omni_core::BatchedExecutionPlan;
@@ -6,6 +5,7 @@ use omni_messages::{
     ExecutionEventSubscriber,
     execution::events::{BatchCompletedEvent, BatchStartEvent},
 };
+use omni_types::TaskMap;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
 use crate::{
@@ -47,8 +47,6 @@ impl<'a, TSys: TaskExecutorSys, S: ExecutionEventSubscriber>
         self,
     ) -> Result<Vec<TaskExecutionResult>, ExecutionPipelineError> {
         let execution_plan = self.plan;
-
-        let task_count: usize = execution_plan.iter().map(|b| b.len()).sum();
 
         // The signing key is for omni's own uploads: no task needs it.
         if let Some(rc) = self.context.remote_cache_configuration()
@@ -95,7 +93,8 @@ impl<'a, TSys: TaskExecutorSys, S: ExecutionEventSubscriber>
                 .sys(self.context.sys().clone())
                 .build();
 
-        let mut results_accumulator = unordered_map!(cap: task_count);
+        let mut results_accumulator: TaskMap<TaskExecutionResult> =
+            TaskMap::new();
 
         let mut batch_exec = BatchExecutor::new(
             self.context,

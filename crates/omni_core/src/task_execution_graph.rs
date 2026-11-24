@@ -1,12 +1,13 @@
 use std::{
     collections::{HashMap, HashSet},
-    hash::{DefaultHasher, Hash, Hasher as _},
     path::{Path, PathBuf},
 };
 
 use omni_command_config::CommandConfig;
 use omni_config_types::TeraExprBoolean;
 use omni_retry_config::RetryConfiguration;
+use omni_types::task_label;
+pub use omni_types::{TaskKey, TaskKeyRef, TaskLabel, TaskMap};
 use petgraph::{
     Direction,
     algo::has_path_connecting,
@@ -20,6 +21,11 @@ use tracing::Level;
 
 use crate::{Project, ProjectGraph, ProjectGraphError};
 
+/// The documented serialized form of a task node. Field names, types and the
+/// rendered `dependencies` labels are unchanged. This is a **report**: it can be
+/// read back for inspection but never executed; only [`TaskExecutionNode`]
+/// built by the graph builder or the `omni exec` and `--ignore-dependencies`
+/// paths is executable.
 #[derive(
     Debug,
     Clone,
@@ -31,42 +37,97 @@ use crate::{Project, ProjectGraph, ProjectGraphError};
     Serialize,
     JsonSchema,
 )]
+#[schemars(rename = "TaskExecutionNode")]
+pub struct TaskExecutionNodeReport {
+    pub task_name: String,
+    pub task_exec: Option<CommandConfig>,
+    pub task_retry_exec: Option<CommandConfig>,
+    pub project_name: String,
+    pub project_dir: PathBuf,
+    pub full_task_name: String,
+    pub dependencies: Vec<String>,
+    pub enabled: TeraExprBoolean,
+    pub interactive: bool,
+    pub persistent: bool,
+    pub retry: RetryConfiguration,
+}
+
+/// An executable task node. Identified by its `(project, task)` pair; the
+/// ordered dependency list is typed. It is serializable as a
+/// [`TaskExecutionNodeReport`] but deliberately not deserializable.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(into = "TaskExecutionNodeReport")]
 pub struct TaskExecutionNode {
-    task_name: String,
+    key: TaskKey,
     task_exec: Option<CommandConfig>,
     task_retry_exec: Option<CommandConfig>,
-    project_name: String,
     project_dir: PathBuf,
     full_task_name: String,
-    dependencies: Vec<String>,
+    dependencies: Vec<TaskKey>,
     enabled: TeraExprBoolean,
     interactive: bool,
     persistent: bool,
     retry: RetryConfiguration,
 }
 
+impl From<TaskExecutionNode> for TaskExecutionNodeReport {
+    fn from(node: TaskExecutionNode) -> Self {
+        Self {
+            task_name: node.key.task().to_string(),
+            task_exec: node.task_exec,
+            task_retry_exec: node.task_retry_exec,
+            project_name: node.key.project().to_string(),
+            project_dir: node.project_dir,
+            full_task_name: node.full_task_name,
+            dependencies: node
+                .dependencies
+                .iter()
+                .map(|d| d.label().into_string())
+                .collect(),
+            enabled: node.enabled,
+            interactive: node.interactive,
+            persistent: node.persistent,
+            retry: node.retry,
+        }
+    }
+}
+
+impl JsonSchema for TaskExecutionNode {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        TaskExecutionNodeReport::schema_name()
+    }
+
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        TaskExecutionNodeReport::schema_id()
+    }
+
+    fn json_schema(
+        generator: &mut schemars::SchemaGenerator,
+    ) -> schemars::Schema {
+        TaskExecutionNodeReport::json_schema(generator)
+    }
+}
+
 impl TaskExecutionNode {
+    /// Build an executable node. `dependencies` is the explicit, possibly
+    /// empty, ordered list of dependency identities.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        task_name: impl Into<String>,
+        key: TaskKey,
         task_exec: Option<CommandConfig>,
         task_retry_exec: Option<CommandConfig>,
-        project_name: impl Into<String>,
         project_dir: impl Into<PathBuf>,
-        dependencies: Vec<String>,
+        dependencies: Vec<TaskKey>,
         enabled: TeraExprBoolean,
         interactive: bool,
         persistent: bool,
         retry: RetryConfiguration,
     ) -> Self {
-        let project_name = project_name.into();
-        let task_name = task_name.into();
         Self {
-            full_task_name: format!("{}#{}", project_name, task_name),
-            task_name,
+            full_task_name: key.label().into_string(),
+            key,
             task_exec,
             task_retry_exec,
-            project_name,
             project_dir: project_dir.into(),
             dependencies,
             enabled,
@@ -78,8 +139,16 @@ impl TaskExecutionNode {
 }
 
 impl TaskExecutionNode {
+    pub fn key(&self) -> &TaskKey {
+        &self.key
+    }
+
+    pub fn key_ref(&self) -> TaskKeyRef<'_> {
+        self.key.as_ref()
+    }
+
     pub fn task_name(&self) -> &str {
-        self.task_name.as_str()
+        self.key.task()
     }
 
     pub fn task_exec_config(&self) -> Option<&CommandConfig> {
@@ -91,18 +160,21 @@ impl TaskExecutionNode {
     }
 
     pub fn project_name(&self) -> &str {
-        self.project_name.as_str()
+        self.key.project()
     }
 
     pub fn project_dir(&self) -> &Path {
         self.project_dir.as_path()
     }
 
+    /// The escaped display label. Presentation only, never an identity.
     pub fn full_task_name(&self) -> &str {
         self.full_task_name.as_str()
     }
 
-    pub fn dependencies(&self) -> &[String] {
+    /// The ordered dependency identities, in declaration order with explicit
+    /// duplicates kept.
+    pub fn dependencies(&self) -> &[TaskKey] {
         &self.dependencies
     }
 
@@ -121,38 +193,6 @@ impl TaskExecutionNode {
     pub fn retry(&self) -> &RetryConfiguration {
         &self.retry
     }
-
-    /// (task_name, task_command, project_name, project_dir, full_task_name, dependencies, enabled, interactive, persistent, retry)
-    #[allow(clippy::type_complexity)]
-    pub fn deconstruct(
-        self,
-    ) -> (
-        String,
-        Option<CommandConfig>,
-        Option<CommandConfig>,
-        String,
-        PathBuf,
-        String,
-        Vec<String>,
-        TeraExprBoolean,
-        bool,
-        bool,
-        RetryConfiguration,
-    ) {
-        (
-            self.task_name,
-            self.task_exec,
-            self.task_retry_exec,
-            self.project_name,
-            self.project_dir,
-            self.full_task_name,
-            self.dependencies,
-            self.enabled,
-            self.interactive,
-            self.persistent,
-            self.retry,
-        )
-    }
 }
 
 #[derive(
@@ -163,32 +203,117 @@ pub enum EdgeType {
     Sibling,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Copy)]
-pub struct TaskKey(u64);
+type InnerGraph = DiGraph<TaskExecutionNode, EdgeType>;
 
-impl TaskKey {
-    pub fn new(project: &str, task: &str) -> Self {
-        let mut hasher = DefaultHasher::new();
-        project.hash(&mut hasher);
-        task.hash(&mut hasher);
-        let hashed = hasher.finish();
+/// The executable task graph, only produced by the graph builder. `node_map` is
+/// an internal index and is not serialized.
+#[derive(Debug, Default, Serialize)]
+pub struct TaskExecutionGraph {
+    #[serde(skip)]
+    node_map: TaskMap<NodeIndex>,
+    di_graph: InnerGraph,
+}
 
-        Self(hashed)
+#[derive(Debug, Deserialize)]
+struct TaskExecutionGraphReportRaw {
+    di_graph: DiGraph<TaskExecutionNodeReport, EdgeType>,
+}
+
+/// A deserialized graph: a report-only view. It has no batch planning; use it
+/// to inspect nodes and edges. The index is rebuilt from each node's own
+/// project and task fields; a legacy serialized `node_map` is ignored and
+/// `dependencies` is rebuilt from the `Dependency` edges in edge-table order,
+/// never parsed from the serialized labels.
+#[derive(Debug, Deserialize)]
+#[serde(from = "TaskExecutionGraphReportRaw")]
+pub struct TaskExecutionGraphReport {
+    node_map: TaskMap<NodeIndex>,
+    di_graph: DiGraph<TaskExecutionNodeReport, EdgeType>,
+}
+
+impl From<TaskExecutionGraphReportRaw> for TaskExecutionGraphReport {
+    fn from(raw: TaskExecutionGraphReportRaw) -> Self {
+        let mut di_graph = raw.di_graph;
+        let mut node_map = TaskMap::new();
+        for index in di_graph.node_indices() {
+            let node = &di_graph[index];
+            node_map.insert(&node.project_name, &node.task_name, index);
+        }
+        let labels = di_graph
+            .node_indices()
+            .map(|i| {
+                let n = &di_graph[i];
+                (i, task_label(&n.project_name, &n.task_name))
+            })
+            .collect::<HashMap<_, _>>();
+        for index in di_graph.node_indices() {
+            di_graph[index].dependencies.clear();
+            di_graph[index].full_task_name = labels[&index].clone();
+        }
+        // Edges run dependee -> dependent; append in edge-table order.
+        let edges = di_graph
+            .edge_indices()
+            .filter_map(|e| {
+                let (from, to) = di_graph.edge_endpoints(e)?;
+                (di_graph[e] == EdgeType::Dependency).then_some((from, to))
+            })
+            .collect::<Vec<_>>();
+        for (dependee, dependent) in edges {
+            let label = labels[&dependee].clone();
+            di_graph[dependent].dependencies.push(label);
+        }
+        Self { node_map, di_graph }
     }
 }
 
-type InnerGraph = DiGraph<TaskExecutionNode, EdgeType>;
+/// One edge of a [`TaskExecutionGraphReport`]. For a `Dependency` edge `from`
+/// is the dependee, scheduled before `to` (the dependent). For a `Sibling`
+/// edge the two tasks are scheduled together; `from` is the referenced
+/// sibling and `to` the task that declares it (for example, `watch` declaring
+/// `serve` gives `serve -> watch`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TaskReportEdge<'a> {
+    pub from: TaskKeyRef<'a>,
+    pub to: TaskKeyRef<'a>,
+    pub edge_type: EdgeType,
+}
 
-#[derive(Debug, Default, Serialize, Deserialize)]
-pub struct TaskExecutionGraph {
-    node_map: HashMap<TaskKey, NodeIndex>,
-    di_graph: InnerGraph,
+impl TaskExecutionGraphReport {
+    /// Every edge, including `Sibling` edges that carry no dependency entry,
+    /// in edge-table order.
+    pub fn edges(&self) -> impl Iterator<Item = TaskReportEdge<'_>> {
+        self.di_graph.edge_indices().filter_map(|e| {
+            let (from, to) = self.di_graph.edge_endpoints(e)?;
+            let key = |i: NodeIndex| {
+                let n = &self.di_graph[i];
+                TaskKeyRef::new(&n.project_name, &n.task_name)
+            };
+            Some(TaskReportEdge {
+                from: key(from),
+                to: key(to),
+                edge_type: self.di_graph[e],
+            })
+        })
+    }
+
+    pub fn count(&self) -> usize {
+        self.di_graph.node_count()
+    }
+
+    pub fn get_task_by_name(
+        &self,
+        project_name: &str,
+        task_name: &str,
+    ) -> Option<&TaskExecutionNodeReport> {
+        let index = self.node_map.get(project_name, task_name)?;
+        Some(&self.di_graph[*index])
+    }
 }
 
 impl TaskExecutionGraph {
     pub fn new() -> Self {
         Self {
-            node_map: HashMap::new(),
+            node_map: TaskMap::new(),
             di_graph: DiGraph::new(),
         }
     }
@@ -200,6 +325,17 @@ impl TaskExecutionGraph {
 
         let projects = project_graph.get_projects_toposorted()?;
 
+        for project in projects.iter() {
+            for task_name in project.tasks.keys() {
+                TaskKey::try_new(project.name.as_str(), task_name.as_str())
+                    .map_err(|e| {
+                        TaskExecutionGraphError::invalid_name(
+                            &e.project, &e.task,
+                        )
+                    })?;
+            }
+        }
+
         // add all nodes first before adding edges
         for project in projects.iter() {
             let project_name = project.name.as_str();
@@ -208,10 +344,9 @@ impl TaskExecutionGraph {
             for task in project.tasks.iter() {
                 let task_name = task.0.as_str();
                 let task_execution_node = TaskExecutionNode::new(
-                    task_name.to_string(),
+                    TaskKey::new(project_name, task_name),
                     task.1.exec.clone(),
                     None,
-                    project_name.to_string(),
                     project_dir.to_path_buf(),
                     vec![],
                     task.1.enabled.clone(),
@@ -222,10 +357,9 @@ impl TaskExecutionGraph {
 
                 let dep_node_index =
                     graph.di_graph.add_node(task_execution_node.clone());
-                graph.node_map.insert(
-                    TaskKey::new(project_name, task_name),
-                    dep_node_index,
-                );
+                graph
+                    .node_map
+                    .insert(project_name, task_name, dep_node_index);
             }
         }
 
@@ -506,8 +640,8 @@ impl TaskExecutionGraph {
         self.di_graph.add_edge(to_idx, from_idx, edge_type);
 
         if edge_type == EdgeType::Dependency {
-            let to_full_name = self.di_graph[to_idx].full_task_name.clone();
-            self.di_graph[from_idx].dependencies.push(to_full_name);
+            let to_key = self.di_graph[to_idx].key.clone();
+            self.di_graph[from_idx].dependencies.push(to_key);
         }
 
         Ok(())
@@ -524,17 +658,9 @@ impl TaskExecutionGraph {
         project_name: &str,
         task_name: &str,
     ) -> TaskExecutionGraphResult<&TaskExecutionNode> {
-        self.get_task_by_key(&TaskKey::new(project_name, task_name))
-            .map_err(|e| {
-                if e.kind() == TaskExecutionGraphErrorKind::TaskNotFoundByKey {
-                    TaskExecutionGraphError::task_not_found(
-                        project_name,
-                        task_name,
-                    )
-                } else {
-                    e
-                }
-            })
+        let index = self.get_task_index_by_name(project_name, task_name)?;
+
+        Ok(&self.di_graph[index])
     }
 
     #[inline(always)]
@@ -546,43 +672,17 @@ impl TaskExecutionGraph {
     }
 
     #[inline(always)]
-    fn get_task_by_key(
-        &self,
-        key: &TaskKey,
-    ) -> TaskExecutionGraphResult<&TaskExecutionNode> {
-        let t = self.get_task_index_by_key(key)?;
-
-        Ok(&self.di_graph[t])
-    }
-
-    #[inline(always)]
     pub fn get_task_index_by_name(
         &self,
         project_name: &str,
         task_name: &str,
     ) -> TaskExecutionGraphResult<NodeIndex> {
-        self.get_task_index_by_key(&TaskKey::new(project_name, task_name))
-            .map_err(|e| {
-                if e.kind() == TaskExecutionGraphErrorKind::TaskNotFoundByKey {
-                    TaskExecutionGraphError::task_not_found(
-                        project_name,
-                        task_name,
-                    )
-                } else {
-                    e
-                }
-            })
-    }
-
-    #[inline(always)]
-    fn get_task_index_by_key(
-        &self,
-        key: &TaskKey,
-    ) -> TaskExecutionGraphResult<NodeIndex> {
         self.node_map
-            .get(key)
+            .get(project_name, task_name)
             .copied()
-            .ok_or_else(|| TaskExecutionGraphError::task_not_found_by_key(*key))
+            .ok_or_else(|| {
+                TaskExecutionGraphError::task_not_found(project_name, task_name)
+            })
     }
 
     #[inline(always)]
@@ -591,15 +691,9 @@ impl TaskExecutionGraph {
         project_name: &str,
         task_name: &str,
     ) -> TaskExecutionGraphResult<Vec<(NodeIndex, TaskExecutionNode)>> {
-        let task_key = TaskKey::new(project_name, task_name);
+        let index = self.get_task_index_by_name(project_name, task_name)?;
 
-        self.get_direct_dependencies_by_key(&task_key).map_err(|e| {
-            if e.kind() == TaskExecutionGraphErrorKind::TaskNotFoundByKey {
-                TaskExecutionGraphError::task_not_found(project_name, task_name)
-            } else {
-                e
-            }
-        })
+        self.get_direct_dependencies(index)
     }
 
     #[inline(always)]
@@ -608,39 +702,9 @@ impl TaskExecutionGraph {
         project_name: &str,
         task_name: &str,
     ) -> TaskExecutionGraphResult<Vec<(NodeIndex, &TaskExecutionNode)>> {
-        let task_key = TaskKey::new(project_name, task_name);
+        let index = self.get_task_index_by_name(project_name, task_name)?;
 
-        self.get_direct_dependencies_ref_by_key(&task_key)
-            .map_err(|e| {
-                if e.kind() == TaskExecutionGraphErrorKind::TaskNotFoundByKey {
-                    TaskExecutionGraphError::task_not_found(
-                        project_name,
-                        task_name,
-                    )
-                } else {
-                    e
-                }
-            })
-    }
-
-    #[inline(always)]
-    fn get_direct_dependencies_by_key(
-        &self,
-        key: &TaskKey,
-    ) -> TaskExecutionGraphResult<Vec<(NodeIndex, TaskExecutionNode)>> {
-        let task_index = self.get_task_index_by_key(key)?;
-
-        self.get_direct_dependencies(task_index)
-    }
-
-    #[inline(always)]
-    fn get_direct_dependencies_ref_by_key(
-        &self,
-        key: &TaskKey,
-    ) -> TaskExecutionGraphResult<Vec<(NodeIndex, &TaskExecutionNode)>> {
-        let task_index = self.get_task_index_by_key(key)?;
-
-        self.get_direct_dependencies_ref(task_index)
+        self.get_direct_dependencies_ref(index)
     }
 
     pub fn get_direct_dependencies(
@@ -985,8 +1049,11 @@ impl TaskExecutionGraphError {
     }
 
     #[doc(hidden)]
-    pub fn task_not_found_by_key(key: TaskKey) -> Self {
-        Self(TaskExecutionGraphErrorInner::TaskNotFoundByKey { key })
+    pub fn invalid_name(project: &str, task: &str) -> Self {
+        Self(TaskExecutionGraphErrorInner::InvalidName {
+            project: project.to_string(),
+            task: task.to_string(),
+        })
     }
 
     #[doc(hidden)]
@@ -1062,13 +1129,24 @@ pub(crate) enum TaskExecutionGraphErrorInner {
         task: String,
     },
 
-    #[error("task with key '{key:?}' not found")]
-    #[diagnostic(skip)]
-    TaskNotFoundByKey { key: TaskKey },
+    /// A project or task name is empty or contains NUL.
+    #[error("project {project:?} or task {task:?} is empty or contains NUL")]
+    #[diagnostic(
+        code = "task.invalid_name",
+        hint = "give every project and task a non-empty name without NUL characters"
+    )]
+    InvalidName {
+        #[diagnostic(detail)]
+        project: String,
+        #[diagnostic(detail)]
+        task: String,
+    },
 
     /// Tasks depend on each other in a cycle.
     #[error(
-        "cycle detected from '{from_project}#{from_task}' to '{to_project}#{to_task}'"
+        "cycle detected from '{}' to '{}'",
+        task_label(.from_project, .from_task),
+        task_label(.to_project, .to_task)
     )]
     #[diagnostic(
         code = "task.cycle_detected",
@@ -1087,7 +1165,9 @@ pub(crate) enum TaskExecutionGraphErrorInner {
 
     /// A task depends on a persistent task, which cannot be a dependency.
     #[error(
-        "can't depend on persistent task '{from_project}#{from_task}' from '{to_project}#{to_task}'"
+        "can't depend on persistent task '{}' from '{}'",
+        task_label(.to_project, .to_task),
+        task_label(.from_project, .from_task)
     )]
     #[diagnostic(
         code = "task.persistent_dependency",
@@ -1252,7 +1332,7 @@ mod tests {
                 .get_task_index_by_name("project1", "p1t2")
                 .unwrap()
         );
-        assert_eq!(p1t1_dependency.1.task_name, "p1t2");
+        assert_eq!(p1t1_dependency.1.task_name(), "p1t2");
     }
 
     #[test]
@@ -1269,7 +1349,7 @@ mod tests {
 
         let p1t4_dependency_1 = &p1t4_dependencies
             .iter()
-            .find(|d| d.1.task_name == "p3t1")
+            .find(|d| d.1.task_name() == "p3t1")
             .unwrap();
         assert_eq!(
             p1t4_dependency_1.0,
@@ -1277,14 +1357,14 @@ mod tests {
                 .get_task_index_by_name("project3", "p3t1")
                 .unwrap()
         );
-        assert_eq!(p1t4_dependency_1.1.task_name, "p3t1");
-        assert_eq!(p1t4_dependency_1.1.project_name, "project3");
+        assert_eq!(p1t4_dependency_1.1.task_name(), "p3t1");
+        assert_eq!(p1t4_dependency_1.1.project_name(), "project3");
 
         let p1t4_dependency_2 = &p1t4_dependencies
             .iter()
             .find(|d| {
-                d.1.project_name == "project1"
-                    && d.1.task_name == "shared-task-3"
+                d.1.project_name() == "project1"
+                    && d.1.task_name() == "shared-task-3"
             })
             .unwrap();
         assert_eq!(
@@ -1293,8 +1373,8 @@ mod tests {
                 .get_task_index_by_name("project1", "shared-task-3")
                 .unwrap()
         );
-        assert_eq!(p1t4_dependency_2.1.task_name, "shared-task-3");
-        assert_eq!(p1t4_dependency_2.1.project_name, "project1");
+        assert_eq!(p1t4_dependency_2.1.task_name(), "shared-task-3");
+        assert_eq!(p1t4_dependency_2.1.project_name(), "project1");
     }
 
     #[test]
@@ -1316,11 +1396,11 @@ mod tests {
 
         let p1t2_dependency_1 = &p1t2_dependencies
             .iter()
-            .find(|d| d.1.project_name == "project2")
+            .find(|d| d.1.project_name() == "project2")
             .expect("Should have dependency to project2");
         let p1t2_dependency_2 = &p1t2_dependencies
             .iter()
-            .find(|d| d.1.project_name == "project3")
+            .find(|d| d.1.project_name() == "project3")
             .expect("Should have dependency to project3");
 
         assert_eq!(
@@ -1329,8 +1409,8 @@ mod tests {
                 .get_task_index_by_name("project2", "shared-task")
                 .unwrap()
         );
-        assert_eq!(p1t2_dependency_1.1.task_name, "shared-task");
-        assert_eq!(p1t2_dependency_1.1.project_name, "project2");
+        assert_eq!(p1t2_dependency_1.1.task_name(), "shared-task");
+        assert_eq!(p1t2_dependency_1.1.project_name(), "project2");
 
         assert_eq!(
             p1t2_dependency_2.0,
@@ -1338,8 +1418,8 @@ mod tests {
                 .get_task_index_by_name("project3", "shared-task")
                 .unwrap()
         );
-        assert_eq!(p1t2_dependency_2.1.task_name, "shared-task");
-        assert_eq!(p1t2_dependency_2.1.project_name, "project3");
+        assert_eq!(p1t2_dependency_2.1.task_name(), "shared-task");
+        assert_eq!(p1t2_dependency_2.1.project_name(), "project3");
 
         assert_eq!(p1t3_dependencies.len(), 1);
         let p1t3_dependency = &p1t3_dependencies[0];
@@ -1349,8 +1429,8 @@ mod tests {
                 .get_task_index_by_name("project3", "shared-task-2")
                 .unwrap()
         );
-        assert_eq!(p1t3_dependency.1.task_name, "shared-task-2");
-        assert_eq!(p1t3_dependency.1.project_name, "project3");
+        assert_eq!(p1t3_dependency.1.task_name(), "shared-task-2");
+        assert_eq!(p1t3_dependency.1.project_name(), "project3");
     }
 
     fn node_mut(
@@ -1382,10 +1462,9 @@ mod tests {
         project_name: &str,
     ) -> TaskExecutionNode {
         TaskExecutionNode::new(
-            task_name.to_string(),
+            TaskKey::new(project_name, task_name),
             Some(CommandConfig::Shell(task_exec.to_string())),
             None,
-            project_name.to_string(),
             PathBuf::from(""),
             vec![],
             TeraExprBoolean::Boolean(true),
@@ -1402,8 +1481,13 @@ mod tests {
         dependencies: &[&str],
     ) -> TaskExecutionNode {
         let mut node = node(task_name, task_exec, project_name);
-        node.dependencies =
-            dependencies.iter().map(|s| s.to_string()).collect();
+        node.dependencies = dependencies
+            .iter()
+            .map(|s| {
+                let (p, t) = s.split_once('#').expect("project#task");
+                TaskKey::new(p, t)
+            })
+            .collect();
         node
     }
 
@@ -1415,7 +1499,7 @@ mod tests {
 
         let mut actual_plan = task_graph
             .get_batched_execution_plan(|n| {
-                Ok(n.task_name == "p1t4" || n.task_name == "sibling-1")
+                Ok(n.task_name() == "p1t4" || n.task_name() == "sibling-1")
             })
             .unwrap();
 
@@ -1484,7 +1568,7 @@ mod tests {
             TaskExecutionGraph::from_project_graph(&project_graph).unwrap();
 
         let actual_plan = task_graph
-            .get_batched_execution_plan(|n| Ok(n.task_name == "p1t4"))
+            .get_batched_execution_plan(|n| Ok(n.task_name() == "p1t4"))
             .unwrap();
 
         for batch in &actual_plan {
@@ -1517,13 +1601,11 @@ mod tests {
     use petgraph::visit::EdgeRef as _;
 
     /// Maps every task in the plan to the index of the batch it appears in.
-    fn batch_index_by_task(
-        plan: &BatchedExecutionPlan,
-    ) -> HashMap<String, usize> {
-        let mut map = HashMap::new();
+    fn batch_index_by_task(plan: &BatchedExecutionPlan) -> TaskMap<usize> {
+        let mut map = TaskMap::new();
         for (i, batch) in plan.iter().enumerate() {
             for node in batch {
-                map.insert(node.full_task_name().to_string(), i);
+                map.insert(node.project_name(), node.task_name(), i);
             }
         }
         map
@@ -1543,11 +1625,11 @@ mod tests {
                 continue;
             }
 
-            let dependee = task_graph.di_graph[edge.source()].full_task_name();
-            let dependent = task_graph.di_graph[edge.target()].full_task_name();
+            let dependee = task_graph.di_graph[edge.source()].key_ref();
+            let dependent = task_graph.di_graph[edge.target()].key_ref();
 
             if let (Some(&dependee_batch), Some(&dependent_batch)) =
-                (batch_of.get(dependee), batch_of.get(dependent))
+                (batch_of.get_ref(dependee), batch_of.get_ref(dependent))
             {
                 assert!(
                     dependee_batch < dependent_batch,
@@ -1572,11 +1654,11 @@ mod tests {
                 continue;
             }
 
-            let a = task_graph.di_graph[edge.source()].full_task_name();
-            let b = task_graph.di_graph[edge.target()].full_task_name();
+            let a = task_graph.di_graph[edge.source()].key_ref();
+            let b = task_graph.di_graph[edge.target()].key_ref();
 
             if let (Some(&a_batch), Some(&b_batch)) =
-                (batch_of.get(a), batch_of.get(b))
+                (batch_of.get_ref(a), batch_of.get_ref(b))
             {
                 assert_eq!(
                     a_batch, b_batch,
@@ -1899,9 +1981,9 @@ mod tests {
                 "seed {seed}: unexpected batch count"
             );
             for (j, &lvl) in expected.iter().enumerate() {
-                let name = format!("proj#t{j}");
+                let name = format!("t{j}");
                 assert_eq!(
-                    batch_of.get(&name).copied(),
+                    batch_of.get("proj", &name).copied(),
                     Some(lvl - 1),
                     "seed {seed}: task {name} placed in the wrong batch"
                 );
@@ -2096,7 +2178,7 @@ mod tests {
         .unwrap();
 
         let plan = task_graph
-            .get_batched_execution_plan(|n| Ok(n.task_name == "main"))
+            .get_batched_execution_plan(|n| Ok(n.task_name() == "main"))
             .unwrap();
 
         assert_siblings_co_scheduled(&task_graph, &plan);
@@ -2121,7 +2203,7 @@ mod tests {
             TaskExecutionGraph::from_project_graph(&project_graph).unwrap();
 
         let plan = task_graph
-            .get_batched_execution_plan(|n| Ok(n.task_name == "sibling-1"))
+            .get_batched_execution_plan(|n| Ok(n.task_name() == "sibling-1"))
             .unwrap();
 
         assert_siblings_co_scheduled(&task_graph, &plan);
@@ -2135,13 +2217,19 @@ mod tests {
             "project4#sibling-4",
         ];
 
+        let split = |m: &str| {
+            let (p, t) = m.split_once('#').unwrap();
+            (p.to_string(), t.to_string())
+        };
+        let (fp, ft) = split(members[0]);
         let first = batch_of
-            .get(members[0])
+            .get(&fp, &ft)
             .copied()
             .expect("sibling-1 must be scheduled");
         for member in members {
+            let (mp, mt) = split(member);
             assert_eq!(
-                batch_of.get(member).copied(),
+                batch_of.get(&mp, &mt).copied(),
                 Some(first),
                 "transitive sibling `{member}` must be in the same batch as \
                  the rest of its component"
@@ -2257,5 +2345,300 @@ mod tests {
             err.kind(),
             TaskExecutionGraphErrorKind::SiblingDependencyCycle
         );
+    }
+
+    // -- Structured identity (RFC 0024 F03.4 slice 0) --------------------
+
+    fn colliding_project_graph() -> ProjectGraph {
+        let ab = Project {
+            tasks: TasksBuilder::new().task("c", "echo ab-c", |b| b).build(),
+            ..create_project("a#b")
+        };
+        let a = Project {
+            tasks: TasksBuilder::new().task("b#c", "echo a-bc", |b| b).build(),
+            ..create_project("a")
+        };
+        let app = Project {
+            tasks: TasksBuilder::new()
+                .task("x", "echo x", |b| {
+                    b.explicit_project_dependency("a#b", "c")
+                })
+                .task("y", "echo y", |b| {
+                    b.explicit_project_dependency("a", "b#c")
+                        .explicit_project_dependency("a#b", "c")
+                })
+                .build(),
+            ..create_project("app")
+        };
+        ProjectGraph::from_projects(vec![ab, a, app]).expect("graph")
+    }
+
+    #[test]
+    fn formerly_colliding_pairs_are_distinct_nodes_with_separate_edges() {
+        let graph =
+            TaskExecutionGraph::from_project_graph(&colliding_project_graph())
+                .unwrap();
+
+        assert_eq!(graph.count(), 4);
+        let ab = graph.get_task_by_name("a#b", "c").unwrap();
+        let a = graph.get_task_by_name("a", "b#c").unwrap();
+        assert_ne!(ab.key(), a.key());
+        assert_eq!(ab.full_task_name(), r"a\#b#c");
+        assert_eq!(a.full_task_name(), r"a#b\#c");
+        assert!(graph.get_task_by_name("a", "c").is_err());
+
+        let x = graph.get_task_by_name("app", "x").unwrap();
+        assert_eq!(x.dependencies(), &[TaskKey::new("a#b", "c")]);
+        let y = graph.get_task_by_name("app", "y").unwrap();
+        assert_eq!(
+            y.dependencies(),
+            &[TaskKey::new("a", "b#c"), TaskKey::new("a#b", "c")]
+        );
+
+        let deps = graph.get_direct_dependencies_by_name("app", "x").unwrap();
+        assert_eq!(deps.len(), 1);
+        assert_eq!(deps[0].1.project_name(), "a#b");
+    }
+
+    #[test]
+    fn insertion_order_does_not_change_pair_identity() {
+        let reversed = {
+            let ab = Project {
+                tasks: TasksBuilder::new()
+                    .task("c", "echo ab-c", |b| b)
+                    .build(),
+                ..create_project("a#b")
+            };
+            let a = Project {
+                tasks: TasksBuilder::new()
+                    .task("b#c", "echo a-bc", |b| b)
+                    .build(),
+                ..create_project("a")
+            };
+            ProjectGraph::from_projects(vec![a, ab]).unwrap()
+        };
+        let graph = TaskExecutionGraph::from_project_graph(&reversed).unwrap();
+        assert_eq!(
+            graph
+                .get_task_by_name("a#b", "c")
+                .unwrap()
+                .task_exec_config(),
+            Some(&CommandConfig::Shell("echo ab-c".to_string()))
+        );
+        assert_eq!(
+            graph
+                .get_task_by_name("a", "b#c")
+                .unwrap()
+                .task_exec_config(),
+            Some(&CommandConfig::Shell("echo a-bc".to_string()))
+        );
+    }
+
+    #[test]
+    fn colliding_pairs_plan_as_two_nodes_in_one_batch() {
+        let graph =
+            TaskExecutionGraph::from_project_graph(&colliding_project_graph())
+                .unwrap();
+        let plan = graph
+            .get_batched_execution_plan(|n| Ok(n.project_name() == "app"))
+            .unwrap();
+        assert_eq!(plan.len(), 2);
+        assert_eq!(plan[0].len(), 2);
+        let mut first =
+            plan[0].iter().map(|n| n.key().clone()).collect::<Vec<_>>();
+        first.sort();
+        assert_eq!(
+            first,
+            vec![TaskKey::new("a", "b#c"), TaskKey::new("a#b", "c")]
+        );
+    }
+
+    #[test]
+    fn serialized_node_keeps_the_documented_shape() {
+        let graph =
+            TaskExecutionGraph::from_project_graph(&colliding_project_graph())
+                .unwrap();
+        let y = graph.get_task_by_name("app", "y").unwrap();
+        let value = serde_json::to_value(y).unwrap();
+        let mut keys = value
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        keys.sort();
+        assert_eq!(
+            keys,
+            [
+                "dependencies",
+                "enabled",
+                "full_task_name",
+                "interactive",
+                "persistent",
+                "project_dir",
+                "project_name",
+                "retry",
+                "task_exec",
+                "task_name",
+                "task_retry_exec",
+            ]
+        );
+        assert_eq!(
+            value["dependencies"],
+            serde_json::json!([r"a#b\#c", r"a\#b#c"])
+        );
+        assert_eq!(value["full_task_name"], "app#y");
+        assert_eq!(value["project_name"], "app");
+        assert_eq!(value["task_name"], "y");
+    }
+
+    #[test]
+    fn graph_serializes_without_the_node_map_and_reads_back_as_a_report() {
+        let graph =
+            TaskExecutionGraph::from_project_graph(&colliding_project_graph())
+                .unwrap();
+        let mut value = serde_json::to_value(&graph).unwrap();
+        assert!(value.get("node_map").is_none());
+        assert!(value.get("di_graph").is_some());
+
+        // A legacy serialized node_map is ignored, and a scrambled
+        // dependency list is rebuilt from the edge table.
+        value["node_map"] = serde_json::json!({"1": 0});
+        for node in value["di_graph"]["nodes"].as_array_mut().unwrap() {
+            node["dependencies"] = serde_json::json!(["bogus#label"]);
+        }
+        let report: TaskExecutionGraphReport =
+            serde_json::from_value(value).unwrap();
+
+        assert_eq!(report.count(), 4);
+        let ab = report.get_task_by_name("a#b", "c").unwrap();
+        let a = report.get_task_by_name("a", "b#c").unwrap();
+        assert_ne!(ab.full_task_name, a.full_task_name);
+        assert!(report.get_task_by_name("a", "c").is_none());
+        let y = report.get_task_by_name("app", "y").unwrap();
+        assert_eq!(
+            y.dependencies,
+            vec![r"a#b\#c".to_string(), r"a\#b#c".to_string()]
+        );
+        let x = report.get_task_by_name("app", "x").unwrap();
+        assert_eq!(x.dependencies, vec![r"a\#b#c".to_string()]);
+    }
+
+    #[test]
+    fn a_node_with_zero_dependencies_is_a_valid_executable_node() {
+        let n = node("t", "echo t", "p");
+        assert!(n.dependencies().is_empty());
+        assert_eq!(n.key(), &TaskKey::new("p", "t"));
+    }
+
+    #[test]
+    fn cycle_error_uses_escaped_labels() {
+        let err =
+            TaskExecutionGraphError::cycle_detected("a#b", "c", "a", "b#c");
+        assert_eq!(
+            err.to_string(),
+            r"cycle detected from 'a\#b#c' to 'a#b\#c'"
+        );
+    }
+
+    #[test]
+    fn persistent_dependency_error_names_the_persistent_task_first() {
+        let server = Project {
+            tasks: TasksBuilder::new()
+                .task("c", "echo server", |b| b.persistent(true))
+                .build(),
+            ..create_project("a#b")
+        };
+        let client = Project {
+            tasks: TasksBuilder::new()
+                .task("b#c", "echo client", |b| {
+                    b.explicit_project_dependency("a#b", "c")
+                })
+                .build(),
+            ..create_project("a")
+        };
+        let project_graph =
+            ProjectGraph::from_projects(vec![server, client]).unwrap();
+        let err = TaskExecutionGraph::from_project_graph(&project_graph)
+            .expect_err("a dependency on a persistent task is rejected");
+        assert_eq!(
+            err.kind(),
+            TaskExecutionGraphErrorKind::CantDependOnPersistentTask
+        );
+        assert_eq!(
+            err.to_string(),
+            r"can't depend on persistent task 'a\#b#c' from 'a#b\#c'"
+        );
+    }
+
+    #[test]
+    fn empty_or_nul_names_are_a_graph_error_not_a_panic() {
+        for (project, task) in
+            [("", "build"), ("p", ""), ("p\0", "build"), ("p", "b\0")]
+        {
+            let p = Project {
+                tasks: TasksBuilder::new().task(task, "echo", |b| b).build(),
+                ..create_project(project)
+            };
+            let project_graph = ProjectGraph::from_projects(vec![p]).unwrap();
+            let err = TaskExecutionGraph::from_project_graph(&project_graph)
+                .expect_err("invalid names must be rejected");
+            assert_eq!(err.kind(), TaskExecutionGraphErrorKind::InvalidName);
+        }
+    }
+
+    #[test]
+    fn report_exposes_sibling_only_edges() {
+        let graph = TaskExecutionGraph::from_project_graph(
+            &ProjectGraph::from_projects(vec![Project {
+                tasks: TasksBuilder::new()
+                    .task("serve", "echo serve", |b| b.persistent(true))
+                    .task("watch", "echo watch", |b| b.own_sibling("serve"))
+                    .build(),
+                ..create_project("a#b")
+            }])
+            .unwrap(),
+        )
+        .unwrap();
+        let value = serde_json::to_value(&graph).unwrap();
+        let report: TaskExecutionGraphReport =
+            serde_json::from_value(value).unwrap();
+
+        let edges = report.edges().collect::<Vec<_>>();
+        assert_eq!(edges.len(), 1);
+        assert_eq!(edges[0].edge_type, EdgeType::Sibling);
+        assert_eq!(edges[0].from, TaskKeyRef::new("a#b", "serve"));
+        assert_eq!(edges[0].to, TaskKeyRef::new("a#b", "watch"));
+        assert!(
+            report
+                .get_task_by_name("a#b", "watch")
+                .unwrap()
+                .dependencies
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn report_rebuilds_a_legacy_node_label_like_its_references() {
+        let graph =
+            TaskExecutionGraph::from_project_graph(&colliding_project_graph())
+                .unwrap();
+        let mut value = serde_json::to_value(&graph).unwrap();
+        for node in value["di_graph"]["nodes"].as_array_mut().unwrap() {
+            let legacy = format!(
+                "{}#{}",
+                node["project_name"].as_str().unwrap(),
+                node["task_name"].as_str().unwrap()
+            );
+            node["full_task_name"] = serde_json::json!(legacy);
+        }
+        let report: TaskExecutionGraphReport =
+            serde_json::from_value(value).unwrap();
+
+        let ab = report.get_task_by_name("a#b", "c").unwrap();
+        assert_eq!(ab.full_task_name, r"a\#b#c");
+        let x = report.get_task_by_name("app", "x").unwrap();
+        assert_eq!(x.full_task_name, "app#x");
+        assert_eq!(x.dependencies, vec![ab.full_task_name.clone()]);
     }
 }

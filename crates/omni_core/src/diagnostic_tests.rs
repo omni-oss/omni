@@ -67,6 +67,11 @@ fn task_graph_errors_are_coded() {
     assert_eq!(d.details().unwrap()["from_task"], "a");
     assert_eq!(d.details().unwrap()["to_task"], "b");
 
+    let r = wrapped(TaskExecutionGraphError::invalid_name("app", ""));
+    let d = find(&r).unwrap();
+    assert_eq!(d.code(), "task.invalid_name");
+    assert_eq!(d.details().unwrap()["task"], "");
+
     let r = wrapped(TaskExecutionGraphError::cant_depend_on_persistent_task(
         "app", "a", "app", "dev",
     ));
@@ -136,6 +141,7 @@ fn new_codes_are_registered_in_the_catalog() {
         "task.cycle_detected",
         "task.persistent_dependency",
         "task.sibling_cycle",
+        "task.invalid_name",
     ] {
         assert!(
             omni_codes::get(code).is_some(),

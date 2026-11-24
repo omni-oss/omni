@@ -54,7 +54,7 @@ and F08 are done**; F03, F05, F06 and F10 are partly done; F04 is done; F07 is n
 - F08.6 [`.pending` cleanup](features/F08.1-lease-gc-reference-protocol.md#f086-pending-cleanup) (D7). Leftovers from older omni versions (no lock file) are never reclaimed.
 
 Open decisions that remain: store `VERSION` compatibility (D1), reference-driven retention
-(D3), and the F10.2 decisions (D2, D5, D9). Plugins (P) are not
+(D3). The F10.2 decisions D2, D5, D8 and D9 are recorded, as are the decision 1 amendment, the all-OS D9 scope, `max_observations_per_path` and view-local `DenyReason` ([confirmed decisions](features/F10-implementation-plan.md#confirmed-maintainer-decisions)); no maintainer confirmation is pending. Plugins (P) are not
 started, except P01 (specification closure), which can start immediately; the rest wait on
 the F03, F05 and F06 wiring.
 
@@ -107,7 +107,7 @@ Known gaps carried forward from the merged refactors:
 | [F07](features/F07-conflict-detection-and-provenance.md)  | Composition conflict detection and provenance           | R04, R07         | L    | Not started (needs an approved plan)                                                                                                                                                                                                                                                                                                                     |
 | [F08](features/F08-source-acquisition-leases.md)          | Remote-source acquisition leases and atomic references  | none             | L    | Done: F08.1-F08.5 ([#108](https://github.com/omni-oss/omni/pull/108)-[#113](https://github.com/omni-oss/omni/pull/113), [#131](https://github.com/omni-oss/omni/pull/131)). F08.6 (D7 `.pending` cleanup) done. Decisions D1 and D3 are still open                                                                                                       |
 | [F09](features/F09-eligibility-inspection.md)             | Cache-eligibility and provenance inspection (CLI/MCP)   | B04, F05         | M    | Done except field provenance (needs F07): API operation, `omni cache eligibility` and the `cache_eligibility` MCP tool                                                                                                                                                                                                                                   |
-| [F10](features/F10-captured-input-view.md)                | Captured, containment-checked input view                | R02              | L    | Partly done: F10.1 design ([#108](https://github.com/omni-oss/omni/pull/108)). F10.2-F10.3 wait on decisions D2, D5 and D9                                                                                                                                                                                                                               |
+| [F10](features/F10-captured-input-view.md)                | Captured, containment-checked input view                | R02              | L    | Partly done: F10.1 design ([#108](https://github.com/omni-oss/omni/pull/108)). F10.2-F10.3 have a [proposed plan](features/F10-implementation-plan.md) (needs approval; D2, D5, D8 and D9 recorded)                                                                                                                                                      |
 
 Size: XS < half a day, S ≈ 1-2 days, M ≈ 3-5 days, L ≈ 1-2 weeks, XL > 2 weeks
 (split before starting; the file suggests slices).
@@ -169,9 +169,12 @@ approval before it is built.
   Cache-key versioning and automatic migration need a separate design before v1.
 - **F07:** two PRs, the provenance/metadata redesign first, then conflict detection.
 - **F03:** the `alias` key lands together with its selector plumbing.
-- **F10:** D2 symlinks are configurable and rejected by default (design to follow); D5 macOS
-  returns `Unsupported` until a verified beneath-root open exists; D9 rejects Windows
-  alternate streams and reserved names.
+- **F10:** D2 symlinks are configurable and rejected by default (reject-only in the first
+  release); D5 macOS returns `Unsupported` (no walk) until a verified beneath-root open
+  exists; D9 rejects alternate streams and reserved names (on all OSes inside the view); D8 `CaseMismatch` on access, `Deleted` on revalidation;
+  Linux uses a direct `openat2` and is `Unsupported` without it, with no fallback. See the
+  [F10 plan](features/F10-implementation-plan.md) for the full decision block; no
+  maintainer confirmation is pending.
 - **F08 D1:** no store `VERSION` bump now; the gap is accepted. Automatic migration joins the
   pre-v1 cache-key versioning design. D3 is separate; D7 was implemented in F08.6.
 

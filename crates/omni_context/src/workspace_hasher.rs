@@ -46,21 +46,12 @@ impl<'a, TSys: CollectorSys + Clone> WorkspaceHasher<'a, TSys> {
         }
 
         for project in projects {
-            let task_prefix = format!("{}#", project.name);
-            let tasks_keys = extracted_data
-                .cache_infos
-                .keys()
-                .filter(|k| k.starts_with(&task_prefix))
-                .collect::<Vec<_>>();
-
             let mut input_files = HashSet::new();
 
-            for key in tasks_keys {
-                let ci = extracted_data.cache_infos[key]
-                    .key_input_files
-                    .include
-                    .clone();
-                input_files.extend(ci);
+            for (_, info) in
+                extracted_data.cache_infos.project_tasks(&project.name)
+            {
+                input_files.extend(info.key_input_files.include.clone());
             }
 
             let input_files = input_files.into_iter().collect::<Vec<_>>();

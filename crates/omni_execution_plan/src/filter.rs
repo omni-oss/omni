@@ -213,6 +213,27 @@ where
         self
     }
 
+    /// Whether a project and its directory pass the project and directory
+    /// selectors alone. A pure scope probe: it builds no executable node and
+    /// ignores the task and meta selectors.
+    pub fn includes_scope(
+        &self,
+        project_name: &str,
+        project_dir: &Path,
+    ) -> bool {
+        if let Some(pm) = &self.project_matcher
+            && !pm.is_match(project_name)
+        {
+            return false;
+        }
+        if let Some(dm) = &self.dir_matcher
+            && !dm.is_match(project_dir.to_string_lossy().as_ref())
+        {
+            return false;
+        }
+        true
+    }
+
     pub fn take_meta_error(&self) -> Option<MetaFilterError> {
         self.collector.as_ref().and_then(|c| c.take())
     }
@@ -521,7 +542,7 @@ mod tests {
     use super::*;
     use config_utils::{DictConfig, DynValue};
     use omni_command_config::CommandConfig;
-    use omni_core::TaskExecutionNode;
+    use omni_core::{TaskExecutionNode, TaskKey};
 
     /// What the CLI prints for a failure.
     fn shown(report: eyre::Report) -> String {
@@ -547,10 +568,9 @@ mod tests {
         .unwrap();
 
         let node = TaskExecutionNode::new(
-            "test".to_string(),
+            TaskKey::new("project1", "test"),
             Some(CommandConfig::Shell("echo test".to_string())),
             None,
-            "project1".to_string(),
             std::path::PathBuf::from(""),
             vec![],
             true.into(),
@@ -568,10 +588,9 @@ mod tests {
 
     fn node(project: &str, task: &str) -> TaskExecutionNode {
         TaskExecutionNode::new(
-            task.to_string(),
+            TaskKey::new(project, task),
             Some(CommandConfig::Shell("echo test".to_string())),
             None,
-            project.to_string(),
             std::path::PathBuf::from(format!("/ws/{project}")),
             vec![],
             true.into(),
@@ -782,10 +801,9 @@ mod tests {
         .unwrap();
 
         let node = TaskExecutionNode::new(
-            "test".to_string(),
+            TaskKey::new("project1", "test"),
             Some(CommandConfig::Shell("echo test".to_string())),
             None,
-            "project1".to_string(),
             std::path::PathBuf::from("/ws/packages/foo"),
             vec![],
             true.into(),
@@ -815,10 +833,9 @@ mod tests {
         .unwrap();
 
         let node = TaskExecutionNode::new(
-            "test".to_string(),
+            TaskKey::new("project1", "test"),
             Some(CommandConfig::Shell("echo test".to_string())),
             None,
-            "project1".to_string(),
             std::path::PathBuf::from("/ws/apps/bar"),
             vec![],
             true.into(),
@@ -854,10 +871,9 @@ mod tests {
         .unwrap();
 
         let node = TaskExecutionNode::new(
-            "test".to_string(),
+            TaskKey::new("project1", "test"),
             Some(CommandConfig::Shell("echo test".to_string())),
             None,
-            "project1".to_string(),
             std::path::PathBuf::from(""),
             vec![],
             true.into(),
