@@ -1,6 +1,6 @@
 # F10 implementation plan: captured input view
 
-**Status:** proposed for approval; no implementation started. Maintainer decisions Q1-Q4 and Q6-Q8 are recorded below; Q5 (default limits) is still open. **Size:** Large (two slices after the F10.1 design). **Risk:** High. The view is a new containment boundary beside the capabilities crates ([AGENTS.md](../../../../../AGENTS.md) risk overrides).
+**Status:** proposed for approval; no implementation started. All maintainer decisions are recorded below (including the default limits); no maintainer questions remain open. **Size:** Large (two slices after the F10.1 design). **Risk:** High. The view is a new containment boundary beside the capabilities crates ([AGENTS.md](../../../../../AGENTS.md) risk overrides).
 **Design:** [F10.1](F10.1-captured-input-view-design.md) (API, evidence, authorization order, limits, errors). This plan does not repeat it; it fixes the build order, the code seams and the decisions the design left open. Facts below were read in the code at `origin/main` (`e1cdb515`).
 
 ## Scope and finish line
@@ -60,7 +60,7 @@ Interfaces and data shapes are those in F10.1 (`InputView::{open, read, exists, 
 
 - `InputView::open` takes an absolute workspace root and holds one `cap_std::fs::Dir`. No API returns a `Dir`, handle or absolute path.
 - Authorization uses the lexical path (root path joined with the validated suffix) because symlinks are rejected in the default mode.
-- Default `InputLimits` values are still open (Q5 below); the checks do not depend on the values.
+- Default `InputLimits` values are the recorded maintainer decision below (accepted for now, adjustable later); the checks do not depend on the values. Limits are host-owned: plugins cannot raise them.
 - `ENOENT` and `ENOTDIR` are `Missing`; `EACCES`, symlink, non-regular and other errors are `InputError` (D6, confirmed). A case-spelling mismatch is reported as a change (D8, confirmed).
 
 **Gate:** the F10.1 F10.2 test list, plus the benchmark on a 1,000-file tree in `crates/omni_bench` against plain reads. Unchanged existing tests in `omni_capabilities` and `omni_capability_sys` prove authority was not expanded.
@@ -116,23 +116,25 @@ Stop and re-plan if any of these happens:
 - Default limits from the benchmark make a realistic discovery pass exceed budget.
 - A change is needed in `dir_walker`, glob or ignore crates (High risk; separate plan).
 
-## Open questions for the maintainer
+## Maintainer decision: default `InputLimits`
 
-- **Q5:** Default `InputLimits` values. Findings: [§8.1](../../008.00-performance-and-shared-safeguards.md#81-shared-safeguards) of RFC 0024 gives no numbers (only that limits exist and are host-wide). The only numeric defaults are the §8.3 default external plugin envelope (64 MiB memory, 16 MiB read bytes and 8 MiB output per batch, 1 s per batch, 5 s aggregate) and the existing `DEFAULT_MAX_WORKSPACE_PATH_LEN` of 4096.
+No maintainer questions remain open.
 
-    **Recommendation (proposed, calibrate by benchmark before acceptance, like §8.3; maintainer to confirm):**
+**Decision:** the maintainer accepted the proposed defaults below "for now, adjustable later". [§8.1](../../008.00-performance-and-shared-safeguards.md#81-shared-safeguards) of RFC 0024 gives no numbers (only that limits exist and are host-wide); the only numeric precedents are the §8.3 default external plugin envelope (64 MiB memory, 16 MiB read bytes and 8 MiB output per batch, 1 s per batch, 5 s aggregate) and the existing `DEFAULT_MAX_WORKSPACE_PATH_LEN` of 4096.
 
-    | Limit                   | Proposed | Note                                                                              |
-    | ----------------------- | -------- | --------------------------------------------------------------------------------- |
-    | `max_path_bytes`        | 4096     | existing default                                                                  |
-    | `max_path_depth`        | 64       |                                                                                   |
-    | `max_file_bytes`        | 8 MiB    |                                                                                   |
-    | `max_total_bytes`       | 16 MiB   | per view; the §8.3 per-batch read envelope; hosts may lower, plugins cannot raise |
-    | `max_tracked_inputs`    | 4096     |                                                                                   |
-    | `max_dir_entries`       | 10000    |                                                                                   |
-    | `max_total_dir_entries` | 50000    |                                                                                   |
-    | `max_dir_scan_entries`  | 100000   | far above the visible limits, per F10.1 rule 5                                    |
-    | `max_operations`        | 10000    |                                                                                   |
-    | `max_reported_changes`  | 100      |                                                                                   |
+| Limit                   | Default | Note                                           |
+| ----------------------- | ------- | ---------------------------------------------- |
+| `max_path_bytes`        | 4096    | existing default                               |
+| `max_path_depth`        | 64      |                                                |
+| `max_file_bytes`        | 8 MiB   |                                                |
+| `max_total_bytes`       | 16 MiB  | per view; the §8.3 per-batch read envelope     |
+| `max_tracked_inputs`    | 4096    |                                                |
+| `max_dir_entries`       | 10000   |                                                |
+| `max_total_dir_entries` | 50000   |                                                |
+| `max_dir_scan_entries`  | 100000  | far above the visible limits, per F10.1 rule 5 |
+| `max_operations`        | 10000   |                                                |
+| `max_reported_changes`  | 100     |                                                |
 
-    Known risk: very large lockfiles may exceed `max_file_bytes`. The benchmark must test real pnpm and yarn lockfiles before the defaults are accepted.
+Limits are host-owned. The host may lower them or change the defaults later; plugins cannot raise them.
+
+**Follow-up requirement (before F10.2b acceptance):** calibrate the defaults with the 1,000-file benchmark in `crates/omni_bench`, and include real pnpm and yarn lockfiles, because very large lockfiles may exceed `max_file_bytes`. Adjust the defaults if the benchmark shows a realistic discovery pass exceeding budget (see the re-planning triggers).
