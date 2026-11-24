@@ -13,13 +13,17 @@ blake3 = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
+criterion = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-criterion = { workspace = true }
 tempfile = { workspace = true }
 
 [[bench]]
 name = "access_gate"
+harness = false
+
+[[bench]]
+name = "adapter_io"
 harness = false
 
 [lints]
