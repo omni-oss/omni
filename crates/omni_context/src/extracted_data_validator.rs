@@ -2,6 +2,7 @@ use std::{collections::HashSet, path::PathBuf};
 
 use derive_new::new;
 use omni_core::TaskDependency;
+use omni_types::task_label;
 use strum::{EnumDiscriminants, EnumIs, IntoDiscriminant as _};
 use tracing::Level;
 
@@ -13,6 +14,45 @@ pub struct ExtractedDataValidator {
 }
 
 impl ExtractedDataValidator {
+    /// Empty or NUL names cannot be a task identity (RFC 0024 F03.4 slice 0).
+    fn validate_names(
+        &self,
+        extractions: &ProjectDataExtractions,
+        errors: &mut Vec<ExtractedDataValidationError>,
+    ) {
+        for project in &extractions.projects {
+            if let Some(reason) = invalid_name_reason(&project.name) {
+                errors.push(
+                    ExtractedDataValidationErrorInner::InvalidProjectName {
+                        project_name: project.name.clone(),
+                        project_dir: project.dir.clone(),
+                        reason: reason.to_string(),
+                    }
+                    .into(),
+                );
+                if self.fail_fast {
+                    return;
+                }
+            }
+
+            for task_name in project.tasks.keys() {
+                if let Some(reason) = invalid_name_reason(task_name) {
+                    errors.push(
+                        ExtractedDataValidationErrorInner::InvalidTaskName {
+                            project_name: project.name.clone(),
+                            task_name: task_name.clone(),
+                            reason: reason.to_string(),
+                        }
+                        .into(),
+                    );
+                    if self.fail_fast {
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
     fn validate_duplicate_project_names(
         &self,
         extractions: &ProjectDataExtractions,
@@ -100,6 +140,12 @@ impl ExtractedDataValidator {
     ) -> Result<(), ExtractedDataValidationErrors> {
         let mut errors = vec![];
 
+        self.validate_names(extractions, &mut errors);
+
+        if self.fail_fast && !errors.is_empty() {
+            return Err(errors.into());
+        }
+
         self.validate_duplicate_project_names(extractions, &mut errors);
 
         if self.fail_fast && !errors.is_empty() {
@@ -117,6 +163,16 @@ impl ExtractedDataValidator {
         } else {
             Err(errors)?
         }
+    }
+}
+
+fn invalid_name_reason(name: &str) -> Option<&'static str> {
+    if name.is_empty() {
+        Some("it is empty")
+    } else if name.contains('\0') {
+        Some("it contains a NUL character")
+    } else {
+        None
     }
 }
 
@@ -274,9 +330,43 @@ pub(crate) enum ExtractedDataValidationErrorInner {
         project_paths: Vec<PathBuf>,
     },
 
+    /// A project name is empty or contains a NUL character.
+    #[error(
+        "invalid project name {project_name:?} (directory {}): {reason}",
+        project_dir.display()
+    )]
+    #[diagnostic(
+        code = "workspace.invalid_project_name",
+        hint = "give the project in `{project_dir:?}` a non-empty `name` without NUL characters"
+    )]
+    InvalidProjectName {
+        #[diagnostic(detail = "project")]
+        project_name: String,
+        #[diagnostic(detail = "dir")]
+        project_dir: PathBuf,
+        #[diagnostic(detail)]
+        reason: String,
+    },
+
+    /// A task name is empty or contains a NUL character.
+    #[error("invalid task name {task_name:?} in project '{project_name}': {reason}")]
+    #[diagnostic(
+        code = "workspace.invalid_task_name",
+        hint = "rename task {task_name:?} in project `{project_name}` to a non-empty name without NUL characters"
+    )]
+    InvalidTaskName {
+        #[diagnostic(detail = "project")]
+        project_name: String,
+        #[diagnostic(detail = "task")]
+        task_name: String,
+        #[diagnostic(detail)]
+        reason: String,
+    },
+
     /// A task depends on a task that its own project does not define.
     #[error(
-        "task '{project_name}#{task_name}' depends on unknown task '{dependency}' in project '{project_name}'"
+        "task '{}' depends on unknown task '{dependency}' in project '{project_name}'",
+        task_label(project_name, task_name)
     )]
     #[diagnostic(
         code = "workspace.dangling_task_dependency",
@@ -356,6 +446,61 @@ mod tests {
             err.errors[0].kind(),
             ExtractedDataValidationErrorKind::DanglingTaskDependency
         );
+    }
+
+    #[test]
+    fn empty_and_nul_names_are_rejected_naming_the_offender() {
+        for (project_name, task_name, kind, needle) in [
+            (
+                "",
+                "t",
+                ExtractedDataValidationErrorKind::InvalidProjectName,
+                "invalid project name \"\"",
+            ),
+            (
+                "p\0q",
+                "t",
+                ExtractedDataValidationErrorKind::InvalidProjectName,
+                "NUL",
+            ),
+            (
+                "p",
+                "",
+                ExtractedDataValidationErrorKind::InvalidTaskName,
+                "invalid task name \"\" in project 'p'",
+            ),
+            (
+                "p",
+                "t\0u",
+                ExtractedDataValidationErrorKind::InvalidTaskName,
+                "in project 'p': it contains a NUL",
+            ),
+        ] {
+            let ex = extractions(vec![project(
+                project_name,
+                vec![(task_name, task_with_own_deps(&[]))],
+            )]);
+            let err = ExtractedDataValidator::new(false)
+                .validate(&ex)
+                .expect_err("invalid name must fail validation");
+            assert_eq!(err.errors[0].kind(), kind, "{project_name:?}");
+            assert!(
+                err.errors[0].to_string().contains(needle),
+                "{} lacks {needle}",
+                err.errors[0]
+            );
+        }
+    }
+
+    #[test]
+    fn reserved_characters_are_valid_names() {
+        let ex = extractions(vec![project(
+            "a#b",
+            vec![("b#c", task_with_own_deps(&[]))],
+        )]);
+        ExtractedDataValidator::new(false)
+            .validate(&ex)
+            .expect("reserved characters are escaped, not rejected");
     }
 
     #[test]

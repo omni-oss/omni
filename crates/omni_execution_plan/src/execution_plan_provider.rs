@@ -9,7 +9,7 @@ use omni_config_types::TeraExprBoolean;
 use omni_configurations::MetaConfiguration;
 use omni_core::{
     BatchedExecutionPlan, Task, TaskDependency, TaskExecutionGraphError,
-    TaskExecutionNode,
+    TaskExecutionNode, TaskKey,
 };
 use omni_glob::GlobPatterns;
 use omni_types::OmniPath;
@@ -151,10 +151,9 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
 
                 for p in projects.iter() {
                     let node = TaskExecutionNode::new(
-                        tfqn.clone(),
+                        TaskKey::new(p.name.as_str(), tfqn.as_str()),
                         Some(command_config.clone()),
                         None,
-                        p.name.clone(),
                         p.dir.clone(),
                         vec![],
                         TeraExprBoolean::Boolean(true),
@@ -205,10 +204,12 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
                 for project in projects {
                     for (task_name, task) in project.tasks.iter() {
                         let node = TaskExecutionNode::new(
-                            task_name.clone(),
+                            TaskKey::new(
+                                project.name.as_str(),
+                                task_name.as_str(),
+                            ),
                             task.exec.clone(),
                             task.retry_exec.clone(),
-                            project.name.clone(),
                             project.dir.clone(),
                             vec![],
                             task.enabled.clone(),
@@ -310,8 +311,8 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
         }
 
         // One filter for the project and directory scope, applied once per
-        // project through its first task (the scope does not depend on the
-        // task). Each exact name is then a map lookup in the in-scope projects.
+        // project (the scope does not depend on the task). This is a pure
+        // probe: no executable node is built. Each exact name is then a map lookup in the in-scope projects.
         let scope = DefaultTaskFilter::new(
             &[],
             project_filters,
@@ -322,22 +323,10 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
         )?;
         let mut in_scope: Vec<&omni_core::Project> = vec![];
         for project in self.context.projects() {
-            let Some((task_name, task)) = project.tasks.iter().next() else {
+            if project.tasks.is_empty() {
                 continue;
-            };
-            let node = TaskExecutionNode::new(
-                task_name.clone(),
-                task.exec.clone(),
-                task.retry_exec.clone(),
-                project.name.clone(),
-                project.dir.clone(),
-                vec![],
-                task.enabled.clone(),
-                task.interactive,
-                task.persistent,
-                task.retry.clone(),
-            );
-            if scope.should_include_task(&node)? {
+            }
+            if scope.includes_scope(&project.name, &project.dir) {
                 in_scope.push(project);
             }
         }

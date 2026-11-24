@@ -3,6 +3,9 @@
 //! Derived from the current graph and configuration on every run: it is not
 //! persisted and is never a cache-key input.
 
+use std::collections::HashSet;
+
+use omni_types::{TaskKey, TaskKeyRef};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use strum::EnumIs;
@@ -72,7 +75,7 @@ pub enum DependencyOutcome<'a> {
     /// A task that ran or was replayed, with its derived status.
     Status(&'a CacheStatus),
     /// A commandless or disabled node: judged by its own dependencies.
-    Transparent(&'a [String]),
+    Transparent(&'a [TaskKey]),
     /// The dependency errored or never ran, so there is no digest to key on.
     Unreusable,
     /// Not part of this plan; contributes nothing.
@@ -81,8 +84,8 @@ pub enum DependencyOutcome<'a> {
 
 pub fn derive_status<'a>(
     own: OwnFacts,
-    dependencies: &[String],
-    lookup: &impl Fn(&str) -> DependencyOutcome<'a>,
+    dependencies: &'a [TaskKey],
+    lookup: &impl for<'k> Fn(TaskKeyRef<'k>) -> DependencyOutcome<'a>,
 ) -> CacheStatus {
     if !own.has_command {
         return CacheStatus::NoCommand;
@@ -111,16 +114,18 @@ pub fn derive_status<'a>(
 }
 
 /// The first uncached dependency in declaration order, as
-/// `(direct dependency, root cause)`. Transparent nodes are looked through.
+/// `(direct dependency, root cause)` display labels. Transparent nodes are
+/// looked through; the walk is by identity and labels are rendered only for the
+/// result. A demotion's own `root_cause` text is carried over as written.
 fn first_uncached_dependency<'a>(
-    dependencies: &[String],
-    lookup: &impl Fn(&str) -> DependencyOutcome<'a>,
+    dependencies: &'a [TaskKey],
+    lookup: &impl for<'k> Fn(TaskKeyRef<'k>) -> DependencyOutcome<'a>,
 ) -> Option<(String, String)> {
-    let mut seen = std::collections::HashSet::new();
+    let mut seen: HashSet<TaskKeyRef<'a>> = HashSet::new();
     let mut stack = dependencies
         .iter()
         .rev()
-        .map(|d| (d.as_str(), d.as_str()))
+        .map(|d| (d.as_ref(), d.as_ref()))
         .collect::<Vec<_>>();
 
     while let Some((direct, name)) = stack.pop() {
@@ -137,7 +142,7 @@ fn first_uncached_dependency<'a>(
                 return Some((direct.to_string(), name.to_string()));
             }
             DependencyOutcome::Transparent(deps) => {
-                stack.extend(deps.iter().rev().map(|d| (direct, d.as_str())));
+                stack.extend(deps.iter().rev().map(|d| (direct, d.as_ref())));
             }
             DependencyOutcome::Unreusable => {
                 return Some((direct.to_string(), name.to_string()));
@@ -151,8 +156,7 @@ fn first_uncached_dependency<'a>(
 
 #[cfg(test)]
 mod tests {
-
-    use maps::UnorderedMap;
+    use omni_types::TaskMap;
 
     use super::*;
 
@@ -166,20 +170,28 @@ mod tests {
         }
     }
 
-    fn names(v: &[&str]) -> Vec<String> {
-        v.iter().map(|s| s.to_string()).collect()
+    fn key(name: &str) -> TaskKey {
+        TaskKey::new("p", name)
+    }
+
+    fn keys(v: &[&str]) -> Vec<TaskKey> {
+        v.iter().map(|s| key(s)).collect()
+    }
+
+    fn label(name: &str) -> String {
+        format!("p#{name}")
     }
 
     struct Graph {
-        statuses: UnorderedMap<String, CacheStatus>,
-        transparent: UnorderedMap<String, Vec<String>>,
+        statuses: TaskMap<CacheStatus>,
+        transparent: TaskMap<Vec<TaskKey>>,
     }
 
     impl Graph {
-        fn outcome(&self, name: &str) -> DependencyOutcome<'_> {
-            if let Some(s) = self.statuses.get(name) {
+        fn outcome(&self, key: TaskKeyRef<'_>) -> DependencyOutcome<'_> {
+            if let Some(s) = self.statuses.get_ref(key) {
                 DependencyOutcome::Status(s)
-            } else if let Some(d) = self.transparent.get(name) {
+            } else if let Some(d) = self.transparent.get_ref(key) {
                 DependencyOutcome::Transparent(d)
             } else {
                 DependencyOutcome::Unknown
@@ -191,20 +203,29 @@ mod tests {
         statuses: &[(&str, CacheStatus)],
         transparent: &[(&str, &[&str])],
     ) -> Graph {
-        Graph {
-            statuses: statuses
-                .iter()
-                .map(|(n, s)| (n.to_string(), s.clone()))
-                .collect(),
-            transparent: transparent
-                .iter()
-                .map(|(n, d)| (n.to_string(), names(d)))
-                .collect(),
+        let mut g = Graph {
+            statuses: TaskMap::new(),
+            transparent: TaskMap::new(),
+        };
+        for (n, s) in statuses {
+            g.statuses.insert("p", n, s.clone());
         }
+        for (n, d) in transparent {
+            g.transparent.insert("p", n, keys(d));
+        }
+        g
     }
 
     fn derive(own: OwnFacts, deps: &[&str], g: &Graph) -> CacheStatus {
-        derive_status(own, &names(deps), &|n| g.outcome(n))
+        let deps = keys(deps);
+        derive_status(own, &deps, &|n| g.outcome(n))
+    }
+
+    fn demoted(direct: &str, root: &str) -> CacheStatus {
+        CacheStatus::Demoted {
+            direct_dependency: label(direct),
+            root_cause: label(root),
+        }
     }
 
     #[test]
@@ -248,13 +269,7 @@ mod tests {
             CacheStatus::WriteOnlyNoCache,
         ] {
             let g = graph(&[("a", dep)], &[]);
-            assert_eq!(
-                derive(facts(), &["a"], &g),
-                CacheStatus::Demoted {
-                    direct_dependency: "a".into(),
-                    root_cause: "a".into()
-                }
-            );
+            assert_eq!(derive(facts(), &["a"], &g), demoted("a", "a"));
         }
     }
 
@@ -268,23 +283,11 @@ mod tests {
                         deciding_source: None,
                     },
                 ),
-                (
-                    "b",
-                    CacheStatus::Demoted {
-                        direct_dependency: "a".into(),
-                        root_cause: "a".into(),
-                    },
-                ),
+                ("b", demoted("a", "a")),
             ],
             &[],
         );
-        assert_eq!(
-            derive(facts(), &["b"], &g),
-            CacheStatus::Demoted {
-                direct_dependency: "b".into(),
-                root_cause: "a".into()
-            }
-        );
+        assert_eq!(derive(facts(), &["b"], &g), demoted("b", "a"));
     }
 
     #[test]
@@ -302,13 +305,7 @@ mod tests {
             &[("c", CacheStatus::Persistent)],
             &[("agg", &["c"]), ("agg2", &["agg"])],
         );
-        assert_eq!(
-            derive(facts(), &["agg2"], &g),
-            CacheStatus::Demoted {
-                direct_dependency: "agg2".into(),
-                root_cause: "c".into()
-            }
-        );
+        assert_eq!(derive(facts(), &["agg2"], &g), demoted("agg2", "c"));
 
         let g = graph(&[("c", CacheStatus::Eligible)], &[("agg", &["c"])]);
         assert_eq!(derive(facts(), &["agg"], &g), CacheStatus::Eligible);
@@ -316,16 +313,10 @@ mod tests {
 
     #[test]
     fn errored_dependency_is_unreusable() {
-        let d = derive_status(facts(), &names(&["a"]), &|_| {
-            DependencyOutcome::Unreusable
-        });
-        assert_eq!(
-            d,
-            CacheStatus::Demoted {
-                direct_dependency: "a".into(),
-                root_cause: "a".into()
-            }
-        );
+        let deps = keys(&["a"]);
+        let d =
+            derive_status(facts(), &deps, &|_| DependencyOutcome::Unreusable);
+        assert_eq!(d, demoted("a", "a"));
     }
 
     #[test]
@@ -335,5 +326,29 @@ mod tests {
             &[("l", &["leaf"]), ("r", &["leaf"])],
         );
         assert_eq!(derive(facts(), &["l", "r"], &g), CacheStatus::Eligible);
+    }
+
+    #[test]
+    fn formerly_colliding_pairs_demote_independently() {
+        let ab = TaskKey::new("a#b", "c");
+        let a = TaskKey::new("a", "b#c");
+        let mut statuses = TaskMap::new();
+        statuses.insert("a#b", "c", CacheStatus::Eligible);
+        statuses.insert("a", "b#c", CacheStatus::Persistent);
+        let lookup = |k: TaskKeyRef<'_>| match statuses.get_ref(k) {
+            Some(s) => DependencyOutcome::Status(s),
+            None => DependencyOutcome::Unknown,
+        };
+        assert_eq!(
+            derive_status(facts(), std::slice::from_ref(&ab), &lookup),
+            CacheStatus::Eligible
+        );
+        assert_eq!(
+            derive_status(facts(), std::slice::from_ref(&a), &lookup),
+            CacheStatus::Demoted {
+                direct_dependency: r"a#b\#c".into(),
+                root_cause: r"a#b\#c".into(),
+            }
+        );
     }
 }
