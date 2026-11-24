@@ -64,6 +64,9 @@ impl TaskKey {
     ) -> Self {
         let project = project.into();
         let task = task.into();
+        // Release builds rely on ingress validation (workspace loading rejects
+        // empty and NUL names, `workspace.invalid_*_name`); construction only
+        // asserts in debug builds so a bad stored name cannot abort a run.
         debug_assert!(
             is_valid_name(&project) && is_valid_name(&task),
             "empty or NUL project/task names are rejected at ingress"
@@ -166,8 +169,20 @@ impl<V> TaskMap<V> {
         }
     }
 
+    /// Insert under `key`, sharing its storage instead of allocating new
+    /// strings for a first-seen project or task.
     pub fn insert_key(&mut self, key: &TaskKey, value: V) -> Option<V> {
-        self.insert(key.project(), key.task(), value)
+        let bucket = match self.inner.get_mut(key.project()) {
+            Some(bucket) => bucket,
+            None => self.inner.entry(Arc::clone(&key.project)).or_default(),
+        };
+        match bucket.get_mut(key.task()) {
+            Some(slot) => Some(std::mem::replace(slot, value)),
+            None => {
+                bucket.insert(Arc::clone(&key.task), value);
+                None
+            }
+        }
     }
 
     pub fn get(&self, project: &str, task: &str) -> Option<&V> {
@@ -223,7 +238,7 @@ impl<V> TaskMap<V> {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.inner.is_empty()
+        self.inner.values().all(HashMap::is_empty)
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (TaskKeyRef<'_>, &V)> {

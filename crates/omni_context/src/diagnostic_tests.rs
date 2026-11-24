@@ -161,6 +161,8 @@ fn codes_are_registered_in_the_catalog() {
         "workspace.project_config_not_found",
         "workspace.invalid_redact",
         "workspace.invalid_task_root_reference",
+        "workspace.invalid_project_name",
+        "workspace.invalid_task_name",
     ] {
         assert!(
             omni_codes::get(code).is_some(),

@@ -525,6 +525,17 @@ mod tests {
             event.task = task.into();
             sub.on_task_output_stream(event).await;
         }
+        for (project, task, command) in
+            [("a#b", "c", "cmd-first"), ("a", "b#c", "cmd-second")]
+        {
+            sub.on_task_started(TaskStartedEvent {
+                task_id: "x".into(),
+                project: project.into(),
+                task: task.into(),
+                command: Some(command.into()),
+            })
+            .await;
+        }
         for (project, task) in [("a#b", "c"), ("a", "b#c")] {
             let mut done = completed("x", 0);
             done.project = project.into();
@@ -534,5 +545,15 @@ mod tests {
         let logs = sub.take_logs();
         assert_eq!(logs.get("a#b", "c").map(String::as_str), Some("FIRST"));
         assert_eq!(logs.get("a", "b#c").map(String::as_str), Some("SECOND"));
+        let commands = sub.take_commands();
+        assert_eq!(
+            commands.get("a#b", "c").map(String::as_str),
+            Some("cmd-first")
+        );
+        assert_eq!(
+            commands.get("a", "b#c").map(String::as_str),
+            Some("cmd-second")
+        );
+        assert_eq!(commands.len(), 2);
     }
 }

@@ -69,4 +69,15 @@ mod tests {
         assert_eq!(hash_parts(parts), Blake3Hasher::hash(&whole));
         assert_eq!(hash_parts([]), Blake3Hasher::hash(b""));
     }
+
+    /// The v1 task identity leaf is hashed with `hash_parts`; keep it tied to
+    /// the default hasher so the two cannot silently diverge.
+    #[test]
+    fn hash_parts_matches_the_default_hasher() {
+        use super::impls::{DefaultHash, DefaultHasher};
+
+        let parts: [&[u8]; 3] = [b"omni", b"\0", b"v1"];
+        let via_parts: DefaultHash = hash_parts(parts);
+        assert_eq!(via_parts, DefaultHasher::hash(&parts.concat()));
+    }
 }

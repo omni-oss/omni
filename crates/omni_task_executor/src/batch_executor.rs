@@ -610,7 +610,6 @@ where
 
         for fut_result in &fut_results {
             let node = fut_result.task_context().node;
-            let fname = node.full_task_name().to_string();
             let hash = if self.no_cache
                 // never cache persistent tasks
                 || fut_result.task_context().node.persistent()
@@ -625,7 +624,7 @@ where
             } else {
                 hashes.get(node.project_name(), node.task_name()).map(|h| h.digest).ok_or_else(|| {
                     BatchExecutorErrorInner::new_cant_get_task_hash(
-                        fname.clone(),
+                        node.full_task_name().to_string(),
                     )
                 })
                 .inspect_err(|_| {
@@ -633,7 +632,7 @@ where
                     // can't await here. Use log:: as a fallback.
                     tracing::error!(
                         "Failed to get hash for task '{}', this is a bug, if you see this please report it to the maintainers",
-                        fname
+                        node.full_task_name()
                     );
                 })?
             };

@@ -279,6 +279,53 @@ mod tests {
     }
 
     #[test]
+    fn results_with_a_cache_status_round_trip() {
+        let statuses = [
+            CacheStatus::Disabled {
+                deciding_source: Some("task-explicit".into()),
+            },
+            CacheStatus::Demoted {
+                direct_dependency: r"a#b\#c".into(),
+                root_cause: "a#b".into(),
+            },
+        ];
+        for status in statuses {
+            let mut completed = TaskExecutionResult::new_completed(
+                [1; 32],
+                node("a#b", "c", &[]),
+                0,
+                std::time::Duration::from_millis(1),
+                false,
+                1,
+            );
+            completed.set_cache_status(status.clone());
+            let mut skipped = TaskExecutionResult::new_skipped(
+                node("a", "b#c", &[]),
+                SkipReason::Disabled,
+            );
+            skipped.set_cache_status(status.clone());
+            for result in [&completed, &skipped] {
+                let value = serde_json::to_value(result).unwrap();
+                assert!(value.get("cache_status").is_some());
+                let report = round_trip(result);
+                let got = match &report {
+                    TaskExecutionResultReport::Completed {
+                        cache_status,
+                        ..
+                    }
+                    | TaskExecutionResultReport::Errored {
+                        cache_status, ..
+                    }
+                    | TaskExecutionResultReport::Skipped {
+                        cache_status, ..
+                    } => cache_status.clone(),
+                };
+                assert_eq!(got, Some(status.clone()));
+            }
+        }
+    }
+
+    #[test]
     fn a_node_with_zero_dependencies_stays_executable() {
         let result = TaskExecutionResult::new_skipped(
             node("p", "t", &[]),
