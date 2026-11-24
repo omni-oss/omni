@@ -229,6 +229,17 @@ impl<V> TaskMap<V> {
         })
     }
 
+    /// Move every entry of `other` in, replacing equal pairs.
+    pub fn extend(&mut self, other: TaskMap<V>) {
+        for (project, bucket) in other.inner {
+            self.inner.entry(project).or_default().extend(bucket);
+        }
+    }
+
+    pub fn into_values(self) -> impl Iterator<Item = V> {
+        self.inner.into_values().flat_map(HashMap::into_values)
+    }
+
     pub fn values(&self) -> impl Iterator<Item = &V> {
         self.inner.values().flat_map(HashMap::values)
     }

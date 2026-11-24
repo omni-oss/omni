@@ -10,6 +10,7 @@ use omni_task_context::{
     TaskContextProvider, TaskContextProviderError, TaskHashProvider,
     collect_dependency_hashes,
 };
+use omni_types::{TaskKeyRef, TaskMap};
 
 use crate::{SkipReason, TaskExecutionResult};
 
@@ -25,7 +26,7 @@ impl<'a, TSys: ContextSys> DefaultTaskContextProvider<'a, TSys> {
     #[inline(always)]
     pub fn new(
         context: &'a LoadedContext<TSys>,
-        overall_results: &'a UnorderedMap<String, TaskExecutionResult>,
+        overall_results: &'a TaskMap<TaskExecutionResult>,
         override_args: Option<&'a UnorderedMap<String, serde_json::Value>>,
     ) -> Self {
         Self {
@@ -110,12 +111,12 @@ impl<'a, TSys: ContextSys> ContextTrait for ContextWrapper<'a, TSys> {
 }
 
 struct OverallResultsTashHashProvider<'a> {
-    overall_results: &'a UnorderedMap<String, TaskExecutionResult>,
+    overall_results: &'a TaskMap<TaskExecutionResult>,
 }
 
 impl<'a> TaskHashProvider for OverallResultsTashHashProvider<'a> {
-    fn get_task_hash(&self, task_full_name: &str) -> Option<DefaultHash> {
-        let result = self.overall_results.get(task_full_name)?;
+    fn get_task_hash(&self, task: TaskKeyRef<'_>) -> Option<DefaultHash> {
+        let result = self.overall_results.get_ref(task)?;
         // An uncached task's hash is the zero sentinel, which proves nothing
         // about freshness, so it never becomes a dependency digest.
         if result
@@ -127,9 +128,9 @@ impl<'a> TaskHashProvider for OverallResultsTashHashProvider<'a> {
         result.hash()
     }
 
-    fn get_dependency_hashes(&self, task_full_name: &str) -> Vec<DefaultHash> {
-        collect_dependency_hashes(task_full_name, |name| {
-            match self.overall_results.get(name) {
+    fn get_dependency_hashes(&self, task: TaskKeyRef<'_>) -> Vec<DefaultHash> {
+        collect_dependency_hashes(task, |name| {
+            match self.overall_results.get_ref(name) {
                 Some(TaskExecutionResult::Skipped {
                     skip_reason: SkipReason::NoCommand | SkipReason::Disabled,
                     task,
