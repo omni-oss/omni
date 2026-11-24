@@ -2,6 +2,8 @@
 
 **Type:** feature · **Size:** L · **Depends on:** R04, R07
 
+**Plan:** [F07.1–F07.5, including the project location migration](F07-implementation-plan.md).
+
 ## Goal
 
 When several **contributors** (layers beyond a single explicit file chain) set the same
