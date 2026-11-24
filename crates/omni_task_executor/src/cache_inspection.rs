@@ -183,6 +183,77 @@ pub fn inspect_nodes(
     }
 }
 
+/// Describe every task of `plan` from configuration alone.
+pub(crate) fn nodes_from_plan<TSys: TaskExecutorSys>(
+    context: &LoadedContext<TSys>,
+    plan: &omni_core::BatchedExecutionPlan,
+) -> Vec<InspectionNode> {
+    let ambiguous = ambiguous_names(
+        plan.iter()
+            .flatten()
+            .map(|n| (n.full_task_name(), n.project_name(), n.task_name())),
+    );
+    plan.iter()
+        .flatten()
+        .filter(|node| !ambiguous.contains(node.full_task_name()))
+        .map(|node| {
+            let info =
+                context.get_cache_info(node.project_name(), node.task_name());
+            let source =
+                info.map(|i| i.cache_enabled_source).unwrap_or_default();
+            InspectionNode {
+                name: node.full_task_name().to_string(),
+                has_command: node.task_exec_config().is_some(),
+                persistent: node.persistent(),
+                enabled: classify_enabled(node.enabled()),
+                cache_enabled: info.is_some_and(|i| i.cache_enabled),
+                cache_source: source,
+                dependencies: node.dependencies().to_vec(),
+                cache_enabled_file: context
+                    .cache_enabled_file(node.project_name(), node.task_name())
+                    .map(|p| {
+                        p.strip_prefix(context.root_dir())
+                            .unwrap_or(p)
+                            .to_path_buf()
+                    }),
+            }
+        })
+        .collect()
+}
+
+/// Joined `project#task` names shared by different (project, task) pairs,
+/// for example `a#b` + `c` and `a` + `b#c`. The executor keys results by the
+/// joined name, so such tasks cannot be told apart; they are left out of the
+/// check instead of risking a wrong report.
+fn ambiguous_names<'a>(
+    nodes: impl Iterator<Item = (&'a str, &'a str, &'a str)>,
+) -> std::collections::HashSet<String> {
+    let mut seen: HashMap<&str, (&str, &str)> = HashMap::new();
+    let mut ambiguous = std::collections::HashSet::new();
+    for (full, project, task) in nodes {
+        match seen.get(full) {
+            Some(first) if *first != (project, task) => {
+                ambiguous.insert(full.to_string());
+            }
+            Some(_) => {}
+            None => {
+                seen.insert(full, (project, task));
+            }
+        }
+    }
+    ambiguous
+}
+
+/// The explicit contradictions of a plan, for the planning error.
+pub(crate) fn plan_contradictions<TSys: TaskExecutorSys>(
+    context: &LoadedContext<TSys>,
+    plan: &omni_core::BatchedExecutionPlan,
+    ignore_dependencies: bool,
+) -> Vec<InspectedContradiction> {
+    inspect_nodes(&nodes_from_plan(context, plan), false, ignore_dependencies)
+        .contradictions
+}
+
 /// Plan `config`'s selection and inspect it without running anything.
 pub fn inspect_cache_eligibility<TSys: TaskExecutorSys>(
     context: &LoadedContext<TSys>,
@@ -210,32 +281,7 @@ pub fn inspect_cache_eligibility<TSys: TaskExecutorSys>(
         config.with_dependents(),
     )?;
 
-    let nodes = plan
-        .iter()
-        .flatten()
-        .map(|node| {
-            let info =
-                context.get_cache_info(node.project_name(), node.task_name());
-            let source =
-                info.map(|i| i.cache_enabled_source).unwrap_or_default();
-            InspectionNode {
-                name: node.full_task_name().to_string(),
-                has_command: node.task_exec_config().is_some(),
-                persistent: node.persistent(),
-                enabled: classify_enabled(node.enabled()),
-                cache_enabled: info.is_some_and(|i| i.cache_enabled),
-                cache_source: source,
-                dependencies: node.dependencies().to_vec(),
-                cache_enabled_file: context
-                    .cache_enabled_file(node.project_name(), node.task_name())
-                    .map(|p| {
-                        p.strip_prefix(context.root_dir())
-                            .unwrap_or(p)
-                            .to_path_buf()
-                    }),
-            }
-        })
-        .collect::<Vec<_>>();
+    let nodes = nodes_from_plan(context, &plan);
 
     Ok(inspect_nodes(&nodes, false, config.ignore_dependencies()))
 }
@@ -381,6 +427,35 @@ mod tests {
         let i = inspect_nodes(&nodes, false, true);
         assert!(i.contradictions.is_empty());
         assert_eq!(status(&i, "app"), &CacheStatus::Eligible);
+    }
+
+    #[test]
+    fn colliding_joined_names_are_left_out() {
+        let names = [
+            ("a#b#c", "a#b", "c"),
+            ("a#b#c", "a", "b#c"),
+            ("x#y", "x", "y"),
+        ];
+        let ambiguous = ambiguous_names(names.into_iter());
+        assert!(ambiguous.contains("a#b#c"));
+        assert!(!ambiguous.contains("x#y"));
+        assert!(
+            ambiguous_names([("x#y", "x", "y"), ("x#y", "x", "y")].into_iter())
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn expression_enabled_dependent_still_contradicts() {
+        let dep = node("dep", false, TaskExplicit, &[]);
+        let mut app = node("app", true, TaskExplicit, &["dep"]);
+        app.enabled = StaticEnabled::Conditional;
+        assert_eq!(
+            inspect_nodes(&[dep, app], false, false)
+                .contradictions
+                .len(),
+            1
+        );
     }
 
     #[test]
