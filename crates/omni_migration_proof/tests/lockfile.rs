@@ -55,8 +55,13 @@ fn round_trip_and_refusal() {
     assert_eq!(store.faults().mutations(), w);
 
     let state = store.state().unwrap();
-    let refused =
-        gate_access(state, PINS_V1, |_| Err::<(), _>(Error::WrongDirection));
+    let refused = gate_access(state, PINS_V1, |v| {
+        if v == PINS_V1 {
+            Ok(())
+        } else {
+            Err(Error::UnknownVersion(v))
+        }
+    });
     assert!(refused.is_err());
     assert_eq!(store.document_bytes(), before);
 }

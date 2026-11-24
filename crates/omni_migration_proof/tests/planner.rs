@@ -442,3 +442,92 @@ fn support_lost_after_planning_is_caught_with_the_right_outcome() {
     );
     assert_eq!(store.state().unwrap(), StoreState::Ready(PINS_V2));
 }
+
+fn three_store(
+    dir: &std::path::Path,
+    c: PinsCatalog,
+    v: Version,
+    body: Body,
+) -> LockfileStore {
+    LockfileStore::create(dir, Faults::new(), c, 1, v, body).unwrap()
+}
+
+#[test]
+fn irreversible_second_leg_blocks_the_whole_chain_before_any_write() {
+    let dir = tempdir().unwrap();
+    let mut c = PinsCatalog::three();
+    c.caps.push((
+        PinsStep::AddTags,
+        StepCapabilities {
+            atomic: true,
+            lossless: false,
+            derivable: false,
+        },
+    ));
+    let store =
+        three_store(dir.path(), c, PINS_V1, Body::V1(V1 { pins: vec![] }));
+    let w = store.faults().mutations();
+    let derivable_only = Policy {
+        allow_derivable_loss: true,
+        ..Policy::default()
+    };
+    for pol in [Policy::default(), derivable_only] {
+        assert!(matches!(
+            store.plan(PINS_V3, Direction::Upgrade, pol),
+            Err(Error::IrreversibleLoss)
+        ));
+    }
+    assert_eq!(store.faults().mutations(), w);
+    assert_eq!(store.state().unwrap(), StoreState::Ready(PINS_V1));
+
+    let allowed = Policy {
+        allow_irreversible_loss: true,
+        ..Policy::default()
+    };
+    let plan = store.plan(PINS_V3, Direction::Upgrade, allowed).unwrap();
+    assert_eq!(
+        execute(&store, &plan, || false).unwrap(),
+        Run::Finished(PINS_V3)
+    );
+}
+
+#[test]
+fn a_reordered_version_edit_is_stale_at_preflight_and_unknown_target_is_refused()
+ {
+    let dir = tempdir().unwrap();
+    let store = three_store(
+        dir.path(),
+        PinsCatalog::three(),
+        PINS_V1,
+        Body::V1(V1 { pins: vec![] }),
+    );
+    let plan = store
+        .plan(PINS_V3, Direction::Upgrade, Policy::default())
+        .unwrap();
+    let mut edited = PinsCatalog::three();
+    edited.edges[1].version = Version(14);
+    store.set_catalog(edited);
+    let w = store.faults().mutations();
+    assert!(matches!(
+        execute(&store, &plan, || false),
+        Err(Error::StaleCatalog)
+    ));
+    assert_eq!(store.faults().mutations(), w);
+
+    store.set_catalog(PinsCatalog::three());
+    assert!(matches!(
+        store.plan(Version(999), Direction::Upgrade, Policy::default()),
+        Err(Error::UnknownVersion(Version(999)))
+    ));
+}
+
+#[test]
+fn ordinary_access_refuses_a_foreign_store_without_writing() {
+    let dir = tempdir().unwrap();
+    let store = v1_store(dir.path(), PinsCatalog::two());
+    rewrite_doc(&store, |v| v["chain"] = "index".into());
+    let w = store.faults().mutations();
+    assert_eq!(store.state(), Err(Error::ChainMismatch));
+    assert_eq!(store.faults().mutations(), w);
+    assert!(!store.intent_exists());
+}

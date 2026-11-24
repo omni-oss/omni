@@ -647,7 +647,12 @@ impl MigrationSession<IndexStep> for IndexSession<'_> {
         })();
         let (marker, records) = match prepared {
             Ok(v) => v,
-            Err(e) => return NotCommitted(e),
+            // Only a wrong version leaves the old layout proven healthy;
+            // unreadable or inconsistent state fails closed.
+            Err(Error::UnexpectedVersion) => {
+                return NotCommitted(Error::UnexpectedVersion);
+            }
+            Err(e) => return RecoveryRequired(e),
         };
         let target = Marker {
             version: s.to,

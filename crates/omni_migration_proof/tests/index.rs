@@ -164,3 +164,61 @@ fn a_foreign_marker_is_a_chain_mismatch() {
         Err(Error::ChainMismatch)
     ));
 }
+
+#[test]
+fn inconsistent_prewrite_state_fails_closed() {
+    let dir = tempdir().unwrap();
+    let s = idx(dir.path(), WITH_INDEX);
+    let mut session = s.begin_migration().unwrap();
+    let step = Step {
+        from: WITH_INDEX,
+        to: WITHOUT_INDEX,
+        id: IndexStep::DropShards,
+    };
+    std::fs::remove_file(s.shards_dir().join("shard-0")).unwrap();
+    let w = s.faults().mutations();
+    assert!(matches!(
+        session.apply(step),
+        StepOutcome::RecoveryRequired(Error::Inconsistent(_))
+    ));
+    assert_eq!(s.faults().mutations(), w);
+    assert!(!s.intent_exists());
+}
+
+#[test]
+fn a_wrong_version_at_prewrite_is_not_committed() {
+    let dir = tempdir().unwrap();
+    let s = idx(dir.path(), WITHOUT_INDEX);
+    let mut session = s.begin_migration().unwrap();
+    let step = Step {
+        from: WITH_INDEX,
+        to: WITHOUT_INDEX,
+        id: IndexStep::DropShards,
+    };
+    assert_eq!(
+        session.apply(step),
+        StepOutcome::NotCommitted(Error::UnexpectedVersion)
+    );
+}
+
+#[test]
+fn missing_and_malformed_chain_names_are_observation_errors() {
+    let dir = tempdir().unwrap();
+    let s = idx(dir.path(), WITH_INDEX);
+    let w = s.faults().mutations();
+    for (doc, want) in [
+        (r#"{"version":"indexed","revision":1}"#, Error::MissingChain),
+        (
+            r#"{"chain":5,"version":"indexed","revision":1}"#,
+            Error::MalformedChain,
+        ),
+    ] {
+        std::fs::write(s.marker_path(), doc).unwrap();
+        assert_eq!(s.observe(), Err(want.clone()));
+        assert_eq!(s.state(), Err(want.clone()));
+        let p = s.plan(WITHOUT_INDEX, Direction::Upgrade, NON_ATOMIC_DERIVABLE);
+        assert!(matches!(p, Err(ref e) if *e == want));
+    }
+    assert_eq!(s.faults().mutations(), w);
+    assert!(!s.intent_exists());
+}
