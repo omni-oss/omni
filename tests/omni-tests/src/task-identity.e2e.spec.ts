@@ -292,64 +292,73 @@ function behaviors(names: Names, test: typeof it): void {
         expect(output).toContain("RUN-A-BC mark=env-a-bc arg=default-a-bc");
     });
 
-    test("a failing pair skips only its own consumer", async () => {
-        const ws = makeWorkspace({
-            workspace: { projects: ["**"] },
-            projects: {
-                "p-ab": {
-                    name: names.abProject,
-                    tasks: { [names.abTask]: { exec: "exit 3" } },
-                },
-                "p-a": {
-                    name: names.aProject,
-                    tasks: { [names.aTask]: { exec: 'echo "A-BC-OK"' } },
-                },
-                app: {
-                    name: "app",
-                    tasks: {
-                        x: {
-                            exec: 'echo "APP-X"',
-                            dependencies: [names.abRef],
+    test.each(["skip-dependents", "continue"])(
+        "a failing pair does not fail the other pair or its consumer (-o %s)",
+        async (onFailure) => {
+            const ws = makeWorkspace({
+                workspace: { projects: ["**"] },
+                projects: {
+                    "p-ab": {
+                        name: names.abProject,
+                        tasks: { [names.abTask]: { exec: "exit 3" } },
+                    },
+                    "p-a": {
+                        name: names.aProject,
+                        tasks: { [names.aTask]: { exec: 'echo "A-BC-OK"' } },
+                    },
+                    app: {
+                        name: "app",
+                        tasks: {
+                            x: {
+                                exec: 'echo "APP-X"',
+                                dependencies: [names.abRef],
+                            },
+                            y: {
+                                exec: 'echo "APP-Y"',
+                                dependencies: [names.aRef],
+                            },
                         },
-                        y: { exec: 'echo "APP-Y"', dependencies: [names.aRef] },
                     },
                 },
-            },
-        });
-        const resultPath = ws.path("result.json");
-        const result = await runOmni(
-            [
-                "run",
-                "x",
-                "y",
-                "-p",
-                "app",
-                "-o",
-                "skip-dependents",
-                "--output-logs",
-                "all",
-                "--result",
-                resultPath,
-                "--result-format",
-                "json",
-            ],
-            { cwd: ws.cwd },
-        );
-        expect(result).toHaveFailed();
-        const items = JSON.parse(
-            readFileSync(resultPath, "utf8"),
-        ) as (ResultItem & { skip_reason?: string; exit_code?: number })[];
-        const status = (p: string, t: string) => find(items, p, t)?.status;
-        expect(status(names.abProject, names.abTask)).not.toBe("skipped");
-        expect(find(items, names.abProject, names.abTask)?.status).not.toBe(
-            "completed",
-        );
-        expect(status(names.aProject, names.aTask)).toBe("completed");
-        expect(status("app", "x")).toBe("skipped");
-        expect(status("app", "y")).toBe("completed");
-        expect(`${result.stdout}\n${result.stderr}`).toContain("APP-Y");
-        expect(`${result.stdout}\n${result.stderr}`).not.toContain("APP-X");
-    });
+            });
+            const resultPath = ws.path("result.json");
+            const result = await runOmni(
+                [
+                    "run",
+                    "x",
+                    "y",
+                    "-p",
+                    "app",
+                    "-o",
+                    onFailure,
+                    "--output-logs",
+                    "all",
+                    "--result",
+                    resultPath,
+                    "--result-format",
+                    "json",
+                ],
+                { cwd: ws.cwd },
+            );
+            expect(result).toHaveFailed();
+            const items = JSON.parse(
+                readFileSync(resultPath, "utf8"),
+            ) as (ResultItem & { skip_reason?: string; exit_code?: number })[];
+            const status = (p: string, t: string) => find(items, p, t)?.status;
+            expect(status(names.abProject, names.abTask)).not.toBe("skipped");
+            expect(find(items, names.abProject, names.abTask)?.status).not.toBe(
+                "completed",
+            );
+            expect(status(names.aProject, names.aTask)).toBe("completed");
+            const skips = onFailure === "skip-dependents";
+            expect(status("app", "x") === "skipped").toBe(skips);
+            expect(status("app", "y")).toBe("completed");
+            expect(`${result.stdout}\n${result.stderr}`).toContain("APP-Y");
+            expect(`${result.stdout}\n${result.stderr}`.includes("APP-X")).toBe(
+                !skips,
+            );
+        },
+    );
 
     test("cache prune --dir/--meta with one pair allowed touches only that pair", async () => {
         const ws = collisionWorkspace(names);
@@ -498,9 +507,11 @@ function blake3Small(input: Uint8Array): Buffer {
 }
 
 /** `hash project` fold: `b3(b3(seed) || b3(leaf))` for one selected task. */
-function projectHashOf(leaf: Buffer): string {
-    const seed = blake3Small(Buffer.from("DEFAULT_SEED"));
-    return base58(blake3Small(Buffer.concat([seed, blake3Small(leaf)])));
+function projectHashOf(...leaves: Buffer[]): string {
+    let acc = blake3Small(Buffer.from("DEFAULT_SEED"));
+    for (const leaf of leaves)
+        acc = blake3Small(Buffer.concat([acc, blake3Small(leaf)]));
+    return base58(acc);
 }
 
 function parityWorkspace(opts: { appDependsOnLib: boolean }): Workspace {
@@ -761,6 +772,56 @@ describe("+hash @e2e (hash project uses the v1 leaf, formerly colliding pairs di
         ws.write("p-ab/src/in.txt", "changed");
         expect(await hashProject("a#b", "c")).not.toBe(first);
         expect(await hashProject("a", "b#c")).toBe(second);
+    });
+});
+
+describe("+hash @e2e (hash project folds the selected leaves for every filter shape)", () => {
+    it("matches an independent fold for no filter, exact and exact-plus-glob", async () => {
+        const cache = { key: { defaults: false, files: ["src/**"] } };
+        const ws = makeWorkspace({
+            workspace: { projects: ["**"] },
+            projects: {
+                lib: {
+                    name: "lib",
+                    tasks: { gen: { exec: "echo gen", cache } },
+                },
+                app: {
+                    name: "app",
+                    tasks: {
+                        x: {
+                            exec: "echo x",
+                            cache,
+                            dependencies: ["lib#gen"],
+                        },
+                        xa: { exec: "echo xa", cache },
+                        y: { exec: "echo y", cache },
+                    },
+                },
+            },
+            files: { "lib/src/a.txt": "a", "app/src/b.txt": "b" },
+        });
+        const items = await runResult(ws, ["x", "xa", "y", "-p", "app"]);
+        const leaf = (task: string) =>
+            Buffer.from(find(items, "app", task)?.hash as string, "base64");
+        const hashProject = async (...filter: string[]) => {
+            const r = await runOmni(
+                ["hash", "-r", "project", "app", ...filter],
+                {
+                    cwd: ws.cwd,
+                },
+            );
+            expect(r).toHaveSucceeded();
+            return r.stdout.trim();
+        };
+
+        expect(await hashProject()).toBe(
+            projectHashOf(leaf("x"), leaf("xa"), leaf("y")),
+        );
+        expect(await hashProject("-t", "x")).toBe(projectHashOf(leaf("x")));
+        // The dependency-only `lib#gen` node feeds x's leaf but is not folded.
+        expect(await hashProject("-t", "y", "--task-pattern", "x*")).toBe(
+            projectHashOf(leaf("x"), leaf("xa"), leaf("y")),
+        );
     });
 });
 
