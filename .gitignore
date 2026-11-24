@@ -52,6 +52,7 @@ orcs.config.json
 /.agents/skills/show-me-your-work
 /.agents/skills/swe-assess
 /.agents/skills/swe-author
+/.agents/skills/swe-change-description
 /.agents/skills/swe-debug
 /.agents/skills/swe-docs-write
 /.agents/skills/swe-execute
@@ -73,4 +74,4 @@ orcs.config.json
 /docs/guidelines/core
 /docs/guidelines/planning
 /docs/guidelines/reviewing
-# @@omni-managed:end 1a7305e7
+# @@omni-managed:end 0b4a7e81
