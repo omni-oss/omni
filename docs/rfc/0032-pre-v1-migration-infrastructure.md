@@ -1,6 +1,6 @@
 # RFC 0032: Pre-v1 migration infrastructure
 
-**Status:** Approved for slice 1 only (contract-proof harness), by maintainer decision. The Rust below is illustrative, not compiled or shipped. Slices 2 and later still need their own evidence and review.
+**Status:** Approved through slice 3 (unwired crate, performance and integration evidence) by maintainer decision; no production adoption. The Rust below is illustrative, not compiled or shipped; see [slice 1 findings](0032-slice-1-findings.md). Production adoption still needs a separate design and release plan.
 **Readers:** Omni maintainers reviewing the contract and contributors who will prototype it.
 
 ## Goal and scope
