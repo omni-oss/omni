@@ -4,7 +4,7 @@ use std::{
 };
 
 use omni_task_output_logs::LogsDisplay;
-use tokio::io::{AsyncRead, AsyncWriteExt, BufWriter};
+use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, BufWriter};
 
 /// Where a task's captured output was routed.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -127,12 +127,7 @@ pub async fn drain(
                     return Err(e);
                 }
             };
-            let mut writer = BufWriter::new(file);
-            let copy_result =
-                tokio::io::copy(&mut reader, &mut writer).await.map(|_| ());
-            // Flush regardless of copy outcome.
-            let flush_result = writer.flush().await;
-            copy_result.and(flush_result)?;
+            copy_to_writer(&mut reader, BufWriter::new(file)).await?;
             Ok(CaptureTarget::File(path))
         }
         None => {
@@ -140,6 +135,22 @@ pub async fn drain(
             Ok(CaptureTarget::Sink)
         }
     }
+}
+
+/// Copy `reader` into `writer`, flushing regardless of the copy outcome. After
+/// a write failure the rest of the reader is drained to a sink so the producer
+/// never hits a broken pipe; the original error is returned.
+async fn copy_to_writer(
+    reader: &mut (impl AsyncRead + Unpin),
+    mut writer: impl AsyncWrite + Unpin,
+) -> std::io::Result<()> {
+    let copy_result = tokio::io::copy(reader, &mut writer).await.map(|_| ());
+    let flush_result = writer.flush().await;
+    let result = copy_result.and(flush_result);
+    if result.is_err() {
+        let _ = tokio::io::copy(reader, &mut tokio::io::sink()).await;
+    }
+    result
 }
 
 /// Whether captured output should be displayed given the resolved display facet
@@ -182,6 +193,53 @@ mod tests {
             second.to_string_lossy().to_lowercase(),
             "a case-insensitive filesystem must not see one file"
         );
+    }
+
+    struct FailAfter(usize);
+
+    impl AsyncWrite for FailAfter {
+        fn poll_write(
+            mut self: std::pin::Pin<&mut Self>,
+            _: &mut std::task::Context<'_>,
+            buf: &[u8],
+        ) -> std::task::Poll<std::io::Result<usize>> {
+            if self.0 == 0 {
+                return std::task::Poll::Ready(Err(std::io::Error::other(
+                    "disk full",
+                )));
+            }
+            let n = buf.len().min(self.0);
+            self.0 -= n;
+            std::task::Poll::Ready(Ok(n))
+        }
+
+        fn poll_flush(
+            self: std::pin::Pin<&mut Self>,
+            _: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<std::io::Result<()>> {
+            std::task::Poll::Ready(Ok(()))
+        }
+
+        fn poll_shutdown(
+            self: std::pin::Pin<&mut Self>,
+            _: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<std::io::Result<()>> {
+            std::task::Poll::Ready(Ok(()))
+        }
+    }
+
+    #[tokio::test]
+    async fn a_write_failure_mid_stream_still_drains_the_producer() {
+        let total = 64 * 1024;
+        let (mut tx, mut rx) = tokio::io::duplex(1024);
+        let producer =
+            tokio::spawn(async move { tx.write_all(&vec![b'x'; total]).await });
+        let err = copy_to_writer(&mut rx, FailAfter(4096)).await.unwrap_err();
+        assert_eq!(err.to_string(), "disk full");
+        producer
+            .await
+            .unwrap()
+            .expect("producer must not see a broken pipe");
     }
 
     #[tokio::test]
