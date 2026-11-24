@@ -398,4 +398,39 @@ mod tests {
             })
         );
     }
+
+    #[test]
+    fn json_shape_of_every_status_variant() {
+        let mut nocmd = node("nocmd", true, HostFallback, &[]);
+        nocmd.has_command = false;
+        let mut persistent = node("persist", true, HostFallback, &[]);
+        persistent.persistent = true;
+        let nodes = [
+            nocmd,
+            persistent,
+            node("off", false, TaskExplicit, &[]),
+            node("ok", true, HostFallback, &[]),
+            node("demoted", true, HostFallback, &["off"]),
+        ];
+        let i = inspect_nodes(&nodes, false, false);
+        let wo =
+            inspect_nodes(&[node("w", true, HostFallback, &[])], true, false);
+        let statuses = i
+            .tasks
+            .iter()
+            .chain(&wo.tasks)
+            .map(|t| serde_json::to_value(&t.status).unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            statuses,
+            vec![
+                serde_json::json!({"status": "no-command"}),
+                serde_json::json!({"status": "persistent"}),
+                serde_json::json!({"status": "disabled", "deciding_source": "task-explicit"}),
+                serde_json::json!({"status": "eligible"}),
+                serde_json::json!({"status": "demoted", "direct_dependency": "off", "root_cause": "off"}),
+                serde_json::json!({"status": "write-only-no-cache"}),
+            ]
+        );
+    }
 }

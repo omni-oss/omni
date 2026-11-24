@@ -29,6 +29,13 @@ pub enum CacheSubcommands {
         #[command(flatten)]
         args: StatsArgs,
     },
+    #[command(
+        about = "Show each selected task's cache eligibility and explicit cache.enabled contradictions, without running anything"
+    )]
+    Eligibility {
+        #[command(flatten)]
+        args: EligibilityArgs,
+    },
     #[command(about = "Prune the local cache")]
     Prune {
         #[command(flatten)]
@@ -88,6 +95,56 @@ pub struct StatsArgs {
         help = "Filter the cache entries by the task meta configuration, accepts CEL syntax. Only matches tasks present in the current workspace"
     )]
     meta: Option<String>,
+}
+
+#[derive(clap::Args, Debug)]
+pub struct EligibilityArgs {
+    #[arg(
+        long,
+        short,
+        help = "Select the task with this exact name. Glob characters are literal; use --task-pattern to match by glob"
+    )]
+    task: Vec<String>,
+
+    #[arg(
+        long,
+        value_name = "GLOB",
+        help = "Select tasks whose name matches this glob. Repeatable, and may be combined with --task"
+    )]
+    task_pattern: Vec<String>,
+
+    #[arg(
+        long,
+        short,
+        help = "Filter to the project with this exact name. Glob characters are literal; use --project-pattern to match by glob"
+    )]
+    project: Vec<String>,
+
+    #[arg(
+        long,
+        value_name = "GLOB",
+        help = "Filter to projects whose name matches this glob. Repeatable, and may be combined with --project"
+    )]
+    project_pattern: Vec<String>,
+
+    #[arg(long, help = "Filter to projects in directories matching this glob")]
+    dir: Vec<String>,
+
+    #[arg(
+        long,
+        short,
+        help = "Filter the tasks based on the meta configuration, accepts CEL syntax"
+    )]
+    meta: Option<String>,
+
+    #[arg(
+        long,
+        help = "Only inspect the selected tasks, not the tasks they depend on"
+    )]
+    ignore_dependencies: bool,
+
+    #[arg(long, help = "Print the result as JSON")]
+    json: bool,
 }
 
 #[derive(clap::Args, Debug)]
@@ -372,6 +429,10 @@ pub async fn run(command: &CacheCommand, ctx: &Context) -> eyre::Result<()> {
             }
         }
 
+        CacheSubcommands::Eligibility { args } => {
+            eligibility(&api, args).await?;
+        }
+
         CacheSubcommands::Prune { args } => {
             prune(&api, args).await?;
         }
@@ -605,4 +666,72 @@ mod signing_flag_tests {
             .is_ok()
         );
     }
+}
+
+async fn eligibility(
+    api: &OmniApi<system_traits::impls::RealSys, omni_messages::NoopSubscriber>,
+    args: &EligibilityArgs,
+) -> eyre::Result<()> {
+    if args.task.is_empty() && args.task_pattern.is_empty() {
+        eyre::bail!("select at least one task with --task or --task-pattern");
+    }
+    let response = api
+        .task_cache_inspect(omni_api::TaskRunRequest {
+            tasks: args.task_pattern.clone(),
+            exact_tasks: args.task.clone(),
+            ignore_dependencies: args.ignore_dependencies,
+            filters: omni_api::TaskRunFilters {
+                meta: args.meta.clone(),
+                project: args.project.clone(),
+                project_pattern: args.project_pattern.clone(),
+                dir: args.dir.clone(),
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+        .await?;
+    let inspection = response.inspection;
+
+    if args.json {
+        println!("{}", serde_json::to_string_pretty(&inspection)?);
+        return Ok(());
+    }
+
+    for task in &inspection.tasks {
+        let value = serde_json::to_value(&task.status)?;
+        let status = value["status"].as_str().unwrap_or("unknown");
+        let mut line = format!("{}: {status}", task.task);
+        match &task.status {
+            omni_task_executor::CacheStatus::Disabled {
+                deciding_source: Some(source),
+            } => line.push_str(&format!(" ({source})")),
+            omni_task_executor::CacheStatus::Demoted {
+                direct_dependency,
+                root_cause,
+            } => line.push_str(&format!(
+                " (dependency {direct_dependency}, root cause {root_cause})"
+            )),
+            _ => {}
+        }
+        if task.condition_unevaluated {
+            line.push_str(" [enabled condition not evaluated]");
+        }
+        println!("{line}");
+    }
+    if !inspection.contradictions.is_empty() {
+        println!();
+        println!("Contradictions:");
+        for c in &inspection.contradictions {
+            println!("  {}", c.message);
+            for (task, file) in [
+                (&c.dependent, &c.dependent_file),
+                (&c.dependency, &c.dependency_file),
+            ] {
+                if let Some(file) = file {
+                    println!("    {task}: {}", file.display());
+                }
+            }
+        }
+    }
+    Ok(())
 }
