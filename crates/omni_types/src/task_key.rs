@@ -50,6 +50,14 @@ fn is_valid_name(name: &str) -> bool {
     !name.is_empty() && !name.contains('\0')
 }
 
+/// A project or task name that is empty or contains NUL.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("project {project:?} or task {task:?} is empty or contains NUL")]
+pub struct InvalidTaskName {
+    pub project: String,
+    pub task: String,
+}
+
 /// An owned `(project, task)` identity with cheaply clonable shared storage.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct TaskKey {
@@ -72,6 +80,23 @@ impl TaskKey {
             "empty or NUL project/task names are rejected at ingress"
         );
         Self { project, task }
+    }
+
+    /// Like [`TaskKey::new`], but rejects empty and NUL names instead of
+    /// asserting. Use it wherever the names have not been validated yet.
+    pub fn try_new(
+        project: impl Into<Arc<str>>,
+        task: impl Into<Arc<str>>,
+    ) -> Result<Self, InvalidTaskName> {
+        let project = project.into();
+        let task = task.into();
+        if !is_valid_name(&project) || !is_valid_name(&task) {
+            return Err(InvalidTaskName {
+                project: project.to_string(),
+                task: task.to_string(),
+            });
+        }
+        Ok(Self { project, task })
     }
 
     pub fn project(&self) -> &str {
@@ -136,10 +161,24 @@ impl fmt::Display for TaskKeyRef<'_> {
 /// Nested project/task map. Lookups borrow `&str` components and never build
 /// an owned key or a label. It serializes as `{project: {task: value}}`.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[cfg_attr(feature = "serde", serde(transparent))]
 pub struct TaskMap<V> {
     inner: HashMap<Arc<str>, HashMap<Arc<str>, V>>,
+}
+
+/// Empty project buckets are dropped, so `{"p":{}}` equals `TaskMap::new()`.
+#[cfg(feature = "serde")]
+impl<'de, V: serde::Deserialize<'de>> serde::Deserialize<'de> for TaskMap<V> {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Self, D::Error> {
+        let mut inner = HashMap::<Arc<str>, HashMap<Arc<str>, V>>::deserialize(
+            deserializer,
+        )?;
+        inner.retain(|_, tasks| !tasks.is_empty());
+        Ok(Self { inner })
+    }
 }
 
 impl<V> Default for TaskMap<V> {
@@ -360,9 +399,30 @@ mod tests {
 
     #[cfg(feature = "serde")]
     #[test]
-    fn a_deserialized_map_of_empty_buckets_is_empty() {
+    fn a_deserialized_map_of_empty_buckets_is_empty_and_equals_new() {
         let map: TaskMap<u8> = serde_json::from_str(r#"{"p":{}}"#).unwrap();
         assert!(map.is_empty());
         assert_eq!(map.len(), 0);
+        assert_eq!(map, TaskMap::new());
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn deserializing_keeps_populated_buckets_and_drops_empty_ones() {
+        let map: TaskMap<u8> =
+            serde_json::from_str(r#"{"p":{},"a#b":{"c":1}}"#).unwrap();
+        let mut expected = TaskMap::new();
+        expected.insert("a#b", "c", 1u8);
+        assert_eq!(map, expected);
+        assert_eq!(map.get("a#b", "c"), Some(&1));
+    }
+
+    #[test]
+    fn try_new_rejects_empty_and_nul_names_without_panicking() {
+        assert!(TaskKey::try_new("p", "t").is_ok());
+        assert!(TaskKey::try_new("", "t").is_err());
+        assert!(TaskKey::try_new("p", "").is_err());
+        assert!(TaskKey::try_new("p\0", "t").is_err());
+        assert!(TaskKey::try_new("p", "t\0").is_err());
     }
 }
