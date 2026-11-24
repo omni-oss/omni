@@ -401,6 +401,7 @@ mod tests {
                 entry: entry("c"),
                 error: "permission denied".into(),
             }],
+            ..Default::default()
         };
         let now = std::time::UNIX_EPOCH + Duration::from_secs(60);
         let response = prune_response(report, true, now);
