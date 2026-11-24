@@ -513,8 +513,13 @@ impl LoadedLayer {
     }
 
     /// The same declaration source and directory around a different layer.
+    ///
+    /// Invariant: `cache_enabled` always describes `layer`. The tracked value
+    /// is dropped here and re-derived from the new layer on the next
+    /// composition, so a previously composed layer cannot leave a stale value.
     pub fn with_layer(mut self, layer: ProjectLayer) -> Self {
         self.layer = layer;
+        self.cache_enabled = None;
         self
     }
 
@@ -983,6 +988,39 @@ mod tests {
 
     fn eager(json: &str) -> ProjectConfiguration {
         serde_json::from_str(json).unwrap()
+    }
+
+    #[test]
+    fn a_corrupted_loaded_layer_is_an_error_not_a_panic() {
+        let mut loaded = LoadedLayer::from_file(
+            OmniPath::new("p.yaml"),
+            OmniPath::default(),
+            layer(r#"{"name":"p","cache":{"enabled":true},"tasks":{"t":"x"}}"#),
+        );
+        loaded.cache_enabled = Some(Declared {
+            value: false,
+            origin: Arc::new(Origin::new(
+                DeclarationSource::file(OmniPath::new("other.yaml")),
+                OmniPath::default(),
+            )),
+        });
+        assert!(matches!(
+            loaded.finalize_composed(),
+            Err(FinalizeError::ProvenanceMismatch { ref task }) if task == "t"
+        ));
+    }
+
+    #[test]
+    fn with_layer_drops_a_stale_tracked_value() {
+        let mut loaded = LoadedLayer::from_file(
+            OmniPath::new("p.yaml"),
+            OmniPath::default(),
+            layer(r#"{"name":"p","cache":{"enabled":true},"tasks":{"t":"x"}}"#),
+        );
+        loaded.attribute();
+        assert!(loaded.cache_enabled.is_some());
+        let loaded = loaded.with_layer(layer(r#"{"name":"p"}"#));
+        assert!(loaded.cache_enabled.is_none());
     }
 
     #[test]

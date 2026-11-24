@@ -366,25 +366,31 @@ fn diamond_task_extends_picks_the_last_declaration_in_order() {
                     "root":{"base":true,"exec":"x","cache":{"enabled":false}}}}"#,
             ),
             file(
-                "lib/mid.yaml",
+                "lib/left.yaml",
                 &format!(
-                    r#"{{"tasks":{{
-                        "l":{{"base":true,"extends":"root"{left}}},
-                        "r":{{"base":true,"extends":"root"{right}}}}}}}"#
+                    r#"{{"tasks":{{"l":{{"base":true,"extends":"root"{left}}}}}}}"#
+                ),
+            ),
+            file(
+                "lib/right.yaml",
+                &format!(
+                    r#"{{"tasks":{{"r":{{"base":true,"extends":"root"{right}}}}}}}"#
                 ),
             ),
             file("app/p.yaml", r#"{"tasks":{"d":{"extends":["l","r"]}}}"#),
         ])
     };
     let on = r#","cache":{"enabled":true}"#;
-    // Both arms reach `root`; the last extendee's own setting wins.
-    let p = tasks(on, "");
-    assert_task(&p, "d", true, Some("file:lib/mid.yaml"));
-    let p = tasks("", on);
-    assert_task(&p, "d", true, Some("file:lib/mid.yaml"));
+    let off = r#","cache":{"enabled":false}"#;
+    // Only one arm sets it: that arm's file decides.
+    assert_task(&tasks(on, ""), "d", true, Some("file:lib/left.yaml"));
+    assert_task(&tasks("", on), "d", true, Some("file:lib/right.yaml"));
+    // Both arms set it: the later arm wins, even with equal values.
+    assert_task(&tasks(on, off), "d", false, Some("file:lib/right.yaml"));
+    assert_task(&tasks(off, on), "d", true, Some("file:lib/right.yaml"));
+    assert_task(&tasks(on, on), "d", true, Some("file:lib/right.yaml"));
     // Neither arm sets it: the shared root's origin survives the diamond.
-    let p = tasks("", "");
-    assert_task(&p, "d", false, Some("file:lib/base.yaml"));
+    assert_task(&tasks("", ""), "d", false, Some("file:lib/base.yaml"));
 }
 
 #[test]
