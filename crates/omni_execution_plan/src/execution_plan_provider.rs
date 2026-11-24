@@ -114,6 +114,15 @@ impl<'a, TContext: Context> ExecutionPlanProvider
     }
 }
 
+fn try_task_key(
+    project: &str,
+    task: &str,
+) -> Result<TaskKey, ExecutionPlanProviderError> {
+    TaskKey::try_new(project, task).map_err(|e| {
+        TaskExecutionGraphError::invalid_name(&e.project, &e.task).into()
+    })
+}
+
 impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
     fn get_execution_plan_ignored_dependencies(
         &self,
@@ -151,7 +160,7 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
 
                 for p in projects.iter() {
                     let node = TaskExecutionNode::new(
-                        TaskKey::new(p.name.as_str(), tfqn.as_str()),
+                        try_task_key(p.name.as_str(), tfqn.as_str())?,
                         Some(command_config.clone()),
                         None,
                         p.dir.clone(),
@@ -204,10 +213,10 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
                 for project in projects {
                     for (task_name, task) in project.tasks.iter() {
                         let node = TaskExecutionNode::new(
-                            TaskKey::new(
+                            try_task_key(
                                 project.name.as_str(),
                                 task_name.as_str(),
-                            ),
+                            )?,
                             task.exec.clone(),
                             task.retry_exec.clone(),
                             project.dir.clone(),

@@ -248,6 +248,7 @@ impl From<TaskExecutionGraphReportRaw> for TaskExecutionGraphReport {
             .collect::<HashMap<_, _>>();
         for index in di_graph.node_indices() {
             di_graph[index].dependencies.clear();
+            di_graph[index].full_task_name = labels[&index].clone();
         }
         // Edges run dependee -> dependent; append in edge-table order.
         let edges = di_graph
@@ -265,7 +266,34 @@ impl From<TaskExecutionGraphReportRaw> for TaskExecutionGraphReport {
     }
 }
 
+/// One edge of a [`TaskExecutionGraphReport`]. Edges run in scheduling
+/// direction: `from` is scheduled before `to`. For a `Dependency` edge `from`
+/// is the dependee and `to` the dependent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TaskReportEdge<'a> {
+    pub from: TaskKeyRef<'a>,
+    pub to: TaskKeyRef<'a>,
+    pub edge_type: EdgeType,
+}
+
 impl TaskExecutionGraphReport {
+    /// Every edge, including `Sibling` edges that carry no dependency entry,
+    /// in edge-table order.
+    pub fn edges(&self) -> impl Iterator<Item = TaskReportEdge<'_>> {
+        self.di_graph.edge_indices().filter_map(|e| {
+            let (from, to) = self.di_graph.edge_endpoints(e)?;
+            let key = |i: NodeIndex| {
+                let n = &self.di_graph[i];
+                TaskKeyRef::new(&n.project_name, &n.task_name)
+            };
+            Some(TaskReportEdge {
+                from: key(from),
+                to: key(to),
+                edge_type: self.di_graph[e],
+            })
+        })
+    }
+
     pub fn count(&self) -> usize {
         self.di_graph.node_count()
     }
@@ -294,6 +322,17 @@ impl TaskExecutionGraph {
         let mut graph = Self::new();
 
         let projects = project_graph.get_projects_toposorted()?;
+
+        for project in projects.iter() {
+            for task_name in project.tasks.keys() {
+                TaskKey::try_new(project.name.as_str(), task_name.as_str())
+                    .map_err(|e| {
+                        TaskExecutionGraphError::invalid_name(
+                            &e.project, &e.task,
+                        )
+                    })?;
+            }
+        }
 
         // add all nodes first before adding edges
         for project in projects.iter() {
@@ -1008,6 +1047,14 @@ impl TaskExecutionGraphError {
     }
 
     #[doc(hidden)]
+    pub fn invalid_name(project: &str, task: &str) -> Self {
+        Self(TaskExecutionGraphErrorInner::InvalidName {
+            project: project.to_string(),
+            task: task.to_string(),
+        })
+    }
+
+    #[doc(hidden)]
     pub fn cycle_detected(
         from_project: &str,
         from_task: &str,
@@ -1080,6 +1127,19 @@ pub(crate) enum TaskExecutionGraphErrorInner {
         task: String,
     },
 
+    /// A project or task name is empty or contains NUL.
+    #[error("project {project:?} or task {task:?} is empty or contains NUL")]
+    #[diagnostic(
+        code = "task.invalid_name",
+        hint = "give every project and task a non-empty name without NUL characters"
+    )]
+    InvalidName {
+        #[diagnostic(detail)]
+        project: String,
+        #[diagnostic(detail)]
+        task: String,
+    },
+
     /// Tasks depend on each other in a cycle.
     #[error(
         "cycle detected from '{}' to '{}'",
@@ -1104,8 +1164,8 @@ pub(crate) enum TaskExecutionGraphErrorInner {
     /// A task depends on a persistent task, which cannot be a dependency.
     #[error(
         "can't depend on persistent task '{}' from '{}'",
-        task_label(.from_project, .from_task),
-        task_label(.to_project, .to_task)
+        task_label(.to_project, .to_task),
+        task_label(.from_project, .from_task)
     )]
     #[diagnostic(
         code = "task.persistent_dependency",
@@ -2470,19 +2530,113 @@ mod tests {
     }
 
     #[test]
-    fn cycle_and_persistent_errors_use_escaped_labels() {
+    fn cycle_error_uses_escaped_labels() {
         let err =
             TaskExecutionGraphError::cycle_detected("a#b", "c", "a", "b#c");
         assert_eq!(
             err.to_string(),
             r"cycle detected from 'a\#b#c' to 'a#b\#c'"
         );
-        let err = TaskExecutionGraphError::cant_depend_on_persistent_task(
-            "a#b", "c", "a", "b#c",
+    }
+
+    #[test]
+    fn persistent_dependency_error_names_the_persistent_task_first() {
+        let server = Project {
+            tasks: TasksBuilder::new()
+                .task("c", "echo server", |b| b.persistent(true))
+                .build(),
+            ..create_project("a#b")
+        };
+        let client = Project {
+            tasks: TasksBuilder::new()
+                .task("b#c", "echo client", |b| {
+                    b.explicit_project_dependency("a#b", "c")
+                })
+                .build(),
+            ..create_project("a")
+        };
+        let project_graph =
+            ProjectGraph::from_projects(vec![server, client]).unwrap();
+        let err = TaskExecutionGraph::from_project_graph(&project_graph)
+            .expect_err("a dependency on a persistent task is rejected");
+        assert_eq!(
+            err.kind(),
+            TaskExecutionGraphErrorKind::CantDependOnPersistentTask
         );
         assert_eq!(
             err.to_string(),
             r"can't depend on persistent task 'a\#b#c' from 'a#b\#c'"
         );
+    }
+
+    #[test]
+    fn empty_or_nul_names_are_a_graph_error_not_a_panic() {
+        for (project, task) in
+            [("", "build"), ("p", ""), ("p\0", "build"), ("p", "b\0")]
+        {
+            let p = Project {
+                tasks: TasksBuilder::new().task(task, "echo", |b| b).build(),
+                ..create_project(project)
+            };
+            let project_graph = ProjectGraph::from_projects(vec![p]).unwrap();
+            let err = TaskExecutionGraph::from_project_graph(&project_graph)
+                .expect_err("invalid names must be rejected");
+            assert_eq!(err.kind(), TaskExecutionGraphErrorKind::InvalidName);
+        }
+    }
+
+    #[test]
+    fn report_exposes_sibling_only_edges() {
+        let graph = TaskExecutionGraph::from_project_graph(
+            &ProjectGraph::from_projects(vec![Project {
+                tasks: TasksBuilder::new()
+                    .task("serve", "echo serve", |b| b.persistent(true))
+                    .task("watch", "echo watch", |b| b.own_sibling("serve"))
+                    .build(),
+                ..create_project("a#b")
+            }])
+            .unwrap(),
+        )
+        .unwrap();
+        let value = serde_json::to_value(&graph).unwrap();
+        let report: TaskExecutionGraphReport =
+            serde_json::from_value(value).unwrap();
+
+        let edges = report.edges().collect::<Vec<_>>();
+        assert_eq!(edges.len(), 1);
+        assert_eq!(edges[0].edge_type, EdgeType::Sibling);
+        assert_eq!(edges[0].from, TaskKeyRef::new("a#b", "serve"));
+        assert_eq!(edges[0].to, TaskKeyRef::new("a#b", "watch"));
+        assert!(
+            report
+                .get_task_by_name("a#b", "watch")
+                .unwrap()
+                .dependencies
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn report_rebuilds_a_legacy_node_label_like_its_references() {
+        let graph =
+            TaskExecutionGraph::from_project_graph(&colliding_project_graph())
+                .unwrap();
+        let mut value = serde_json::to_value(&graph).unwrap();
+        for node in value["di_graph"]["nodes"].as_array_mut().unwrap() {
+            let legacy = format!(
+                "{}#{}",
+                node["project_name"].as_str().unwrap(),
+                node["task_name"].as_str().unwrap()
+            );
+            node["full_task_name"] = serde_json::json!(legacy);
+        }
+        let report: TaskExecutionGraphReport =
+            serde_json::from_value(value).unwrap();
+
+        let ab = report.get_task_by_name("a#b", "c").unwrap();
+        assert_eq!(ab.full_task_name, r"a\#b#c");
+        let x = report.get_task_by_name("app", "x").unwrap();
+        assert_eq!(x.full_task_name, "app#x");
+        assert_eq!(x.dependencies, vec![ab.full_task_name.clone()]);
     }
 }
