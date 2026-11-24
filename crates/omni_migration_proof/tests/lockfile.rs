@@ -290,7 +290,10 @@ fn guarded_stale_checks_write_nothing() {
         .plan(PINS_V2, Direction::Upgrade, Policy::default())
         .unwrap();
     // Replaced store: new incarnation.
-    rewrite_doc(&store, |v| v["incarnation"] = 4242.into());
+    let mut v: serde_json::Value =
+        serde_json::from_slice(&store.document_bytes()).unwrap();
+    v["incarnation"] = 4242.into();
+    std::fs::write(store.doc_path(), v.to_string()).unwrap();
     assert!(matches!(
         execute(&store, &plan, || false),
         Err(Error::StalePlan)
@@ -327,4 +330,71 @@ fn guarded_stale_checks_write_nothing() {
         Err(Error::StaleCatalog)
     ));
     assert_eq!(store.faults().mutations(), w);
+}
+
+#[test]
+fn create_rejects_a_body_that_does_not_match_the_version() {
+    let dir = tempdir().unwrap();
+    let r = LockfileStore::create(
+        dir.path(),
+        Faults::new(),
+        PinsCatalog::two(),
+        1,
+        PINS_V1,
+        Body::V2(V2 {
+            pins: vec![],
+            notes: vec![],
+        }),
+    );
+    assert!(matches!(r, Err(Error::MalformedDocument(_))));
+}
+
+#[test]
+fn generation_overflow_is_refused_before_staging() {
+    let dir = tempdir().unwrap();
+    let store = v1_store(dir.path(), PinsCatalog::two());
+    let mut v: serde_json::Value =
+        serde_json::from_slice(&store.document_bytes()).unwrap();
+    v["generation"] = u64::MAX.into();
+    std::fs::write(store.doc_path(), v.to_string()).unwrap();
+    let w = store.faults().mutations();
+    assert!(matches!(
+        store.edit_pins("b"),
+        Err(Error::MalformedDocument(_))
+    ));
+    let plan = store
+        .plan(PINS_V2, Direction::Upgrade, Policy::default())
+        .unwrap();
+    assert!(matches!(
+        execute(&store, &plan, || false).unwrap(),
+        Run::Stopped {
+            last: PINS_V1,
+            error: Error::MalformedDocument(_)
+        }
+    ));
+    assert_eq!(store.faults().mutations(), w);
+}
+
+#[test]
+fn direct_session_apply_never_overwrites_a_pending_intent() {
+    let dir = tempdir().unwrap();
+    let store = v1_store(dir.path(), PinsCatalog::two());
+    let plan = store
+        .plan(PINS_V2, Direction::Upgrade, Policy::default())
+        .unwrap();
+    store.faults().set("doc.parent_sync", Action::Err, 0);
+    execute(&store, &plan, || false).unwrap();
+    store.faults().clear();
+    let before = std::fs::read(store.intent_path()).unwrap();
+    let mut session = store.begin_migration().unwrap();
+    let step = Step {
+        from: PINS_V2,
+        to: PINS_V1,
+        id: PinsStep::BackToPlainPins,
+    };
+    assert_eq!(
+        session.apply(step),
+        StepOutcome::RecoveryRequired(Error::Dirty)
+    );
+    assert_eq!(std::fs::read(store.intent_path()).unwrap(), before);
 }

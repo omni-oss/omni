@@ -154,13 +154,16 @@ impl Document {
         })
     }
 
-    fn rewrite(&self, to: Version, body: Body) -> Self {
-        Self {
+    fn rewrite(&self, to: Version, body: Body) -> Result<Self, Error> {
+        let generation = self.generation.checked_add(1).ok_or_else(|| {
+            Error::MalformedDocument("generation overflow".into())
+        })?;
+        Ok(Self {
             version: to,
-            generation: self.generation + 1,
+            generation,
             incarnation: self.incarnation,
             body,
-        }
+        })
     }
 
     fn stamp(&self) -> Stamp {
@@ -290,6 +293,17 @@ impl LockfileStore {
         version: Version,
         body: Body,
     ) -> Result<Self, Error> {
+        let matches = matches!(
+            (version, &body),
+            (PINS_V1, Body::V1(_))
+                | (PINS_V2, Body::V2(_))
+                | (PINS_V3, Body::V3(_))
+        );
+        if !matches {
+            return Err(Error::MalformedDocument(
+                "body does not match version".into(),
+            ));
+        }
         let store = Self::open(root, faults, catalog);
         let doc = Document {
             version,
@@ -384,7 +398,13 @@ impl LockfileStore {
             }
             return Ok(GuardedObservation::RecoveryRequired);
         }
-        Ok(GuardedObservation::Ready(self.read_document()?.0.stamp()))
+        let stamp = self.read_document()?.0.stamp();
+        // An intent published after the first check is still visible here:
+        // it is cleared only after the document is durable.
+        if self.pending_intent_chain()?.is_some() {
+            return Ok(GuardedObservation::RecoveryRequired);
+        }
+        Ok(GuardedObservation::Ready(stamp))
     }
 
     pub fn state(&self) -> Result<StoreState, Error> {
@@ -453,7 +473,7 @@ impl LockfileStore {
             Body::V2(b) => b.pins.push(add.to_string()),
             Body::V3(b) => b.pins.push(add.to_string()),
         }
-        let next = old.rewrite(old.version, body);
+        let next = old.rewrite(old.version, body)?;
         let session_less = Publisher { store: self };
         session_less
             .publish(&old_bytes, old.generation, &next)
@@ -603,6 +623,13 @@ impl MigrationSession<PinsStep> for PinsSession<'_> {
         if let Err(e) = check_backend(self.store.fs.probe(), c) {
             return StepOutcome::NotCommitted(e);
         }
+        // Never overwrite unresolved recovery evidence, even when called
+        // directly rather than through `execute`.
+        match self.store.pending_intent_chain() {
+            Ok(None) => {}
+            Ok(Some(_)) => return StepOutcome::RecoveryRequired(Error::Dirty),
+            Err(e) => return StepOutcome::RecoveryRequired(e),
+        }
         let (old, old_bytes) = match self.store.read_document() {
             Ok((doc, bytes)) if doc.version == s.from => (doc, bytes),
             Ok(_) => {
@@ -641,7 +668,10 @@ impl MigrationSession<PinsStep> for PinsSession<'_> {
                 return StepOutcome::RecoveryRequired(Error::UnexpectedVersion);
             }
         };
-        let next = old.rewrite(s.to, body);
+        let next = match old.rewrite(s.to, body) {
+            Ok(n) => n,
+            Err(e) => return StepOutcome::NotCommitted(e),
+        };
         match (Publisher { store: self.store }).publish(
             &old_bytes,
             old.generation,

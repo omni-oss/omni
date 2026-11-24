@@ -194,6 +194,9 @@ impl IndexStore {
         version: Version,
         records: &[&str],
     ) -> Result<Self, Error> {
+        if version != WITH_INDEX && version != WITHOUT_INDEX {
+            return Err(Error::UnknownVersion(version));
+        }
         let store = Self::open(root, faults);
         let records: Vec<String> =
             records.iter().map(|s| s.to_string()).collect();
@@ -425,24 +428,39 @@ impl IndexStore {
     }
 
     pub fn observe(&self) -> Result<GuardedObservation, Error> {
-        if let Some(name) = self.pending_intent_chain()? {
-            if name != ChainName::INDEX.0 {
-                return Err(Error::ChainMismatch);
+        // Unguarded readers retry until marker, records and intent agree
+        // across the reads, so a stamp never mixes two states.
+        for _ in 0..5 {
+            if let Some(name) = self.pending_intent_chain()? {
+                if name != ChainName::INDEX.0 {
+                    return Err(Error::ChainMismatch);
+                }
+                return Ok(GuardedObservation::RecoveryRequired);
             }
-            return Ok(GuardedObservation::RecoveryRequired);
+            let marker = self.read_marker()?;
+            let records = self.read_records()?;
+            let layout = self.verify_layout(marker.version, &records.records);
+            let stable = self.read_marker().ok() == Some(marker)
+                && self.read_records().is_ok_and(|r| r.fp == records.fp)
+                && self.pending_intent_chain()?.is_none();
+            if !stable {
+                continue;
+            }
+            layout?;
+            let rev = fingerprint(
+                format!("{}:{}", records.generation, marker.revision)
+                    .as_bytes(),
+            );
+            return Ok(GuardedObservation::Ready(Stamp {
+                store: StoreId(records.incarnation),
+                chain: ChainName::INDEX,
+                revision: Revision(
+                    u64::from_str_radix(&rev[..16], 16).unwrap(),
+                ),
+                version: marker.version,
+            }));
         }
-        let marker = self.read_marker()?;
-        let records = self.read_records()?;
-        self.verify_layout(marker.version, &records.records)?;
-        let rev = fingerprint(
-            format!("{}:{}", records.generation, marker.revision).as_bytes(),
-        );
-        Ok(GuardedObservation::Ready(Stamp {
-            store: StoreId(records.incarnation),
-            chain: ChainName::INDEX,
-            revision: Revision(u64::from_str_radix(&rev[..16], 16).unwrap()),
-            version: marker.version,
-        }))
+        Err(Error::Io("unstable snapshot".into()))
     }
 
     pub fn state(&self) -> Result<StoreState, Error> {
@@ -487,11 +505,15 @@ impl IndexStore {
             ));
         }
         let old = self.read_records()?;
+        self.verify_layout(WITHOUT_INDEX, &old.records)?;
+        let generation = old.generation.checked_add(1).ok_or_else(|| {
+            Error::MalformedDocument("generation overflow".into())
+        })?;
         let mut records = old.records.clone();
         records.push(add.to_string());
         let next = serde_json::to_vec(&json!({
             "incarnation": old.incarnation,
-            "generation": old.generation + 1,
+            "generation": generation,
             "records": records,
         }))
         .unwrap();
@@ -549,6 +571,13 @@ impl IndexStore {
         let old = Marker::from_json(&intent["old"])?;
         let target = Marker::from_json(&intent["target"])?;
         let rollback = Marker::from_json(&intent["rollback"])?;
+        let valid = rollback.version == old.version
+            && target.version != old.version
+            && Some(target.revision) == old.revision.checked_add(1)
+            && Some(rollback.revision) == old.revision.checked_add(2);
+        if !valid {
+            return Err(Error::RecoveryBlocked);
+        }
         let live = self.read_marker().map_err(|_| Error::RecoveryBlocked)?;
         let blocked = |e: Error| match e {
             Error::Inconsistent(_) => Error::RecoveryBlocked,
@@ -636,13 +665,18 @@ impl MigrationSession<IndexStep> for IndexSession<'_> {
         if let Err(e) = check_backend(st.fs.probe(), c) {
             return NotCommitted(e);
         }
+        match st.pending_intent() {
+            Ok(None) => {}
+            Ok(Some(_)) => return RecoveryRequired(Error::Dirty),
+            Err(e) => return RecoveryRequired(e),
+        }
         let prepared = (|| {
             let marker = st.read_marker()?;
             let records = st.read_records()?;
+            st.verify_layout(marker.version, &records.records)?;
             if marker.version != s.from {
                 return Err(Error::UnexpectedVersion);
             }
-            st.verify_layout(s.from, &records.records)?;
             Ok((marker, records))
         })();
         let (marker, records) = match prepared {
@@ -654,13 +688,21 @@ impl MigrationSession<IndexStep> for IndexSession<'_> {
             }
             Err(e) => return RecoveryRequired(e),
         };
+        let (Some(t), Some(r)) = (
+            marker.revision.checked_add(1),
+            marker.revision.checked_add(2),
+        ) else {
+            return NotCommitted(Error::MalformedDocument(
+                "revision overflow".into(),
+            ));
+        };
         let target = Marker {
             version: s.to,
-            revision: marker.revision + 1,
+            revision: t,
         };
         let rollback = Marker {
             version: s.from,
-            revision: marker.revision + 2,
+            revision: r,
         };
         let intent = serde_json::to_vec(&json!({
             "chain": "index",

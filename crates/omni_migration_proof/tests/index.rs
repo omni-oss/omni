@@ -121,7 +121,9 @@ fn prewrite_failure_is_not_committed_and_writes_nothing() {
     let s = idx(dir.path(), WITH_INDEX);
     let plan = drop_plan(&s);
     s.faults().set("intent.stage", Action::Err, 0);
+    let w = s.faults().mutations();
     let out = execute(&s, &plan, || false).unwrap();
+    assert_eq!(s.faults().mutations(), w);
     assert!(matches!(
         out,
         Run::Stopped {
@@ -221,4 +223,78 @@ fn missing_and_malformed_chain_names_are_observation_errors() {
     }
     assert_eq!(s.faults().mutations(), w);
     assert!(!s.intent_exists());
+}
+
+#[test]
+fn create_rejects_unsupported_versions() {
+    let dir = tempdir().unwrap();
+    let r =
+        IndexStore::create(dir.path(), Faults::new(), 1, Version(999), &["a"]);
+    assert!(matches!(r, Err(Error::UnknownVersion(Version(999)))));
+}
+
+#[test]
+fn editor_refuses_a_records_only_store_with_a_leftover_shard() {
+    let dir = tempdir().unwrap();
+    let s = idx(dir.path(), WITHOUT_INDEX);
+    std::fs::create_dir_all(s.shards_dir()).unwrap();
+    std::fs::write(s.shards_dir().join("shard-0"), b"x").unwrap();
+    assert!(matches!(s.edit_records("z"), Err(Error::Inconsistent(_))));
+    assert!(!s.intent_exists());
+}
+
+#[test]
+fn direct_session_apply_never_overwrites_a_pending_intent() {
+    let dir = tempdir().unwrap();
+    let s = idx(dir.path(), WITH_INDEX);
+    s.faults().set("marker.parent_sync", Action::Err, 0);
+    execute(&s, &drop_plan(&s), || false).unwrap();
+    s.faults().clear();
+    let before = std::fs::read(s.intent_path()).unwrap();
+    let mut session = s.begin_migration().unwrap();
+    let step = Step {
+        from: WITHOUT_INDEX,
+        to: WITH_INDEX,
+        id: IndexStep::RebuildShards,
+    };
+    assert_eq!(
+        session.apply(step),
+        StepOutcome::RecoveryRequired(Error::Dirty)
+    );
+    assert_eq!(std::fs::read(s.intent_path()).unwrap(), before);
+}
+
+#[test]
+fn a_leftover_shard_is_not_a_plain_version_mismatch() {
+    let dir = tempdir().unwrap();
+    let s = idx(dir.path(), WITHOUT_INDEX);
+    std::fs::create_dir_all(s.shards_dir()).unwrap();
+    std::fs::write(s.shards_dir().join("shard-0"), b"x").unwrap();
+    let mut session = s.begin_migration().unwrap();
+    let step = Step {
+        from: WITH_INDEX,
+        to: WITHOUT_INDEX,
+        id: IndexStep::DropShards,
+    };
+    assert!(matches!(
+        session.apply(step),
+        StepOutcome::RecoveryRequired(Error::Inconsistent(_))
+    ));
+}
+
+#[test]
+fn recovery_rejects_rollback_evidence_that_changes_the_version() {
+    let dir = tempdir().unwrap();
+    let s = idx(dir.path(), WITH_INDEX);
+    s.faults().set("shard.removed", Action::Err, 0);
+    execute(&s, &drop_plan(&s), || false).unwrap();
+    s.faults().clear();
+    let mut intent: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(s.intent_path()).unwrap())
+            .unwrap();
+    intent["rollback"]["version"] = "records-only".into();
+    std::fs::write(s.intent_path(), intent.to_string()).unwrap();
+    assert_eq!(s.recover_under_guard(), Err(Error::RecoveryBlocked));
+    assert!(s.intent_exists());
+    assert_eq!(s.shard_bytes().unwrap().len(), 1);
 }

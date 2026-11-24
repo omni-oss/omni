@@ -16,6 +16,7 @@ fn child(scenario: &str, root: &Path, failpoints: &str) -> Command {
     c.args(["--exact", "child_entry", "--nocapture", "--test-threads=1"])
         .env("OMNI_MIG_SCENARIO", scenario)
         .env("OMNI_MIG_ROOT", root)
+        .current_dir(root)
         .env(FAILPOINT_ENV, failpoints)
         .stdout(Stdio::null())
         .stderr(Stdio::null());
@@ -112,9 +113,10 @@ fn a_live_writer_blocks_peers_and_the_survivor_rejects_stale_plans() {
         .unwrap();
     let ready = dir.path().join("ready");
     let release = dir.path().join("release");
-    let fp =
-        format!("doc.rename=wait:{}:{}", ready.display(), release.display());
-    let mut first = child("lockfile_up", dir.path(), &fp).spawn().unwrap();
+    // Relative names keep colons in temp paths out of the failpoint syntax.
+    let fp = "doc.rename=wait:ready:release";
+    let first = child("lockfile_up", dir.path(), fp).spawn().unwrap();
+    let mut first = KillOnDrop(Some(first));
     let start = Instant::now();
     while !ready.exists() {
         assert!(
@@ -132,7 +134,7 @@ fn a_live_writer_blocks_peers_and_the_survivor_rejects_stale_plans() {
     );
     assert_eq!(s.state().unwrap(), StoreState::RecoveryRequired);
     std::fs::write(&release, b"go").unwrap();
-    assert!(first.wait().unwrap().success());
+    assert!(first.0.take().unwrap().wait().unwrap().success());
     assert!(peer.try_lock_exclusive(&s.guard_path()).is_ok());
     // The second writer re-observes under the guard and rejects its stale plan.
     assert!(matches!(
@@ -140,4 +142,16 @@ fn a_live_writer_blocks_peers_and_the_survivor_rejects_stale_plans() {
         Err(Error::StalePlan)
     ));
     assert_eq!(s.state().unwrap(), StoreState::Ready(PINS_V2));
+}
+
+/// Kills and reaps the child if the test fails before it is released.
+struct KillOnDrop(Option<std::process::Child>);
+
+impl Drop for KillOnDrop {
+    fn drop(&mut self) {
+        if let Some(c) = self.0.as_mut() {
+            let _ = c.kill();
+            let _ = c.wait();
+        }
+    }
 }
