@@ -1,6 +1,6 @@
 # F10 implementation plan: captured input view
 
-**Status:** proposed for approval; no implementation started. Maintainer decisions are recorded below, **except** the items listed under [Pending maintainer confirmation](#pending-maintainer-confirmation) (including an amendment to decision 1); those must be confirmed before F10.2a starts. **Size:** Large (two slices after the F10.1 design). **Risk:** High. The view is a new containment boundary beside the capabilities crates ([AGENTS.md](../../../../../AGENTS.md) risk overrides).
+**Status:** proposed for approval; no implementation started. All maintainer decisions, including the decision 1 amendment, are recorded below (see [Confirmed maintainer decisions](#confirmed-maintainer-decisions)); no maintainer confirmation is pending. Items the plan author could not verify are F10.2a verification items, not open questions. **Size:** Large (two slices after the F10.1 design). **Risk:** High. The view is a new containment boundary beside the capabilities crates ([AGENTS.md](../../../../../AGENTS.md) risk overrides).
 **Design:** [F10.1](F10.1-captured-input-view-design.md) (API, evidence, authorization order, limits, errors). This plan does not repeat it; it fixes the build order, the code seams and the decisions the design left open. Facts below were read in the code at `origin/main` (`e1cdb515`).
 
 ## Scope and finish line
@@ -12,11 +12,11 @@ Recorded maintainer decisions (see [README](README.md#decisions-for-finishing-th
 - **D2:** symlinks are configurable and **rejected by default**. The first release is reject-only; the follow mode exists only as a typed option and is not implemented (see F10.2c).
 - **D5:** **macOS returns `Containment::Unsupported`** until a verified beneath-root open exists. No best-effort walk on macOS.
 - **D9:** **reject** Windows alternate data streams and reserved device names.
-- **D6:** `ENOTDIR` on a parent counts as `Missing`. **D8:** a case-spelling mismatch is rejected by the view (exact behavior in [D8 behavior](#d8-case-spelling-behavior), pending confirmation). **D3:** an atomic replace with identical bytes is not a change.
+- **D6:** `ENOTDIR` on a parent counts as `Missing`. **D8:** a case-spelling mismatch is rejected by the view (exact behavior in [D8 behavior](#d8-case-spelling-behavior), confirmed). **D3:** an atomic replace with identical bytes is not a change.
 
 Maintainer decisions on this plan (previously open questions):
 
-1. **Build on `cap-std`** (not raw `libc`/`rustix`/`windows-sys`), gated on the F10.2a proof fixture. **AMENDED, needs maintainer confirmation:** see [Decision 1 amendment](#decision-1-amendment-needs-maintainer-confirmation); the source evidence shows the fixture cannot pass on Linux with `cap-std` by design.
+1. **Build on `cap-std`** (not raw `libc`/`rustix`/`windows-sys`), gated on the F10.2a proof fixture. **Amended by the maintainer:** Linux uses a direct `rustix::fs::openat2` and `cap-std` stays for Windows only; see [Decision 1 amendment](#decision-1-amendment). The source evidence shows the fixture cannot pass on Linux with `cap-std` by design.
 2. **Symlink follow (F10.2c) is not in the first release.** Ship reject-only with the follow mode kept as a typed option for later. Windows junctions are never followed.
 3. **The D9 name check lives only inside the view**, not in `WorkspacePath::parse`.
 4. **Digest:** a local digest trait implemented with `blake3`. Do not reuse `omni_hasher::Hasher` (avoids `system_traits` and async dependencies).
@@ -51,7 +51,7 @@ Each slice leaves a working system, adds a crate nothing depends on yet, and is 
     - **Windows:** a component walk the view owns: each component opened relative to the held parent handle (`cap-std` `open_dir_nofollow` / `OpenOptions` with `FILE_FLAG_OPEN_REPARSE_POINT` semantics, via `CreateFileAtW`), explicit `share_mode(READ | WRITE)` without `FILE_SHARE_DELETE` on every directory handle the walk holds, any reparse point (symlink, junction, mount point) rejected, final-path check with `GetFinalPathNameByHandle`. Verified in `cap-primitives 4.0.3` source: `windows/fs/open_unchecked.rs` `open_at` calls `CreateFileAtW(dir = start handle, ...)`, so a single open is relative to the held handle; but `windows/fs/open_impl.rs` delegates to `manually::open`, which **follows** in-root symlinks and opens intermediate directories with the default share mode (`READ | WRITE | DELETE`, `open_options_ext.rs:31`). So the plain `cap-std` `Dir::open` is **not** the Windows primitive: the view must walk one component at a time and hold the handles itself. That the held handles block a rename is **unverified** until the Windows gate passes.
     - **macOS and other OSes:** `ContainmentViolation::Unsupported` without any filesystem walk (D5).
 - **Proof fixture (the thin slice):** one function opening a file beneath the root via `WorkspacePath` segments with the primitive above, returning `ContainmentViolation::Symlink` on any symlink component.
-- Name validation for D9 (inside the view only, decision 3). Rule per OS: see [D9 portability](#d9-portability-pending-confirmation). Table-driven unit tests run on all OSes (pure function); real-file behavior runs on Windows.
+- Name validation for D9 (inside the view only, decision 3). Rule per OS: see [D9 portability](#d9-portability). Table-driven unit tests run on all OSes (pure function); real-file behavior runs on Windows.
 
 **Gate (all must pass on native CI; a missing capability fails on CI, it does not skip):**
 
@@ -117,7 +117,7 @@ CI matrix requirement: see F10.2a. `ci.yaml` plans Rust test jobs through `run-o
 - Add to the release notes only when a consumer lands: new rejection errors (`Containment`, `Denied`, budget errors) and the D2/D5/D9 behavior and decision 6, as documented limits ("macOS unsupported", "Linux without `openat2` unsupported", "symlinks rejected unless configured", "streams and reserved names rejected"). **The consumer's plan must carry these release-note obligations** (D5 and decision 6 are user-visible there).
 - Update `docs/tooling.md` in the F10.2a PR: it names `cap-std` only for `cache_restore`; add `rustix` (direct `openat2`) and the Windows `cap-std` use, and add `omni_input_view` to the check list. Update `tasks.yaml` F10.2 to `done` only when F10.2c lands (F10.2a-c are one task there; see [tasks.yaml](../tasks.yaml)). Update the [README](README.md) F10 row and `tasks.yaml` notes in each slice PR, not before.
 
-## Decision 1 amendment (needs maintainer confirmation)
+## Decision 1 amendment
 
 The maintainer chose "build on `cap-std`, gated on the proof fixture". Reading `cap-primitives 4.0.3` shows the fixture cannot pass on Linux by design:
 
@@ -127,31 +127,42 @@ The maintainer chose "build on `cap-std`, gated on the proof fixture". Reading `
 
 **Amendment:** Linux uses `rustix::fs::openat2` directly with `RESOLVE_BENEATH | RESOLVE_NO_SYMLINKS | RESOLVE_NO_MAGICLINKS` and no fallback. `cap-std` is kept only where its semantics are proven: on Windows, as the handle-relative `CreateFileAtW` open (`start` handle, verified in `windows/fs/open_unchecked.rs`), with the view doing its own one-component-at-a-time walk, because `cap-std`'s own Windows `open` is `manually::open` (follows symlinks, default share mode includes `FILE_SHARE_DELETE`). Whether held handles block renames is proven only by the F10.2a Windows gate. Cost: a security-review-heavy Linux path owned by this crate (rustix's `openat2` is a safe API), and `rustix` as a direct dependency.
 
-**Needs maintainer confirmation:** accept this amendment, or choose `cap-std` for Linux and weaken decision 6 / D2.
+**Confirmed by the maintainer:** this amendment is a recorded decision (including `RESOLVE_NO_XDEV` and no fallback).
 
 ## DenyReason placement
 
-Decision: define a **view-local** `DenyReason` in `omni_input_view` (a small struct: the denied workspace path, and a `DenyCause::{NoMatch, ExplicitDeny, Other}` enum), mapped by the consumer's adapter from `omni_capabilities::DenyReason` (defined in `eval.rs`). The alternative, depending on `omni_capabilities`, pulls `eyre`, `serde`, `serde_json`, `schemars`, `strum`, `merge`, `globset`, `path-clean`, `omni_types` and `omni_diagnostic` into a crate meant to be a light leaf, and couples it to a High-risk crate. **Needs maintainer confirmation** (alternative: add the dependency; the "show why" output then shares the type directly).
+Decision: define a **view-local** `DenyReason` in `omni_input_view` (a small struct: the denied workspace path, and a `DenyCause::{NoMatch, ExplicitDeny, Other}` enum), mapped by the consumer's adapter from `omni_capabilities::DenyReason` (defined in `eval.rs`). The alternative, depending on `omni_capabilities`, pulls `eyre`, `serde`, `serde_json`, `schemars`, `strum`, `merge`, `globset`, `path-clean`, `omni_types` and `omni_diagnostic` into a crate meant to be a light leaf, and couples it to a High-risk crate. Confirmed by the maintainer.
 
 ## D8 case-spelling behavior
 
-Simplest consistent design (pending confirmation): the view never reports a spelling mismatch as a `Change`.
+Confirmed design (maintainer decision): the view never reports a spelling mismatch as a `Change`.
 
 - **Initial access (F10.2b):** on a case-insensitive filesystem (Windows, default macOS) the view compares the requested segment to the on-disk name byte for byte, taken from the parent directory listing. A mismatch returns `InputError::CaseMismatch { path: WorkspacePath }` (a new variant, fatal). It records no evidence and is never `Missing`.
 - **Revalidation (F10.3):** every tracked path was accepted with an exact spelling, so a later mismatch means the entry was renamed (case-only) on disk. Revalidation reports it as `ChangeKind::Deleted` for the old spelling (the exact name no longer exists), not a new kind, so `ChangeKind` stays `Modified | Created | Deleted | KindChanged | MembershipChanged`. If the re-observation returns `CaseMismatch` the pass maps it to `Change { kind: Deleted }`; any other error stays an error.
-- This replaces the earlier wording "a case-spelling mismatch counts as a change". **Needs maintainer confirmation.**
+- This replaces the earlier wording "a case-spelling mismatch counts as a change". Confirmed by the maintainer.
 
-## D9 portability (pending confirmation)
+## D9 portability
 
-Recommendation: reject `:` in any segment and reserved device names (`CON`, `PRN`, `AUX`, `NUL`, `COM1-9`, `LPT1-9`, with or without an extension, any case) plus trailing dot or space on **all** OSes inside the view, so a discovery run does not accept on Linux a path that fails on Windows. The cost is rejecting legal Linux names (`a:b`, `con`). The alternative (OS-specific rules: Windows only) lets discovery results diverge by OS. Table-driven tests run on all OSes either way. **Needs maintainer confirmation.**
+Decision: reject `:` in any segment and reserved device names (`CON`, `PRN`, `AUX`, `NUL`, `COM1-9`, `LPT1-9`, with or without an extension, any case) plus trailing dot or space on **all** OSes inside the view, so a discovery run does not accept on Linux a path that fails on Windows. The cost is rejecting legal Linux names (`a:b`, `con`). The alternative (OS-specific rules: Windows only) lets discovery results diverge by OS. Table-driven tests run on all OSes. **Confirmed by the maintainer:** the all-OS rule applies.
 
-## Pending maintainer confirmation
+## Confirmed maintainer decisions
 
-1. Decision 1 amendment (Linux `rustix::openat2`, `cap-std` on Windows only).
-2. D8 behavior (`CaseMismatch` error on access, `Deleted` on revalidation).
-3. D9 all-OS rule.
-4. `max_observations_per_path` default of 16 (below).
-5. `DenyReason` placement (view-local, versus depending on `omni_capabilities`).
+The maintainer confirmed these items; no maintainer confirmation remains pending:
+
+1. Decision 1 amendment (Linux `rustix::openat2` with `BENEATH | NO_SYMLINKS | NO_MAGICLINKS | NO_XDEV`, no fallback; `cap-std` on Windows only, with the view's own one-component walk).
+2. D8: `CaseMismatch` on initial access, `Deleted` on revalidation.
+3. D9: reject `:` in any segment and reserved device names on all OSes inside the view.
+4. `max_observations_per_path` default of 16.
+5. `DenyReason` is view-local; no dependency on `omni_capabilities`.
+
+### F10.2a verification items
+
+The plan author could not verify these; F10.2a checks them and states the result in its PR. They are implementation verification, not maintainer questions:
+
+- `ci.yaml` plans `test_rust` jobs for the Linux, Windows and macOS runners (OS matrix), and whether those jobs are new or reused.
+- Windows share-mode behavior: that held directory handles without `FILE_SHARE_DELETE` block a rename of an ancestor (otherwise Windows becomes `Unsupported`; see the re-planning triggers).
+- `rustix` as a direct workspace dependency (version and features, versus the transitive `cap-std` copy in `Cargo.lock`).
+- The macOS equivalent: native macOS CI proving beneath-root containment, otherwise it stays `Unsupported` (D5).
 
 ## Re-planning triggers
 
@@ -167,23 +178,23 @@ Stop and re-plan if any of these happens:
 
 ## Maintainer decision: default `InputLimits`
 
-The defaults below were accepted; `max_observations_per_path` was added after and is pending.
+The defaults below were accepted, and the maintainer confirmed `max_observations_per_path` afterwards.
 
 **Decision:** the maintainer accepted the proposed defaults below "for now, adjustable later". [§8.1](../../008.00-performance-and-shared-safeguards.md#81-shared-safeguards) of RFC 0024 gives no numbers (only that limits exist and are host-wide); the only numeric precedents are the [§8.4](../../008.03-tier-specific-enforcement.md#84-tier-specific-enforcement) default external plugin envelope (64 MiB memory, 16 MiB read bytes and 8 MiB output per batch, 1 s per batch, 5 s aggregate) and the existing `DEFAULT_MAX_WORKSPACE_PATH_LEN` of 4096.
 
-| Limit                       | Default | Note                                                                   |
-| --------------------------- | ------- | ---------------------------------------------------------------------- |
-| `max_path_bytes`            | 4096    | existing default                                                       |
-| `max_path_depth`            | 64      |                                                                        |
-| `max_file_bytes`            | 8 MiB   |                                                                        |
-| `max_total_bytes`           | 16 MiB  | per view; the §8.4 per-batch read envelope                             |
-| `max_tracked_inputs`        | 4096    |                                                                        |
-| `max_dir_entries`           | 10000   |                                                                        |
-| `max_total_dir_entries`     | 50000   |                                                                        |
-| `max_dir_scan_entries`      | 100000  | far above the visible limits, per F10.1 rule 5                         |
-| `max_operations`            | 10000   |                                                                        |
-| `max_reported_changes`      | 100     |                                                                        |
-| `max_observations_per_path` | 16      | proposed, pending maintainer confirmation; counted in `max_operations` |
+| Limit                       | Default | Note                                                     |
+| --------------------------- | ------- | -------------------------------------------------------- |
+| `max_path_bytes`            | 4096    | existing default                                         |
+| `max_path_depth`            | 64      |                                                          |
+| `max_file_bytes`            | 8 MiB   |                                                          |
+| `max_total_bytes`           | 16 MiB  | per view; the §8.4 per-batch read envelope               |
+| `max_tracked_inputs`        | 4096    |                                                          |
+| `max_dir_entries`           | 10000   |                                                          |
+| `max_total_dir_entries`     | 50000   |                                                          |
+| `max_dir_scan_entries`      | 100000  | far above the visible limits, per F10.1 rule 5           |
+| `max_operations`            | 10000   |                                                          |
+| `max_reported_changes`      | 100     |                                                          |
+| `max_observations_per_path` | 16      | confirmed by the maintainer; counted in `max_operations` |
 
 Limits are host-owned. The host may lower them or change the defaults later; plugins cannot raise them.
 

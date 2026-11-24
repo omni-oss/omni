@@ -54,7 +54,7 @@ and F08 are done**; F03, F05, F06 and F10 are partly done; F04 is done; F07 is n
 - F08.6 [`.pending` cleanup](features/F08.1-lease-gc-reference-protocol.md#f086-pending-cleanup) (D7). Leftovers from older omni versions (no lock file) are never reclaimed.
 
 Open decisions that remain: store `VERSION` compatibility (D1), reference-driven retention
-(D3). The F10.2 decisions D2, D5 and D9 are recorded; the [F10 plan](features/F10-implementation-plan.md#pending-maintainer-confirmation) lists items still awaiting maintainer confirmation (decision 1 amendment, D8 behavior, D9 all-OS scope, `max_observations_per_path`, `DenyReason` placement). Plugins (P) are not
+(D3). The F10.2 decisions D2, D5, D8 and D9 are recorded, as are the decision 1 amendment, the all-OS D9 scope, `max_observations_per_path` and view-local `DenyReason` ([confirmed decisions](features/F10-implementation-plan.md#confirmed-maintainer-decisions)); no maintainer confirmation is pending. Plugins (P) are not
 started, except P01 (specification closure), which can start immediately; the rest wait on
 the F03, F05 and F06 wiring.
 
@@ -171,10 +171,10 @@ approval before it is built.
 - **F03:** the `alias` key lands together with its selector plumbing.
 - **F10:** D2 symlinks are configurable and rejected by default (reject-only in the first
   release); D5 macOS returns `Unsupported` (no walk) until a verified beneath-root open
-  exists; D9 rejects alternate streams and reserved names (scope across OSes pending);
-  Linux without `openat2` is `Unsupported` with no fallback. See the
-  [F10 plan](features/F10-implementation-plan.md) for the full decision block and the
-  items awaiting maintainer confirmation.
+  exists; D9 rejects alternate streams and reserved names (on all OSes inside the view); D8 `CaseMismatch` on access, `Deleted` on revalidation;
+  Linux uses a direct `openat2` and is `Unsupported` without it, with no fallback. See the
+  [F10 plan](features/F10-implementation-plan.md) for the full decision block; no
+  maintainer confirmation is pending.
 - **F08 D1:** no store `VERSION` bump now; the gap is accepted. Automatic migration joins the
   pre-v1 cache-key versioning design. D3 is separate; D7 was implemented in F08.6.
 
