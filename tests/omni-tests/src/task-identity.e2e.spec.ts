@@ -9,7 +9,7 @@
  * control; both run as ordinary tests since the cutover landed.
  */
 
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync, readdirSync, renameSync } from "node:fs";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -360,10 +360,7 @@ function parityWorkspace(opts: { appDependsOnLib: boolean }): Workspace {
     });
 }
 
-async function runResult(
-    ws: Workspace,
-    args: string[],
-): Promise<ResultItem[]> {
+async function runResult(ws: Workspace, args: string[]): Promise<ResultItem[]> {
     const resultPath = ws.path(`result-${args.join("_")}.json`);
     const result = await runOmni(
         ["run", ...args, "--result", resultPath, "--result-format", "json"],
@@ -383,10 +380,11 @@ describe("+run @e2e (v1 digest parity across run, dry-run, ignore-dependencies a
         const real = await runResult(ws, ["x", "-p", "app"]);
         const warmDry = await runResult(ws, ["x", "-p", "app", "--dry-run"]);
 
-        for (const [project, task] of [
+        const pairs: [string, string][] = [
             ["lib", "gen"],
             ["app", "x"],
-        ]) {
+        ];
+        for (const [project, task] of pairs) {
             expect(hashOf(dry, project, task)).toBeTruthy();
             expect(hashOf(real, project, task)).toBe(
                 hashOf(dry, project, task),
@@ -492,7 +490,9 @@ describe("+hash @e2e (workspace input union is per exact project)", () => {
                     tasks: {
                         t: {
                             exec: "echo t",
-                            cache: { key: { defaults: false, files: ["src/**"] } },
+                            cache: {
+                                key: { defaults: false, files: ["src/**"] },
+                            },
                         },
                     },
                 },
@@ -501,7 +501,9 @@ describe("+hash @e2e (workspace input union is per exact project)", () => {
                     tasks: {
                         c: {
                             exec: "echo c",
-                            cache: { key: { defaults: false, files: ["other/**"] } },
+                            cache: {
+                                key: { defaults: false, files: ["other/**"] },
+                            },
                         },
                     },
                 },
@@ -525,5 +527,74 @@ describe("+hash @e2e (workspace input union is per exact project)", () => {
         expect(await hash()).toBe(before);
         ws.write("p-ab/other/in.txt", "changed");
         expect(await hash()).not.toBe(before);
+    });
+});
+
+describe("+run @e2e (empty and NUL names are rejected at ingress)", () => {
+    const run = async (projects: Record<string, unknown>) => {
+        const ws = makeWorkspace({
+            workspace: { projects: ["**"] },
+            projects: projects as never,
+        });
+        return runOmni(["run", "ok", "--task-pattern", "*"], { cwd: ws.cwd });
+    };
+
+    it("rejects an empty project name, naming the project directory", async () => {
+        const result = await run({
+            p: { name: "", tasks: { ok: "echo ok" } },
+        });
+        expect(result).toHaveFailed();
+        expect(`${result.stdout}\n${result.stderr}`).toContain(
+            'invalid project name ""',
+        );
+    });
+
+    it("rejects an empty task name, naming the project", async () => {
+        const result = await run({
+            p: { name: "p", tasks: { ok: "echo ok", "": "echo empty" } },
+        });
+        expect(result).toHaveFailed();
+        expect(`${result.stdout}\n${result.stderr}`).toContain(
+            "invalid task name \"\" in project 'p'",
+        );
+    });
+
+    it("rejects a NUL in a task name", async () => {
+        const result = await run({
+            p: { name: "p", tasks: { ok: "echo ok", "t\u0000u": "echo nul" } },
+        });
+        expect(result).toHaveFailed();
+        expect(`${result.stdout}\n${result.stderr}`).toContain(
+            "it contains a NUL character",
+        );
+    });
+});
+
+describe("+run @e2e (a digest-addressed entry from another recipe is never reused)", () => {
+    it("misses, rebuilds under the v1 address and leaves the foreign entry untouched", async () => {
+        const ws = parityWorkspace({ appDependsOnLib: false });
+        const first = await runResult(ws, ["x", "-p", "app"]);
+        const digest = base58(Buffer.from(first[0]?.hash as string, "base64"));
+
+        const out = ws.path(".omni", "cache");
+        const projectDir = readdirSync(out)
+            .map((p) => join(out, p, "output"))
+            .find((dir) => {
+                try {
+                    return readdirSync(dir).includes(digest);
+                } catch {
+                    return false;
+                }
+            }) as string;
+        // Move the v1 entry to a different address, as a legacy digest would.
+        const foreign = "LegacyRecipeDigestFor";
+        renameSync(join(projectDir, digest), join(projectDir, foreign));
+
+        const second = await runResult(ws, ["x", "-p", "app"]);
+        expect(second[0]?.cache_hit).toBe(false);
+        expect(second[0]?.hash).toBe(first[0]?.hash);
+        expect(readdirSync(projectDir).sort()).toEqual(
+            [digest, foreign].sort(),
+        );
     });
 });

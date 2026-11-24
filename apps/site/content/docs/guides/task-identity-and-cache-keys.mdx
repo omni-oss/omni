@@ -1,0 +1,66 @@
+---
+title: "Task identity and cache keys"
+description: "Release note (pre-v1): task caches start cold once, project and workspace hashes change, reserved characters in labels are escaped, and empty or NUL names are rejected"
+---
+
+A task is now identified by its exact project name and task name, never by the
+joined text `project#task`. Two tasks such as project `a#b` with task `c`, and
+project `a` with task `b#c`, used to look identical to cache keys, results and
+output routing. They are now fully independent.
+
+## What changes for you
+
+- **Task caches start cold once.** The identity part of every task's cache key
+  has a new, versioned form. The first run after upgrading misses, then hits as
+  normal. Old entries are never matched again and are not converted. Remove
+  them with `omni cache prune --stale` once every checkout and CI job runs the
+  new version.
+- **Hashes change once.** `omni hash project`, `omni hash workspace` and the
+  `hash` field of `--result` output take new values. Anything that pins those
+  values needs updating.
+- **Mixed versions can coexist.** An old and a new `omni` never reuse each
+  other's entries; each fills its own. Stale classification compares the
+  digests of the binary that runs it, so it can mark the other version's
+  entries stale. While some worktrees or CI jobs still run the old version, do
+  not run `omni cache prune --stale` if you want to keep their warm entries.
+- **Reserved characters in labels are escaped.** The `project#task` text shown
+  in the CLI, `--result` JSON (`full_task_name`, `dependencies`), MCP output and
+  notices now escapes `\`, `#`, a project name starting with `^`, and adjacent
+  colons, with a backslash. Names without those characters render exactly as
+  before. The `project_name` and `task_name` fields are unchanged and always
+  identify the task.
+
+    | Project | Task    | Label       |
+    | ------- | ------- | ----------- |
+    | `app`   | `build` | `app#build` |
+    | `a#b`   | `c`     | `a\#b#c`    |
+    | `a`     | `b#c`   | `a#b\#c`    |
+
+- **Empty and NUL names are rejected.** A project `name` or a task name that is
+  empty or contains a NUL character now fails workspace loading with a
+  diagnostic naming the project or task (`workspace.invalid_project_name`,
+  `workspace.invalid_task_name`). Before, such names ran under surprising
+  labels such as `p#`.
+- `omni cache prune` prints a task whose name contains `#` in full instead of
+  cutting it at the first `#`.
+
+No configuration changes are needed for names that are non-empty and NUL free.
+
+## Rust API changes (pre-v1)
+
+- `TaskExecutionNode::new` takes a `TaskKey` and a typed dependency list;
+  `deconstruct` is removed. `TaskExecutionNode` is serializable but no longer
+  deserializable. Read serialized nodes as `TaskExecutionNodeReport`, graphs as
+  `TaskExecutionGraphReport` (report only, no batch planning) and results as
+  `TaskExecutionResultReport`. The graph's internal `node_map` is no longer
+  serialized.
+- `omni_api` `ExecResponse` and `TaskRunResponse` are serialize-only.
+- `TaskHashProvider`, `derive_status` and the cache-contradiction types take
+  `TaskKey` and `TaskKeyRef` instead of joined names.
+
+## Rolling back
+
+Install the previous version. Its own entries are still on disk unless you
+pruned them, so it hits them again; entries written by the new version are left
+in place and are not reused. Do not remove them as part of the rollback.
+Project and workspace hashes return to the old values.

@@ -6,6 +6,7 @@ Keeping this up to date: when a pattern changes, update its example paths and th
 - [diagnostic-prefixes.md](diagnostic-prefixes.md): error and notice code prefix ownership.
 - [source-kinds.md](source-kinds.md): adding a remote-source kind (`SourceDriver`) and publishing staged reference updates.
 - [scaffolding.md](scaffolding.md): creating crates and packages from generators.
+- [task-identity.md](task-identity.md): structured `(project, task)` identity, escaped display labels and the cache-key identity leaf.
 - Cache output restoration: `crates/omni_task_executor/src/cache_restore.rs`
   confines writes with retained directory capabilities, no-follow traversal and
   exclusive creation. Do not replace this with pathname checks followed by
