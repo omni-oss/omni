@@ -2,6 +2,7 @@
 
 mod batch_executor;
 mod cache_contradiction;
+mod cache_inspection;
 mod cache_manager;
 mod cache_restore;
 mod cache_store_provider;
@@ -22,6 +23,10 @@ mod utils;
 pub use cache_contradiction::{
     CacheContradiction, ContradictionNode, ContradictionRole,
     find_explicit_contradictions,
+};
+pub use cache_inspection::{
+    CacheInspection, InspectedContradiction, InspectedTask, InspectionNode,
+    inspect_cache_eligibility, inspect_nodes,
 };
 pub use config::*;
 pub use executor::*;

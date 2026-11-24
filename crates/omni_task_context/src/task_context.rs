@@ -74,10 +74,8 @@ impl<'a> TaskContext<'a> {
         Ok(match self.node.enabled() {
             TeraExprBoolean::Boolean(enabled) => *enabled,
             TeraExprBoolean::Expr(expr) => {
-                match expr.as_str().trim().to_lowercase().as_str() {
-                    "true" | "yes" | "y" | "1" => return Ok(true),
-                    "false" | "no" | "n" | "0" => return Ok(false),
-                    _ => {}
+                if let Some(enabled) = static_enabled(expr.as_str()) {
+                    return Ok(enabled);
                 }
                 let result = omni_tera::one_off(
                     expr.as_str(),
@@ -87,5 +85,61 @@ impl<'a> TaskContext<'a> {
                 result.trim().eq_ignore_ascii_case("true")
             }
         })
+    }
+}
+
+/// The value of an `enabled` expression that needs no rendering, if it has one.
+/// Shared by task execution and the static cache inspection so they agree.
+pub fn static_enabled(expr: &str) -> Option<bool> {
+    match expr.trim().to_lowercase().as_str() {
+        "true" | "yes" | "y" | "1" => Some(true),
+        "false" | "no" | "n" | "0" => Some(false),
+        _ => None,
+    }
+}
+
+/// How a task's `enabled` setting reads from configuration alone.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StaticEnabled {
+    Enabled,
+    Disabled,
+    /// A template expression that is only known at execution time.
+    Conditional,
+}
+
+pub fn classify_enabled(enabled: &TeraExprBoolean) -> StaticEnabled {
+    match enabled {
+        TeraExprBoolean::Boolean(true) => StaticEnabled::Enabled,
+        TeraExprBoolean::Boolean(false) => StaticEnabled::Disabled,
+        TeraExprBoolean::Expr(expr) => match static_enabled(expr.as_str()) {
+            Some(true) => StaticEnabled::Enabled,
+            Some(false) => StaticEnabled::Disabled,
+            None => StaticEnabled::Conditional,
+        },
+    }
+}
+
+#[cfg(test)]
+mod enabled_tests {
+    use super::*;
+
+    #[test]
+    fn classifies_without_rendering() {
+        let c =
+            |s: &str| classify_enabled(&TeraExprBoolean::from(s.to_string()));
+        assert_eq!(c(" FALSE "), StaticEnabled::Disabled);
+        assert_eq!(c("No"), StaticEnabled::Disabled);
+        assert_eq!(c("n"), StaticEnabled::Disabled);
+        assert_eq!(c("0"), StaticEnabled::Disabled);
+        assert_eq!(c("Yes"), StaticEnabled::Enabled);
+        assert_eq!(c("{{ env.CI }}"), StaticEnabled::Conditional);
+        assert_eq!(
+            classify_enabled(&TeraExprBoolean::Boolean(false)),
+            StaticEnabled::Disabled
+        );
+        assert_eq!(
+            classify_enabled(&TeraExprBoolean::Boolean(true)),
+            StaticEnabled::Enabled
+        );
     }
 }

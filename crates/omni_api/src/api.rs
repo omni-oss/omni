@@ -33,7 +33,7 @@ use crate::{
             ProjectConfigResponse, ProjectListEntry, ProjectListRequest,
             ProjectSelector,
         },
-        task::{TaskRunRequest, TaskRunResponse},
+        task::{TaskCacheInspectResponse, TaskRunRequest, TaskRunResponse},
     },
     setup_guard::SetupGuard,
 };
@@ -308,6 +308,19 @@ where
         crate::operations::task::handle_task_run(
             ctx.ensure_loaded().await?,
             &self.subscriber,
+            req,
+        )
+        .await
+    }
+
+    /// Report the cache eligibility of the selected tasks without running them.
+    pub async fn task_cache_inspect(
+        &self,
+        req: TaskRunRequest,
+    ) -> eyre::Result<TaskCacheInspectResponse> {
+        let ctx = self.ctx.lock().await;
+        crate::operations::task::handle_task_cache_inspect(
+            ctx.as_context(),
             req,
         )
         .await

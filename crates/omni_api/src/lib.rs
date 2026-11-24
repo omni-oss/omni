@@ -54,7 +54,10 @@ pub use operations::{
         StoreCheckoutFailure, StoreCheckoutId, StoreCheckoutView,
         SubsystemReportView, SubsystemSelection,
     },
-    task::{TaskRunFilters, TaskRunRequest, TaskRunResponse},
+    task::{
+        TaskCacheInspectResponse, TaskRunFilters, TaskRunRequest,
+        TaskRunResponse,
+    },
     tool::{ToolInfo, ToolInspectResponse, ToolListResponse, ToolWorkingDir},
 };
 

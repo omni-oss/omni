@@ -324,6 +324,9 @@ where
             "hash_workspace" => call0(self.tool_hash_workspace()).await,
             "hash_project" => call1(args, |p| self.tool_hash_project(p)).await,
             "cache_stats" => call1(args, |p| self.tool_cache_stats(p)).await,
+            "cache_eligibility" => {
+                call1(args, |p| self.tool_cache_eligibility(p)).await
+            }
             "cache_prune" => call1(args, |p| self.tool_cache_prune(p)).await,
             "task_run" => call1(args, |p| self.tool_task_run(p)).await,
             "exec_command" => call1(args, |p| self.tool_exec_command(p)).await,
@@ -379,6 +382,7 @@ fn shared_working_dir(
         }
         "hash_project" => parse::<HashProjectParams>(args),
         "cache_stats" => parse::<CacheStatsParams>(args),
+        "cache_eligibility" => parse::<CacheEligibilityParams>(args),
         "cache_prune" => parse::<CachePruneParams>(args),
         "task_run" => parse::<TaskRunParams>(args),
         "exec_command" => parse::<ExecCommandParams>(args),

@@ -337,7 +337,7 @@ describe(
         tags: ["mcp"],
     },
     () => {
-        it("tools/list returns all 24 expected tools", async () => {
+        it("tools/list returns all 25 expected tools", async () => {
             const ws = makeWorkspace(singleProjectSpec());
             const { client } = await connectMcp({ cwd: ws.cwd });
 
@@ -346,6 +346,7 @@ describe(
             const names = tools.map((t) => t.name).sort();
             expect(names).toEqual(
                 [
+                    "cache_eligibility",
                     "cache_prune",
                     "cache_stats",
                     "exec_command",
@@ -391,6 +392,7 @@ describe(
                 "hash_workspace",
                 "hash_project",
                 "cache_stats",
+                "cache_eligibility",
                 "tool_list",
                 "tool_inspect",
                 "projection_status",
@@ -1470,6 +1472,74 @@ describe(
                     arguments: { name: "does-not-exist" },
                 }),
             ).rejects.toThrow(Error);
+        });
+    },
+);
+
+// ---------------------------------------------------------------------------
+// cache_eligibility
+// ---------------------------------------------------------------------------
+
+describe(
+    "+mcp @mcp @cli (cache_eligibility)",
+    {
+        tags: ["mcp", "caching"],
+    },
+    () => {
+        const spec = (): WorkspaceSpec => ({
+            workspace: { projects: ["**"] },
+            projects: {
+                app: {
+                    name: "app",
+                    tasks: {
+                        gen: { exec: 'echo "gen"', cache: { enabled: false } },
+                        build: {
+                            exec: 'echo "build"',
+                            dependencies: ["gen"],
+                            cache: { enabled: true },
+                        },
+                    },
+                },
+            },
+        });
+
+        it("lists statuses and the explicit contradiction without running tasks", async () => {
+            const ws = makeWorkspace(spec());
+            const { client } = await connectMcp({ cwd: ws.cwd });
+
+            const result = await client.callTool({
+                name: "cache_eligibility",
+                arguments: { tasks: ["build"] },
+            });
+            const data = getContent<{
+                tasks: Array<{ task: string; status: string }>;
+                contradictions: Array<{
+                    dependent: string;
+                    dependency: string;
+                }>;
+            }>(result);
+
+            expect(data.tasks.find((t) => t.task === "app#build")?.status).toBe(
+                "demoted",
+            );
+            expect(data.tasks.find((t) => t.task === "app#gen")?.status).toBe(
+                "disabled",
+            );
+            expect(data.contradictions).toHaveLength(1);
+            expect(data.contradictions[0]?.dependent).toBe("app#build");
+            expect(data.contradictions[0]?.dependency).toBe("app#gen");
+        });
+
+        it("requires a task selection", async () => {
+            const ws = makeWorkspace(spec());
+            const { client } = await connectMcp({ cwd: ws.cwd });
+
+            await expect(
+                client.callTool({
+                    name: "cache_eligibility",
+                    arguments: {},
+                }),
+            ).rejects.toThrow(/at least one task/);
         });
     },
 );

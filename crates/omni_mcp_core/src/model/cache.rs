@@ -21,6 +21,44 @@ pub struct CacheStatsParams {
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct CacheEligibilityParams {
+    /// Exact names of tasks to inspect. Glob characters are literal; use
+    /// `task_patterns` to select by glob. At least one of `tasks` and
+    /// `task_patterns` is required.
+    #[serde(default)]
+    pub tasks: Vec<String>,
+    /// Glob patterns selecting tasks by name. May be combined with `tasks`.
+    #[serde(default)]
+    pub task_patterns: Vec<String>,
+    /// Exact project names; glob characters are literal.
+    #[serde(default)]
+    pub project: Vec<String>,
+    /// Project name globs, in addition to `project`.
+    #[serde(default)]
+    pub project_patterns: Vec<String>,
+    /// Directory filter.
+    #[serde(default)]
+    pub dir: Vec<String>,
+    /// CEL expression selecting tasks by their `meta` configuration.
+    #[serde(default)]
+    pub meta: Option<String>,
+    /// Inspect only the selected tasks, not the tasks they depend on.
+    #[serde(default)]
+    pub ignore_dependencies: bool,
+}
+
+/// Per-task cache status and explicit `cache.enabled` contradictions.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct CacheEligibilityResult {
+    #[schemars(with = "serde_json::Value")]
+    pub tasks: Vec<omni_task_executor::InspectedTask>,
+    #[schemars(with = "serde_json::Value")]
+    pub contradictions: Vec<omni_task_executor::InspectedContradiction>,
+    /// Tasks whose `enabled` condition was not evaluated.
+    pub unevaluated_conditions: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct CacheStatsResult {
     pub projects: Vec<ProjectCacheStatsSummary>,
 }
@@ -125,5 +163,36 @@ mod tests {
         .unwrap();
         assert_eq!(prune.project, ["app*"]);
         assert_eq!(prune.project_pattern, ["lib-*"]);
+    }
+}
+
+#[cfg(test)]
+mod eligibility_tests {
+    use super::*;
+
+    #[test]
+    fn params_default_everything_but_the_selection() {
+        let p: CacheEligibilityParams =
+            serde_json::from_value(serde_json::json!({"tasks": ["build"]}))
+                .unwrap();
+        assert_eq!(p.tasks, vec!["build"]);
+        assert!(p.task_patterns.is_empty() && !p.ignore_dependencies);
+    }
+
+    #[test]
+    fn result_keeps_the_inspection_field_names() {
+        let r = CacheEligibilityResult {
+            tasks: vec![],
+            contradictions: vec![],
+            unevaluated_conditions: vec!["a#b".into()],
+        };
+        assert_eq!(
+            serde_json::to_value(&r).unwrap(),
+            serde_json::json!({
+                "tasks": [],
+                "contradictions": [],
+                "unevaluated_conditions": ["a#b"]
+            })
+        );
     }
 }

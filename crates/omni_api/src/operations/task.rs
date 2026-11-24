@@ -152,6 +152,43 @@ where
     TSys: TaskExecutorSys + Clone,
     S: ExecutionEventSubscriber,
 {
+    let config = build_run_config(&req)?;
+    let executor = TaskExecutor::new(config, ctx, subscriber);
+    let results = executor.run().await?;
+
+    Ok(TaskRunResponse { results })
+}
+
+/// Cache eligibility of the selected tasks, derived from configuration alone.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct TaskCacheInspectResponse {
+    #[schemars(with = "serde_json::Value")]
+    pub inspection: omni_task_executor::CacheInspection,
+}
+
+/// Inspect the cache status of the tasks `req` selects without running them.
+/// Only the selection fields of the request apply.
+///
+/// Loads a fresh definitions-only view, so no environment value is evaluated
+/// and no command substitution can run, even if the API already holds a
+/// fully loaded context.
+pub async fn handle_task_cache_inspect<TSys>(
+    ctx: &omni_context::Context<TSys>,
+    req: TaskRunRequest,
+) -> eyre::Result<TaskCacheInspectResponse>
+where
+    TSys: TaskExecutorSys + Clone,
+{
+    let config = build_run_config(&req)?;
+    let loaded = ctx.reload()?.into_loaded_definitions_only().await?;
+    let inspection =
+        omni_task_executor::inspect_cache_eligibility(&loaded, &config)?;
+    Ok(TaskCacheInspectResponse { inspection })
+}
+
+fn build_run_config(
+    req: &TaskRunRequest,
+) -> eyre::Result<omni_task_executor::ExecutionConfig> {
     let mut builder = ExecutionConfigBuilder::default();
 
     builder
@@ -178,11 +215,7 @@ where
 
     apply_filters(&mut builder, &req.filters);
 
-    let config = builder.build()?;
-    let executor = TaskExecutor::new(config, ctx, subscriber);
-    let results = executor.run().await?;
-
-    Ok(TaskRunResponse { results })
+    Ok(builder.build()?)
 }
 
 // ── Shared helpers ────────────────────────────────────────────────────────────

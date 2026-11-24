@@ -1,0 +1,81 @@
+---
+
+title: "eligibility"
+
+description: "Show each selected task's cache eligibility and explicit cache.enabled contradictions, without running anything"
+
+---
+
+
+
+## Usage
+
+```bash
+omni cache eligibility [OPTIONS]
+```
+
+---
+
+## Options
+
+### `-t`, `--task`
+
+Select the task with this exact name, for example `-t build`. At least one of --task or --task-pattern is required. Glob characters are literal; use --task-pattern to match by glob
+
+- **Required:** No
+
+### `--task-pattern`
+
+Select tasks whose name matches this glob. At least one of --task or --task-pattern is required. Repeatable, and may be combined with --task
+
+- **Required:** No
+
+### `-p`, `--project`
+
+Filter to the project with this exact name. Glob characters are literal; use --project-pattern to match by glob
+
+- **Required:** No
+
+### `--project-pattern`
+
+Filter to projects whose name matches this glob. Repeatable, and may be combined with --project
+
+- **Required:** No
+
+### `--dir`
+
+Filter to projects in directories matching this glob
+
+- **Required:** No
+
+### `-m`, `--meta`
+
+Filter the tasks based on the meta configuration, accepts CEL syntax
+
+- **Required:** No
+
+### `--ignore-dependencies`
+
+Only inspect the selected tasks, not the tasks they depend on
+
+- **Required:** No
+
+- **Possible values:** `true`, `false`
+
+### `--json`
+
+Print the result as JSON
+
+- **Required:** No
+
+- **Possible values:** `true`, `false`
+
+---
+
+## Examples
+
+```bash
+omni cache eligibility [OPTIONS]
+```
+
+---

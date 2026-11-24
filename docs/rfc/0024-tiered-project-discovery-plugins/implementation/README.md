@@ -38,7 +38,7 @@ The package-level waves further down are a coarse summary; the task graph supers
 ## Status
 
 Bug fixes B01-B04 and refactors R01-R08 are merged. Of the standalone features, **F01, F02
-and F08 are done**; F03, F05, F06 and F10 are partly done; F04 is done; F07 and F09 are not started. The per-feature status is in the
+and F08 are done**; F03, F05, F06 and F10 are partly done; F04 is done; F07 is not started and F09 is done except field provenance. The per-feature status is in the
 [features table](#features-new-capability-useful-on-its-own), and the merged batches are:
 
 - F01 and F02: the [first feature batch](features/F01-F02-batch.md) ([#101](https://github.com/omni-oss/omni/pull/101)).
@@ -106,7 +106,7 @@ Known gaps carried forward from the merged refactors:
 | [F06](features/F06-effective-semantic-digest.md)          | Per-task effective semantic digest in cache keys        | R03, R05, B01    | XL   | Partly done: F06.1 audit ([#103](https://github.com/omni-oss/omni/pull/103)), F06.2 digest function ([#114](https://github.com/omni-oss/omni/pull/114)). F06.3 (cache-key plumbing, High risk) is not started                                                                                                         |
 | [F07](features/F07-conflict-detection-and-provenance.md)  | Composition conflict detection and provenance           | R04, R07         | L    | Not started (needs an approved plan)                                                                                                                                                                                                                                                                                  |
 | [F08](features/F08-source-acquisition-leases.md)          | Remote-source acquisition leases and atomic references  | none             | L    | Done: F08.1-F08.5 ([#108](https://github.com/omni-oss/omni/pull/108)-[#113](https://github.com/omni-oss/omni/pull/113), [#131](https://github.com/omni-oss/omni/pull/131)). F08.6 (D7 `.pending` cleanup) done. Decisions D1 and D3 are still open                                                                                                    |
-| [F09](features/F09-eligibility-inspection.md)             | Cache-eligibility and provenance inspection (CLI/MCP)   | B04, F05         | M    | Not started                                                                                                                                                                                                                                                                                                           |
+| [F09](features/F09-eligibility-inspection.md)             | Cache-eligibility and provenance inspection (CLI/MCP)   | B04, F05         | M    | Done except field provenance (needs F07): API operation, `omni cache eligibility` and the `cache_eligibility` MCP tool |
 | [F10](features/F10-captured-input-view.md)                | Captured, containment-checked input view                | R02              | L    | Partly done: F10.1 design ([#108](https://github.com/omni-oss/omni/pull/108)). F10.2-F10.3 wait on decisions D2, D5 and D9                                                                                                                                                                                            |
 
 Size: XS < half a day, S ≈ 1-2 days, M ≈ 3-5 days, L ≈ 1-2 weeks, XL > 2 weeks
@@ -156,6 +156,24 @@ targets.
   Mark the accepted slice done and link its implementation PR once it has a URL. If
   acceptance is only partial, list what shipped and what remains instead of marking
   the whole package done. A completed slice unblocks dependent work only after merge.
+
+## Decisions for finishing the standalone features
+
+Recorded before the plugin work resumes. Each still needs its own plan and, at High risk,
+approval before it is built.
+
+- **F05.2 planner error:** a hard error, as the RFC specifies. The Omni workspace audit finds
+  no contradictions; other workspaces can be checked with `omni cache eligibility`.
+- **F06.3:** platform stays out of the cache key (users can configure it explicitly); the
+  workspace hash includes the digest; the one-time invalidation ships with a release note.
+  Cache-key versioning and automatic migration need a separate design before v1.
+- **F07:** two PRs, the provenance/metadata redesign first, then conflict detection.
+- **F03:** the `alias` key lands together with its selector plumbing.
+- **F10:** D2 symlinks are configurable and rejected by default (design to follow); D5 macOS
+  returns `Unsupported` until a verified beneath-root open exists; D9 rejects Windows
+  alternate streams and reserved names.
+- **F08 D1:** no store `VERSION` bump now; the gap is accepted. Automatic migration joins the
+  pre-v1 cache-key versioning design. D3 is separate; D7 was implemented in F08.6.
 
 ## Part 2: the plugin features
 
