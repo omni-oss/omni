@@ -1,6 +1,7 @@
 # F09: Cache-eligibility and provenance inspection (CLI/MCP)
 
 **Type:** feature · **Size:** M · **Depends on:** B04, F05 (F07 for field provenance)
+**Status:** slice 1 (API operation) done; CLI (slice 2) and MCP (slice 3) not started.
 
 ## Goal
 
@@ -40,3 +41,18 @@ note, CLI/JSON and MCP.
   without failing the inspection or executing task commands.
 - Redaction applied; no file contents in output.
 - Disabling output channels doesn't change execution.
+
+## Slices
+
+1. **API operation (done).** `omni_task_executor::inspect_cache_eligibility` plans a
+   selection and reports each task's `CacheStatus`, the tier that decided
+   `cache.enabled`, and every explicit contradiction with both declaring files
+   (workspace-relative). It runs nothing, evaluates no `enabled` expression, loads no
+   environment and never fails on a contradiction. Statuses come from the executor's
+   `derive_status`; `enabled` classification shares `static_enabled` with
+   `TaskContext::is_enabled`. Tasks with a template `enabled` are judged as enabled
+   and listed in `unevaluated_conditions`. Exposed as `OmniApi::task_cache_inspect`
+   (request: `TaskRunRequest`, selection fields only). `--no-cache` is not modelled, so
+   `write-only-no-cache` is not reported yet.
+2. **CLI (not started).** A command with JSON output and snapshot tests per status.
+3. **MCP (not started).** A tool with the same output, plus schema and docs updates.

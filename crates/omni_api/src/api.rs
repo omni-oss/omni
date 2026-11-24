@@ -33,7 +33,7 @@ use crate::{
             ProjectConfigResponse, ProjectListEntry, ProjectListRequest,
             ProjectSelector,
         },
-        task::{TaskRunRequest, TaskRunResponse},
+        task::{TaskCacheInspectResponse, TaskRunRequest, TaskRunResponse},
     },
     setup_guard::SetupGuard,
 };
@@ -311,6 +311,18 @@ where
             req,
         )
         .await
+    }
+
+    /// Report the cache eligibility of the selected tasks without running them.
+    pub async fn task_cache_inspect(
+        &self,
+        req: TaskRunRequest,
+    ) -> eyre::Result<TaskCacheInspectResponse> {
+        let mut ctx = self.ctx.lock().await;
+        crate::operations::task::handle_task_cache_inspect(
+            ctx.ensure_loaded().await?,
+            req,
+        )
     }
 
     /// Execute an arbitrary command in the workspace environment.

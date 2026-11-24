@@ -2072,3 +2072,47 @@ fn project_config_response_with_root_references_serializes() {
     let json = serde_json::to_string(&resp).expect("response");
     assert!(serde_json::from_str::<ProjectConfigResponse>(&json).is_err());
 }
+
+// ── task cache inspection ─────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn task_cache_inspect_lists_contradiction_without_running_anything() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let root = tmp.path();
+    std::fs::write(
+        root.join("workspace.omni.yaml"),
+        "projects:\n  - \"projects/**\"\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(root.join("projects/app")).unwrap();
+    // `marker` proves nothing ran: either task would create it.
+    std::fs::write(
+        root.join("projects/app/project.omni.yaml"),
+        "name: app\ntasks:\n  gen:\n    exec: touch marker\n    cache:\n      enabled: false\n  build:\n    exec: touch marker\n    dependencies:\n      - gen\n    cache:\n      enabled: true\n  plain:\n    exec: touch marker\n",
+    )
+    .unwrap();
+    let api = make_api(root);
+
+    let resp = api
+        .task_cache_inspect(omni_api::TaskRunRequest {
+            tasks: vec!["build".into()],
+            ..Default::default()
+        })
+        .await
+        .expect("inspect");
+    let i = &resp.inspection;
+
+    assert_eq!(i.contradictions.len(), 1);
+    let c = &i.contradictions[0];
+    assert_eq!(c.dependent, "app#build");
+    assert_eq!(c.dependency, "app#gen");
+    let file = Some(PathBuf::from("projects/app/project.omni.yaml"));
+    assert_eq!(c.dependent_file, file);
+    assert_eq!(c.dependency_file, file);
+    assert!(i.tasks.iter().any(|t| t.task == "app#build"
+        && matches!(
+            t.status,
+            omni_task_executor::CacheStatus::Demoted { .. }
+        )));
+    assert!(!root.join("projects/app/marker").exists());
+}
