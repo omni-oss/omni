@@ -2225,9 +2225,14 @@ async fn contradiction_fails_the_plan_before_any_event_task_or_cache_write() {
             .expect_err("contradiction must fail the plan");
         let d = omni_diagnostic::find(&err).expect("diagnostic");
         assert_eq!(d.code(), "executor.cache_contradiction");
-        let details = d.details().unwrap().to_string();
-        assert!(details.contains("app#build") && details.contains("app#gen"));
-        assert!(details.contains("projects/app/project.omni.yaml"));
+        let file = Path::new("projects").join("app").join("project.omni.yaml");
+        assert_eq!(
+            d.details().unwrap()["contradictions"],
+            serde_json::json!([format!(
+                "app#build ({file}) -> app#gen ({file})",
+                file = file.display(),
+            )])
+        );
         assert_eq!(
             recorder.events.load(std::sync::atomic::Ordering::SeqCst),
             0,
