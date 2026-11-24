@@ -2122,9 +2122,9 @@ async fn task_cache_inspect_lists_contradiction_without_running_anything() {
     );
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 struct Recorder {
-    events: std::sync::atomic::AtomicUsize,
+    events: std::sync::Arc<std::sync::atomic::AtomicUsize>,
 }
 
 impl omni_messages::NoticeSubscriber for Recorder {
@@ -2210,7 +2210,8 @@ async fn contradiction_fails_the_plan_before_any_event_task_or_cache_write() {
         .with_sources_dir(Some(root.join(".omni/sources/store")))
         .unwrap();
         let cache_dir = ctx.cache_dir();
-        let api = OmniApi::new_with_sys(ctx, Recorder::default());
+        let recorder = Recorder::default();
+        let api = OmniApi::new_with_sys(ctx, recorder.clone());
         let err = api
             .task_run(TaskRunRequest {
                 exact_tasks: vec!["build".into()],
@@ -2227,6 +2228,11 @@ async fn contradiction_fails_the_plan_before_any_event_task_or_cache_write() {
         let details = d.details().unwrap().to_string();
         assert!(details.contains("app#build") && details.contains("app#gen"));
         assert!(details.contains("projects/app/project.omni.yaml"));
+        assert_eq!(
+            recorder.events.load(std::sync::atomic::Ordering::SeqCst),
+            0,
+            "no plan-ready or task-started event may fire"
+        );
         assert!(!root.join("projects/app/marker").exists());
         assert_eq!(count_files(&cache_dir), 0, "nothing reached the cache");
     }
