@@ -31,7 +31,7 @@ orcs.config.json
 # contributors should have their own todo.txt and agents files
 **/todo.txt
 **/.worklog
-.agents
+/.agents/agent-choices.local.md
 
 # @@omni-managed:begin (managed by `omni ignore sync`; do not edit by hand)
 /.omni/cache/**
