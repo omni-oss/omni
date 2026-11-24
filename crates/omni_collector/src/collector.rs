@@ -1342,10 +1342,13 @@ mod tests {
     /// An ordinary undecorated task with controlled inputs, env, args, output
     /// globs, command and dependency digests.
     fn ordinary_task(root: &Path, project: &str, task: &str) -> Project {
-        write_file(&root.join(project).join("src/a.txt"), "a");
+        // A flat input keeps the hashed `@project/<path>` free of a path
+        // separator, which the collector renders natively (`\` on Windows),
+        // so the pinned digests hold on every OS.
+        write_file(&root.join(project).join("a.txt"), "a");
         let mut p = Project::new(root, project);
         p.task_name = task.to_string();
-        p.input_files = vec![OmniPath::new("src/**/*.txt")];
+        p.input_files = vec![OmniPath::new("*.txt")];
         p.output_files = vec![OmniPath::new("dist/**")];
         p.input_env_keys = vec!["MODE".to_string()];
         p.env_vars.insert("MODE".to_string(), "release".to_string());
@@ -1425,7 +1428,7 @@ mod tests {
         );
         assert_eq!(
             hex32(digests.legacy_recipe),
-            "3fa673aafe481f2afc40309d8c365eb6a3ef201a2bf718aa1e9262987d5c4d6a"
+            "38f3811e830a6572f5b6d9dd7e4ccf4c15c565b80f745524a34715f2f140518c"
         );
         assert_ne!(digests.collector, digests.legacy_recipe);
     }
@@ -1462,7 +1465,7 @@ mod tests {
         );
         assert_eq!(
             hex32(digests.v1_recipe),
-            "ccd4438a5d433062a171d637e6dd8e790c57aa4caf8335bc96f7aec0ed251f24"
+            "baccd2c423a6c8afbd93c453f56926ea0e49c3d837fe0909f9ecc24cd085e174"
         );
         assert_ne!(digests.v1_recipe, digests.legacy_recipe);
         assert_eq!(digests.collector, digests.v1_recipe);

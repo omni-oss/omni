@@ -16,6 +16,10 @@ import { describe, expect, it } from "vitest";
 
 import { makeWorkspace, runOmni, type Workspace } from "@/harness";
 
+// A flat input keeps the hashed `@project/<path>` free of a path separator,
+// which the collector renders natively (`\` on Windows), so pinned digests
+// hold on every OS.
+const FLAT_CONFIG_HASH = { key: { defaults: false, files: ["*.txt"] } };
 const NO_CONFIG_HASH = { key: { defaults: false, files: ["src/**"] } };
 
 interface ResultItem {
@@ -175,12 +179,12 @@ describe("+run @e2e (base behavior of an ordinary task is pinned)", () => {
                             exec: 'echo "ordinary $MODE $PROFILE"',
                             args: { profile: "fast" },
                             env: { vars: { MODE: "release", PROFILE: "p" } },
-                            cache: NO_CONFIG_HASH,
+                            cache: FLAT_CONFIG_HASH,
                         },
                     },
                 },
             },
-            files: { "app/src/a.txt": "a" },
+            files: { "app/a.txt": "a" },
         });
     }
 
@@ -234,7 +238,7 @@ describe("+run @e2e (base behavior of an ordinary task is pinned)", () => {
             { cwd: ws.cwd },
         );
         const [item] = JSON.parse(readFileSync(resultPath, "utf8"));
-        expect(item.hash).toBe("S9EO0EDusfY8WI5qn+/84yBJaa5rQ+jWMMQ3EcCgkDc=");
+        expect(item.hash).toBe("aZRuysvFOqM9KaWhJwamH3krAObxWkX7VmAHMSE3JUw=");
     });
 });
 
