@@ -371,7 +371,7 @@ pub async fn run(command: &CacheCommand, ctx: &Context) -> eyre::Result<()> {
         }
 
         CacheSubcommands::Stats { args } => {
-            let stats = api
+            let response = api
                 .cache_stats(CacheStatsRequest {
                     project: args.project.clone(),
                     project_pattern: args.project_pattern.clone(),
@@ -381,6 +381,7 @@ pub async fn run(command: &CacheCommand, ctx: &Context) -> eyre::Result<()> {
                     meta: args.meta.clone(),
                 })
                 .await?;
+            let stats = &response.stats;
             for (i, project) in stats.projects.iter().enumerate() {
                 println!("Project: {}", project.project_name);
                 println!("  Tasks:");
@@ -426,6 +427,7 @@ pub async fn run(command: &CacheCommand, ctx: &Context) -> eyre::Result<()> {
                     println!();
                 }
             }
+            print_alias_hints(&response.hints);
         }
 
         CacheSubcommands::Eligibility { args } => {
@@ -481,6 +483,20 @@ pub async fn run(command: &CacheCommand, ctx: &Context) -> eyre::Result<()> {
     Ok(())
 }
 
+/// Print advisory alias suggestions. They never change what is selected.
+fn print_alias_hints(hints: &[omni_api::CacheAliasHint]) {
+    for hint in hints {
+        println!(
+            "Hint: no cache entries are stored under `{}`; it is an alias of task `{}` in project `{}`. Stored entries use the canonical name: try `--project {} --task {}`",
+            hint.selector,
+            hint.canonical,
+            hint.project,
+            hint.project,
+            hint.canonical
+        );
+    }
+}
+
 async fn prune(
     api: &OmniApi<system_traits::impls::RealSys, omni_messages::NoopSubscriber>,
     args: &PruneArgs,
@@ -502,6 +518,7 @@ async fn prune(
         dry_run: true,
     };
     let prune_result = api.cache_prune(request.clone()).await?;
+    print_alias_hints(&prune_result.hints);
 
     let pruned = prune_result.entries;
 

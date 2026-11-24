@@ -62,6 +62,11 @@ pub struct CacheEligibilityResult {
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct CacheStatsResult {
     pub projects: Vec<ProjectCacheStatsSummary>,
+    /// Advisory suggestions for exact `task` selectors that matched no stored
+    /// entry but name a live alias. They never change what is listed. Omitted
+    /// when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub alias_hints: Vec<omni_api::CacheAliasHint>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
@@ -121,6 +126,11 @@ pub struct CachePruneResult {
     pub dry_run: bool,
     pub entries_pruned: usize,
     pub bytes_freed: u64,
+    /// Advisory suggestions for exact `task` selectors that matched no stored
+    /// entry but name a live alias. They never change what is pruned. Omitted
+    /// when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub alias_hints: Vec<omni_api::CacheAliasHint>,
 }
 
 #[cfg(test)]

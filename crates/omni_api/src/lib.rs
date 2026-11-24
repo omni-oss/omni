@@ -12,8 +12,8 @@ pub use error::OmniApiError;
 // Re-export commonly used types at the crate root.
 pub use operations::{
     cache::{
-        CachePruneRequest, CachePruneResponse, CacheRemoteSetupRequest,
-        CacheStatsRequest,
+        CacheAliasHint, CachePruneRequest, CachePruneResponse,
+        CacheRemoteSetupRequest, CacheStatsRequest, CacheStatsResponse,
     },
     config_schema::{ConfigSchemaResponse, SchemaKind},
     env::{EnvRequest, EnvResponse},
