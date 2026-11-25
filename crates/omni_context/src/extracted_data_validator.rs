@@ -472,7 +472,7 @@ mod tests {
 
     #[test]
     fn dangling_alias_to_missing_task_is_error() {
-        let mut app =
+        let app =
             project("app", vec![("build", task_with_own_deps(&["compile"]))]);
         let mut aliases = maps::OrderedMap::new();
         aliases.insert("compile".to_string(), "gone".to_string());

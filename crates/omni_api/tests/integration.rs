@@ -2329,3 +2329,73 @@ async fn contradiction_ignored_when_dependencies_are_ignored() {
         .await
         .expect("ignored dependency is not judged");
 }
+
+#[tokio::test]
+async fn cache_confirm_prune_deletes_only_the_previewed_entries() {
+    use omni_api::TaskRunRequest;
+
+    let tmp = tempfile::TempDir::new().unwrap();
+    let root = tmp.path();
+    let write_project = |build: &str, alias_target: &str| {
+        contradiction_workspace(
+            root,
+            "app",
+            &format!(
+                "  build-native:\n    exec: {build}\n  lint:\n    exec: echo lint\n  compile:\n    alias: {alias_target}\n"
+            ),
+        );
+    };
+    let run = |task: &'static str| async move {
+        make_api(root)
+            .task_run(TaskRunRequest {
+                exact_tasks: vec![task.into()],
+                ..Default::default()
+            })
+            .await
+            .expect("task run");
+    };
+
+    write_project("echo one", "build-native");
+    run("build-native").await;
+    run("lint").await;
+
+    let api = make_api(root);
+    let request = CachePruneRequest {
+        task: vec!["build-native".into()],
+        dry_run: true,
+        ..Default::default()
+    };
+    let preview = api.cache_prune(request.clone()).await.unwrap();
+    assert_eq!(preview.entries.len(), 1);
+    let approved = preview.entries[0].entry_dir.clone();
+    assert!(approved.exists(), "a dry run deletes nothing");
+
+    // Between preview and confirm: retarget the alias and store a second
+    // entry that the same request now also matches.
+    write_project("echo two", "lint");
+    run("build-native").await;
+
+    let confirmed = api
+        .cache_confirm_prune(request, preview.entries)
+        .await
+        .unwrap();
+    assert_eq!(confirmed.entries.len(), 1);
+    assert_eq!(confirmed.entries[0].entry_dir, approved);
+    assert!(!approved.exists(), "the approved entry is deleted");
+
+    let after = make_api(root)
+        .cache_prune(CachePruneRequest {
+            dry_run: true,
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    let mut left: Vec<_> =
+        after.entries.iter().map(|e| e.task_name.as_str()).collect();
+    left.sort_unstable();
+    assert_eq!(
+        left,
+        ["build-native", "lint"],
+        "the new entry and the retargeted alias's entry survive"
+    );
+}
