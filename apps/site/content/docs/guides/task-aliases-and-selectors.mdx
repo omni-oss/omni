@@ -52,6 +52,10 @@ collapses into it. Aliases to the same target collapse to the first.
   alias with another alias replaces the whole entry. Aliases in `base: true`
   layers are checked once they are composed into a concrete project.
 - An alias and a task cannot share a name inside one project.
+- Repeating the `alias` key inside one object is not an error: as with any
+  duplicate key in a configuration object, the last value wins.
+- A key containing `:` such as `a:b` is an ordinary task name; only the
+  doubled `::` form is rejected as a plugin scope.
 - No automatic aliases exist. There is no plugin scope: `native::build` in a key,
   target or selector is rejected (see below).
 
@@ -124,13 +128,11 @@ unmatchable under `--dir` and `--meta`, as before.
   entries are accepted. Schema validation cannot detect two keys that normalize
   to the same task; loading the workspace does. Republish the schema when you
   upgrade.
-- **Digests change for one graph shape.** A task that lists the same target both
-  in `with` and as a `^dependency` used to get a duplicate dependency edge,
-  because the duplicate check could see only one of the two connecting edges.
-  It now keeps one. The task's dependency digests, and so the digests of that
-  task and its dependents, change once for such a graph. Tasks that do not do
-  this are unaffected. No stored entry is rewritten; the changed digests simply
-  miss once.
+- **Digests do not change for existing graphs.** The duplicate-reference check
+  now tests every edge between two tasks, not only the newest one. For graphs
+  built from configuration this gives the same result as before, so no existing
+  task digest changes because of it. Digest baselines captured before the alias
+  work are pinned in the test suite.
 - **No cache format change.** Aliases add no stored names and no entries. Nothing
   needs migrating, and rolling back leaves every entry usable by the version that
   wrote it.
