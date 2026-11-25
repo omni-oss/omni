@@ -151,8 +151,14 @@ fn every_symlink_shape_is_a_containment_error() {
     symlink(outside.join("b/file"), root_dir.join("link_file")).unwrap();
     symlink(root_dir.join("a"), root_dir.join("link_inside")).unwrap();
     symlink("gone", root_dir.join("dangling")).unwrap();
-    symlink("../outside/b/file", root_dir.join("a/relative_escape")).unwrap();
+    symlink("../../outside/b/file", root_dir.join("a/relative_escape"))
+        .unwrap();
     symlink("loop", root_dir.join("loop")).unwrap();
+    // The relative link really points at the existing outside file.
+    assert_eq!(
+        fs::read_to_string(root_dir.join("a/relative_escape")).unwrap(),
+        OUTSIDE
+    );
     let root = fixture.contained();
     for path in [
         "link_dir/b/file",
@@ -404,6 +410,11 @@ where
     let mut crossings = 0usize;
     // At least `ITERATIONS` reads; when the caller needs a kernel escape
     // report, keep going (bounded) so a loaded machine cannot starve it.
+    // Make sure the swapper is really running before the reads start, so the
+    // reads overlap swaps.
+    while swaps.load(Ordering::SeqCst) == 0 && !handle.is_finished() {
+        thread::yield_now();
+    }
     let started = std::time::Instant::now();
     let mut reads = 0usize;
     while reads < ITERATIONS
@@ -436,8 +447,9 @@ where
             }
         }
     }
-    // Keep the swapper going until it has had a fair number of rounds.
-    while swaps.load(Ordering::SeqCst) < 100 {
+    // Keep the swapper going until it has had a fair number of rounds, but
+    // stop waiting if it died, so its panic is reported by `join`.
+    while swaps.load(Ordering::SeqCst) < 100 && !handle.is_finished() {
         thread::yield_now();
     }
     stop.store(true, Ordering::SeqCst);
@@ -601,7 +613,11 @@ fn real_seccomp_filter_blocking_openat2_is_unsupported() {
         return;
     }
 
-    let fixture = Fixture::new();
+    // Unfiltered control: where the sandbox already blocks `openat2` the
+    // filtered result would prove nothing, so skip (named).
+    let Some(fixture) = Fixture::supported() else {
+        return;
+    };
     let mut command =
         std::process::Command::new(std::env::current_exe().unwrap());
     command
