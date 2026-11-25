@@ -9,10 +9,9 @@ use omni_configurations::{
 };
 
 fn layer(json: &str) -> LoadedLayer {
-    LoadedLayer {
-        layer: serde_json::from_str::<ProjectLayer>(json).unwrap(),
-        ..Default::default()
-    }
+    LoadedLayer::unattributed(
+        serde_json::from_str::<ProjectLayer>(json).unwrap(),
+    )
 }
 
 fn compose(docs: &[&str]) -> LoadedLayer {
@@ -254,16 +253,18 @@ fn alias(target: &str) -> TaskLayer {
 
 fn with_task(t: TaskLayer) -> LoadedLayer {
     let mut l = LoadedLayer::default();
-    l.layer.tasks = Some(DictConfig::value(
-        [("t".to_string(), t)].into_iter().collect(),
-    ));
+    l.update_layer(|layer| {
+        layer.tasks = Some(DictConfig::value(
+            [("t".to_string(), t)].into_iter().collect(),
+        ));
+    });
     l
 }
 
 fn effective(base: TaskLayer, over: TaskLayer) -> TaskLayer {
     let mut l = with_task(base);
     l.merge(with_task(over));
-    l.layer.tasks.unwrap().as_map()["t"].clone()
+    l.layer().tasks.as_ref().unwrap().as_map()["t"].clone()
 }
 
 fn normal(json: &str) -> TaskLayer {
@@ -286,7 +287,12 @@ fn normal_to_alias_keeps_nothing_of_the_normal_task() {
 #[test]
 fn alias_to_normal_starts_a_distinct_definition() {
     let over = normal(r#"{"description":"only"}"#);
-    assert_eq!(effective(alias("n::build"), over.clone()), over);
+    // Composition attributes a long form to its layer, so compare the task,
+    // not its intermediate representation.
+    assert_eq!(
+        effective(alias("n::build"), over.clone()).into_long_form("t"),
+        over.into_long_form("t")
+    );
     let short = normal(r#""cmd""#);
     assert_eq!(effective(alias("n::build"), short.clone()), short);
 }
@@ -302,25 +308,27 @@ fn a_normal_task_after_an_alias_after_a_normal_task_forgets_the_first() {
         with_task(normal(r#"{"exec":"first","env":{"vars":{"A":"1"}}}"#));
     l.merge(with_task(alias("x")));
     l.merge(with_task(normal(r#"{"description":"d"}"#)));
-    let TaskLayer::LongForm(t) = l.layer.tasks.unwrap().as_map()["t"].clone()
-    else {
-        panic!("long form")
-    };
+    let t = l.layer().tasks.as_ref().unwrap().as_map()["t"]
+        .clone()
+        .into_long_form("t")
+        .expect("a normal task");
     assert!(t.exec.is_none() && t.env.is_none());
 }
 
 #[test]
 fn aliases_survive_task_extension_resolution() {
     let mut l = with_task(alias("x"));
-    if let Some(tasks) = l.layer.tasks.as_mut() {
-        tasks
-            .as_map_mut()
-            .insert("tpl".into(), normal(r#"{"base":true,"exec":"tpl"}"#));
-        tasks
-            .as_map_mut()
-            .insert("u".into(), normal(r#"{"extends":"tpl"}"#));
-    }
-    l.layer.name = Some("p".into());
+    l.update_layer(|layer| {
+        if let Some(tasks) = layer.tasks.as_mut() {
+            tasks
+                .as_map_mut()
+                .insert("tpl".into(), normal(r#"{"base":true,"exec":"tpl"}"#));
+            tasks
+                .as_map_mut()
+                .insert("u".into(), normal(r#"{"extends":"tpl"}"#));
+        }
+        layer.name = Some("p".into());
+    });
     let finalized = l.finalize_composed().unwrap();
     let tasks = finalized.config.tasks.as_map();
     assert!(tasks.contains_key("u") && !tasks.contains_key("tpl"));

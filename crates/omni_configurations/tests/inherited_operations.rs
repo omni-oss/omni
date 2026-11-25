@@ -9,9 +9,10 @@ use omni_configurations::{
 use serde_json::{Value, json};
 
 fn compose(docs: &[Value]) -> FinalizedProject {
-    let mut layers = docs.iter().map(|doc| LoadedLayer {
-        layer: serde_json::from_value::<ProjectLayer>(doc.clone()).unwrap(),
-        ..Default::default()
+    let mut layers = docs.iter().map(|doc| {
+        LoadedLayer::unattributed(
+            serde_json::from_value::<ProjectLayer>(doc.clone()).unwrap(),
+        )
     });
     let mut merged = layers.next().unwrap();
     for layer in layers {

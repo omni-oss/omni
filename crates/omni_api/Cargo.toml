@@ -39,6 +39,7 @@ system_traits = { workspace = true, features = [
 either = { workspace = true }
 omni_messages = { workspace = true }
 omni_context = { workspace = true }
+omni_types = { workspace = true }
 omni_task_output_logs = { workspace = true }
 omni_task_executor = { workspace = true }
 omni_retry_config = { workspace = true }
