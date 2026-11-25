@@ -396,7 +396,8 @@ where
         }
         args.inventory = Some(&inventory);
     }
-    let entries = cache_store.prune_caches(&args).await?;
+    // Read the stored names before deleting anything: a historical entry that
+    // this prune removes must still suppress its own selector's hint.
     let hints = alias_hints(
         ctx,
         &cache_store,
@@ -405,6 +406,7 @@ where
         &req.task,
     )
     .await;
+    let entries = cache_store.prune_caches(&args).await?;
 
     Ok(CachePruneResponse {
         entries,
