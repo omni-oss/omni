@@ -169,7 +169,7 @@ fn a_later_declaration_overrides_an_extended_template_s_file() {
 fn names_with_a_hash_are_keyed_structurally() {
     let p = compose(vec![file(
         "a.yaml",
-        r#"{"name":"a#b","tasks":{"c":{"exec":"x","cache":{"enabled":true}},"b#c":{"exec":"x","cache":{"enabled":false}}}}"#,
+        r#"{"name":"a#b","tasks":{"c":{"exec":"x","cache":{"enabled":true}},"b\\#c":{"exec":"x","cache":{"enabled":false}}}}"#,
     )]);
     assert!(p.task_cache_enabled["c"].value);
     assert!(!p.task_cache_enabled["b#c"].value);

@@ -64,8 +64,9 @@ where
             task_pattern: params.task_pattern,
             ..Default::default()
         };
-        let stats = self.make_api()?.cache_stats(req).await?;
-        let projects = stats
+        let response = self.make_api()?.cache_stats(req).await?;
+        let projects = response
+            .stats
             .projects
             .into_iter()
             .map(|p| ProjectCacheStatsSummary {
@@ -81,7 +82,10 @@ where
                     .collect(),
             })
             .collect();
-        Ok(CacheStatsResult { projects })
+        Ok(CacheStatsResult {
+            projects,
+            alias_hints: response.hints,
+        })
     }
 
     pub(crate) async fn tool_cache_prune(
@@ -111,6 +115,7 @@ where
             dry_run: params.dry_run,
             entries_pruned,
             bytes_freed,
+            alias_hints: prune_response.hints,
         })
     }
 }

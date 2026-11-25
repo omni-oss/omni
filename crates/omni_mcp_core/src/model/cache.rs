@@ -22,7 +22,8 @@ pub struct CacheStatsParams {
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct CacheEligibilityParams {
-    /// Exact names of tasks to inspect. Glob characters are literal; use
+    /// Exact names of tasks to inspect: a task or an alias, optionally
+    /// `project#task`. Glob characters are literal; use
     /// `task_patterns` to select by glob. At least one of `tasks` and
     /// `task_patterns` is required.
     #[serde(default)]
@@ -61,6 +62,11 @@ pub struct CacheEligibilityResult {
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct CacheStatsResult {
     pub projects: Vec<ProjectCacheStatsSummary>,
+    /// Advisory suggestions for exact `task` selectors that matched no stored
+    /// entry but name a live alias. They never change what is listed. Omitted
+    /// when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub alias_hints: Vec<omni_api::CacheAliasHint>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
@@ -120,6 +126,11 @@ pub struct CachePruneResult {
     pub dry_run: bool,
     pub entries_pruned: usize,
     pub bytes_freed: u64,
+    /// Advisory suggestions for exact `task` selectors that matched no stored
+    /// entry but name a live alias. They never change what is pruned. Omitted
+    /// when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub alias_hints: Vec<omni_api::CacheAliasHint>,
 }
 
 #[cfg(test)]

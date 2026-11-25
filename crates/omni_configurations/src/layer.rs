@@ -20,10 +20,12 @@ use enum_map::EnumMap;
 use merge::Merge;
 use omni_command_config::CommandConfig;
 use omni_config_types::{SingleOrMany, TeraExprBoolean};
+use omni_core::TaskAliases;
 use omni_glob_config::MergeGlobConfig;
 use omni_retry_config::RetryConfiguration;
 use omni_task_output_logs::OutputLogsConfiguration;
 use omni_types::{OmniPath, Root};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use system_traits::FsReadAsync;
 
@@ -36,7 +38,9 @@ use crate::{
     TaskEnvConfiguration, TaskOutputConfiguration, replace_if_present, utils,
 };
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, Merge)]
+#[derive(
+    Debug, Clone, Default, PartialEq, Serialize, Deserialize, Merge, JsonSchema,
+)]
 #[serde(deny_unknown_fields)]
 pub struct TaskOutputLayer {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -48,7 +52,9 @@ pub struct TaskOutputLayer {
     pub logs: Option<bool>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, Merge)]
+#[derive(
+    Debug, Clone, Default, PartialEq, Serialize, Deserialize, Merge, JsonSchema,
+)]
 #[serde(deny_unknown_fields)]
 pub struct CacheKeyLayer {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -64,7 +70,9 @@ pub struct CacheKeyLayer {
     pub files: Option<MergeGlobConfig<OmniPath>>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, Merge)]
+#[derive(
+    Debug, Clone, Default, PartialEq, Serialize, Deserialize, Merge, JsonSchema,
+)]
 #[serde(deny_unknown_fields)]
 pub struct CacheLayer {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -84,7 +92,9 @@ pub struct CacheLayer {
     pub output: Option<TaskOutputLayer>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, Merge)]
+#[derive(
+    Debug, Clone, Default, PartialEq, Serialize, Deserialize, Merge, JsonSchema,
+)]
 #[serde(deny_unknown_fields)]
 pub struct ProjectEnvLayer {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -92,7 +102,9 @@ pub struct ProjectEnvLayer {
     pub vars: Option<DictConfig<Replace<String>>>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, Merge)]
+#[derive(
+    Debug, Clone, Default, PartialEq, Serialize, Deserialize, Merge, JsonSchema,
+)]
 #[serde(deny_unknown_fields)]
 pub struct TaskLongFormLayer {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -222,24 +234,99 @@ impl TaskDeclarations {
 }
 
 /// A parsed task or the ordered declarations produced by composing it.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, schemars::JsonSchema)]
 #[serde(untagged)]
 pub enum TaskLayer {
     ShortForm(CommandConfig),
     LongForm(Box<TaskLongFormLayer>),
     /// Intermediate state only. Raw files cannot declare a sequence of layers.
     #[serde(skip)]
+    #[schemars(skip)]
     Composed(TaskDeclarations),
-    /// Another name for a canonical task, not a task of its own. It cannot be
-    /// parsed yet (the `alias` key is still rejected); it exists so
-    /// composition can already apply the atomic normal/alias rules.
+    /// Another name for a canonical task, not a task of its own: `{ alias:
+    /// <target> }`. It is never a long form, so it cannot also carry task
+    /// settings.
     Alias(TaskAliasLayer),
 }
 
-/// The target of a [`TaskLayer::Alias`], carrying no task settings.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+/// The target of a [`TaskLayer::Alias`], carrying no task settings. The target
+/// is a same-project reference in the shared reference grammar, decoded when the
+/// composed project's alias index is built.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct TaskAliasLayer {
+    /// The task this name stands for. Write `\#`, `\:` and `\\` for a literal
+    /// `#`, `:` and `\` in the task name.
     pub alias: String,
+}
+
+/// A map that first yields an already-read key, then continues with the rest.
+struct PeekedMap<'de, A: serde::de::MapAccess<'de>> {
+    first: Option<String>,
+    rest: A,
+    _marker: std::marker::PhantomData<&'de ()>,
+}
+
+impl<'de, A: serde::de::MapAccess<'de>> serde::de::MapAccess<'de>
+    for PeekedMap<'de, A>
+{
+    type Error = A::Error;
+
+    fn next_key_seed<K>(
+        &mut self,
+        seed: K,
+    ) -> Result<Option<K::Value>, Self::Error>
+    where
+        K: serde::de::DeserializeSeed<'de>,
+    {
+        use serde::de::IntoDeserializer as _;
+        match self.first.take() {
+            Some(key) => {
+                seed.deserialize(key.into_deserializer()).map(Some).map_err(
+                    |e: serde::de::value::Error| serde::de::Error::custom(e),
+                )
+            }
+            None => self.rest.next_key_seed(seed),
+        }
+    }
+
+    fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value, Self::Error>
+    where
+        V: serde::de::DeserializeSeed<'de>,
+    {
+        self.rest.next_value_seed(seed)
+    }
+}
+
+fn deserialize_task_object<'de, A>(mut map: A) -> Result<TaskLayer, A::Error>
+where
+    A: serde::de::MapAccess<'de>,
+{
+    use serde::de::Error as _;
+    let Some(first) = map.next_key::<String>()? else {
+        return TaskLongFormLayer::deserialize(
+            serde::de::value::MapAccessDeserializer::new(map),
+        )
+        .map(|task| TaskLayer::LongForm(Box::new(task)));
+    };
+    if first == "alias" {
+        let target: String = map.next_value()?;
+        if let Some(other) = map.next_key::<String>()? {
+            return Err(A::Error::custom(format!(
+                "an alias entry holds only `alias`, found `{other}` beside it"
+            )));
+        }
+        return Ok(TaskLayer::Alias(TaskAliasLayer { alias: target }));
+    }
+    let peeked = PeekedMap {
+        first: Some(first),
+        rest: map,
+        _marker: std::marker::PhantomData,
+    };
+    TaskLongFormLayer::deserialize(
+        serde::de::value::MapAccessDeserializer::new(peeked),
+    )
+    .map(|task| TaskLayer::LongForm(Box::new(task)))
 }
 
 impl<'a> Deserialize<'a> for TaskLayer {
@@ -260,7 +347,7 @@ impl<'a> Deserialize<'a> for TaskLayer {
                 }
                 Ok(TaskLayer::ShortForm(CommandConfig::Argv(items)))
             })
-            .map(|long_form| long_form.deserialize().map(TaskLayer::LongForm))
+            .map(|map| deserialize_task_object(map))
             .deserialize(deserializer)
     }
 }
@@ -363,7 +450,9 @@ fn merge_task_maps(
     base
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, Merge)]
+#[derive(
+    Debug, Clone, Default, PartialEq, Serialize, Deserialize, Merge, JsonSchema,
+)]
 #[serde(deny_unknown_fields)]
 pub struct ProjectLayer {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -407,9 +496,141 @@ pub struct ProjectLayer {
     #[merge(strategy = merge::option::recurse)]
     pub redact: Option<RedactConfiguration>,
 
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// The project's tasks and aliases, keyed by declaration key (the shared
+    /// reference grammar: `\#`, `\:`, `\\` and `\^` write literal characters).
+    #[serde(
+        default,
+        deserialize_with = "deserialize_tasks",
+        skip_serializing_if = "Option::is_none"
+    )]
     #[merge(strategy = merge_tasks)]
+    #[schemars(schema_with = "tasks_schema")]
     pub tasks: Option<DictConfig<TaskLayer>>,
+}
+
+/// Decode the `tasks` map and normalize its keys from the declaration-key
+/// grammar to raw task names, before any layers are merged.
+fn deserialize_tasks<'de, D>(
+    deserializer: D,
+) -> Result<Option<DictConfig<TaskLayer>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::Error as _;
+    let Some(tasks) =
+        Option::<DictConfig<TaskLayer>>::deserialize(deserializer)?
+    else {
+        return Ok(None);
+    };
+    normalize_task_keys(tasks)
+        .map(Some)
+        .map_err(D::Error::custom)
+}
+
+/// The raw task name a declaration key spells.
+pub(crate) fn decode_declaration_key(key: &str) -> Result<String, String> {
+    use omni_types::{ReferenceError, ReferenceSurface, TaskReference};
+    // Empty and NUL names are rejected with their own diagnostic when the
+    // workspace loads, which names the project.
+    if key.is_empty() || key.contains('\0') {
+        return Ok(key.to_owned());
+    }
+    let literal = || {
+        TaskReference::own(key)
+            .map(|reference| reference.format())
+            .unwrap_or_else(|_| key.to_owned())
+    };
+    let reference = TaskReference::parse(key).map_err(|e| {
+        format!(
+            "invalid task name `{key}`: {e}; write `{}` for a task literally named `{key}`",
+            literal()
+        )
+    })?;
+    reference
+        .validate_for(ReferenceSurface::DeclarationKey)
+        .map_err(|e| {
+            format!(
+                "invalid task name `{key}`: {e}; write `{}` for a task literally named `{key}`",
+                literal()
+            )
+        })?;
+    if reference.plugin().is_some() {
+        let e = ReferenceError::NotAllowed {
+            surface: ReferenceSurface::DeclarationKey,
+            reason: "be plugin-scoped yet; plugin scopes are not supported in this version",
+        };
+        return Err(format!(
+            "invalid task name `{key}`: {e}; write `{}` for a task literally named `{key}`",
+            literal()
+        ));
+    }
+    Ok(reference.task().to_owned())
+}
+
+fn normalize_task_map(
+    map: maps::Map<String, TaskLayer>,
+) -> Result<maps::Map<String, TaskLayer>, String> {
+    let mut normalized: maps::Map<String, TaskLayer> = maps::map![];
+    let mut spelled: maps::Map<String, String> = maps::map![];
+    for (key, task) in map {
+        let name = decode_declaration_key(&key)?;
+        if let Some(first) = spelled.get(&name) {
+            return Err(format!(
+                "task keys `{first}` and `{key}` both name the task `{name}`"
+            ));
+        }
+        spelled.insert(name.clone(), key);
+        normalized.insert(name, task);
+    }
+    Ok(normalized)
+}
+
+fn normalize_task_keys(
+    tasks: DictConfig<TaskLayer>,
+) -> Result<DictConfig<TaskLayer>, String> {
+    Ok(match tasks {
+        DictConfig::Value(map) => DictConfig::Value(normalize_task_map(map)?),
+        DictConfig::Merge { merge } => DictConfig::Merge {
+            merge: normalize_task_map(merge)?,
+        },
+        DictConfig::Replace { replace } => DictConfig::Replace {
+            replace: normalize_task_map(replace)?,
+        },
+    })
+}
+
+/// The authored `tasks` shape, which follows the loader: an operator is the
+/// sole key of its object and an object-valued operator wins, so a task named
+/// `merge` or `replace` inside no envelope can only be a short form.
+fn tasks_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+    let task = generator.subschema_for::<TaskLayer>();
+    let short = generator.subschema_for::<CommandConfig>();
+    schemars::json_schema!({
+        "description": "Tasks and aliases by name. `merge` or `replace` as the only key of this object is an operator; declare a task or alias with that name inside an explicit outer envelope.",
+        "anyOf": [
+            {
+                "type": "object",
+                "properties": {
+                    "merge": { "type": "object", "additionalProperties": task }
+                },
+                "required": ["merge"],
+                "additionalProperties": false
+            },
+            {
+                "type": "object",
+                "properties": {
+                    "replace": { "type": "object", "additionalProperties": task }
+                },
+                "required": ["replace"],
+                "additionalProperties": false
+            },
+            {
+                "type": "object",
+                "properties": { "merge": short, "replace": short },
+                "additionalProperties": task
+            }
+        ]
+    })
 }
 
 impl CacheLayer {
@@ -652,6 +873,10 @@ pub struct FinalizedProject {
     /// Each task's effective `meta`: the project's, with every declaration of
     /// the task replayed over it. Empty for `base` projects.
     pub task_meta: maps::Map<String, MetaConfiguration>,
+    /// The project's aliases, flattened to canonical task names. Empty for
+    /// `base` projects: their aliases are only validated once composed into a
+    /// concrete project. Aliases are not tasks and never appear in `config`.
+    pub aliases: TaskAliases,
 }
 
 /// Why a composed project cannot be finalized.
@@ -661,6 +886,8 @@ pub enum FinalizeError {
     MissingName(#[from] MissingProjectName),
     #[error(transparent)]
     TaskExtension(#[from] crate::TaskExtensionError),
+    #[error(transparent)]
+    TaskAlias(#[from] crate::TaskAliasError),
     #[error(
         "internal error: replayed `cache.enabled` provenance disagrees with the merged value for task `{task}`"
     )]
@@ -690,14 +917,28 @@ impl LoadedLayer {
         let mut task_cache_enabled_file = maps::Map::default();
         let mut task_cache_enabled_origin = maps::Map::default();
         let mut task_meta = maps::Map::default();
+        let mut aliases = TaskAliases::default();
         let mut provenance_mismatch: Option<String> = None;
         let tasks = if layer.base == Some(true) {
             layer.tasks.take().map(finalize_tasks).unwrap_or_default()
         } else if let Some(mut tasks) = layer.tasks.take() {
+            let project_name = layer.name.clone().unwrap_or_default();
+            let declared = crate::task_alias::take_aliases(&mut tasks);
+            let task_names = tasks.keys().cloned().collect();
+            let canonical = crate::task_alias::resolve_aliases(
+                &project_name,
+                &declared,
+                &task_names,
+            )?;
             let resolved_extensions =
                 crate::task_extension::resolve_task_layer_extensions(
-                    &mut tasks,
+                    &mut tasks, &canonical,
                 )?;
+            aliases = crate::task_alias::finish_aliases(
+                &project_name,
+                canonical,
+                |target| tasks.as_map().contains_key(target),
+            )?;
             finalize_tasks_with(tasks, |name, task| {
                 let mut cache = layer.cache.clone();
                 let mut meta = layer.meta.clone();
@@ -783,6 +1024,7 @@ impl LoadedLayer {
             task_cache_enabled_file,
             task_cache_enabled_origin,
             task_meta,
+            aliases,
         })
     }
 }

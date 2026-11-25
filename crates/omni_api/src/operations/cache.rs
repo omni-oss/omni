@@ -108,6 +108,38 @@ pub struct CachePruneResponse {
     pub entries: Vec<PrunedCacheEntry>,
     /// Mirrors `CachePruneRequest::dry_run`.
     pub dry_run: bool,
+    /// Advisory alias suggestions for exact task selectors that matched no
+    /// stored name. They never change the selection, the approved paths or a
+    /// confirmation.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hints: Vec<CacheAliasHint>,
+}
+
+/// The result of [`handle_cache_stats`]: the stored statistics, plus advisory
+/// alias hints.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CacheStatsResponse {
+    #[serde(flatten)]
+    pub stats: CacheStats,
+    /// Advisory alias suggestions for exact task selectors that matched no
+    /// stored name. They never change which entries are listed.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hints: Vec<CacheAliasHint>,
+}
+
+/// A live alias that names the same task as an exact selector which matched no
+/// stored cache entry. Stored names are canonical, so the suggestion is to
+/// select the canonical name; nothing is selected on the caller's behalf.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CacheAliasHint {
+    /// The exact task selector that matched no stored entry.
+    pub selector: String,
+    /// The project that declares the alias.
+    pub project: String,
+    /// The alias; equal to `selector`.
+    pub alias: String,
+    /// The canonical task name to select instead, with `project`.
+    pub canonical: String,
 }
 
 // ── Handlers ─────────────────────────────────────────────────────────────────
@@ -116,7 +148,7 @@ pub struct CachePruneResponse {
 pub async fn handle_cache_stats<TSys>(
     ctx: &LoadedContext<TSys>,
     req: CacheStatsRequest,
-) -> eyre::Result<CacheStats>
+) -> eyre::Result<CacheStatsResponse>
 where
     TSys: TaskExecutorSys + Clone,
 {
@@ -159,7 +191,97 @@ where
             .await?
     };
 
-    Ok(stats)
+    let hints = alias_hints(
+        ctx,
+        &cache_store,
+        &req.project,
+        &req.project_pattern,
+        &req.task,
+    )
+    .await;
+
+    Ok(CacheStatsResponse { stats, hints })
+}
+
+/// Suggest the canonical name for each exact task selector that matches no
+/// stored `(project, task)` pair in its project scope but names a live alias.
+///
+/// Best effort and advisory: it reads the invoking workspace's already loaded
+/// definitions (no new load, no environment evaluation, never a peer
+/// workspace), decides a miss on the stored cache before any directory, meta,
+/// age, size, stale or orphan predicate, and drops every hint if the stored
+/// names cannot be read. Patterns get no hint.
+async fn alias_hints<TSys>(
+    ctx: &LoadedContext<TSys>,
+    cache_store: &impl TaskExecutionCacheStore,
+    projects: &[String],
+    project_patterns: &[String],
+    tasks: &[String],
+) -> Vec<CacheAliasHint>
+where
+    TSys: TaskExecutorSys + Clone,
+{
+    use omni_execution_plan::{
+        DefaultProjectFilter, ProjectFilterExt as _, ProjectSelector,
+    };
+
+    if tasks.is_empty() || ctx.projects().iter().all(|p| p.aliases.is_empty()) {
+        return vec![];
+    }
+    let selectors = projects
+        .iter()
+        .map(ProjectSelector::exact)
+        .chain(project_patterns.iter().map(ProjectSelector::pattern))
+        .collect::<Vec<_>>();
+    let Ok(filter) = DefaultProjectFilter::new(&selectors) else {
+        return vec![];
+    };
+    let scoped = filter.filter_projects(ctx.projects());
+    let exact_projects: Vec<&str> =
+        projects.iter().map(String::as_str).collect();
+    let project_globs: Vec<&str> =
+        project_patterns.iter().map(String::as_str).collect();
+
+    let mut hints = vec![];
+    let mut seen = HashSet::new();
+    for task in tasks {
+        if !seen.insert(task.as_str()) {
+            continue;
+        }
+        let candidates = scoped
+            .iter()
+            .filter(|p| p.is_alias(task))
+            .collect::<Vec<_>>();
+        if candidates.is_empty() {
+            continue;
+        }
+        let stored = cache_store
+            .get_stats(&CacheStatsArgs::<()> {
+                project_names: &exact_projects,
+                project_name_globs: &project_globs,
+                task_names: &[task.as_str()],
+                task_name_globs: &[],
+                dir_globs: &[],
+                meta_filter: None,
+                context: None,
+            })
+            .await;
+        let Ok(stored) = stored else { return vec![] };
+        if stored.projects.iter().any(|p| !p.tasks.is_empty()) {
+            continue;
+        }
+        for project in candidates {
+            if let Some(canonical) = project.aliases.resolve(task) {
+                hints.push(CacheAliasHint {
+                    selector: task.clone(),
+                    project: project.name.clone(),
+                    alias: task.clone(),
+                    canonical: canonical.to_owned(),
+                });
+            }
+        }
+    }
+    hints
 }
 
 /// Compute (and optionally delete) prunable cache entries.
@@ -274,11 +396,22 @@ where
         }
         args.inventory = Some(&inventory);
     }
+    // Read the stored names before deleting anything: a historical entry that
+    // this prune removes must still suppress its own selector's hint.
+    let hints = alias_hints(
+        ctx,
+        &cache_store,
+        &req.project,
+        &req.project_pattern,
+        &req.task,
+    )
+    .await;
     let entries = cache_store.prune_caches(&args).await?;
 
     Ok(CachePruneResponse {
         entries,
         dry_run: req.dry_run,
+        hints,
     })
 }
 
@@ -405,5 +538,55 @@ impl<'a, TSys: ContextSys> CacheContext for CacheCtxWrapper<'a, TSys> {
         _task_name: &str,
     ) -> Option<&UnorderedMap<String, serde_json::Value>> {
         None
+    }
+}
+
+#[cfg(test)]
+mod hint_tests {
+    use super::*;
+
+    fn hint() -> CacheAliasHint {
+        CacheAliasHint {
+            selector: "compile".into(),
+            project: "web".into(),
+            alias: "compile".into(),
+            canonical: "build-native".into(),
+        }
+    }
+
+    #[test]
+    fn stats_json_flattens_the_stats_and_adds_hints_only_when_present() {
+        let plain = serde_json::to_value(CacheStatsResponse {
+            stats: CacheStats::default(),
+            hints: vec![],
+        })
+        .unwrap();
+        assert_eq!(plain, serde_json::json!({ "projects": [] }));
+        let hinted = serde_json::to_value(CacheStatsResponse {
+            stats: CacheStats::default(),
+            hints: vec![hint()],
+        })
+        .unwrap();
+        assert_eq!(hinted["projects"], serde_json::json!([]));
+        assert_eq!(hinted["hints"][0]["canonical"], "build-native");
+        let back: CacheStatsResponse = serde_json::from_value(plain).unwrap();
+        assert!(back.hints.is_empty());
+    }
+
+    #[test]
+    fn prune_json_omits_empty_hints() {
+        let plain = serde_json::to_value(CachePruneResponse {
+            entries: vec![],
+            dry_run: true,
+            hints: vec![],
+        })
+        .unwrap();
+        assert!(plain.get("hints").is_none());
+        let old: CachePruneResponse =
+            serde_json::from_value(serde_json::json!({
+                "entries": [], "dry_run": false
+            }))
+            .unwrap();
+        assert!(old.hints.is_empty());
     }
 }

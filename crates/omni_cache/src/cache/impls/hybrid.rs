@@ -327,6 +327,7 @@ impl HybridTaskExecutionCacheStore {
             } else {
                 DefaultExecutionPlanProvider::new(ContextWrapper::new(context))
                     .with_allow_missing_exact(true)
+                    .with_raw_canonical_names(true)
                     .get_execution_plan(
                         &task_call(args.task_names, args.task_name_globs),
                         &selected,
@@ -896,8 +897,10 @@ fn hashtext(text: &str) -> String {
 
 impl HybridTaskExecutionCacheStore {
     /// Build the execution plan with the given project/task/dir/meta filters
-    /// and return the set of `(project, task)` pairs that survive all of them. Used to apply the context-dependent `--dir`/`--meta` filters
-    /// to cache entries, which are otherwise only keyed by name.
+    /// and return the set of `(project, task)` pairs that survive all of them,
+    /// without expanding to dependencies (decision D2). Used to apply the
+    /// context-dependent `--dir`/`--meta` filters to cache entries, which are
+    /// otherwise only keyed by name.
     #[allow(clippy::too_many_arguments)]
     fn plan_task_set<TContext: Context>(
         &self,
@@ -914,13 +917,16 @@ impl HybridTaskExecutionCacheStore {
         let plan =
             DefaultExecutionPlanProvider::new(ContextWrapper::new(context))
                 .with_allow_missing_exact(true)
+                .with_raw_canonical_names(true)
                 .get_execution_plan(
                     &call,
                     &project_call(project_names, project_name_globs),
                     dir_globs,
                     meta_filter,
                     None,
-                    false,
+                    // Direct canonical matches only: dependencies of a match
+                    // are not selected by `--dir` or `--meta`.
+                    true,
                     false,
                 )?;
 
@@ -7601,6 +7607,136 @@ mod tests {
                 .unwrap(),
             "LOGS-A-BC"
         );
+    }
+
+    struct PlanCtx(Vec<omni_core::Project>);
+
+    impl Context for PlanCtx {
+        type Error = std::io::Error;
+        fn get_task_env_vars(
+            &self,
+            _: &omni_core::TaskExecutionNode,
+        ) -> Result<Option<Arc<EnvVars>>, Self::Error> {
+            Ok(None)
+        }
+        fn get_cache_info(
+            &self,
+            _: &str,
+            _: &str,
+        ) -> Option<&omni_task_context::CacheInfo> {
+            None
+        }
+        fn get_output_logs(
+            &self,
+            _: &str,
+            _: &str,
+        ) -> Option<&omni_task_output_logs::OutputLogsConfiguration> {
+            None
+        }
+        fn get_task_meta_config(
+            &self,
+            _: &str,
+            _: &str,
+        ) -> Option<&omni_configurations::MetaConfiguration> {
+            None
+        }
+        fn get_project_meta_config(
+            &self,
+            _: &str,
+        ) -> Option<&omni_configurations::MetaConfiguration> {
+            None
+        }
+        fn get_task_override_args(
+            &self,
+            _: &str,
+            _: &str,
+        ) -> Option<&UnorderedMap<String, serde_json::Value>> {
+            None
+        }
+        fn get_project_graph(
+            &self,
+        ) -> Result<omni_core::ProjectGraph, Self::Error> {
+            omni_core::ProjectGraph::from_projects(self.0.clone())
+                .map_err(std::io::Error::other)
+        }
+        fn projects(&self) -> &[omni_core::Project] {
+            &self.0
+        }
+        fn root_dir(&self) -> &Path {
+            Path::new("/ws")
+        }
+    }
+
+    fn plan_ctx() -> PlanCtx {
+        let task = |deps: Vec<omni_core::TaskDependency>| {
+            omni_core::Task::new(
+                None,
+                None,
+                deps,
+                None,
+                omni_configurations::types::TeraExprBoolean::Boolean(true),
+                false,
+                false,
+                vec![],
+                Default::default(),
+            )
+        };
+        let mut web = omni_core::Project::new(
+            "web",
+            "/ws/web".into(),
+            vec![],
+            Default::default(),
+        );
+        web.tasks.insert("lint".into(), task(vec![]));
+        web.tasks.insert("build-native".into(), task(vec![]));
+        web.tasks.insert(
+            "prep".into(),
+            task(vec![omni_core::TaskDependency::Own {
+                task: "lint".into(),
+            }]),
+        );
+        PlanCtx(vec![
+            web.with_aliases(omni_core::TaskAliases::new(
+                [("compile".to_string(), "build-native".to_string())]
+                    .into_iter()
+                    .collect(),
+            )),
+        ])
+    }
+
+    #[test]
+    fn dir_and_meta_inventory_filters_keep_direct_canonical_matches_only() {
+        let temp = tempfile::tempdir().unwrap();
+        let cache = cache_store(temp.path());
+        let ctx = plan_ctx();
+        let set = |tasks: &[&str], globs: &[&str]| {
+            let set = cache
+                .plan_task_set(&ctx, &[], &[], tasks, globs, &["web"], None)
+                .unwrap();
+            let mut keys = vec![];
+            for (project, task) in [
+                ("web", "lint"),
+                ("web", "prep"),
+                ("web", "build-native"),
+                ("web", "compile"),
+                ("web", "gone"),
+            ] {
+                if set.get(project, task).is_some() {
+                    keys.push(format!("{project}#{task}"));
+                }
+            }
+            keys
+        };
+        // `prep` depends on `lint`, but the dependency is not a direct match.
+        assert_eq!(set(&["prep"], &[]), ["web#prep"]);
+        // No selectors: every current task, never a removed or alias name.
+        assert_eq!(set(&[], &[]), ["web#lint", "web#prep", "web#build-native"]);
+        // Stored names are raw canonical names: an alias neither matches as an
+        // exact name nor through a pattern.
+        assert!(set(&["compile"], &[]).is_empty());
+        assert!(set(&[], &["comp*"]).is_empty());
+        assert_eq!(set(&["build-native"], &[]), ["web#build-native"]);
+        assert_eq!(set(&["gone"], &[]), Vec::<String>::new());
     }
 
     #[test]

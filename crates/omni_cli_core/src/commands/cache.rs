@@ -71,7 +71,7 @@ pub struct StatsArgs {
     #[arg(
         long,
         short,
-        help = "Filter the cache entries by exact task name. Glob characters are literal; use --task-pattern to match by glob"
+        help = "Filter the cache entries by exact stored (canonical) task name; an alias is not expanded, and a hint suggests the canonical name when one matches. Glob characters are literal; use --task-pattern to match by glob"
     )]
     task: Vec<String>,
 
@@ -101,7 +101,7 @@ pub struct EligibilityArgs {
     #[arg(
         long,
         short,
-        help = "Select the task with this exact name, for example `-t build`. At least one of --task or --task-pattern is required. Glob characters are literal; use --task-pattern to match by glob"
+        help = "Select the task with this exact name (a task or an alias, optionally `project#task`), for example `-t build`. At least one of --task or --task-pattern is required. Glob characters are literal; use --task-pattern to match by glob"
     )]
     task: Vec<String>,
 
@@ -185,7 +185,7 @@ pub struct PruneArgs {
     #[arg(
         long,
         short,
-        help = "Only prune entries belonging to a task with this exact name. Glob characters are literal; use --task-pattern to match by glob."
+        help = "Only prune entries belonging to a task with this exact stored (canonical) name; an alias is not expanded, and a hint suggests the canonical name when one matches. Glob characters are literal; use --task-pattern to match by glob."
     )]
     task: Vec<String>,
 
@@ -371,7 +371,7 @@ pub async fn run(command: &CacheCommand, ctx: &Context) -> eyre::Result<()> {
         }
 
         CacheSubcommands::Stats { args } => {
-            let stats = api
+            let response = api
                 .cache_stats(CacheStatsRequest {
                     project: args.project.clone(),
                     project_pattern: args.project_pattern.clone(),
@@ -381,6 +381,7 @@ pub async fn run(command: &CacheCommand, ctx: &Context) -> eyre::Result<()> {
                     meta: args.meta.clone(),
                 })
                 .await?;
+            let stats = &response.stats;
             for (i, project) in stats.projects.iter().enumerate() {
                 println!("Project: {}", project.project_name);
                 println!("  Tasks:");
@@ -426,6 +427,7 @@ pub async fn run(command: &CacheCommand, ctx: &Context) -> eyre::Result<()> {
                     println!();
                 }
             }
+            print_alias_hints(&response.hints);
         }
 
         CacheSubcommands::Eligibility { args } => {
@@ -481,6 +483,108 @@ pub async fn run(command: &CacheCommand, ctx: &Context) -> eyre::Result<()> {
     Ok(())
 }
 
+/// Print advisory alias suggestions. They never change what is selected.
+fn print_alias_hints(hints: &[omni_api::CacheAliasHint]) {
+    for hint in hints {
+        println!(
+            "Hint: no cache entries are stored under `{}`; it is an alias of task `{}` in project `{}`. Stored entries use the canonical name: try `--project {} --task {}`",
+            hint.selector,
+            hint.canonical,
+            hint.project,
+            quote_shell_arg(&hint.project),
+            quote_shell_arg(&hint.canonical)
+        );
+    }
+}
+
+fn is_plain_arg(value: &str) -> bool {
+    !value.is_empty()
+        && value.chars().all(|c| {
+            c.is_ascii_alphanumeric()
+                || matches!(c, '_' | '-' | '.' | '/' | ':' | '@' | '+' | ',')
+        })
+}
+
+/// POSIX shells: single quotes, with embedded `'` written as `'\''`.
+fn quote_posix_arg(value: &str) -> String {
+    if is_plain_arg(value) {
+        return value.to_string();
+    }
+    format!("'{}'", value.replace('\'', "'\\''"))
+}
+
+/// Windows `CreateProcess` / `CommandLineToArgvW` argument quoting: double
+/// quotes, with embedded `"` escaped as `\"` and backslashes before a quote
+/// (or the closing quote) doubled. This is advisory text only. It is not safe
+/// for every shell: PowerShell still expands `$` and treats `,` and a leading
+/// `@` specially, and `cmd.exe` expands `%VAR%` and treats `&`, `|`, `<`, `>`
+/// outside this quoting. Paste unusual names with care.
+fn quote_windows_arg(value: &str) -> String {
+    if is_plain_arg(value) {
+        return value.to_string();
+    }
+    let mut out = String::from("\"");
+    let mut backslashes = 0usize;
+    for c in value.chars() {
+        match c {
+            '\\' => backslashes += 1,
+            '"' => {
+                out.push_str(&"\\".repeat(backslashes * 2 + 1));
+                out.push('"');
+                backslashes = 0;
+            }
+            _ => {
+                out.push_str(&"\\".repeat(backslashes));
+                out.push(c);
+                backslashes = 0;
+            }
+        }
+    }
+    out.push_str(&"\\".repeat(backslashes * 2));
+    out.push('"');
+    out
+}
+
+/// Quote a raw name for the current platform's shell. Ordinary names are
+/// printed unchanged.
+fn quote_shell_arg(value: &str) -> String {
+    if cfg!(windows) {
+        quote_windows_arg(value)
+    } else {
+        quote_posix_arg(value)
+    }
+}
+
+#[cfg(test)]
+mod quote_tests {
+    use super::*;
+
+    #[test]
+    fn ordinary_names_are_unchanged() {
+        for n in ["web", "build-native", "a/b:c@1.0+x,y_z"] {
+            assert_eq!(quote_posix_arg(n), n);
+            assert_eq!(quote_windows_arg(n), n);
+        }
+    }
+
+    #[test]
+    fn posix_quotes_backslash_space_and_quote() {
+        assert_eq!(quote_posix_arg("a\\b c"), "'a\\b c'");
+        assert_eq!(quote_posix_arg("it's #1"), "'it'\\''s #1'");
+        assert_eq!(quote_posix_arg("*"), "'*'");
+        assert_eq!(quote_posix_arg(""), "''");
+    }
+
+    #[test]
+    fn windows_quotes_backslash_space_and_quote() {
+        assert_eq!(quote_windows_arg("a\\b c"), "\"a\\b c\"");
+        assert_eq!(quote_windows_arg("a b\\"), "\"a b\\\\\"");
+        assert_eq!(quote_windows_arg("say \"hi\""), "\"say \\\"hi\\\"\"");
+        assert_eq!(quote_windows_arg(""), "\"\"");
+        assert_eq!(quote_windows_arg("a\\\"b"), "\"a\\\\\\\"b\"");
+    }
+}
+
 async fn prune(
     api: &OmniApi<system_traits::impls::RealSys, omni_messages::NoopSubscriber>,
     args: &PruneArgs,
@@ -502,6 +606,7 @@ async fn prune(
         dry_run: true,
     };
     let prune_result = api.cache_prune(request.clone()).await?;
+    print_alias_hints(&prune_result.hints);
 
     let pruned = prune_result.entries;
 

@@ -16,6 +16,70 @@ pub struct Project {
     pub dir: PathBuf,
     pub dependencies: Vec<String>,
     pub tasks: OrderedMap<String, Task>,
+    /// Authored aliases of this project's tasks. They are not tasks: they only
+    /// name a canonical entry of `tasks`.
+    #[new(default)]
+    #[serde(skip)]
+    pub aliases: TaskAliases,
+}
+
+impl Project {
+    /// Attach the resolved alias index.
+    pub fn with_aliases(mut self, aliases: TaskAliases) -> Self {
+        self.aliases = aliases;
+        self
+    }
+
+    /// The canonical task name a public name (a task or an alias) refers to
+    /// in this project. Exact task names win; an alias resolves through its
+    /// index entry. `None` when the project has no such public name.
+    pub fn canonical_task_name<'a>(&'a self, name: &'a str) -> Option<&'a str> {
+        if let Some((canonical, _)) = self.tasks.get_key_value(name) {
+            return Some(canonical.as_str());
+        }
+        let canonical = self.aliases.resolve(name)?;
+        self.tasks.contains_key(canonical).then_some(canonical)
+    }
+
+    /// Whether `name` is an alias of this project (and not a task).
+    pub fn is_alias(&self, name: &str) -> bool {
+        !self.tasks.contains_key(name) && self.aliases.resolve(name).is_some()
+    }
+}
+
+/// The resolved aliases of one project: each alias name maps to the canonical
+/// task name it stands for. Chains are already flattened, so a lookup is one
+/// step. This belongs to one resolved project; it is not part of any cache
+/// key, entry or stored name.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct TaskAliases {
+    canonical_by_alias: OrderedMap<String, String>,
+}
+
+impl TaskAliases {
+    pub fn new(canonical_by_alias: OrderedMap<String, String>) -> Self {
+        Self { canonical_by_alias }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.canonical_by_alias.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.canonical_by_alias.len()
+    }
+
+    /// The canonical task name of `alias`, if it is one.
+    pub fn resolve(&self, alias: &str) -> Option<&str> {
+        self.canonical_by_alias.get(alias).map(String::as_str)
+    }
+
+    /// `(alias, canonical)` pairs in alias-name order.
+    pub fn iter(&self) -> impl Iterator<Item = (&str, &str)> {
+        self.canonical_by_alias
+            .iter()
+            .map(|(alias, canonical)| (alias.as_str(), canonical.as_str()))
+    }
 }
 
 #[allow(clippy::too_many_arguments)]

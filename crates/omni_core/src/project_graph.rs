@@ -233,6 +233,21 @@ impl ProjectGraph {
         self.get_direct_dependencies(project_index)
     }
 
+    /// Like [`Self::get_direct_dependencies_by_name`], borrowing the projects
+    /// instead of cloning them, in the same order.
+    pub fn get_direct_dependency_refs_by_name(
+        &self,
+        project_name: &str,
+    ) -> ProjectGraphResult<Vec<&Project>> {
+        let project_index = self.get_project_index(project_name)?;
+
+        Ok(self
+            .di_graph
+            .edges_directed(project_index, Direction::Incoming)
+            .map(|edge| &self.di_graph[edge.source()])
+            .collect())
+    }
+
     pub fn get_direct_dependencies(
         &self,
         node_index: NodeIndex,
@@ -351,6 +366,7 @@ mod tests {
             dir: Default::default(),
             dependencies: Default::default(),
             tasks: Default::default(),
+            aliases: Default::default(),
         }
     }
 

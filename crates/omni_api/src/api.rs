@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use omni_cache::{CacheStats, PrunedCacheEntry};
+use omni_cache::PrunedCacheEntry;
 use omni_context::{
     Context, ContextSys, LoadedContext, MaybeLoaded, WorkspaceInitConfig,
     get_root_dir,
@@ -18,7 +18,7 @@ use crate::{
     operations::{
         cache::{
             CachePruneRequest, CachePruneResponse, CacheRemoteSetupRequest,
-            CacheStatsRequest,
+            CacheStatsRequest, CacheStatsResponse,
         },
         config_schema::{ConfigSchemaResponse, SchemaKind},
         env::{EnvRequest, EnvResponse},
@@ -370,7 +370,7 @@ where
     pub async fn cache_stats(
         &self,
         req: CacheStatsRequest,
-    ) -> eyre::Result<CacheStats> {
+    ) -> eyre::Result<CacheStatsResponse> {
         let mut ctx = self.ctx.lock().await;
         crate::operations::cache::handle_cache_stats(
             ctx.ensure_loaded().await?,

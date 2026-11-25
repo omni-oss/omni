@@ -55,6 +55,7 @@ recorded here. Test-only prefixes are not listed.
 | `sandbox` | `bridge_rpc_runner` |
 | `scm` | `omni_scm` |
 | `task` | `omni_core` |
+| `task_alias` | `omni_configurations` |
 | `task_extension` | `omni_configurations` |
 | `tool` | `omni_tool` |
 | `workspace` | `omni_context` |

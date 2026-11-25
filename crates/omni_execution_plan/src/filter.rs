@@ -7,7 +7,7 @@ use std::{
 
 use globset::GlobSet;
 use omni_configurations::MetaConfiguration;
-use omni_core::{Project, TaskExecutionNode};
+use omni_core::{Project, TaskAliases, TaskExecutionNode};
 use omni_expressions::Evaluator;
 use omni_glob::{GlobMatcher, GlobOptions, GlobPatterns, include_set};
 use omni_scm::{Scm, get_scm_implementation};
@@ -96,6 +96,19 @@ impl ProjectFilter for DefaultProjectFilter {
     }
 }
 
+/// The canonical names that have at least one alias accepted by `is_match`,
+/// calling it once per alias.
+fn canonicals_with_matching_alias(
+    aliases: &TaskAliases,
+    mut is_match: impl FnMut(&str) -> bool,
+) -> HashSet<String> {
+    aliases
+        .iter()
+        .filter(|(alias, _)| is_match(alias))
+        .map(|(_, canonical)| canonical.to_string())
+        .collect()
+}
+
 pub struct DefaultTaskFilter<'b, TGetTaskMetaFn>
 where
     TGetTaskMetaFn:
@@ -103,6 +116,14 @@ where
 {
     task_matcher: Option<Arc<GlobSet>>,
     exact_task_names: HashSet<String>,
+    /// Parsed live exact selectors: `(project qualifier, public task name)`.
+    references: Vec<(Option<String>, String)>,
+    /// Aliases per project, only for projects that have any. Empty in raw
+    /// canonical-name mode.
+    aliases: maps::UnorderedMap<String, TaskAliases>,
+    /// Per project, the canonical tasks that have an alias matching the task
+    /// pattern; computed once when the aliases are installed.
+    pattern_alias_hits: maps::UnorderedMap<String, HashSet<String>>,
     meta_filter: Option<Evaluator>,
     meta_filter_source: Option<String>,
     collector: Option<MetaFilterCollector>,
@@ -127,12 +148,16 @@ where
         let select_all = task_filters.is_empty()
             || task_filters.iter().any(|s| matches!(s, TaskSelector::All));
         let mut exact_task_names = HashSet::new();
+        let mut references = vec![];
         let mut task_patterns: Vec<&str> = vec![];
         if !select_all {
             for selector in task_filters {
                 match selector {
                     TaskSelector::Exact(n) => {
                         exact_task_names.insert(n.clone());
+                    }
+                    TaskSelector::Reference { project, task } => {
+                        references.push((project.clone(), task.clone()));
                     }
                     TaskSelector::Pattern(p) => task_patterns.push(p),
                     TaskSelector::All => {}
@@ -193,10 +218,63 @@ where
             meta_filter_source,
             collector: None,
             exact_task_names,
+            references,
+            aliases: Default::default(),
+            pattern_alias_hits: Default::default(),
             project_matcher,
             dir_matcher,
             get_task_meta,
         })
+    }
+
+    /// Resolve live exact selectors and match patterns through these per
+    /// project alias indexes. Without them only canonical names match.
+    pub fn with_aliases(
+        mut self,
+        aliases: maps::UnorderedMap<String, TaskAliases>,
+    ) -> Self {
+        self.pattern_alias_hits = match &self.task_matcher {
+            Some(matcher) => aliases
+                .iter()
+                .filter_map(|(project, index)| {
+                    let hits = canonicals_with_matching_alias(index, |a| {
+                        matcher.is_match(a)
+                    });
+                    (!hits.is_empty()).then(|| (project.clone(), hits))
+                })
+                .collect(),
+            None => Default::default(),
+        };
+        self.aliases = aliases;
+        self
+    }
+
+    fn matches_reference(&self, node: &TaskExecutionNode) -> bool {
+        self.references.iter().any(|(qualifier, task)| {
+            if let Some(qualifier) = qualifier
+                && qualifier != node.project_name()
+            {
+                return false;
+            }
+            task == node.task_name()
+                || self
+                    .aliases
+                    .get(node.project_name())
+                    .and_then(|aliases| aliases.resolve(task))
+                    .is_some_and(|canonical| canonical == node.task_name())
+        })
+    }
+
+    fn matches_pattern(
+        &self,
+        matcher: &GlobSet,
+        node: &TaskExecutionNode,
+    ) -> bool {
+        matcher.is_match(node.task_name())
+            || self
+                .pattern_alias_hits
+                .get(node.project_name())
+                .is_some_and(|hits| hits.contains(node.task_name()))
     }
 
     /// Instead of returning an error for the first task whose meta filter
@@ -252,6 +330,7 @@ where
     ) -> Result<bool, Self::Error> {
         if self.task_matcher.is_none()
             && self.exact_task_names.is_empty()
+            && self.references.is_empty()
             && self.meta_filter.is_none()
             && self.project_matcher.is_none()
             && self.dir_matcher.is_none()
@@ -266,12 +345,17 @@ where
         }
 
         let by_exact = self.exact_task_names.contains(node.task_name());
+        let by_reference =
+            !self.references.is_empty() && self.matches_reference(node);
         let by_pattern = self
             .task_matcher
             .as_ref()
-            .is_some_and(|tm| tm.is_match(node.task_name()));
-        if (self.task_matcher.is_some() || !self.exact_task_names.is_empty())
+            .is_some_and(|tm| self.matches_pattern(tm, node));
+        if (self.task_matcher.is_some()
+            || !self.exact_task_names.is_empty()
+            || !self.references.is_empty())
             && !by_exact
+            && !by_reference
             && !by_pattern
         {
             return Ok(false);
@@ -598,6 +682,94 @@ mod tests {
             false,
             Default::default(),
         )
+    }
+
+    fn alias_index(
+        project: &str,
+        pairs: &[(&str, &str)],
+    ) -> maps::UnorderedMap<String, TaskAliases> {
+        let mut index = maps::UnorderedMap::default();
+        index.insert(
+            project.to_string(),
+            TaskAliases::new(
+                pairs
+                    .iter()
+                    .map(|(a, c)| (a.to_string(), c.to_string()))
+                    .collect(),
+            ),
+        );
+        index
+    }
+
+    fn pattern_filter(
+        pattern: &str,
+        aliases: Option<maps::UnorderedMap<String, TaskAliases>>,
+    ) -> DefaultTaskFilter<
+        'static,
+        impl for<'a> Fn(&'a TaskExecutionNode) -> Option<&'static MetaConfiguration>,
+    > {
+        let filter = DefaultTaskFilter::new(
+            &[TaskSelector::pattern(pattern)],
+            &[],
+            &[],
+            Path::new(""),
+            None,
+            |_| None,
+        )
+        .unwrap();
+        match aliases {
+            Some(a) => filter.with_aliases(a),
+            None => filter,
+        }
+    }
+
+    #[test]
+    fn a_pattern_selects_by_canonical_name_alias_or_neither() {
+        let idx = || alias_index("web", &[("compile", "build-native")]);
+        let f = pattern_filter("comp*", Some(idx()));
+        assert!(f.should_include_task(&node("web", "build-native")).unwrap());
+        assert!(!f.should_include_task(&node("web", "other")).unwrap());
+        assert!(!f.should_include_task(&node("api", "build-native")).unwrap());
+        let f = pattern_filter("build*", Some(idx()));
+        assert!(f.should_include_task(&node("web", "build-native")).unwrap());
+        let f = pattern_filter("zzz*", Some(idx()));
+        assert!(!f.should_include_task(&node("web", "build-native")).unwrap());
+    }
+
+    #[test]
+    fn raw_mode_ignores_aliases_in_patterns() {
+        let f = pattern_filter("comp*", None);
+        assert!(!f.should_include_task(&node("web", "build-native")).unwrap());
+        let f = pattern_filter("build*", None);
+        assert!(f.should_include_task(&node("web", "build-native")).unwrap());
+    }
+
+    #[test]
+    fn the_alias_index_is_matched_once_not_once_per_task() {
+        let pairs: Vec<(String, String)> = (0..2_000)
+            .map(|i| (format!("alias{i}"), format!("task{i}")))
+            .collect();
+        let refs: Vec<(&str, &str)> = pairs
+            .iter()
+            .map(|(a, c)| (a.as_str(), c.as_str()))
+            .collect();
+        let index = alias_index("web", &refs);
+        let mut calls = 0;
+        let hits = canonicals_with_matching_alias(&index["web"], |_| {
+            calls += 1;
+            false
+        });
+        assert!(hits.is_empty());
+        assert_eq!(calls, pairs.len());
+
+        let f = pattern_filter("zzz*", Some(index));
+        assert!(f.pattern_alias_hits.is_empty());
+        for (_, canonical) in &pairs {
+            assert!(!f.should_include_task(&node("web", canonical)).unwrap());
+        }
+        let f = pattern_filter("alias77", Some(alias_index("web", &refs)));
+        assert!(f.should_include_task(&node("web", "task77")).unwrap());
+        assert!(!f.should_include_task(&node("web", "task78")).unwrap());
     }
 
     fn kind_meta(kind: &str) -> MetaConfiguration {

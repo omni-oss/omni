@@ -8,7 +8,8 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct TaskRunParams {
-    /// Exact names of tasks to run. Glob characters are literal; use
+    /// Exact names of tasks to run: a task or an alias, optionally
+    /// `project#task` (escape a literal `#` as `\#`). Glob characters are literal; use
     /// `task_patterns` to select by glob. At least one of `tasks` and
     /// `task_patterns` is required.
     #[serde(default)]

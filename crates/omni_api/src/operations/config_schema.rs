@@ -1,5 +1,5 @@
 use omni_configurations::{
-    OwnedProjectionConfiguration, PackManifest, ProjectConfiguration,
+    OwnedProjectionConfiguration, PackManifest, ProjectLayer,
     WorkspaceConfiguration,
 };
 use omni_generator_configurations::GeneratorConfiguration;
@@ -58,7 +58,7 @@ pub fn handle_config_schema(
 ) -> eyre::Result<ConfigSchemaResponse> {
     let schemars_schema = match kind {
         SchemaKind::Workspace => schema_for!(WorkspaceConfiguration),
-        SchemaKind::Project => schema_for!(ProjectConfiguration),
+        SchemaKind::Project => schema_for!(ProjectLayer),
         SchemaKind::Generator => schema_for!(GeneratorConfiguration),
         SchemaKind::Tool => schema_for!(ToolConfiguration),
         SchemaKind::Projection => schema_for!(OwnedProjectionConfiguration),

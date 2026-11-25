@@ -7,7 +7,8 @@ use derive_new::new;
 use enum_map::enum_map;
 use omni_configurations::{
     FinalizeError, FinalizedProject, LoadConfigError, LoadConfigErrorKind,
-    LoadedLayer, ProjectLayer, TaskExtensionError, types::SingleOrMany,
+    LoadedLayer, ProjectLayer, TaskAliasError, TaskExtensionError,
+    types::SingleOrMany,
 };
 use omni_core::{ExtensionGraph, ExtensionGraphError};
 use omni_types::{OmniPath, Root};
@@ -170,6 +171,7 @@ impl<'a, TSys: ContextSys> ProjectConfigLoader<'a, TSys> {
                         }
                     }
                     FinalizeError::TaskExtension(e) => e.into(),
+                    FinalizeError::TaskAlias(e) => e.into(),
                     e @ FinalizeError::ProvenanceMismatch { .. } => {
                         ProjectConfigLoaderErrorInner::Internal(e.to_string())
                     }
@@ -244,6 +246,10 @@ pub(crate) enum ProjectConfigLoaderErrorInner {
     #[error(transparent)]
     #[diagnostic(delegate)]
     TaskExtension(#[from] TaskExtensionError),
+
+    #[error(transparent)]
+    #[diagnostic(delegate)]
+    TaskAlias(#[from] TaskAliasError),
 
     #[error("{0}")]
     #[diagnostic(skip)]

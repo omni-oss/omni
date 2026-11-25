@@ -1459,7 +1459,7 @@ mod tests {
         for (file, config) in [
             (
                 &first,
-                "name: a\ncache:\n  enabled: true\ntasks:\n  'b#c':\n    exec: echo\n",
+                "name: a\ncache:\n  enabled: true\ntasks:\n  'b\\#c':\n    exec: echo\n",
             ),
             (
                 &second,

@@ -1,7 +1,7 @@
 use std::{error::Error, path::Path};
 
 use omni_configurations::MetaConfiguration;
-use omni_core::{Project, ProjectGraph, TaskExecutionNode};
+use omni_core::{Project, ProjectGraph, TaskExecutionNode, TaskKey};
 use omni_glob::GlobPatterns;
 use omni_types::OmniPath;
 
@@ -15,8 +15,32 @@ pub fn empty_cache_input_files() -> &'static GlobPatterns<OmniPath> {
     &EMPTY
 }
 
+/// The result of selecting tasks: the canonical tasks the request matched
+/// directly, and the expanded plan (matches plus their dependencies and, when
+/// asked, dependents).
+#[derive(Debug, Clone)]
+pub struct ExecutionSelection {
+    /// Canonical tasks that matched the selectors and filters, before any
+    /// expansion. Each appears once, whatever mix of aliases, canonical names
+    /// and patterns selected it.
+    pub direct: Vec<TaskKey>,
+    pub plan: Vec<Vec<TaskExecutionNode>>,
+}
+
 pub trait ExecutionPlanProvider {
     type Error: Error + Send + Sync + 'static;
+
+    #[allow(clippy::result_large_err, clippy::too_many_arguments)]
+    fn get_execution_selection(
+        &self,
+        call: &Call,
+        project_filters: &[ProjectSelector],
+        dir_filters: &[&str],
+        meta_filter: Option<&str>,
+        scm_affected_filter: Option<&ScmAffectedFilter>,
+        ignore_deps: bool,
+        with_dependents: bool,
+    ) -> Result<ExecutionSelection, Self::Error>;
 
     #[allow(clippy::result_large_err, clippy::too_many_arguments)]
     fn get_execution_plan(
@@ -28,7 +52,19 @@ pub trait ExecutionPlanProvider {
         scm_affected_filter: Option<&ScmAffectedFilter>,
         ignore_deps: bool,
         with_dependents: bool,
-    ) -> Result<Vec<Vec<TaskExecutionNode>>, Self::Error>;
+    ) -> Result<Vec<Vec<TaskExecutionNode>>, Self::Error> {
+        Ok(self
+            .get_execution_selection(
+                call,
+                project_filters,
+                dir_filters,
+                meta_filter,
+                scm_affected_filter,
+                ignore_deps,
+                with_dependents,
+            )?
+            .plan)
+    }
 }
 
 pub trait ProjectFilter {

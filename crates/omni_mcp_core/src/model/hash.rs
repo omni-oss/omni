@@ -4,7 +4,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct HashProjectParams {
     pub name: String,
-    /// Exact task names; glob characters are literal. With no `tasks` and no
+    /// Exact task names (a task or an alias; `project#task` must name this
+    /// project); glob characters are literal. With no `tasks` and no
     /// `task_patterns`, every task of the project is hashed.
     #[serde(default)]
     pub tasks: Vec<String>,
