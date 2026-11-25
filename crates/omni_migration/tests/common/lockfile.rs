@@ -522,6 +522,11 @@ impl LockfileStore {
             ))
         };
         let (old, new) = (identity("old")?, identity("new")?);
+        // A step always publishes the successor generation; anything else is
+        // evidence this store did not write.
+        if old.0.checked_add(1) != Some(new.0) {
+            return Err(Error::RecoveryBlocked);
+        }
         let (doc, bytes) =
             self.read_document().map_err(|_| Error::RecoveryBlocked)?;
         let live = (doc.generation, fingerprint(&bytes));

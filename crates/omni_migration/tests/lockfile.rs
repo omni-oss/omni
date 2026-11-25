@@ -462,3 +462,22 @@ fn a_file_sync_failure_while_staging_is_not_committed() {
         assert!(!store.intent_exists(), "{point}");
     }
 }
+
+#[test]
+fn recovery_rejects_an_intent_that_is_not_a_successor_generation() {
+    let dir = tempdir().unwrap();
+    let store = v1_store(dir.path(), PinsCatalog::two());
+    let plan = store
+        .plan(PINS_V2, Direction::Upgrade, Policy::default())
+        .unwrap();
+    store.faults().set("doc.rename", Action::Err, 0);
+    execute(&store, &plan, || false).unwrap();
+    store.faults().clear();
+    let mut intent: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(store.intent_path()).unwrap())
+            .unwrap();
+    intent["new"] = intent["old"].clone();
+    std::fs::write(store.intent_path(), intent.to_string()).unwrap();
+    assert_eq!(store.recover_under_guard(), Err(Error::RecoveryBlocked));
+    assert!(store.intent_exists());
+}
