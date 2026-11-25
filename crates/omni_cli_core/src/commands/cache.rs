@@ -491,9 +491,91 @@ fn print_alias_hints(hints: &[omni_api::CacheAliasHint]) {
             hint.selector,
             hint.canonical,
             hint.project,
-            hint.project,
-            hint.canonical
+            quote_shell_arg(&hint.project),
+            quote_shell_arg(&hint.canonical)
         );
+    }
+}
+
+fn is_plain_arg(value: &str) -> bool {
+    !value.is_empty()
+        && value.chars().all(|c| {
+            c.is_ascii_alphanumeric()
+                || matches!(c, '_' | '-' | '.' | '/' | ':' | '@' | '+' | ',')
+        })
+}
+
+/// POSIX shells: single quotes, with embedded `'` written as `'\''`.
+fn quote_posix_arg(value: &str) -> String {
+    if is_plain_arg(value) {
+        return value.to_string();
+    }
+    format!("'{}'", value.replace('\'', "'\\''"))
+}
+
+/// Windows (cmd and PowerShell): double quotes, with embedded `"` escaped as
+/// `\"` and backslashes before a quote (or the closing quote) doubled.
+fn quote_windows_arg(value: &str) -> String {
+    if is_plain_arg(value) {
+        return value.to_string();
+    }
+    let mut out = String::from("\"");
+    let mut backslashes = 0usize;
+    for c in value.chars() {
+        match c {
+            '\\' => backslashes += 1,
+            '"' => {
+                out.push_str(&"\\".repeat(backslashes * 2 + 1));
+                out.push('"');
+                backslashes = 0;
+            }
+            _ => {
+                out.push_str(&"\\".repeat(backslashes));
+                out.push(c);
+                backslashes = 0;
+            }
+        }
+    }
+    out.push_str(&"\\".repeat(backslashes * 2));
+    out.push('"');
+    out
+}
+
+/// Quote a raw name for the current platform's shell. Ordinary names are
+/// printed unchanged.
+fn quote_shell_arg(value: &str) -> String {
+    if cfg!(windows) {
+        quote_windows_arg(value)
+    } else {
+        quote_posix_arg(value)
+    }
+}
+
+#[cfg(test)]
+mod quote_tests {
+    use super::*;
+
+    #[test]
+    fn ordinary_names_are_unchanged() {
+        for n in ["web", "build-native", "a/b:c@1.0+x,y_z"] {
+            assert_eq!(quote_posix_arg(n), n);
+            assert_eq!(quote_windows_arg(n), n);
+        }
+    }
+
+    #[test]
+    fn posix_quotes_backslash_space_and_quote() {
+        assert_eq!(quote_posix_arg("a\\b c"), "'a\\b c'");
+        assert_eq!(quote_posix_arg("it's #1"), "'it'\\''s #1'");
+        assert_eq!(quote_posix_arg("*"), "'*'");
+        assert_eq!(quote_posix_arg(""), "''");
+    }
+
+    #[test]
+    fn windows_quotes_backslash_space_and_quote() {
+        assert_eq!(quote_windows_arg("a\\b c"), "\"a\\b c\"");
+        assert_eq!(quote_windows_arg("a b\\"), "\"a b\\\\\"");
+        assert_eq!(quote_windows_arg("say \"hi\""), "\"say \\\"hi\\\"\"");
     }
 }
 

@@ -104,6 +104,10 @@ a hint and change nothing else:
 Hint: no cache entries are stored under `compile`; it is an alias of task `build-native` in project `web`. Stored entries use the canonical name: try `--project web --task build-native`
 ```
 
+Names that contain characters special to the shell (spaces, backslashes, quotes,
+`#`, `*`) are quoted in the suggested command: single quotes on POSIX shells,
+double quotes on Windows. Ordinary names are printed unchanged.
+
 The hint never changes which entries are listed, previewed, approved or pruned.
 In JSON and MCP results it is an additive `hints` field (`alias_hints` in the
 MCP `cache_stats` and `cache_prune` results), omitted when empty. Patterns get no
