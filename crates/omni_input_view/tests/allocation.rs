@@ -13,7 +13,7 @@ use std::{
 
 use omni_input_view::{
     AuthDecision, AuthError, Cancellation, InputAuthorizer, InputError,
-    InputLimits, InputView, InputViewOptions,
+    InputLimits, InputView, InputViewOptions, SymlinkPolicy,
 };
 use omni_path_utils::WorkspacePath;
 
@@ -78,6 +78,7 @@ fn an_oversized_file_is_refused_without_allocating_its_size() {
                 max_file_bytes: 1024 * 1024,
                 ..InputLimits::default()
             },
+            symlinks: SymlinkPolicy::Reject,
         },
     )
     .unwrap();

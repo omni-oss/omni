@@ -36,4 +36,6 @@ pub use error::{BudgetKind, ContainmentViolation, EntryKind, InputError};
 pub use evidence::{Evidence, FileIdentity, Observation, PathEvidence};
 pub use limits::InputLimits;
 pub use name::check_name;
-pub use view::{Exists, InputView, InputViewOptions, List, Listing, Read};
+pub use view::{
+    Exists, InputView, InputViewOptions, List, Listing, Read, SymlinkPolicy,
+};

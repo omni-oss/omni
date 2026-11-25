@@ -28,6 +28,18 @@ const CHUNK: usize = 64 * 1024;
 pub struct InputViewOptions {
     pub authorizer: Arc<dyn InputAuthorizer>,
     pub limits: InputLimits,
+    pub symlinks: SymlinkPolicy,
+}
+
+/// What to do with a symlink on a path. Only `Reject` is implemented.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SymlinkPolicy {
+    /// Every symlink or reparse point is a containment error (D2).
+    #[default]
+    Reject,
+    /// Reserved for a later plan; selecting it is
+    /// [`InputError::SymlinkPolicyUnsupported`] and nothing is followed.
+    FollowInRoot { max_hops: u8 },
 }
 
 /// `Missing` is a tracked result, not an error.
@@ -79,6 +91,11 @@ impl InputView {
         root: &Path,
         options: InputViewOptions,
     ) -> Result<Self, InputError> {
+        // Checked before the root is touched: no resolver, hop counter or
+        // re-authorization of resolved paths exists, so nothing is followed.
+        if options.symlinks != SymlinkPolicy::Reject {
+            return Err(InputError::SymlinkPolicyUnsupported);
+        }
         Ok(Self {
             root: ContainedRoot::open(root)?,
             authorizer: options.authorizer,
@@ -107,7 +124,7 @@ impl InputView {
     ) -> Result<Exists, InputError> {
         self.begin(path, cx)?;
         let Some((_file, metadata)) = self.probe(path)? else {
-            self.record(path, Observation::Missing)?;
+            self.record(cx, path, Observation::Missing)?;
             return Ok(Exists::Missing);
         };
         let kind = kind_of(&metadata);
@@ -116,7 +133,7 @@ impl InputView {
             EntryKind::Dir => Exists::Dir,
             other => return Err(InputError::NotRegular(other)),
         };
-        self.record(path, Observation::Present(kind))?;
+        self.record(cx, path, Observation::Present(kind))?;
         Ok(exists)
     }
 
@@ -127,7 +144,7 @@ impl InputView {
     ) -> Result<List, InputError> {
         self.begin(dir, cx)?;
         let Some((probe, metadata)) = self.probe(dir)? else {
-            self.record(dir, Observation::Missing)?;
+            self.record(cx, dir, Observation::Missing)?;
             return Ok(List::Missing);
         };
         match kind_of(&metadata) {
@@ -146,7 +163,7 @@ impl InputView {
                             Err(InputError::NotDirectory(kind_of(&now)))
                         }
                         None => {
-                            self.record(dir, Observation::Missing)?;
+                            self.record(cx, dir, Observation::Missing)?;
                             Ok(List::Missing)
                         }
                     };
@@ -207,7 +224,7 @@ impl InputView {
         if cx.is_cancelled() {
             return Err(InputError::Cancelled);
         }
-        self.record(dir, observation)?;
+        self.record(cx, dir, observation)?;
         Ok(List::Found(Listing { entries: found }))
     }
 
@@ -221,10 +238,13 @@ impl InputView {
         self.begin(path, cx)?;
         let captured = self.lock().captured.get(path).cloned();
         if let Some(bytes) = captured {
+            if cx.is_cancelled() {
+                return Err(InputError::Cancelled);
+            }
             return Ok(Read::Found(bytes));
         }
         let Some((probe_handle, metadata)) = self.probe(path)? else {
-            self.record(path, Observation::Missing)?;
+            self.record(cx, path, Observation::Missing)?;
             return Ok(Read::Missing);
         };
         regular(&metadata)?;
@@ -232,7 +252,7 @@ impl InputView {
             match self.root.open_path(path, Want::File)? {
                 Some(file) => file,
                 None => {
-                    self.record(path, Observation::Missing)?;
+                    self.record(cx, path, Observation::Missing)?;
                     return Ok(Read::Missing);
                 }
             }
@@ -255,7 +275,7 @@ impl InputView {
         let (bytes, digest) =
             self.read_all(file, path, len, limit, cx, after_chunk)?;
         let bytes: Arc<[u8]> = bytes.into();
-        let bytes = self.record_file(path, bytes, digest, &metadata)?;
+        let bytes = self.record_file(cx, path, bytes, digest, &metadata)?;
         Ok(Read::Found(bytes))
     }
 
@@ -388,12 +408,16 @@ impl InputView {
     /// revalidation finding).
     fn record_file(
         &self,
+        cx: &Cancellation,
         path: &WorkspacePath,
         bytes: Arc<[u8]>,
         digest: crate::digest::Digest,
         metadata: &Metadata,
     ) -> Result<Arc<[u8]>, InputError> {
         let mut state = self.lock();
+        if cx.is_cancelled() {
+            return Err(InputError::Cancelled);
+        }
         if let Some(existing) = state.captured.get(path) {
             return Ok(existing.clone());
         }
@@ -410,12 +434,18 @@ impl InputView {
         Ok(bytes)
     }
 
+    /// Evidence is only published for a call that was not cancelled, so a
+    /// cancellation that arrives after admission still records nothing.
     fn record(
         &self,
+        cx: &Cancellation,
         path: &WorkspacePath,
         observation: Observation,
     ) -> Result<(), InputError> {
         let mut state = self.lock();
+        if cx.is_cancelled() {
+            return Err(InputError::Cancelled);
+        }
         self.record_locked(&mut state, path, observation)
     }
 

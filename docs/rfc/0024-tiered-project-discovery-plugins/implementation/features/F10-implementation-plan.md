@@ -1,6 +1,6 @@
 # F10 implementation plan: captured input view
 
-**Status:** approved. F10.2a is implemented and its native CI passed on Linux, Windows and macOS (see [F10.2a implementation record](#f102a-implementation-record)); F10.2b is implemented (see [F10.2b implementation record](#f102b-implementation-record)); F10.2c and F10.3 are not started. All maintainer decisions, including the decision 1 amendment, are recorded below (see [Confirmed maintainer decisions](#confirmed-maintainer-decisions)); no maintainer confirmation is pending. Items the plan author could not verify are F10.2a verification items, not open questions. **Size:** Large (two slices after the F10.1 design). **Risk:** High. The view is a new containment boundary beside the capabilities crates ([AGENTS.md](../../../../../AGENTS.md) risk overrides).
+**Status:** approved. F10.2a is implemented and its native CI passed on Linux, Windows and macOS (see [F10.2a implementation record](#f102a-implementation-record)); F10.2b is implemented (see [F10.2b implementation record](#f102b-implementation-record)); F10.2c is implemented (see [F10.2c implementation record](#f102c-implementation-record)); F10.3 is not started. All maintainer decisions, including the decision 1 amendment, are recorded below (see [Confirmed maintainer decisions](#confirmed-maintainer-decisions)); no maintainer confirmation is pending. Items the plan author could not verify are F10.2a verification items, not open questions. **Size:** Large (two slices after the F10.1 design). **Risk:** High. The view is a new containment boundary beside the capabilities crates ([AGENTS.md](../../../../../AGENTS.md) risk overrides).
 **Design:** [F10.1](F10.1-captured-input-view-design.md) (API, evidence, authorization order, limits, errors). This plan does not repeat it; it fixes the build order, the code seams and the decisions the design left open. Facts below were read in the code at `origin/main` (`e1cdb515`).
 
 ## Scope and finish line
@@ -158,6 +158,13 @@ Calibration with real lockfiles (`OMNI_BENCH_LOCKFILES`, downloaded from the pub
 | pnpm (next.js)   | 1.32 MiB | 90 us | 2.01 ms |
 
 The largest real lockfile is 1.32 MiB, so `max_file_bytes` (8 MiB) has about 6x headroom and `max_total_bytes` (16 MiB) holds about twelve of the largest. A realistic discovery pass (a handful of lockfiles and manifests) costs low milliseconds. **No default changes**; the re-planning trigger "defaults make a realistic pass exceed budget" did not fire. The view costs roughly 2x plain reads for many small files, which is the price of hashing and containment.
+
+### F10.2c implementation record
+
+`SymlinkPolicy::{Reject (default), FollowInRoot { max_hops }}` is a field of `InputViewOptions`. Only `Reject` exists: `InputView::open` with `FollowInRoot` returns `InputError::SymlinkPolicyUnsupported` before the root is touched, so nothing is opened, authorized, read or followed, and no resolver, hop counter or re-authorization of resolved paths was written. Windows junctions and mount points are rejected in every mode (`ReparsePoint`). Risk stays Medium: no follow code ships and the default behavior is the F10.2b behavior.
+
+- **Reject matrix (view level):** Linux covers an absolute target, a `..` target, a loop, a dangling link, an in-root absolute and relative link, an intermediate directory link, a retargeted link (always `Symlink`, never bytes; the same name as a real file reads normally) and a listed symlink (reported as `Symlink`, listing it is a containment error). Windows covers junctions (never skipped, including a retargeted junction) and symlink shapes (absolute, `..\`, dangling, loop, directory link; gated on `OMNI_TEST_REQUIRE_CAPABILITIES`, so they fail on CI when the privilege is missing).
+- **Cancellation after admission:** evidence and cached results are published only for a call that is not cancelled, checked under the state lock (review feedback on #176); tests cancel from the read hook and from an authorizer.
 
 ## Test matrix
 

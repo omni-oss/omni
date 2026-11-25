@@ -418,8 +418,8 @@ tasks:
       touches: [docs],
     }
   # Plan: features/F10-implementation-plan.md. F10.2 spans slices F10.2a-c;
-  # mark it done only when F10.2c lands (or split it per slice). F10.2a and F10.2b are built
-  # (crate omni_input_view); F10.2c is not.
+  # mark it done only when F10.2c lands (or split it per slice). F10.2a, F10.2b and F10.2c are
+  # built (crate omni_input_view), so F10.2 is done once the F10.2c PR merges.
   # touches [capability] on F10.2/F10.3 is intentional as a review-routing flag:
   # the view is a containment boundary beside the capabilities crates, though
   # those crates are not edited (the plan forbids it).

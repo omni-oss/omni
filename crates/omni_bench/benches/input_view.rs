@@ -20,7 +20,7 @@ mod real {
     use criterion::{BenchmarkId, Criterion, Throughput, criterion_group};
     use omni_input_view::{
         AuthDecision, AuthError, Cancellation, InputAuthorizer, InputLimits,
-        InputView, InputViewOptions,
+        InputView, InputViewOptions, SymlinkPolicy,
     };
     use omni_path_utils::WorkspacePath;
 
@@ -41,6 +41,7 @@ mod real {
             InputViewOptions {
                 authorizer: Arc::new(AllowAll),
                 limits,
+                symlinks: SymlinkPolicy::Reject,
             },
         )
         .expect("open view")

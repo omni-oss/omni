@@ -104,6 +104,7 @@ impl Fixture {
             InputViewOptions {
                 authorizer: self.policy.clone(),
                 limits,
+                symlinks: SymlinkPolicy::Reject,
             },
         )
         .unwrap()
@@ -756,11 +757,17 @@ fn overlapping_reads_keep_the_first_capture() {
     let first: Arc<[u8]> = Arc::from(&b"first"[..]);
     let second: Arc<[u8]> = Arc::from(&b"second"[..]);
     let kept = view
-        .record_file(&path, first.clone(), digest_of(b"first"), &metadata)
+        .record_file(
+            &cx(),
+            &path,
+            first.clone(),
+            digest_of(b"first"),
+            &metadata,
+        )
         .unwrap();
     assert_eq!(kept, first);
     let kept = view
-        .record_file(&path, second, digest_of(b"second"), &metadata)
+        .record_file(&cx(), &path, second, digest_of(b"second"), &metadata)
         .unwrap();
     assert_eq!(kept, first, "the later capture must not replace the first");
     assert_eq!(view.evidence().paths[&path].observations.len(), 1);
@@ -785,6 +792,7 @@ fn an_authorizer_that_cancels_stops_the_call() {
         InputViewOptions {
             authorizer: Arc::new(Cancelling(cancel.clone())),
             limits: InputLimits::default(),
+            symlinks: SymlinkPolicy::Reject,
         },
     )
     .unwrap();
@@ -816,4 +824,204 @@ fn growth_during_the_read_is_charged_before_buffering() {
         "{result:?}"
     );
     assert!(view.evidence().paths.is_empty());
+}
+
+// F10.2c: symlinks are rejected; following is not implemented.
+
+#[test]
+fn following_symlinks_is_unsupported_and_follows_nothing() {
+    let fixture = Fixture::new();
+    for max_hops in [0u8, 1, 8] {
+        let error = InputView::open(
+            &fixture.root,
+            InputViewOptions {
+                authorizer: fixture.policy.clone(),
+                limits: InputLimits::default(),
+                symlinks: SymlinkPolicy::FollowInRoot { max_hops },
+            },
+        )
+        .err()
+        .expect("FollowInRoot must not open a view");
+        assert!(matches!(error, InputError::SymlinkPolicyUnsupported));
+    }
+    // Not even the authorizer was consulted: nothing was read.
+    assert!(fixture.policy.calls().is_empty());
+    assert_eq!(SymlinkPolicy::default(), SymlinkPolicy::Reject);
+}
+
+#[test]
+fn an_ancestor_cancelled_after_admission_records_nothing() {
+    // Cancelling from the byte hook (after admission, before the evidence is
+    // published) must not leave an observation behind.
+    let fixture = Fixture::new();
+    let view = fixture.view();
+    let cancel = cx();
+    let result =
+        view.read_with(&wp("a/b/file"), &cancel, &mut || cancel.cancel());
+    assert!(matches!(result, Err(InputError::Cancelled)), "{result:?}");
+    assert!(view.evidence().paths.is_empty());
+    // A cached read after cancellation is refused too.
+    view.read(&wp("a/b/file"), &cx()).unwrap();
+    let cancelled = cx();
+    cancelled.cancel();
+    assert!(matches!(
+        view.read(&wp("a/b/file"), &cancelled),
+        Err(InputError::Cancelled)
+    ));
+}
+
+#[cfg(unix)]
+mod reject_matrix {
+    use std::os::unix::fs::symlink;
+
+    use super::*;
+
+    fn assert_symlink(view: &InputView, path: &str) {
+        for result in [
+            view.read(&wp(path), &cx()).map(|_| ()),
+            view.exists(&wp(path), &cx()).map(|_| ()),
+        ] {
+            assert!(
+                matches!(
+                    result,
+                    Err(InputError::Containment(ContainmentViolation::Symlink))
+                ),
+                "{path}: {result:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn every_link_shape_is_a_containment_error_and_reads_nothing() {
+        let fixture = Fixture::new();
+        let root = &fixture.root;
+        symlink(fixture.outside.join("secret"), root.join("absolute")).unwrap();
+        symlink("../outside/secret", root.join("dotdot")).unwrap();
+        symlink("loop", root.join("loop")).unwrap();
+        symlink("gone", root.join("dangling")).unwrap();
+        symlink(root.at("a/b/file"), root.join("inside_abs")).unwrap();
+        symlink("a/b/file", root.join("inside_rel")).unwrap();
+        symlink("b", root.at("a/dir_link")).unwrap();
+        let view = fixture.view();
+        for path in [
+            "absolute",
+            "dotdot",
+            "loop",
+            "dangling",
+            "inside_abs",
+            "inside_rel",
+            "a/dir_link/file",
+            "a/dir_link",
+        ] {
+            assert_symlink(&view, path);
+        }
+        assert!(view.evidence().paths.is_empty());
+    }
+
+    #[test]
+    fn a_retargeted_link_never_yields_bytes() {
+        let fixture = Fixture::new();
+        let link = fixture.root.join("moving");
+        symlink(fixture.outside.join("secret"), &link).unwrap();
+        let view = fixture.view();
+        assert_symlink(&view, "moving");
+        fs::remove_file(&link).unwrap();
+        symlink(fixture.root.at("a/b/file"), &link).unwrap();
+        assert_symlink(&view, "moving");
+        fs::remove_file(&link).unwrap();
+        // Once it is a real file the same path reads normally.
+        fs::write(&link, "now a file").unwrap();
+        assert_eq!(
+            text(view.read(&wp("moving"), &cx()).unwrap()).as_deref(),
+            Some("now a file")
+        );
+    }
+
+    #[test]
+    fn a_listed_symlink_is_reported_as_a_symlink_not_followed() {
+        let fixture = Fixture::new();
+        symlink(&fixture.outside, fixture.root.join("link")).unwrap();
+        let view = fixture.view();
+        let listed = names(view.list(&wp("."), &cx()).unwrap());
+        assert!(listed.contains(&("link".to_string(), EntryKind::Symlink)));
+        assert!(matches!(
+            view.list(&wp("link"), &cx()),
+            Err(InputError::Containment(ContainmentViolation::Symlink))
+        ));
+    }
+}
+
+#[cfg(windows)]
+mod reject_matrix_windows {
+    use std::os::windows::fs::{symlink_dir, symlink_file};
+
+    use omni_test_capabilities::Capability;
+
+    use super::*;
+
+    fn junction(link: &Path, target: &Path) {
+        let output = std::process::Command::new("cmd.exe")
+            .args(["/C", "mklink", "/J"])
+            .arg(link)
+            .arg(target)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+    }
+
+    fn assert_reparse(view: &InputView, path: &str) {
+        for result in [
+            view.read(&wp(path), &cx()).map(|_| ()),
+            view.exists(&wp(path), &cx()).map(|_| ()),
+        ] {
+            assert!(
+                matches!(
+                    result,
+                    Err(InputError::Containment(
+                        ContainmentViolation::ReparsePoint
+                    ))
+                ),
+                "{path}: {result:?}"
+            );
+        }
+    }
+
+    // Junctions need no privilege, so these never skip.
+    #[test]
+    fn junctions_are_rejected_and_a_retargeted_one_never_yields_bytes() {
+        let fixture = Fixture::new();
+        let link = fixture.root.join("junction");
+        junction(&link, &fixture.outside);
+        let view = fixture.view();
+        assert_reparse(&view, "junction");
+        assert_reparse(&view, "junction/secret");
+        fs::remove_dir(&link).unwrap();
+        junction(&link, &fixture.root.at("a/b"));
+        assert_reparse(&view, "junction");
+        assert_reparse(&view, "junction/file");
+        assert!(view.evidence().paths.is_empty());
+    }
+
+    #[test]
+    fn symlink_shapes_are_rejected() {
+        let fixture = Fixture::new();
+        if !omni_test_capabilities::require(Capability::Symlink, &fixture.root)
+        {
+            return;
+        }
+        let root = &fixture.root;
+        symlink_file(fixture.outside.join("secret"), root.join("absolute"))
+            .unwrap();
+        symlink_file("..\\outside\\secret", root.join("dotdot")).unwrap();
+        symlink_file("gone", root.join("dangling")).unwrap();
+        symlink_file("loop", root.join("loop")).unwrap();
+        symlink_dir("b", root.at("a/dir_link")).unwrap();
+        let view = fixture.view();
+        for path in
+            ["absolute", "dotdot", "dangling", "loop", "a/dir_link/file"]
+        {
+            assert_reparse(&view, path);
+        }
+        assert!(view.evidence().paths.is_empty());
+    }
 }
