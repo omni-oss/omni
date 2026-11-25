@@ -324,8 +324,8 @@ fn omitting_the_reparse_flag_lets_a_symlink_be_followed() {
     if !omni_test_capabilities::require(Capability::Symlink, &fixture.root) {
         return;
     }
-    let target = fixture.root.at("a/b/file");
-    symlink_file(&target, fixture.root.at("a/b/link_file")).unwrap();
+    // A relative target: cap-std rejects an absolute one as an escape attempt.
+    symlink_file("file", fixture.root.at("a/b/link_file")).unwrap();
 
     let with_flag = raw_walk(
         &fixture,

@@ -379,7 +379,12 @@ fn replace_file(path: &Path, text: &str) {
 
 const ITERATIONS: usize = 10_000;
 
-fn run_race<S>(fixture: &Fixture, path: &str, swapper: S) -> usize
+fn run_race<S>(
+    fixture: &Fixture,
+    path: &str,
+    want_crossings: bool,
+    swapper: S,
+) -> usize
 where
     S: Fn() + Send + Sync + 'static,
 {
@@ -397,7 +402,16 @@ where
     };
     let mut found = 0usize;
     let mut crossings = 0usize;
-    for _ in 0..ITERATIONS {
+    // At least `ITERATIONS` reads; when the caller needs a kernel escape
+    // report, keep going (bounded) so a loaded machine cannot starve it.
+    let started = std::time::Instant::now();
+    let mut reads = 0usize;
+    while reads < ITERATIONS
+        || (want_crossings
+            && crossings == 0
+            && started.elapsed() < std::time::Duration::from_secs(60))
+    {
+        reads += 1;
         match read_inside(&root, path) {
             Ok(Some(text)) => {
                 assert_eq!(text, INSIDE, "outside bytes returned");
@@ -439,7 +453,7 @@ fn race_intermediate_directory_swapped_with_a_symlink() {
         return;
     };
     let (root, outside) = (fixture.root.clone(), fixture.outside.clone());
-    run_race(&fixture, "a/b/file", move || {
+    run_race(&fixture, "a/b/file", false, move || {
         let (a, real) = (root.join("a"), root.join("a_real"));
         fs::rename(&a, &real).unwrap();
         symlink(&outside, &a).unwrap();
@@ -454,7 +468,7 @@ fn race_final_file_swapped_with_a_symlink() {
         return;
     };
     let (root, outside) = (fixture.root.clone(), fixture.outside.clone());
-    run_race(&fixture, "a/b/file", move || {
+    run_race(&fixture, "a/b/file", false, move || {
         let file = root.join("a/b/file");
         let real = root.join("a/b/file_real");
         fs::rename(&file, &real).unwrap();
@@ -492,6 +506,7 @@ fn race_ancestor_moved_out_and_back() {
     let crossings = run_race(
         &fixture,
         "a/b/file",
+        true,
         move_out_and_back(fixture.root.clone(), fixture.outside.clone(), "a"),
     );
     // The kernel's BENEATH escape check (EXDEV) really fired during the
@@ -507,6 +522,7 @@ fn race_intermediate_directory_moved_out_and_back() {
     run_race(
         &fixture,
         "a/b/file",
+        false,
         move_out_and_back(fixture.root.clone(), fixture.outside.clone(), "a/b"),
     );
 }
