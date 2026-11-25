@@ -812,13 +812,15 @@ fn growth_during_the_read_is_charged_before_buffering() {
         max_total_bytes: (CHUNK + 10) as u64 + 100,
         ..InputLimits::default()
     });
-    let mut grown = false;
+    let mut chunks = 0usize;
     let result = view.read_with(&wp("grow"), &cx(), &mut || {
-        if !grown {
-            grown = true;
+        chunks += 1;
+        if chunks == 1 {
             fs::write(&big, vec![b'y'; 4 * CHUNK]).unwrap();
         }
     });
+    // Refused when the first grown chunk was seen, before any more was buffered.
+    assert_eq!(chunks, 1);
     assert!(
         matches!(result, Err(InputError::Budget(BudgetKind::TotalBytes))),
         "{result:?}"
@@ -844,6 +846,19 @@ fn following_symlinks_is_unsupported_and_follows_nothing() {
         .expect("FollowInRoot must not open a view");
         assert!(matches!(error, InputError::SymlinkPolicyUnsupported));
     }
+    // Refused before the root is touched, even a root that does not exist.
+    let missing = fixture.root.join("does-not-exist");
+    let error = InputView::open(
+        &missing,
+        InputViewOptions {
+            authorizer: fixture.policy.clone(),
+            limits: InputLimits::default(),
+            symlinks: SymlinkPolicy::FollowInRoot { max_hops: 1 },
+        },
+    )
+    .err()
+    .expect("FollowInRoot must not open a view");
+    assert!(matches!(error, InputError::SymlinkPolicyUnsupported));
     // Not even the authorizer was consulted: nothing was read.
     assert!(fixture.policy.calls().is_empty());
     assert_eq!(SymlinkPolicy::default(), SymlinkPolicy::Reject);
@@ -868,6 +883,31 @@ fn an_ancestor_cancelled_after_admission_records_nothing() {
         view.read(&wp("a/b/file"), &cancelled),
         Err(InputError::Cancelled)
     ));
+}
+
+#[test]
+fn evidence_is_not_published_for_a_cancelled_call() {
+    let fixture = Fixture::new();
+    let view = fixture.view();
+    let path = wp("a/b/file");
+    let metadata = fs::metadata(fixture.root.at("a/b/file")).unwrap();
+    let cancelled = cx();
+    cancelled.cancel();
+    assert!(matches!(
+        view.record(&cancelled, &path, Observation::Missing),
+        Err(InputError::Cancelled)
+    ));
+    assert!(matches!(
+        view.record_file(
+            &cancelled,
+            &path,
+            Arc::from(&b"inside"[..]),
+            digest_of(b"inside"),
+            &metadata
+        ),
+        Err(InputError::Cancelled)
+    ));
+    assert!(view.evidence().paths.is_empty());
 }
 
 #[cfg(unix)]
@@ -999,6 +1039,10 @@ mod reject_matrix_windows {
         junction(&link, &fixture.root.at("a/b"));
         assert_reparse(&view, "junction");
         assert_reparse(&view, "junction/file");
+        assert!(matches!(
+            view.list(&wp("junction"), &cx()),
+            Err(InputError::Containment(ContainmentViolation::ReparsePoint))
+        ));
         assert!(view.evidence().paths.is_empty());
     }
 
@@ -1017,9 +1061,14 @@ mod reject_matrix_windows {
         symlink_file("loop", root.join("loop")).unwrap();
         symlink_dir("b", root.at("a/dir_link")).unwrap();
         let view = fixture.view();
-        for path in
-            ["absolute", "dotdot", "dangling", "loop", "a/dir_link/file"]
-        {
+        for path in [
+            "absolute",
+            "dotdot",
+            "dangling",
+            "loop",
+            "a/dir_link",
+            "a/dir_link/file",
+        ] {
             assert_reparse(&view, path);
         }
         assert!(view.evidence().paths.is_empty());

@@ -405,7 +405,8 @@ impl InputView {
     /// Records the file observation and keeps the first capture: if another
     /// read of the same path finished first, its bytes win and are returned,
     /// so every caller sees one snapshot per path (a later divergence is a
-    /// revalidation finding).
+    /// revalidation finding). The losing read was already charged for its
+    /// buffer, which over-counts the budget (the safe direction).
     fn record_file(
         &self,
         cx: &Cancellation,
@@ -551,3 +552,43 @@ fn identity(metadata: &Metadata) -> FileIdentity {
 
 #[cfg(all(test, any(target_os = "linux", windows)))]
 mod tests;
+
+#[cfg(all(test, not(any(target_os = "linux", windows))))]
+mod unsupported_tests {
+    use super::*;
+
+    struct Never;
+
+    impl InputAuthorizer for Never {
+        fn authorize_read(
+            &self,
+            _: &WorkspacePath,
+        ) -> Result<AuthDecision, crate::auth::AuthError> {
+            Err(crate::auth::AuthError)
+        }
+    }
+
+    fn options(symlinks: SymlinkPolicy) -> InputViewOptions {
+        InputViewOptions {
+            authorizer: Arc::new(Never),
+            limits: InputLimits::default(),
+            symlinks,
+        }
+    }
+
+    #[test]
+    fn open_is_unsupported_without_touching_the_filesystem() {
+        let root = Path::new("/does/not/exist");
+        assert!(matches!(
+            InputView::open(root, options(SymlinkPolicy::Reject)),
+            Err(InputError::Containment(ContainmentViolation::Unsupported))
+        ));
+        assert!(matches!(
+            InputView::open(
+                root,
+                options(SymlinkPolicy::FollowInRoot { max_hops: 1 })
+            ),
+            Err(InputError::SymlinkPolicyUnsupported)
+        ));
+    }
+}

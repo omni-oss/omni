@@ -2,8 +2,8 @@
 //!
 //! F10.2a is the per-OS beneath-root open primitive and the D9 name check;
 //! F10.2b adds the tracked [`InputView`] (read, exists, list, limits,
-//! evidence). Symlink policy and revalidation land in later slices; nothing
-//! here is consumed yet.
+//! evidence). F10.2c adds the reject-only [`SymlinkPolicy`]; revalidation lands in
+//! F10.3. Nothing here is consumed yet.
 //!
 //! Containment is only claimed where it is enforced and proven:
 //!
