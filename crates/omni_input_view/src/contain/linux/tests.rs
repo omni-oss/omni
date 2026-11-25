@@ -421,6 +421,7 @@ where
     let swaps_before = swaps.load(Ordering::SeqCst);
     let started = std::time::Instant::now();
     let mut reads = 0usize;
+    let mut overlapped = false;
     while reads < ITERATIONS
         || (swaps.load(Ordering::SeqCst) == swaps_before
             && !handle.is_finished()
@@ -453,9 +454,9 @@ where
                 );
             }
         }
+        // Observed inside the loop, so only a swap during the reads counts.
+        overlapped |= swaps.load(Ordering::SeqCst) > swaps_before;
     }
-    // Whether a swap happened while the reads ran, not during shutdown.
-    let overlapped = swaps.load(Ordering::SeqCst) > swaps_before;
     // Keep the swapper going until it has had a fair number of rounds, but
     // stop waiting if it died, so its panic is reported by `join`.
     while swaps.load(Ordering::SeqCst) < 100 && !handle.is_finished() {
