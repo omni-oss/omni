@@ -19,6 +19,18 @@ use crate::{ContainedRoot, error::InputError, open_beneath};
 const INSIDE: &str = "inside";
 const OUTSIDE: &str = "OUTSIDE";
 
+trait At {
+    fn at(&self, relative: &str) -> PathBuf;
+}
+
+impl At for Path {
+    fn at(&self, relative: &str) -> PathBuf {
+        relative
+            .split('/')
+            .fold(self.to_path_buf(), |path, part| path.join(part))
+    }
+}
+
 struct Fixture {
     _tmp: tempfile::TempDir,
     root: PathBuf,
@@ -28,13 +40,15 @@ struct Fixture {
 impl Fixture {
     fn new() -> Self {
         let tmp = tempfile::tempdir().unwrap();
-        let base = fs::canonicalize(tmp.path()).unwrap();
+        // Not canonicalized: a verbatim `\\?\` path does not accept `/` joins or
+        // `mklink`. `ContainedRoot::open` canonicalizes the root itself.
+        let base = tmp.path().to_path_buf();
         let root = base.join("root");
         let outside = base.join("outside");
-        fs::create_dir_all(root.join("a/b")).unwrap();
+        fs::create_dir_all(root.at("a/b")).unwrap();
         fs::create_dir_all(outside.join("b")).unwrap();
-        fs::write(root.join("a/b/file"), INSIDE).unwrap();
-        fs::write(outside.join("b/file"), OUTSIDE).unwrap();
+        fs::write(root.at("a/b/file"), INSIDE).unwrap();
+        fs::write(outside.at("b/file"), OUTSIDE).unwrap();
         Self {
             _tmp: tmp,
             root,
@@ -114,10 +128,7 @@ fn missing_and_not_a_directory_are_missing_not_errors() {
 fn junctions_are_rejected_and_never_skipped() {
     let fixture = Fixture::new();
     junction(&fixture.root.join("link_dir"), &fixture.outside);
-    junction(
-        &fixture.root.join("a/link_inside"),
-        &fixture.root.join("a/b"),
-    );
+    junction(&fixture.root.at("a/link_inside"), &fixture.root.at("a/b"));
     let root = fixture.contained();
     for path in [
         "link_dir",
@@ -138,11 +149,8 @@ fn symlinks_are_rejected() {
         return;
     }
     symlink_dir(&fixture.outside, fixture.root.join("link_dir")).unwrap();
-    symlink_file(
-        fixture.outside.join("b/file"),
-        fixture.root.join("link_file"),
-    )
-    .unwrap();
+    symlink_file(fixture.outside.at("b/file"), fixture.root.join("link_file"))
+        .unwrap();
     symlink_file(fixture.root.join("gone"), fixture.root.join("dangling"))
         .unwrap();
     let root = fixture.contained();
@@ -156,7 +164,7 @@ fn symlinks_are_rejected() {
 fn names_are_rejected_by_d9_not_reported_as_missing() {
     let fixture = Fixture::new();
     // A real alternate data stream on a real file.
-    fs::write(fixture.root.join("a/b/file:ads"), "stream").unwrap();
+    fs::write(fixture.root.at("a/b/file:ads"), "stream").unwrap();
     let root = fixture.contained();
     for path in [
         "a/b/file:ads",
@@ -193,7 +201,7 @@ fn assert_rename_blocked(from: &Path, to: &Path) {
 #[test]
 fn held_ancestors_cannot_be_renamed_and_move_out_and_back_cannot_run() {
     let fixture = Fixture::new();
-    let (a, b) = (fixture.root.join("a"), fixture.root.join("a/b"));
+    let (a, b) = (fixture.root.join("a"), fixture.root.at("a/b"));
     let moved = fixture.outside.join("moved");
     let mut seen = Vec::new();
     let result = raw_walk(
@@ -256,12 +264,9 @@ fn hook_next_component_swapped_for_a_junction_after_the_parent_is_held() {
         "a/b/file",
         &mut |step| {
             if step == Step::Retained(0) {
-                fs::rename(
-                    fixture.root.join("a/b"),
-                    fixture.root.join("a/b_real"),
-                )
-                .unwrap();
-                junction(&fixture.root.join("a/b"), &fixture.outside.join("b"));
+                fs::rename(fixture.root.at("a/b"), fixture.root.at("a/b_real"))
+                    .unwrap();
+                junction(&fixture.root.at("a/b"), &fixture.outside.join("b"));
             }
         },
         FILE_FLAG_OPEN_REPARSE_POINT,
@@ -277,12 +282,9 @@ fn hook_final_directory_swapped_for_a_junction_before_the_open() {
         "a/b",
         &mut |step| {
             if step == Step::Retained(0) {
-                fs::rename(
-                    fixture.root.join("a/b"),
-                    fixture.root.join("a/b_real"),
-                )
-                .unwrap();
-                junction(&fixture.root.join("a/b"), &fixture.outside);
+                fs::rename(fixture.root.at("a/b"), fixture.root.at("a/b_real"))
+                    .unwrap();
+                junction(&fixture.root.at("a/b"), &fixture.outside);
             }
         },
         FILE_FLAG_OPEN_REPARSE_POINT,
@@ -302,9 +304,9 @@ fn hook_final_file_swapped_for_a_symlink_before_the_open() {
         "a/b/file",
         &mut |step| {
             if step == Step::Retained(1) {
-                let file = fixture.root.join("a/b/file");
+                let file = fixture.root.at("a/b/file");
                 fs::remove_file(&file).unwrap();
-                symlink_file(fixture.outside.join("b/file"), &file).unwrap();
+                symlink_file(fixture.outside.at("b/file"), &file).unwrap();
             }
         },
         FILE_FLAG_OPEN_REPARSE_POINT,
@@ -312,35 +314,32 @@ fn hook_final_file_swapped_for_a_symlink_before_the_open() {
     assert_eq!(result, Err(ContainmentViolation::ReparsePoint.into()));
 }
 
-/// FILE_FLAG_OPEN_REPARSE_POINT is load-bearing: without it the same junction
-/// is no longer observed as a reparse point (the OS follows it), so the
-/// reparse-point rejection the other tests rely on does not happen.
+/// FILE_FLAG_OPEN_REPARSE_POINT is load-bearing. Without it, cap-std notices
+/// the final-component symlink itself and follows it (`manually::open`), so
+/// the read succeeds and the reparse-point rejection never happens.
 #[test]
-fn omitting_the_reparse_flag_defeats_the_reparse_check() {
+fn omitting_the_reparse_flag_lets_a_symlink_be_followed() {
+    use std::os::windows::fs::symlink_file;
     let fixture = Fixture::new();
-    junction(&fixture.root.join("link_dir"), &fixture.outside);
+    if !omni_test_capabilities::require(Capability::Symlink, &fixture.root) {
+        return;
+    }
+    let target = fixture.root.at("a/b/file");
+    symlink_file(&target, fixture.root.at("a/b/link_file")).unwrap();
 
     let with_flag = raw_walk(
         &fixture,
-        "link_dir/b/file",
+        "a/b/link_file",
         &mut |_| {},
         FILE_FLAG_OPEN_REPARSE_POINT,
     );
     assert_eq!(with_flag, Err(ContainmentViolation::ReparsePoint.into()));
 
-    let without_flag = raw_walk(&fixture, "link_dir/b/file", &mut |_| {}, 0);
-    assert_ne!(
-        without_flag,
-        Err(ContainmentViolation::ReparsePoint.into()),
-        "the junction was still seen as a reparse point without the flag"
-    );
-    // It was followed at the OS level: either the outside bytes came back or
-    // the final-path check caught the escape. Never a clean in-root read.
-    assert!(
-        without_flag.as_deref() == Ok(OUTSIDE)
-            || without_flag == Err(ContainmentViolation::EscapesRoot.into())
-            || without_flag.is_err(),
-        "{without_flag:?}"
+    let without_flag = raw_walk(&fixture, "a/b/link_file", &mut |_| {}, 0);
+    assert_eq!(
+        without_flag.as_deref(),
+        Ok(INSIDE),
+        "the symlink was not followed without the flag"
     );
 }
 
@@ -348,10 +347,10 @@ fn omitting_the_reparse_flag_defeats_the_reparse_check() {
 fn final_path_check_rejects_a_handle_outside_the_root() {
     let fixture = Fixture::new();
     let root = Root::open(&fixture.root).unwrap();
-    let outside = File::open(fixture.outside.join("b/file")).unwrap();
+    let outside = File::open(fixture.outside.at("b/file")).unwrap();
     let found = sys::final_path(&outside).unwrap();
     assert!(!is_under(&found, &root.final_path));
-    let inside = File::open(fixture.root.join("a/b/file")).unwrap();
+    let inside = File::open(fixture.root.at("a/b/file")).unwrap();
     assert!(is_under(
         &sys::final_path(&inside).unwrap(),
         &root.final_path
@@ -377,8 +376,8 @@ fn race_intermediate_directory_swapped_with_a_junction() {
                 let (a, real) = (root_dir.join("a"), root_dir.join("a_real"));
                 if fs::rename(&a, &real).is_ok() {
                     junction(&a, &outside);
-                    let _ = fs::remove_dir(&a);
-                    fs::rename(&real, &a).unwrap();
+                    retry(|| fs::remove_dir(&a));
+                    retry(|| fs::rename(&real, &a));
                 }
             }
         })
@@ -390,4 +389,15 @@ fn race_intermediate_directory_swapped_with_a_junction() {
     }
     stop.store(true, Ordering::SeqCst);
     handle.join().unwrap();
+}
+
+/// Sharing violations are expected while the reader holds a handle.
+fn retry(mut operation: impl FnMut() -> std::io::Result<()>) {
+    for _ in 0..10_000 {
+        if operation().is_ok() {
+            return;
+        }
+        thread::yield_now();
+    }
+    panic!("operation kept failing");
 }

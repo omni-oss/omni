@@ -35,7 +35,7 @@ fn is_reserved_device_name(segment: &str) -> bool {
             let rest: Vec<char> = chars.collect();
             matches!(prefix.as_str(), "COM" | "LPT")
                 && rest.len() == 1
-                && matches!(rest[0], '1'..='9' | '¹' | '²' | '³')
+                && matches!(rest[0], '0'..='9' | '¹' | '²' | '³')
         }
     }
 }
@@ -53,7 +53,6 @@ mod tests {
             ".gitignore",
             "console",
             "com10",
-            "com0",
             "lpt",
             "nul_x",
             "aux1",
@@ -85,6 +84,8 @@ mod tests {
             "aux",
             "NUL",
             "nul.tar.gz",
+            "COM0",
+            "lpt0",
             "COM1",
             "com9",
             "Lpt1",

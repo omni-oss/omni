@@ -49,10 +49,11 @@ impl Root {
             .open(&canonical)
             .map_err(io_error)?;
         let metadata = file.metadata().map_err(io_error)?;
-        if metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
-            || !metadata.is_dir()
-        {
+        if metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
             return Err(ContainmentViolation::ReparsePoint.into());
+        }
+        if !metadata.is_dir() {
+            return Err(OpenError::Io(std::io::ErrorKind::NotADirectory));
         }
         let final_path = sys::final_path(&file).map_err(io_error)?;
         Ok(Self {
@@ -147,14 +148,20 @@ fn single_component(name: &str) -> Result<(), OpenError> {
     }
 }
 
+/// Strictly beneath `root`, compared case-insensitively. Fails closed on a
+/// name that is not valid Unicode.
 fn is_under(found: &Path, root: &Path) -> bool {
+    fn folded(component: Component<'_>) -> Option<String> {
+        component.as_os_str().to_str().map(str::to_lowercase)
+    }
     let mut found = found.components();
-    root.components().all(|expected| {
-        found.next().is_some_and(|actual| {
-            actual.as_os_str().to_string_lossy().to_lowercase()
-                == expected.as_os_str().to_string_lossy().to_lowercase()
-        })
-    })
+    let same_prefix = root.components().all(|expected| {
+        match (found.next().and_then(folded), folded(expected)) {
+            (Some(actual), Some(expected)) => actual == expected,
+            _ => false,
+        }
+    });
+    same_prefix && found.next().is_some()
 }
 
 fn io_error(error: std::io::Error) -> OpenError {

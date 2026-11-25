@@ -21,6 +21,7 @@ pub(super) fn final_path(file: &File) -> io::Result<PathBuf> {
     let handle = file.as_raw_handle() as HANDLE;
     let mut buffer: Vec<u16> = vec![0; 512];
     for _ in 0..4 {
+        let length = u32::try_from(buffer.len()).map_err(io::Error::other)?;
         // SAFETY: `handle` is a live handle owned by `file`, which is
         // borrowed for the whole call. `buffer` is a valid, writable region of
         // exactly `buffer.len()` UTF-16 units, and nothing is retained.
@@ -28,7 +29,7 @@ pub(super) fn final_path(file: &File) -> io::Result<PathBuf> {
             GetFinalPathNameByHandleW(
                 handle,
                 buffer.as_mut_ptr(),
-                buffer.len() as u32,
+                length,
                 VOLUME_NAME_DOS,
             )
         } as usize;
@@ -65,7 +66,7 @@ mod tests {
     fn a_path_over_max_path_needs_the_retry() {
         let tmp = tempfile::tempdir().unwrap();
         let mut dir = std::fs::canonicalize(tmp.path()).unwrap();
-        for _ in 0..4 {
+        for _ in 0..7 {
             dir.push("d".repeat(100));
         }
         std::fs::create_dir_all(&dir).unwrap();
@@ -73,7 +74,7 @@ mod tests {
         std::fs::write(&file, b"x").unwrap();
         let handle = File::open(&file).unwrap();
         let found = final_path(&handle).unwrap();
-        assert!(found.as_os_str().len() > 260);
+        assert!(found.as_os_str().len() > 512);
         assert_eq!(found, file);
     }
 

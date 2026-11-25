@@ -379,7 +379,7 @@ fn replace_file(path: &Path, text: &str) {
 
 const ITERATIONS: usize = 10_000;
 
-fn run_race<S>(fixture: &Fixture, path: &str, swapper: S)
+fn run_race<S>(fixture: &Fixture, path: &str, swapper: S) -> usize
 where
     S: Fn() + Send + Sync + 'static,
 {
@@ -396,6 +396,7 @@ where
         })
     };
     let mut found = 0usize;
+    let mut crossings = 0usize;
     for _ in 0..ITERATIONS {
         match read_inside(&root, path) {
             Ok(Some(text)) => {
@@ -407,6 +408,9 @@ where
                 // `MountCrossing` here is the kernel's `EXDEV`: it also reports a
                 // `RESOLVE_BENEATH` escape it detected during a concurrent
                 // rename. Either way the read is refused, which is the point.
+                if is_violation(&error, ContainmentViolation::MountCrossing) {
+                    crossings += 1;
+                }
                 assert!(
                     is_violation(&error, ContainmentViolation::Symlink)
                         || is_violation(
@@ -425,7 +429,8 @@ where
     stop.store(true, Ordering::SeqCst);
     handle.join().unwrap();
     assert!(swaps.load(Ordering::SeqCst) >= 100);
-    assert!(found <= ITERATIONS);
+    assert!(found > 0, "every read was refused");
+    crossings
 }
 
 #[test]
@@ -484,11 +489,14 @@ fn race_ancestor_moved_out_and_back() {
     let Some(fixture) = Fixture::supported() else {
         return;
     };
-    run_race(
+    let crossings = run_race(
         &fixture,
         "a/b/file",
         move_out_and_back(fixture.root.clone(), fixture.outside.clone(), "a"),
     );
+    // The kernel's BENEATH escape check (EXDEV) really fired during the
+    // lookups; without it these reads could have followed the moved directory.
+    assert!(crossings > 0, "the kernel never reported an escape");
 }
 
 #[test]
@@ -593,12 +601,16 @@ fn real_seccomp_filter_blocking_openat2_is_unsupported() {
         command.pre_exec(install_openat2_filter);
     }
     match command.output() {
-        Ok(output) => assert!(
-            output.status.success(),
-            "child failed: {}\n{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        ),
+        Ok(output) => {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            assert!(
+                output.status.success(),
+                "child failed: {stdout}\n{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            // `--exact` matching nothing would also exit 0.
+            assert!(stdout.contains("1 passed"), "child ran nothing: {stdout}");
+        }
         Err(error) => {
             // Skips, named, unless the lane requires `seccomp`.
             let _ = omni_test_capabilities::gate("seccomp", false, error);

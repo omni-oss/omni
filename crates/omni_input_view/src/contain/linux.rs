@@ -32,7 +32,10 @@ impl Root {
             .map_err(|error| OpenError::Io(error.kind()))?;
         let fd = fs::open(
             &canonical,
-            OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC,
+            OFlags::RDONLY
+                | OFlags::DIRECTORY
+                | OFlags::CLOEXEC
+                | OFlags::NOFOLLOW,
             Mode::empty(),
         )
         .map_err(|errno| OpenError::Io(std::io::Error::from(errno).kind()))?;

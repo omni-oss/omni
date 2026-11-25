@@ -69,8 +69,18 @@ pub fn open_beneath(
     root: &ContainedRoot,
     path: &WorkspacePath,
 ) -> Result<Option<File>, InputError> {
+    open_beneath_with(&root.0, path, imp::open_file)
+}
+
+/// The shared layer around the per-OS open: the request and name checks must
+/// run before `open` is called at all.
+fn open_beneath_with<R>(
+    root: &R,
+    path: &WorkspacePath,
+    open: impl FnOnce(&R, &WorkspacePath) -> Result<File, OpenError>,
+) -> Result<Option<File>, InputError> {
     check_open_request(path)?;
-    match imp::open_file(&root.0, path) {
+    match open(root, path) {
         Ok(file) => Ok(Some(file)),
         Err(OpenError::Missing) => Ok(None),
         Err(error) => Err(map_error(error, path)),
@@ -99,5 +109,45 @@ fn map_error(error: OpenError, path: &WorkspacePath) -> InputError {
             path: path.clone(),
             kind,
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::Cell;
+
+    use super::*;
+
+    #[test]
+    fn rejected_requests_never_reach_the_os_open() {
+        let calls = Cell::new(0);
+        let attempt = |path: WorkspacePath| {
+            open_beneath_with(&(), &path, |_, _| {
+                calls.set(calls.get() + 1);
+                Err(OpenError::Missing)
+            })
+        };
+        for bad in ["ab:c", "a/CON", "nul.txt", "a/b./c", "a/trail ", "a/COM0"]
+        {
+            let error =
+                attempt(WorkspacePath::parse(bad).unwrap()).unwrap_err();
+            assert!(
+                matches!(
+                    error,
+                    InputError::Containment(
+                        ContainmentViolation::NameUnsupported
+                    )
+                ),
+                "{bad}: {error:?}"
+            );
+        }
+        assert!(attempt(WorkspacePath::root()).is_err());
+        assert_eq!(calls.get(), 0);
+        assert!(
+            attempt(WorkspacePath::parse("a/b").unwrap())
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(calls.get(), 1);
     }
 }
