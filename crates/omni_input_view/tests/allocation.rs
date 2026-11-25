@@ -89,11 +89,27 @@ fn an_oversized_file_is_refused_without_allocating_its_size() {
     if let Err(InputError::Containment(ContainmentViolation::Unsupported)) =
         view.exists(&WorkspacePath::root(), &Cancellation::new())
     {
-        if cfg!(all(target_os = "linux", target_arch = "x86_64"))
-            && std::env::var_os("OMNI_INPUT_VIEW_ALLOW_NO_OPENAT2").is_none()
+        // Only a non-x86_64 Linux sandbox may answer `Unsupported`.
+        if !cfg!(target_os = "linux")
+            || (cfg!(target_arch = "x86_64")
+                && std::env::var_os("OMNI_INPUT_VIEW_ALLOW_NO_OPENAT2")
+                    .is_none())
         {
-            panic!("x86_64 Linux must provide openat2");
+            panic!("this target must not answer Unsupported");
         }
+        assert!(matches!(
+            view.read(
+                &WorkspacePath::parse("huge").unwrap(),
+                &Cancellation::new()
+            ),
+            Err(InputError::Containment(ContainmentViolation::Unsupported))
+        ));
+        assert!(view.evidence().paths.is_empty());
+        let _ = omni_test_capabilities::gate(
+            "openat2",
+            false,
+            "blocked by the sandbox",
+        );
         return;
     }
 

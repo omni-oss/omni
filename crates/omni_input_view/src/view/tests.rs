@@ -103,11 +103,14 @@ impl Fixture {
         let view = fixture.view();
         match view.exists(&wp("."), &cx()) {
             Err(InputError::Containment(ContainmentViolation::Unsupported)) => {
-                if cfg!(all(target_os = "linux", target_arch = "x86_64"))
-                    && std::env::var_os("OMNI_INPUT_VIEW_ALLOW_NO_OPENAT2")
-                        .is_none()
+                // Only a non-x86_64 Linux sandbox may answer `Unsupported`;
+                // anywhere else (x86_64 Linux, Windows) it is a real failure.
+                if !cfg!(target_os = "linux")
+                    || (cfg!(target_arch = "x86_64")
+                        && std::env::var_os("OMNI_INPUT_VIEW_ALLOW_NO_OPENAT2")
+                            .is_none())
                 {
-                    panic!("x86_64 Linux must provide openat2");
+                    panic!("this target must not answer Unsupported");
                 }
                 assert!(matches!(
                     view.read(&wp("a/b/file"), &cx()),
