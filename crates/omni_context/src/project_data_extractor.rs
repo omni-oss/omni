@@ -1070,9 +1070,10 @@ mod tests {
 
     /// F07.2 parity gate: cache-key file inputs `extract_all` derives from the
     /// extension graph, captured from the pre-F07 revision (c7aa81fc). The
-    /// baseline's list ORDER varies from run to run (hash-ordered), so only
-    /// the sorted multiset is pinned, repeated entries included (the project
-    /// file appears twice). Paths are relative to the temp root and joined
+    /// baseline's list ORDER varies from run to run (hash-ordered), so the
+    /// sorted multiset is pinned, repeated entries included (the project
+    /// file appears twice), plus the stable position of the project's own
+    /// file at the end. Paths are relative to the temp root and joined
     /// with `/`, since the absolute temp root is not stable and the cache
     /// extractor exposes inputs, not digests.
     fn extracted_inputs(
@@ -1132,6 +1133,16 @@ mod tests {
                     .iter()
                     .map(|g| rel(g))
                     .collect::<Vec<_>>();
+                // The project's own file is pushed last, after the closure
+                // (whose order is hash-random), so its position is stable
+                // and worth pinning before the list is sorted.
+                if info.key_defaults {
+                    assert_eq!(
+                        include.last().map(String::as_str),
+                        Some("app/project.omni.yaml"),
+                        "the project's own file must be the last input",
+                    );
+                }
                 include.sort();
                 let mut exclude = info
                     .key_input_files

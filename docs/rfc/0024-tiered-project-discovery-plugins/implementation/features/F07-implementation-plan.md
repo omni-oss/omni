@@ -130,12 +130,12 @@ struct ResolvedProject {
 }
 ```
 
-| Current caller | Migration |
-| --- | --- |
-| `finalize` / `finalize_composed` in `layer.rs` | Return effective values separately from the concrete layer's location. Construct the resolved project in the loader; keep declaration bases on their origins. |
-| `omni_context/src/project_config_entry.rs` | Reuse its `ConfigLocation`; classify discovery by the concrete file, not by a path inferred from the name. Preserve existing base and extends-only behavior. |
-| `omni_context/src/project_data_extractor.rs` | Read runtime paths from the resolved project. Feed the same concrete file and extension-chain inputs to cache hashing in the same order, including existing repetitions. A virtual entry has no file input; do not manufacture one. |
-| `omni_api/src/operations/project.rs` and `omni_mcp_core/src/tools/project.rs` | Take location from the resolved entry when selecting by path or displaying a directory. Keep existing wire fields and values; do not serialize the resolved wrapper as config. |
+| Current caller                                                                | Migration                                                                                                                                                                                                                           |
+| ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `finalize` / `finalize_composed` in `layer.rs`                                | Return effective values separately from the concrete layer's location. Construct the resolved project in the loader; keep declaration bases on their origins.                                                                       |
+| `omni_context/src/project_config_entry.rs`                                    | Reuse its `ConfigLocation`; classify discovery by the concrete file, not by a path inferred from the name. Preserve existing base and extends-only behavior.                                                                        |
+| `omni_context/src/project_data_extractor.rs`                                  | Read runtime paths from the resolved project. Feed the same concrete file and extension-chain inputs to cache hashing in the same order, including existing repetitions. A virtual entry has no file input; do not manufacture one. |
+| `omni_api/src/operations/project.rs` and `omni_mcp_core/src/tools/project.rs` | Take location from the resolved entry when selecting by path or displaying a directory. Keep existing wire fields and values; do not serialize the resolved wrapper as config.                                                      |
 
 Audit all constructors and field readers, including tests, before deleting
 the fields. This is an internal representation change with **no config-file
@@ -149,7 +149,9 @@ authored `config`; `ProjectConfigEntry` carries `root_dir` and `location`
 `ProjectConfigResponse` gains non-serialized `dir` and `file` so the MCP
 `project_config` tool and CLI selection keep their values; the wire shape is
 unchanged. Cache-key file inputs still come from the concrete file and its
-extension chain in the same order.
+extension chain: the same entries, repeats included, with the project's own
+file last. The order of the extension closure itself was already hash-random
+before F07 and still is, so parity fixtures pin the sorted entries.
 
 **Migration note for Rust callers (no config-file migration).**
 `ProjectConfiguration { file, dir, .. }` literals lose those two fields.
@@ -159,7 +161,10 @@ root_dir}` instead. `ProjectLayer::finalize` no longer takes `file`/`dir`.
 replaced by `from_finalized`. `FinalizedProject::file` is now an
 `Option<OmniPath>` (`None` for fileless layers). `omni_api::ProjectConfigResponse`
 gained public fields `dir` and `file`, so struct literals and destructuring
-without `..` break.
+without `..` break. `LoadedLayer`'s fields are private: read the layer with
+`LoadedLayer::layer()`, replace it with `with_layer(..)`, and edit it with
+`update_layer(|layer| ..)`, which drops the tracked `cache.enabled` so it is
+re-derived on the next composition.
 
 **Gate:** pin the authored schema and API/MCP JSON shape, file/name selection,
 relative paths from inherited declarations, closure order and diamond behavior,

@@ -530,7 +530,9 @@ impl LoadedLayer {
 
     /// Edit the layer in place. The tracked `cache.enabled` is dropped and
     /// re-derived from the edited layer on the next composition, so an edit
-    /// cannot leave a stale value behind.
+    /// cannot leave a stale value behind. An edit takes ownership of the
+    /// setting: after merging, a re-derived `cache.enabled` is credited to
+    /// this layer's file, not to the base that originally declared it.
     pub fn update_layer<R>(
         &mut self,
         edit: impl FnOnce(&mut ProjectLayer) -> R,
