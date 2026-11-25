@@ -316,7 +316,7 @@ fn hook_final_file_swapped_for_a_symlink_before_the_open() {
 
 /// FILE_FLAG_OPEN_REPARSE_POINT is load-bearing. Without it, cap-std notices
 /// the final-component symlink itself and follows it (`manually::open`), so
-/// the read succeeds and the reparse-point rejection never happens.
+/// the reparse-point rejection never happens.
 #[test]
 fn omitting_the_reparse_flag_lets_a_symlink_be_followed() {
     use std::os::windows::fs::symlink_file;
@@ -335,12 +335,18 @@ fn omitting_the_reparse_flag_lets_a_symlink_be_followed() {
     );
     assert_eq!(with_flag, Err(ContainmentViolation::ReparsePoint.into()));
 
+    // Without the flag cap-std follows the link and no reparse point is seen
+    // (never `ReparsePoint`). Since F10.2b the exact final-path check is a
+    // second layer: the followed handle is `a/b/file`, not the requested
+    // `a/b/link_file`, so it is refused as a spelling mismatch. Native CI
+    // showed this; before that check the read returned the target's bytes.
     let without_flag = raw_walk(&fixture, "a/b/link_file", &mut |_| {}, 0);
-    assert_eq!(
-        without_flag.as_deref(),
-        Ok(INSIDE),
-        "the symlink was not followed without the flag"
+    assert_ne!(
+        without_flag,
+        Err(ContainmentViolation::ReparsePoint.into()),
+        "the symlink was still seen as a reparse point without the flag"
     );
+    assert_eq!(without_flag, Err(OpenError::CaseMismatch));
 }
 
 #[test]
