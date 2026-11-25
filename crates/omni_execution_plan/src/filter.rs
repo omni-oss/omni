@@ -96,6 +96,19 @@ impl ProjectFilter for DefaultProjectFilter {
     }
 }
 
+/// The canonical names that have at least one alias accepted by `is_match`,
+/// calling it once per alias.
+fn canonicals_with_matching_alias(
+    aliases: &TaskAliases,
+    mut is_match: impl FnMut(&str) -> bool,
+) -> HashSet<String> {
+    aliases
+        .iter()
+        .filter(|(alias, _)| is_match(alias))
+        .map(|(_, canonical)| canonical.to_string())
+        .collect()
+}
+
 pub struct DefaultTaskFilter<'b, TGetTaskMetaFn>
 where
     TGetTaskMetaFn:
@@ -108,6 +121,9 @@ where
     /// Aliases per project, only for projects that have any. Empty in raw
     /// canonical-name mode.
     aliases: maps::UnorderedMap<String, TaskAliases>,
+    /// Per project, the canonical tasks that have an alias matching the task
+    /// pattern; computed once when the aliases are installed.
+    pattern_alias_hits: maps::UnorderedMap<String, HashSet<String>>,
     meta_filter: Option<Evaluator>,
     meta_filter_source: Option<String>,
     collector: Option<MetaFilterCollector>,
@@ -204,6 +220,7 @@ where
             exact_task_names,
             references,
             aliases: Default::default(),
+            pattern_alias_hits: Default::default(),
             project_matcher,
             dir_matcher,
             get_task_meta,
@@ -216,6 +233,18 @@ where
         mut self,
         aliases: maps::UnorderedMap<String, TaskAliases>,
     ) -> Self {
+        self.pattern_alias_hits = match &self.task_matcher {
+            Some(matcher) => aliases
+                .iter()
+                .filter_map(|(project, index)| {
+                    let hits = canonicals_with_matching_alias(index, |a| {
+                        matcher.is_match(a)
+                    });
+                    (!hits.is_empty()).then(|| (project.clone(), hits))
+                })
+                .collect(),
+            None => Default::default(),
+        };
         self.aliases = aliases;
         self
     }
@@ -243,13 +272,9 @@ where
     ) -> bool {
         matcher.is_match(node.task_name())
             || self
-                .aliases
+                .pattern_alias_hits
                 .get(node.project_name())
-                .is_some_and(|aliases| {
-                    aliases.iter().any(|(alias, canonical)| {
-                        canonical == node.task_name() && matcher.is_match(alias)
-                    })
-                })
+                .is_some_and(|hits| hits.contains(node.task_name()))
     }
 
     /// Instead of returning an error for the first task whose meta filter
@@ -657,6 +682,94 @@ mod tests {
             false,
             Default::default(),
         )
+    }
+
+    fn alias_index(
+        project: &str,
+        pairs: &[(&str, &str)],
+    ) -> maps::UnorderedMap<String, TaskAliases> {
+        let mut index = maps::UnorderedMap::default();
+        index.insert(
+            project.to_string(),
+            TaskAliases::new(
+                pairs
+                    .iter()
+                    .map(|(a, c)| (a.to_string(), c.to_string()))
+                    .collect(),
+            ),
+        );
+        index
+    }
+
+    fn pattern_filter(
+        pattern: &str,
+        aliases: Option<maps::UnorderedMap<String, TaskAliases>>,
+    ) -> DefaultTaskFilter<
+        'static,
+        impl for<'a> Fn(&'a TaskExecutionNode) -> Option<&'static MetaConfiguration>,
+    > {
+        let filter = DefaultTaskFilter::new(
+            &[TaskSelector::pattern(pattern)],
+            &[],
+            &[],
+            Path::new(""),
+            None,
+            |_| None,
+        )
+        .unwrap();
+        match aliases {
+            Some(a) => filter.with_aliases(a),
+            None => filter,
+        }
+    }
+
+    #[test]
+    fn a_pattern_selects_by_canonical_name_alias_or_neither() {
+        let idx = || alias_index("web", &[("compile", "build-native")]);
+        let f = pattern_filter("comp*", Some(idx()));
+        assert!(f.should_include_task(&node("web", "build-native")).unwrap());
+        assert!(!f.should_include_task(&node("web", "other")).unwrap());
+        assert!(!f.should_include_task(&node("api", "build-native")).unwrap());
+        let f = pattern_filter("build*", Some(idx()));
+        assert!(f.should_include_task(&node("web", "build-native")).unwrap());
+        let f = pattern_filter("zzz*", Some(idx()));
+        assert!(!f.should_include_task(&node("web", "build-native")).unwrap());
+    }
+
+    #[test]
+    fn raw_mode_ignores_aliases_in_patterns() {
+        let f = pattern_filter("comp*", None);
+        assert!(!f.should_include_task(&node("web", "build-native")).unwrap());
+        let f = pattern_filter("build*", None);
+        assert!(f.should_include_task(&node("web", "build-native")).unwrap());
+    }
+
+    #[test]
+    fn the_alias_index_is_matched_once_not_once_per_task() {
+        let pairs: Vec<(String, String)> = (0..2_000)
+            .map(|i| (format!("alias{i}"), format!("task{i}")))
+            .collect();
+        let refs: Vec<(&str, &str)> = pairs
+            .iter()
+            .map(|(a, c)| (a.as_str(), c.as_str()))
+            .collect();
+        let index = alias_index("web", &refs);
+        let mut calls = 0;
+        let hits = canonicals_with_matching_alias(&index["web"], |_| {
+            calls += 1;
+            false
+        });
+        assert!(hits.is_empty());
+        assert_eq!(calls, pairs.len());
+
+        let f = pattern_filter("zzz*", Some(index));
+        assert!(f.pattern_alias_hits.is_empty());
+        for (_, canonical) in &pairs {
+            assert!(!f.should_include_task(&node("web", canonical)).unwrap());
+        }
+        let f = pattern_filter("alias77", Some(alias_index("web", &refs)));
+        assert!(f.should_include_task(&node("web", "task77")).unwrap());
+        assert!(!f.should_include_task(&node("web", "task78")).unwrap());
     }
 
     fn kind_meta(kind: &str) -> MetaConfiguration {
