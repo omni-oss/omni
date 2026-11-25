@@ -1,10 +1,14 @@
 /**
  * A task named in `with` is co-scheduled with the task that names it, and its
- * own prerequisites (`dependencies`) must run first. Each task records itself
- * in `order.log` and fails when a required task has not been recorded yet, so
- * a missing or late prerequisite is a failed run and not just a log line.
- * Every command is `node`, so the specs behave the same on every OS.
+ * own prerequisites (`dependencies`) must run first. Each task writes its own
+ * marker file in `markers/` and fails when the marker of a required task does
+ * not exist yet, so a missing or late prerequisite is a failed run and not
+ * just a log line. Separate files avoid concurrent writes to one file by
+ * co-scheduled tasks. Every command is `node`, so the specs behave the same on
+ * every OS.
  */
+
+import { readdirSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
@@ -13,13 +17,11 @@ import { makeWorkspace, runOmni, type WorkspaceSpec } from "@/harness";
 const MARK_JS = `
 const fs = require("fs");
 const path = require("path");
-const log = path.join(__dirname, "order.log");
+const markers = path.join(__dirname, "markers");
 const [name, ...required] = process.argv.slice(2);
-const seen = fs.existsSync(log)
-    ? fs.readFileSync(log, "utf8").split("\\n").filter(Boolean)
-    : [];
-const ok = required.every((r) => seen.includes(r));
-fs.appendFileSync(log, (ok ? name : name + " MISSING-PREREQ") + "\\n");
+fs.mkdirSync(markers, { recursive: true });
+const ok = required.every((r) => fs.existsSync(path.join(markers, r)));
+fs.writeFileSync(path.join(markers, ok ? name : name + ".MISSING-PREREQ"), "");
 process.exit(ok ? 0 : 1);
 `;
 
@@ -28,6 +30,11 @@ type Task = Record<string, unknown>;
 /** A task that records itself after checking that `requires` ran before it. */
 function mark(name: string, requires: string[] = [], extra: Task = {}): Task {
     return { exec: ["node", "../mark.js", name, ...requires], ...extra };
+}
+
+/** Names of the tasks that ran, sorted; a `.MISSING-PREREQ` suffix is a failure. */
+function markerNames(ws: ReturnType<typeof makeWorkspace>): string[] {
+    return ws.exists("markers") ? readdirSync(ws.path("markers")).sort() : [];
 }
 
 interface Case {
@@ -162,7 +169,7 @@ const cases: Case[] = [
             },
             tool: { name: "tool", tasks: toolTasks({ x: mark("x") }) },
         },
-        args: ["run", "x", "--with-dependents", "--no-cache"],
+        args: ["run", "x", "-p", "tool", "--with-dependents", "--no-cache"],
         expected: ["x", "app-x", "setup", "build-native"],
     },
 ];
@@ -177,19 +184,10 @@ describe("+run @with (sibling prerequisites)", () => {
             });
 
             const result = await runOmni(c.args, { cwd: ws.cwd });
-            const order = ws.exists("order.log")
-                ? ws
-                      .read("order.log")
-                      .split("\n")
-                      .filter((l) => l !== "")
-                : [];
+            const order = markerNames(ws);
 
             expect(result).toHaveSucceeded();
-            expect([...order].sort()).toEqual([...c.expected].sort());
-            expect(order.indexOf("setup")).toBeLessThan(
-                order.indexOf("build-native"),
-            );
-            expect(order.indexOf("setup")).toBeGreaterThanOrEqual(0);
+            expect(order).toEqual([...c.expected].sort());
         });
     }
 
@@ -214,6 +212,6 @@ describe("+run @with (sibling prerequisites)", () => {
         );
 
         expect(result).toHaveSucceeded();
-        expect(ws.read("order.log").split("\n").filter(Boolean)).toEqual(["t"]);
+        expect(markerNames(ws)).toEqual(["t"]);
     });
 });
