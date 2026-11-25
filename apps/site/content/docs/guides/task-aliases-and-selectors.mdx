@@ -1,0 +1,154 @@
+---
+title: "Task aliases and task selectors"
+description: "Release note (pre-v1): author aliases for tasks, select tasks by alias or project#task, escape reserved characters in task names, and what changes for cache pruning and older binaries"
+---
+
+A project can now give a task a second name. An alias names the same task as
+its target, so running either name, or both, plans one execution.
+
+```yaml
+name: web
+tasks:
+    build-native: make native
+    compile:
+        alias: build-native
+```
+
+`omni run compile`, `omni run build-native` and `omni run compile build-native`
+all run the single task `web#build-native`. An alias is not a task: it has no
+command, cache entry or result of its own, and results, hashes and cache entries
+always carry the canonical name.
+
+## Where an alias works
+
+- **Selection.** `omni run`, `omni hash project -t`, `omni cache eligibility -t`
+  and their MCP tools accept an alias wherever they accept an exact task name.
+  A pattern (`--task-pattern`, `task_patterns`) matches the canonical name and
+  every alias of the task, and selects the task once.
+- **Dependencies.** A task that lists `compile` in `dependencies` or `with` gets
+  an edge to `build-native`. `web#compile` and `^compile` resolve the alias in
+  the project they name. For `^compile`, each upstream project resolves it on
+  its own; a project without that name adds no edge and the search continues
+  into its upstream projects.
+- **`extends`.** `extends: compile` inherits the definition of `build-native`.
+  The extending task is still its own task.
+- **Not changed:** an exact name that matches nothing is an error, even when a
+  pattern next to it matches. Wildcard characters in an exact name are literal.
+
+If a task lists the same target more than once, explicit canonical references
+keep their slots (a duplicate listed twice stays twice, as before). An alias
+that points to a target that already has an explicit slot, in either order,
+collapses into it. Aliases to the same target collapse to the first.
+
+## Rules for aliases
+
+- An alias is exactly `{ alias: <target> }`. Mixing it with task fields such as
+  `exec` is an error, even if a later layer would replace the entry.
+- The target is a task of the same project, written in the same escaped grammar
+  as every task reference. Chains are fine. Cycles, missing targets and
+  `base: true` templates are errors; a plain task without a command is a valid
+  target.
+- A later layer that replaces a task with an alias, an alias with a task, or an
+  alias with another alias replaces the whole entry. Aliases in `base: true`
+  layers are checked once they are composed into a concrete project.
+- An alias and a task cannot share a name inside one project.
+- No automatic aliases exist. There is no plugin scope: `native::build` in a key,
+  target or selector is rejected (see below).
+
+## Escaping reserved characters (migration)
+
+Task names in declaration keys, `extends`, alias targets, dependencies and exact
+selectors now use one grammar. `#` separates a project from a task, a leading
+`^` means upstream, `::` is reserved for plugin scopes, and `\` escapes the next
+character. A task whose name contains one of these must be written with a
+backslash. Names without those characters, including `lint:fix` (a single colon),
+are unchanged.
+
+| Task name   | Declaration key / alias target / selector |
+| ----------- | ----------------------------------------- |
+| `build#all` | `build\#all`                              |
+| `^up`       | `\^up`                                    |
+| `a::b`      | `a\:\:b`                                  |
+| `a\b`       | `a\\b`                                    |
+
+```yaml
+tasks:
+    "build\\#all": make all # a task named `build#all` (YAML needs the backslash doubled in quotes)
+    all:
+        alias: 'build\#all'
+```
+
+Two keys that normalize to the same name, such as `lint:fix` and `lint\:fix`,
+are rejected in the same layer. Across layers they merge as one task.
+Existing configurations with reserved characters in task names need this
+escaping, and so do the scripts that select or reference them.
+
+A project-qualified selector scopes to one project: `omni run web#compile` runs
+the alias in `web` only. The same spelling is what task labels print, so a label
+from output or `--result` can be pasted back as a selector. `omni hash project
+web -t other#build` fails because the qualifier must name `web`.
+
+## What changes in cache commands
+
+`omni cache stats` and `omni cache prune` still match stored canonical names
+only. An alias is never expanded, so entries written under an old task name stay
+selectable by that name, even after the name becomes an alias. When an exact
+`--task` selector matches no stored entry but is a live alias, the commands add
+a hint and change nothing else:
+
+```text
+Hint: no cache entries are stored under `compile`; it is an alias of task `build-native` in project `web`. Stored entries use the canonical name: try `--project web --task build-native`
+```
+
+The hint never changes which entries are listed, previewed, approved or pruned.
+In JSON and MCP results it is an additive `hints` field (`alias_hints` in the
+MCP `cache_stats` and `cache_prune` results), omitted when empty. Patterns get no
+hint.
+
+`omni cache stats` and `omni cache prune` with `--dir` or `--meta` now keep only
+the stored entries of tasks that match those filters themselves. Before, they
+also kept entries of tasks that a matching task depends on. Stale analysis still
+hashes the whole dependency graph. Entries of tasks that no longer exist stay
+unmatchable under `--dir` and `--meta`, as before.
+
+## Compatibility and rollback
+
+- **Older binaries reject aliases.** A configuration that uses `alias` or the new
+  escaping cannot be read by an older `omni`. Before rolling back, replace every
+  alias with its canonical name (and rewrite its references), restore the
+  unescaped names in keys and scripts, and republish the project JSON schema from
+  the older version so editors stop accepting `alias`.
+- **The project JSON schema changes.** `omni config schema project` now describes
+  what you author (the layer a file holds), not the composed project. `name` is
+  optional there, because base and extended files may omit it, and `alias`
+  entries are accepted. Schema validation cannot detect two keys that normalize
+  to the same task; loading the workspace does. Republish the schema when you
+  upgrade.
+- **Digests change for one graph shape.** A task that lists the same target both
+  in `with` and as a `^dependency` used to get a duplicate dependency edge,
+  because the duplicate check could see only one of the two connecting edges.
+  It now keeps one. The task's dependency digests, and so the digests of that
+  task and its dependents, change once for such a graph. Tasks that do not do
+  this are unaffected. No stored entry is rewritten; the changed digests simply
+  miss once.
+- **No cache format change.** Aliases add no stored names and no entries. Nothing
+  needs migrating, and rolling back leaves every entry usable by the version that
+  wrote it.
+
+## Rust API changes (pre-v1)
+
+- `omni_core::Project` has an `aliases: TaskAliases` field (not serialized);
+  `Project::canonical_task_name` and `Project::is_alias` resolve public names.
+- `omni_execution_plan::TaskSelector` has a `Reference { project, task }`
+  variant, built by `TaskSelector::parse_exact`. `TaskSelector::Exact` still means
+  a raw canonical name. `ExecutionPlanProvider` has a required
+  `get_execution_selection` returning the directly matched tasks and the plan;
+  `get_execution_plan` is a provided method on top of it.
+- `DefaultExecutionPlanProvider::with_raw_canonical_names(true)` turns off alias
+  and public-name matching for stored-name callers such as cache inventory.
+- `OmniApi::cache_stats` returns `CacheStatsResponse` (the stats plus `hints`);
+  `CachePruneResponse` gains `hints`.
+- `TaskLayer`, `ProjectLayer` and the layer types derive `JsonSchema`;
+  `FinalizedProject` has an `aliases` index; `FinalizeError` has a `TaskAlias`
+  variant, with new diagnostic codes `task_alias.*` and
+  `task_extension.invalid_extendee`.

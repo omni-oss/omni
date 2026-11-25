@@ -71,7 +71,7 @@ pub struct StatsArgs {
     #[arg(
         long,
         short,
-        help = "Filter the cache entries by exact task name. Glob characters are literal; use --task-pattern to match by glob"
+        help = "Filter the cache entries by exact stored (canonical) task name; an alias is not expanded, and a hint suggests the canonical name when one matches. Glob characters are literal; use --task-pattern to match by glob"
     )]
     task: Vec<String>,
 
@@ -185,7 +185,7 @@ pub struct PruneArgs {
     #[arg(
         long,
         short,
-        help = "Only prune entries belonging to a task with this exact name. Glob characters are literal; use --task-pattern to match by glob."
+        help = "Only prune entries belonging to a task with this exact stored (canonical) name; an alias is not expanded, and a hint suggests the canonical name when one matches. Glob characters are literal; use --task-pattern to match by glob."
     )]
     task: Vec<String>,
 
