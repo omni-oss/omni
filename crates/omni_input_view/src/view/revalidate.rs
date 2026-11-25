@@ -91,8 +91,13 @@ impl InputView {
             if cx.is_cancelled() {
                 return Err(InputError::Cancelled);
             }
-            let Some(kind) = self.revalidate_path(&meter, path, entry, cx)?
-            else {
+            let found = self.revalidate_path(&meter, path, entry, cx)?;
+            // A pass cancelled during its last observation must not be
+            // reported as a clean result.
+            if cx.is_cancelled() {
+                return Err(InputError::Cancelled);
+            }
+            let Some(kind) = found else {
                 continue;
             };
             detected += 1;
@@ -102,6 +107,9 @@ impl InputView {
                     kind,
                 });
             }
+        }
+        if cx.is_cancelled() {
+            return Err(InputError::Cancelled);
         }
         if detected == 0 {
             return Ok(Revalidation::Unchanged);

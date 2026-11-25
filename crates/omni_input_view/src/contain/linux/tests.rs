@@ -454,6 +454,8 @@ where
             }
         }
     }
+    // Whether a swap happened while the reads ran, not during shutdown.
+    let overlapped = swaps.load(Ordering::SeqCst) > swaps_before;
     // Keep the swapper going until it has had a fair number of rounds, but
     // stop waiting if it died, so its panic is reported by `join`.
     while swaps.load(Ordering::SeqCst) < 100 && !handle.is_finished() {
@@ -462,10 +464,7 @@ where
     stop.store(true, Ordering::SeqCst);
     handle.join().unwrap();
     assert!(swaps.load(Ordering::SeqCst) >= 100);
-    assert!(
-        swaps.load(Ordering::SeqCst) > swaps_before,
-        "no swap overlapped the reads"
-    );
+    assert!(overlapped, "no swap overlapped the reads");
     assert!(found > 0, "every read was refused");
     crossings
 }

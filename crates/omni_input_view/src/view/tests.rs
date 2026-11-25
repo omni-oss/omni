@@ -280,6 +280,26 @@ fn exists_then_read_of_the_same_file_is_not_a_conflict() {
 }
 
 #[test]
+fn a_refused_first_observation_leaves_no_evidence_entry_behind() {
+    let fixture = fixture!();
+    let view = fixture.view_with(InputLimits {
+        max_observations_per_path: 0,
+        max_tracked_inputs: 1,
+        ..InputLimits::default()
+    });
+    assert!(is_budget(
+        &view.exists(&wp("first"), &cx()).unwrap_err(),
+        BudgetKind::Observations
+    ));
+    // The refused path did not use up the tracked-input budget.
+    assert!(is_budget(
+        &view.exists(&wp("second"), &cx()).unwrap_err(),
+        BudgetKind::Observations
+    ));
+    assert!(view.evidence().paths.is_empty());
+}
+
+#[test]
 fn evidence_is_ordered_by_path() {
     let fixture = fixture!();
     let view = fixture.view();

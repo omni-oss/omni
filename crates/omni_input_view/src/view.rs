@@ -18,7 +18,7 @@ use crate::{
     contain::{ContainedRoot, Want, entries},
     digest::{Blake3Digest, DigestSink},
     error::{BudgetKind, ContainmentViolation, EntryKind, InputError},
-    evidence::{Evidence, FileIdentity, Observation},
+    evidence::{Evidence, FileIdentity, Observation, PathEvidence},
     limits::InputLimits,
     name::check_name,
 };
@@ -273,7 +273,8 @@ impl InputView {
             other => return Ok(FileOutcome::NotFile(other)),
         }
         let len = metadata.len();
-        let limit = self.limits.max_file_bytes;
+        // Never more than a `Vec` can hold, even on a 32-bit target.
+        let limit = self.limits.max_file_bytes.min(isize::MAX as u64);
         if len > limit {
             return Err(InputError::TooLarge { len, limit });
         }
@@ -555,9 +556,19 @@ impl InputView {
         {
             return Err(InputError::Budget(BudgetKind::Inputs));
         }
-        let entry = state.evidence.paths.entry(path.clone()).or_default();
-        if !entry.record(observation, self.limits.max_observations_per_path) {
-            return Err(InputError::Budget(BudgetKind::Observations));
+        // A path is only added once its first observation is accepted, so a
+        // refused observation leaves no empty entry behind.
+        let max = self.limits.max_observations_per_path;
+        if let Some(entry) = state.evidence.paths.get_mut(path) {
+            if !entry.record(observation, max) {
+                return Err(InputError::Budget(BudgetKind::Observations));
+            }
+        } else {
+            let mut entry = PathEvidence::default();
+            if !entry.record(observation, max) {
+                return Err(InputError::Budget(BudgetKind::Observations));
+            }
+            state.evidence.paths.insert(path.clone(), entry);
         }
         Ok(())
     }
