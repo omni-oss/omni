@@ -138,8 +138,18 @@ impl InputView {
             match self.root.open_path(dir, Want::Dir)? {
                 Some(handle) => handle,
                 None => {
-                    self.record(dir, Observation::Missing)?;
-                    return Ok(List::Missing);
+                    // `ENOTDIR` also covers the path having become a file
+                    // since the probe: look again before claiming it is
+                    // absent.
+                    return match self.probe(dir)? {
+                        Some((_, now)) => {
+                            Err(InputError::NotDirectory(kind_of(&now)))
+                        }
+                        None => {
+                            self.record(dir, Observation::Missing)?;
+                            Ok(List::Missing)
+                        }
+                    };
                 }
             }
         } else {
@@ -244,12 +254,8 @@ impl InputView {
 
         let (bytes, digest) =
             self.read_all(file, path, len, limit, cx, after_chunk)?;
-        let actual = bytes.len() as u64;
-        if actual > len {
-            self.charge_bytes(actual - len)?;
-        }
         let bytes: Arc<[u8]> = bytes.into();
-        self.record_file(path, &bytes, digest, &metadata)?;
+        let bytes = self.record_file(path, bytes, digest, &metadata)?;
         Ok(Read::Found(bytes))
     }
 
@@ -265,6 +271,9 @@ impl InputView {
         // `len <= limit` here, so this allocation is already bounded.
         let mut bytes = Vec::with_capacity(len as usize);
         let mut sink = Blake3Digest::new();
+        // Already charged by the caller; growth beyond it is charged here,
+        // before the bytes are buffered.
+        let mut charged = len;
         let mut reader = file.take(limit.saturating_add(1));
         let mut chunk = vec![0u8; CHUNK.min(len.saturating_add(1) as usize)];
         loop {
@@ -281,6 +290,10 @@ impl InputView {
             let total = bytes.len() as u64 + read as u64;
             if total > limit {
                 return Err(InputError::TooLarge { len: total, limit });
+            }
+            if total > charged {
+                self.charge_bytes(total - charged)?;
+                charged = total;
             }
             sink.update(&chunk[..read]);
             bytes.extend_from_slice(&chunk[..read]);
@@ -318,6 +331,10 @@ impl InputView {
         }
         path.segments().try_for_each(check_name)?;
         match self.authorize(path)? {
+            // The authorizer may have cancelled while deciding.
+            AuthDecision::Allow if cx.is_cancelled() => {
+                Err(InputError::Cancelled)
+            }
             AuthDecision::Allow => Ok(()),
             AuthDecision::Deny(reason) => Err(InputError::Denied(reason)),
         }
@@ -365,14 +382,21 @@ impl InputView {
         Ok(())
     }
 
+    /// Records the file observation and keeps the first capture: if another
+    /// read of the same path finished first, its bytes win and are returned,
+    /// so every caller sees one snapshot per path (a later divergence is a
+    /// revalidation finding).
     fn record_file(
         &self,
         path: &WorkspacePath,
-        bytes: &Arc<[u8]>,
+        bytes: Arc<[u8]>,
         digest: crate::digest::Digest,
         metadata: &Metadata,
-    ) -> Result<(), InputError> {
+    ) -> Result<Arc<[u8]>, InputError> {
         let mut state = self.lock();
+        if let Some(existing) = state.captured.get(path) {
+            return Ok(existing.clone());
+        }
         self.record_locked(
             &mut state,
             path,
@@ -383,7 +407,7 @@ impl InputView {
             },
         )?;
         state.captured.insert(path.clone(), bytes.clone());
-        Ok(())
+        Ok(bytes)
     }
 
     fn record(

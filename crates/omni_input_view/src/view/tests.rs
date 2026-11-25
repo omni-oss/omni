@@ -746,3 +746,74 @@ fn defaults_match_the_recorded_decision() {
     assert_eq!(limits.max_observations_per_path, 16);
     assert_eq!(limits.max_file_bytes, 8 * 1024 * 1024);
 }
+
+#[test]
+fn overlapping_reads_keep_the_first_capture() {
+    let fixture = Fixture::new();
+    let view = fixture.view();
+    let path = wp("a/b/file");
+    let metadata = fs::metadata(fixture.root.at("a/b/file")).unwrap();
+    let first: Arc<[u8]> = Arc::from(&b"first"[..]);
+    let second: Arc<[u8]> = Arc::from(&b"second"[..]);
+    let kept = view
+        .record_file(&path, first.clone(), digest_of(b"first"), &metadata)
+        .unwrap();
+    assert_eq!(kept, first);
+    let kept = view
+        .record_file(&path, second, digest_of(b"second"), &metadata)
+        .unwrap();
+    assert_eq!(kept, first, "the later capture must not replace the first");
+    assert_eq!(view.evidence().paths[&path].observations.len(), 1);
+}
+
+#[test]
+fn an_authorizer_that_cancels_stops_the_call() {
+    struct Cancelling(Cancellation);
+    impl InputAuthorizer for Cancelling {
+        fn authorize_read(
+            &self,
+            _: &WorkspacePath,
+        ) -> Result<AuthDecision, AuthError> {
+            self.0.cancel();
+            Ok(AuthDecision::Allow)
+        }
+    }
+    let fixture = Fixture::new();
+    let cancel = cx();
+    let view = InputView::open(
+        &fixture.root,
+        InputViewOptions {
+            authorizer: Arc::new(Cancelling(cancel.clone())),
+            limits: InputLimits::default(),
+        },
+    )
+    .unwrap();
+    assert!(matches!(
+        view.exists(&wp("a/b/file"), &cancel),
+        Err(InputError::Cancelled)
+    ));
+    assert!(view.evidence().paths.is_empty());
+}
+
+#[test]
+fn growth_during_the_read_is_charged_before_buffering() {
+    let fixture = Fixture::new();
+    let big = fixture.root.join("grow");
+    fs::write(&big, vec![b'x'; CHUNK + 10]).unwrap();
+    let view = fixture.view_with(InputLimits {
+        max_total_bytes: (CHUNK + 10) as u64 + 100,
+        ..InputLimits::default()
+    });
+    let mut grown = false;
+    let result = view.read_with(&wp("grow"), &cx(), &mut || {
+        if !grown {
+            grown = true;
+            fs::write(&big, vec![b'y'; 4 * CHUNK]).unwrap();
+        }
+    });
+    assert!(
+        matches!(result, Err(InputError::Budget(BudgetKind::TotalBytes))),
+        "{result:?}"
+    );
+    assert!(view.evidence().paths.is_empty());
+}
