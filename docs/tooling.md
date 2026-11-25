@@ -12,12 +12,26 @@ Keeping this up to date: change this page in the same PR that adds, removes or u
   `cache_restore` module. Directory-relative no-follow operations and retained
   Windows handles avoid implementing platform security primitives ourselves;
   dependency versions are locked in `Cargo.lock`.
+- The captured input view (`omni_input_view`, RFC 0024 F10) owns its containment
+  primitive instead: on Linux a direct `rustix::fs::openat2` (workspace
+  dependency `rustix`, features `std` and `fs`) with `RESOLVE_BENEATH |
+  RESOLVE_NO_SYMLINKS | RESOLVE_NO_MAGICLINKS | RESOLVE_NO_XDEV` and no fallback
+  (`cap-std` falls back silently to a userspace walk, so it is not used there).
+  On Windows it uses `cap-std` handle-relative opens in its own one-component
+  walk plus one contained `unsafe` call to `GetFinalPathNameByHandleW` through
+  `windows-sys`. Other OSes, macOS included, are `Unsupported`.
 
 ## Quality tools
 
 `omni_setup` uses the Rust multiplatform test preset so its fallback-keystore
 access-control tests run on native Windows CI. Run them locally on Windows
 with `cargo test -p omni_setup fallback_store::key_file`.
+
+`omni_input_view` uses the same preset because its containment tests must pass
+on native Linux, Windows and macOS runners. Windows symlink tests follow
+`OMNI_TEST_REQUIRE_CAPABILITIES` (they fail on CI when the privilege is missing
+and skip only locally); junction tests never skip. Run it locally with
+`cargo test -p omni_input_view`.
 
 - Rust: `cargo fmt`, `cargo clippy`, `cargo test`; benchmarks use criterion (`crates/omni_bench`).
 - TypeScript: `oxfmt` (`oxfmt.config.ts`), `oxlint` (`oxlint.config.ts`), `tsc`, `vitest` (`vitest.workspace.ts`).

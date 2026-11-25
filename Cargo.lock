@@ -7708,6 +7708,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "omni_input_view"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "cap-std",
+ "libc",
+ "omni_path_utils",
+ "omni_test_capabilities",
+ "rustix",
+ "tempfile",
+ "thiserror 2.0.21",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "omni_lockfile"
 version = "0.2.0"
 dependencies = [
