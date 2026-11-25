@@ -349,12 +349,24 @@ fn final_path_check_rejects_a_handle_outside_the_root() {
     let root = Root::open(&fixture.root).unwrap();
     let outside = File::open(fixture.outside.at("b/file")).unwrap();
     let found = sys::final_path(&outside).unwrap();
-    assert!(!is_under(&found, &root.final_path));
+    assert_eq!(
+        check_final(&found, &root.final_path, &["a", "b", "file"]),
+        Err(ContainmentViolation::EscapesRoot.into())
+    );
     let inside = File::open(fixture.root.at("a/b/file")).unwrap();
-    assert!(is_under(
-        &sys::final_path(&inside).unwrap(),
-        &root.final_path
-    ));
+    let found = sys::final_path(&inside).unwrap();
+    assert_eq!(
+        check_final(&found, &root.final_path, &["a", "b", "file"]),
+        Ok(())
+    );
+    assert_eq!(
+        check_final(&found, &root.final_path, &["a", "B", "file"]),
+        Err(OpenError::CaseMismatch)
+    );
+    assert_eq!(
+        check_final(&found, &root.final_path, &["a", "b"]),
+        Err(ContainmentViolation::EscapesRoot.into())
+    );
 }
 
 // Statistical loop: a thread swaps a component between a real directory and a

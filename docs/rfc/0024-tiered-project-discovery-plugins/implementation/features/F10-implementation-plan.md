@@ -1,6 +1,6 @@
 # F10 implementation plan: captured input view
 
-**Status:** approved. F10.2a is implemented (see [F10.2a implementation record](#f102a-implementation-record)); F10.2b, F10.2c and F10.3 are not started. All maintainer decisions, including the decision 1 amendment, are recorded below (see [Confirmed maintainer decisions](#confirmed-maintainer-decisions)); no maintainer confirmation is pending. Items the plan author could not verify are F10.2a verification items, not open questions. **Size:** Large (two slices after the F10.1 design). **Risk:** High. The view is a new containment boundary beside the capabilities crates ([AGENTS.md](../../../../../AGENTS.md) risk overrides).
+**Status:** approved. F10.2a is implemented and its native CI passed on Linux, Windows and macOS (see [F10.2a implementation record](#f102a-implementation-record)); F10.2b is implemented (see [F10.2b implementation record](#f102b-implementation-record)); F10.2c and F10.3 are not started. All maintainer decisions, including the decision 1 amendment, are recorded below (see [Confirmed maintainer decisions](#confirmed-maintainer-decisions)); no maintainer confirmation is pending. Items the plan author could not verify are F10.2a verification items, not open questions. **Size:** Large (two slices after the F10.1 design). **Risk:** High. The view is a new containment boundary beside the capabilities crates ([AGENTS.md](../../../../../AGENTS.md) risk overrides).
 **Design:** [F10.1](F10.1-captured-input-view-design.md) (API, evidence, authorization order, limits, errors). This plan does not repeat it; it fixes the build order, the code seams and the decisions the design left open. Facts below were read in the code at `origin/main` (`e1cdb515`).
 
 ## Scope and finish line
@@ -117,7 +117,47 @@ Crate `crates/omni_input_view` (extends `rust-lib` and `rust-multiplatform`; the
 - **Tests:** Linux has deterministic hook variants (directory and final file swapped for a symlink, intermediate directory moved out and left, moved out and back), 10,000-read statistical loops (symlink swap and move-out-and-back, each with at least 100 swaps), injected `ENOSYS`/`EPERM` (asserting one syscall and nothing else), a real seccomp filter run in a child process, and a flag-assertion test. On a sandbox that blocks `openat2` (the aarch64 `cross` lane), the containment tests skip with a named `SKIPPED[capability=openat2 ...]` and the injected tests still run; on x86_64 a block fails the test. Windows tests cover the held-handle rename rejection (ancestors, final file and root), junctions (never skipped), symlinks (gated by `OMNI_TEST_REQUIRE_CAPABILITIES`), real alternate streams, deterministic swap hooks and a test that omits `FILE_FLAG_OPEN_REPARSE_POINT`.
 - **What guards which flag:** `NO_SYMLINKS` is guarded by behavior tests; `BENEATH`, `NO_XDEV` and `NO_MAGICLINKS` are guarded only by the flag-equality test (the ancestor race additionally asserts that the kernel's `EXDEV` escape check fired). The Linux move-out-and-back hook runs before the syscall, so it cannot cover a rename during the lookup; the statistical loop does. A real `NO_XDEV` mount test needs a mount namespace and is left to a later slice.
 - **Review fixes:** the D9 order is tested through a shared `open_beneath_with` seam (the OS open is never called for a rejected name); `COM0`/`LPT0` are reserved too; the Windows root open reports `NotADirectory` for a non-directory root and `is_under` is strict and fail-closed; the omit-flag test uses a final-component symlink (cap-std follows it without the flag).
-- **Not yet proven:** the native Windows and macOS results and the aarch64 `cross` behavior; see the PR for the CI record.
+- **Native CI (PR #174, head `fa94f051`):** the `omni_input_view` test task executed and passed on `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, both Apple targets and `x86_64-pc-windows-msvc`, with `OMNI_TEST_REQUIRE_CAPABILITIES` including `symlink`, so Windows symlink tests cannot have skipped. The held-handle rename rejection therefore held on `windows-2022`. The job logs only show the omni task result, not per-test names.
+
+### F10.2b implementation record
+
+`InputView::{open, read, exists, list, evidence}` with `InputViewOptions { authorizer, limits }` (the symlink field arrives in F10.2c). Order per call: charge `max_operations`, cancellation, path length and depth, the D9 name check, the authorizer, then the open. Decisions made while building it (recorded here, not asked):
+
+- **`exists` records `Observation::Present(EntryKind)`** instead of a content `File` or `Dir` observation, so probing existence never reads or lists. `Present(k)` is compatible with a `File` or `Dir` of the same kind (no conflict); any other difference, including `Missing`, marks the path conflicting. F10.3 re-probes `Present` by kind only.
+- **`list` returns `List::{Found(Listing), Missing}`** (like `Read`), because a missing directory is a tracked result (D6). Listing a file is `InputError::NotDirectory(kind)`; reading a directory is `NotRegular(Dir)`.
+- **Probe first (Linux):** the kind is learned with an `O_PATH` open (no read, no device or FIFO side effect), and only a regular file or directory is then opened for reading. This closes the review nit about opening device nodes. Windows opens once and reuses the handle.
+- **Repeated reads** return the first captured bytes without touching the file; `exists` and `list` re-observe every time.
+- **Name rules in `list`:** an entry whose name is not UTF-8 or that the D9 rule rejects fails the whole `list` with `NameUnsupported` (design: rejected when listed, never skipped). This is strict on Linux, where `a:b` is a legal file name; the consumer sees an error for that directory.
+- **Raw-scan counter:** denied children count only toward `max_dir_scan_entries`; the visible budgets count authorized entries only.
+- **Budgets charge on attempt and are never refunded.** `max_total_bytes` is charged from `fstat` before allocating and again for growth beyond it; a file that grows during the read is caught by the `limit + 1` cap (`TooLarge`).
+- **D8 on Windows** is checked from the final path of the opened handle: the on-disk names must equal the requested names byte for byte, otherwise `CaseMismatch` (nothing recorded). No directory listing is needed, and it also rejects 8.3 aliases. Linux and macOS do not check it: Linux names are case-sensitive here (a case-insensitive Linux mount is not handled) and macOS is `Unsupported`.
+- Windows listing uses cap-std `Dir::entries` on a handle that is already contained and held without `FILE_SHARE_DELETE`.
+
+**Tests:** 30 view tests (portable between Linux and Windows) cover read, missing and `ENOTDIR`, repeated read, `exists`, conflicts, ordering, denied path (never `Missing`, no probe), unevaluable policy, names refused before the authorizer, containment beating an allowing policy, FIFO, path shape and size limits, growth during the read, total bytes, operations counting misses, tracked inputs and observations bounds, list sorting and kinds, denied child omitted and unchanged membership digest, per-entry policy failure, the exact raw-scan threshold, visible budgets independent of the number of denied entries, listed bad names, and cancellation (before and mid-read, nothing recorded). `tests/allocation.rs` uses a counting allocator to show a 512 MiB sparse file is refused with no allocation near 1 MiB. The Windows-only `CaseMismatch` test and the Windows containment test are proven by the native job only.
+
+**Benchmark** (`crates/omni_bench/benches/input_view.rs`, Linux x86_64, `cargo bench`, release): 1,000 files of 2 KiB in 10 directories.
+
+| Case                       | Plain `std::fs` | View    | Ratio                                                       |
+| -------------------------- | --------------- | ------- | ----------------------------------------------------------- |
+| read all 1,000 files       | 5.4 ms          | 11.3 ms | 2.1x (about +5.9 us per file: probe open, blake3, one copy) |
+| list 10 directories of 100 | 155 us          | 662 us  | 4.3x (per-entry authorization and sort)                     |
+
+Calibration with real lockfiles (`OMNI_BENCH_LOCKFILES`, downloaded from the public repositories, not committed):
+
+| Lockfile         | Size     | Plain | View    |
+| ---------------- | -------- | ----- | ------- |
+| pnpm (vue core)  | 0.19 MiB | 16 us | 104 us  |
+| pnpm (pnpm)      | 0.24 MiB | 22 us | 127 us  |
+| yarn (react)     | 0.68 MiB | 39 us | 311 us  |
+| yarn (babel)     | 0.66 MiB | 43 us | 358 us  |
+| pnpm (angular)   | 0.74 MiB | 43 us | 1.04 ms |
+| pnpm (nuxt)      | 0.77 MiB | 48 us | 358 us  |
+| yarn (berry)     | 0.77 MiB | 47 us | 1.13 ms |
+| pnpm (mui)       | 0.79 MiB | 49 us | 1.36 ms |
+| yarn (storybook) | 1.29 MiB | 72 us | 2.05 ms |
+| pnpm (next.js)   | 1.32 MiB | 90 us | 2.01 ms |
+
+The largest real lockfile is 1.39 MiB, so `max_file_bytes` (8 MiB) has about 5.8x headroom and `max_total_bytes` (16 MiB) holds about eleven of the largest. A realistic discovery pass (a handful of lockfiles and manifests) costs low milliseconds. **No default changes**; the re-planning trigger "defaults make a realistic pass exceed budget" did not fire. The view costs roughly 2x plain reads for many small files, which is the price of hashing and containment.
 
 ## Test matrix
 

@@ -25,7 +25,7 @@ use windows_sys::Win32::Storage::FileSystem::{
     FILE_FLAG_OPEN_REPARSE_POINT, FILE_SHARE_READ, FILE_SHARE_WRITE,
 };
 
-use super::OpenError;
+use super::{OpenError, Want};
 use crate::error::ContainmentViolation;
 
 mod sys;
@@ -76,6 +76,7 @@ pub(crate) enum Step {
 pub(crate) fn open_file(
     root: &Root,
     path: &WorkspacePath,
+    _want: Want,
 ) -> Result<File, OpenError> {
     open_file_with(root, path, &mut |_| {})
 }
@@ -98,6 +99,14 @@ pub(crate) fn open_file_with_flags(
 ) -> Result<File, OpenError> {
     let options = open_options(reparse_flag);
     let names: Vec<&str> = path.segments().collect();
+    if names.is_empty() {
+        // The root itself: another handle on the held root directory.
+        return root
+            .dir
+            .try_clone()
+            .map(Dir::into_std_file)
+            .map_err(io_error);
+    }
     let mut retained: Vec<Dir> = Vec::with_capacity(names.len());
 
     for (index, name) in names.iter().enumerate() {
@@ -114,9 +123,7 @@ pub(crate) fn open_file_with_flags(
         if last {
             hook(Step::Opened);
             let found = sys::final_path(&file).map_err(io_error)?;
-            if !is_under(&found, &root.final_path) {
-                return Err(ContainmentViolation::EscapesRoot.into());
-            }
+            check_final(&found, &root.final_path, &names)?;
             return Ok(file);
         }
         if !metadata.is_dir() {
@@ -126,7 +133,7 @@ pub(crate) fn open_file_with_flags(
         retained.push(Dir::from_std_file(file));
         hook(Step::Retained(index));
     }
-    Err(OpenError::Io(std::io::ErrorKind::InvalidInput))
+    unreachable!("the loop returns on the last component")
 }
 
 fn open_options(reparse_flag: u32) -> OpenOptions {
@@ -148,20 +155,75 @@ fn single_component(name: &str) -> Result<(), OpenError> {
     }
 }
 
-/// Strictly beneath `root`, compared case-insensitively. Fails closed on a
+/// The final path of the handle must be exactly `root` plus the requested
+/// names. Anything outside the root is an escape. The right place with a
+/// different spelling (case, or an 8.3 alias) is a `CaseMismatch` (D8): the
+/// view compares names byte for byte and never case-folds. Fails closed on a
 /// name that is not valid Unicode.
-fn is_under(found: &Path, root: &Path) -> bool {
-    fn folded(component: Component<'_>) -> Option<String> {
-        component.as_os_str().to_str().map(str::to_lowercase)
+fn check_final(
+    found: &Path,
+    root: &Path,
+    names: &[&str],
+) -> Result<(), OpenError> {
+    fn text(component: Component<'_>) -> Option<&str> {
+        component.as_os_str().to_str()
     }
+    let escape = || OpenError::from(ContainmentViolation::EscapesRoot);
     let mut found = found.components();
-    let same_prefix = root.components().all(|expected| {
-        match (found.next().and_then(folded), folded(expected)) {
-            (Some(actual), Some(expected)) => actual == expected,
-            _ => false,
+    for expected in root.components() {
+        let (Some(actual), Some(expected)) =
+            (found.next().and_then(text), text(expected))
+        else {
+            return Err(escape());
+        };
+        if !actual.eq_ignore_ascii_case(expected)
+            && actual.to_lowercase() != expected.to_lowercase()
+        {
+            return Err(escape());
         }
-    });
-    same_prefix && found.next().is_some()
+    }
+    let rest: Vec<Component<'_>> = found.collect();
+    if rest.len() != names.len() {
+        return Err(escape());
+    }
+    for (actual, expected) in rest.into_iter().zip(names) {
+        match text(actual) {
+            Some(actual) if actual == *expected => {}
+            Some(_) => return Err(OpenError::CaseMismatch),
+            None => return Err(escape()),
+        }
+    }
+    Ok(())
+}
+
+pub(crate) struct RawEntry {
+    pub(crate) name: Result<String, ()>,
+    pub(crate) kind: crate::error::EntryKind,
+}
+
+/// Entries of an open directory, kinds taken without following links.
+pub(crate) fn entries(
+    dir: File,
+) -> std::io::Result<impl Iterator<Item = std::io::Result<RawEntry>>> {
+    use crate::error::EntryKind;
+    let reader = Dir::from_std_file(dir).entries()?;
+    Ok(reader.map(|entry| {
+        let entry = entry?;
+        let file_type = entry.file_type()?;
+        let kind = if file_type.is_symlink() {
+            EntryKind::Symlink
+        } else if file_type.is_dir() {
+            EntryKind::Dir
+        } else if file_type.is_file() {
+            EntryKind::File
+        } else {
+            EntryKind::Other
+        };
+        Ok(RawEntry {
+            name: entry.file_name().into_string().map_err(|_| ()),
+            kind,
+        })
+    }))
 }
 
 fn io_error(error: std::io::Error) -> OpenError {

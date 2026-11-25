@@ -1,8 +1,9 @@
 //! Captured, containment-checked input view (RFC 0024 F10).
 //!
-//! This is the F10.2a slice: the shared types, the per-OS beneath-root open
-//! primitive and the D9 name check. The `InputView` API (read, exists, list,
-//! evidence, revalidation) lands in later slices; nothing here is consumed yet.
+//! F10.2a is the per-OS beneath-root open primitive and the D9 name check;
+//! F10.2b adds the tracked [`InputView`] (read, exists, list, limits,
+//! evidence). Symlink policy and revalidation land in later slices; nothing
+//! here is consumed yet.
 //!
 //! Containment is only claimed where it is enforced and proven:
 //!
@@ -23,6 +24,7 @@ mod error;
 mod evidence;
 mod limits;
 mod name;
+mod view;
 
 pub use auth::{
     AuthDecision, AuthError, DenyCause, DenyReason, InputAuthorizer,
@@ -34,3 +36,4 @@ pub use error::{BudgetKind, ContainmentViolation, EntryKind, InputError};
 pub use evidence::{Evidence, FileIdentity, Observation, PathEvidence};
 pub use limits::InputLimits;
 pub use name::check_name;
+pub use view::{Exists, InputView, InputViewOptions, List, Listing, Read};

@@ -106,7 +106,7 @@ where
 {
     use std::io::Read;
     let root = Root::open(&fixture.root).unwrap();
-    open_file_with(&root, &wp(path), syscall).map(|mut file| {
+    open_file_with(&root, &wp(path), Want::File, syscall).map(|mut file| {
         let mut text = String::new();
         file.read_to_string(&mut text).unwrap();
         text
