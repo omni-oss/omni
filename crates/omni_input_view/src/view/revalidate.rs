@@ -20,7 +20,8 @@ pub enum ChangeKind {
     /// Was absent, now exists (any kind).
     Created,
     /// Was present, now gone. Also a case-only rename of the tracked name
-    /// (D8: the exact spelling no longer exists) and a parent that became a
+    /// (D8: the exact spelling no longer exists; a name tracked as absent that
+    /// now exists with another spelling is `Created`) and a parent that became a
     /// file (D6).
     Deleted,
     /// File became a directory or the reverse, or something else.
@@ -79,6 +80,9 @@ impl InputView {
         &self,
         cx: &Cancellation,
     ) -> Result<Revalidation, InputError> {
+        if cx.is_cancelled() {
+            return Err(InputError::Cancelled);
+        }
         let tracked = self.lock().evidence.clone();
         let meter = Mutex::new(Meter::default());
         let mut changes = Vec::new();
@@ -124,9 +128,16 @@ impl InputView {
         self.begin(meter, path, cx)?;
         let result = self.compare(meter, path, baseline, cx);
         match result {
-            // The entry now has a different spelling: the tracked one is gone.
+            // The exact spelling is not what is on disk (D8). A tracked name
+            // that existed is gone (`Deleted`); one tracked as absent now has a
+            // differently spelled entry, which a fresh access would reject, so
+            // the input world changed (`Created`). Either way the pass fails.
             Err(InputError::CaseMismatch { .. }) => {
-                Ok(Some(ChangeKind::Deleted))
+                Ok(Some(if matches!(baseline, Observation::Missing) {
+                    ChangeKind::Created
+                } else {
+                    ChangeKind::Deleted
+                }))
             }
             other => other,
         }

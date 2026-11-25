@@ -1243,6 +1243,111 @@ mod revalidation {
     }
 
     #[test]
+    fn the_strongest_earlier_observation_is_the_baseline() {
+        // exists() records only the kind; the later read/list records content.
+        // The two are compatible, so no conflict is flagged: the pass must
+        // compare against the content, not the first (kind-only) observation.
+        let fixture = listing_fixture();
+        let view = fixture.view();
+        view.exists(&wp("a/b/file"), &cx()).unwrap();
+        view.read(&wp("a/b/file"), &cx()).unwrap();
+        view.exists(&wp("d"), &cx()).unwrap();
+        view.list(&wp("d"), &cx()).unwrap();
+        assert!(!view.evidence().paths[&wp("a/b/file")].conflict);
+        assert!(!view.evidence().paths[&wp("d")].conflict);
+        fs::write(fixture.root.at("a/b/file"), "insidf").unwrap();
+        fs::write(fixture.root.at("d").join("new"), "x").unwrap();
+        assert_eq!(
+            changed(&view),
+            [
+                ("a/b/file".to_string(), ChangeKind::Modified),
+                ("d".to_string(), ChangeKind::MembershipChanged),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_listed_directory_that_vanishes_or_becomes_a_file_is_a_change() {
+        let fixture = listing_fixture();
+        fs::create_dir(fixture.root.join("e")).unwrap();
+        let view = fixture.view();
+        view.list(&wp("d"), &cx()).unwrap();
+        view.list(&wp("e"), &cx()).unwrap();
+        fs::remove_dir_all(fixture.root.join("d")).unwrap();
+        fs::remove_dir(fixture.root.join("e")).unwrap();
+        fs::write(fixture.root.join("e"), "a file").unwrap();
+        assert_eq!(
+            changed(&view),
+            [
+                ("d".to_string(), ChangeKind::Deleted),
+                ("e".to_string(), ChangeKind::KindChanged),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_pass_cancelled_before_it_starts_is_cancelled_even_when_empty() {
+        let fixture = Fixture::new();
+        let view = fixture.view();
+        let cancelled = cx();
+        cancelled.cancel();
+        assert!(matches!(
+            view.revalidate(&cancelled),
+            Err(InputError::Cancelled)
+        ));
+    }
+
+    #[test]
+    fn a_directory_that_outgrew_its_limit_is_an_error_not_a_change() {
+        let fixture = listing_fixture();
+        let view = fixture.view_with(InputLimits {
+            max_dir_entries: 5,
+            ..InputLimits::default()
+        });
+        view.list(&wp("d"), &cx()).unwrap();
+        for name in ["n1", "n2", "n3"] {
+            fs::write(fixture.root.at("d").join(name), "x").unwrap();
+        }
+        assert!(matches!(
+            view.revalidate(&cx()),
+            Err(InputError::Budget(BudgetKind::DirEntries))
+        ));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_file_replaced_by_a_junction_is_a_containment_error_not_a_change() {
+        let fixture = Fixture::new();
+        let view = fixture.view();
+        view.exists(&wp("a/b"), &cx()).unwrap();
+        fs::remove_dir_all(fixture.root.at("a/b")).unwrap();
+        let output = std::process::Command::new("cmd.exe")
+            .args(["/C", "mklink", "/J"])
+            .arg(fixture.root.at("a/b"))
+            .arg(&fixture.outside)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        assert!(matches!(
+            view.revalidate(&cx()),
+            Err(InputError::Containment(ContainmentViolation::ReparsePoint))
+        ));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_differently_spelled_entry_appearing_for_a_missing_name_is_created() {
+        let fixture = Fixture::new();
+        let view = fixture.view();
+        assert_eq!(view.read(&wp("Readme.md"), &cx()).unwrap(), Read::Missing);
+        fs::write(fixture.root.join("README.MD"), "x").unwrap();
+        assert_eq!(
+            changed(&view),
+            [("Readme.md".to_string(), ChangeKind::Created)]
+        );
+    }
+
+    #[test]
     fn present_only_tracks_the_kind() {
         let fixture = Fixture::new();
         let view = fixture.view();
