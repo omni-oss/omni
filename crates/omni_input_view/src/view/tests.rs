@@ -190,6 +190,10 @@ fn exists_reports_the_kind_and_a_directory_is_not_a_regular_read() {
     assert_eq!(view.exists(&wp("a/b"), &cx()).unwrap(), Exists::Dir);
     assert_eq!(view.exists(&wp("."), &cx()).unwrap(), Exists::Dir);
     assert!(matches!(
+        view.read(&wp("."), &cx()),
+        Err(InputError::NotRegular(EntryKind::Dir))
+    ));
+    assert!(matches!(
         view.read(&wp("a/b"), &cx()),
         Err(InputError::NotRegular(EntryKind::Dir))
     ));
@@ -651,6 +655,17 @@ fn a_listed_name_that_is_not_supported_fails_the_list() {
             ContainmentViolation::NameUnsupported
         ))
     ));
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn a_denied_entry_with_an_unsupported_name_is_omitted_not_an_error() {
+    let fixture = listing_fixture();
+    fs::write(fixture.root.at("d").join("ab:c"), "x").unwrap();
+    fixture.policy.deny("d/ab:c");
+    let listed = names(fixture.view().list(&wp("d"), &cx()).unwrap());
+    assert!(listed.iter().all(|(name, _)| name != "ab:c"));
+    assert_eq!(listed.len(), 4);
 }
 
 #[test]

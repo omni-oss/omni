@@ -59,11 +59,12 @@ impl InputAuthorizer for AllowAll {
 
 #[test]
 fn an_oversized_file_is_refused_without_allocating_its_size() {
-    const FILE_LEN: u64 = 512 * 1024 * 1024;
+    const FILE_LEN: u64 = 16 * 1024 * 1024;
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path().join("root");
     std::fs::create_dir(&root).unwrap();
-    // A sparse file: no real storage, but `fstat` reports the full length.
+    // Large enough to dwarf the 1 MiB limit and any allocator noise, small
+    // enough not to matter if the filesystem is not sparse (NTFS).
     std::fs::File::create(root.join("huge"))
         .unwrap()
         .set_len(FILE_LEN)

@@ -159,10 +159,14 @@ impl InputView {
             if raw > self.limits.max_dir_scan_entries {
                 return Err(InputError::Budget(BudgetKind::DirScan));
             }
+            // A name that cannot be a workspace path at all (not UTF-8, a
+            // backslash, a drive prefix) cannot be authorized, so it fails the
+            // list. Every other entry is authorized first, so a denied entry
+            // is omitted whatever its name, and only an allowed entry with a
+            // name D9 rejects fails the list.
             let name = entry
                 .name
                 .map_err(|()| ContainmentViolation::NameUnsupported)?;
-            check_name(&name)?;
             let child = dir
                 .join(&name)
                 .map_err(|_| ContainmentViolation::NameUnsupported)?;
@@ -170,6 +174,7 @@ impl InputView {
                 AuthDecision::Deny(_) => continue,
                 AuthDecision::Allow => {}
             }
+            check_name(&name)?;
             if found.len() >= self.limits.max_dir_entries {
                 return Err(InputError::Budget(BudgetKind::DirEntries));
             }
@@ -204,8 +209,9 @@ impl InputView {
         after_chunk: &mut dyn FnMut(),
     ) -> Result<Read, InputError> {
         self.begin(path, cx)?;
-        if let Some(bytes) = self.lock().captured.get(path) {
-            return Ok(Read::Found(bytes.clone()));
+        let captured = self.lock().captured.get(path).cloned();
+        if let Some(bytes) = captured {
+            return Ok(Read::Found(bytes));
         }
         let Some((probe_handle, metadata)) = self.probe(path)? else {
             self.record(path, Observation::Missing)?;
@@ -230,6 +236,7 @@ impl InputView {
         if len > limit {
             return Err(InputError::TooLarge { len, limit });
         }
+        // Charged for the attempt and not refunded if the read later fails.
         self.charge_bytes(len)?;
         if cx.is_cancelled() {
             return Err(InputError::Cancelled);
@@ -258,8 +265,8 @@ impl InputView {
         // `len <= limit` here, so this allocation is already bounded.
         let mut bytes = Vec::with_capacity(len as usize);
         let mut sink = Blake3Digest::new();
-        let mut reader = file.take(limit + 1);
-        let mut chunk = vec![0u8; CHUNK.min(len as usize + 1)];
+        let mut reader = file.take(limit.saturating_add(1));
+        let mut chunk = vec![0u8; CHUNK.min(len.saturating_add(1) as usize)];
         loop {
             if cx.is_cancelled() {
                 return Err(InputError::Cancelled);
@@ -270,15 +277,14 @@ impl InputView {
             if read == 0 {
                 break;
             }
+            // Refuse before growing the buffer past the limit.
+            let total = bytes.len() as u64 + read as u64;
+            if total > limit {
+                return Err(InputError::TooLarge { len: total, limit });
+            }
             sink.update(&chunk[..read]);
             bytes.extend_from_slice(&chunk[..read]);
             after_chunk();
-            if bytes.len() as u64 > limit {
-                return Err(InputError::TooLarge {
-                    len: bytes.len() as u64,
-                    limit,
-                });
-            }
         }
         Ok((bytes, sink.finalize()))
     }
@@ -326,18 +332,14 @@ impl InputView {
             .map_err(|_| InputError::PolicyUnavailable)
     }
 
-    /// A side-effect-free open that reports the kind. Off Linux the real open
-    /// is the probe and is reused.
+    /// A side-effect-free open that reports the kind (`O_PATH` on Linux). Off
+    /// Linux the probe open is the real open and its handle is reused. It also
+    /// accepts the workspace root, which `read` then refuses as a directory.
     fn probe(
         &self,
         path: &WorkspacePath,
     ) -> Result<Option<(File, Metadata)>, InputError> {
-        let want = if ContainedRoot::PROBE_FIRST {
-            Want::Probe
-        } else {
-            Want::File
-        };
-        let Some(file) = self.root.open_path(path, want)? else {
+        let Some(file) = self.root.open_path(path, Want::Probe)? else {
             return Ok(None);
         };
         let metadata = handle_metadata(&file, path)?;

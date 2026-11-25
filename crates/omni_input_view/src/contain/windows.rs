@@ -201,7 +201,10 @@ pub(crate) struct RawEntry {
     pub(crate) kind: crate::error::EntryKind,
 }
 
-/// Entries of an open directory, kinds taken without following links.
+/// Entries of an open directory, kinds taken without following links. cap-std
+/// lists through the handle's path, so a directory deeper than `MAX_PATH` on a
+/// system without long paths enabled cannot be listed even though it can be
+/// opened.
 pub(crate) fn entries(
     dir: File,
 ) -> std::io::Result<impl Iterator<Item = std::io::Result<RawEntry>>> {
