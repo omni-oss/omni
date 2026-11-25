@@ -430,18 +430,35 @@ fn resolve_in<'a>(
 /// Collect the first match of `task` in each branch of `project`'s upstream
 /// projects; a project with no such public name adds nothing and the walk
 /// continues into its own predecessors.
+///
+/// Each project is visited once per lookup, in first-visit order. A revisit
+/// could only repeat matches already collected, so skipping it keeps the
+/// result while shared branches of a layered graph are not walked once per
+/// path. `visited` is created lazily: a lookup that never descends needs no
+/// set.
 fn collect_upstream<'a>(
     project_graph: &'a ProjectGraph,
     project: &'a Project,
     task: &'a str,
     found: &mut Vec<ResolvedReference<'a>>,
+    visited: &mut Option<HashSet<&'a str>>,
 ) -> Result<(), TaskExecutionGraphError> {
     let dependencies =
         project_graph.get_direct_dependency_refs_by_name(&project.name)?;
     for p in dependencies {
+        if let Some(seen) = visited.as_mut()
+            && !seen.insert(p.name.as_str())
+        {
+            continue;
+        }
         match resolve_in(p, task) {
             Some(resolved) => found.push(resolved),
-            None => collect_upstream(project_graph, p, task, found)?,
+            None => {
+                visited
+                    .get_or_insert_with(HashSet::new)
+                    .insert(p.name.as_str());
+                collect_upstream(project_graph, p, task, found, visited)?
+            }
         }
     }
     Ok(())
@@ -493,7 +510,13 @@ fn add_references(
             }
             crate::TaskDependency::Upstream { task } => {
                 let mut found = vec![];
-                collect_upstream(project_graph, project, task, &mut found)?;
+                collect_upstream(
+                    project_graph,
+                    project,
+                    task,
+                    &mut found,
+                    &mut None,
+                )?;
                 any_alias |= found.iter().any(|r| r.alias);
                 Step::Upstream(found)
             }
@@ -2937,6 +2960,103 @@ mod alias_tests {
         let mut d = deps(&g, "app", "t");
         d.sort();
         assert_eq!(d, ["deep#build-native", "mid2#compile"]);
+    }
+
+    /// `layers` layers of two projects, each depending on both projects of
+    /// the next layer; `matching` lists the (layer, index) projects that own
+    /// `compile`. `app` depends on both projects of layer 0.
+    fn layered(layers: usize, matching: &[(usize, usize)]) -> Vec<Project> {
+        let name = |l: usize, i: usize| format!("l{l}_{i}");
+        let t = TasksBuilder::new()
+            .task("t", "x", |b| b.upstream_dependency("compile"))
+            .build();
+        let mut projects = vec![project("app", &["l0_0", "l0_1"], t, &[])];
+        for l in 0..layers {
+            for i in 0..2 {
+                let next = [name(l + 1, 0), name(l + 1, 1)];
+                let deps: Vec<&str> = if l + 1 < layers {
+                    next.iter().map(String::as_str).collect()
+                } else {
+                    vec![]
+                };
+                let tasks = if matching.contains(&(l, i)) {
+                    leaf(&["compile"])
+                } else {
+                    leaf(&["other"])
+                };
+                projects.push(project(&name(l, i), &deps, tasks, &[]));
+            }
+        }
+        projects
+    }
+
+    /// The unmemoised walk: every path is followed and every match stored.
+    fn brute_force<'a>(
+        pg: &'a ProjectGraph,
+        project: &'a Project,
+        found: &mut Vec<&'a str>,
+    ) {
+        for p in pg
+            .get_direct_dependency_refs_by_name(&project.name)
+            .unwrap()
+        {
+            if p.tasks.contains_key("compile") {
+                found.push(p.name.as_str());
+            } else {
+                brute_force(pg, p, found);
+            }
+        }
+    }
+
+    fn first_occurrences(all: Vec<&str>) -> Vec<&str> {
+        let mut seen = HashSet::new();
+        all.into_iter().filter(|n| seen.insert(*n)).collect()
+    }
+
+    #[test]
+    fn the_upstream_walk_matches_the_unmemoised_walk_in_first_visit_order() {
+        let cases: &[&[(usize, usize)]] = &[
+            &[(4, 0), (4, 1)],
+            &[(4, 1)],
+            &[(2, 0), (4, 1)],
+            &[(1, 1), (3, 0)],
+            &[(0, 0), (3, 1)],
+            &[],
+        ];
+        for matching in cases {
+            let pg = ProjectGraph::from_projects(layered(5, matching)).unwrap();
+            let app = pg.get_project_by_name("app").unwrap();
+            let mut expected = vec![];
+            brute_force(&pg, app, &mut expected);
+            let mut found = vec![];
+            collect_upstream(&pg, app, "compile", &mut found, &mut None)
+                .unwrap();
+            let got: Vec<&str> = found.iter().map(|r| r.project).collect();
+            assert_eq!(
+                first_occurrences(got),
+                first_occurrences(expected),
+                "{matching:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_deep_layered_diamond_is_walked_once_per_project() {
+        let layers = 25;
+        let g = graph(layered(layers, &[(layers - 1, 0), (layers - 1, 1)]));
+        let mut d = deps(&g, "app", "t");
+        d.sort();
+        assert_eq!(d, ["l24_0#compile", "l24_1#compile"]);
+        let pg =
+            ProjectGraph::from_projects(layered(layers, &[(layers - 1, 0)]))
+                .unwrap();
+        let app = pg.get_project_by_name("app").unwrap();
+        let mut found = vec![];
+        collect_upstream(&pg, app, "compile", &mut found, &mut None).unwrap();
+        // Each project is reached through at most two parents before it is
+        // recorded as visited, so the walk stays linear in the layer count.
+        assert!(found.len() <= 4, "{}", found.len());
+        assert_eq!(found[0].project, "l24_0");
     }
 
     #[test]
