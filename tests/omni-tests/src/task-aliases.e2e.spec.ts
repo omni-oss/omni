@@ -126,10 +126,9 @@ describe("+run @e2e (aliases and canonical selection)", () => {
 
     it("a dependency on an alias becomes an edge to the canonical task", async () => {
         const ws = makeWorkspace(spec());
-        const result = await runOmni(
-            ["run", "bundle", "--no-cache"],
-            { cwd: ws.cwd },
-        );
+        const result = await runOmni(["run", "bundle", "--no-cache"], {
+            cwd: ws.cwd,
+        });
         expect(result).toHaveSucceeded();
         const native = result.stderr.indexOf(
             "Executed task 'web#build-native'",
@@ -209,9 +208,9 @@ describe("+hashing @e2e (aliases select the same canonical task)", () => {
         const canonical = await hash(ws.cwd, "-t", "build-native");
         expect(await hash(ws.cwd, "-t", "compile")).toBe(canonical);
         expect(await hash(ws.cwd, "-t", "web#compile")).toBe(canonical);
-        expect(
-            await hash(ws.cwd, "-t", "compile", "-t", "build-native"),
-        ).toBe(canonical);
+        expect(await hash(ws.cwd, "-t", "compile", "-t", "build-native")).toBe(
+            canonical,
+        );
         expect(await hash(ws.cwd, "--task-pattern", "comp*")).toBe(canonical);
     });
 
@@ -249,15 +248,7 @@ describe("+cache @e2e (eligibility selects through aliases)", () => {
     it("`cache eligibility -t <alias>` reports the canonical task", async () => {
         const ws = makeWorkspace(spec());
         const result = await runOmni(
-            [
-                "cache",
-                "eligibility",
-                "-t",
-                "compile",
-                "-p",
-                "web",
-                "--json",
-            ],
+            ["cache", "eligibility", "-t", "compile", "-p", "web", "--json"],
             { cwd: ws.cwd },
         );
         expect(result).toHaveSucceeded();
@@ -384,7 +375,10 @@ describe("+config @e2e (authored schema and loader agree)", () => {
             "a mixed operator envelope",
             { name: "p", tasks: { merge: { a: "echo" }, b: "echo" } },
         ],
-        ["a non-string alias target", { name: "p", tasks: { a: { alias: 1 } } }],
+        [
+            "a non-string alias target",
+            { name: "p", tasks: { a: { alias: 1 } } },
+        ],
     ];
 
     it("accepts and rejects the same alias shapes as the loader", async () => {

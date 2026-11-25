@@ -318,7 +318,9 @@ function behaviors(names: Names, test: typeof it): void {
                     },
                     "p-a": {
                         name: names.aProject,
-                        tasks: { [esc(names.aTask)]: { exec: 'echo "A-BC-OK"' } },
+                        tasks: {
+                            [esc(names.aTask)]: { exec: 'echo "A-BC-OK"' },
+                        },
                     },
                     app: {
                         name: "app",

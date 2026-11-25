@@ -57,9 +57,7 @@ describe("+cache @e2e (alias hints are advisory and canonical-only)", () => {
         expect(stats).toHaveSucceeded();
         expect(stats.stdout).not.toContain("- Task:");
         expect(stats.stdout).toContain(HINT);
-        expect(stats.stdout).toContain(
-            "`--project web --task build-native`",
-        );
+        expect(stats.stdout).toContain("`--project web --task build-native`");
 
         const canonical = await runOmni(
             ["cache", "stats", "--project", "web", "--task", "build-native"],
