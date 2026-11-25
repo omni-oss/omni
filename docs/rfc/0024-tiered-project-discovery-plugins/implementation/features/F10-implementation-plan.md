@@ -1,6 +1,6 @@
 # F10 implementation plan: captured input view
 
-**Status:** approved. F10.2a is implemented and its native CI passed on Linux, Windows and macOS (see [F10.2a implementation record](#f102a-implementation-record)); F10.2b is implemented (see [F10.2b implementation record](#f102b-implementation-record)); F10.2c is implemented (see [F10.2c implementation record](#f102c-implementation-record)); F10.3 is not started. All maintainer decisions, including the decision 1 amendment, are recorded below (see [Confirmed maintainer decisions](#confirmed-maintainer-decisions)); no maintainer confirmation is pending. Items the plan author could not verify are F10.2a verification items, not open questions. **Size:** Large (two slices after the F10.1 design). **Risk:** High. The view is a new containment boundary beside the capabilities crates ([AGENTS.md](../../../../../AGENTS.md) risk overrides).
+**Status:** approved. F10.2a is implemented and its native CI passed on Linux, Windows and macOS (see [F10.2a implementation record](#f102a-implementation-record)); F10.2b is implemented (see [F10.2b implementation record](#f102b-implementation-record)); F10.2c is implemented (see [F10.2c implementation record](#f102c-implementation-record)); F10.3 is implemented (see [F10.3 implementation record](#f103-implementation-record)). All maintainer decisions, including the decision 1 amendment, are recorded below (see [Confirmed maintainer decisions](#confirmed-maintainer-decisions)); no maintainer confirmation is pending. Items the plan author could not verify are F10.2a verification items, not open questions. **Size:** Large (two slices after the F10.1 design). **Risk:** High. The view is a new containment boundary beside the capabilities crates ([AGENTS.md](../../../../../AGENTS.md) risk overrides).
 **Design:** [F10.1](F10.1-captured-input-view-design.md) (API, evidence, authorization order, limits, errors). This plan does not repeat it; it fixes the build order, the code seams and the decisions the design left open. Facts below were read in the code at `origin/main` (`e1cdb515`).
 
 ## Scope and finish line
@@ -165,6 +165,21 @@ The largest real lockfile is 1.32 MiB, so `max_file_bytes` (8 MiB) has about 6x 
 
 - **Reject matrix (view level):** Linux covers an absolute target, a `..` target, a loop, a dangling link, an in-root absolute and relative link, an intermediate directory link, a retargeted link (always `Symlink`, never bytes; the same name as a real file reads normally) and a listed symlink (reported as `Symlink`, listing it is a containment error). Windows covers junctions (never skipped, including a retargeted junction) and symlink shapes (absolute, `..\`, dangling, loop, directory link; gated on `OMNI_TEST_REQUIRE_CAPABILITIES`, so they fail on CI when the privilege is missing).
 - **Cancellation after admission:** evidence and cached results are published only for a call that is not cancelled, checked under the state lock (review feedback on #176); tests cancel from the read hook and from an authorizer.
+
+### F10.3 implementation record
+
+`InputView::revalidate(&Cancellation) -> Result<Revalidation, InputError>` with `Revalidation::{Unchanged, Changed { changes, remainder }}`, `Change { path, kind }`, `ChangeKind::{Modified, Created, Deleted, KindChanged, MembershipChanged}` and the default policy helper `Revalidation::reject_on_change() -> Result<(), InputsChanged>` (no retry loop). Decisions made while building it:
+
+- **Baseline per path:** the strongest observation (content, then kind, then absence). `Missing` baseline: any existing kind now is `Created`. `Present(kind)`: gone is `Deleted`, another kind `KindChanged`, content ignored. `File`: the bytes are re-read and re-digested (identity and mtime are never used); gone is `Deleted`, no longer a regular file `KindChanged`, different bytes or length `Modified`. `Dir`: re-listed with the same authorization filter; gone `Deleted`, not a directory `KindChanged`, different membership digest `MembershipChanged`.
+- **Conflicting evidence is a change by itself**, without re-reading: the first disagreeing pair gives the kind (`Missing` then present is `Created`, present then `Missing` is `Deleted`, kinds differ `KindChanged`, two files `Modified`, two directories `MembershipChanged`).
+- **D3:** an atomic replace with identical bytes is `Unchanged`. **D6:** an `ENOTDIR` parent is `Missing`, so a tracked file below a directory that became a file is `Deleted`. **D8:** a case-only rename is `CaseMismatch` on a fresh access and is reported as `Deleted` here (the exact spelling is gone); any other error stays an error.
+- **Errors, not changes:** denial, policy failure, containment violation (a file replaced by a symlink), I/O failure, a limit hit (a file that grew past `max_file_bytes`) and cancellation fail the whole pass.
+- **Own budgets:** each pass gets fresh operation, byte and directory-entry counters (the limits are the same), so a pass over everything that was tracked is not starved by the reads that tracked it. The live counters are untouched.
+- **Read-only and repeatable:** evidence and captured bytes are never modified; a denied entry appearing or disappearing is invisible, as for `list`.
+- **Output:** changes are in path order, truncated to `max_reported_changes`; `remainder` counts the rest (the pass still observes every path).
+- **Honest guarantee (RFC 0024 section 17.2):** changes are detected only up to the last re-observation of each path; an edit after that, or during the pass itself, is not detected, and no test asserts otherwise.
+
+The refactor that made this possible split `read`, `exists` and `list` into capture steps (`capture_kind`, `capture_file`, `capture_dir`) shared with the pass; the live behavior and tests are unchanged.
 
 ## Test matrix
 

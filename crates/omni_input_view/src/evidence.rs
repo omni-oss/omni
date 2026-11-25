@@ -55,7 +55,7 @@ impl Observation {
     }
 
     /// Same fact, ignoring the advisory identity.
-    fn same_fact(&self, other: &Self) -> bool {
+    pub(crate) fn same_fact(&self, other: &Self) -> bool {
         match (self, other) {
             (
                 Self::File {
@@ -85,7 +85,7 @@ impl Observation {
 
     /// A `Present(kind)` says nothing a `File` or `Dir` of that kind does not,
     /// so the two never conflict.
-    fn compatible(&self, other: &Self) -> bool {
+    pub(crate) fn compatible(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Present(kind), full) | (full, Self::Present(kind)) => {
                 full.kind() == Some(*kind)

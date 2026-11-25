@@ -2,8 +2,8 @@
 //!
 //! F10.2a is the per-OS beneath-root open primitive and the D9 name check;
 //! F10.2b adds the tracked [`InputView`] (read, exists, list, limits,
-//! evidence). F10.2c adds the reject-only [`SymlinkPolicy`]; revalidation lands in
-//! F10.3. Nothing here is consumed yet.
+//! evidence). F10.2c adds the reject-only [`SymlinkPolicy`] and F10.3 the final-pass
+//! [`InputView::revalidate`]. Nothing here is consumed yet.
 //!
 //! Containment is only claimed where it is enforced and proven:
 //!
@@ -37,5 +37,6 @@ pub use evidence::{Evidence, FileIdentity, Observation, PathEvidence};
 pub use limits::InputLimits;
 pub use name::check_name;
 pub use view::{
-    Exists, InputView, InputViewOptions, List, Listing, Read, SymlinkPolicy,
+    Change, ChangeKind, Exists, InputView, InputViewOptions, InputsChanged,
+    List, Listing, Read, Revalidation, SymlinkPolicy,
 };

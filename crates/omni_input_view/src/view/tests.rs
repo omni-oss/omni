@@ -1074,3 +1074,331 @@ mod reject_matrix_windows {
         assert!(view.evidence().paths.is_empty());
     }
 }
+
+// F10.3: revalidation and reject-on-change.
+
+mod revalidation {
+    use super::*;
+
+    fn changed(view: &InputView) -> Vec<(String, ChangeKind)> {
+        match view.revalidate(&cx()).unwrap() {
+            Revalidation::Unchanged => Vec::new(),
+            Revalidation::Changed { changes, remainder } => {
+                assert_eq!(remainder, 0);
+                changes
+                    .into_iter()
+                    .map(|change| (change.path.to_string(), change.kind))
+                    .collect()
+            }
+        }
+    }
+
+    fn track_file(view: &InputView) {
+        assert!(matches!(
+            view.read(&wp("a/b/file"), &cx()).unwrap(),
+            Read::Found(_)
+        ));
+    }
+
+    #[test]
+    fn nothing_changed_is_unchanged_and_repeatable() {
+        let fixture = listing_fixture();
+        let view = fixture.view();
+        track_file(&view);
+        view.read(&wp("missing"), &cx()).unwrap();
+        view.exists(&wp("a"), &cx()).unwrap();
+        view.list(&wp("d"), &cx()).unwrap();
+        let before = view.evidence();
+        assert_eq!(view.revalidate(&cx()).unwrap(), Revalidation::Unchanged);
+        assert_eq!(view.revalidate(&cx()).unwrap(), Revalidation::Unchanged);
+        // Read-only: the evidence is untouched, and so is the first capture.
+        assert_eq!(view.evidence(), before);
+        assert!(view.revalidate(&cx()).unwrap().reject_on_change().is_ok());
+    }
+
+    #[test]
+    fn a_same_size_same_mtime_edit_is_modified() {
+        let fixture = Fixture::new();
+        let view = fixture.view();
+        track_file(&view);
+        let path = fixture.root.at("a/b/file");
+        let mtime = fs::metadata(&path).unwrap().modified().unwrap();
+        fs::write(&path, "insidf").unwrap();
+        fs::File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_modified(mtime)
+            .unwrap();
+        let after = fs::metadata(&path).unwrap();
+        assert_eq!(after.len(), 6);
+        assert_eq!(after.modified().unwrap(), mtime);
+        assert_eq!(
+            changed(&view),
+            [("a/b/file".to_string(), ChangeKind::Modified)]
+        );
+    }
+
+    #[test]
+    fn an_atomic_replace_with_identical_bytes_is_not_a_change() {
+        let fixture = Fixture::new();
+        let view = fixture.view();
+        track_file(&view);
+        let path = fixture.root.at("a/b/file");
+        let temp = fixture.root.at("a/b/file.tmp");
+        fs::write(&temp, "inside").unwrap();
+        fs::rename(&temp, &path).unwrap();
+        assert_eq!(view.revalidate(&cx()).unwrap(), Revalidation::Unchanged);
+    }
+
+    #[test]
+    fn created_after_a_missing_read_and_deleted_and_kind_changes() {
+        let fixture = Fixture::new();
+        fs::write(fixture.root.join("gone"), "x").unwrap();
+        fs::write(fixture.root.join("swap"), "x").unwrap();
+        let view = fixture.view();
+        view.read(&wp("later"), &cx()).unwrap();
+        view.read(&wp("gone"), &cx()).unwrap();
+        view.read(&wp("swap"), &cx()).unwrap();
+        view.exists(&wp("a"), &cx()).unwrap();
+        fs::write(fixture.root.join("later"), "now").unwrap();
+        fs::remove_file(fixture.root.join("gone")).unwrap();
+        fs::remove_file(fixture.root.join("swap")).unwrap();
+        fs::create_dir(fixture.root.join("swap")).unwrap();
+        fs::remove_dir_all(fixture.root.join("a")).unwrap();
+        fs::write(fixture.root.join("a"), "now a file").unwrap();
+        assert_eq!(
+            changed(&view),
+            [
+                ("a".to_string(), ChangeKind::KindChanged),
+                ("gone".to_string(), ChangeKind::Deleted),
+                ("later".to_string(), ChangeKind::Created),
+                ("swap".to_string(), ChangeKind::KindChanged),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_parent_that_became_a_file_counts_as_missing() {
+        let fixture = Fixture::new();
+        let view = fixture.view();
+        track_file(&view);
+        fs::remove_dir_all(fixture.root.at("a/b")).unwrap();
+        fs::write(fixture.root.at("a/b"), "a file now").unwrap();
+        assert_eq!(
+            changed(&view),
+            [("a/b/file".to_string(), ChangeKind::Deleted)]
+        );
+    }
+
+    #[test]
+    fn membership_changes_are_detected() {
+        let fixture = listing_fixture();
+        let view = fixture.view();
+        view.list(&wp("d"), &cx()).unwrap();
+        // Add, remove and rename each change the membership.
+        for step in 0..3 {
+            let dir = fixture.root.at("d");
+            match step {
+                0 => fs::write(dir.join("new"), "x").unwrap(),
+                1 => fs::remove_file(dir.join("new")).unwrap(),
+                _ => fs::rename(dir.join("a.txt"), dir.join("z.txt")).unwrap(),
+            }
+            let result = changed(&view);
+            if step == 1 {
+                assert!(result.is_empty(), "back to the original membership");
+            } else {
+                assert_eq!(
+                    result,
+                    [("d".to_string(), ChangeKind::MembershipChanged)],
+                    "step {step}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_denied_entry_appearing_is_invisible() {
+        let fixture = listing_fixture();
+        fixture.policy.deny("d/secret.txt");
+        let view = fixture.view();
+        view.list(&wp("d"), &cx()).unwrap();
+        fs::write(fixture.root.at("d").join("secret.txt"), "x").unwrap();
+        assert_eq!(view.revalidate(&cx()).unwrap(), Revalidation::Unchanged);
+    }
+
+    #[test]
+    fn conflicting_observations_are_a_change_without_a_re_read() {
+        let fixture = Fixture::new();
+        let view = fixture.view();
+        view.exists(&wp("later"), &cx()).unwrap();
+        fs::write(fixture.root.join("later"), "now").unwrap();
+        view.read(&wp("later"), &cx()).unwrap();
+        // The final state is stable and equals the last observation, yet the
+        // pass saw Missing then a file.
+        assert_eq!(
+            changed(&view),
+            [("later".to_string(), ChangeKind::Created)]
+        );
+    }
+
+    #[test]
+    fn present_only_tracks_the_kind() {
+        let fixture = Fixture::new();
+        let view = fixture.view();
+        view.exists(&wp("a/b/file"), &cx()).unwrap();
+        fs::write(fixture.root.at("a/b/file"), "edited").unwrap();
+        assert_eq!(view.revalidate(&cx()).unwrap(), Revalidation::Unchanged);
+        fs::remove_file(fixture.root.at("a/b/file")).unwrap();
+        assert_eq!(
+            changed(&view),
+            [("a/b/file".to_string(), ChangeKind::Deleted)]
+        );
+    }
+
+    #[test]
+    fn output_is_bounded_with_a_remainder_and_deterministic() {
+        let fixture = Fixture::new();
+        let view = fixture.view_with(InputLimits {
+            max_reported_changes: 2,
+            ..InputLimits::default()
+        });
+        for name in ["c1", "a1", "d1", "b1"] {
+            view.read(&wp(name), &cx()).unwrap();
+            fs::write(fixture.root.join(name), name).unwrap();
+        }
+        let expected = Revalidation::Changed {
+            changes: vec![
+                Change {
+                    path: wp("a1"),
+                    kind: ChangeKind::Created,
+                },
+                Change {
+                    path: wp("b1"),
+                    kind: ChangeKind::Created,
+                },
+            ],
+            remainder: 2,
+        };
+        assert_eq!(view.revalidate(&cx()).unwrap(), expected);
+        assert_eq!(view.revalidate(&cx()).unwrap(), expected);
+        let rejected = expected.reject_on_change().unwrap_err();
+        assert_eq!((rejected.changes.len(), rejected.remainder), (2, 2));
+    }
+
+    #[test]
+    fn denial_containment_io_and_budget_failures_are_errors_not_changes() {
+        // Denied during the pass.
+        let fixture = Fixture::new();
+        let view = fixture.view();
+        track_file(&view);
+        fixture.policy.deny("a/b/file");
+        assert!(matches!(view.revalidate(&cx()), Err(InputError::Denied(_))));
+
+        // Unevaluable policy.
+        let fixture = Fixture::new();
+        let view = fixture.view();
+        track_file(&view);
+        fixture.policy.fail("a/b/file");
+        assert!(matches!(
+            view.revalidate(&cx()),
+            Err(InputError::PolicyUnavailable)
+        ));
+
+        // A limit hit during the pass (the file grew past the cap).
+        let fixture = Fixture::new();
+        let view = fixture.view_with(InputLimits {
+            max_file_bytes: 10,
+            ..InputLimits::default()
+        });
+        track_file(&view);
+        fs::write(fixture.root.at("a/b/file"), vec![b'x'; 50]).unwrap();
+        assert!(matches!(
+            view.revalidate(&cx()),
+            Err(InputError::TooLarge { .. })
+        ));
+    }
+
+    #[test]
+    fn the_pass_has_its_own_budgets() {
+        // Tracking used every operation; the pass still has a full set.
+        let fixture = Fixture::new();
+        fs::write(fixture.root.join("second"), "x").unwrap();
+        let view = fixture.view_with(InputLimits {
+            max_operations: 2,
+            max_total_bytes: 7,
+            ..InputLimits::default()
+        });
+        track_file(&view);
+        view.read(&wp("second"), &cx()).unwrap();
+        assert!(matches!(
+            view.read(&wp("third"), &cx()),
+            Err(InputError::Budget(BudgetKind::Operations))
+        ));
+        assert_eq!(view.revalidate(&cx()).unwrap(), Revalidation::Unchanged);
+        assert_eq!(view.revalidate(&cx()).unwrap(), Revalidation::Unchanged);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_file_replaced_by_a_symlink_is_a_containment_error_not_a_change() {
+        let fixture = Fixture::new();
+        let view = fixture.view();
+        track_file(&view);
+        let path = fixture.root.at("a/b/file");
+        fs::remove_file(&path).unwrap();
+        std::os::unix::fs::symlink(fixture.outside.join("secret"), &path)
+            .unwrap();
+        assert!(matches!(
+            view.revalidate(&cx()),
+            Err(InputError::Containment(ContainmentViolation::Symlink))
+        ));
+    }
+
+    #[test]
+    fn cancellation_leaves_the_state_untouched() {
+        let fixture = Fixture::new();
+        let view = fixture.view();
+        track_file(&view);
+        let before = view.evidence();
+        let cancelled = cx();
+        cancelled.cancel();
+        assert!(matches!(
+            view.revalidate(&cancelled),
+            Err(InputError::Cancelled)
+        ));
+        assert_eq!(view.evidence(), before);
+        assert_eq!(view.revalidate(&cx()).unwrap(), Revalidation::Unchanged);
+    }
+
+    #[test]
+    fn an_edit_after_the_last_re_observation_is_not_asserted_as_detected() {
+        // The honest guarantee: only changes before the last re-observation
+        // are found. This documents the boundary and asserts nothing about
+        // the later edit.
+        let fixture = Fixture::new();
+        let view = fixture.view();
+        track_file(&view);
+        assert_eq!(view.revalidate(&cx()).unwrap(), Revalidation::Unchanged);
+        fs::write(fixture.root.at("a/b/file"), "later!").unwrap();
+        // Nothing is asserted here: the pass already returned.
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_case_only_rename_of_a_tracked_path_is_deleted() {
+        let fixture = Fixture::new();
+        fs::write(fixture.root.join("Readme.md"), "x").unwrap();
+        let view = fixture.view();
+        view.read(&wp("Readme.md"), &cx()).unwrap();
+        fs::rename(
+            fixture.root.join("Readme.md"),
+            fixture.root.join("README.MD"),
+        )
+        .unwrap();
+        assert_eq!(
+            changed(&view),
+            [("Readme.md".to_string(), ChangeKind::Deleted)]
+        );
+    }
+}

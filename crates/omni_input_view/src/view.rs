@@ -68,11 +68,18 @@ pub struct Listing {
     pub entries: Vec<(String, EntryKind)>,
 }
 
+/// Counters for the budgets that charge per attempt. The live view has one;
+/// every revalidation pass gets a fresh one, so a pass over everything that was
+/// tracked cannot be starved by the reads that tracked it.
 #[derive(Default)]
-struct State {
+struct Meter {
     operations: usize,
     total_bytes: u64,
     total_dir_entries: usize,
+}
+
+#[derive(Default)]
+struct State {
     captured: HashMap<WorkspacePath, Arc<[u8]>>,
     evidence: Evidence,
 }
@@ -81,8 +88,37 @@ pub struct InputView {
     root: ContainedRoot,
     authorizer: Arc<dyn InputAuthorizer>,
     limits: InputLimits,
+    live: Mutex<Meter>,
     state: Mutex<State>,
 }
+
+/// What a fresh look at a file found.
+enum FileOutcome {
+    Missing,
+    NotFile(EntryKind),
+    File(Box<FileCapture>),
+}
+
+struct FileCapture {
+    bytes: Vec<u8>,
+    digest: crate::digest::Digest,
+    metadata: Metadata,
+}
+
+/// What a fresh look at a directory found.
+enum DirOutcome {
+    Missing,
+    NotDir(EntryKind),
+    Dir(DirCapture),
+}
+
+struct DirCapture {
+    entries: Vec<(String, EntryKind)>,
+    id: FileIdentity,
+}
+
+mod revalidate;
+pub use revalidate::{Change, ChangeKind, InputsChanged, Revalidation};
 
 impl InputView {
     /// Holds a handle on `root`. Where containment is unsupported this is
@@ -100,6 +136,7 @@ impl InputView {
             root: ContainedRoot::open(root)?,
             authorizer: options.authorizer,
             limits: options.limits,
+            live: Mutex::default(),
             state: Mutex::default(),
         })
     }
@@ -122,12 +159,11 @@ impl InputView {
         path: &WorkspacePath,
         cx: &Cancellation,
     ) -> Result<Exists, InputError> {
-        self.begin(path, cx)?;
-        let Some((_file, metadata)) = self.probe(path)? else {
+        self.begin(&self.live, path, cx)?;
+        let Some(kind) = self.capture_kind(path)? else {
             self.record(cx, path, Observation::Missing)?;
             return Ok(Exists::Missing);
         };
-        let kind = kind_of(&metadata);
         let exists = match kind {
             EntryKind::File => Exists::File,
             EntryKind::Dir => Exists::Dir,
@@ -142,14 +178,133 @@ impl InputView {
         dir: &WorkspacePath,
         cx: &Cancellation,
     ) -> Result<List, InputError> {
-        self.begin(dir, cx)?;
+        self.begin(&self.live, dir, cx)?;
+        let capture = match self.capture_dir(&self.live, dir, cx)? {
+            DirOutcome::Missing => {
+                self.record(cx, dir, Observation::Missing)?;
+                return Ok(List::Missing);
+            }
+            DirOutcome::NotDir(kind) => {
+                return Err(InputError::NotDirectory(kind));
+            }
+            DirOutcome::Dir(capture) => capture,
+        };
+        let observation = Observation::Dir {
+            entry_count: u32::try_from(capture.entries.len())
+                .unwrap_or(u32::MAX),
+            membership_digest: membership_digest(&capture.entries),
+            id: Some(capture.id),
+        };
+        self.record(cx, dir, observation)?;
+        Ok(List::Found(Listing {
+            entries: capture.entries,
+        }))
+    }
+
+    /// `after_chunk` runs after every chunk read; tests cancel from it.
+    pub(crate) fn read_with(
+        &self,
+        path: &WorkspacePath,
+        cx: &Cancellation,
+        after_chunk: &mut dyn FnMut(),
+    ) -> Result<Read, InputError> {
+        self.begin(&self.live, path, cx)?;
+        let captured = self.lock().captured.get(path).cloned();
+        if let Some(bytes) = captured {
+            if cx.is_cancelled() {
+                return Err(InputError::Cancelled);
+            }
+            return Ok(Read::Found(bytes));
+        }
+        match self.capture_file(&self.live, path, cx, after_chunk)? {
+            FileOutcome::Missing => {
+                self.record(cx, path, Observation::Missing)?;
+                Ok(Read::Missing)
+            }
+            FileOutcome::NotFile(kind) => Err(InputError::NotRegular(kind)),
+            FileOutcome::File(capture) => {
+                let bytes: Arc<[u8]> = capture.bytes.into();
+                let bytes = self.record_file(
+                    cx,
+                    path,
+                    bytes,
+                    capture.digest,
+                    &capture.metadata,
+                )?;
+                Ok(Read::Found(bytes))
+            }
+        }
+    }
+
+    /// The kind of what is at `path` right now, or `None` when absent.
+    fn capture_kind(
+        &self,
+        path: &WorkspacePath,
+    ) -> Result<Option<EntryKind>, InputError> {
+        Ok(self.probe(path)?.map(|(_, metadata)| kind_of(&metadata)))
+    }
+
+    /// Opens and reads the file at `path` (already admitted by `begin`).
+    fn capture_file(
+        &self,
+        meter: &Mutex<Meter>,
+        path: &WorkspacePath,
+        cx: &Cancellation,
+        after_chunk: &mut dyn FnMut(),
+    ) -> Result<FileOutcome, InputError> {
+        let Some((probe_handle, metadata)) = self.probe(path)? else {
+            return Ok(FileOutcome::Missing);
+        };
+        match kind_of(&metadata) {
+            EntryKind::File => {}
+            other => return Ok(FileOutcome::NotFile(other)),
+        }
+        let file = if ContainedRoot::PROBE_FIRST {
+            match self.root.open_path(path, Want::File)? {
+                Some(file) => file,
+                None => return Ok(FileOutcome::Missing),
+            }
+        } else {
+            probe_handle
+        };
+        let metadata = handle_metadata(&file, path)?;
+        match kind_of(&metadata) {
+            EntryKind::File => {}
+            other => return Ok(FileOutcome::NotFile(other)),
+        }
+        let len = metadata.len();
+        let limit = self.limits.max_file_bytes;
+        if len > limit {
+            return Err(InputError::TooLarge { len, limit });
+        }
+        // Charged for the attempt and not refunded if the read later fails.
+        self.charge_bytes(meter, len)?;
+        if cx.is_cancelled() {
+            return Err(InputError::Cancelled);
+        }
+        let (bytes, digest) =
+            self.read_all(meter, file, path, len, limit, cx, after_chunk)?;
+        Ok(FileOutcome::File(Box::new(FileCapture {
+            bytes,
+            digest,
+            metadata,
+        })))
+    }
+
+    /// Lists the directory at `dir` (already admitted by `begin`): every entry
+    /// is authorized before it is counted, denied ones are omitted.
+    fn capture_dir(
+        &self,
+        meter: &Mutex<Meter>,
+        dir: &WorkspacePath,
+        cx: &Cancellation,
+    ) -> Result<DirOutcome, InputError> {
         let Some((probe, metadata)) = self.probe(dir)? else {
-            self.record(cx, dir, Observation::Missing)?;
-            return Ok(List::Missing);
+            return Ok(DirOutcome::Missing);
         };
         match kind_of(&metadata) {
             EntryKind::Dir => {}
-            other => return Err(InputError::NotDirectory(other)),
+            other => return Ok(DirOutcome::NotDir(other)),
         }
         let handle = if ContainedRoot::PROBE_FIRST {
             match self.root.open_path(dir, Want::Dir)? {
@@ -158,15 +313,10 @@ impl InputView {
                     // `ENOTDIR` also covers the path having become a file
                     // since the probe: look again before claiming it is
                     // absent.
-                    return match self.probe(dir)? {
-                        Some((_, now)) => {
-                            Err(InputError::NotDirectory(kind_of(&now)))
-                        }
-                        None => {
-                            self.record(cx, dir, Observation::Missing)?;
-                            Ok(List::Missing)
-                        }
-                    };
+                    return Ok(match self.probe(dir)? {
+                        Some((_, now)) => DirOutcome::NotDir(kind_of(&now)),
+                        None => DirOutcome::Missing,
+                    });
                 }
             }
         } else {
@@ -205,82 +355,20 @@ impl InputView {
             if found.len() >= self.limits.max_dir_entries {
                 return Err(InputError::Budget(BudgetKind::DirEntries));
             }
-            self.charge_dir_entry()?;
+            self.charge_dir_entry(meter)?;
             found.push((name, entry.kind));
         }
         found.sort_by(|a, b| a.0.cmp(&b.0));
-
-        let mut digest = Blake3Digest::new();
-        for (name, kind) in &found {
-            digest.update(&(name.len() as u64).to_le_bytes());
-            digest.update(name.as_bytes());
-            digest.update(&[kind_byte(*kind)]);
-        }
-        let observation = Observation::Dir {
-            entry_count: u32::try_from(found.len()).unwrap_or(u32::MAX),
-            membership_digest: digest.finalize(),
-            id: Some(id),
-        };
         if cx.is_cancelled() {
             return Err(InputError::Cancelled);
         }
-        self.record(cx, dir, observation)?;
-        Ok(List::Found(Listing { entries: found }))
+        Ok(DirOutcome::Dir(DirCapture { entries: found, id }))
     }
 
-    /// `after_chunk` runs after every chunk read; tests cancel from it.
-    pub(crate) fn read_with(
-        &self,
-        path: &WorkspacePath,
-        cx: &Cancellation,
-        after_chunk: &mut dyn FnMut(),
-    ) -> Result<Read, InputError> {
-        self.begin(path, cx)?;
-        let captured = self.lock().captured.get(path).cloned();
-        if let Some(bytes) = captured {
-            if cx.is_cancelled() {
-                return Err(InputError::Cancelled);
-            }
-            return Ok(Read::Found(bytes));
-        }
-        let Some((probe_handle, metadata)) = self.probe(path)? else {
-            self.record(cx, path, Observation::Missing)?;
-            return Ok(Read::Missing);
-        };
-        regular(&metadata)?;
-        let file = if ContainedRoot::PROBE_FIRST {
-            match self.root.open_path(path, Want::File)? {
-                Some(file) => file,
-                None => {
-                    self.record(cx, path, Observation::Missing)?;
-                    return Ok(Read::Missing);
-                }
-            }
-        } else {
-            probe_handle
-        };
-        let metadata = handle_metadata(&file, path)?;
-        regular(&metadata)?;
-        let len = metadata.len();
-        let limit = self.limits.max_file_bytes;
-        if len > limit {
-            return Err(InputError::TooLarge { len, limit });
-        }
-        // Charged for the attempt and not refunded if the read later fails.
-        self.charge_bytes(len)?;
-        if cx.is_cancelled() {
-            return Err(InputError::Cancelled);
-        }
-
-        let (bytes, digest) =
-            self.read_all(file, path, len, limit, cx, after_chunk)?;
-        let bytes: Arc<[u8]> = bytes.into();
-        let bytes = self.record_file(cx, path, bytes, digest, &metadata)?;
-        Ok(Read::Found(bytes))
-    }
-
+    #[allow(clippy::too_many_arguments)]
     fn read_all(
         &self,
+        meter: &Mutex<Meter>,
         file: File,
         path: &WorkspacePath,
         len: u64,
@@ -312,7 +400,7 @@ impl InputView {
                 return Err(InputError::TooLarge { len: total, limit });
             }
             if total > charged {
-                self.charge_bytes(total - charged)?;
+                self.charge_bytes(meter, total - charged)?;
                 charged = total;
             }
             sink.update(&chunk[..read]);
@@ -326,15 +414,16 @@ impl InputView {
     /// authorization, in that order, before any filesystem access.
     fn begin(
         &self,
+        meter: &Mutex<Meter>,
         path: &WorkspacePath,
         cx: &Cancellation,
     ) -> Result<(), InputError> {
         {
-            let mut state = self.lock();
-            if state.operations >= self.limits.max_operations {
+            let mut meter = lock(meter);
+            if meter.operations >= self.limits.max_operations {
                 return Err(InputError::Budget(BudgetKind::Operations));
             }
-            state.operations += 1;
+            meter.operations += 1;
         }
         if cx.is_cancelled() {
             return Err(InputError::Cancelled);
@@ -383,22 +472,26 @@ impl InputView {
         Ok(Some((file, metadata)))
     }
 
-    fn charge_bytes(&self, bytes: u64) -> Result<(), InputError> {
-        let mut state = self.lock();
-        let total = state.total_bytes.saturating_add(bytes);
+    fn charge_bytes(
+        &self,
+        meter: &Mutex<Meter>,
+        bytes: u64,
+    ) -> Result<(), InputError> {
+        let mut meter = lock(meter);
+        let total = meter.total_bytes.saturating_add(bytes);
         if total > self.limits.max_total_bytes {
             return Err(InputError::Budget(BudgetKind::TotalBytes));
         }
-        state.total_bytes = total;
+        meter.total_bytes = total;
         Ok(())
     }
 
-    fn charge_dir_entry(&self) -> Result<(), InputError> {
-        let mut state = self.lock();
-        if state.total_dir_entries >= self.limits.max_total_dir_entries {
+    fn charge_dir_entry(&self, meter: &Mutex<Meter>) -> Result<(), InputError> {
+        let mut meter = lock(meter);
+        if meter.total_dir_entries >= self.limits.max_total_dir_entries {
             return Err(InputError::Budget(BudgetKind::TotalDirEntries));
         }
-        state.total_dir_entries += 1;
+        meter.total_dir_entries += 1;
         Ok(())
     }
 
@@ -470,17 +563,24 @@ impl InputView {
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, State> {
-        self.state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+        lock(&self.state)
     }
 }
 
-fn regular(metadata: &Metadata) -> Result<(), InputError> {
-    match kind_of(metadata) {
-        EntryKind::File => Ok(()),
-        other => Err(InputError::NotRegular(other)),
+fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    mutex
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+fn membership_digest(entries: &[(String, EntryKind)]) -> crate::digest::Digest {
+    let mut digest = Blake3Digest::new();
+    for (name, kind) in entries {
+        digest.update(&(name.len() as u64).to_le_bytes());
+        digest.update(name.as_bytes());
+        digest.update(&[kind_byte(*kind)]);
     }
+    digest.finalize()
 }
 
 fn handle_metadata(
