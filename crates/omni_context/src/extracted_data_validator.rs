@@ -107,7 +107,7 @@ impl ExtractedDataValidator {
                         continue;
                     };
 
-                    if !project.tasks.contains_key(dependency) {
+                    if project.canonical_task_name(dependency).is_none() {
                         errors.push(
                             ExtractedDataValidationErrorInner::DanglingTaskDependency {
                                 project_name: project.name.clone(),
@@ -447,6 +447,41 @@ mod tests {
         assert_eq!(
             err.errors[0].kind(),
             ExtractedDataValidationErrorKind::DanglingTaskDependency
+        );
+    }
+
+    #[test]
+    fn own_alias_dependency_and_sibling_are_not_dangling() {
+        let mut app = project(
+            "app",
+            vec![
+                ("build", task_with_own_deps(&["compile"])),
+                ("build-native", task_with_own_deps(&[])),
+            ],
+        );
+        app.tasks.get_mut("build").unwrap().siblings =
+            task_with_own_deps(&["compile"]).dependencies;
+        let mut aliases = maps::OrderedMap::new();
+        aliases.insert("compile".to_string(), "build-native".to_string());
+        let app = app.with_aliases(omni_core::TaskAliases::new(aliases));
+
+        ExtractedDataValidator::new(false)
+            .validate(&extractions(vec![app]))
+            .expect("own alias references resolve through the alias index");
+    }
+
+    #[test]
+    fn dangling_alias_to_missing_task_is_error() {
+        let mut app =
+            project("app", vec![("build", task_with_own_deps(&["compile"]))]);
+        let mut aliases = maps::OrderedMap::new();
+        aliases.insert("compile".to_string(), "gone".to_string());
+        let app = app.with_aliases(omni_core::TaskAliases::new(aliases));
+
+        assert!(
+            ExtractedDataValidator::new(false)
+                .validate(&extractions(vec![app]))
+                .is_err()
         );
     }
 

@@ -138,6 +138,41 @@ describe("+run @e2e (aliases and canonical selection)", () => {
         expect(bundle).toBeGreaterThan(native);
     });
 
+    it("an own-project alias in dependencies and with loads and runs once, in order", async () => {
+        const ws = makeWorkspace({
+            workspace: { projects: ["**"] },
+            projects: {
+                solo: {
+                    name: "solo",
+                    tasks: {
+                        "prep-real": 'echo "prep"',
+                        prep: { alias: "prep-real" },
+                        "side-real": 'echo "side"',
+                        side: { alias: "side-real" },
+                        main: {
+                            exec: 'echo "main"',
+                            dependencies: ["prep", "solo#prep"],
+                            with: ["side", "side-real"],
+                        },
+                    },
+                },
+            },
+        });
+        const result = await runOmni(["run", "main", "--no-cache"], {
+            cwd: ws.cwd,
+        });
+        expect(result).toHaveSucceeded();
+        expect(count(result.stderr, "Executed task 'solo#prep-real'")).toBe(1);
+        expect(count(result.stderr, "Executed task 'solo#side-real'")).toBe(1);
+        expect(count(result.stderr, "Executed task 'solo#main'")).toBe(1);
+        expect(result.stderr).not.toContain("solo#prep'");
+        expect(result.stderr).not.toContain("solo#side'");
+        const prep = result.stderr.indexOf("Executed task 'solo#prep-real'");
+        const main = result.stderr.indexOf("Executed task 'solo#main'");
+        expect(prep).toBeGreaterThanOrEqual(0);
+        expect(main).toBeGreaterThan(prep);
+    });
+
     it("a project qualifier scopes the name to one project", async () => {
         const ws = makeWorkspace(spec());
         const web = await runOmni(["run", "web#compile"], { cwd: ws.cwd });
