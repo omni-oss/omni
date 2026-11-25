@@ -7804,10 +7804,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "omni_migration_proof"
+name = "omni_migration"
 version = "0.0.0"
 dependencies = [
  "blake3",
+ "criterion",
  "serde",
  "serde_json",
  "tempfile",

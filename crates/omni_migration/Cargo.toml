@@ -1,0 +1,30 @@
+[package]
+name = "omni_migration"
+rust-version.workspace = true
+edition.workspace = true
+version = "0.0.0"
+authors.workspace = true
+repository.workspace = true
+publish = false
+description = "Storage-agnostic planner and runner for pre-v1 store migrations (RFC 0032). Unwired; not for production use."
+
+[dependencies]
+blake3 = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tempfile = { workspace = true }
+
+[[bench]]
+name = "access_gate"
+harness = false
+
+[[bench]]
+name = "adapter_io"
+harness = false
+
+[lints]
+workspace = true

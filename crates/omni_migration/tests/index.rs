@@ -1,9 +1,14 @@
+// The fixtures fsync directories, which Windows does not support.
+#![cfg(unix)]
+
 mod common;
 
+use common::fs::{Action, Faults};
+use common::index::*;
 use common::*;
-use omni_migration_proof::core::*;
-use omni_migration_proof::fs::{Action, Faults};
-use omni_migration_proof::index::*;
+use omni_migration::*;
+use std::sync::Arc;
+
 use tempfile::tempdir;
 
 fn idx(root: &std::path::Path, v: Version) -> IndexStore {
@@ -171,17 +176,21 @@ fn a_foreign_marker_is_a_chain_mismatch() {
 fn inconsistent_prewrite_state_fails_closed() {
     let dir = tempdir().unwrap();
     let s = idx(dir.path(), WITH_INDEX);
-    let mut session = s.begin_migration().unwrap();
-    let step = Step {
-        from: WITH_INDEX,
-        to: WITHOUT_INDEX,
-        id: IndexStep::DropShards,
-    };
-    std::fs::remove_file(s.shards_dir().join("shard-0")).unwrap();
+    let plan = drop_plan(&s);
+    let shard = s.shards_dir().join("shard-0");
+    s.faults().set(
+        "apply.start",
+        Action::Hook(Arc::new(move || std::fs::remove_file(&shard).unwrap())),
+        0,
+    );
     let w = s.faults().mutations();
     assert!(matches!(
-        session.apply(step),
-        StepOutcome::RecoveryRequired(Error::Inconsistent(_))
+        execute(&s, &plan, || false),
+        Ok(Run::NeedsRecovery {
+            last_confirmed: WITH_INDEX,
+            attempted: WITHOUT_INDEX,
+            error: Error::Inconsistent(_),
+        })
     ));
     assert_eq!(s.faults().mutations(), w);
     assert!(!s.intent_exists());
@@ -190,17 +199,29 @@ fn inconsistent_prewrite_state_fails_closed() {
 #[test]
 fn a_wrong_version_at_prewrite_is_not_committed() {
     let dir = tempdir().unwrap();
-    let s = idx(dir.path(), WITHOUT_INDEX);
-    let mut session = s.begin_migration().unwrap();
-    let step = Step {
-        from: WITH_INDEX,
-        to: WITHOUT_INDEX,
-        id: IndexStep::DropShards,
-    };
-    assert_eq!(
-        session.apply(step),
-        StepOutcome::NotCommitted(Error::UnexpectedVersion)
+    let s = idx(dir.path(), WITH_INDEX);
+    let plan = drop_plan(&s);
+    let (shards, marker) = (s.shards_dir(), s.marker_path());
+    s.faults().set(
+        "apply.start",
+        Action::Hook(Arc::new(move || {
+            std::fs::remove_dir_all(&shards).unwrap();
+            std::fs::write(
+                &marker,
+                r#"{"chain":"index","version":"records-only","revision":1}"#,
+            )
+            .unwrap();
+        })),
+        0,
     );
+    assert_eq!(
+        execute(&s, &plan, || false),
+        Ok(Run::Stopped {
+            last: WITH_INDEX,
+            error: Error::UnexpectedVersion
+        })
+    );
+    assert!(!s.intent_exists());
 }
 
 #[test]
@@ -244,41 +265,55 @@ fn editor_refuses_a_records_only_store_with_a_leftover_shard() {
 }
 
 #[test]
-fn direct_session_apply_never_overwrites_a_pending_intent() {
+fn apply_never_overwrites_an_intent_that_appears_after_observation() {
     let dir = tempdir().unwrap();
     let s = idx(dir.path(), WITH_INDEX);
-    s.faults().set("marker.parent_sync", Action::Err, 0);
-    execute(&s, &drop_plan(&s), || false).unwrap();
-    s.faults().clear();
-    let before = std::fs::read(s.intent_path()).unwrap();
-    let mut session = s.begin_migration().unwrap();
-    let step = Step {
-        from: WITHOUT_INDEX,
-        to: WITH_INDEX,
-        id: IndexStep::RebuildShards,
-    };
-    assert_eq!(
-        session.apply(step),
-        StepOutcome::RecoveryRequired(Error::Dirty)
+    let plan = drop_plan(&s);
+    let intent = s.intent_path();
+    s.faults().set(
+        "apply.start",
+        Action::Hook(Arc::new(move || {
+            std::fs::write(&intent, br#"{"chain":"index","kind":"peer"}"#)
+                .unwrap()
+        })),
+        0,
     );
-    assert_eq!(std::fs::read(s.intent_path()).unwrap(), before);
+    assert!(matches!(
+        execute(&s, &plan, || false),
+        Ok(Run::NeedsRecovery {
+            error: Error::Dirty,
+            ..
+        })
+    ));
+    assert_eq!(
+        std::fs::read(s.intent_path()).unwrap(),
+        br#"{"chain":"index","kind":"peer"}"#
+    );
 }
 
 #[test]
 fn a_leftover_shard_is_not_a_plain_version_mismatch() {
     let dir = tempdir().unwrap();
-    let s = idx(dir.path(), WITHOUT_INDEX);
-    std::fs::create_dir_all(s.shards_dir()).unwrap();
-    std::fs::write(s.shards_dir().join("shard-0"), b"x").unwrap();
-    let mut session = s.begin_migration().unwrap();
-    let step = Step {
-        from: WITH_INDEX,
-        to: WITHOUT_INDEX,
-        id: IndexStep::DropShards,
-    };
+    let s = idx(dir.path(), WITH_INDEX);
+    let plan = drop_plan(&s);
+    let marker = s.marker_path();
+    s.faults().set(
+        "apply.start",
+        Action::Hook(Arc::new(move || {
+            std::fs::write(
+                &marker,
+                r#"{"chain":"index","version":"records-only","revision":1}"#,
+            )
+            .unwrap();
+        })),
+        0,
+    );
     assert!(matches!(
-        session.apply(step),
-        StepOutcome::RecoveryRequired(Error::Inconsistent(_))
+        execute(&s, &plan, || false),
+        Ok(Run::NeedsRecovery {
+            error: Error::Inconsistent(_),
+            ..
+        })
     ));
 }
 
@@ -297,4 +332,78 @@ fn recovery_rejects_rollback_evidence_that_changes_the_version() {
     assert_eq!(s.recover_under_guard(), Err(Error::RecoveryBlocked));
     assert!(s.intent_exists());
     assert_eq!(s.shard_bytes().unwrap().len(), 1);
+}
+
+#[test]
+fn unsynced_intent_removal_after_a_durable_commit_still_commits() {
+    let dir = tempdir().unwrap();
+    let s = idx(dir.path(), WITH_INDEX);
+    let plan = drop_plan(&s);
+    s.faults().set("intent.clear.parent_sync", Action::Err, 0);
+    assert_eq!(
+        execute(&s, &plan, || false),
+        Ok(Run::Finished(WITHOUT_INDEX))
+    );
+    assert!(!s.intent_exists());
+    assert_eq!(s.state(), Ok(StoreState::Ready(WITHOUT_INDEX)));
+}
+
+#[test]
+fn backend_support_lost_after_planning_is_caught_with_the_right_outcome() {
+    let ok = BackendSupport::DURABLE_NON_ATOMIC;
+    let lost = BackendSupport::NONE;
+    let original = |s: &IndexStore| s.shard_bytes().unwrap();
+
+    // Probes: begin_migration, preflight, then one per applied step.
+    let dir = tempdir().unwrap();
+    let s = idx(dir.path(), WITH_INDEX);
+    let plan = drop_plan(&s);
+    let shards = original(&s);
+    s.faults().script_probes(&[ok, lost]);
+    let w = s.faults().mutations();
+    assert_eq!(execute(&s, &plan, || false), Err(Error::UnsupportedBackend));
+    assert_eq!(s.faults().mutations(), w);
+    assert!(!s.intent_exists());
+    assert_eq!(original(&s), shards);
+
+    let dir = tempdir().unwrap();
+    let s = idx(dir.path(), WITH_INDEX);
+    let plan = drop_plan(&s);
+    s.faults().script_probes(&[ok, ok, lost]);
+    let w = s.faults().mutations();
+    assert_eq!(
+        execute(&s, &plan, || false),
+        Ok(Run::Stopped {
+            last: WITH_INDEX,
+            error: Error::UnsupportedBackend
+        })
+    );
+    assert_eq!(s.faults().mutations(), w);
+    assert!(!s.intent_exists());
+    assert_eq!(s.state(), Ok(StoreState::Ready(WITH_INDEX)));
+    assert_eq!(original(&s), shards);
+}
+
+#[test]
+fn a_shard_sync_failure_needs_recovery_and_rolls_back() {
+    let dir = tempdir().unwrap();
+    let s = idx(dir.path(), WITHOUT_INDEX);
+    let plan = s
+        .plan(WITH_INDEX, Direction::Downgrade, NON_ATOMIC)
+        .unwrap();
+    s.faults().set("shard.sync", Action::Err, 0);
+    assert!(matches!(
+        execute(&s, &plan, || false),
+        Ok(Run::NeedsRecovery {
+            last_confirmed: WITHOUT_INDEX,
+            attempted: WITH_INDEX,
+            ..
+        })
+    ));
+    s.faults().clear();
+    assert_eq!(s.read_marker_version(), Ok(WITHOUT_INDEX));
+    assert_eq!(s.state(), Ok(StoreState::RecoveryRequired));
+    assert_eq!(s.recover_under_guard(), Ok(IndexRecovered::RolledBack));
+    assert!(s.shard_bytes().unwrap().is_empty());
+    assert_eq!(s.state(), Ok(StoreState::Ready(WITHOUT_INDEX)));
 }

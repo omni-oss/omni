@@ -1,10 +1,12 @@
 #![allow(dead_code)]
 
-use omni_migration_proof::core::Policy;
-use omni_migration_proof::fs::Faults;
-use omni_migration_proof::lockfile::{
-    Body, LockfileStore, PINS_V1, PinsCatalog, V1,
-};
+pub mod fs;
+pub mod index;
+pub mod lockfile;
+
+use self::fs::Faults;
+use self::lockfile::{Body, LockfileStore, PINS_V1, PinsCatalog, V1};
+use omni_migration::Policy;
 
 pub const NON_ATOMIC: Policy = Policy {
     allow_non_atomic: true,
@@ -37,10 +39,17 @@ pub fn rewrite_doc(
     store: &LockfileStore,
     f: impl FnOnce(&mut serde_json::Value),
 ) {
+    rewrite_doc_at(&store.doc_path(), f)
+}
+
+pub fn rewrite_doc_at(
+    path: &std::path::Path,
+    f: impl FnOnce(&mut serde_json::Value),
+) {
     let mut v: serde_json::Value =
-        serde_json::from_slice(&store.document_bytes()).unwrap();
+        serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
     f(&mut v);
     let g = v["generation"].as_u64().unwrap() + 1;
     v["generation"] = g.into();
-    std::fs::write(store.doc_path(), serde_json::to_vec(&v).unwrap()).unwrap();
+    std::fs::write(path, serde_json::to_vec(&v).unwrap()).unwrap();
 }

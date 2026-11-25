@@ -2,17 +2,19 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
 
-use crate::core::{
-    BackendSupport, Catalog, CatalogId, Chain, ChainBinding, ChainName,
-    Direction, Error, GuardedObservation, MigrationSession, MigrationStore,
-    Plan, Policy, Revision, Stamp, Step, StepCapabilities, StepOutcome,
-    StoreId, StoreState, Transition, Version, build_plan, check_backend,
+use super::fs::{DurableFs, Faults, Guard, PublishError, fingerprint};
+use omni_migration::{
+    AuthorizedStep, BackendSupport, Catalog, CatalogId, Chain, ChainBinding,
+    ChainName, Direction, Error, GuardedObservation, MigrationSession,
+    MigrationStore, Plan, Policy, Revision, Stamp, Step, StepCapabilities,
+    StepId, StepOutcome, StoreId, StoreState, Transition, Version, build_plan,
+    check_backend,
 };
-use crate::fs::{DurableFs, Faults, Guard, PublishError, fingerprint};
 
 pub const WITH_INDEX: Version = Version(90);
 pub const WITHOUT_INDEX: Version = Version(12);
 pub const INDEX_CATALOG: CatalogId = CatalogId(2);
+pub const INDEX_CHAIN: ChainName = ChainName::new("index");
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum IndexStep {
@@ -26,6 +28,15 @@ pub const INDEX_EDGES: &[Transition<IndexStep>] = &[Transition {
     upgrade: IndexStep::DropShards,
     downgrade: Some(IndexStep::RebuildShards),
 }];
+
+impl StepId for IndexStep {
+    fn stable_id(&self) -> u32 {
+        match self {
+            Self::DropShards => 1,
+            Self::RebuildShards => 2,
+        }
+    }
+}
 
 const SHARDS: [&str; 2] = ["shard-0", "shard-1"];
 
@@ -146,7 +157,7 @@ impl Catalog<IndexStep> for IndexCatalog {
     fn binding(&self) -> ChainBinding {
         self.chain()
             .expect("valid fixture chain")
-            .binding(ChainName::INDEX)
+            .binding(INDEX_CHAIN)
     }
 
     fn backend(&self) -> BackendSupport {
@@ -300,7 +311,7 @@ impl IndexStore {
             .map_err(|_| Error::MalformedVersion)?;
         match v.get("chain") {
             None => return Err(Error::MissingChain),
-            Some(Value::String(s)) if s == ChainName::INDEX.0 => {}
+            Some(Value::String(s)) if s == INDEX_CHAIN.as_str() => {}
             Some(Value::String(_)) => return Err(Error::ChainMismatch),
             Some(_) => return Err(Error::MalformedChain),
         }
@@ -390,6 +401,7 @@ impl IndexStore {
         let dir = self.shards_dir();
         if dir.exists() {
             for (name, _) in self.shard_files()? {
+                self.faults().hit("shard.sync")?;
                 std::fs::File::open(dir.join(name))?.sync_all()?;
             }
             self.fs.sync_dir(&dir)?;
@@ -432,7 +444,7 @@ impl IndexStore {
         // across the reads, so a stamp never mixes two states.
         for _ in 0..5 {
             if let Some(name) = self.pending_intent_chain()? {
-                if name != ChainName::INDEX.0 {
+                if name != INDEX_CHAIN.as_str() {
                     return Err(Error::ChainMismatch);
                 }
                 return Ok(GuardedObservation::RecoveryRequired);
@@ -453,7 +465,7 @@ impl IndexStore {
             );
             return Ok(GuardedObservation::Ready(Stamp {
                 store: StoreId(records.incarnation),
-                chain: ChainName::INDEX,
+                chain: INDEX_CHAIN,
                 revision: Revision(
                     u64::from_str_radix(&rev[..16], 16).unwrap(),
                 ),
@@ -540,7 +552,7 @@ impl IndexStore {
         let Some(intent) = self.pending_intent()? else {
             return Ok(IndexRecovered::Nothing);
         };
-        if intent["chain"] != ChainName::INDEX.0 {
+        if intent["chain"] != INDEX_CHAIN.as_str() {
             return Err(Error::ChainMismatch);
         }
         let records =
@@ -656,9 +668,13 @@ impl MigrationSession<IndexStep> for IndexSession<'_> {
         self.store.observe()
     }
 
-    fn apply(&mut self, s: Step<IndexStep>) -> StepOutcome {
+    fn apply(&mut self, step: AuthorizedStep<IndexStep>) -> StepOutcome {
         use StepOutcome::{Committed, NotCommitted, RecoveryRequired};
+        let s = step.step();
         let st = self.store;
+        if let Err(e) = st.fs.faults.hit("apply.start") {
+            return NotCommitted(e);
+        }
         let Some(c) = self.capabilities(s) else {
             return NotCommitted(Error::MissingStep);
         };
