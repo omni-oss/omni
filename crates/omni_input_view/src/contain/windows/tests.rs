@@ -1,0 +1,393 @@
+use std::{
+    fs,
+    io::Read,
+    path::{Path, PathBuf},
+    process::Command,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    thread,
+};
+
+use omni_path_utils::WorkspacePath;
+use omni_test_capabilities::Capability;
+
+use super::*;
+use crate::{ContainedRoot, error::InputError, open_beneath};
+
+const INSIDE: &str = "inside";
+const OUTSIDE: &str = "OUTSIDE";
+
+struct Fixture {
+    _tmp: tempfile::TempDir,
+    root: PathBuf,
+    outside: PathBuf,
+}
+
+impl Fixture {
+    fn new() -> Self {
+        let tmp = tempfile::tempdir().unwrap();
+        let base = fs::canonicalize(tmp.path()).unwrap();
+        let root = base.join("root");
+        let outside = base.join("outside");
+        fs::create_dir_all(root.join("a/b")).unwrap();
+        fs::create_dir_all(outside.join("b")).unwrap();
+        fs::write(root.join("a/b/file"), INSIDE).unwrap();
+        fs::write(outside.join("b/file"), OUTSIDE).unwrap();
+        Self {
+            _tmp: tmp,
+            root,
+            outside,
+        }
+    }
+
+    fn contained(&self) -> ContainedRoot {
+        ContainedRoot::open(&self.root).unwrap()
+    }
+}
+
+fn wp(path: &str) -> WorkspacePath {
+    WorkspacePath::parse(path).unwrap()
+}
+
+fn read_text(mut file: File) -> String {
+    let mut text = String::new();
+    file.read_to_string(&mut text).unwrap();
+    text
+}
+
+fn read_inside(
+    root: &ContainedRoot,
+    path: &str,
+) -> Result<Option<String>, InputError> {
+    open_beneath(root, &wp(path)).map(|file| file.map(read_text))
+}
+
+fn junction(link: &Path, target: &Path) {
+    let output = Command::new("cmd.exe")
+        .args(["/C", "mklink", "/J"])
+        .arg(link)
+        .arg(target)
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+}
+
+fn is_reparse(error: &InputError) -> bool {
+    matches!(
+        error,
+        InputError::Containment(ContainmentViolation::ReparsePoint)
+    )
+}
+
+fn raw_walk(
+    fixture: &Fixture,
+    path: &str,
+    hook: &mut dyn FnMut(Step),
+    flag: u32,
+) -> Result<String, OpenError> {
+    let root = Root::open(&fixture.root).unwrap();
+    open_file_with_flags(&root, &wp(path), hook, flag).map(read_text)
+}
+
+#[test]
+fn reads_a_regular_file_beneath_the_root() {
+    let fixture = Fixture::new();
+    let root = fixture.contained();
+    assert_eq!(
+        read_inside(&root, "a/b/file").unwrap().as_deref(),
+        Some(INSIDE)
+    );
+}
+
+#[test]
+fn missing_and_not_a_directory_are_missing_not_errors() {
+    let fixture = Fixture::new();
+    let root = fixture.contained();
+    assert_eq!(read_inside(&root, "a/nope").unwrap(), None);
+    assert_eq!(read_inside(&root, "nope/deeper/file").unwrap(), None);
+    assert_eq!(read_inside(&root, "a/b/file/below").unwrap(), None);
+}
+
+#[test]
+fn junctions_are_rejected_and_never_skipped() {
+    let fixture = Fixture::new();
+    junction(&fixture.root.join("link_dir"), &fixture.outside);
+    junction(
+        &fixture.root.join("a/link_inside"),
+        &fixture.root.join("a/b"),
+    );
+    let root = fixture.contained();
+    for path in [
+        "link_dir",
+        "link_dir/b/file",
+        "a/link_inside/file",
+        "a/link_inside",
+    ] {
+        let error = read_inside(&root, path).unwrap_err();
+        assert!(is_reparse(&error), "{path}: {error:?}");
+    }
+}
+
+#[test]
+fn symlinks_are_rejected() {
+    use std::os::windows::fs::{symlink_dir, symlink_file};
+    let fixture = Fixture::new();
+    if !omni_test_capabilities::require(Capability::Symlink, &fixture.root) {
+        return;
+    }
+    symlink_dir(&fixture.outside, fixture.root.join("link_dir")).unwrap();
+    symlink_file(
+        fixture.outside.join("b/file"),
+        fixture.root.join("link_file"),
+    )
+    .unwrap();
+    symlink_file(fixture.root.join("gone"), fixture.root.join("dangling"))
+        .unwrap();
+    let root = fixture.contained();
+    for path in ["link_dir", "link_dir/b/file", "link_file", "dangling"] {
+        let error = read_inside(&root, path).unwrap_err();
+        assert!(is_reparse(&error), "{path}: {error:?}");
+    }
+}
+
+#[test]
+fn names_are_rejected_by_d9_not_reported_as_missing() {
+    let fixture = Fixture::new();
+    // A real alternate data stream on a real file.
+    fs::write(fixture.root.join("a/b/file:ads"), "stream").unwrap();
+    let root = fixture.contained();
+    for path in [
+        "a/b/file:ads",
+        "a/CON",
+        "a/nul.txt",
+        "a/COM1",
+        "a/b./c",
+        "a/trail ",
+    ] {
+        let error = read_inside(&root, path).unwrap_err();
+        assert!(
+            matches!(
+                error,
+                InputError::Containment(ContainmentViolation::NameUnsupported)
+            ),
+            "{path}: {error:?}"
+        );
+    }
+}
+
+// Held-handle rename rejection: the boundary the whole Windows design rests on.
+// If a rename succeeds here, Windows becomes `Unsupported` (re-planning trigger).
+
+fn assert_rename_blocked(from: &Path, to: &Path) {
+    let result = fs::rename(from, to);
+    assert!(
+        result.is_err(),
+        "renaming the held directory {} succeeded",
+        from.display()
+    );
+    assert!(from.exists(), "{} disappeared", from.display());
+}
+
+#[test]
+fn held_ancestors_cannot_be_renamed_and_move_out_and_back_cannot_run() {
+    let fixture = Fixture::new();
+    let (a, b) = (fixture.root.join("a"), fixture.root.join("a/b"));
+    let moved = fixture.outside.join("moved");
+    let mut seen = Vec::new();
+    let result = raw_walk(
+        &fixture,
+        "a/b/file",
+        &mut |step| {
+            seen.push(step);
+            match step {
+                Step::Retained(0) => {
+                    assert_rename_blocked(&a, &moved);
+                }
+                Step::Retained(1) => {
+                    assert_rename_blocked(&b, &moved);
+                    assert_rename_blocked(&a, &moved);
+                }
+                Step::Opened => {
+                    assert_rename_blocked(&b, &moved);
+                    assert_rename_blocked(&a, &moved);
+                    // The file itself is held without FILE_SHARE_DELETE.
+                    assert_rename_blocked(
+                        &b.join("file"),
+                        &fixture.outside.join("file"),
+                    );
+                }
+                Step::Retained(_) => unreachable!(),
+            }
+        },
+        FILE_FLAG_OPEN_REPARSE_POINT,
+    );
+    assert_eq!(result.as_deref(), Ok(INSIDE));
+    assert_eq!(seen, [Step::Retained(0), Step::Retained(1), Step::Opened]);
+    assert!(!moved.exists());
+}
+
+#[test]
+fn the_held_root_cannot_be_renamed() {
+    let fixture = Fixture::new();
+    let renamed = fixture.root.with_file_name("renamed");
+    let result = raw_walk(
+        &fixture,
+        "a/b/file",
+        &mut |step| {
+            if step == Step::Retained(0) {
+                assert_rename_blocked(&fixture.root, &renamed);
+            }
+        },
+        FILE_FLAG_OPEN_REPARSE_POINT,
+    );
+    assert_eq!(result.as_deref(), Ok(INSIDE));
+}
+
+// Deterministic variants: the state of the next component changes between two
+// component resolutions.
+
+#[test]
+fn hook_next_component_swapped_for_a_junction_after_the_parent_is_held() {
+    let fixture = Fixture::new();
+    let result = raw_walk(
+        &fixture,
+        "a/b/file",
+        &mut |step| {
+            if step == Step::Retained(0) {
+                fs::rename(
+                    fixture.root.join("a/b"),
+                    fixture.root.join("a/b_real"),
+                )
+                .unwrap();
+                junction(&fixture.root.join("a/b"), &fixture.outside.join("b"));
+            }
+        },
+        FILE_FLAG_OPEN_REPARSE_POINT,
+    );
+    assert_eq!(result, Err(ContainmentViolation::ReparsePoint.into()));
+}
+
+#[test]
+fn hook_final_directory_swapped_for_a_junction_before_the_open() {
+    let fixture = Fixture::new();
+    let result = raw_walk(
+        &fixture,
+        "a/b",
+        &mut |step| {
+            if step == Step::Retained(0) {
+                fs::rename(
+                    fixture.root.join("a/b"),
+                    fixture.root.join("a/b_real"),
+                )
+                .unwrap();
+                junction(&fixture.root.join("a/b"), &fixture.outside);
+            }
+        },
+        FILE_FLAG_OPEN_REPARSE_POINT,
+    );
+    assert_eq!(result, Err(ContainmentViolation::ReparsePoint.into()));
+}
+
+#[test]
+fn hook_final_file_swapped_for_a_symlink_before_the_open() {
+    use std::os::windows::fs::symlink_file;
+    let fixture = Fixture::new();
+    if !omni_test_capabilities::require(Capability::Symlink, &fixture.root) {
+        return;
+    }
+    let result = raw_walk(
+        &fixture,
+        "a/b/file",
+        &mut |step| {
+            if step == Step::Retained(1) {
+                let file = fixture.root.join("a/b/file");
+                fs::remove_file(&file).unwrap();
+                symlink_file(fixture.outside.join("b/file"), &file).unwrap();
+            }
+        },
+        FILE_FLAG_OPEN_REPARSE_POINT,
+    );
+    assert_eq!(result, Err(ContainmentViolation::ReparsePoint.into()));
+}
+
+/// FILE_FLAG_OPEN_REPARSE_POINT is load-bearing: without it the same junction
+/// is no longer observed as a reparse point (the OS follows it), so the
+/// reparse-point rejection the other tests rely on does not happen.
+#[test]
+fn omitting_the_reparse_flag_defeats_the_reparse_check() {
+    let fixture = Fixture::new();
+    junction(&fixture.root.join("link_dir"), &fixture.outside);
+
+    let with_flag = raw_walk(
+        &fixture,
+        "link_dir/b/file",
+        &mut |_| {},
+        FILE_FLAG_OPEN_REPARSE_POINT,
+    );
+    assert_eq!(with_flag, Err(ContainmentViolation::ReparsePoint.into()));
+
+    let without_flag = raw_walk(&fixture, "link_dir/b/file", &mut |_| {}, 0);
+    assert_ne!(
+        without_flag,
+        Err(ContainmentViolation::ReparsePoint.into()),
+        "the junction was still seen as a reparse point without the flag"
+    );
+    // It was followed at the OS level: either the outside bytes came back or
+    // the final-path check caught the escape. Never a clean in-root read.
+    assert!(
+        without_flag.as_deref() == Ok(OUTSIDE)
+            || without_flag == Err(ContainmentViolation::EscapesRoot.into())
+            || without_flag.is_err(),
+        "{without_flag:?}"
+    );
+}
+
+#[test]
+fn final_path_check_rejects_a_handle_outside_the_root() {
+    let fixture = Fixture::new();
+    let root = Root::open(&fixture.root).unwrap();
+    let outside = File::open(fixture.outside.join("b/file")).unwrap();
+    let found = sys::final_path(&outside).unwrap();
+    assert!(!is_under(&found, &root.final_path));
+    let inside = File::open(fixture.root.join("a/b/file")).unwrap();
+    assert!(is_under(
+        &sys::final_path(&inside).unwrap(),
+        &root.final_path
+    ));
+}
+
+// Statistical loop: a thread swaps a component between a real directory and a
+// junction to an outside directory while the reader loops. Most swaps fail
+// while the reader holds handles; that is the boundary working.
+
+const ITERATIONS: usize = 10_000;
+
+#[test]
+fn race_intermediate_directory_swapped_with_a_junction() {
+    let fixture = Fixture::new();
+    let root = fixture.contained();
+    let (root_dir, outside) = (fixture.root.clone(), fixture.outside.clone());
+    let stop = Arc::new(AtomicBool::new(false));
+    let handle = {
+        let stop = stop.clone();
+        thread::spawn(move || {
+            while !stop.load(Ordering::SeqCst) {
+                let (a, real) = (root_dir.join("a"), root_dir.join("a_real"));
+                if fs::rename(&a, &real).is_ok() {
+                    junction(&a, &outside);
+                    let _ = fs::remove_dir(&a);
+                    fs::rename(&real, &a).unwrap();
+                }
+            }
+        })
+    };
+    for _ in 0..ITERATIONS {
+        if let Ok(Some(text)) = read_inside(&root, "a/b/file") {
+            assert_eq!(text, INSIDE, "outside bytes returned");
+        }
+    }
+    stop.store(true, Ordering::SeqCst);
+    handle.join().unwrap();
+}
