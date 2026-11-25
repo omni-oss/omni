@@ -3500,4 +3500,135 @@ mod with_sibling_prerequisites_tests {
             TaskExecutionGraphErrorKind::SiblingDependencyCycle
         );
     }
+
+    #[test]
+    fn prerequisite_depending_on_the_co_scheduled_task_is_rejected() {
+        // `t ~ b`, `b <- p`, `p <- t`: {t, b} must precede `p` (p needs t)
+        // and follow it (b needs p).
+        let g = build(vec![project(
+            "proj",
+            &[],
+            TasksBuilder::new()
+                .task("t", "x", |b| b.own_sibling("b"))
+                .task("b", "x", |b| b.own_dependency("p"))
+                .task("p", "x", |b| b.own_dependency("t"))
+                .build(),
+        )]);
+        let err = g
+            .get_batched_execution_plan(|n| Ok(n.task_name() == "t"))
+            .expect_err(
+                "the prerequisite needs a task co-scheduled with its dependent",
+            );
+        assert_eq!(
+            err.kind(),
+            TaskExecutionGraphErrorKind::SiblingDependencyCycle
+        );
+    }
+
+    /// A single-pass patch would add `p` and `q` but not `r`: the expansion
+    /// must follow siblings and dependencies repeatedly until nothing is new.
+    #[test]
+    fn multi_hop_fixed_point_schedules_the_whole_closure() {
+        let g = build(vec![project(
+            "proj",
+            &[],
+            TasksBuilder::new()
+                .task("t", "x", |b| b.own_sibling("b"))
+                .task("b", "x", |b| b.own_dependency("p"))
+                .task("p", "x", |b| b.own_sibling("q"))
+                .task("q", "x", |b| b.own_dependency("r"))
+                .task("r", "x", |b| b)
+                .build(),
+        )]);
+        let plan = g
+            .get_batched_execution_plan(|n| Ok(n.task_name() == "t"))
+            .unwrap();
+        assert_eq!(
+            batches(&plan),
+            strs(&[&["proj#r"], &["proj#p", "proj#q"], &["proj#b", "proj#t"],])
+        );
+    }
+
+    #[test]
+    fn reverse_sibling_direction_brings_the_prerequisite() {
+        // `b` names `t` in its own `with`, and `b` has a prerequisite; the
+        // filter selects `t` only.
+        let g = build(vec![project(
+            "proj",
+            &[],
+            TasksBuilder::new()
+                .task("t", "x", |b| b)
+                .task("setup", "x", |b| b)
+                .task("b", "x", |b| b.own_sibling("t").own_dependency("setup"))
+                .build(),
+        )]);
+        let plan = g
+            .get_batched_execution_plan(|n| Ok(n.task_name() == "t"))
+            .unwrap();
+        assert_eq!(
+            batches(&plan),
+            strs(&[&["proj#setup"], &["proj#b", "proj#t"]])
+        );
+    }
+
+    /// `d` depends on the pulled-in sibling `b` but is neither selected nor a
+    /// dependent of a selected task, so it must not be scheduled, with or
+    /// without `--with-dependents`. The prerequisite `setup` must be.
+    #[test]
+    fn dependents_of_a_pulled_in_sibling_are_never_followed() {
+        let g = build(vec![project(
+            "proj",
+            &[],
+            TasksBuilder::new()
+                .task("t", "x", |b| b.own_sibling("b"))
+                .task("setup", "x", |b| b)
+                .task("b", "x", |b| b.own_dependency("setup"))
+                .task("d", "x", |b| b.own_dependency("b"))
+                .build(),
+        )]);
+        let expected = strs(&[&["proj#setup"], &["proj#b", "proj#t"]]);
+
+        let plan = g
+            .get_batched_execution_plan(|n| Ok(n.task_name() == "t"))
+            .unwrap();
+        assert_eq!(batches(&plan), expected);
+
+        let plan = g
+            .get_batched_execution_plan_with_dependents(
+                |n| Ok(n.task_name() == "t"),
+                |_| Ok(true),
+            )
+            .unwrap();
+        assert_eq!(batches(&plan), expected);
+    }
+
+    /// Guard (passes on the base): the direct set is what the filter matched,
+    /// whatever the expansion adds, because `ProjectHasher` folds only it.
+    #[test]
+    fn direct_set_is_not_changed_by_the_expansion() {
+        let g =
+            app_with(|b| b.explicit_project_sibling("tool", "build-native"));
+        let sorted = |direct: Vec<TaskKey>| {
+            let mut d =
+                direct.iter().map(|k| k.to_string()).collect::<Vec<_>>();
+            d.sort();
+            d
+        };
+
+        let (direct, _) = g
+            .get_batched_execution_selection(
+                |n| Ok(n.project_name() == "app"),
+                None,
+            )
+            .unwrap();
+        assert_eq!(sorted(direct), vec!["app#t".to_string()]);
+
+        let (direct, _) = g
+            .get_batched_execution_selection(
+                |n| Ok(n.project_name() == "app"),
+                Some(&|_| Ok(true)),
+            )
+            .unwrap();
+        assert_eq!(sorted(direct), vec!["app#t".to_string()]);
+    }
 }
