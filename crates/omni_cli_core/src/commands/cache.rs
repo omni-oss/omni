@@ -513,8 +513,12 @@ fn quote_posix_arg(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
 }
 
-/// Windows (cmd and PowerShell): double quotes, with embedded `"` escaped as
-/// `\"` and backslashes before a quote (or the closing quote) doubled.
+/// Windows `CreateProcess` / `CommandLineToArgvW` argument quoting: double
+/// quotes, with embedded `"` escaped as `\"` and backslashes before a quote
+/// (or the closing quote) doubled. This is advisory text only. It is not safe
+/// for every shell: PowerShell still expands `$` and treats `,` and a leading
+/// `@` specially, and `cmd.exe` expands `%VAR%` and treats `&`, `|`, `<`, `>`
+/// outside this quoting. Paste unusual names with care.
 fn quote_windows_arg(value: &str) -> String {
     if is_plain_arg(value) {
         return value.to_string();
@@ -576,6 +580,8 @@ mod quote_tests {
         assert_eq!(quote_windows_arg("a\\b c"), "\"a\\b c\"");
         assert_eq!(quote_windows_arg("a b\\"), "\"a b\\\\\"");
         assert_eq!(quote_windows_arg("say \"hi\""), "\"say \\\"hi\\\"\"");
+        assert_eq!(quote_windows_arg(""), "\"\"");
+        assert_eq!(quote_windows_arg("a\\\"b"), "\"a\\\\\\\"b\"");
     }
 }
 
