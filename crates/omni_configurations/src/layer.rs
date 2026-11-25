@@ -476,7 +476,7 @@ pub struct LoadedLayer {
     /// The only record of where the layer came from; the file, if any, is
     /// derived from it so the two cannot disagree.
     source: DeclarationSource,
-    pub layer: ProjectLayer,
+    layer: ProjectLayer,
     /// The winning project-level `cache.enabled` and who declared it.
     /// Maintained only by composition.
     pub(crate) cache_enabled: Option<Declared<bool>>,
@@ -521,6 +521,22 @@ impl LoadedLayer {
         self.layer = layer;
         self.cache_enabled = None;
         self
+    }
+
+    /// The layer as written, plus whatever composition merged into it.
+    pub fn layer(&self) -> &ProjectLayer {
+        &self.layer
+    }
+
+    /// Edit the layer in place. The tracked `cache.enabled` is dropped and
+    /// re-derived from the edited layer on the next composition, so an edit
+    /// cannot leave a stale value behind.
+    pub fn update_layer<R>(
+        &mut self,
+        edit: impl FnOnce(&mut ProjectLayer) -> R,
+    ) -> R {
+        self.cache_enabled = None;
+        edit(&mut self.layer)
     }
 
     /// The file the layer was read from; empty for a fileless layer.
@@ -1007,6 +1023,43 @@ mod tests {
             loaded.finalize_composed(),
             Err(FinalizeError::ProvenanceMismatch { ref task }) if task == "t"
         ));
+    }
+
+    #[test]
+    fn editing_a_merged_layer_cannot_cause_a_provenance_mismatch() {
+        let merged = || {
+            let mut base = LoadedLayer::from_file(
+                OmniPath::new("base.yaml"),
+                OmniPath::default(),
+                layer(r#"{"cache":{"enabled":true}}"#),
+            );
+            base.merge(LoadedLayer::from_file(
+                OmniPath::new("p.yaml"),
+                OmniPath::default(),
+                layer(r#"{"name":"p","tasks":{"t":"x"}}"#),
+            ));
+            base
+        };
+
+        let unchanged = merged();
+        let declared = unchanged.cache_enabled.clone().unwrap();
+        assert!(declared.value);
+        assert_eq!(
+            declared.origin.source.file_path(),
+            Some(&Arc::new(OmniPath::new("base.yaml")))
+        );
+        assert!(unchanged.finalize_composed().is_ok());
+
+        let mut edited = merged();
+        edited.update_layer(|layer| {
+            layer.cache.as_mut().unwrap().enabled = Some(false.into());
+        });
+        assert!(edited.cache_enabled.is_none());
+        let finalized = edited.finalize_composed().unwrap();
+        assert_eq!(
+            finalized.config.cache.enabled.map(|e| *e.as_ref()),
+            Some(false)
+        );
     }
 
     #[test]

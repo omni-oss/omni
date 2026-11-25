@@ -202,7 +202,7 @@ fn provenance_is_not_serialized_or_authored() {
         "a.yaml",
         r#"{"name":"a","cache":{"enabled":true},"tasks":{"t":{"exec":"x","cache":{"enabled":true}}}}"#,
     );
-    let serialized = serde_json::to_value(&layer.layer).unwrap();
+    let serialized = serde_json::to_value(layer.layer()).unwrap();
     assert_eq!(
         serialized,
         serde_json::json!({

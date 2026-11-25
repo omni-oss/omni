@@ -337,9 +337,9 @@ mod tests {
         assert_eq!(layers.len(), 1);
         assert_eq!(layers[0].file(), &OmniPath::from(file));
         assert_eq!(layers[0].dir(), &OmniPath::from(root.join("app")));
-        assert_eq!(layers[0].layer.name.as_deref(), Some("app"));
-        assert!(layers[0].layer.cache.is_none());
-        assert!(layers[0].layer.tasks.is_none());
+        assert_eq!(layers[0].layer().name.as_deref(), Some("app"));
+        assert!(layers[0].layer().cache.is_none());
+        assert!(layers[0].layer().tasks.is_none());
     }
 
     #[tokio::test]
@@ -350,7 +350,7 @@ mod tests {
 
         let layers = layers(root, &[file]).await;
 
-        assert_eq!(layers[0].layer.name, None);
+        assert_eq!(layers[0].layer().name, None);
     }
 
     #[tokio::test]
@@ -378,7 +378,7 @@ mod tests {
         };
         let base = by_file(&base);
         let key_files = base
-            .layer
+            .layer()
             .cache
             .clone()
             .unwrap()
@@ -392,7 +392,7 @@ mod tests {
             root.join("shared/in.txt")
         );
         let Some(config_utils::DictConfig::Value(tasks)) =
-            base.layer.tasks.clone()
+            base.layer().tasks.clone()
         else {
             panic!("tasks")
         };
@@ -412,11 +412,11 @@ mod tests {
 
         let app = layers
             .iter()
-            .find(|l| l.layer.name.as_deref() == Some("app"))
+            .find(|l| l.layer().name.as_deref() == Some("app"))
             .unwrap();
         assert_eq!(app.dir(), &OmniPath::from(root.join("app")));
         assert_eq!(
-            app.layer.extends,
+            app.layer().extends,
             Some(SingleOrMany::Single(OmniPath::from(
                 root.join("shared/base.omni.yaml")
             )))
@@ -772,7 +772,7 @@ mod tests {
     fn names(layers: &[&LoadedLayer]) -> Vec<String> {
         layers
             .iter()
-            .map(|l| l.layer.name.clone().unwrap_or_default())
+            .map(|l| l.layer().name.clone().unwrap_or_default())
             .collect()
     }
 
@@ -889,12 +889,12 @@ mod tests {
         assert_eq!(layers[1].file(), &OmniPath::from(app));
         assert_eq!(layers[1].dir(), &OmniPath::from(root.join("app")));
         let ops = |l: &LoadedLayer| {
-            serde_json::to_value(&l.layer.dependencies).unwrap()
+            serde_json::to_value(&l.layer().dependencies).unwrap()
         };
         assert_eq!(ops(layers[0]), serde_json::json!({"replace": ["b"]}));
         assert_eq!(ops(layers[1]), serde_json::json!({"append": ["c"]}));
         let key_files = layers[0]
-            .layer
+            .layer()
             .cache
             .clone()
             .unwrap()
@@ -926,14 +926,14 @@ mod tests {
         let layers = projects.raw_layers(&app).unwrap();
 
         for layer in &layers {
-            assert!(layer.layer.cache.is_none());
-            assert!(layer.layer.tasks.is_none());
-            assert!(layer.layer.dependencies.is_none());
-            assert!(layer.layer.env.is_none());
-            assert!(layer.layer.output_logs.is_none());
+            assert!(layer.layer().cache.is_none());
+            assert!(layer.layer().tasks.is_none());
+            assert!(layer.layer().dependencies.is_none());
+            assert!(layer.layer().env.is_none());
+            assert!(layer.layer().output_logs.is_none());
         }
-        assert_eq!(layers[0].layer.base, Some(true));
-        assert_eq!(layers[1].layer.base, None);
+        assert_eq!(layers[0].layer().base, Some(true));
+        assert_eq!(layers[1].layer().base, None);
         assert!(!named(&projects.projects, "app").config.base);
     }
 
