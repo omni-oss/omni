@@ -29,9 +29,10 @@ fn old_task_cache(p: &ProjectConfiguration, task: &str) -> CacheConfiguration {
 }
 
 fn new(docs: &[&str]) -> omni_configurations::FinalizedProject {
-    let mut it = docs.iter().map(|d| LoadedLayer {
-        layer: serde_json::from_str::<ProjectLayer>(d).unwrap(),
-        ..Default::default()
+    let mut it = docs.iter().map(|d| {
+        LoadedLayer::unattributed(
+            serde_json::from_str::<ProjectLayer>(d).unwrap(),
+        )
     });
     let mut acc = it.next().unwrap();
     for next in it {

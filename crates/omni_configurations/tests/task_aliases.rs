@@ -9,10 +9,9 @@ use omni_configurations::{
 use serde_json::{Value, json};
 
 fn layer(doc: Value) -> LoadedLayer {
-    LoadedLayer {
-        layer: serde_json::from_value::<ProjectLayer>(doc).unwrap(),
-        ..Default::default()
-    }
+    LoadedLayer::unattributed(
+        serde_json::from_value::<ProjectLayer>(doc).unwrap(),
+    )
 }
 
 fn compose(docs: Vec<Value>) -> Result<FinalizedProject, FinalizeError> {

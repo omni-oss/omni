@@ -236,11 +236,7 @@ mod tests {
         let layer: ProjectLayer =
             serde_json::from_str(&format!(r#"{{"name":"p","tasks":{tasks}}}"#))
                 .unwrap();
-        LoadedLayer {
-            layer,
-            ..Default::default()
-        }
-        .finalize_composed()
+        LoadedLayer::unattributed(layer).finalize_composed()
     }
 
     fn resolve(tasks: &str) -> FinalizedProject {

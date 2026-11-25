@@ -4,18 +4,20 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::core::{
-    BackendSupport, Catalog, CatalogId, Chain, ChainBinding, ChainName,
-    Direction, Error, GuardedObservation, MigrationSession, MigrationStore,
-    Plan, Policy, Revision, Stamp, Step, StepCapabilities, StepOutcome,
-    StoreId, StoreState, Transition, Version, build_plan, check_backend,
+use super::fs::{DurableFs, Faults, Guard, PublishError, fingerprint};
+use omni_migration::{
+    AuthorizedStep, BackendSupport, Catalog, CatalogId, Chain, ChainBinding,
+    ChainName, Direction, Error, GuardedObservation, MigrationSession,
+    MigrationStore, Plan, Policy, Revision, Stamp, Step, StepCapabilities,
+    StepId, StepOutcome, StoreId, StoreState, Transition, Version, build_plan,
+    check_backend,
 };
-use crate::fs::{DurableFs, Faults, Guard, PublishError, fingerprint};
 
 pub const PINS_V1: Version = Version(7);
 pub const PINS_V2: Version = Version(42);
 pub const PINS_V3: Version = Version(13);
 pub const PINS_CATALOG: CatalogId = CatalogId(1);
+pub const PINS_CHAIN: ChainName = ChainName::new("pins");
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PinsStep {
@@ -23,6 +25,17 @@ pub enum PinsStep {
     BackToPlainPins,
     AddTags,
     DropTags,
+}
+
+impl StepId for PinsStep {
+    fn stable_id(&self) -> u32 {
+        match self {
+            Self::AddNotes => 10,
+            Self::BackToPlainPins => 11,
+            Self::AddTags => 20,
+            Self::DropTags => 21,
+        }
+    }
 }
 
 pub fn pins_version(tag: Option<&Value>) -> Result<Version, Error> {
@@ -169,7 +182,7 @@ impl Document {
     fn stamp(&self) -> Stamp {
         Stamp {
             store: StoreId(self.incarnation),
-            chain: ChainName::PINS,
+            chain: PINS_CHAIN,
             revision: Revision(self.generation),
             version: self.version,
         }
@@ -232,7 +245,7 @@ impl Catalog<PinsStep> for PinsCatalog {
     fn binding(&self) -> ChainBinding {
         self.chain()
             .expect("valid fixture chain")
-            .binding(ChainName::PINS)
+            .binding(PINS_CHAIN)
     }
 
     fn backend(&self) -> BackendSupport {
@@ -360,7 +373,7 @@ impl LockfileStore {
     fn check_chain_name(&self, v: &Value) -> Result<(), Error> {
         match v.get("chain") {
             None => Err(Error::MissingChain),
-            Some(Value::String(s)) if s == ChainName::PINS.0 => Ok(()),
+            Some(Value::String(s)) if s == PINS_CHAIN.as_str() => Ok(()),
             Some(Value::String(_)) => Err(Error::ChainMismatch),
             Some(_) => Err(Error::MalformedChain),
         }
@@ -393,7 +406,7 @@ impl LockfileStore {
     /// one consistent state. Intent is checked first.
     pub fn observe(&self) -> Result<GuardedObservation, Error> {
         if let Some(name) = self.pending_intent_chain()? {
-            if name != ChainName::PINS.0 {
+            if name != PINS_CHAIN.as_str() {
                 return Err(Error::ChainMismatch);
             }
             return Ok(GuardedObservation::RecoveryRequired);
@@ -490,7 +503,7 @@ impl LockfileStore {
         let Some(name) = self.pending_intent_chain()? else {
             return Ok(Recovered::Nothing);
         };
-        if name != ChainName::PINS.0 {
+        if name != PINS_CHAIN.as_str() {
             return Err(Error::ChainMismatch);
         }
         let intent: Value =
@@ -509,6 +522,11 @@ impl LockfileStore {
             ))
         };
         let (old, new) = (identity("old")?, identity("new")?);
+        // A step always publishes the successor generation; anything else is
+        // evidence this store did not write.
+        if old.0.checked_add(1) != Some(new.0) {
+            return Err(Error::RecoveryBlocked);
+        }
         let (doc, bytes) =
             self.read_document().map_err(|_| Error::RecoveryBlocked)?;
         let live = (doc.generation, fingerprint(&bytes));
@@ -616,7 +634,11 @@ impl MigrationSession<PinsStep> for PinsSession<'_> {
         self.store.observe()
     }
 
-    fn apply(&mut self, s: Step<PinsStep>) -> StepOutcome {
+    fn apply(&mut self, step: AuthorizedStep<PinsStep>) -> StepOutcome {
+        let s = step.step();
+        if let Err(e) = self.store.fs.faults.hit("apply.start") {
+            return StepOutcome::NotCommitted(e);
+        }
         let Some(c) = self.capabilities(s) else {
             return StepOutcome::NotCommitted(Error::MissingStep);
         };
@@ -632,8 +654,10 @@ impl MigrationSession<PinsStep> for PinsSession<'_> {
         }
         let (old, old_bytes) = match self.store.read_document() {
             Ok((doc, bytes)) if doc.version == s.from => (doc, bytes),
+            // A readable, healthy document at another version is a proven
+            // old state.
             Ok(_) => {
-                return StepOutcome::RecoveryRequired(Error::UnexpectedVersion);
+                return StepOutcome::NotCommitted(Error::UnexpectedVersion);
             }
             Err(e) => return StepOutcome::RecoveryRequired(e),
         };

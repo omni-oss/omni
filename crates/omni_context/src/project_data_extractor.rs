@@ -60,8 +60,7 @@ impl<'a> RunnableProjectRoots<'a> {
     ) -> Self {
         let mut roots = UnorderedMap::default();
         for project in projects {
-            let config = &project.config;
-            let dir = config.dir.path().expect("path should be resolved");
+            let dir = project.dir.path().expect("path should be resolved");
             // Unrepresentable native paths cannot be named by a ProjectRootId.
             // They remain available through ordinary project-name references.
             let Ok(path) = WorkspacePath::from_os_path(workspace_root, dir)
@@ -201,7 +200,7 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
 
         let filtered = project_configs
             .iter()
-            .filter(|p| is_runnable_project(&p.config, &project_paths));
+            .filter(|p| is_runnable_project(p, &project_paths));
         // Lower every task before any environment is loaded, so an invalid
         // reference fails without running command substitutions.
         let project_roots =
@@ -230,8 +229,7 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
                 "processing_project_config",
             );
 
-            let dir =
-                project_config.dir.path().expect("path should be resolved");
+            let dir = finalized.dir.path().expect("path should be resolved");
 
             let mut project_extras = maps::map![
                 "PROJECT_NAME".to_string() => project_config.name.to_string(),
@@ -244,10 +242,9 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
             if !overrides.as_map().is_empty() {
                 project_extras.extend(overrides.to_map_to_inner());
                 if !ws_vars_os.is_empty() {
-                    let cfg = self.env_loader.command_config(
-                        project_config.dir.path()?,
-                        &ws_vars_os,
-                    );
+                    let cfg = self
+                        .env_loader
+                        .command_config(finalized.dir.path()?, &ws_vars_os);
                     expand_into_with_command_config(
                         &mut project_extras,
                         &self.workspace_configuration.env.vars,
@@ -331,12 +328,18 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
 
                 let key_input_files = if use_defaults {
                     let mut files = cache.key.files.clone();
-                    let additional_files = config_file_inputs(
-                        &ConfigLocation::File(
-                            project_config.file.path()?.to_path_buf(),
-                        ),
-                        extension_graph,
-                    )?;
+                    let location = match &finalized.file {
+                        Some(file) => Some(ConfigLocation::File(
+                            file.path()?.to_path_buf(),
+                        )),
+                        None => None,
+                    };
+                    let additional_files = match &location {
+                        Some(location) => {
+                            config_file_inputs(location, extension_graph)?
+                        }
+                        None => vec![],
+                    };
 
                     // The project's own config-file ids seed the include side
                     // only; defaults are always includes. The exclude side
@@ -556,19 +559,21 @@ mod tests {
     use system_traits::impls::RealSys;
 
     fn layer(file: &str, extends: &[&str]) -> LoadedLayer {
-        let mut l = LoadedLayer {
-            file: PathBuf::from(file).into(),
-            dir: PathBuf::from(file).parent().unwrap().to_path_buf().into(),
-            ..Default::default()
-        };
+        let mut l = LoadedLayer::from_file(
+            PathBuf::from(file).into(),
+            PathBuf::from(file).parent().unwrap().to_path_buf().into(),
+            Default::default(),
+        );
         if !extends.is_empty() {
-            l.layer.extends =
-                Some(omni_configurations::types::SingleOrMany::Many(
-                    extends
-                        .iter()
-                        .map(|e| OmniPath::from(PathBuf::from(e)))
-                        .collect(),
-                ));
+            l.update_layer(|layer| {
+                layer.extends =
+                    Some(omni_configurations::types::SingleOrMany::Many(
+                        extends
+                            .iter()
+                            .map(|e| OmniPath::from(PathBuf::from(e)))
+                            .collect(),
+                    ));
+            });
         }
         l
     }
@@ -642,11 +647,11 @@ mod tests {
         let configured_layer = |dir: &str, file: &str, json: &str| {
             let dir = root.join(dir);
             std::fs::create_dir_all(&dir).unwrap();
-            LoadedLayer {
-                file: dir.join(file).into(),
-                dir: dir.into(),
-                layer: serde_json::from_str(json).unwrap(),
-            }
+            LoadedLayer::from_file(
+                dir.join(file).into(),
+                dir.into(),
+                serde_json::from_str(json).unwrap(),
+            )
         };
         let mut app = configured_layer(
             "app",
@@ -655,12 +660,7 @@ mod tests {
         );
         let origin = TaskReferenceOrigin {
             task: "template".into(),
-            file: Some(app.file.path().unwrap().to_owned()),
-        };
-        let TaskLayer::LongForm(template) =
-            &mut app.layer.tasks.as_mut().unwrap().as_map_mut()["template"]
-        else {
-            panic!("expected a normal task template");
+            file: Some(app.file().path().unwrap().to_owned()),
         };
         let project_root = ProjectRootId::new(
             WorkspacePath::parse("packages/shared").unwrap(),
@@ -670,9 +670,16 @@ mod tests {
             task: task.into(),
             origin: origin.clone(),
         };
-        template.dependencies =
-            Some(ListConfig::append(vec![reference("build")]));
-        template.with = Some(ListConfig::append(vec![reference("watch")]));
+        app.update_layer(|layer| {
+            let TaskLayer::LongForm(template) =
+                &mut layer.tasks.as_mut().unwrap().as_map_mut()["template"]
+            else {
+                panic!("expected a normal task template");
+            };
+            template.dependencies =
+                Some(ListConfig::append(vec![reference("build")]));
+            template.with = Some(ListConfig::append(vec![reference("watch")]));
+        });
         app.merge(configured_layer(
             "app",
             "project.omni.yaml",
@@ -686,12 +693,12 @@ mod tests {
             ));
         }
 
-        let mut discovered = vec![app.file.path().unwrap().to_owned()];
+        let mut discovered = vec![app.file().path().unwrap().to_owned()];
         let mut layers = vec![app];
         for &(file, json, is_discovered) in target_layers {
             let target = configured_layer("packages/shared", file, json);
             if is_discovered {
-                discovered.push(target.file.path().unwrap().to_owned());
+                discovered.push(target.file().path().unwrap().to_owned());
             }
             layers.push(target);
         }
@@ -906,10 +913,9 @@ mod tests {
             "name: app\ncache:\n  enabled: false\ntasks:\n  inherits: echo\n  own:\n    exec: x\n    cache:\n      enabled: true\n",
         )
         .unwrap();
-        let layer = LoadedLayer {
-            layer: ProjectLayer::load(Path::new(file), &RealSys).await.unwrap(),
-            ..layer(file, &[])
-        };
+        let layer = layer(file, &[]).with_layer(
+            ProjectLayer::load(Path::new(file), &RealSys).await.unwrap(),
+        );
         let graph = ExtensionGraph::from_nodes(vec![layer.clone()]).unwrap();
         let finalized = layer.finalize_composed().unwrap();
 
@@ -962,9 +968,9 @@ mod tests {
         std::fs::create_dir_all(root.join("app")).unwrap();
         let file = root.join("app/project.omni.yaml");
         let file = file.to_str().unwrap();
-        let declare = |json: &str| LoadedLayer {
-            layer: serde_json::from_str::<ProjectLayer>(json).unwrap(),
-            ..layer(file, &[])
+        let declare = |json: &str| {
+            layer(file, &[])
+                .with_layer(serde_json::from_str::<ProjectLayer>(json).unwrap())
         };
         let mut composed = declare(
             r#"{"name":"app","meta":{"tags":["project"]},"tasks":{
@@ -1023,10 +1029,9 @@ mod tests {
                     "cache": {"enabled": who == "ab-c"},
                 }},
             });
-            layers.push(LoadedLayer {
-                layer: serde_json::from_value::<ProjectLayer>(json).unwrap(),
-                ..layer(file.to_str().unwrap(), &[])
-            });
+            layers.push(layer(file.to_str().unwrap(), &[]).with_layer(
+                serde_json::from_value::<ProjectLayer>(json).unwrap(),
+            ));
             files.push(file);
         }
         let graph = ExtensionGraph::from_nodes(layers.clone()).unwrap();
@@ -1077,8 +1082,8 @@ mod tests {
         let root = dir.path().to_path_buf();
         std::fs::create_dir_all(root.join("app")).unwrap();
         let file = root.join("app/project.omni.yaml");
-        let l = LoadedLayer {
-            layer: serde_json::from_value::<ProjectLayer>(serde_json::json!({
+        let l = layer(file.to_str().unwrap(), &[]).with_layer(
+            serde_json::from_value::<ProjectLayer>(serde_json::json!({
                 "name": "app",
                 "tasks": {
                     "build-native": "make",
@@ -1087,8 +1092,7 @@ mod tests {
                 }
             }))
             .unwrap(),
-            ..layer(file.to_str().unwrap(), &[])
-        };
+        );
         let graph = ExtensionGraph::from_nodes(vec![l.clone()]).unwrap();
         let finalized = l.finalize_composed().unwrap();
         let workspace: WorkspaceConfiguration =
@@ -1112,4 +1116,364 @@ mod tests {
             Some("build-native")
         );
     }
+
+    /// F07.2 parity gate: cache-key file inputs `extract_all` derives from the
+    /// extension graph, captured from the pre-F07 revision (c7aa81fc). The
+    /// baseline's list ORDER varies from run to run (hash-ordered), so the
+    /// sorted multiset is pinned, repeated entries included (the project
+    /// file appears twice), plus the stable position of the project's own
+    /// file at the end. Paths are relative to the temp root and joined
+    /// with `/`, since the absolute temp root is not stable and the cache
+    /// extractor exposes inputs, not digests.
+    fn extracted_inputs(
+        files: &[(&str, &str)],
+        app: &str,
+    ) -> Vec<(String, Vec<String>, Vec<String>, bool)> {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let root_json = root.to_string_lossy().replace('\\', "\\\\");
+        let mut layers = vec![];
+        for (name, json) in files {
+            let file = root.join(name);
+            let dir = file.parent().unwrap().to_path_buf();
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(&file, "").unwrap();
+            layers.push(LoadedLayer::from_file(
+                file.into(),
+                dir.into(),
+                serde_json::from_str(&json.replace("ROOT", &root_json))
+                    .unwrap(),
+            ));
+        }
+        let graph = ExtensionGraph::from_nodes(layers.clone()).unwrap();
+        let app_layer = layers
+            .into_iter()
+            .find(|l| l.file().path().unwrap() == root.join(app))
+            .unwrap();
+        let finalized = app_layer.finalize_composed().unwrap();
+        let workspace = serde_json::from_str(r#"{"projects":["**"]}"#).unwrap();
+        let mut env_loader = EnvLoader::new(RealSys, root.to_owned(), vec![]);
+        let data = ProjectDataExtractor::new(
+            &RealSys,
+            root,
+            &mut env_loader,
+            false,
+            &workspace,
+        )
+        .extract_all(&[finalized], &[root.join(app)], &graph)
+        .unwrap();
+        let rel = |p: &OmniPath| {
+            p.path()
+                .unwrap()
+                .strip_prefix(root)
+                .unwrap()
+                .components()
+                .map(|c| c.as_os_str().to_string_lossy().into_owned())
+                .collect::<Vec<_>>()
+                .join("/")
+        };
+        ["t", "n"]
+            .into_iter()
+            .map(|task| {
+                let info = data.cache_infos.get("app", task).unwrap();
+                let mut include = info
+                    .key_input_files
+                    .include
+                    .iter()
+                    .map(|g| rel(g))
+                    .collect::<Vec<_>>();
+                // The project's own file is pushed last, after the closure
+                // (whose order is hash-random), so its position is stable
+                // and worth pinning before the list is sorted.
+                if info.key_defaults {
+                    assert_eq!(
+                        include.last().map(String::as_str),
+                        Some("app/project.omni.yaml"),
+                        "the project's own file must be the last input",
+                    );
+                }
+                include.sort();
+                let mut exclude = info
+                    .key_input_files
+                    .exclude
+                    .iter()
+                    .map(|g| rel(g))
+                    .collect::<Vec<_>>();
+                exclude.sort();
+                (task.to_string(), include, exclude, info.key_defaults)
+            })
+            .collect()
+    }
+
+    const APP_TASKS: &str = r#""tasks":{
+        "t":{"exec":"x"},
+        "n":{"exec":"x","cache":{"key":{"defaults":false}}}}"#;
+
+    fn strings(v: &[&str]) -> Vec<String> {
+        v.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn a_file_backed_extension_chain_keeps_its_cache_inputs() {
+        let app = format!(
+            r#"{{"name":"app","extends":["ROOT/lib/mid.yaml"],{APP_TASKS}}}"#
+        );
+        let got = extracted_inputs(
+            &[
+                ("lib/base.yaml", r#"{"base":true}"#),
+                (
+                    "lib/mid.yaml",
+                    r#"{"base":true,"extends":["ROOT/lib/base.yaml"]}"#,
+                ),
+                ("app/project.omni.yaml", &app),
+            ],
+            "app/project.omni.yaml",
+        );
+        assert_eq!(
+            got,
+            vec![
+                (
+                    "t".to_string(),
+                    strings(&[
+                        "app/project.omni.yaml",
+                        "app/project.omni.yaml",
+                        "lib/base.yaml",
+                        "lib/mid.yaml",
+                    ]),
+                    vec![],
+                    true
+                ),
+                ("n".to_string(), vec![], vec![], false),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_diamond_extension_keeps_its_cache_inputs() {
+        let app = format!(
+            r#"{{"name":"app","extends":["ROOT/lib/left.yaml","ROOT/lib/right.yaml"],{APP_TASKS}}}"#
+        );
+        let got = extracted_inputs(
+            &[
+                ("lib/base.yaml", r#"{"base":true}"#),
+                (
+                    "lib/left.yaml",
+                    r#"{"base":true,"extends":["ROOT/lib/base.yaml"]}"#,
+                ),
+                (
+                    "lib/right.yaml",
+                    r#"{"base":true,"extends":["ROOT/lib/base.yaml"]}"#,
+                ),
+                ("app/project.omni.yaml", &app),
+            ],
+            "app/project.omni.yaml",
+        );
+        assert_eq!(
+            got,
+            vec![
+                (
+                    "t".to_string(),
+                    strings(&[
+                        "app/project.omni.yaml",
+                        "app/project.omni.yaml",
+                        "lib/base.yaml",
+                        "lib/left.yaml",
+                        "lib/right.yaml",
+                    ]),
+                    vec![],
+                    true
+                ),
+                ("n".to_string(), vec![], vec![], false),
+            ]
+        );
+    }
+
+    /// F07.2 digest parity gate. Feeds `extract_all`'s cache inputs for the
+    /// `t` and `n` tasks of `app` through the collector's digest step, the
+    /// same call `ProjectHasher::hash` makes per task (it then only combines
+    /// the per-task digests). The files are empty and the layout fixed, so
+    /// the digest depends only on the relative input paths, which the hasher
+    /// renders with the native separator. `closure_order` permutes the
+    /// extracted `include` list, standing in for the hash-random closure
+    /// order of `ExtensionGraph::get_transitive_extendee_ids`.
+    async fn task_digests(
+        files: &[(&str, &str)],
+        app: &str,
+        closure_order: fn(&mut Vec<OmniPath>),
+    ) -> Vec<(String, String)> {
+        use omni_collector::{CollectConfig, Collector, ProjectTaskInfo};
+
+        let temp = tempfile::tempdir().unwrap();
+        let cache = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let root_json = root.to_string_lossy().replace('\\', "\\\\");
+        let mut layers = vec![];
+        for (name, json) in files {
+            let file = root.join(name);
+            let dir = file.parent().unwrap().to_path_buf();
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(&file, "").unwrap();
+            layers.push(LoadedLayer::from_file(
+                file.into(),
+                dir.into(),
+                serde_json::from_str(&json.replace("ROOT", &root_json))
+                    .unwrap(),
+            ));
+        }
+        let graph = ExtensionGraph::from_nodes(layers.clone()).unwrap();
+        let app_layer = layers
+            .into_iter()
+            .find(|l| l.file().path().unwrap() == root.join(app))
+            .unwrap();
+        let finalized = app_layer.finalize_composed().unwrap();
+        let workspace = serde_json::from_str(r#"{"projects":["**"]}"#).unwrap();
+        let mut env_loader = EnvLoader::new(RealSys, root.to_owned(), vec![]);
+        let data = ProjectDataExtractor::new(
+            &RealSys,
+            root,
+            &mut env_loader,
+            false,
+            &workspace,
+        )
+        .extract_all(&[finalized], &[root.join(app)], &graph)
+        .unwrap();
+        let project = data.projects.iter().find(|p| p.name == "app").unwrap();
+        let no_env = Map::default();
+        let mut out = vec![];
+        for task in ["t", "n"] {
+            let info = data.cache_infos.get("app", task).unwrap();
+            let mut include = info.key_input_files.include.clone();
+            closure_order(&mut include);
+            let task_info = ProjectTaskInfo {
+                project_name: "app",
+                project_dir: &project.dir,
+                task_name: task,
+                task_exec: project
+                    .tasks
+                    .get(task)
+                    .and_then(|t| t.exec.as_ref()),
+                task_retry_exec: None,
+                output_files: &info.cache_output_files.include,
+                output_files_exclude: &info.cache_output_files.exclude,
+                input_files: &include,
+                input_files_exclude: &info.key_input_files.exclude,
+                input_env_keys: &info.key_env_keys,
+                env_vars: &no_env,
+                dependency_digests: &[],
+                args: &info.args,
+            };
+            let collected = Collector::new(root, cache.path(), RealSys)
+                .collect(
+                    &[task_info],
+                    &CollectConfig {
+                        input_files: true,
+                        output_files: false,
+                        digests: true,
+                        cache_output_dirs: false,
+                    },
+                )
+                .await
+                .unwrap();
+            let digest = collected[0].digest.expect("digest");
+            out.push((
+                task.to_string(),
+                bs58::encode(digest.as_ref()).into_string(),
+            ));
+        }
+        out
+    }
+
+    fn chain_files(app: &str) -> Vec<(&'static str, String)> {
+        vec![
+            ("lib/base.yaml", r#"{"base":true}"#.to_string()),
+            (
+                "lib/mid.yaml",
+                r#"{"base":true,"extends":["ROOT/lib/base.yaml"]}"#.to_string(),
+            ),
+            ("app/project.omni.yaml", app.to_string()),
+        ]
+    }
+
+    fn diamond_files(app: &str) -> Vec<(&'static str, String)> {
+        vec![
+            ("lib/base.yaml", r#"{"base":true}"#.to_string()),
+            (
+                "lib/left.yaml",
+                r#"{"base":true,"extends":["ROOT/lib/base.yaml"]}"#.to_string(),
+            ),
+            (
+                "lib/right.yaml",
+                r#"{"base":true,"extends":["ROOT/lib/base.yaml"]}"#.to_string(),
+            ),
+            ("app/project.omni.yaml", app.to_string()),
+        ]
+    }
+
+    async fn digests_for(
+        files: Vec<(&'static str, String)>,
+        order: fn(&mut Vec<OmniPath>),
+    ) -> Vec<(String, String)> {
+        let refs = files
+            .iter()
+            .map(|(n, j)| (*n, j.as_str()))
+            .collect::<Vec<_>>();
+        task_digests(&refs, "app/project.omni.yaml", order).await
+    }
+
+    fn keep(_: &mut Vec<OmniPath>) {}
+    fn reverse(v: &mut Vec<OmniPath>) {
+        v.reverse();
+    }
+    fn rotate(v: &mut Vec<OmniPath>) {
+        if !v.is_empty() {
+            v.rotate_left(1);
+        }
+    }
+
+    #[tokio::test]
+    async fn chain_task_digests_match_the_baseline_and_ignore_closure_order() {
+        let app = format!(
+            r#"{{"name":"app","extends":["ROOT/lib/mid.yaml"],{APP_TASKS}}}"#
+        );
+        let a = digests_for(chain_files(&app), keep).await;
+        let b = digests_for(chain_files(&app), reverse).await;
+        let c = digests_for(chain_files(&app), rotate).await;
+        assert_eq!(a, b);
+        assert_eq!(a, c);
+        // Separators are hashed natively, so the literals are Unix-only.
+        #[cfg(unix)]
+        assert_eq!(
+            a,
+            CHAIN_DIGESTS.map(|(t, d)| (t.to_string(), d.to_string()))
+        );
+    }
+
+    #[tokio::test]
+    async fn diamond_task_digests_match_the_baseline_and_ignore_closure_order()
+    {
+        let app = format!(
+            r#"{{"name":"app","extends":["ROOT/lib/left.yaml","ROOT/lib/right.yaml"],{APP_TASKS}}}"#
+        );
+        let a = digests_for(diamond_files(&app), keep).await;
+        let b = digests_for(diamond_files(&app), reverse).await;
+        let c = digests_for(diamond_files(&app), rotate).await;
+        assert_eq!(a, b);
+        assert_eq!(a, c);
+        #[cfg(unix)]
+        assert_eq!(
+            a,
+            DIAMOND_DIGESTS.map(|(t, d)| (t.to_string(), d.to_string()))
+        );
+    }
+
+    #[cfg(unix)]
+    const CHAIN_DIGESTS: [(&str, &str); 2] = [
+        ("t", "EkZdvw624oSWRh3dptTHur953cdeGPeQEK7ggUjFHVSo"),
+        ("n", "BtEuC55R6uckLLP73xRMq5KqNtzyk1yENCVjMNSB64PW"),
+    ];
+    #[cfg(unix)]
+    const DIAMOND_DIGESTS: [(&str, &str); 2] = [
+        ("t", "x7qpHaig4Ba8GCn7uhJHFCYPS6sXsYhv6Gwf5Y7ZnPY"),
+        ("n", "BtEuC55R6uckLLP73xRMq5KqNtzyk1yENCVjMNSB64PW"),
+    ];
 }

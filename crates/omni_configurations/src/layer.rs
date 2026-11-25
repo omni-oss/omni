@@ -30,11 +30,12 @@ use serde::{Deserialize, Serialize};
 use system_traits::FsReadAsync;
 
 use crate::{
-    CacheConfiguration, CacheEnabled, CacheKeyConfiguration,
-    HANDWRITTEN_TASK_FALLBACK, LoadConfigError, MetaConfiguration,
-    ProjectConfiguration, ProjectEnvConfiguration, RedactConfiguration,
+    CacheConfiguration, CacheEnabled, CacheEnabledSource,
+    CacheKeyConfiguration, DeclarationSource, Declared,
+    HANDWRITTEN_TASK_FALLBACK, LayerId, LoadConfigError, MetaConfiguration,
+    Origin, ProjectConfiguration, ProjectEnvConfiguration, RedactConfiguration,
     TaskConfiguration, TaskConfigurationLongForm, TaskDependencyConfiguration,
-    TaskEnvConfiguration, TaskOutputConfiguration, utils,
+    TaskEnvConfiguration, TaskOutputConfiguration, replace_if_present, utils,
 };
 
 #[derive(
@@ -70,38 +71,25 @@ pub struct CacheKeyLayer {
 }
 
 #[derive(
-    Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema,
+    Debug, Clone, Default, PartialEq, Serialize, Deserialize, Merge, JsonSchema,
 )]
 #[serde(deny_unknown_fields)]
 pub struct CacheLayer {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[merge(strategy = merge::option::recurse)]
     pub key: Option<CacheKeyLayer>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[merge(strategy = merge::option::recurse)]
     pub enabled: Option<Replace<bool>>,
 
-    /// File backing the authored `enabled` setting, if loaded from disk.
-    #[serde(skip)]
-    #[schemars(skip)]
-    pub enabled_file: Option<Arc<OmniPath>>,
-
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[merge(strategy = merge::option::recurse)]
     pub remote: Option<Replace<bool>>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[merge(strategy = merge::option::recurse)]
     pub output: Option<TaskOutputLayer>,
-}
-
-impl Merge for CacheLayer {
-    fn merge(&mut self, other: Self) {
-        if other.enabled.is_some() {
-            self.enabled_file = other.enabled_file;
-        }
-        merge::option::recurse(&mut self.enabled, other.enabled);
-        merge::option::recurse(&mut self.key, other.key);
-        merge::option::recurse(&mut self.remote, other.remote);
-        merge::option::recurse(&mut self.output, other.output);
-    }
 }
 
 #[derive(
@@ -192,10 +180,19 @@ pub struct TaskLongFormLayer {
     pub retry: Option<RetryConfiguration>,
 }
 
-/// The ordered declarations of a composed task. The graphs can share immutable
-/// declarations when they clone an extension closure.
+/// One declaration of a task and where it came from.
 #[derive(Debug, Clone, PartialEq)]
-pub struct TaskDeclarations(Vec<Arc<TaskLongFormLayer>>);
+struct Declaration {
+    task: Arc<TaskLongFormLayer>,
+    origin: Arc<Origin>,
+}
+
+/// The ordered declarations of a composed task. The graphs can share immutable
+/// declarations when they clone an extension closure. A short form that
+/// joins a composition carries no origin of its own yet: it declares no
+/// tracked field.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TaskDeclarations(Vec<Declaration>);
 
 impl Merge for TaskDeclarations {
     fn merge(&mut self, other: Self) {
@@ -204,26 +201,33 @@ impl Merge for TaskDeclarations {
 }
 
 impl TaskDeclarations {
-    fn one(task: Box<TaskLongFormLayer>) -> Self {
-        Self(vec![Arc::from(task)])
+    fn one(task: Box<TaskLongFormLayer>, origin: Arc<Origin>) -> Self {
+        Self(vec![Declaration {
+            task: Arc::from(task),
+            origin,
+        }])
     }
 
     pub(crate) fn base(&self) -> bool {
-        self.0.last().and_then(|task| task.base) == Some(true)
+        self.0.last().and_then(|d| d.task.base) == Some(true)
     }
 
     pub(crate) fn extends(&self) -> Option<&SingleOrMany<String>> {
-        self.0.iter().rev().find_map(|task| task.extends.as_ref())
+        self.0.iter().rev().find_map(|d| d.task.extends.as_ref())
     }
 
     fn fold(
         self,
-        mut visit: impl FnMut(&TaskLongFormLayer),
+        mut visit: impl FnMut(&TaskLongFormLayer, &Arc<Origin>),
     ) -> TaskLongFormLayer {
         let mut task = TaskLongFormLayer::default();
-        for declaration in self.0 {
-            visit(&declaration);
-            task.merge(Arc::unwrap_or_clone(declaration));
+        for Declaration {
+            task: declared,
+            origin,
+        } in self.0
+        {
+            visit(&declared, &origin);
+            task.merge(Arc::unwrap_or_clone(declared));
         }
         task
     }
@@ -372,7 +376,7 @@ impl TaskLayer {
     /// project settings. An alias has no long form.
     pub fn into_long_form(self, name: &str) -> Option<TaskLongFormLayer> {
         self.into_declarations(name)
-            .map(|declarations| declarations.fold(|_| {}))
+            .map(|declarations| declarations.fold(|_, _| {}))
     }
 
     /// Compose a higher layer's declaration of task `name` over this one.
@@ -654,13 +658,7 @@ impl ProjectLayer {
         sys: &(impl FsReadAsync + Send + Sync),
     ) -> Result<Self, LoadConfigError> {
         let path = path.into();
-        let mut layer: Self = utils::fs::load_config_async(path, sys).await?;
-        let file = Arc::new(OmniPath::from(path.to_path_buf()));
-        layer
-            .authored_cache_layers()
-            .filter(|cache| cache.enabled.is_some())
-            .for_each(|cache| cache.enabled_file = Some(Arc::clone(&file)));
-        Ok(layer)
+        utils::fs::load_config_async(path, sys).await
     }
 
     /// Resolve the layer's `@project` cache glob patterns against the
@@ -690,17 +688,138 @@ impl ProjectLayer {
 /// A project layer with the file it was read from and that file's directory.
 /// The directory is the layer's path origin; the effective project root of a
 /// composed project is the directory of the concrete (last) layer.
+///
+/// Composing layers replays values and their provenance in one operation, so
+/// a tracked value (`cache.enabled`) and its [`Origin`] only change together.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct LoadedLayer {
-    pub file: OmniPath,
-    pub dir: OmniPath,
-    pub layer: ProjectLayer,
+    dir: OmniPath,
+    /// The only record of where the layer came from; the file, if any, is
+    /// derived from it so the two cannot disagree.
+    source: DeclarationSource,
+    layer: ProjectLayer,
+    /// The winning project-level `cache.enabled` and who declared it.
+    /// Maintained only by composition.
+    pub(crate) cache_enabled: Option<Declared<bool>>,
+}
+
+impl LoadedLayer {
+    /// A layer read from `file`.
+    pub fn from_file(
+        file: OmniPath,
+        dir: OmniPath,
+        layer: ProjectLayer,
+    ) -> Self {
+        Self {
+            source: DeclarationSource::file(file),
+            dir,
+            layer,
+            cache_enabled: None,
+        }
+    }
+
+    /// A layer with no file, declared by the fileless source `id`.
+    pub fn fileless(id: LayerId, dir: OmniPath, layer: ProjectLayer) -> Self {
+        Self {
+            source: DeclarationSource::Fileless { id },
+            dir,
+            layer,
+            cache_enabled: None,
+        }
+    }
+
+    /// A layer nothing can attribute: anonymous source, empty directory.
+    pub fn unattributed(layer: ProjectLayer) -> Self {
+        Self::fileless(LayerId::default(), OmniPath::default(), layer)
+    }
+
+    /// The same declaration source and directory around a different layer.
+    ///
+    /// Invariant: `cache_enabled` always describes `layer`. The tracked value
+    /// is dropped here and re-derived from the new layer on the next
+    /// composition, so a previously composed layer cannot leave a stale value.
+    pub fn with_layer(mut self, layer: ProjectLayer) -> Self {
+        self.layer = layer;
+        self.cache_enabled = None;
+        self
+    }
+
+    /// The layer as written, plus whatever composition merged into it.
+    pub fn layer(&self) -> &ProjectLayer {
+        &self.layer
+    }
+
+    /// Edit the layer in place. The tracked `cache.enabled` is dropped and
+    /// re-derived from the edited layer on the next composition, so an edit
+    /// cannot leave a stale value behind. An edit takes ownership of the
+    /// setting: after merging, a re-derived `cache.enabled` is credited to
+    /// this layer's file, not to the base that originally declared it.
+    pub fn update_layer<R>(
+        &mut self,
+        edit: impl FnOnce(&mut ProjectLayer) -> R,
+    ) -> R {
+        self.cache_enabled = None;
+        edit(&mut self.layer)
+    }
+
+    /// The file the layer was read from; empty for a fileless layer.
+    pub fn file(&self) -> &OmniPath {
+        static NONE: std::sync::OnceLock<OmniPath> = std::sync::OnceLock::new();
+        match self.source.file_path() {
+            Some(path) => path,
+            None => NONE.get_or_init(OmniPath::default),
+        }
+    }
+
+    pub fn dir(&self) -> &OmniPath {
+        &self.dir
+    }
+
+    pub fn source(&self) -> &DeclarationSource {
+        &self.source
+    }
+
+    fn origin(&self) -> Arc<Origin> {
+        Arc::new(Origin::new(self.source.clone(), self.dir.clone()))
+    }
+
+    /// Attribute everything this layer declares itself to its own origin.
+    /// Declarations already attributed by an earlier composition are kept.
+    fn attribute(&mut self) {
+        let origin = self.origin();
+        if self.cache_enabled.is_none() {
+            replace_if_present(
+                &mut self.cache_enabled,
+                self.layer
+                    .cache
+                    .as_ref()
+                    .and_then(|cache| cache.enabled.as_ref())
+                    .map(|enabled| *enabled.as_ref()),
+                &origin,
+            );
+        }
+        if let Some(tasks) = self.layer.tasks.as_mut() {
+            for task in tasks.values_mut() {
+                if let TaskLayer::LongForm(long_form) = task {
+                    *task = TaskLayer::Composed(TaskDeclarations::one(
+                        std::mem::take(long_form),
+                        Arc::clone(&origin),
+                    ));
+                }
+            }
+        }
+    }
 }
 
 impl Merge for LoadedLayer {
-    fn merge(&mut self, other: Self) {
-        self.file = other.file;
+    fn merge(&mut self, mut other: Self) {
+        self.attribute();
+        other.attribute();
+        if other.cache_enabled.is_some() {
+            self.cache_enabled = other.cache_enabled;
+        }
         self.dir = other.dir;
+        self.source = other.source;
         self.layer.merge(other.layer);
     }
 }
@@ -709,7 +828,7 @@ impl omni_core::ExtensionGraphNode for LoadedLayer {
     type Id = OmniPath;
 
     fn id(&self) -> &Self::Id {
-        &self.file
+        self.file()
     }
 
     fn extendee_ids(&self) -> &[Self::Id] {
@@ -724,7 +843,7 @@ impl omni_core::ExtensionGraphNode for LoadedLayer {
 impl LoadedLayer {
     /// Apply defaults and validate this layer alone as an eager configuration.
     pub fn finalize(self) -> Result<ProjectConfiguration, MissingProjectName> {
-        self.layer.finalize(self.file, self.dir)
+        self.layer.finalize()
     }
 }
 
@@ -733,6 +852,11 @@ impl LoadedLayer {
 #[derive(Debug, Clone, PartialEq)]
 pub struct FinalizedProject {
     pub config: ProjectConfiguration,
+    /// The concrete (last) layer's file; `None` when it has none. Location is
+    /// not part of the authored configuration.
+    pub file: Option<OmniPath>,
+    /// The concrete layer's directory: the project's root directory.
+    pub dir: OmniPath,
     /// Effective cache per task name. Empty for `base` projects, which run no
     /// tasks.
     pub task_cache: maps::Map<String, CacheConfiguration>,
@@ -743,6 +867,9 @@ pub struct FinalizedProject {
     /// Files that supplied effective authored `cache.enabled` settings.
     /// Defaults and declarations without a loaded file have no entry.
     pub task_cache_enabled_file: maps::Map<String, Arc<OmniPath>>,
+    /// The origin of each task's effective authored `cache.enabled`, whether
+    /// or not it is a file. A host fallback has no entry.
+    pub task_cache_enabled_origin: maps::Map<String, Arc<Origin>>,
     /// Each task's effective `meta`: the project's, with every declaration of
     /// the task replayed over it. Empty for `base` projects.
     pub task_meta: maps::Map<String, MetaConfiguration>,
@@ -761,17 +888,26 @@ pub enum FinalizeError {
     TaskExtension(#[from] crate::TaskExtensionError),
     #[error(transparent)]
     TaskAlias(#[from] crate::TaskAliasError),
+    #[error(
+        "internal error: replayed `cache.enabled` provenance disagrees with the merged value for task `{task}`"
+    )]
+    ProvenanceMismatch { task: String },
 }
 
 impl LoadedLayer {
     /// Finalize a fully composed layer: resolve task extensions and inherit
     /// project-level cache settings into each task on the presence-aware
     /// layers, and only then apply defaults and validate the name.
-    pub fn finalize_composed(self) -> Result<FinalizedProject, FinalizeError> {
+    pub fn finalize_composed(
+        mut self,
+    ) -> Result<FinalizedProject, FinalizeError> {
+        self.attribute();
+        let file = self.source.file_path().map(|p| (**p).clone());
         let LoadedLayer {
-            file,
             dir,
             mut layer,
+            cache_enabled: project_declared,
+            ..
         } = self;
         if layer.name.is_none() {
             return Err(MissingProjectName.into());
@@ -779,8 +915,10 @@ impl LoadedLayer {
         let mut task_cache = maps::Map::default();
         let mut task_cache_enabled = maps::Map::default();
         let mut task_cache_enabled_file = maps::Map::default();
+        let mut task_cache_enabled_origin = maps::Map::default();
         let mut task_meta = maps::Map::default();
         let mut aliases = TaskAliases::default();
+        let mut provenance_mismatch: Option<String> = None;
         let tasks = if layer.base == Some(true) {
             layer.tasks.take().map(finalize_tasks).unwrap_or_default()
         } else if let Some(mut tasks) = layer.tasks.take() {
@@ -801,56 +939,90 @@ impl LoadedLayer {
                 canonical,
                 |target| tasks.as_map().contains_key(target),
             )?;
-            let project_enabled = layer
-                .cache
-                .as_ref()
-                .and_then(|cache| cache.enabled.as_ref())
-                .map(|enabled| *enabled.as_ref());
             finalize_tasks_with(tasks, |name, task| {
                 let mut cache = layer.cache.clone();
                 let mut meta = layer.meta.clone();
                 // Fold the task's own settings and its effective project
                 // settings from the same declarations, in the same order.
-                let task =
-                    task.finalize_with(resolved_extensions, |patch| {
+                let mut task_declared: Option<Declared<bool>> = None;
+                let task = task.finalize_with(
+                    resolved_extensions,
+                    |patch, origin| {
                         merge::option::recurse(&mut cache, patch.cache.clone());
                         merge::option::recurse(&mut meta, patch.meta.clone());
-                    })?;
-                let task_enabled = task
-                    .cache()
+                        replace_if_present(
+                            &mut task_declared,
+                            patch
+                                .cache
+                                .as_ref()
+                                .and_then(|cache| cache.enabled.as_ref())
+                                .map(|enabled| *enabled.as_ref()),
+                            origin,
+                        );
+                    },
+                )?;
+                // The value and tier the program uses come from the replayed
+                // declarations. The merged value must agree with them.
+                let decided = match (&task_declared, &project_declared) {
+                    (Some(declared), _) => Some((
+                        CacheEnabledSource::TaskExplicit,
+                        declared.clone(),
+                    )),
+                    (None, Some(declared)) => Some((
+                        CacheEnabledSource::ProjectExplicit,
+                        declared.clone(),
+                    )),
+                    (None, None) => None,
+                };
+                let merged = cache
+                    .as_ref()
                     .and_then(|cache| cache.enabled.as_ref())
                     .map(|enabled| *enabled.as_ref());
-                if let Some(file) = cache
-                    .as_ref()
-                    .filter(|cache| cache.enabled.is_some())
-                    .and_then(|cache| cache.enabled_file.as_ref())
+                if decided.as_ref().map(|(_, declared)| declared.value)
+                    != merged
                 {
-                    task_cache_enabled_file
-                        .insert(name.to_owned(), Arc::clone(file));
+                    provenance_mismatch.get_or_insert_with(|| name.to_owned());
                 }
+                let enabled = match decided {
+                    Some((source, declared)) => {
+                        if let Some(file) = declared.origin.source.file_path() {
+                            task_cache_enabled_file
+                                .insert(name.to_owned(), Arc::clone(file));
+                        }
+                        task_cache_enabled_origin
+                            .insert(name.to_owned(), declared.origin);
+                        CacheEnabled {
+                            value: declared.value,
+                            source,
+                        }
+                    }
+                    None => CacheEnabled {
+                        value: HANDWRITTEN_TASK_FALLBACK,
+                        source: CacheEnabledSource::HostFallback,
+                    },
+                };
                 task_cache.insert(
                     name.to_owned(),
                     cache.unwrap_or_default().finalize(),
                 );
                 task_meta.insert(name.to_owned(), meta.unwrap_or_default());
-                task_cache_enabled.insert(
-                    name.to_owned(),
-                    CacheEnabled::from_authored(
-                        task_enabled,
-                        project_enabled,
-                        HANDWRITTEN_TASK_FALLBACK,
-                    ),
-                );
+                task_cache_enabled.insert(name.to_owned(), enabled);
                 Some(task)
             })
         } else {
             DictConfig::default()
         };
+        if let Some(task) = provenance_mismatch {
+            return Err(FinalizeError::ProvenanceMismatch { task });
+        }
         Ok(FinalizedProject {
-            config: layer.finalize_with_tasks(file, dir, tasks)?,
+            config: layer.finalize_with_tasks(tasks)?,
+            file,
+            dir,
             task_cache,
             task_cache_enabled,
             task_cache_enabled_file,
+            task_cache_enabled_origin,
             task_meta,
             aliases,
         })
@@ -933,6 +1105,10 @@ impl TaskLongFormLayer {
     }
 }
 
+fn unattributed() -> Arc<Origin> {
+    Arc::new(Origin::unattributed())
+}
+
 impl TaskLayer {
     pub(crate) fn into_declarations(
         self,
@@ -941,9 +1117,11 @@ impl TaskLayer {
         Some(match self {
             TaskLayer::Alias(_) => return None,
             TaskLayer::Composed(declarations) => declarations,
-            TaskLayer::LongForm(long_form) => TaskDeclarations::one(long_form),
-            TaskLayer::ShortForm(command) => {
-                TaskDeclarations::one(Box::new(TaskLongFormLayer {
+            TaskLayer::LongForm(long_form) => {
+                TaskDeclarations::one(long_form, unattributed())
+            }
+            TaskLayer::ShortForm(command) => TaskDeclarations::one(
+                Box::new(TaskLongFormLayer {
                     exec: Some(Replace::new(command)),
                     dependencies: Some(ListConfig::append(vec![
                         TaskDependencyConfiguration::Upstream {
@@ -951,8 +1129,9 @@ impl TaskLayer {
                         },
                     ])),
                     ..Default::default()
-                }))
-            }
+                }),
+                unattributed(),
+            ),
         })
     }
 
@@ -969,20 +1148,20 @@ impl TaskLayer {
     /// Finalize keeping the written form: a short form stays short. An alias
     /// has no eager task form yet and yields `None`.
     pub fn finalize(self) -> Option<TaskConfiguration> {
-        self.finalize_with(false, |_| {})
+        self.finalize_with(false, |_, _| {})
     }
 
     fn finalize_with(
         self,
         resolved_extensions: bool,
-        mut visit: impl FnMut(&TaskLongFormLayer),
+        mut visit: impl FnMut(&TaskLongFormLayer, &Arc<Origin>),
     ) -> Option<TaskConfiguration> {
         let mut task = match self {
             TaskLayer::ShortForm(command) => {
                 return Some(TaskConfiguration::ShortForm(command));
             }
             TaskLayer::LongForm(long_form) => {
-                visit(&long_form);
+                visit(&long_form, &unattributed());
                 *long_form
             }
             TaskLayer::Composed(declarations) => declarations.fold(visit),
@@ -1027,26 +1206,19 @@ fn finalize_tasks_with(
 
 impl ProjectLayer {
     /// Apply defaults and enforce the required `name`, producing the eager
-    /// configuration. `file` and `dir` are the concrete project's own file and
-    /// directory.
+    /// configuration. The project's location is not part of it.
     pub fn finalize(
         mut self,
-        file: OmniPath,
-        dir: OmniPath,
     ) -> Result<ProjectConfiguration, MissingProjectName> {
         let tasks = self.tasks.take().map(finalize_tasks).unwrap_or_default();
-        self.finalize_with_tasks(file, dir, tasks)
+        self.finalize_with_tasks(tasks)
     }
 
     fn finalize_with_tasks(
         self,
-        file: OmniPath,
-        dir: OmniPath,
         tasks: DictConfig<TaskConfiguration>,
     ) -> Result<ProjectConfiguration, MissingProjectName> {
         Ok(ProjectConfiguration {
-            file,
-            dir,
             base: self.base.unwrap_or(false),
             extends: self.extends,
             name: self.name.ok_or(MissingProjectName)?,
@@ -1075,6 +1247,76 @@ mod tests {
 
     fn eager(json: &str) -> ProjectConfiguration {
         serde_json::from_str(json).unwrap()
+    }
+
+    #[test]
+    fn a_corrupted_loaded_layer_is_an_error_not_a_panic() {
+        let mut loaded = LoadedLayer::from_file(
+            OmniPath::new("p.yaml"),
+            OmniPath::default(),
+            layer(r#"{"name":"p","cache":{"enabled":true},"tasks":{"t":"x"}}"#),
+        );
+        loaded.cache_enabled = Some(Declared {
+            value: false,
+            origin: Arc::new(Origin::new(
+                DeclarationSource::file(OmniPath::new("other.yaml")),
+                OmniPath::default(),
+            )),
+        });
+        assert!(matches!(
+            loaded.finalize_composed(),
+            Err(FinalizeError::ProvenanceMismatch { ref task }) if task == "t"
+        ));
+    }
+
+    #[test]
+    fn editing_a_merged_layer_cannot_cause_a_provenance_mismatch() {
+        let merged = || {
+            let mut base = LoadedLayer::from_file(
+                OmniPath::new("base.yaml"),
+                OmniPath::default(),
+                layer(r#"{"cache":{"enabled":true}}"#),
+            );
+            base.merge(LoadedLayer::from_file(
+                OmniPath::new("p.yaml"),
+                OmniPath::default(),
+                layer(r#"{"name":"p","tasks":{"t":"x"}}"#),
+            ));
+            base
+        };
+
+        let unchanged = merged();
+        let declared = unchanged.cache_enabled.clone().unwrap();
+        assert!(declared.value);
+        assert_eq!(
+            declared.origin.source.file_path(),
+            Some(&Arc::new(OmniPath::new("base.yaml")))
+        );
+        assert!(unchanged.finalize_composed().is_ok());
+
+        let mut edited = merged();
+        edited.update_layer(|layer| {
+            layer.cache.as_mut().unwrap().enabled = Some(false.into());
+        });
+        assert!(edited.cache_enabled.is_none());
+        let finalized = edited.finalize_composed().unwrap();
+        assert_eq!(
+            finalized.config.cache.enabled.map(|e| *e.as_ref()),
+            Some(false)
+        );
+    }
+
+    #[test]
+    fn with_layer_drops_a_stale_tracked_value() {
+        let mut loaded = LoadedLayer::from_file(
+            OmniPath::new("p.yaml"),
+            OmniPath::default(),
+            layer(r#"{"name":"p","cache":{"enabled":true},"tasks":{"t":"x"}}"#),
+        );
+        loaded.attribute();
+        assert!(loaded.cache_enabled.is_some());
+        let loaded = loaded.with_layer(layer(r#"{"name":"p"}"#));
+        assert!(loaded.cache_enabled.is_none());
     }
 
     #[test]
@@ -1282,7 +1524,7 @@ mod tests {
             panic!()
         };
         assert_eq!(declarations.0.len(), 2);
-        let t = declarations.clone().fold(|_| {}).finalize();
+        let t = declarations.clone().fold(|_, _| {}).finalize();
         let crate::TaskConfiguration::LongForm(et) = &e.tasks.as_map()["t"]
         else {
             panic!()
@@ -1296,9 +1538,7 @@ mod tests {
     }
 
     fn finalized(json: &str) -> ProjectConfiguration {
-        layer(json)
-            .finalize(OmniPath::default(), OmniPath::default())
-            .unwrap()
+        layer(json).finalize().unwrap()
     }
 
     #[test]
@@ -1335,35 +1575,30 @@ mod tests {
 
     #[test]
     fn finalize_requires_a_name() {
-        let err = layer(r#"{"base":true}"#)
-            .finalize(OmniPath::default(), OmniPath::default())
-            .unwrap_err();
+        let err = layer(r#"{"base":true}"#).finalize().unwrap_err();
         assert_eq!(err, MissingProjectName);
     }
 
     #[test]
     fn loaded_layer_merge_takes_the_later_origin() {
-        let mut a = LoadedLayer {
-            file: OmniPath::new("a/p.yaml"),
-            dir: OmniPath::new("a"),
-            layer: layer(r#"{"name":"a","base":true}"#),
-        };
-        a.merge(LoadedLayer {
-            file: OmniPath::new("b/p.yaml"),
-            dir: OmniPath::new("b"),
-            layer: layer(r#"{"description":"d"}"#),
-        });
-        assert_eq!(a.file, OmniPath::new("b/p.yaml"));
-        assert_eq!(a.dir, OmniPath::new("b"));
+        let mut a = LoadedLayer::from_file(
+            OmniPath::new("a/p.yaml"),
+            OmniPath::new("a"),
+            layer(r#"{"name":"a","base":true}"#),
+        );
+        a.merge(LoadedLayer::from_file(
+            OmniPath::new("b/p.yaml"),
+            OmniPath::new("b"),
+            layer(r#"{"description":"d"}"#),
+        ));
+        assert_eq!(a.file(), &OmniPath::new("b/p.yaml"));
+        assert_eq!(a.dir(), &OmniPath::new("b"));
         assert_eq!(a.layer.name.as_deref(), Some("a"));
         assert_eq!(a.layer.base, None);
     }
 
     fn composed(docs: &[&str]) -> FinalizedProject {
-        let mut it = docs.iter().map(|d| LoadedLayer {
-            layer: layer(d),
-            ..Default::default()
-        });
+        let mut it = docs.iter().map(|d| LoadedLayer::unattributed(layer(d)));
         let mut acc = it.next().unwrap();
         for next in it {
             acc.merge(next);
@@ -1498,12 +1733,9 @@ mod tests {
         use omni_core::ExtensionGraphNode;
 
         let ids = |json: &str| {
-            LoadedLayer {
-                layer: layer(json),
-                ..Default::default()
-            }
-            .extendee_ids()
-            .to_vec()
+            LoadedLayer::unattributed(layer(json))
+                .extendee_ids()
+                .to_vec()
         };
         assert_eq!(
             ids(r#"{"name":"p","extends":"a.yaml"}"#),
@@ -1527,10 +1759,9 @@ mod tests {
 
     #[test]
     fn unknown_task_extendee_fails_composition() {
-        let l = LoadedLayer {
-            layer: layer(r#"{"name":"a","tasks":{"t":{"extends":"gone"}}}"#),
-            ..Default::default()
-        };
+        let l = LoadedLayer::unattributed(layer(
+            r#"{"name":"a","tasks":{"t":{"extends":"gone"}}}"#,
+        ));
         assert!(matches!(
             l.finalize_composed(),
             Err(FinalizeError::TaskExtension(_))

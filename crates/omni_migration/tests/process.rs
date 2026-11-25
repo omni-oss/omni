@@ -1,14 +1,17 @@
+// The fixtures fsync directories, which Windows does not support.
+#![cfg(unix)]
+
 mod common;
 
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
+use common::fs::{Action, DurableFs, FAILPOINT_ENV, Faults};
+use common::index::*;
+use common::lockfile::*;
 use common::*;
-use omni_migration_proof::core::*;
-use omni_migration_proof::fs::{DurableFs, FAILPOINT_ENV, Faults};
-use omni_migration_proof::index::*;
-use omni_migration_proof::lockfile::*;
+use omni_migration::*;
 use tempfile::tempdir;
 
 fn child(scenario: &str, root: &Path, failpoints: &str) -> Command {
@@ -49,6 +52,10 @@ fn child_entry() {
                 .plan(WITHOUT_INDEX, Direction::Upgrade, NON_ATOMIC_DERIVABLE)
                 .unwrap();
             matches!(execute(&s, &plan, || false), Ok(Run::Finished(_)))
+        }
+        "index_recover" => {
+            let s = IndexStore::open(&root, Faults::from_env());
+            s.recover_under_guard().is_ok()
         }
         other => panic!("unknown scenario {other}"),
     };
@@ -141,6 +148,78 @@ fn a_live_writer_blocks_peers_and_the_survivor_rejects_stale_plans() {
         execute(&s, &stale, || false),
         Err(Error::StalePlan)
     ));
+    assert_eq!(s.state().unwrap(), StoreState::Ready(PINS_V2));
+}
+
+#[test]
+fn index_killed_during_a_rollback_run_recovers_on_retry() {
+    for (point, want) in [
+        ("shard.write=exit@1", IndexRecovered::RolledBack),
+        ("marker.parent_sync=exit", IndexRecovered::RollbackVerified),
+    ] {
+        let dir = tempdir().unwrap();
+        let s = IndexStore::create(
+            dir.path(),
+            Faults::new(),
+            5,
+            WITH_INDEX,
+            &["bb", "a", "ccc"],
+        )
+        .unwrap();
+        let original = s.shard_bytes().unwrap();
+        let plan = s
+            .plan(WITHOUT_INDEX, Direction::Upgrade, NON_ATOMIC_DERIVABLE)
+            .unwrap();
+        s.faults().set("shard.removed", Action::Err, 0);
+        assert!(matches!(
+            execute(&s, &plan, || false),
+            Ok(Run::NeedsRecovery { .. })
+        ));
+        let status =
+            child("index_recover", dir.path(), point).status().unwrap();
+        assert_eq!(status.code(), Some(86), "{point}");
+        assert!(s.intent_exists(), "{point}");
+        assert_eq!(s.state().unwrap(), StoreState::RecoveryRequired);
+        assert_eq!(s.recover_under_guard(), Ok(want), "{point}");
+        assert_eq!(s.shard_bytes().unwrap(), original, "{point}");
+        assert_eq!(s.state().unwrap(), StoreState::Ready(WITH_INDEX));
+    }
+}
+
+#[test]
+fn a_blocked_execute_waits_on_the_guard_then_rejects_its_stale_plan() {
+    let dir = tempdir().unwrap();
+    let s = lockfile(dir.path());
+    let stale = s
+        .plan(PINS_V2, Direction::Upgrade, Policy::default())
+        .unwrap();
+    let ready = dir.path().join("ready");
+    let release = dir.path().join("release");
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::scope(|scope| {
+        // Declared here so a failed assertion kills the child before the
+        // scope joins the blocked thread.
+        let first =
+            child("lockfile_up", dir.path(), "doc.rename=wait:ready:release")
+                .spawn()
+                .unwrap();
+        let mut first = KillOnDrop(Some(first));
+        let start = Instant::now();
+        while !ready.exists() {
+            assert!(
+                start.elapsed() < Duration::from_secs(60),
+                "child never reached the barrier"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        scope.spawn(|| tx.send(execute(&s, &stale, || false)).unwrap());
+        // The blocking lock() path: the second execute must still be waiting.
+        assert!(rx.recv_timeout(Duration::from_millis(500)).is_err());
+        std::fs::write(&release, b"go").unwrap();
+        assert!(first.0.take().unwrap().wait().unwrap().success());
+        let out = rx.recv_timeout(Duration::from_secs(60)).unwrap();
+        assert_eq!(out, Err(Error::StalePlan));
+    });
     assert_eq!(s.state().unwrap(), StoreState::Ready(PINS_V2));
 }
 
