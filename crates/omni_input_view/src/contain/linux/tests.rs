@@ -415,9 +415,13 @@ where
     while swaps.load(Ordering::SeqCst) == 0 && !handle.is_finished() {
         thread::yield_now();
     }
+    let swaps_before = swaps.load(Ordering::SeqCst);
     let started = std::time::Instant::now();
     let mut reads = 0usize;
     while reads < ITERATIONS
+        || (swaps.load(Ordering::SeqCst) == swaps_before
+            && !handle.is_finished()
+            && started.elapsed() < std::time::Duration::from_secs(60))
         || (want_crossings
             && crossings == 0
             && started.elapsed() < std::time::Duration::from_secs(60))
@@ -455,6 +459,10 @@ where
     stop.store(true, Ordering::SeqCst);
     handle.join().unwrap();
     assert!(swaps.load(Ordering::SeqCst) >= 100);
+    assert!(
+        swaps.load(Ordering::SeqCst) > swaps_before,
+        "no swap overlapped the reads"
+    );
     assert!(found > 0, "every read was refused");
     crossings
 }
