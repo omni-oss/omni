@@ -3206,3 +3206,298 @@ mod alias_tests {
         assert!(g.has_connected_node(ia, ib, EdgeType::Sibling).unwrap());
     }
 }
+
+/// Proof for the `with` prerequisites bug: a sibling pulled in by the
+/// sibling expansion must bring its own dependencies, scheduled strictly
+/// before it, while staying co-scheduled with the task that named it.
+#[cfg(test)]
+mod with_sibling_prerequisites_tests {
+    use std::path::PathBuf;
+
+    use maps::OrderedMap;
+
+    use super::*;
+    use crate::{TaskAliases, TasksBuilder};
+
+    fn project(
+        name: &str,
+        deps: &[&str],
+        tasks: OrderedMap<String, crate::Task>,
+    ) -> Project {
+        Project::new(
+            name,
+            PathBuf::new(),
+            deps.iter().map(|d| d.to_string()).collect(),
+            tasks,
+        )
+    }
+
+    fn build(projects: Vec<Project>) -> TaskExecutionGraph {
+        ProjectGraph::from_projects(projects)
+            .unwrap()
+            .get_task_execution_graph()
+            .unwrap()
+    }
+
+    fn batches(plan: &BatchedExecutionPlan) -> Vec<Vec<String>> {
+        plan.iter()
+            .map(|batch| {
+                let mut names = batch
+                    .iter()
+                    .map(|n| n.full_task_name().to_string())
+                    .collect::<Vec<_>>();
+                names.sort();
+                names
+            })
+            .collect()
+    }
+
+    fn strs(batches: &[&[&str]]) -> Vec<Vec<String>> {
+        batches
+            .iter()
+            .map(|b| b.iter().map(|s| s.to_string()).collect())
+            .collect()
+    }
+
+    /// `tool` holds `setup <- build-native`; `app` depends on `tool`.
+    fn tool_tasks() -> OrderedMap<String, crate::Task> {
+        TasksBuilder::new()
+            .task("setup", "x", |b| b)
+            .task("build-native", "x", |b| b.own_dependency("setup"))
+            .build()
+    }
+
+    fn app_with(
+        t: impl Fn(crate::TaskBuilder) -> crate::TaskBuilder,
+    ) -> TaskExecutionGraph {
+        build(vec![
+            project(
+                "app",
+                &["tool"],
+                TasksBuilder::new().task("t", "x", t).build(),
+            ),
+            project("tool", &[], tool_tasks()),
+        ])
+    }
+
+    fn app_plan(g: &TaskExecutionGraph) -> Vec<Vec<String>> {
+        batches(
+            &g.get_batched_execution_plan(|n| Ok(n.project_name() == "app"))
+                .unwrap(),
+        )
+    }
+
+    const PREREQ_FIRST: &[&[&str]] =
+        &[&["tool#setup"], &["app#t", "tool#build-native"]];
+
+    #[test]
+    fn same_project_sibling_brings_its_prerequisite() {
+        let g = build(vec![project(
+            "proj",
+            &[],
+            TasksBuilder::new()
+                .task("t", "x", |b| b.own_sibling("build-native"))
+                .task("setup", "x", |b| b)
+                .task("build-native", "x", |b| b.own_dependency("setup"))
+                .build(),
+        )]);
+        // The user filter selects only `t`, which excludes `setup`.
+        let plan = g
+            .get_batched_execution_plan(|n| Ok(n.task_name() == "t"))
+            .unwrap();
+        assert_eq!(
+            batches(&plan),
+            strs(&[&["proj#setup"], &["proj#build-native", "proj#t"]])
+        );
+    }
+
+    #[test]
+    fn sibling_in_another_project_brings_its_prerequisite() {
+        let g =
+            app_with(|b| b.explicit_project_sibling("tool", "build-native"));
+        assert_eq!(app_plan(&g), strs(PREREQ_FIRST));
+    }
+
+    #[test]
+    fn sibling_reached_through_an_alias_brings_its_prerequisite() {
+        let aliases = TaskAliases::new(
+            [("native".to_string(), "build-native".to_string())]
+                .into_iter()
+                .collect::<OrderedMap<_, _>>(),
+        );
+        let g = build(vec![
+            project(
+                "app",
+                &["tool"],
+                TasksBuilder::new()
+                    .task("t", "x", |b| {
+                        b.explicit_project_sibling("tool", "native")
+                    })
+                    .build(),
+            ),
+            project("tool", &[], tool_tasks()).with_aliases(aliases),
+        ]);
+        assert_eq!(app_plan(&g), strs(PREREQ_FIRST));
+    }
+
+    #[test]
+    fn sibling_reached_through_upstream_brings_its_prerequisite() {
+        let g = app_with(|b| b.upstream_sibling("build-native"));
+        assert_eq!(app_plan(&g), strs(PREREQ_FIRST));
+    }
+
+    #[test]
+    fn deep_prerequisite_chain_of_a_sibling_is_fully_scheduled() {
+        let g = build(vec![project(
+            "proj",
+            &[],
+            TasksBuilder::new()
+                .task("t", "x", |b| b.own_sibling("build-native"))
+                .task("s1", "x", |b| b)
+                .task("s2", "x", |b| b.own_dependency("s1"))
+                .task("s3", "x", |b| b.own_dependency("s2"))
+                .task("build-native", "x", |b| b.own_dependency("s3"))
+                .build(),
+        )]);
+        let plan = g
+            .get_batched_execution_plan(|n| Ok(n.task_name() == "t"))
+            .unwrap();
+        assert_eq!(
+            batches(&plan),
+            strs(&[
+                &["proj#s1"],
+                &["proj#s2"],
+                &["proj#s3"],
+                &["proj#build-native", "proj#t"],
+            ])
+        );
+    }
+
+    /// Regression guard: already passes on the base because `setup` is
+    /// reachable from `t` itself; the fix must keep it scheduled once.
+    #[test]
+    fn prerequisite_shared_with_the_selected_chain_is_scheduled_once() {
+        let g = app_with(|b| {
+            b.explicit_project_dependency("tool", "setup")
+                .explicit_project_sibling("tool", "build-native")
+        });
+        let plan = app_plan(&g);
+        assert_eq!(plan, strs(PREREQ_FIRST));
+        assert_eq!(plan.iter().flatten().count(), 3);
+    }
+
+    /// The shared prerequisite is only partly in the selected chain: `s1` is
+    /// (through `t -> s2 -> s1`), `s0` belongs to the sibling alone.
+    #[test]
+    fn partly_shared_prerequisites_are_each_scheduled_once() {
+        let g = build(vec![project(
+            "proj",
+            &[],
+            TasksBuilder::new()
+                .task("s0", "x", |b| b)
+                .task("s1", "x", |b| b)
+                .task("s2", "x", |b| b.own_dependency("s1"))
+                .task("t", "x", |b| {
+                    b.own_dependency("s2").own_sibling("build-native")
+                })
+                .task("build-native", "x", |b| {
+                    b.own_dependency("s1").own_dependency("s0")
+                })
+                .build(),
+        )]);
+        let plan = g
+            .get_batched_execution_plan(|n| Ok(n.task_name() == "t"))
+            .unwrap();
+        assert_eq!(
+            batches(&plan),
+            strs(&[
+                &["proj#s0", "proj#s1"],
+                &["proj#s2"],
+                &["proj#build-native", "proj#t"],
+            ])
+        );
+    }
+
+    #[test]
+    fn with_dependents_schedules_the_prerequisite_of_a_dependent_sibling() {
+        // `app#t` depends on `tool#x` and names `tool#build-native`.
+        let g = build(vec![
+            project(
+                "app",
+                &["tool"],
+                TasksBuilder::new()
+                    .task("t", "x", |b| {
+                        b.upstream_dependency("x")
+                            .explicit_project_sibling("tool", "build-native")
+                    })
+                    .build(),
+            ),
+            project(
+                "tool",
+                &[],
+                TasksBuilder::new()
+                    .task("x", "x", |b| b)
+                    .task("setup", "x", |b| b)
+                    .task("build-native", "x", |b| b.own_dependency("setup"))
+                    .build(),
+            ),
+        ]);
+        let plan = g
+            .get_batched_execution_plan_with_dependents(
+                |n| Ok(n.task_name() == "x"),
+                |_| Ok(true),
+            )
+            .unwrap();
+        assert_eq!(
+            batches(&plan),
+            strs(
+                &[&["tool#setup", "tool#x"], &["app#t", "tool#build-native"],]
+            )
+        );
+    }
+
+    #[test]
+    fn persistent_task_brings_its_sibling_prerequisite_before_it() {
+        let g = build(vec![project(
+            "proj",
+            &[],
+            TasksBuilder::new()
+                .task("t", "x", |b| b.own_sibling("dev"))
+                .task("setup", "x", |b| b)
+                .task("dev", "x", |b| {
+                    b.persistent(true).own_dependency("setup")
+                })
+                .build(),
+        )]);
+        let plan = g
+            .get_batched_execution_plan(|n| Ok(n.task_name() == "t"))
+            .unwrap();
+        assert_eq!(
+            batches(&plan),
+            strs(&[&["proj#setup"], &["proj#dev", "proj#t"]])
+        );
+    }
+
+    #[test]
+    fn prerequisite_cycle_through_a_pulled_in_sibling_is_rejected() {
+        // `t ~ b`, `b <- p`, `q <- b`, `p ~ q`: once `p` is scheduled its
+        // sibling `q` comes with it, and {p, q} both precedes and follows `b`.
+        let g = build(vec![project(
+            "proj",
+            &[],
+            TasksBuilder::new()
+                .task("t", "x", |b| b.own_sibling("b"))
+                .task("b", "x", |b| b.own_dependency("p"))
+                .task("p", "x", |b| b.own_sibling("q"))
+                .task("q", "x", |b| b.own_dependency("b"))
+                .build(),
+        )]);
+        let err = g
+            .get_batched_execution_plan(|n| Ok(n.task_name() == "t"))
+            .expect_err("the prerequisite chain loops back through siblings");
+        assert_eq!(
+            err.kind(),
+            TaskExecutionGraphErrorKind::SiblingDependencyCycle
+        );
+    }
+}
