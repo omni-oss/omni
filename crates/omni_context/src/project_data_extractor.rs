@@ -1238,4 +1238,193 @@ mod tests {
             ]
         );
     }
+
+    /// F07.2 digest parity gate. Feeds `extract_all`'s cache inputs for the
+    /// `t` and `n` tasks of `app` through the collector's digest step, the
+    /// same call `ProjectHasher::hash` makes per task (it then only combines
+    /// the per-task digests). The files are empty and the layout fixed, so
+    /// the digest depends only on the relative input paths, which the hasher
+    /// renders with the native separator. `closure_order` permutes the
+    /// extracted `include` list, standing in for the hash-random closure
+    /// order of `ExtensionGraph::get_transitive_extendee_ids`.
+    async fn task_digests(
+        files: &[(&str, &str)],
+        app: &str,
+        closure_order: fn(&mut Vec<OmniPath>),
+    ) -> Vec<(String, String)> {
+        use omni_collector::{CollectConfig, Collector, ProjectTaskInfo};
+
+        let temp = tempfile::tempdir().unwrap();
+        let cache = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let root_json = root.to_string_lossy().replace('\\', "\\\\");
+        let mut layers = vec![];
+        for (name, json) in files {
+            let file = root.join(name);
+            let dir = file.parent().unwrap().to_path_buf();
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(&file, "").unwrap();
+            layers.push(LoadedLayer::from_file(
+                file.into(),
+                dir.into(),
+                serde_json::from_str(&json.replace("ROOT", &root_json))
+                    .unwrap(),
+            ));
+        }
+        let graph = ExtensionGraph::from_nodes(layers.clone()).unwrap();
+        let app_layer = layers
+            .into_iter()
+            .find(|l| l.file().path().unwrap() == root.join(app))
+            .unwrap();
+        let finalized = app_layer.finalize_composed().unwrap();
+        let workspace = serde_json::from_str(r#"{"projects":["**"]}"#).unwrap();
+        let mut env_loader = EnvLoader::new(RealSys, root.to_owned(), vec![]);
+        let data = ProjectDataExtractor::new(
+            &RealSys,
+            root,
+            &mut env_loader,
+            false,
+            &workspace,
+        )
+        .extract_all(&[finalized], &[root.join(app)], &graph)
+        .unwrap();
+        let project = data.projects.iter().find(|p| p.name == "app").unwrap();
+        let no_env = Map::default();
+        let mut out = vec![];
+        for task in ["t", "n"] {
+            let info = data.cache_infos.get("app", task).unwrap();
+            let mut include = info.key_input_files.include.clone();
+            closure_order(&mut include);
+            let task_info = ProjectTaskInfo {
+                project_name: "app",
+                project_dir: &project.dir,
+                task_name: task,
+                task_exec: project
+                    .tasks
+                    .get(task)
+                    .and_then(|t| t.exec.as_ref()),
+                task_retry_exec: None,
+                output_files: &info.cache_output_files.include,
+                output_files_exclude: &info.cache_output_files.exclude,
+                input_files: &include,
+                input_files_exclude: &info.key_input_files.exclude,
+                input_env_keys: &info.key_env_keys,
+                env_vars: &no_env,
+                dependency_digests: &[],
+                args: &info.args,
+            };
+            let collected = Collector::new(root, cache.path(), RealSys)
+                .collect(
+                    &[task_info],
+                    &CollectConfig {
+                        input_files: true,
+                        output_files: false,
+                        digests: true,
+                        cache_output_dirs: false,
+                    },
+                )
+                .await
+                .unwrap();
+            let digest = collected[0].digest.expect("digest");
+            out.push((
+                task.to_string(),
+                bs58::encode(digest.as_ref()).into_string(),
+            ));
+        }
+        out
+    }
+
+    fn chain_files(app: &str) -> Vec<(&'static str, String)> {
+        vec![
+            ("lib/base.yaml", r#"{"base":true}"#.to_string()),
+            (
+                "lib/mid.yaml",
+                r#"{"base":true,"extends":["ROOT/lib/base.yaml"]}"#.to_string(),
+            ),
+            ("app/project.omni.yaml", app.to_string()),
+        ]
+    }
+
+    fn diamond_files(app: &str) -> Vec<(&'static str, String)> {
+        vec![
+            ("lib/base.yaml", r#"{"base":true}"#.to_string()),
+            (
+                "lib/left.yaml",
+                r#"{"base":true,"extends":["ROOT/lib/base.yaml"]}"#.to_string(),
+            ),
+            (
+                "lib/right.yaml",
+                r#"{"base":true,"extends":["ROOT/lib/base.yaml"]}"#.to_string(),
+            ),
+            ("app/project.omni.yaml", app.to_string()),
+        ]
+    }
+
+    async fn digests_for(
+        files: Vec<(&'static str, String)>,
+        order: fn(&mut Vec<OmniPath>),
+    ) -> Vec<(String, String)> {
+        let refs = files
+            .iter()
+            .map(|(n, j)| (*n, j.as_str()))
+            .collect::<Vec<_>>();
+        task_digests(&refs, "app/project.omni.yaml", order).await
+    }
+
+    fn keep(_: &mut Vec<OmniPath>) {}
+    fn reverse(v: &mut Vec<OmniPath>) {
+        v.reverse();
+    }
+    fn rotate(v: &mut Vec<OmniPath>) {
+        if !v.is_empty() {
+            v.rotate_left(1);
+        }
+    }
+
+    #[tokio::test]
+    async fn chain_task_digests_match_the_baseline_and_ignore_closure_order() {
+        let app = format!(
+            r#"{{"name":"app","extends":["ROOT/lib/mid.yaml"],{APP_TASKS}}}"#
+        );
+        let a = digests_for(chain_files(&app), keep).await;
+        let b = digests_for(chain_files(&app), reverse).await;
+        let c = digests_for(chain_files(&app), rotate).await;
+        assert_eq!(a, b);
+        assert_eq!(a, c);
+        // Separators are hashed natively, so the literals are Unix-only.
+        #[cfg(unix)]
+        assert_eq!(
+            a,
+            CHAIN_DIGESTS.map(|(t, d)| (t.to_string(), d.to_string()))
+        );
+    }
+
+    #[tokio::test]
+    async fn diamond_task_digests_match_the_baseline_and_ignore_closure_order()
+    {
+        let app = format!(
+            r#"{{"name":"app","extends":["ROOT/lib/left.yaml","ROOT/lib/right.yaml"],{APP_TASKS}}}"#
+        );
+        let a = digests_for(diamond_files(&app), keep).await;
+        let b = digests_for(diamond_files(&app), reverse).await;
+        let c = digests_for(diamond_files(&app), rotate).await;
+        assert_eq!(a, b);
+        assert_eq!(a, c);
+        #[cfg(unix)]
+        assert_eq!(
+            a,
+            DIAMOND_DIGESTS.map(|(t, d)| (t.to_string(), d.to_string()))
+        );
+    }
+
+    #[cfg(unix)]
+    const CHAIN_DIGESTS: [(&str, &str); 2] = [
+        ("t", "EkZdvw624oSWRh3dptTHur953cdeGPeQEK7ggUjFHVSo"),
+        ("n", "BtEuC55R6uckLLP73xRMq5KqNtzyk1yENCVjMNSB64PW"),
+    ];
+    #[cfg(unix)]
+    const DIAMOND_DIGESTS: [(&str, &str); 2] = [
+        ("t", "x7qpHaig4Ba8GCn7uhJHFCYPS6sXsYhv6Gwf5Y7ZnPY"),
+        ("n", "BtEuC55R6uckLLP73xRMq5KqNtzyk1yENCVjMNSB64PW"),
+    ];
 }
