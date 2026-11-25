@@ -404,6 +404,11 @@ impl InputView {
                 self.charge_bytes(meter, total - charged)?;
                 charged = total;
             }
+            // A failed reservation is an error, not a capacity-overflow panic
+            // (a 32-bit target cannot double a very large buffer).
+            bytes
+                .try_reserve(read)
+                .map_err(|_| InputError::TooLarge { len: total, limit })?;
             sink.update(&chunk[..read]);
             bytes.extend_from_slice(&chunk[..read]);
             after_chunk();
