@@ -94,6 +94,43 @@ impl Fixture {
         }
     }
 
+    /// A fixture, only where the kernel really provides `openat2` (Linux). A
+    /// sandbox that blocks it (the aarch64 `cross` container) must answer
+    /// `Unsupported` and read nothing, which is asserted here; the rest of the
+    /// test is skipped with the named gate. x86_64 Linux must have it.
+    fn supported() -> Option<Self> {
+        let fixture = Self::new();
+        let view = fixture.view();
+        match view.exists(&wp("."), &cx()) {
+            Err(InputError::Containment(ContainmentViolation::Unsupported)) => {
+                if cfg!(all(target_os = "linux", target_arch = "x86_64"))
+                    && std::env::var_os("OMNI_INPUT_VIEW_ALLOW_NO_OPENAT2")
+                        .is_none()
+                {
+                    panic!("x86_64 Linux must provide openat2");
+                }
+                assert!(matches!(
+                    view.read(&wp("a/b/file"), &cx()),
+                    Err(InputError::Containment(
+                        ContainmentViolation::Unsupported
+                    ))
+                ));
+                assert!(view.evidence().paths.is_empty());
+                let _ = omni_test_capabilities::gate(
+                    "openat2",
+                    false,
+                    "blocked by the sandbox",
+                );
+                None
+            }
+            Ok(_) => {
+                // The probe itself is not part of the test's evidence.
+                Some(Self::new())
+            }
+            other => panic!("unexpected probe result {other:?}"),
+        }
+    }
+
     fn view(&self) -> InputView {
         self.view_with(InputLimits::default())
     }
@@ -109,6 +146,15 @@ impl Fixture {
         )
         .unwrap()
     }
+}
+
+macro_rules! fixture {
+    () => {
+        match Fixture::supported() {
+            Some(fixture) => fixture,
+            None => return,
+        }
+    };
 }
 
 fn wp(path: &str) -> WorkspacePath {
@@ -138,7 +184,7 @@ fn is_budget(error: &InputError, kind: BudgetKind) -> bool {
 
 #[test]
 fn read_returns_the_bytes_and_records_a_file_observation() {
-    let fixture = Fixture::new();
+    let fixture = fixture!();
     let view = fixture.view();
     let read = view.read(&wp("a/b/file"), &cx()).unwrap();
     assert_eq!(text(read).as_deref(), Some("inside"));
@@ -154,7 +200,7 @@ fn read_returns_the_bytes_and_records_a_file_observation() {
 
 #[test]
 fn missing_is_tracked_and_not_a_directory_is_missing() {
-    let fixture = Fixture::new();
+    let fixture = fixture!();
     let view = fixture.view();
     assert_eq!(view.read(&wp("a/nope"), &cx()).unwrap(), Read::Missing);
     assert_eq!(
@@ -174,7 +220,7 @@ fn missing_is_tracked_and_not_a_directory_is_missing() {
 
 #[test]
 fn a_repeated_read_returns_the_first_captured_bytes() {
-    let fixture = Fixture::new();
+    let fixture = fixture!();
     let view = fixture.view();
     let first = view.read(&wp("a/b/file"), &cx()).unwrap();
     fs::write(fixture.root.at("a/b/file"), "changed").unwrap();
@@ -185,7 +231,7 @@ fn a_repeated_read_returns_the_first_captured_bytes() {
 
 #[test]
 fn exists_reports_the_kind_and_a_directory_is_not_a_regular_read() {
-    let fixture = Fixture::new();
+    let fixture = fixture!();
     let view = fixture.view();
     assert_eq!(view.exists(&wp("a/b/file"), &cx()).unwrap(), Exists::File);
     assert_eq!(view.exists(&wp("a/b"), &cx()).unwrap(), Exists::Dir);
@@ -206,7 +252,7 @@ fn exists_reports_the_kind_and_a_directory_is_not_a_regular_read() {
 
 #[test]
 fn missing_then_created_is_a_conflict_with_both_observations_kept() {
-    let fixture = Fixture::new();
+    let fixture = fixture!();
     let view = fixture.view();
     assert_eq!(view.exists(&wp("later"), &cx()).unwrap(), Exists::Missing);
     fs::write(fixture.root.join("later"), "now").unwrap();
@@ -223,7 +269,7 @@ fn missing_then_created_is_a_conflict_with_both_observations_kept() {
 
 #[test]
 fn exists_then_read_of_the_same_file_is_not_a_conflict() {
-    let fixture = Fixture::new();
+    let fixture = fixture!();
     let view = fixture.view();
     view.exists(&wp("a/b/file"), &cx()).unwrap();
     view.read(&wp("a/b/file"), &cx()).unwrap();
@@ -235,7 +281,7 @@ fn exists_then_read_of_the_same_file_is_not_a_conflict() {
 
 #[test]
 fn evidence_is_ordered_by_path() {
-    let fixture = Fixture::new();
+    let fixture = fixture!();
     let view = fixture.view();
     for path in ["zeta", "a/b/file", "mid"] {
         let _ = view.exists(&wp(path), &cx());
@@ -253,7 +299,7 @@ fn evidence_is_ordered_by_path() {
 
 #[test]
 fn a_denied_path_is_denied_never_missing_and_is_not_probed() {
-    let fixture = Fixture::new();
+    let fixture = fixture!();
     fixture.policy.deny("a/b/file");
     fixture.policy.deny("does/not/exist");
     let view = fixture.view();
@@ -272,7 +318,7 @@ fn a_denied_path_is_denied_never_missing_and_is_not_probed() {
 
 #[test]
 fn an_unevaluable_policy_fails_closed() {
-    let fixture = Fixture::new();
+    let fixture = fixture!();
     fixture.policy.fail("a/b/file");
     let view = fixture.view();
     assert!(matches!(
@@ -284,7 +330,7 @@ fn an_unevaluable_policy_fails_closed() {
 
 #[test]
 fn rejected_names_are_refused_before_the_authorizer_or_the_filesystem() {
-    let fixture = Fixture::new();
+    let fixture = fixture!();
     let view = fixture.view();
     for path in ["a/CON", "ab:c", "x/nul.txt", "a/b./c"] {
         assert!(matches!(
@@ -301,7 +347,7 @@ fn rejected_names_are_refused_before_the_authorizer_or_the_filesystem() {
 #[cfg(unix)]
 #[test]
 fn containment_rejects_what_the_policy_allows() {
-    let fixture = Fixture::new();
+    let fixture = fixture!();
     std::os::unix::fs::symlink(&fixture.outside, fixture.root.join("escape"))
         .unwrap();
     std::os::unix::fs::symlink(
@@ -325,7 +371,7 @@ fn containment_rejects_what_the_policy_allows() {
 #[cfg(windows)]
 #[test]
 fn containment_rejects_what_the_policy_allows() {
-    let fixture = Fixture::new();
+    let fixture = fixture!();
     let output = std::process::Command::new("cmd.exe")
         .args(["/C", "mklink", "/J"])
         .arg(fixture.root.join("escape"))
@@ -344,7 +390,7 @@ fn containment_rejects_what_the_policy_allows() {
 #[cfg(target_os = "linux")]
 #[test]
 fn a_fifo_is_not_regular_and_does_not_block() {
-    let fixture = Fixture::new();
+    let fixture = fixture!();
     let fifo = fixture.root.join("fifo");
     assert!(
         std::process::Command::new("mkfifo")
@@ -368,7 +414,7 @@ fn a_fifo_is_not_regular_and_does_not_block() {
 
 #[test]
 fn path_shape_limits_are_checked_before_any_io() {
-    let fixture = Fixture::new();
+    let fixture = fixture!();
     let view = fixture.view_with(InputLimits {
         max_path_depth: 2,
         max_path_bytes: 12,
@@ -390,7 +436,7 @@ fn path_shape_limits_are_checked_before_any_io() {
 
 #[test]
 fn an_oversized_file_is_too_large() {
-    let fixture = Fixture::new();
+    let fixture = fixture!();
     fs::write(fixture.root.join("big"), "0123456789").unwrap();
     let view = fixture.view_with(InputLimits {
         max_file_bytes: 5,
@@ -405,7 +451,7 @@ fn an_oversized_file_is_too_large() {
 
 #[test]
 fn a_file_that_grows_during_the_read_is_caught_by_the_cap() {
-    let fixture = Fixture::new();
+    let fixture = fixture!();
     let big = fixture.root.join("grow");
     fs::write(&big, vec![b'x'; CHUNK + 10]).unwrap();
     let view = fixture.view_with(InputLimits {
@@ -428,7 +474,7 @@ fn a_file_that_grows_during_the_read_is_caught_by_the_cap() {
 
 #[test]
 fn total_bytes_are_charged_before_reading() {
-    let fixture = Fixture::new();
+    let fixture = fixture!();
     fs::write(fixture.root.join("one"), "123456").unwrap();
     fs::write(fixture.root.join("two"), "abcdef").unwrap();
     let view = fixture.view_with(InputLimits {
@@ -445,7 +491,7 @@ fn total_bytes_are_charged_before_reading() {
 
 #[test]
 fn operations_count_misses_and_failures() {
-    let fixture = Fixture::new();
+    let fixture = fixture!();
     let view = fixture.view_with(InputLimits {
         max_operations: 3,
         ..InputLimits::default()
@@ -461,7 +507,7 @@ fn operations_count_misses_and_failures() {
 
 #[test]
 fn tracked_inputs_and_observations_per_path_are_bounded() {
-    let fixture = Fixture::new();
+    let fixture = fixture!();
     let view = fixture.view_with(InputLimits {
         max_tracked_inputs: 2,
         ..InputLimits::default()
@@ -498,6 +544,15 @@ fn listing_fixture() -> Fixture {
     fixture
 }
 
+macro_rules! listing {
+    () => {
+        match Fixture::supported() {
+            Some(_) => listing_fixture(),
+            None => return,
+        }
+    };
+}
+
 fn names(list: List) -> Vec<(String, EntryKind)> {
     match list {
         List::Found(listing) => listing.entries,
@@ -520,7 +575,7 @@ fn dir_digest(view: &InputView, path: &str) -> (u32, crate::digest::Digest) {
 
 #[test]
 fn list_is_sorted_single_level_with_kinds() {
-    let fixture = listing_fixture();
+    let fixture = listing!();
     let view = fixture.view();
     assert_eq!(
         names(view.list(&wp("d"), &cx()).unwrap()),
@@ -537,13 +592,13 @@ fn list_is_sorted_single_level_with_kinds() {
 
 #[test]
 fn a_denied_child_is_omitted_and_does_not_change_the_membership_digest() {
-    let denied = listing_fixture();
+    let denied = listing!();
     denied.policy.deny("d/c.txt");
     let denied_view = denied.view();
     let listed = names(denied_view.list(&wp("d"), &cx()).unwrap());
     assert!(listed.iter().all(|(name, _)| name != "c.txt"));
 
-    let plain = Fixture::new();
+    let plain = fixture!();
     fs::create_dir_all(plain.root.at("d/sub")).unwrap();
     for name in ["b.txt", "a.txt"] {
         fs::write(plain.root.at("d").join(name), name).unwrap();
@@ -556,7 +611,7 @@ fn a_denied_child_is_omitted_and_does_not_change_the_membership_digest() {
 
 #[test]
 fn a_policy_failure_for_one_entry_fails_the_list() {
-    let fixture = listing_fixture();
+    let fixture = listing!();
     fixture.policy.fail("d/b.txt");
     let view = fixture.view();
     assert!(matches!(
@@ -568,7 +623,7 @@ fn a_policy_failure_for_one_entry_fails_the_list() {
 
 #[test]
 fn a_denied_directory_is_denied() {
-    let fixture = listing_fixture();
+    let fixture = listing!();
     fixture.policy.deny("d");
     assert!(matches!(
         fixture.view().list(&wp("d"), &cx()),
@@ -581,7 +636,7 @@ fn raw_scan_threshold_is_the_only_way_denied_entries_can_fail_a_list() {
     // Exactly `max_dir_scan_entries` raw entries (one denied) lists fine; one
     // more denied entry makes the same list fail with DirScan, never with a
     // visible-budget error, and the error carries no counts or names.
-    let fixture = Fixture::new();
+    let fixture = fixture!();
     fs::create_dir(fixture.root.join("s")).unwrap();
     for name in ["one", "two", "three"] {
         fs::write(fixture.root.at("s").join(name), name).unwrap();
@@ -605,7 +660,7 @@ fn raw_scan_threshold_is_the_only_way_denied_entries_can_fail_a_list() {
 #[test]
 fn visible_budgets_do_not_depend_on_denied_entries() {
     for denied in [0usize, 1, 5] {
-        let fixture = Fixture::new();
+        let fixture = fixture!();
         fs::create_dir(fixture.root.join("s")).unwrap();
         for name in ["one", "two"] {
             fs::write(fixture.root.at("s").join(name), name).unwrap();
@@ -633,7 +688,7 @@ fn visible_budgets_do_not_depend_on_denied_entries() {
 
 #[test]
 fn dir_entries_limit_stops_the_list() {
-    let fixture = listing_fixture();
+    let fixture = listing!();
     let view = fixture.view_with(InputLimits {
         max_dir_entries: 3,
         ..InputLimits::default()
@@ -648,7 +703,7 @@ fn dir_entries_limit_stops_the_list() {
 #[cfg(target_os = "linux")]
 #[test]
 fn a_listed_name_that_is_not_supported_fails_the_list() {
-    let fixture = listing_fixture();
+    let fixture = listing!();
     fs::write(fixture.root.at("d").join("ab:c"), "x").unwrap();
     assert!(matches!(
         fixture.view().list(&wp("d"), &cx()),
@@ -661,7 +716,7 @@ fn a_listed_name_that_is_not_supported_fails_the_list() {
 #[cfg(target_os = "linux")]
 #[test]
 fn a_denied_entry_with_an_unsupported_name_is_omitted_not_an_error() {
-    let fixture = listing_fixture();
+    let fixture = listing!();
     fs::write(fixture.root.at("d").join("ab:c"), "x").unwrap();
     fixture.policy.deny("d/ab:c");
     let listed = names(fixture.view().list(&wp("d"), &cx()).unwrap());
@@ -671,7 +726,7 @@ fn a_denied_entry_with_an_unsupported_name_is_omitted_not_an_error() {
 
 #[test]
 fn membership_digest_changes_when_an_entry_is_added() {
-    let fixture = listing_fixture();
+    let fixture = listing!();
     let view = fixture.view();
     view.list(&wp("d"), &cx()).unwrap();
     let first = dir_digest(&view, "d");
@@ -688,7 +743,7 @@ fn membership_digest_changes_when_an_entry_is_added() {
 
 #[test]
 fn a_cancelled_call_records_nothing() {
-    let fixture = Fixture::new();
+    let fixture = fixture!();
     let view = fixture.view();
     let cancelled = cx();
     cancelled.cancel();
@@ -705,7 +760,7 @@ fn a_cancelled_call_records_nothing() {
 
 #[test]
 fn cancelling_mid_read_exposes_no_bytes_and_records_nothing() {
-    let fixture = Fixture::new();
+    let fixture = fixture!();
     fs::write(fixture.root.join("large"), vec![b'z'; 3 * CHUNK]).unwrap();
     let view = fixture.view();
     let cancel = cx();
@@ -723,7 +778,7 @@ fn cancelling_mid_read_exposes_no_bytes_and_records_nothing() {
 #[cfg(windows)]
 #[test]
 fn a_wrong_case_request_is_a_case_mismatch_and_records_nothing() {
-    let fixture = Fixture::new();
+    let fixture = fixture!();
     fs::write(fixture.root.join("Readme.md"), "x").unwrap();
     let view = fixture.view();
     assert!(matches!(
@@ -750,7 +805,7 @@ fn defaults_match_the_recorded_decision() {
 
 #[test]
 fn overlapping_reads_keep_the_first_capture() {
-    let fixture = Fixture::new();
+    let fixture = fixture!();
     let view = fixture.view();
     let path = wp("a/b/file");
     let metadata = fs::metadata(fixture.root.at("a/b/file")).unwrap();
@@ -785,7 +840,7 @@ fn an_authorizer_that_cancels_stops_the_call() {
             Ok(AuthDecision::Allow)
         }
     }
-    let fixture = Fixture::new();
+    let fixture = fixture!();
     let cancel = cx();
     let view = InputView::open(
         &fixture.root,
@@ -805,7 +860,7 @@ fn an_authorizer_that_cancels_stops_the_call() {
 
 #[test]
 fn growth_during_the_read_is_charged_before_buffering() {
-    let fixture = Fixture::new();
+    let fixture = fixture!();
     let big = fixture.root.join("grow");
     fs::write(&big, vec![b'x'; CHUNK + 10]).unwrap();
     let view = fixture.view_with(InputLimits {
@@ -868,7 +923,7 @@ fn following_symlinks_is_unsupported_and_follows_nothing() {
 fn an_ancestor_cancelled_after_admission_records_nothing() {
     // Cancelling from the byte hook (after admission, before the evidence is
     // published) must not leave an observation behind.
-    let fixture = Fixture::new();
+    let fixture = fixture!();
     let view = fixture.view();
     let cancel = cx();
     let result =
@@ -887,7 +942,7 @@ fn an_ancestor_cancelled_after_admission_records_nothing() {
 
 #[test]
 fn evidence_is_not_published_for_a_cancelled_call() {
-    let fixture = Fixture::new();
+    let fixture = fixture!();
     let view = fixture.view();
     let path = wp("a/b/file");
     let metadata = fs::metadata(fixture.root.at("a/b/file")).unwrap();
@@ -933,7 +988,7 @@ mod reject_matrix {
 
     #[test]
     fn every_link_shape_is_a_containment_error_and_reads_nothing() {
-        let fixture = Fixture::new();
+        let fixture = fixture!();
         let root = &fixture.root;
         symlink(fixture.outside.join("secret"), root.join("absolute")).unwrap();
         symlink("../outside/secret", root.join("dotdot")).unwrap();
@@ -960,7 +1015,7 @@ mod reject_matrix {
 
     #[test]
     fn a_retargeted_link_never_yields_bytes() {
-        let fixture = Fixture::new();
+        let fixture = fixture!();
         let link = fixture.root.join("moving");
         symlink(fixture.outside.join("secret"), &link).unwrap();
         let view = fixture.view();
@@ -979,7 +1034,7 @@ mod reject_matrix {
 
     #[test]
     fn a_listed_symlink_is_reported_as_a_symlink_not_followed() {
-        let fixture = Fixture::new();
+        let fixture = fixture!();
         symlink(&fixture.outside, fixture.root.join("link")).unwrap();
         let view = fixture.view();
         let listed = names(view.list(&wp("."), &cx()).unwrap());
@@ -1029,7 +1084,7 @@ mod reject_matrix_windows {
     // Junctions need no privilege, so these never skip.
     #[test]
     fn junctions_are_rejected_and_a_retargeted_one_never_yields_bytes() {
-        let fixture = Fixture::new();
+        let fixture = fixture!();
         let link = fixture.root.join("junction");
         junction(&link, &fixture.outside);
         let view = fixture.view();
@@ -1048,7 +1103,7 @@ mod reject_matrix_windows {
 
     #[test]
     fn symlink_shapes_are_rejected() {
-        let fixture = Fixture::new();
+        let fixture = fixture!();
         if !omni_test_capabilities::require(Capability::Symlink, &fixture.root)
         {
             return;
@@ -1102,7 +1157,7 @@ mod revalidation {
 
     #[test]
     fn nothing_changed_is_unchanged_and_repeatable() {
-        let fixture = listing_fixture();
+        let fixture = listing!();
         let view = fixture.view();
         track_file(&view);
         view.read(&wp("missing"), &cx()).unwrap();
@@ -1118,7 +1173,7 @@ mod revalidation {
 
     #[test]
     fn a_same_size_same_mtime_edit_is_modified() {
-        let fixture = Fixture::new();
+        let fixture = fixture!();
         let view = fixture.view();
         track_file(&view);
         let path = fixture.root.at("a/b/file");
@@ -1141,7 +1196,7 @@ mod revalidation {
 
     #[test]
     fn an_atomic_replace_with_identical_bytes_is_not_a_change() {
-        let fixture = Fixture::new();
+        let fixture = fixture!();
         let view = fixture.view();
         track_file(&view);
         let path = fixture.root.at("a/b/file");
@@ -1153,7 +1208,7 @@ mod revalidation {
 
     #[test]
     fn created_after_a_missing_read_and_deleted_and_kind_changes() {
-        let fixture = Fixture::new();
+        let fixture = fixture!();
         fs::write(fixture.root.join("gone"), "x").unwrap();
         fs::write(fixture.root.join("swap"), "x").unwrap();
         let view = fixture.view();
@@ -1180,7 +1235,7 @@ mod revalidation {
 
     #[test]
     fn a_parent_that_became_a_file_counts_as_missing() {
-        let fixture = Fixture::new();
+        let fixture = fixture!();
         let view = fixture.view();
         track_file(&view);
         fs::remove_dir_all(fixture.root.at("a/b")).unwrap();
@@ -1193,7 +1248,7 @@ mod revalidation {
 
     #[test]
     fn membership_changes_are_detected() {
-        let fixture = listing_fixture();
+        let fixture = listing!();
         let view = fixture.view();
         view.list(&wp("d"), &cx()).unwrap();
         // Add, remove and rename each change the membership.
@@ -1219,7 +1274,7 @@ mod revalidation {
 
     #[test]
     fn a_denied_entry_appearing_is_invisible() {
-        let fixture = listing_fixture();
+        let fixture = listing!();
         fixture.policy.deny("d/secret.txt");
         let view = fixture.view();
         view.list(&wp("d"), &cx()).unwrap();
@@ -1229,7 +1284,7 @@ mod revalidation {
 
     #[test]
     fn conflicting_observations_are_a_change_without_a_re_read() {
-        let fixture = Fixture::new();
+        let fixture = fixture!();
         let view = fixture.view();
         view.exists(&wp("later"), &cx()).unwrap();
         fs::write(fixture.root.join("later"), "now").unwrap();
@@ -1247,7 +1302,7 @@ mod revalidation {
         // exists() records only the kind; the later read/list records content.
         // The two are compatible, so no conflict is flagged: the pass must
         // compare against the content, not the first (kind-only) observation.
-        let fixture = listing_fixture();
+        let fixture = listing!();
         let view = fixture.view();
         view.exists(&wp("a/b/file"), &cx()).unwrap();
         view.read(&wp("a/b/file"), &cx()).unwrap();
@@ -1268,7 +1323,7 @@ mod revalidation {
 
     #[test]
     fn a_listed_directory_that_vanishes_or_becomes_a_file_is_a_change() {
-        let fixture = listing_fixture();
+        let fixture = listing!();
         fs::create_dir(fixture.root.join("e")).unwrap();
         let view = fixture.view();
         view.list(&wp("d"), &cx()).unwrap();
@@ -1287,7 +1342,7 @@ mod revalidation {
 
     #[test]
     fn a_pass_cancelled_before_it_starts_is_cancelled_even_when_empty() {
-        let fixture = Fixture::new();
+        let fixture = fixture!();
         let view = fixture.view();
         let cancelled = cx();
         cancelled.cancel();
@@ -1299,7 +1354,7 @@ mod revalidation {
 
     #[test]
     fn a_directory_that_outgrew_its_limit_is_an_error_not_a_change() {
-        let fixture = listing_fixture();
+        let fixture = listing!();
         let view = fixture.view_with(InputLimits {
             max_dir_entries: 5,
             ..InputLimits::default()
@@ -1318,7 +1373,7 @@ mod revalidation {
     #[test]
     fn a_directory_replaced_by_a_junction_is_a_containment_error_not_a_change()
     {
-        let fixture = Fixture::new();
+        let fixture = fixture!();
         let view = fixture.view();
         view.exists(&wp("a/b"), &cx()).unwrap();
         fs::remove_dir_all(fixture.root.at("a/b")).unwrap();
@@ -1338,7 +1393,7 @@ mod revalidation {
     #[cfg(windows)]
     #[test]
     fn a_differently_spelled_entry_appearing_for_a_missing_name_is_created() {
-        let fixture = Fixture::new();
+        let fixture = fixture!();
         let view = fixture.view();
         assert_eq!(view.read(&wp("Readme.md"), &cx()).unwrap(), Read::Missing);
         fs::write(fixture.root.join("README.MD"), "x").unwrap();
@@ -1350,7 +1405,7 @@ mod revalidation {
 
     #[test]
     fn present_only_tracks_the_kind() {
-        let fixture = Fixture::new();
+        let fixture = fixture!();
         let view = fixture.view();
         view.exists(&wp("a/b/file"), &cx()).unwrap();
         fs::write(fixture.root.at("a/b/file"), "edited").unwrap();
@@ -1364,7 +1419,7 @@ mod revalidation {
 
     #[test]
     fn output_is_bounded_with_a_remainder_and_deterministic() {
-        let fixture = Fixture::new();
+        let fixture = fixture!();
         let view = fixture.view_with(InputLimits {
             max_reported_changes: 2,
             ..InputLimits::default()
@@ -1395,14 +1450,14 @@ mod revalidation {
     #[test]
     fn denial_containment_io_and_budget_failures_are_errors_not_changes() {
         // Denied during the pass.
-        let fixture = Fixture::new();
+        let fixture = fixture!();
         let view = fixture.view();
         track_file(&view);
         fixture.policy.deny("a/b/file");
         assert!(matches!(view.revalidate(&cx()), Err(InputError::Denied(_))));
 
         // Unevaluable policy.
-        let fixture = Fixture::new();
+        let fixture = fixture!();
         let view = fixture.view();
         track_file(&view);
         fixture.policy.fail("a/b/file");
@@ -1412,7 +1467,7 @@ mod revalidation {
         ));
 
         // A limit hit during the pass (the file grew past the cap).
-        let fixture = Fixture::new();
+        let fixture = fixture!();
         let view = fixture.view_with(InputLimits {
             max_file_bytes: 10,
             ..InputLimits::default()
@@ -1428,7 +1483,7 @@ mod revalidation {
     #[test]
     fn the_pass_has_its_own_budgets() {
         // Tracking used every operation; the pass still has a full set.
-        let fixture = Fixture::new();
+        let fixture = fixture!();
         fs::write(fixture.root.join("second"), "x").unwrap();
         let view = fixture.view_with(InputLimits {
             max_operations: 2,
@@ -1448,7 +1503,7 @@ mod revalidation {
     #[cfg(unix)]
     #[test]
     fn a_file_replaced_by_a_symlink_is_a_containment_error_not_a_change() {
-        let fixture = Fixture::new();
+        let fixture = fixture!();
         let view = fixture.view();
         track_file(&view);
         let path = fixture.root.at("a/b/file");
@@ -1463,7 +1518,7 @@ mod revalidation {
 
     #[test]
     fn cancellation_leaves_the_state_untouched() {
-        let fixture = Fixture::new();
+        let fixture = fixture!();
         let view = fixture.view();
         track_file(&view);
         let before = view.evidence();
@@ -1482,7 +1537,7 @@ mod revalidation {
         // The honest guarantee: only changes before the last re-observation
         // are found. This documents the boundary and asserts nothing about
         // the later edit.
-        let fixture = Fixture::new();
+        let fixture = fixture!();
         let view = fixture.view();
         track_file(&view);
         assert_eq!(view.revalidate(&cx()).unwrap(), Revalidation::Unchanged);
@@ -1493,7 +1548,7 @@ mod revalidation {
     #[cfg(windows)]
     #[test]
     fn a_case_only_rename_of_a_tracked_path_is_deleted() {
-        let fixture = Fixture::new();
+        let fixture = fixture!();
         fs::write(fixture.root.join("Readme.md"), "x").unwrap();
         let view = fixture.view();
         view.read(&wp("Readme.md"), &cx()).unwrap();

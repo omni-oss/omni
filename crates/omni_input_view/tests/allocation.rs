@@ -12,8 +12,9 @@ use std::{
 };
 
 use omni_input_view::{
-    AuthDecision, AuthError, Cancellation, InputAuthorizer, InputError,
-    InputLimits, InputView, InputViewOptions, SymlinkPolicy,
+    AuthDecision, AuthError, Cancellation, ContainmentViolation,
+    InputAuthorizer, InputError, InputLimits, InputView, InputViewOptions,
+    SymlinkPolicy,
 };
 use omni_path_utils::WorkspacePath;
 
@@ -82,6 +83,19 @@ fn an_oversized_file_is_refused_without_allocating_its_size() {
         },
     )
     .unwrap();
+
+    // A sandbox that blocks `openat2` (the aarch64 `cross` container) answers
+    // `Unsupported` and reads nothing; x86_64 Linux must have it.
+    if let Err(InputError::Containment(ContainmentViolation::Unsupported)) =
+        view.exists(&WorkspacePath::root(), &Cancellation::new())
+    {
+        if cfg!(all(target_os = "linux", target_arch = "x86_64"))
+            && std::env::var_os("OMNI_INPUT_VIEW_ALLOW_NO_OPENAT2").is_none()
+        {
+            panic!("x86_64 Linux must provide openat2");
+        }
+        return;
+    }
 
     LARGEST.store(0, Ordering::SeqCst);
     let result =

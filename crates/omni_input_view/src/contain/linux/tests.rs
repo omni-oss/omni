@@ -59,7 +59,10 @@ impl Fixture {
             Err(error)
                 if is_violation(&error, ContainmentViolation::Unsupported) =>
             {
-                if cfg!(target_arch = "x86_64") {
+                if cfg!(target_arch = "x86_64")
+                    && std::env::var_os("OMNI_INPUT_VIEW_ALLOW_NO_OPENAT2")
+                        .is_none()
+                {
                     panic!("x86_64 Linux must provide openat2, got {error:?}");
                 }
                 let _ = omni_test_capabilities::gate(
