@@ -3010,34 +3010,45 @@ mod alias_tests {
 
     #[test]
     fn the_no_alias_path_matches_the_general_path() {
-        // `other` is unrelated to every reference, but it carries an alias in
-        // the second run only; the references resolve identically either way.
-        let build = |with_alias: bool| {
+        // The second run adds a reference written as the alias `l2` (which
+        // names `local`), so `t` really takes the general path with its sets;
+        // it collapses into the existing explicit `local` edges, so both runs
+        // must produce exactly the same dependency list.
+        let build = |with_alias_reference: bool| {
             let t = TasksBuilder::new()
                 .task("t", "x", |b| {
-                    b.own_dependency("local")
+                    let b = b
+                        .own_dependency("local")
                         .own_dependency("local")
                         .explicit_project_dependency("lib", "compile")
                         .explicit_project_dependency("lib", "compile")
                         .upstream_dependency("compile")
                         .upstream_dependency("compile")
-                        .upstream_dependency("compile")
+                        .upstream_dependency("compile");
+                    if with_alias_reference {
+                        b.own_dependency("l2")
+                    } else {
+                        b
+                    }
                 })
                 .task("local", "x", |b| b)
                 .build();
-            let alias: &[(&str, &str)] =
-                if with_alias { &[("l2", "local")] } else { &[] };
+            let alias: &[(&str, &str)] = if with_alias_reference {
+                &[("l2", "local")]
+            } else {
+                &[]
+            };
             graph(vec![
                 project("app", &["lib"], t, alias),
                 project("lib", &[], leaf(&["compile"]), &[]),
             ])
         };
         let plain = deps(&build(false), "app", "t");
-        assert_eq!(plain, deps(&build(true), "app", "t"));
         assert_eq!(
             plain,
             ["lib#compile", "lib#compile", "app#local", "app#local"]
         );
+        assert_eq!(plain, deps(&build(true), "app", "t"));
     }
 
     #[test]
