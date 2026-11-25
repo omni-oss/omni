@@ -392,33 +392,53 @@ impl TaskExecutionGraph {
 }
 
 /// A reference resolved to the canonical task it names. `alias` is set when
-/// the written name was an alias of its project, not a canonical task.
-struct ResolvedReference {
-    key: TaskKey,
+/// the written name was an alias of its project, not a canonical task. The
+/// names are borrowed so resolving allocates nothing.
+#[derive(Clone, Copy)]
+struct ResolvedReference<'a> {
+    project: &'a str,
+    task: &'a str,
     alias: bool,
 }
 
+impl ResolvedReference<'_> {
+    fn pair(&self) -> (&str, &str) {
+        (self.project, self.task)
+    }
+}
+
 /// The canonical task a public `name` of `project` refers to.
-fn resolve_in(project: &Project, name: &str) -> Option<ResolvedReference> {
+fn resolve_in<'a>(
+    project: &'a Project,
+    name: &'a str,
+) -> Option<ResolvedReference<'a>> {
+    if let Some((canonical, _)) = project.tasks.get_key_value(name) {
+        return Some(ResolvedReference {
+            project: project.name.as_str(),
+            task: canonical.as_str(),
+            alias: false,
+        });
+    }
     let canonical = project.canonical_task_name(name)?;
     Some(ResolvedReference {
-        key: TaskKey::new(project.name.as_str(), canonical),
-        alias: project.is_alias(name),
+        project: project.name.as_str(),
+        task: canonical,
+        alias: true,
     })
 }
 
 /// Collect the first match of `task` in each branch of `project`'s upstream
 /// projects; a project with no such public name adds nothing and the walk
 /// continues into its own predecessors.
-fn collect_upstream(
-    project_graph: &ProjectGraph,
-    project: &Project,
-    task: &str,
-    found: &mut Vec<ResolvedReference>,
+fn collect_upstream<'a>(
+    project_graph: &'a ProjectGraph,
+    project: &'a Project,
+    task: &'a str,
+    found: &mut Vec<ResolvedReference<'a>>,
 ) -> Result<(), TaskExecutionGraphError> {
     let dependencies =
-        project_graph.get_direct_dependencies_by_name(&project.name)?;
-    for (_, p) in dependencies.iter() {
+        project_graph.get_direct_dependency_refs_by_name(&project.name)?;
+    for p in dependencies {
         match resolve_in(p, task) {
             Some(resolved) => found.push(resolved),
             None => collect_upstream(project_graph, p, task, found)?,
@@ -434,6 +454,10 @@ fn collect_upstream(
 /// whatever the declaration order, and alias references among themselves
 /// collapse to the first. A `^name` reference keeps its existing rule: it adds
 /// no edge when one of the same kind already connects the pair.
+///
+/// Names are borrowed throughout and the explicit/upstream sets are built only
+/// when some reference resolved through an alias, the only case that reads
+/// them.
 fn add_references(
     project_graph: &ProjectGraph,
     graph: &mut TaskExecutionGraph,
@@ -442,33 +466,35 @@ fn add_references(
     references: &[crate::TaskDependency],
     edge_type: EdgeType,
 ) -> Result<(), TaskExecutionGraphError> {
-    enum Step {
-        Direct(Option<ResolvedReference>, String, String),
-        Upstream(Vec<ResolvedReference>),
+    enum Step<'a> {
+        Direct(Option<ResolvedReference<'a>>, &'a str, &'a str),
+        Upstream(Vec<ResolvedReference<'a>>),
     }
 
+    let mut any_alias = false;
     let mut steps = Vec::with_capacity(references.len());
     for reference in references {
         steps.push(match reference {
-            crate::TaskDependency::Own { task } => Step::Direct(
-                resolve_in(project, task),
-                project.name.clone(),
-                task.clone(),
-            ),
+            crate::TaskDependency::Own { task } => {
+                let resolved = resolve_in(project, task);
+                any_alias |= resolved.is_some_and(|r| r.alias);
+                Step::Direct(resolved, project.name.as_str(), task.as_str())
+            }
             crate::TaskDependency::ExplicitProject {
                 project: target,
                 task,
-            } => Step::Direct(
-                project_graph
+            } => {
+                let resolved = project_graph
                     .get_project_by_name(target)
                     .ok()
-                    .and_then(|p| resolve_in(p, task)),
-                target.clone(),
-                task.clone(),
-            ),
+                    .and_then(|p| resolve_in(p, task));
+                any_alias |= resolved.is_some_and(|r| r.alias);
+                Step::Direct(resolved, target.as_str(), task.as_str())
+            }
             crate::TaskDependency::Upstream { task } => {
                 let mut found = vec![];
                 collect_upstream(project_graph, project, task, &mut found)?;
+                any_alias |= found.iter().any(|r| r.alias);
                 Step::Upstream(found)
             }
         });
@@ -476,46 +502,49 @@ fn add_references(
 
     let mut explicit = HashSet::new();
     let mut upstream = HashSet::new();
-    for step in &steps {
-        match step {
-            Step::Direct(Some(resolved), ..) if !resolved.alias => {
-                explicit.insert(resolved.key.clone());
+    if any_alias {
+        for step in &steps {
+            match step {
+                Step::Direct(Some(resolved), ..) if !resolved.alias => {
+                    explicit.insert(resolved.pair());
+                }
+                Step::Upstream(found) => {
+                    upstream.extend(found.iter().map(|r| r.pair()));
+                }
+                Step::Direct(..) => {}
             }
-            Step::Upstream(found) => {
-                upstream.extend(found.iter().map(|r| r.key.clone()));
-            }
-            Step::Direct(..) => {}
         }
     }
 
     let pname = project.name.as_str();
-    for step in steps {
+    for step in &steps {
         match step {
             // An unresolved name keeps its literal spelling so the missing
             // task is reported as before.
-            Step::Direct(None, target_project, target_task) => graph
+            &Step::Direct(None, target_project, target_task) => graph
                 .add_edge_by_names(
                     pname,
                     task_name,
-                    &target_project,
-                    &target_task,
+                    target_project,
+                    target_task,
                     edge_type,
                 )?,
-            Step::Direct(Some(resolved), ..) if !resolved.alias => graph
+            &Step::Direct(Some(resolved), ..) if !resolved.alias => graph
                 .add_edge_by_names(
                     pname,
                     task_name,
-                    resolved.key.project(),
-                    resolved.key.task(),
+                    resolved.project,
+                    resolved.task,
                     edge_type,
                 )?,
-            Step::Direct(Some(resolved), ..) => {
-                if explicit.contains(&resolved.key)
-                    || upstream.contains(&resolved.key)
+            &Step::Direct(Some(resolved), ..) => {
+                if explicit.contains(&resolved.pair())
+                    || upstream.contains(&resolved.pair())
                     || graph.is_connected(
                         pname,
                         task_name,
-                        &resolved.key,
+                        resolved.project,
+                        resolved.task,
                         edge_type,
                     )?
                 {
@@ -524,18 +553,19 @@ fn add_references(
                 graph.add_edge_by_names(
                     pname,
                     task_name,
-                    resolved.key.project(),
-                    resolved.key.task(),
+                    resolved.project,
+                    resolved.task,
                     edge_type,
                 )?;
             }
             Step::Upstream(found) => {
-                for resolved in found {
-                    if (resolved.alias && explicit.contains(&resolved.key))
+                for resolved in found.iter().copied() {
+                    if (resolved.alias && explicit.contains(&resolved.pair()))
                         || graph.is_connected(
                             pname,
                             task_name,
-                            &resolved.key,
+                            resolved.project,
+                            resolved.task,
                             edge_type,
                         )?
                     {
@@ -544,8 +574,8 @@ fn add_references(
                     graph.add_edge_by_names(
                         pname,
                         task_name,
-                        resolved.key.project(),
-                        resolved.key.task(),
+                        resolved.project,
+                        resolved.task,
                         edge_type,
                     )?;
                 }
@@ -601,12 +631,13 @@ impl TaskExecutionGraph {
         &self,
         from_project_name: &str,
         from_task_name: &str,
-        to: &TaskKey,
+        to_project_name: &str,
+        to_task_name: &str,
         edge_type: EdgeType,
     ) -> TaskExecutionGraphResult<bool> {
         let from =
             self.get_task_index_by_name(from_project_name, from_task_name)?;
-        let to = self.get_task_index_by_name(to.project(), to.task())?;
+        let to = self.get_task_index_by_name(to_project_name, to_task_name)?;
         self.has_connected_node(from, to, edge_type)
     }
 
@@ -2975,6 +3006,38 @@ mod alias_tests {
         };
         assert_eq!(deps(&build(true), "app", "t").len(), 1);
         assert_eq!(deps(&build(false), "app", "t").len(), 2);
+    }
+
+    #[test]
+    fn the_no_alias_path_matches_the_general_path() {
+        // `other` is unrelated to every reference, but it carries an alias in
+        // the second run only; the references resolve identically either way.
+        let build = |with_alias: bool| {
+            let t = TasksBuilder::new()
+                .task("t", "x", |b| {
+                    b.own_dependency("local")
+                        .own_dependency("local")
+                        .explicit_project_dependency("lib", "compile")
+                        .explicit_project_dependency("lib", "compile")
+                        .upstream_dependency("compile")
+                        .upstream_dependency("compile")
+                        .upstream_dependency("compile")
+                })
+                .task("local", "x", |b| b)
+                .build();
+            let alias: &[(&str, &str)] =
+                if with_alias { &[("l2", "local")] } else { &[] };
+            graph(vec![
+                project("app", &["lib"], t, alias),
+                project("lib", &[], leaf(&["compile"]), &[]),
+            ])
+        };
+        let plain = deps(&build(false), "app", "t");
+        assert_eq!(plain, deps(&build(true), "app", "t"));
+        assert_eq!(
+            plain,
+            ["lib#compile", "lib#compile", "app#local", "app#local"]
+        );
     }
 
     #[test]
