@@ -1316,7 +1316,8 @@ mod revalidation {
 
     #[cfg(windows)]
     #[test]
-    fn a_file_replaced_by_a_junction_is_a_containment_error_not_a_change() {
+    fn a_directory_replaced_by_a_junction_is_a_containment_error_not_a_change()
+    {
         let fixture = Fixture::new();
         let view = fixture.view();
         view.exists(&wp("a/b"), &cx()).unwrap();
