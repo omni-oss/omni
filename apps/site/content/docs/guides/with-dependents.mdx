@@ -1,0 +1,55 @@
+---
+title: "Running dependents with `--with-dependents`"
+description: "Which tasks `omni run --with-dependents` adds, and how it combines with project, directory, meta and scm filters"
+---
+
+`omni run <task> --with-dependents` (`-w`) runs the selected tasks and then the
+tasks that depend on them. It adds only dependents whose **task name** is one
+of the requested task names. Use it to check that a change to a
+library does not break its consumers: `omni run build -p lib -w` runs
+`lib#build` and `build` in every project that depends on `lib`.
+
+## What is added
+
+- **Dependents with a requested name.** A task is added when it depends on a
+  selected task, directly or through other tasks that are also added, and its
+  name matches one of the requested task names or `--task-pattern` globs. With
+  several requested names, a task with any of them can carry the search on to
+  its own dependents: with `omni run build test -p core -w`, if `mid#test`
+  depends on `core#build` and `end#build` depends on `mid#test`, both are added.
+- **Their dependencies.** Added tasks run with their own dependencies, as in a
+  normal run.
+- **Not added: other tasks.** A dependent with a different name is not added,
+  even when it depends on the selected task. With `omni run build -p lib -w`,
+  `app#verify` (which depends on `lib#test`) and `lib#test` (which depends on
+  `lib#build`) do not run. Name them too: `omni run lib#test verify -w`, which starts from `lib#test` and adds
+  `app#verify`.
+- **Not added: dependents reached through another task.** The search stops at a
+  task whose name is not one of the requested names. If `end#build` depends on `mid#test`, and
+  `mid#test` depends on `core#build`, then `omni run build -p core -w` does not
+  run `end#build`.
+- **Not followed: `with` siblings.** The search follows `dependencies` only. A
+  dependent of a task that was pulled in through `with` is not added.
+  Prerequisites of the added tasks still run (see the
+  "Prerequisites of `with` tasks" guide).
+
+## How it combines with filters
+
+`--project`, `--project-pattern`, `--dir`, `--meta` and `--scm-affected` (with
+`--scm-base` and `--scm-target`) choose the **starting tasks only**. The
+dependents they find are not filtered again, so
+`omni run build --dir libs/core -w` also runs `build` in dependents outside
+`libs/core`, and `omni run build --scm-affected -w` runs the dependents of every
+changed task even when those projects did not change. A `project#task` selector
+scopes the starting task to that project and the dependents to any project.
+
+Aliases are matched per project, as in any selector. `omni run compile -p core -w`
+adds a dependent only if it also has a task or alias named `compile`; a
+dependent whose `build` task has no `compile` alias is not added. Use the
+canonical name to reach all of them.
+
+## Where it does not apply
+
+- `--ignore-dependencies` cannot be combined with `--with-dependents`.
+- The MCP `task_run` tool and the `omni_api` `TaskRunRequest` accept the option
+  (`with_dependents`), but the MCP tool always sets it to `false`.
