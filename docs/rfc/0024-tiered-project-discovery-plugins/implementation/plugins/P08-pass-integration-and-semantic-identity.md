@@ -18,7 +18,7 @@ task-cache identity for inferred tasks.
 ## Work
 
 1. Pipeline: explicit layers → eligibility → inference hooks → freeze → dependency
-   hooks → compose (activation layers, apply, defaults, conflicts) → resolve aliases and
+   hooks → compose (activation layers, apply, defaults, ordered precedence) → resolve aliases and
    task inheritance → resolve edges and lower references → validate → observation →
    revalidate → publish.
 2. Capture bootstrap inputs (workspace config and any layer supplying activation,

@@ -23,7 +23,7 @@ machinery that keeps it stable.
    detection, backups, interrupted multi-file recovery, manual-refusal paths; test the
    unversioned legacy workspace baseline.
 6. Author docs: plugin guide, statelessness responsibilities, conformance testing,
-   toolchain pinning; user docs for activation, `apply`, `defaults`, conflicts.
+   toolchain pinning; user docs for activation, `apply`, `defaults`, activation-list precedence.
 7. Keep activation explicit after stabilization.
 
 ## Acceptance

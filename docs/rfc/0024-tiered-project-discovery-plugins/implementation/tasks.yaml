@@ -343,8 +343,8 @@ tasks:
   # mark F07 done only when F07.3-F07.5 land (or split it per slice).
   F07:
     {
-      owner: "OpenCode (F07.1 and F07.2 merged #172; F07.3-F07.5 not started)",
-      title: "Conflict detection and provenance",
+      owner: "OpenCode (F07.1 and F07.2 merged #172; F07.3-F07.5 not started; composition is ordered, not conflict-keeping)",
+      title: "Ordered contributor composition and provenance",
       parent: F07,
       kind: code,
       size: L,
@@ -557,7 +557,7 @@ tasks:
     }
   P04.5:
     {
-      title: "Activation composition under conflict rules",
+      title: "Activation composition under ordered precedence",
       parent: P04,
       kind: code,
       size: M,

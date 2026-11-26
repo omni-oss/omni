@@ -1,14 +1,14 @@
-# F07 implementation plan: composition provenance and conflicts
+# F07 implementation plan: composition provenance and ordered precedence
 
 **Status:** approved (#164). F07.1 and F07.2 are merged ([#172](https://github.com/omni-oss/omni/pull/172); final review PASS per the PR); F07.3 onward is not started. **Size:** Large.
 **Risk:** High: composition and location changes can affect task behavior and
 cache keys. The chosen direction is to finish the metadata redesign before
-building conflict detection, rather than ship a parallel provenance walk.
+building ordered composition, rather than ship a parallel provenance walk.
 
 ## Scope and finish line
 
 Complete [F07](F07-conflict-detection-and-provenance.md) in two phases:
-**metadata and provenance** (F07.1–F07.2), then **conflicts and inspection**
+**metadata and provenance** (F07.1–F07.2), then **ordered composition and inspection**
 (F07.3–F07.5). The slices below are review units, not a commitment to exactly
 two PRs. Each must leave a working system.
 
@@ -17,9 +17,9 @@ two PRs. Each must leave a working system.
   serialized configurations and existing explicit-only cache keys stay unchanged.
 - Authored config types hold no loader-supplied file or directory fields.
   Resolved projects expose their location separately from authored values.
-- Synthetic unordered contributors compose deterministically. Conflicts that
-  survive explicit replay produce actionable diagnostics. Selected provenance
-  is available through the existing inspection surfaces.
+- Synthetic ordered contributors compose deterministically: the later one wins,
+  explicit replay still overrides all of them, and overridden contributors are
+  reported. Selected provenance is available through the existing inspection surfaces.
 - No plugin host, activation runtime, new authored keys, cache-key version
   changes or virtual-project discovery. Fileless projects are exercised as
   resolved values in tests, not discovered by F07.
@@ -33,11 +33,12 @@ the preset directory, and the runnable project root stays `apps/web`. If the
 app omits enablement, the preset remains the winner. If a later fileless
 declaration replaces enablement, it wins without reporting the preset's file.
 
-At the same root, synthetic contributors `frontend` and `native` supply
-different descriptions and disjoint tasks. Reversing their order must produce
-the same conflict. An explicit `description: web` resolves it; an unrelated
-task override does not. The resulting inspection identifies the winning
-explicit declaration without exposing unrelated configuration values.
+At the same root, synthetic contributors `frontend` and `native`, in that order,
+supply different descriptions and disjoint tasks. `native` wins the description and
+`frontend` is reported as overridden. Reversing the order flips the winner;
+reversing only scheduling does not. An explicit `description: web` overrides both;
+an unrelated task override does not. The resulting inspection identifies the winning
+declaration and the overridden contributors without exposing configuration values.
 
 ## F07.1 — Replay values and provenance together
 
@@ -172,12 +173,13 @@ and old/new cache input and digest parity for file-backed projects. Test a
 virtual entry with a root but no file, without expanding discovery. Revert the
 slice to restore the Rust fields without reverting F07.1.
 
-## F07.3 — Compose unordered contributors without guessing a winner
+## F07.3 — Compose ordered contributors; the later one wins
 
-**Depends on F07.1–F07.2.** Keep explicit traversal and unordered composition
+**Depends on F07.1–F07.2.** Keep explicit traversal and contributor composition
 separate: the extension graph provides ordered authored declarations only.
 Test the new composition entry with synthetic, already validated contributions
-identified by stable contributor IDs. Treat activation-local application as
+given as an ordered sequence of stable contributor IDs, the same shape the
+activation list will supply. Treat activation-local application as
 finished input: one contributor's subtraction never edits another's values
 ([C04](../../007.04-composition-golden-fixtures.md#c04--application-subtraction-is-activation-local)).
 Add a typed contributor variant to `DeclarationSource` here, rather than
@@ -185,61 +187,107 @@ encoding contributor identity as a file path or an anonymous fileless ID.
 P-series work will wire its own validation and activation boundaries.
 
 - Disjoint fields combine; semantically equal scalar/task fields coalesce and
-  retain their contributors. Different values conflict, including equal text
-  with different interpretation modes. Stable contributor order controls
-  presentation and additive lists, not scalar winners.
-- Keep conflicts until explicit replay overwrites that leaf or replaces an
-  ancestor subtree. An unrelated edit or a merge that does not touch the leaf
-  cannot clear it. Ordered explicit-only chains keep last-wins semantics.
+  retain their contributors. Different values: the later contributor wins,
+  including equal text with different interpretation modes. Compatible task
+  declarations merge property by property, later winning; a different declaration
+  kind replaces the earlier one as a whole.
+- No conflict markers. Explicit replay, as today, overwrites a leaf or replaces an
+  ancestor subtree and always beats every contributor; explicit-only chains keep
+  last-wins semantics. Scalar conflicts inside one contributor or between explicit
+  layers replay normally.
 - **Proposed collection rule:** compare dictionary contributions at the key
-  or nested-field boundary rather than conflicting on whole dictionaries.
-  Additive lists are ordered by contributor ID, not compared positionally for
-  conflicts; preserve contributions until explicit operations finish. Follow
+  or nested-field boundary rather than whole dictionaries. Additive lists
+  concatenate in contributor order, not positionally compared; preserve
+  contributions until explicit operations finish. Follow
   [§7.3](../../007.02-multiple-plugins-and-conflicts.md#73-multiple-plugins-and-conflicts)
   for field-specific normalization. Do not add blanket deduplication or change
   explicit-only hashing in this slice. If a normalization correction would
   change existing keys, stop and scope it separately.
-- Expose unresolved conflicts from composition as structured data: project
-  root, field path and contributing origins. Invalid input is a validation
-  error, never a conflict that a later override can hide.
+- No ID-based ordering is needed: contributor order is the given sequence, and
+  IDs only name contributors. Built-ins have no special position.
+- Carry, for each winning leaf, the overridden contributors with differing
+  values, as structured data (project root, field path, contributor origins), for
+  F07.4 and F07.5. Invalid input is a validation error, never something a later
+  contributor or override can hide.
 
-**Gate:** shuffle contributor order and compare outcomes; cover C04,
-[C12](../../007.04-composition-golden-fixtures.md#c12--cross-plugin-conflicts-require-a-relevant-explicit-resolution)
+**Gate:** same ordered sequence under shuffled scheduling gives identical
+output; reversing the sequence flips winners and the overridden set. Cover C04,
+[C12](../../007.04-composition-golden-fixtures.md#c12--later-activation-wins-explicit-configuration-overrides-both)
 and [C17](../../007.04-composition-golden-fixtures.md#c17--normalize-duplicates-only-after-positional-operations).
-Also cover equal values with distinct origins, interpretation modes, leaf and
-subtree masks, and unrelated overrides. Revert this entry point without undoing
+Also cover equal values with distinct origins (no overridden entry), interpretation
+modes, leaf and subtree masks by explicit layers, and unrelated overrides. Revert this entry point without undoing
 explicit-config provenance.
 
-## F07.4 — Diagnose unresolved conflicts
+## F07.4 — Notify when a later contributor overrides
 
-**Depends on F07.3.** Convert unresolved conflicts into `omni_diagnostic`
-errors at the composition boundary. Report the root, structured field path,
-both contributor IDs and declaring files when known. Describe how an explicit
-override resolves the field. Avoid raw configuration values in messages.
-Do not change the existing duplicate-final-project-name check.
+**Depends on F07.3.** Keep this slice, now small, because an override between
+plugins must not be silent. At the composition boundary raise one aggregated
+info-level `omni_diagnostic` notice (declared like `cache.dependency_demoted` in
+`crates/omni_task_executor/src/notices.rs`; illustrative code
+`composition.plugin_override`) with counts of overridden fields and projects. Raise it
+only when a later contributor's value differs from an earlier one and no explicit
+layer replaces the field; coalesced values and additive lists raise nothing. Never
+put raw values in the message. Details live in the F07.5 inspection field. Do not
+change the existing duplicate-final-project-name check, which stays an error.
 
-**Gate:** pin diagnostic code, stable order and CLI/MCP error detail. Include a
-fileless contributor and a conflict surviving an unrelated explicit override.
-Revert the new diagnostic mapping without changing replay semantics.
+**Gate:** pin the notice code, level and message text; cover differing, equal,
+explicitly replaced and fileless-contributor cases. Revert the notice without
+changing composition.
 
 ## F07.5 — Expose winning provenance through inspection
 
 **Depends on F07.1–F07.4 and F09.** Start with the tracked `cache.enabled`
 origin in `omni cache eligibility` and `cache_eligibility` MCP. Add an explicit
 output field rather than serializing internal provenance. Text reports the
-deciding tier and safe, workspace-relative file where available; JSON and MCP
-share the same fields. Fileless and fallback decisions have no file, and no
+deciding tier and safe, workspace-relative file where available, and now also names
+the overridden contributors (plugin ids and declaration locations, never values);
+JSON and MCP share the same fields. Fileless and fallback decisions have no file, and no
 raw values or file contents are returned. Keep F09 inspection non-executing.
 Do not claim comprehensive field provenance before those fields are tracked.
 
 **Gate:** snapshot text, JSON and MCP for inherited, overridden, fallback and
-fileless decisions. Verify the inspection still runs no commands or environment
-substitutions. Revert the output addition independently.
+fileless decisions, and for a decision with overridden contributors. Verify the
+inspection still runs no commands or environment substitutions. Revert the output
+addition independently.
+
+## Decision and audit
+
+**Decision (2026-11-26, maintainer approved).** Activation-list order decides
+precedence between plugins; the later listed wins. Reasons: opt-in activation makes
+the list explicit user configuration; Nx uses the same rule; a hybrid (error by
+default, order resolves) collapses because the list is always present. Built-ins have
+no special order. Declaration layers go less specific first. The earlier model
+(conflicts are errors, no order decides winners) is superseded; see
+[§7.3](../../007.02-multiple-plugins-and-conflicts.md#73-multiple-plugins-and-conflicts)
+and [§11](../../011.00-alternatives-and-discussion.md#11-alternatives-and-discussion-points).
+
+**Audit appendix: places that stated or depended on the old rule.**
+
+| Place                                                                                  | Action                                                                                    |
+| -------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| 007.02 §7.3 (rule, ID order, list-restriction reason, final conflict paragraph)        | Rewritten; list restrictions kept, reason restated                                        |
+| 007.01 §7.2 item 1                                                                     | Reworded: list order decides cross-activation precedence                                  |
+| 007.00 (replace note, apply combination, accumulated value)                            | Reworded to ordered precedence                                                            |
+| 007.03 (two sentences on conflict/last-writer rules)                                   | Reworded; duplicate project names stay errors                                             |
+| 007.04 C04                                                                             | Order now activation-list; reversed-list case added                                       |
+| 007.04 C12                                                                             | Rewritten as ordered-precedence fixture with explicit override                            |
+| 007.04 C17, C14                                                                        | Unchanged: no dependence                                                                  |
+| 005.00 (list order never chooses a winner; stable effective-id order; execution order) | Clarified: only id collisions; ordered by list                                            |
+| 008.00, 008.01                                                                         | Reordering recomposes, fragments stay valid; composed-result keys include the ordered ids |
+| 011.00                                                                                 | Alternative moved to chosen; old rule and hybrid recorded                                 |
+| 000.00, 010.00, 013.00, 016.00                                                         | Wording only                                                                              |
+| 017.00 §17.1                                                                           | Conflict markers replaced by ordered precedence; fixtures list updated                    |
+| 018.00 §18.1                                                                           | Resolution note; no open decision                                                         |
+| 014.00 activation-id order for version negotiation                                     | Left: protocol selection, not composition                                                 |
+| 004.01, 006.02, 006.04 conflicts                                                       | Left: conflicts within one context or one owner's claims, unrelated                       |
+| F07 feature doc, F07.3-F07.5, sequencing                                               | Rewritten here                                                                            |
+| tasks.yaml F07 and P04.5 titles, owner text; SCHEDULE.md                               | Edited; regenerated with `python3 schedule.py` and `oxfmt`                                |
+| README, P04, P08, P16, R04                                                             | Wording only                                                                              |
 
 ## Review and sequencing
 
 Approve the plan before changing code. Confirm the proposed collection policy
-before F07.3; it does not block the replay prototype. Keep F06.3 cache-key
+before F07.3 (precedence itself is decided, below); it does not block the replay prototype. Keep F06.3 cache-key
 changes and F03 alias plumbing out of these diffs; use the existing dependency
 resolution contract, with plugin integration and new aliases wired separately.
 For each slice, run scoped formatting, clippy and tests per `CONTRIBUTING.md`;

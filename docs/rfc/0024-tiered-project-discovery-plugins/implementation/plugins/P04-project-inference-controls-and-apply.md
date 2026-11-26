@@ -10,7 +10,7 @@ project authors control inferred projects.
 ## RFC references
 
 - [§7.1 project modes, apply, defaults](../../007.00-project-modes-and-apply.md)
-- [§7.2 layer order](../../007.01-layer-order-and-merge-semantics.md), [§7.3 conflicts](../../007.02-multiple-plugins-and-conflicts.md#73-multiple-plugins-and-conflicts)
+- [§7.2 layer order](../../007.01-layer-order-and-merge-semantics.md), [§7.3 multiple plugins](../../007.02-multiple-plugins-and-conflicts.md#73-multiple-plugins-and-conflicts)
 - [§6.3 data boundary](../../006.03-data-boundary-and-literal-values.md#63-data-boundary), [§17.1](../../017.00-review-findings-and-prerequisites.md#171-inferred-collection-operations-versus-conflict-detection)
 - Fixtures C01-C07, C09, C12-C15, C19, C22, C26
 
@@ -33,8 +33,8 @@ project authors control inferred projects.
    (baseline `append` semantics, rooted paths); outputs and other fields rejected. Slots
    into the F05 tier order between plugin-emitted and the host fallback.
 5. **Composition of activations:** per-activation first, then combined under F07's
-   conflict rules, beneath explicit extension/concrete layers; reordered loading never
-   picks a winner; dependency edges resolve after composition and replacement.
+   ordered-precedence rules (activation-list order, later wins), beneath explicit
+   extension/concrete layers; reordered loading never picks a winner; dependency edges resolve after composition and replacement.
 
 ## Acceptance
 

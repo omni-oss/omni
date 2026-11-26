@@ -166,7 +166,7 @@ A task may start once every dependency is merged. All tasks in a wave are depend
 | Task    | Title                                                 | Size | Deps              | Domains               |
 | ------- | ----------------------------------------------------- | ---- | ----------------- | --------------------- |
 | F05.1   | Origin-tagged cache enablement through CacheInfo      | M    | R04.3             | extractor             |
-| F07 ⚠   | Conflict detection and provenance                     | L    | R04.3, R07.2      | loader, config-types  |
+| F07 ⚠   | Ordered contributor composition and provenance        | L    | R04.3, R07.2      | loader, config-types  |
 | P04.1 ⚠ | Project inference controls                            | M    | R04.3, P02        | config-types          |
 | P04.2 ⚠ | Restricted additive plugin contribution types         | M    | R04.3, R03.2, B03 | config-types          |
 | P09.2   | Static manifest validation and descriptors            | M    | P09.1             | plugin-config, source |
@@ -213,16 +213,16 @@ A task may start once every dependency is merged. All tasks in a wave are depend
 
 ### Wave 7
 
-| Task    | Title                                       | Size | Deps              | Domains         |
-| ------- | ------------------------------------------- | ---- | ----------------- | --------------- |
-| P04.5   | Activation composition under conflict rules | M    | P04.3, P04.4, F07 | loader          |
-| P06.3 ⚠ | Dispositions and transition table           | M    | P06.2             | plugin-host     |
-| P06.4 ⚠ | Dependency-ordered inference                | M    | P06.1, P06.2      | plugin-host     |
-| P06.5 ⚠ | Claim and query service                     | L    | P06.2, P01.1      | plugin-host     |
-| P06.7 ⚠ | Budgets, cancellation, overflow splitting   | L    | P06.2, P01.5      | plugin-host     |
-| P10.3 ⚠ | JS manager selection                        | M    | P10.1, P10.2      | plugin-builtins |
-| P10.6 ⚠ | JS script tasks                             | M    | P10.1, R03.3      | plugin-builtins |
-| P11.4 ⚠ | Cargo build/check/test tasks                | M    | P11.1, R03.3      | plugin-builtins |
+| Task    | Title                                           | Size | Deps              | Domains         |
+| ------- | ----------------------------------------------- | ---- | ----------------- | --------------- |
+| P04.5   | Activation composition under ordered precedence | M    | P04.3, P04.4, F07 | loader          |
+| P06.3 ⚠ | Dispositions and transition table               | M    | P06.2             | plugin-host     |
+| P06.4 ⚠ | Dependency-ordered inference                    | M    | P06.1, P06.2      | plugin-host     |
+| P06.5 ⚠ | Claim and query service                         | L    | P06.2, P01.1      | plugin-host     |
+| P06.7 ⚠ | Budgets, cancellation, overflow splitting       | L    | P06.2, P01.5      | plugin-host     |
+| P10.3 ⚠ | JS manager selection                            | M    | P10.1, P10.2      | plugin-builtins |
+| P10.6 ⚠ | JS script tasks                                 | M    | P10.1, R03.3      | plugin-builtins |
+| P11.4 ⚠ | Cargo build/check/test tasks                    | M    | P11.1, R03.3      | plugin-builtins |
 
 ⚠ `plugin-host` shared by P06.3, P06.4, P06.5, P06.7: serialize or give to one worker.
 
