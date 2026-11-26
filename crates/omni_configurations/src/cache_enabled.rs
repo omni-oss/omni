@@ -78,13 +78,14 @@ pub struct CacheEnabled {
     pub source: CacheEnabledSource,
 }
 
-/// The host fallback for a handwritten task: cache unless told otherwise.
-pub const HANDWRITTEN_TASK_FALLBACK: bool = true;
+/// The host fallback for a task written in configuration: cache unless told
+/// otherwise.
+pub const CONFIGURED_TASK_CACHE_ENABLED_FALLBACK: bool = true;
 
 /// The host fallback for a task a plugin inferred: do not cache unless something
 /// says to. Unused until plugins can contribute tasks; callers resolving an
-/// inferred task pass this instead of [`HANDWRITTEN_TASK_FALLBACK`].
-pub const INFERRED_TASK_FALLBACK: bool = false;
+/// inferred task pass this instead of [`CONFIGURED_TASK_CACHE_ENABLED_FALLBACK`].
+pub const INFERRED_TASK_CACHE_ENABLED_FALLBACK: bool = false;
 
 impl CacheEnabled {
     /// The highest tier that has a value wins; with none, `host_fallback` applies.
@@ -241,19 +242,25 @@ mod tests {
     }
 
     #[test]
-    fn an_inferred_task_defaults_to_uncached_and_a_handwritten_one_to_cached() {
-        let inferred =
-            CacheEnabled::from_authored(None, None, INFERRED_TASK_FALLBACK);
-        let handwritten =
-            CacheEnabled::from_authored(None, None, HANDWRITTEN_TASK_FALLBACK);
+    fn an_inferred_task_defaults_to_uncached_and_a_configured_one_to_cached() {
+        let inferred = CacheEnabled::from_authored(
+            None,
+            None,
+            INFERRED_TASK_CACHE_ENABLED_FALLBACK,
+        );
+        let configured = CacheEnabled::from_authored(
+            None,
+            None,
+            CONFIGURED_TASK_CACHE_ENABLED_FALLBACK,
+        );
         assert_eq!(inferred, decided(false, HostFallback));
-        assert_eq!(handwritten, decided(true, HostFallback));
+        assert_eq!(configured, decided(true, HostFallback));
         // An authored setting still wins on an inferred task.
         assert_eq!(
             CacheEnabled::from_authored(
                 Some(true),
                 None,
-                INFERRED_TASK_FALLBACK
+                INFERRED_TASK_CACHE_ENABLED_FALLBACK
             ),
             decided(true, TaskExplicit)
         );
