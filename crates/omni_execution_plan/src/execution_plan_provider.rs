@@ -1531,6 +1531,74 @@ mod tests {
     }
 
     #[test]
+    fn with_dependents_walks_through_other_names_keeping_the_selector_semantics()
+     {
+        // `site` depends on `api`. `site#pack` (alias `compile`) waits for
+        // `api#build`, which waits for `web#build-native`, so it is reached
+        // only through a differently named task. `site#lint` is reached the
+        // same way but is not requested.
+        let mut projects = alias_projects();
+        let mut site = omni_core::Project::new(
+            "site",
+            "/ws/site".into(),
+            vec!["api".into()],
+            Default::default(),
+        );
+        for name in ["pack", "lint"] {
+            site.tasks.insert(
+                name.into(),
+                alias_task(vec![TaskDependency::Upstream {
+                    task: "build".into(),
+                }]),
+            );
+        }
+        projects.push(
+            site.with_aliases(omni_core::TaskAliases::new(
+                [("compile".to_string(), "pack".to_string())]
+                    .into_iter()
+                    .collect(),
+            )),
+        );
+
+        for call in [
+            Call::Tasks(vec![exact("compile")]),
+            Call::pattern_tasks(["comp*"]),
+        ] {
+            let ctx = FixtureContext {
+                projects: projects.clone(),
+                patterns: GlobPatterns::default(),
+            };
+            let selection = DefaultExecutionPlanProvider::new(ctx)
+                .get_execution_selection(
+                    &call,
+                    &[ProjectSelector::exact("web")],
+                    &[],
+                    None,
+                    None,
+                    false,
+                    true,
+                )
+                .unwrap();
+            let label = |k: &TaskKey| k.label().into_string();
+            let direct: Vec<String> =
+                selection.direct.iter().map(label).collect();
+            let mut plan: Vec<String> = selection
+                .plan
+                .iter()
+                .flatten()
+                .map(|n| n.key().label().into_string())
+                .collect();
+            plan.sort();
+            assert_eq!(direct, ["web#build-native"], "{call:?}");
+            assert_eq!(
+                plan,
+                ["api#build", "api#compile", "site#pack", "web#build-native"],
+                "{call:?}"
+            );
+        }
+    }
+
+    #[test]
     fn raw_canonical_mode_never_resolves_an_alias() {
         let (direct, _) = select(
             &Call::Tasks(vec![
