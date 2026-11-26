@@ -127,8 +127,12 @@ impl<'a, TSys: TaskExecutorSys, S: ExecutionEventSubscriber>
             results_accumulator.extend(results);
         }
 
-        Ok(results_accumulator.into_values().collect())
+        Ok(ordered_results(results_accumulator))
     }
+}
+
+fn ordered_results<V>(results: TaskMap<V>) -> Vec<V> {
+    results.into_sorted_values()
 }
 
 #[derive(Debug, thiserror::Error, omni_diagnostic::Diagnostic)]
@@ -158,4 +162,39 @@ enum ExecutionPipelineErrorInner {
     #[error(transparent)]
     #[diagnostic(delegate)]
     BatchExecutor(#[from] BatchExecutorError),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn results_are_ordered_by_project_then_task() {
+        const PROJECTS: usize = 100;
+        const TASKS: [&str; 3] = ["build", "lint", "test"];
+        const RUNS: usize = 20;
+
+        let mut expected = Vec::new();
+        for p in 0..PROJECTS {
+            for t in TASKS {
+                expected.push((format!("project-{p}"), t.to_string()));
+            }
+        }
+        expected.sort();
+
+        // Every `TaskMap` seeds its hashers independently, so each run starts
+        // from a different iteration order. A fixed order surviving
+        // `RUNS` x 300 entries by luck is negligible.
+        for run in 0..RUNS {
+            let mut map = TaskMap::new();
+            for (project, task) in expected.iter().rev() {
+                map.insert(project, task, (project.clone(), task.clone()));
+            }
+
+            assert!(
+                ordered_results(map) == expected,
+                "run {run}: results are not sorted by (project, task)"
+            );
+        }
+    }
 }
