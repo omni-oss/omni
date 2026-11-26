@@ -41,7 +41,7 @@ interface Case {
     label: string;
     spec: WorkspaceSpec["projects"];
     args: string[];
-    /** Tasks that must have run exactly once, `setup` before `build-native`. */
+    /** Tasks that must have run before this task, `setup` before `build-native`. */
     expected: string[];
 }
 
