@@ -60,7 +60,7 @@ inferred layers must compose beneath explicit ones without importing defaults.
 
 ## Out of scope
 
-- Plugin layers, `apply`, activation `defaults` (F05), conflict markers (F07),
+- Plugin layers, `apply`, activation `defaults` (F05), contributor composition (F07),
   alias lowering (F03), virtual identity (R07).
 
 ## Acceptance

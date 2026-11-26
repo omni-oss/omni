@@ -10,7 +10,7 @@ project authors control inferred projects.
 ## RFC references
 
 - [§7.1 project modes, apply, defaults](../../007.00-project-modes-and-apply.md)
-- [§7.2 layer order](../../007.01-layer-order-and-merge-semantics.md), [§7.3 conflicts](../../007.02-multiple-plugins-and-conflicts.md#73-multiple-plugins-and-conflicts)
+- [§7.2 layer order](../../007.01-layer-order-and-merge-semantics.md), [§7.3 multiple plugins](../../007.02-multiple-plugins-and-conflicts.md#73-multiple-plugins-and-conflicts)
 - [§6.3 data boundary](../../006.03-data-boundary-and-literal-values.md#63-data-boundary), [§17.1](../../017.00-review-findings-and-prerequisites.md#171-inferred-collection-operations-versus-conflict-detection)
 - Fixtures C01-C07, C09, C12-C15, C19, C22, C26
 
@@ -21,8 +21,9 @@ project authors control inferred projects.
    the concrete discovered file and are **not inherited** from bases; `base: true` still
    excludes templates.
 2. **Restricted plugin-contribution types** in `omni_configurations`: the allowed
-   field subset and additive-only collection profile (plain additions and `append`;
-   reject `prepend`/`replace`/positional `merge`), no host-managed fields, no `extends`
+   field subset and additive-only collection profile (`append` envelope only;
+   reject plain lists and bare `key.files` patterns, `prepend`/`replace`/positional
+   `merge`), shared with activation `defaults` (maintainer-confirmed 2026-11-27), no host-managed fields, no `extends`
    paths, literal-only environment values (uses R03 literal operands).
 3. **Standard `apply`:** workspace-selected files per activation, resolved relative to
    the declaring file; reuse extension-closure traversal and raw-layer replay (R04/R07);
@@ -33,8 +34,8 @@ project authors control inferred projects.
    (baseline `append` semantics, rooted paths); outputs and other fields rejected. Slots
    into the F05 tier order between plugin-emitted and the host fallback.
 5. **Composition of activations:** per-activation first, then combined under F07's
-   conflict rules, beneath explicit extension/concrete layers; reordered loading never
-   picks a winner; dependency edges resolve after composition and replacement.
+   ordered-precedence rules (activation-list order, later wins, within a tier for `cache.enabled`), beneath explicit
+   extension/concrete layers; reordered loading never picks a winner; dependency edges resolve after composition and replacement.
 
 ## Acceptance
 
@@ -43,7 +44,8 @@ project authors control inferred projects.
 - Multiple activations' disjoint task patches; activation-local subtraction keeps
   another activation's values; later explicit replacement overrides globally.
 - Applied references survive public alias changes and cache round trips.
-- Rejected plugin `prepend`/`replace` even if later overridden.
+- Rejected plugin plain list and `prepend`/`replace` even if later overridden, with a
+  structured error at the output boundary; authored plain lists still replace.
 - A finalized config holding a plugin-emitted root reference serializes and
   inspects cleanly (`ProjectConfigResponse`, `print-config`), using the internal
   serialization added in [#147](https://github.com/omni-oss/omni/pull/147).
