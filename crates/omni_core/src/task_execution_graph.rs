@@ -3702,12 +3702,14 @@ mod with_sibling_prerequisites_tests {
         assert_eq!(sorted(direct), vec!["app#t".to_string()]);
     }
 
+    type ChainNeeds<'a> = &'a [(&'a str, &'a str)];
+    type ChainTask<'a> = (&'a str, ChainNeeds<'a>);
+    type ChainProject<'a> = (&'a str, &'a [&'a str], &'a [ChainTask<'a>]);
+
     /// Proof tests for walking `--with-dependents` through differently named
     /// tasks. Each project holds the tasks named in `tasks`; `(task, project,
     /// task)` entries are `task` depending on `project#task`.
-    fn chain_graph(
-        projects: &[(&str, &[&str], &[(&str, &[(&str, &str)])])],
-    ) -> TaskExecutionGraph {
+    fn chain_graph(projects: &[ChainProject]) -> TaskExecutionGraph {
         build(
             projects
                 .iter()
@@ -3951,6 +3953,95 @@ mod with_sibling_prerequisites_tests {
             dependents_plan(&g, "core", &["build"]),
             strs(&[&["core#build"]])
         );
+    }
+
+    fn sibling_chain() -> TaskExecutionGraph {
+        build(vec![
+            project(
+                "core",
+                &[],
+                TasksBuilder::new().task("build", "x", |b| b).build(),
+            ),
+            project(
+                "mid",
+                &["core", "side"],
+                TasksBuilder::new()
+                    .task("test", "x", |b| {
+                        b.explicit_project_dependency("core", "build")
+                            .explicit_project_sibling("side", "build")
+                    })
+                    .build(),
+            ),
+            project(
+                "side",
+                &["extra"],
+                TasksBuilder::new()
+                    .task("build", "x", |b| {
+                        b.explicit_project_dependency("extra", "prep")
+                    })
+                    .build(),
+            ),
+            project(
+                "extra",
+                &[],
+                TasksBuilder::new().task("prep", "x", |b| b).build(),
+            ),
+            project(
+                "end",
+                &["mid"],
+                TasksBuilder::new()
+                    .task("build", "x", |b| {
+                        b.explicit_project_dependency("mid", "test")
+                    })
+                    .build(),
+            ),
+        ])
+    }
+
+    /// Fails on the base (`end#build` is not added, so only `core#build`
+    /// runs). Once an added dependent needs `mid#test`, it runs as a
+    /// dependency and step 3 also schedules its `with` sibling `side#build`
+    /// and the sibling's prerequisite `extra#prep`.
+    #[test]
+    fn with_dependents_pulled_in_intermediate_runs_its_siblings() {
+        let g = sibling_chain();
+        let mut all = dependents_plan(&g, "core", &["build"])
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
+        all.sort();
+        assert_eq!(
+            all,
+            [
+                "core#build",
+                "end#build",
+                "extra#prep",
+                "mid#test",
+                "side#build"
+            ]
+        );
+    }
+
+    /// Fails on the base for the same reason: an unrelated dependency of the
+    /// intermediate (`extra#prep`) is scheduled once `end#build` needs it.
+    #[test]
+    fn with_dependents_pulled_in_intermediate_runs_its_other_dependencies() {
+        let g = chain_graph(&[
+            ("core", &[], &[("build", &[])]),
+            ("extra", &[], &[("prep", &[])]),
+            (
+                "mid",
+                &["core", "extra"],
+                &[("test", &[("core", "build"), ("extra", "prep")])],
+            ),
+            ("end", &["mid"], &[("build", &[("mid", "test")])]),
+        ]);
+        let mut all = dependents_plan(&g, "core", &["build"])
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
+        all.sort();
+        assert_eq!(all, ["core#build", "end#build", "extra#prep", "mid#test"]);
     }
 
     /// Guard: the direct set stays the filter match, whatever the walk adds,
