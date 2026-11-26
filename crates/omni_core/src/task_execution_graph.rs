@@ -1112,13 +1112,20 @@ impl TaskExecutionGraph {
             ordered_batches.push(batches.get(&level).unwrap().clone());
         }
 
+        // Batch membership is already deterministic; the order inside a batch
+        // comes from hash iteration, so sort it by identity.
         let plan = ordered_batches
             .into_iter()
-            .map(|batch| {
+            .map(|mut batch| {
+                batch.sort_unstable_by(|a, b| {
+                    let (a, b) =
+                        (&self.di_graph[*a].key, &self.di_graph[*b].key);
+                    (a.project(), a.task()).cmp(&(b.project(), b.task()))
+                });
                 batch
                     .into_iter()
                     .map(|node| self.di_graph[node].clone())
-                    .collect()
+                    .collect::<Vec<_>>()
             })
             .collect();
         Ok((direct, plan))
@@ -1854,6 +1861,60 @@ mod tests {
         };
 
         ProjectGraph::from_projects(vec![project]).expect("Can't create graph")
+    }
+
+    /// Three projects with four independent tasks each (one wide batch of
+    /// twelve), plus a dependent per project (a second, three-task batch).
+    fn wide_batch_project_graph() -> ProjectGraph {
+        let projects = ["zeta", "alpha", "mid"]
+            .into_iter()
+            .map(|name| Project {
+                tasks: TasksBuilder::new()
+                    .task("t3", "echo t3", |b| b)
+                    .task("t1", "echo t1", |b| b)
+                    .task("t4", "echo t4", |b| b)
+                    .task("t2", "echo t2", |b| b)
+                    .task("last", "echo last", |b| b.own_dependency("t1"))
+                    .build(),
+                ..create_project(name)
+            })
+            .collect();
+
+        ProjectGraph::from_projects(projects).expect("Can't create graph")
+    }
+
+    /// Every build of the graph allocates fresh `HashMap`s with new random
+    /// hasher keys, so an unsorted batch differs between builds. A batch of
+    /// twelve has 12! orderings, so 25 builds that all agree by luck on the
+    /// old code are negligible (about 1e-200).
+    #[test]
+    fn batch_order_within_a_batch_is_deterministic() {
+        let project_graph = wide_batch_project_graph();
+        let order = || {
+            let task_graph =
+                TaskExecutionGraph::from_project_graph(&project_graph).unwrap();
+            let plan =
+                task_graph.get_batched_execution_plan(|_| Ok(true)).unwrap();
+            plan.iter()
+                .map(|batch| {
+                    batch
+                        .iter()
+                        .map(|n| n.full_task_name().to_string())
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>()
+        };
+
+        let first = order();
+        assert_eq!(first.len(), 2);
+        assert_eq!(first[0].len(), 12);
+        for _ in 0..25 {
+            assert_eq!(order(), first);
+        }
+
+        let mut sorted = first.clone();
+        sorted.iter_mut().for_each(|b| b.sort());
+        assert_eq!(first, sorted, "batches are sorted by (project, task)");
     }
 
     #[test]
