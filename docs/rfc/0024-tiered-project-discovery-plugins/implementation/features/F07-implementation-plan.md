@@ -222,7 +222,9 @@ P-series work will wire its own validation and activation boundaries.
   contributor or override can hide.
 
 **Gate:** same ordered sequence under shuffled scheduling gives identical
-output; reversing the sequence flips winners and the overridden set. Cover C04,
+output; reversing the sequence flips the winner and the overridden set of a field that plugins
+set to different values at the same tier with no explicit override (an explicit layer or
+a higher `cache.enabled` tier keeps its winner). Cover C04,
 [C12](../../007.04-composition-golden-fixtures.md#c12--later-activation-wins-explicit-configuration-overrides-both)
 and [C17](../../007.04-composition-golden-fixtures.md#c17--normalize-duplicates-only-after-positional-operations).
 Also cover equal values with distinct origins (no overridden entry), interpretation
@@ -239,7 +241,9 @@ info-level `omni_notice::Notice` (RFC 0023; declared like `cache.dependency_demo
 only when a later contributor's value differs from an earlier one and no explicit
 layer replaces the field (provenance still lists the overridden contributors
 then); coalesced values and additive lists raise nothing. Never
-put raw values in the message. Details live in the F07.5 inspection field. Do not
+put raw values in the message. Details for `cache.enabled` overrides live in the F07.5 inspection field; details for
+other fields, such as a description override, wait for P12 inspection, so the notice
+carries counts only until then. Do not
 change the existing duplicate-final-project-name check, which stays an error.
 
 **Gate:** pin the notice code, level and message text; cover differing, equal,

@@ -43,13 +43,16 @@ activation-list order (inferred tasks stay activation-scoped and never collide),
    still overrides every contributor.
 3. Record the overridden contributors beside the winner, only when the values differ.
 4. Execution/loading-order independence: the same ordered list gives identical results
-   however contributors are scheduled; reversing the list reverses the winners.
+   however contributors are scheduled; reversing the list reverses the winner of a field
+   that plugins set to different values at the same tier with no explicit override.
 5. Surface provenance via existing inspection output where cheap (full UI is F09).
 
 ## Acceptance
 
 - Same ordered contributors give identical outcomes under any scheduling; reversing the
-  order flips the winners.
+  order flips the winner of a field that plugins set to different values at the same
+  tier with no explicit override (an explicit layer or a higher `cache.enabled` tier
+  keeps its winner).
 - Explicit masking at leaf and subtree boundaries; equal text with different
   interpretation modes are not equal.
 - Provenance and the notice name the overridden contributors, without raw values.
