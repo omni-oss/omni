@@ -302,11 +302,10 @@ and [§11](../../011.00-alternatives-and-discussion.md#11-alternatives-and-discu
 | tasks.yaml F07 and P04.5 titles, owner text; SCHEDULE.md                               | Edited; regenerated with `python3 schedule.py` and `oxfmt`                                |
 | README, P04, P08, P16, R04                                                             | Wording only                                                                              |
 
-**Open questions for the maintainer** (also in
+**Decided by the maintainer on 2026-11-26** (also in
 [§7.3](../../007.02-multiple-plugins-and-conflicts.md#73-multiple-plugins-and-conflicts)).
 (1) Ambiguous automatic alias is the one place list order does not decide a winner;
-should it also be resolved by list order? Recommendation: keep the error for now.
-(2) Confirm the conservative exclusion of `cache.remote` from plugin output.
+it stays an error. (2) `cache.remote` is excluded from plugin output.
 
 ## Review and sequencing
 
