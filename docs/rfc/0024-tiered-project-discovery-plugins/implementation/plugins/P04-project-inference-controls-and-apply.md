@@ -33,7 +33,7 @@ project authors control inferred projects.
    (baseline `append` semantics, rooted paths); outputs and other fields rejected. Slots
    into the F05 tier order between plugin-emitted and the host fallback.
 5. **Composition of activations:** per-activation first, then combined under F07's
-   ordered-precedence rules (activation-list order, later wins), beneath explicit
+   ordered-precedence rules (activation-list order, later wins, within a tier for `cache.enabled`), beneath explicit
    extension/concrete layers; reordered loading never picks a winner; dependency edges resolve after composition and replacement.
 
 ## Acceptance

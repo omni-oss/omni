@@ -17,8 +17,8 @@ Amended 2026-11-26: this replaces the earlier conflict-detection model
 ## Why it matters
 
 Standalone: "where did this value come from?" for explicit `extends` chains. For plugins:
-two plugins emitting the same task or field resolve deterministically by activation-list
-order, independent of scheduling order, and the override is visible rather than silent.
+two plugins emitting the same shared project field resolve deterministically by
+activation-list order (inferred tasks stay activation-scoped and never collide), independent of scheduling order, and the override is visible rather than silent.
 
 ## RFC references
 
@@ -38,7 +38,8 @@ order, independent of scheduling order, and the override is visible rather than 
 
 1. Provenance type: layer id, file path (workspace-normalized, R02), field path.
 2. Composition model: contributors arrive as an ordered sequence; the later one wins a
-   scalar or task field; the explicit extension chain stays last-wins as today and
+   shared project field (within one tier for `cache.enabled`; a same-key task field
+   across ordered layers); the explicit extension chain stays last-wins as today and
    still overrides every contributor.
 3. Record the overridden contributors beside the winner, only when the values differ.
 4. Execution/loading-order independence: the same ordered list gives identical results

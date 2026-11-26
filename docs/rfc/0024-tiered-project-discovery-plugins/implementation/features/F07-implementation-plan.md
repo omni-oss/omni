@@ -182,6 +182,10 @@ given as an ordered sequence of stable contributor IDs, the same shape the
 activation list will supply. Treat activation-local application as
 finished input: one contributor's subtraction never edits another's values
 ([C04](../../007.04-composition-golden-fixtures.md#c04--application-subtraction-is-activation-local)).
+Plugin-level `cache.enabled` needs care: `CacheEnabledSource` has one `Plugin` variant today
+(`crates/omni_configurations/src/cache_enabled.rs`) and `CacheEnabled::resolve` keeps the
+last of equal candidates, so resolve plugin task over plugin project before passing a
+single `Plugin` candidate, or split the variant, so C01 holds.
 Add a typed contributor variant to `DeclarationSource` here, rather than
 encoding contributor identity as a file path or an anonymous fileless ID.
 P-series work will wire its own validation and activation boundaries.
