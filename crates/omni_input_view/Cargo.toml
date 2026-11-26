@@ -9,6 +9,8 @@ publish = false
 
 [dependencies]
 blake3 = { workspace = true }
+omni_codes = { workspace = true }
+omni_diagnostic = { workspace = true }
 omni_path_utils = { workspace = true }
 thiserror = { workspace = true }
 
@@ -23,6 +25,7 @@ windows-sys = { version = "0.61", features = [
 ] }
 
 [dev-dependencies]
+eyre = { workspace = true }
 omni_test_capabilities = { workspace = true }
 tempfile = { workspace = true }
 

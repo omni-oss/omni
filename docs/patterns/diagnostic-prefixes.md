@@ -42,6 +42,7 @@ recorded here. Test-only prefixes are not listed.
 | `ignore` | `omni_ignore_core` |
 | `input` | `omni_input_schema` |
 | `input_provider` | `omni_input_provider` |
+| `input_view` | `omni_input_view` |
 | `meta` | `omni_execution_plan` |
 | `meta_source` | `omni_meta` |
 | `notices` | `omni_mcp_core` |

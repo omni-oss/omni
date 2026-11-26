@@ -89,10 +89,7 @@ fn junction(link: &Path, target: &Path) {
 }
 
 fn is_reparse(error: &InputError) -> bool {
-    matches!(
-        error,
-        InputError::Containment(ContainmentViolation::ReparsePoint)
-    )
+    matches!(error, InputError::ReparsePoint { .. })
 }
 
 fn raw_walk(
@@ -176,10 +173,7 @@ fn names_are_rejected_by_d9_not_reported_as_missing() {
     ] {
         let error = read_inside(&root, path).unwrap_err();
         assert!(
-            matches!(
-                error,
-                InputError::Containment(ContainmentViolation::NameUnsupported)
-            ),
+            matches!(error, InputError::UnsupportedName { .. }),
             "{path}: {error:?}"
         );
     }

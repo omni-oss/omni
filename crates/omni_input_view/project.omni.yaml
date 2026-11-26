@@ -7,4 +7,6 @@ extends:
   - "@workspace/omni/presets/rust-multiplatform.omni.yaml"
 
 dependencies:
+  - omni_codes
+  - omni_diagnostic
   - omni_path_utils

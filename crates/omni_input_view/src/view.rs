@@ -17,10 +17,10 @@ use crate::{
     cancel::Cancellation,
     contain::{ContainedRoot, Want, entries},
     digest::{Blake3Digest, DigestSink},
-    error::{BudgetKind, ContainmentViolation, EntryKind, InputError},
+    error::{BudgetKind, EntryKind, InputError, NameProblem},
     evidence::{Evidence, FileIdentity, Observation, PathEvidence},
     limits::InputLimits,
-    name::check_name,
+    name::{check_name, check_path},
 };
 
 const CHUNK: usize = 64 * 1024;
@@ -122,7 +122,7 @@ pub use revalidate::{Change, ChangeKind, InputsChanged, Revalidation};
 
 impl InputView {
     /// Holds a handle on `root`. Where containment is unsupported this is
-    /// `Containment(Unsupported)` and nothing is read.
+    /// `ContainmentUnsupported` and nothing is read.
     pub fn open(
         root: &Path,
         options: InputViewOptions,
@@ -167,7 +167,12 @@ impl InputView {
         let exists = match kind {
             EntryKind::File => Exists::File,
             EntryKind::Dir => Exists::Dir,
-            other => return Err(InputError::NotRegular(other)),
+            other => {
+                return Err(InputError::NotRegular {
+                    path: path.clone(),
+                    kind: other,
+                });
+            }
         };
         self.record(cx, path, Observation::Present(kind))?;
         Ok(exists)
@@ -185,7 +190,10 @@ impl InputView {
                 return Ok(List::Missing);
             }
             DirOutcome::NotDir(kind) => {
-                return Err(InputError::NotDirectory(kind));
+                return Err(InputError::NotDirectory {
+                    path: dir.clone(),
+                    kind,
+                });
             }
             DirOutcome::Dir(capture) => capture,
         };
@@ -221,7 +229,10 @@ impl InputView {
                 self.record(cx, path, Observation::Missing)?;
                 Ok(Read::Missing)
             }
-            FileOutcome::NotFile(kind) => Err(InputError::NotRegular(kind)),
+            FileOutcome::NotFile(kind) => Err(InputError::NotRegular {
+                path: path.clone(),
+                kind,
+            }),
             FileOutcome::File(capture) => {
                 let bytes: Arc<[u8]> = capture.bytes.into();
                 let bytes = self.record_file(
@@ -276,7 +287,11 @@ impl InputView {
         // Never more than a `Vec` can hold, even on a 32-bit target.
         let limit = self.limits.max_file_bytes.min(isize::MAX as u64);
         if len > limit {
-            return Err(InputError::TooLarge { len, limit });
+            return Err(InputError::TooLarge {
+                path: path.clone(),
+                len,
+                limit,
+            });
         }
         // Charged for the attempt and not refunded if the read later fails.
         self.charge_bytes(meter, len)?;
@@ -342,17 +357,28 @@ impl InputView {
             // list. Every other entry is authorized first, so a denied entry
             // is omitted whatever its name, and only an allowed entry with a
             // name D9 rejects fails the list.
-            let name = entry
-                .name
-                .map_err(|()| ContainmentViolation::NameUnsupported)?;
-            let child = dir
-                .join(&name)
-                .map_err(|_| ContainmentViolation::NameUnsupported)?;
+            let Ok(name) = entry.name else {
+                return Err(InputError::UnsupportedName {
+                    path: entry_path(dir, "<name that is not valid UTF-8>"),
+                    problem: NameProblem::NotRepresentable,
+                });
+            };
+            let Ok(child) = dir.join(&name) else {
+                return Err(InputError::UnsupportedName {
+                    path: entry_path(dir, &name),
+                    problem: NameProblem::NotRepresentable,
+                });
+            };
             match self.authorize(&child)? {
                 AuthDecision::Deny(_) => continue,
                 AuthDecision::Allow => {}
             }
-            check_name(&name)?;
+            check_name(&name).map_err(|problem| {
+                InputError::UnsupportedName {
+                    path: entry_path(dir, &name),
+                    problem,
+                }
+            })?;
             if found.len() >= self.limits.max_dir_entries {
                 return Err(InputError::Budget(BudgetKind::DirEntries));
             }
@@ -398,7 +424,11 @@ impl InputView {
             // Refuse before growing the buffer past the limit.
             let total = bytes.len() as u64 + read as u64;
             if total > limit {
-                return Err(InputError::TooLarge { len: total, limit });
+                return Err(InputError::TooLarge {
+                    path: path.clone(),
+                    len: total,
+                    limit,
+                });
             }
             if total > charged {
                 self.charge_bytes(meter, total - charged)?;
@@ -408,9 +438,13 @@ impl InputView {
             // Amortized growth can ask for more than a 32-bit target has when
             // the bytes still fit, so retry once for exactly what is needed.
             if bytes.try_reserve(read).is_err() {
-                bytes
-                    .try_reserve_exact(read)
-                    .map_err(|_| InputError::TooLarge { len: total, limit })?;
+                bytes.try_reserve_exact(read).map_err(|_| {
+                    InputError::TooLarge {
+                        path: path.clone(),
+                        len: total,
+                        limit,
+                    }
+                })?;
             }
             sink.update(&chunk[..read]);
             bytes.extend_from_slice(&chunk[..read]);
@@ -447,7 +481,7 @@ impl InputView {
         if path.segments().count() > self.limits.max_path_depth {
             return Err(InputError::Budget(BudgetKind::PathDepth));
         }
-        path.segments().try_for_each(check_name)?;
+        check_path(path)?;
         match self.authorize(path)? {
             // The authorizer may have cancelled while deciding.
             AuthDecision::Allow if cx.is_cancelled() => {
@@ -586,6 +620,30 @@ impl InputView {
     }
 }
 
+/// A name read from disk, made safe to print: control characters (a newline or
+/// an ANSI escape in a file name) must not forge or garble terminal and log
+/// output.
+pub(crate) fn printable(name: &str) -> String {
+    name.chars()
+        .flat_map(|c| {
+            if c.is_control() {
+                c.escape_default().collect::<Vec<_>>()
+            } else {
+                vec![c]
+            }
+        })
+        .collect()
+}
+
+fn entry_path(dir: &WorkspacePath, name: &str) -> String {
+    let name = printable(name);
+    if dir.is_root() {
+        name
+    } else {
+        format!("{}/{name}", printable(dir.as_str()))
+    }
+}
+
 fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     mutex
         .lock()
@@ -700,7 +758,7 @@ mod unsupported_tests {
         let root = Path::new("/does/not/exist");
         assert!(matches!(
             InputView::open(root, options(SymlinkPolicy::Reject)),
-            Err(InputError::Containment(ContainmentViolation::Unsupported))
+            Err(InputError::ContainmentUnsupported)
         ));
         assert!(matches!(
             InputView::open(

@@ -102,7 +102,7 @@ impl Fixture {
         let fixture = Self::new();
         let view = fixture.view();
         match view.exists(&wp("."), &cx()) {
-            Err(InputError::Containment(ContainmentViolation::Unsupported)) => {
+            Err(InputError::ContainmentUnsupported) => {
                 // Only a non-x86_64 Linux sandbox may answer `Unsupported`;
                 // anywhere else (x86_64 Linux, Windows) it is a real failure.
                 if !cfg!(target_os = "linux")
@@ -114,9 +114,7 @@ impl Fixture {
                 }
                 assert!(matches!(
                     view.read(&wp("a/b/file"), &cx()),
-                    Err(InputError::Containment(
-                        ContainmentViolation::Unsupported
-                    ))
+                    Err(InputError::ContainmentUnsupported)
                 ));
                 assert!(view.evidence().paths.is_empty());
                 let _ = omni_test_capabilities::gate(
@@ -241,15 +239,24 @@ fn exists_reports_the_kind_and_a_directory_is_not_a_regular_read() {
     assert_eq!(view.exists(&wp("."), &cx()).unwrap(), Exists::Dir);
     assert!(matches!(
         view.read(&wp("."), &cx()),
-        Err(InputError::NotRegular(EntryKind::Dir))
+        Err(InputError::NotRegular {
+            kind: EntryKind::Dir,
+            ..
+        })
     ));
     assert!(matches!(
         view.read(&wp("a/b"), &cx()),
-        Err(InputError::NotRegular(EntryKind::Dir))
+        Err(InputError::NotRegular {
+            kind: EntryKind::Dir,
+            ..
+        })
     ));
     assert!(matches!(
         view.list(&wp("a/b/file"), &cx()),
-        Err(InputError::NotDirectory(EntryKind::File))
+        Err(InputError::NotDirectory {
+            kind: EntryKind::File,
+            ..
+        })
     ));
 }
 
@@ -358,9 +365,7 @@ fn rejected_names_are_refused_before_the_authorizer_or_the_filesystem() {
     for path in ["a/CON", "ab:c", "x/nul.txt", "a/b./c"] {
         assert!(matches!(
             view.read(&wp(path), &cx()),
-            Err(InputError::Containment(
-                ContainmentViolation::NameUnsupported
-            ))
+            Err(InputError::UnsupportedName { .. })
         ));
     }
     assert!(fixture.policy.calls().is_empty());
@@ -383,7 +388,7 @@ fn containment_rejects_what_the_policy_allows() {
         assert!(
             matches!(
                 view.read(&wp(path), &cx()),
-                Err(InputError::Containment(ContainmentViolation::Symlink))
+                Err(InputError::Symlink { .. })
             ),
             "{path}"
         );
@@ -405,7 +410,7 @@ fn containment_rejects_what_the_policy_allows() {
     let view = fixture.view();
     assert!(matches!(
         view.read(&wp("escape/secret"), &cx()),
-        Err(InputError::Containment(ContainmentViolation::ReparsePoint))
+        Err(InputError::ReparsePoint { .. })
     ));
     assert!(view.evidence().paths.is_empty());
 }
@@ -425,11 +430,17 @@ fn a_fifo_is_not_regular_and_does_not_block() {
     let view = fixture.view();
     assert!(matches!(
         view.read(&wp("fifo"), &cx()),
-        Err(InputError::NotRegular(EntryKind::Other))
+        Err(InputError::NotRegular {
+            kind: EntryKind::Other,
+            ..
+        })
     ));
     assert!(matches!(
         view.exists(&wp("fifo"), &cx()),
-        Err(InputError::NotRegular(EntryKind::Other))
+        Err(InputError::NotRegular {
+            kind: EntryKind::Other,
+            ..
+        })
     ));
 }
 
@@ -467,7 +478,11 @@ fn an_oversized_file_is_too_large() {
     });
     assert!(matches!(
         view.read(&wp("big"), &cx()),
-        Err(InputError::TooLarge { len: 10, limit: 5 })
+        Err(InputError::TooLarge {
+            len: 10,
+            limit: 5,
+            ..
+        })
     ));
     assert!(view.evidence().paths.is_empty());
 }
@@ -725,14 +740,70 @@ fn dir_entries_limit_stops_the_list() {
 
 #[cfg(target_os = "linux")]
 #[test]
+fn a_listed_name_failure_says_which_entry_and_why() {
+    use omni_diagnostic::Diagnostic as _;
+    let fixture = listing!();
+    fs::write(fixture.root.at("d").join("ab:c"), "x").unwrap();
+    let error = fixture.view().list(&wp("d"), &cx()).unwrap_err();
+    let message = error.to_string();
+    assert!(message.contains("d/ab:c"), "{message}");
+    assert!(message.contains("alternate data stream"), "{message}");
+    assert_eq!(error.code(), "input_view.unsupported_name");
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn an_unrepresentable_listed_name_is_reported_and_made_printable() {
+    use omni_diagnostic::Diagnostic as _;
+    // A backslash cannot be part of a workspace path; a newline in a name
+    // must not reach the output raw.
+    let fixture = listing!();
+    fs::write(fixture.root.at("d").join("back\\slash"), "x").unwrap();
+    let error = fixture.view().list(&wp("d"), &cx()).unwrap_err();
+    assert!(matches!(
+        error,
+        InputError::UnsupportedName {
+            problem: NameProblem::NotRepresentable,
+            ..
+        }
+    ));
+    assert!(error.to_string().contains("back\\slash"), "{error}");
+    assert_eq!(error.code(), "input_view.unsupported_name");
+
+    let fixture = listing!();
+    fs::write(fixture.root.at("d").join("line\nbreak:x"), "x").unwrap();
+    let message = fixture
+        .view()
+        .list(&wp("d"), &cx())
+        .unwrap_err()
+        .to_string();
+    assert!(!message.contains('\n'), "{message:?}");
+    assert!(message.contains("line\\nbreak:x"), "{message:?}");
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn a_directory_prefix_with_control_characters_is_printable_too() {
+    let fixture = fixture!();
+    fs::create_dir(fixture.root.join("x\ny")).unwrap();
+    fs::write(fixture.root.at("x\ny").join("ab:c"), "x").unwrap();
+    let error = fixture.view().list(&wp("x\ny"), &cx()).unwrap_err();
+    let message = error.to_string();
+    assert!(!message.contains('\n'), "{message:?}");
+    assert!(message.contains("x\\ny/ab:c"), "{message:?}");
+    // The same for a path the caller asks for.
+    let error = fixture.view().read(&wp("x\ny/CON"), &cx()).unwrap_err();
+    assert!(!error.to_string().contains('\n'), "{error}");
+}
+
+#[cfg(target_os = "linux")]
+#[test]
 fn a_listed_name_that_is_not_supported_fails_the_list() {
     let fixture = listing!();
     fs::write(fixture.root.at("d").join("ab:c"), "x").unwrap();
     assert!(matches!(
         fixture.view().list(&wp("d"), &cx()),
-        Err(InputError::Containment(
-            ContainmentViolation::NameUnsupported
-        ))
+        Err(InputError::UnsupportedName { .. })
     ));
 }
 
@@ -1000,10 +1071,7 @@ mod reject_matrix {
             view.exists(&wp(path), &cx()).map(|_| ()),
         ] {
             assert!(
-                matches!(
-                    result,
-                    Err(InputError::Containment(ContainmentViolation::Symlink))
-                ),
+                matches!(result, Err(InputError::Symlink { .. })),
                 "{path}: {result:?}"
             );
         }
@@ -1064,7 +1132,7 @@ mod reject_matrix {
         assert!(listed.contains(&("link".to_string(), EntryKind::Symlink)));
         assert!(matches!(
             view.list(&wp("link"), &cx()),
-            Err(InputError::Containment(ContainmentViolation::Symlink))
+            Err(InputError::Symlink { .. })
         ));
     }
 }
@@ -1093,12 +1161,7 @@ mod reject_matrix_windows {
             view.exists(&wp(path), &cx()).map(|_| ()),
         ] {
             assert!(
-                matches!(
-                    result,
-                    Err(InputError::Containment(
-                        ContainmentViolation::ReparsePoint
-                    ))
-                ),
+                matches!(result, Err(InputError::ReparsePoint { .. })),
                 "{path}: {result:?}"
             );
         }
@@ -1119,7 +1182,7 @@ mod reject_matrix_windows {
         assert_reparse(&view, "junction/file");
         assert!(matches!(
             view.list(&wp("junction"), &cx()),
-            Err(InputError::Containment(ContainmentViolation::ReparsePoint))
+            Err(InputError::ReparsePoint { .. })
         ));
         assert!(view.evidence().paths.is_empty());
     }
@@ -1409,7 +1472,7 @@ mod revalidation {
         assert!(output.status.success(), "{output:?}");
         assert!(matches!(
             view.revalidate(&cx()),
-            Err(InputError::Containment(ContainmentViolation::ReparsePoint))
+            Err(InputError::ReparsePoint { .. })
         ));
     }
 
@@ -1535,7 +1598,7 @@ mod revalidation {
             .unwrap();
         assert!(matches!(
             view.revalidate(&cx()),
-            Err(InputError::Containment(ContainmentViolation::Symlink))
+            Err(InputError::Symlink { .. })
         ));
     }
 

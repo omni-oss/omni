@@ -63,7 +63,7 @@ pub struct ContainedRoot(imp::Root);
 impl ContainedRoot {
     /// Canonicalizes `root` once and holds a handle to it. On platforms
     /// without verified containment this returns
-    /// [`ContainmentViolation::Unsupported`] without touching the filesystem.
+    /// [`InputError::ContainmentUnsupported`] without touching the filesystem.
     pub fn open(root: &Path) -> Result<Self, InputError> {
         imp::Root::open(root)
             .map(Self)
@@ -130,8 +130,7 @@ fn check_open_request(
             kind: io::ErrorKind::InvalidInput,
         });
     }
-    check_path(path)?;
-    Ok(())
+    check_path(path)
 }
 
 fn map_error(error: OpenError, path: &WorkspacePath) -> InputError {
@@ -140,7 +139,9 @@ fn map_error(error: OpenError, path: &WorkspacePath) -> InputError {
             path: path.clone(),
             kind: io::ErrorKind::NotFound,
         },
-        OpenError::Violation(violation) => InputError::Containment(violation),
+        OpenError::Violation(violation) => {
+            InputError::violation(violation, path)
+        }
         OpenError::CaseMismatch => {
             InputError::CaseMismatch { path: path.clone() }
         }
@@ -171,12 +172,7 @@ mod tests {
             let error =
                 attempt(WorkspacePath::parse(bad).unwrap()).unwrap_err();
             assert!(
-                matches!(
-                    error,
-                    InputError::Containment(
-                        ContainmentViolation::NameUnsupported
-                    )
-                ),
+                matches!(error, InputError::UnsupportedName { .. }),
                 "{bad}: {error:?}"
             );
         }
