@@ -6,7 +6,7 @@ use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use omni_context::{Context, LoadedContext};
-use omni_execution_plan::{Call, ExecutionPlanProvider};
+use omni_execution_plan::{Call, ExecutionPlanProvider, ProjectSelector};
 use omni_task_executor::bench_support::ContextExecutionPlanProvider;
 use omni_test_utils::{
     DependencyStrategy, HarnessConfig, generate_workspace, presets::exec_preset,
@@ -86,6 +86,36 @@ fn benches(c: &mut Criterion) {
                             None,
                             false,
                             false,
+                        )
+                        .expect("plan");
+                    black_box(plan);
+                });
+            },
+        );
+    }
+    g.finish();
+
+    // `--with-dependents` seeded at the first project: its dependents are
+    // walked, so this measures the cost of the walk.
+    let mut g = c.benchmark_group("pipeline/plan_building_with_dependents");
+    for p in &prepared {
+        let provider = ContextExecutionPlanProvider::new(&p.ctx);
+        let call = Call::pattern_tasks(["t0"]);
+        let seed = ProjectSelector::exact(p.ctx.projects()[0].name.clone());
+        g.bench_with_input(
+            BenchmarkId::from_parameter(&p.name),
+            &(),
+            |b, _| {
+                b.iter(|| {
+                    let plan = provider
+                        .get_execution_plan(
+                            &call,
+                            std::slice::from_ref(&seed),
+                            &[],
+                            None,
+                            None,
+                            false,
+                            true,
                         )
                         .expect("plan");
                     black_box(plan);

@@ -882,18 +882,23 @@ impl TaskExecutionGraph {
         let dep_graph = filtered_graph!(&self.di_graph, EdgeType::Dependency);
 
         if with_dependents {
-            // Step 1.5 - Include dependents (direct and indirect) of possible roots
+            // Step 1.5 - Walk every dependent (direct and indirect) of the
+            // seeds along dependency edges, and add the ones that pass the
+            // dependents filter. The filter only decides what is added, so a
+            // differently named task does not stop the walk.
+            let mut visited = HashSet::new();
             let mut dependents = HashSet::new();
             let mut stack =
                 possible_roots.clone().into_iter().collect::<Vec<_>>();
             while let Some(i) = stack.pop() {
-                if dependents.insert(i) {
+                if visited.insert(i) {
                     for n in
                         dep_graph.neighbors_directed(i, Direction::Outgoing)
                     {
                         if with_dependents_filter(&self.di_graph[n])? {
-                            stack.push(n);
+                            dependents.insert(n);
                         }
+                        stack.push(n);
                     }
                 }
             }
@@ -3700,5 +3705,366 @@ mod with_sibling_prerequisites_tests {
             )
             .unwrap();
         assert_eq!(sorted(direct), vec!["app#t".to_string()]);
+    }
+
+    type ChainNeeds<'a> = &'a [(&'a str, &'a str)];
+    type ChainTask<'a> = (&'a str, ChainNeeds<'a>);
+    type ChainProject<'a> = (&'a str, &'a [&'a str], &'a [ChainTask<'a>]);
+
+    /// Proof tests for walking `--with-dependents` through differently named
+    /// tasks. Each project holds the tasks named in `tasks`; `(task, project,
+    /// task)` entries are `task` depending on `project#task`.
+    fn chain_graph(projects: &[ChainProject]) -> TaskExecutionGraph {
+        build(
+            projects
+                .iter()
+                .map(|(name, deps, tasks)| {
+                    let mut builder = TasksBuilder::new();
+                    for (task, needs) in tasks.iter() {
+                        builder = builder.task(*task, "x", |mut b| {
+                            for (p, t) in needs.iter() {
+                                b = b.explicit_project_dependency(*p, *t);
+                            }
+                            b
+                        });
+                    }
+                    project(name, deps, builder.build())
+                })
+                .collect(),
+        )
+    }
+
+    fn dependents_plan(
+        g: &TaskExecutionGraph,
+        seed_project: &str,
+        names: &[&str],
+    ) -> Vec<Vec<String>> {
+        batches(
+            &g.get_batched_execution_plan_with_dependents(
+                |n| {
+                    Ok(n.project_name() == seed_project
+                        && names.contains(&n.task_name()))
+                },
+                |n| Ok(names.contains(&n.task_name())),
+            )
+            .unwrap(),
+        )
+    }
+
+    /// Fails on the base: the search stops at `mid#test`, so `end#build`, a
+    /// transitive dependent of `core#build`, is not added. `other#lint` only
+    /// depends on the non-matching `mid#test` and must stay out, which shows
+    /// the intermediate is walked through but not added as a root.
+    #[test]
+    fn with_dependents_walks_through_a_differently_named_task() {
+        let g = chain_graph(&[
+            ("core", &[], &[("build", &[])]),
+            ("mid", &["core"], &[("test", &[("core", "build")])]),
+            ("end", &["mid"], &[("build", &[("mid", "test")])]),
+            ("other", &["mid"], &[("lint", &[("mid", "test")])]),
+        ]);
+        assert_eq!(
+            dependents_plan(&g, "core", &["build"]),
+            strs(&[&["core#build"], &["mid#test"], &["end#build"]])
+        );
+    }
+
+    /// Fails on the base: several non-matching hops between the seed and the
+    /// matching dependent.
+    #[test]
+    fn with_dependents_walks_through_several_differently_named_tasks() {
+        let g = chain_graph(&[
+            ("core", &[], &[("build", &[])]),
+            ("m1", &["core"], &[("a", &[("core", "build")])]),
+            ("m2", &["m1"], &[("b", &[("m1", "a")])]),
+            ("m3", &["m2"], &[("c", &[("m2", "b")])]),
+            ("end", &["m3"], &[("build", &[("m3", "c")])]),
+        ]);
+        assert_eq!(
+            dependents_plan(&g, "core", &["build"]),
+            strs(&[
+                &["core#build"],
+                &["m1#a"],
+                &["m2#b"],
+                &["m3#c"],
+                &["end#build"],
+            ])
+        );
+    }
+
+    /// Fails on the base. A diamond of non-matching tasks (`l#x`, `r#y`) is
+    /// walked once per node and `end#build` is scheduled once. The visited
+    /// set is what keeps a node reached by two paths from being walked twice.
+    #[test]
+    fn with_dependents_diamond_through_other_tasks_schedules_each_once() {
+        let g = chain_graph(&[
+            ("core", &[], &[("build", &[])]),
+            ("l", &["core"], &[("x", &[("core", "build")])]),
+            ("r", &["core"], &[("y", &[("core", "build")])]),
+            ("end", &["l", "r"], &[("build", &[("l", "x"), ("r", "y")])]),
+        ]);
+        let plan = dependents_plan(&g, "core", &["build"]);
+        assert_eq!(
+            plan,
+            strs(&[&["core#build"], &["l#x", "r#y"], &["end#build"]])
+        );
+        assert_eq!(plan.iter().flatten().count(), 4);
+    }
+
+    /// Guard (passes on the base, must keep passing): a matching and a
+    /// non-matching path both reach `end#build`; it and its own dependent
+    /// `tail#build` are scheduled once.
+    #[test]
+    fn with_dependents_mixed_paths_do_not_duplicate_tasks() {
+        let g = chain_graph(&[
+            ("core", &[], &[("build", &[])]),
+            ("l", &["core"], &[("build", &[("core", "build")])]),
+            ("r", &["core"], &[("x", &[("core", "build")])]),
+            (
+                "end",
+                &["l", "r"],
+                &[("build", &[("l", "build"), ("r", "x")])],
+            ),
+            ("tail", &["end"], &[("build", &[("end", "build")])]),
+        ]);
+        let plan = dependents_plan(&g, "core", &["build"]);
+        assert_eq!(
+            plan,
+            strs(&[
+                &["core#build"],
+                &["l#build", "r#x"],
+                &["end#build"],
+                &["tail#build"],
+            ])
+        );
+    }
+
+    /// Guard (passes on the base): matching dependents with no intermediate
+    /// and a matching diamond are unchanged.
+    #[test]
+    fn with_dependents_same_name_chain_and_diamond_are_unchanged() {
+        let g = chain_graph(&[
+            ("core", &[], &[("build", &[])]),
+            ("l", &["core"], &[("build", &[("core", "build")])]),
+            ("r", &["core"], &[("build", &[("core", "build")])]),
+            (
+                "end",
+                &["l", "r"],
+                &[("build", &[("l", "build"), ("r", "build")])],
+            ),
+        ]);
+        assert_eq!(
+            dependents_plan(&g, "core", &["build"]),
+            strs(&[&["core#build"], &["l#build", "r#build"], &["end#build"],])
+        );
+    }
+
+    /// Guard (passes on the base): with several names, any requested name
+    /// carries the search on, so `end#build` is reached through `mid#test`.
+    #[test]
+    fn with_dependents_multi_name_requests_walk_through_requested_names() {
+        let g = chain_graph(&[
+            ("core", &[], &[("build", &[])]),
+            ("mid", &["core"], &[("test", &[("core", "build")])]),
+            ("end", &["mid"], &[("build", &[("mid", "test")])]),
+        ]);
+        assert_eq!(
+            dependents_plan(&g, "core", &["build", "test"]),
+            strs(&[&["core#build"], &["mid#test"], &["end#build"]])
+        );
+    }
+
+    /// Fails on the base: `gen` is not a requested name, so it is walked
+    /// through but not added, and `end#test` (a requested name) is added.
+    #[test]
+    fn with_dependents_multi_name_requests_walk_through_other_names() {
+        let g = chain_graph(&[
+            ("core", &[], &[("build", &[])]),
+            ("mid", &["core"], &[("gen", &[("core", "build")])]),
+            ("end", &["mid"], &[("test", &[("mid", "gen")])]),
+        ]);
+        assert_eq!(
+            dependents_plan(&g, "core", &["build", "test"]),
+            strs(&[&["core#build"], &["mid#gen"], &["end#test"]])
+        );
+    }
+
+    /// Fails on the base: a persistent same-name dependent reached through a
+    /// non-matching task is added (nothing can depend on a persistent task, so
+    /// it is never an intermediate itself).
+    #[test]
+    fn with_dependents_adds_a_persistent_dependent_reached_through_other_tasks()
+    {
+        let g = build(vec![
+            project(
+                "core",
+                &[],
+                TasksBuilder::new().task("build", "x", |b| b).build(),
+            ),
+            project(
+                "mid",
+                &["core"],
+                TasksBuilder::new()
+                    .task("test", "x", |b| {
+                        b.explicit_project_dependency("core", "build")
+                    })
+                    .build(),
+            ),
+            project(
+                "end",
+                &["mid"],
+                TasksBuilder::new()
+                    .task("build", "x", |b| {
+                        b.persistent(true)
+                            .explicit_project_dependency("mid", "test")
+                    })
+                    .build(),
+            ),
+        ]);
+        assert_eq!(
+            dependents_plan(&g, "core", &["build"]),
+            strs(&[&["core#build"], &["mid#test"], &["end#build"]])
+        );
+    }
+
+    /// Guard (passes on the base): `with` siblings are never followed, also
+    /// not through a non-matching task. `mid#test` is not a root, so its
+    /// sibling `side#build` is not scheduled.
+    #[test]
+    fn with_dependents_does_not_follow_siblings_through_other_tasks() {
+        let g = build(vec![
+            project(
+                "core",
+                &[],
+                TasksBuilder::new().task("build", "x", |b| b).build(),
+            ),
+            project(
+                "mid",
+                &["core", "side"],
+                TasksBuilder::new()
+                    .task("test", "x", |b| {
+                        b.explicit_project_dependency("core", "build")
+                            .explicit_project_sibling("side", "build")
+                    })
+                    .build(),
+            ),
+            project(
+                "side",
+                &[],
+                TasksBuilder::new().task("build", "x", |b| b).build(),
+            ),
+        ]);
+        assert_eq!(
+            dependents_plan(&g, "core", &["build"]),
+            strs(&[&["core#build"]])
+        );
+    }
+
+    fn sibling_chain() -> TaskExecutionGraph {
+        build(vec![
+            project(
+                "core",
+                &[],
+                TasksBuilder::new().task("build", "x", |b| b).build(),
+            ),
+            project(
+                "mid",
+                &["core", "side"],
+                TasksBuilder::new()
+                    .task("test", "x", |b| {
+                        b.explicit_project_dependency("core", "build")
+                            .explicit_project_sibling("side", "build")
+                    })
+                    .build(),
+            ),
+            project(
+                "side",
+                &["extra"],
+                TasksBuilder::new()
+                    .task("build", "x", |b| {
+                        b.explicit_project_dependency("extra", "prep")
+                    })
+                    .build(),
+            ),
+            project(
+                "extra",
+                &[],
+                TasksBuilder::new().task("prep", "x", |b| b).build(),
+            ),
+            project(
+                "end",
+                &["mid"],
+                TasksBuilder::new()
+                    .task("build", "x", |b| {
+                        b.explicit_project_dependency("mid", "test")
+                    })
+                    .build(),
+            ),
+        ])
+    }
+
+    /// Fails on the base (`end#build` is not added, so only `core#build`
+    /// runs). Once an added dependent needs `mid#test`, it runs as a
+    /// dependency and step 3 also schedules its `with` sibling `side#build`
+    /// and the sibling's prerequisite `extra#prep`.
+    #[test]
+    fn with_dependents_pulled_in_intermediate_runs_its_siblings() {
+        let g = sibling_chain();
+        let mut all = dependents_plan(&g, "core", &["build"])
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
+        all.sort();
+        assert_eq!(
+            all,
+            [
+                "core#build",
+                "end#build",
+                "extra#prep",
+                "mid#test",
+                "side#build"
+            ]
+        );
+    }
+
+    /// Fails on the base for the same reason: an unrelated dependency of the
+    /// intermediate (`extra#prep`) is scheduled once `end#build` needs it.
+    #[test]
+    fn with_dependents_pulled_in_intermediate_runs_its_other_dependencies() {
+        let g = chain_graph(&[
+            ("core", &[], &[("build", &[])]),
+            ("extra", &[], &[("prep", &[])]),
+            (
+                "mid",
+                &["core", "extra"],
+                &[("test", &[("core", "build"), ("extra", "prep")])],
+            ),
+            ("end", &["mid"], &[("build", &[("mid", "test")])]),
+        ]);
+        let mut all = dependents_plan(&g, "core", &["build"])
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
+        all.sort();
+        assert_eq!(all, ["core#build", "end#build", "extra#prep", "mid#test"]);
+    }
+
+    /// Guard: the direct set stays the filter match, whatever the walk adds,
+    /// because `ProjectHasher` folds only it.
+    #[test]
+    fn with_dependents_walk_does_not_change_the_direct_set() {
+        let g = chain_graph(&[
+            ("core", &[], &[("build", &[])]),
+            ("mid", &["core"], &[("test", &[("core", "build")])]),
+            ("end", &["mid"], &[("build", &[("mid", "test")])]),
+        ]);
+        let (direct, _) = g
+            .get_batched_execution_selection(
+                |n| Ok(n.project_name() == "core" && n.task_name() == "build"),
+                Some(&|n| Ok(n.task_name() == "build")),
+            )
+            .unwrap();
+        let direct = direct.iter().map(|k| k.to_string()).collect::<Vec<_>>();
+        assert_eq!(direct, vec!["core#build".to_string()]);
     }
 }
