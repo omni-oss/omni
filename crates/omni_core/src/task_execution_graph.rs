@@ -882,18 +882,23 @@ impl TaskExecutionGraph {
         let dep_graph = filtered_graph!(&self.di_graph, EdgeType::Dependency);
 
         if with_dependents {
-            // Step 1.5 - Include dependents (direct and indirect) of possible roots
+            // Step 1.5 - Walk every dependent (direct and indirect) of the
+            // seeds along dependency edges, and add the ones that pass the
+            // dependents filter. The filter only decides what is added, so a
+            // differently named task does not stop the walk.
+            let mut visited = HashSet::new();
             let mut dependents = HashSet::new();
             let mut stack =
                 possible_roots.clone().into_iter().collect::<Vec<_>>();
             while let Some(i) = stack.pop() {
-                if dependents.insert(i) {
+                if visited.insert(i) {
                     for n in
                         dep_graph.neighbors_directed(i, Direction::Outgoing)
                     {
                         if with_dependents_filter(&self.di_graph[n])? {
-                            stack.push(n);
+                            dependents.insert(n);
                         }
+                        stack.push(n);
                     }
                 }
             }
