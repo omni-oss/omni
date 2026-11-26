@@ -22,7 +22,8 @@ project authors control inferred projects.
    excludes templates.
 2. **Restricted plugin-contribution types** in `omni_configurations`: the allowed
    field subset and additive-only collection profile (`append` envelope only;
-   reject plain lists, `prepend`/`replace`/positional `merge`), no host-managed fields, no `extends`
+   reject plain lists and bare `key.files` patterns, `prepend`/`replace`/positional
+   `merge`), shared with activation `defaults` (maintainer-confirmed 2026-11-27), no host-managed fields, no `extends`
    paths, literal-only environment values (uses R03 literal operands).
 3. **Standard `apply`:** workspace-selected files per activation, resolved relative to
    the declaring file; reuse extension-closure traversal and raw-layer replay (R04/R07);

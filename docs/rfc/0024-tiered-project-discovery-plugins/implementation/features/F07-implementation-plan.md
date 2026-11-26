@@ -209,8 +209,9 @@ P-series work will wire its own validation and activation boundaries.
 - **Proposed collection rule:** compare dictionary contributions at the key
   or nested-field boundary rather than whole dictionaries. Additive lists
   concatenate in contributor order, not positionally compared (plugin lists use
-  only the `append` envelope; a plugin plain list is rejected at the output
-  boundary, amended 2026-11-26); preserve
+  only the `append` envelope; a plain list or bare pattern from a plugin or in
+  activation `defaults` is rejected at the output boundary, amended 2026-11-26 and
+  2026-11-27); preserve
   contributions until explicit operations finish. Follow
   [§7.3](../../007.02-multiple-plugins-and-conflicts.md#73-multiple-plugins-and-conflicts)
   for field-specific normalization. Do not add blanket deduplication or change
