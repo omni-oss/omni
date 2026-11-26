@@ -19,9 +19,11 @@ search stopped at the first task whose name was not one of the requested names.
 The rule: a dependent is **walked through, added only if the name matches**.
 Tasks with other names are not added on their own: `mid#test` and a task such as
 `other#lint` that depends only on `mid#test` do not run unless something added
-needs them. To add `mid#test`, request its name too: `omni run build test -p core -w`.
-A task in another project, such as `other#lint`, has to be requested on its own, for
-example with `omni run other#lint`.
+needs them. To run `mid#test` yourself, name it with its project:
+`omni run core#build mid#test -w`. A task in another project, such as
+`other#lint`, has to be named the same way (`omni run other#lint`). Note that
+`-p core` scopes every requested name to `core`, so `omni run build test -p core -w`
+only works when `core` has a `test` task.
 
 See what a run will do with `omni run build -p core -w -d`.
 
