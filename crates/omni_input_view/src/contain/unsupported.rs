@@ -5,7 +5,7 @@ use std::{fs::File, path::Path};
 
 use omni_path_utils::WorkspacePath;
 
-use super::OpenError;
+use super::{OpenError, Want};
 use crate::error::ContainmentViolation;
 
 pub(crate) struct Root;
@@ -19,8 +19,20 @@ impl Root {
 pub(crate) fn open_file(
     _root: &Root,
     _path: &WorkspacePath,
+    _want: Want,
 ) -> Result<File, OpenError> {
     Err(ContainmentViolation::Unsupported.into())
+}
+
+pub(crate) struct RawEntry {
+    pub(crate) name: Result<String, ()>,
+    pub(crate) kind: crate::error::EntryKind,
+}
+
+pub(crate) fn entries(
+    _dir: File,
+) -> std::io::Result<impl Iterator<Item = std::io::Result<RawEntry>>> {
+    Err::<std::iter::Empty<_>, _>(std::io::ErrorKind::Unsupported.into())
 }
 
 #[cfg(test)]

@@ -31,7 +31,9 @@ with `cargo test -p omni_setup fallback_store::key_file`.
 on native Linux, Windows and macOS runners. Windows symlink tests follow
 `OMNI_TEST_REQUIRE_CAPABILITIES` (they fail on CI when the privilege is missing
 and skip only locally); junction tests never skip. Run it locally with
-`cargo test -p omni_input_view`.
+`cargo test -p omni_input_view`. The overhead benchmark is
+`cargo bench -p omni_bench --bench input_view`; set `OMNI_BENCH_LOCKFILES` to a
+directory of real lockfiles to include the lockfile group.
 
 - Rust: `cargo fmt`, `cargo clippy`, `cargo test`; benchmarks use criterion (`crates/omni_bench`).
 - TypeScript: `oxfmt` (`oxfmt.config.ts`), `oxlint` (`oxlint.config.ts`), `tsc`, `vitest` (`vitest.workspace.ts`).

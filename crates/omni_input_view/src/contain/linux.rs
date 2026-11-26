@@ -16,8 +16,8 @@ use rustix::{
     io::Errno,
 };
 
-use super::OpenError;
-use crate::error::ContainmentViolation;
+use super::{OpenError, Want};
+use crate::error::{ContainmentViolation, EntryKind};
 
 /// Bounded retries for `EAGAIN` (a racing rename) and `EINTR`.
 const MAX_RETRIES: usize = 4;
@@ -57,20 +57,32 @@ fn real_openat2(
 pub(crate) fn open_file(
     root: &Root,
     path: &WorkspacePath,
+    want: Want,
 ) -> Result<File, OpenError> {
-    open_file_with(root, path, &real_openat2)
+    open_file_with(root, path, want, &real_openat2)
 }
 
 pub(crate) fn open_file_with<F>(
     root: &Root,
     path: &WorkspacePath,
+    want: Want,
     openat2: &F,
 ) -> Result<File, OpenError>
 where
     F: Fn(BorrowedFd<'_>, &str, OFlags, ResolveFlags) -> Result<OwnedFd, Errno>,
 {
-    let oflags =
-        OFlags::RDONLY | OFlags::CLOEXEC | OFlags::NONBLOCK | OFlags::NOCTTY;
+    let oflags = match want {
+        Want::Probe => OFlags::PATH | OFlags::CLOEXEC,
+        Want::File => {
+            OFlags::RDONLY | OFlags::CLOEXEC | OFlags::NONBLOCK | OFlags::NOCTTY
+        }
+        Want::Dir => {
+            OFlags::RDONLY
+                | OFlags::CLOEXEC
+                | OFlags::DIRECTORY
+                | OFlags::NOCTTY
+        }
+    };
     let resolve = ResolveFlags::BENEATH
         | ResolveFlags::NO_SYMLINKS
         | ResolveFlags::NO_MAGICLINKS
@@ -106,6 +118,56 @@ pub(crate) fn map_errno(errno: Errno) -> OpenError {
         }
         other => OpenError::Io(std::io::Error::from(other).kind()),
     }
+}
+
+/// One raw directory entry. `name` is `Err` when it is not valid UTF-8.
+pub(crate) struct RawEntry {
+    pub(crate) name: Result<String, ()>,
+    pub(crate) kind: EntryKind,
+}
+
+/// Entries of an open directory (without `.` and `..`), kinds taken without
+/// following links.
+pub(crate) fn entries(
+    dir: File,
+) -> std::io::Result<impl Iterator<Item = std::io::Result<RawEntry>>> {
+    let reader = fs::Dir::read_from(&dir)?;
+    Ok(reader.filter_map(move |entry| {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(errno) => return Some(Err(errno.into())),
+        };
+        let bytes = entry.file_name().to_bytes();
+        if bytes == b"." || bytes == b".." {
+            return None;
+        }
+        let kind = match entry.file_type() {
+            fs::FileType::RegularFile => EntryKind::File,
+            fs::FileType::Directory => EntryKind::Dir,
+            fs::FileType::Symlink => EntryKind::Symlink,
+            fs::FileType::Unknown => {
+                match fs::statat(
+                    &dir,
+                    entry.file_name(),
+                    fs::AtFlags::SYMLINK_NOFOLLOW,
+                ) {
+                    Ok(stat) => match fs::FileType::from_raw_mode(stat.st_mode)
+                    {
+                        fs::FileType::RegularFile => EntryKind::File,
+                        fs::FileType::Directory => EntryKind::Dir,
+                        fs::FileType::Symlink => EntryKind::Symlink,
+                        _ => EntryKind::Other,
+                    },
+                    Err(errno) => return Some(Err(errno.into())),
+                }
+            }
+            _ => EntryKind::Other,
+        };
+        Some(Ok(RawEntry {
+            name: String::from_utf8(bytes.to_vec()).map_err(|_| ()),
+            kind,
+        }))
+    }))
 }
 
 #[cfg(test)]

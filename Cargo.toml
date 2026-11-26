@@ -299,6 +299,7 @@ utoipa = { version = "^6.0.0", features = [
     "repr",
     "non_strict_integers",
 ] }
+omni_input_view = { path = "./crates/omni_input_view" }
 omni_path_utils = { path = "./crates/omni_path_utils" }
 flate2 = { version = "^1.1.11", features = [
     "zlib-rs",

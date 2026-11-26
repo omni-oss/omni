@@ -16,6 +16,11 @@ name = "task_execution"
 path = "benches/task_execution.rs"
 harness = false
 
+[[bench]]
+name = "input_view"
+path = "benches/input_view.rs"
+harness = false
+
 [features]
 # Expand the scenario matrix with larger scales/shapes. Off by default so the
 # suite stays runnable in a few minutes / in CI.
@@ -33,6 +38,8 @@ omni_tracing_subscriber = { workspace = true }
 system_traits = { workspace = true }
 
 [dev-dependencies]
+omni_input_view = { workspace = true }
+omni_path_utils = { workspace = true }
 criterion = { workspace = true }
 tokio = { workspace = true }
 mimalloc = { workspace = true }
