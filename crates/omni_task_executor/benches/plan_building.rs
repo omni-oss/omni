@@ -95,8 +95,8 @@ fn benches(c: &mut Criterion) {
     }
     g.finish();
 
-    // `--with-dependents` seeded at the first task of the most depended-on
-    // project: the dependents are found through differently named tasks.
+    // `--with-dependents` seeded at the first project: its dependents are
+    // walked, so this measures the cost of the walk.
     let mut g = c.benchmark_group("pipeline/plan_building_with_dependents");
     for p in &prepared {
         let provider = ContextExecutionPlanProvider::new(&p.ctx);

@@ -27,19 +27,24 @@ See what a run will do with `omni run build -p core -w -d`.
 
 - **More tasks run.** Workspaces that chain through a differently named task
   between two tasks with the requested name run more tasks, and CI times grow
-  with them. A failing added task now fails a run that used to pass.
+  with them. A failing added task now fails a run that used to pass. The growth
+  can be large when an added task pulls in the `build` and `test` tasks it
+  needs: on one real workspace, `check` for a leaf project went from 3 tasks to 46. Check with `-d` before you update CI.
 - **Intermediate tasks run.** An intermediate task such as `mid#test` runs as a
   dependency of an added task, with its own dependencies and its `with`
   siblings (and their prerequisites). Persistent tasks are never walked through,
   but a same-name persistent dependent reached this way is now started.
 - **Newly surfaced errors.** The added tasks and their prerequisites can raise
   errors that did not appear before:
-    - `executor.cache_contradiction`, for a `with` task with an explicit
-      `cache.enabled: true` whose prerequisite has `cache.enabled: false`.
+    - `executor.cache_contradiction`, when a scheduled task with an explicit
+      `cache.enabled: true` depends on a task with an explicit
+      `cache.enabled: false`. That now includes an added dependent and an
+      intermediate task it needs.
     - `task.sibling_cycle`, when a prerequisite depends back on a task that runs
       together with it.
-    - `CacheDependencyDemoted`, when an added task depends on an uncached task
-      and becomes uncached.
+- **Cache demotion.** An added task that depends on an uncached task, without
+  saying so itself, becomes uncached (`cache.dependency_demoted` notice;
+  `demoted` in `omni cache eligibility` and in run results).
 - **Unchanged.** The starting tasks, `--project`, `--dir`, `--meta` and
   `--scm-affected` (they choose the starting tasks only), the `project#task`
   qualifier, aliases (matched per project), `with` siblings (not followed while
