@@ -783,6 +783,21 @@ fn an_unrepresentable_listed_name_is_reported_and_made_printable() {
 
 #[cfg(target_os = "linux")]
 #[test]
+fn a_directory_prefix_with_control_characters_is_printable_too() {
+    let fixture = fixture!();
+    fs::create_dir(fixture.root.join("x\ny")).unwrap();
+    fs::write(fixture.root.at("x\ny").join("ab:c"), "x").unwrap();
+    let error = fixture.view().list(&wp("x\ny"), &cx()).unwrap_err();
+    let message = error.to_string();
+    assert!(!message.contains('\n'), "{message:?}");
+    assert!(message.contains("x\\ny/ab:c"), "{message:?}");
+    // The same for a path the caller asks for.
+    let error = fixture.view().read(&wp("x\ny/CON"), &cx()).unwrap_err();
+    assert!(!error.to_string().contains('\n'), "{error}");
+}
+
+#[cfg(target_os = "linux")]
+#[test]
 fn a_listed_name_that_is_not_supported_fails_the_list() {
     let fixture = listing!();
     fs::write(fixture.root.at("d").join("ab:c"), "x").unwrap();

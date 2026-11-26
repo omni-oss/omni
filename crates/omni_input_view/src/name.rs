@@ -22,7 +22,7 @@ pub fn check_name(segment: &str) -> Result<(), NameProblem> {
 pub(crate) fn check_path(path: &WorkspacePath) -> Result<(), InputError> {
     path.segments().try_for_each(check_name).map_err(|problem| {
         InputError::UnsupportedName {
-            path: path.to_string(),
+            path: crate::view::printable(path.as_str()),
             problem,
         }
     })

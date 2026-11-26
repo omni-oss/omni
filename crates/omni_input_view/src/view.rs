@@ -623,7 +623,7 @@ impl InputView {
 /// A name read from disk, made safe to print: control characters (a newline or
 /// an ANSI escape in a file name) must not forge or garble terminal and log
 /// output.
-fn printable(name: &str) -> String {
+pub(crate) fn printable(name: &str) -> String {
     name.chars()
         .flat_map(|c| {
             if c.is_control() {
@@ -640,7 +640,7 @@ fn entry_path(dir: &WorkspacePath, name: &str) -> String {
     if dir.is_root() {
         name
     } else {
-        format!("{dir}/{name}")
+        format!("{}/{name}", printable(dir.as_str()))
     }
 }
 
