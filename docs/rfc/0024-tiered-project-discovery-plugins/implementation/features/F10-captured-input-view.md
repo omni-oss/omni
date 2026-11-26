@@ -3,7 +3,7 @@
 **Type:** feature (shared infrastructure) · **Size:** L · **Depends on:** R02
 
 Design prerequisite: [F10.1 captured input view design](F10.1-captured-input-view-design.md).
-Slices F10.2-F10.3 remain unimplemented.
+**Status:** merged. F10.2a (containment primitive, crate `omni_input_view`) in [#174](https://github.com/omni-oss/omni/pull/174); F10.2b (tracked `read`/`exists`/`list`), F10.2c (reject-only symlink policy) and F10.3 (revalidation, reject-on-change) in [#176](https://github.com/omni-oss/omni/pull/176). Nothing consumes the view yet. See the [plan](F10-implementation-plan.md).
 
 ## Problem
 

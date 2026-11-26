@@ -8,8 +8,7 @@ merged and now parses `dependencies`/`with` ([part 2](F03.2-reference-parser.md#
 (F03.3) is done for internal references ([#143](https://github.com/omni-oss/omni/pull/143)).
 F03.1 ([#103](https://github.com/omni-oss/omni/pull/103)), F03.2 part 1
 ([#116](https://github.com/omni-oss/omni/pull/116)) and part 2
-([#117](https://github.com/omni-oss/omni/pull/117)) are merged. The handwritten
-`alias` key and plugin-scoped variants remain pending.
+([#117](https://github.com/omni-oss/omni/pull/117)) are merged. F03.4 is merged: structured task identity and the versioned cache-key identity leaf ([#171](https://github.com/omni-oss/omni/pull/171)), then the handwritten `alias` key, canonical selection and alias hints ([#175](https://github.com/omni-oss/omni/pull/175)). Plugin-scoped variants remain pending.
 
 ## Problem
 

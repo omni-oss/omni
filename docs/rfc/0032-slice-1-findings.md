@@ -1,6 +1,6 @@
 # RFC 0032 slice 1 findings
 
-**Status:** Draft for independent review. This records what the slice 1 harness ([#170](https://github.com/omni-oss/omni/pull/170), `crates/omni_migration_proof`) showed about [RFC 0032](0032-pre-v1-migration-infrastructure.md). It gates slice 2 and does not authorize it.
+**Status:** Historical record; slice 1 merged in [#170](https://github.com/omni-oss/omni/pull/170) after independent review, and slices 2 and 3 merged in [#173](https://github.com/omni-oss/omni/pull/173). This records what the slice 1 harness ([#170](https://github.com/omni-oss/omni/pull/170), `crates/omni_migration_proof`) showed about [RFC 0032](0032-pre-v1-migration-infrastructure.md). It gated slice 2 and did not authorize it; the maintainer approved slices 2 and 3 separately.
 **Update:** Slice 2 superseded the harness. `crates/omni_migration` carries its tests and the carry-over items below, and the harness crate was removed; see [Slice 2 and 3 results](0032-pre-v1-migration-infrastructure.md#slice-2-and-3-results). The text below describes the harness as it was.
 **Readers:** The maintainer deciding whether to extract `omni_migration`, and the reviewer checking that the evidence supports that decision.
 

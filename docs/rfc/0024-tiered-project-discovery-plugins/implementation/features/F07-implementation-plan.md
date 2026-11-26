@@ -1,6 +1,6 @@
 # F07 implementation plan: composition provenance and conflicts
 
-**Status:** approved (#164). F07.1 implemented and independently reviewed (PASS) on `feat/f07-provenance-redesign`; F07.2 implemented there, awaiting independent review; F07.3 onward not started. **Size:** Large.
+**Status:** approved (#164). F07.1 and F07.2 are merged ([#172](https://github.com/omni-oss/omni/pull/172); final review PASS per the PR); F07.3 onward is not started. **Size:** Large.
 **Risk:** High: composition and location changes can affect task behavior and
 cache keys. The chosen direction is to finish the metadata redesign before
 building conflict detection, rather than ship a parallel provenance walk.
