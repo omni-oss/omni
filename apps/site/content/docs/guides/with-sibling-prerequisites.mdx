@@ -1,0 +1,56 @@
+---
+title: "Prerequisites of `with` tasks"
+description: "Release note (pre-v1): tasks named in `with` now run their own dependencies first, and what that can surface"
+---
+
+Tasks named in `with` now run their own `dependencies` first, even when a
+project, task or other filter does not select them. Previously the
+prerequisites of a `with` task could be skipped, so the task could run without
+them.
+
+```yaml
+name: app
+tasks:
+    t:
+        command: ./run.sh
+        with: [tool#build-native]
+```
+
+If `tool#build-native` depends on `tool#setup`, `omni run t -p app` now runs
+`tool#setup`, then `tool#build-native` together with `app#t`. The same applies
+to siblings in other projects, siblings named through an alias or `^upstream`,
+and siblings reached through `--with-dependents`. The `with` tasks of a
+prerequisite are pulled in as well, until nothing new is added. The dependents
+of a pulled-in task are not.
+
+## What changes
+
+- **More tasks run.** The prerequisites of `with` tasks are part of the plan.
+  `--ignore-dependencies` is unchanged and still runs only the selected tasks.
+- **New hard errors.** Configurations that only worked because the
+  prerequisites were skipped can now fail:
+    - `task.sibling_cycle`, when a prerequisite depends back on a task that
+      runs together with it. The error lists tasks involved in or blocked by the
+      cycle, and the chain may run through a prerequisite of a `with` task.
+    - `executor.cache_contradiction` (also reported by
+      `omni cache eligibility`), when a `with` task with an explicit
+      `cache.enabled: true` has a prerequisite with an explicit
+      `cache.enabled: false`.
+- **Cache demotion.** A prerequisite that is uncached without saying so makes
+  the `with` task uncached (`Demoted` in `omni cache eligibility` and in run
+  results).
+- **Quieter notices.** The `RemoteOptOutSkippedDependencies` notice no longer
+  appears for a `with` task that opts out of remote caching, because its
+  prerequisite now runs.
+- **Cache entries.** Task digests are computed as before. The entry of a `with`
+  task that used to run without its prerequisite was keyed on an incomplete
+  set of inputs, so it becomes a miss once. Cache pruning can now classify
+  these tasks and their old entries as stale.
+
+Pre-v1, the new errors are hard errors rather than warnings.
+
+## Rollback
+
+Nothing stored changes, so an older binary reads every cache and report.
+Downgrading brings back the old behavior: `with` prerequisites are skipped
+again.

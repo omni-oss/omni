@@ -62,6 +62,7 @@ Known gaps carried forward from the merged refactors:
 
 - Virtual projects can be represented and guarded (R07.1, R07.3) but discovery cannot
   build one yet: a finalized project may have no file (`FinalizedProject::file` is an `Option`, F07.2 moved `file`/`dir` out of `ProjectConfiguration`), but discovery and `ProjectConfigEntry::from_finalized` only produce file-backed entries (discovery work is P05).
+- F03.5 [`with` sibling prerequisites](features/F03.5-with-sibling-prerequisites-plan.md) is fixed: the prerequisites of `with` tasks are scheduled. Follow-ups, to be filed as separate issues: sort tasks within a batch (the order comes from hash iteration), and `--with-dependents` matches dependents by task name only.
 - The `alias` key is not parsed, so alias transitions (R05) are only tested with
   programmatically built aliases (F03).
 - A project's own config file is listed twice as a cache-key input
