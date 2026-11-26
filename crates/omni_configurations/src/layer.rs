@@ -30,11 +30,11 @@ use serde::{Deserialize, Serialize};
 use system_traits::FsReadAsync;
 
 use crate::{
-    CacheConfiguration, CacheEnabled, CacheEnabledSource,
-    CacheKeyConfiguration, DeclarationSource, Declared,
-    HANDWRITTEN_TASK_FALLBACK, LayerId, LoadConfigError, MetaConfiguration,
-    Origin, ProjectConfiguration, ProjectEnvConfiguration, RedactConfiguration,
-    TaskConfiguration, TaskConfigurationLongForm, TaskDependencyConfiguration,
+    CONFIGURED_TASK_CACHE_ENABLED_FALLBACK, CacheConfiguration, CacheEnabled,
+    CacheEnabledSource, CacheKeyConfiguration, DeclarationSource, Declared,
+    LayerId, LoadConfigError, MetaConfiguration, Origin, ProjectConfiguration,
+    ProjectEnvConfiguration, RedactConfiguration, TaskConfiguration,
+    TaskConfigurationLongForm, TaskDependencyConfiguration,
     TaskEnvConfiguration, TaskOutputConfiguration, replace_if_present, utils,
 };
 
@@ -997,7 +997,7 @@ impl LoadedLayer {
                         }
                     }
                     None => CacheEnabled {
-                        value: HANDWRITTEN_TASK_FALLBACK,
+                        value: CONFIGURED_TASK_CACHE_ENABLED_FALLBACK,
                         source: CacheEnabledSource::HostFallback,
                     },
                 };
