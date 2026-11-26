@@ -549,6 +549,7 @@ mod with_sibling_prerequisite_tests {
             "tool#build-native" => (true, CacheEnabledSource::TaskExplicit),
             _ => (true, CacheEnabledSource::HostFallback),
         });
+        assert!(i.tasks.iter().any(|t| t.task == "tool#setup"));
         assert_eq!(i.contradictions.len(), 1);
         assert_eq!(i.contradictions[0].dependent, "tool#build-native");
         assert_eq!(i.contradictions[0].dependency, "tool#setup");

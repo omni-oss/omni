@@ -7860,9 +7860,10 @@ mod tests {
             .await
             .unwrap();
 
-        // Before the fix the filter `t` planned neither `build-native` nor
-        // `setup`: both were observed without a digest, so they were
-        // indeterminate and none of their entries could ever be stale.
+        // Before the fix the filter `t` planned `build-native` but not `setup`,
+        // so `setup` had no status and no digest, `build-native` could not
+        // take a reusable hash from it, and both were observed without a
+        // digest: indeterminate, so none of their entries could ever be stale.
         for task in ["setup", "build-native"] {
             assert!(
                 !inventory.is_indeterminate("tool", task),
