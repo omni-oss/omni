@@ -1,0 +1,55 @@
+---
+title: "Dependents through other tasks"
+description: "Release note (pre-v1): `omni run --with-dependents` now finds dependents that reach the selected task through a differently named task, and what that can surface"
+---
+
+`omni run <task> --with-dependents` (`-w`) now finds a dependent even when it
+depends on the selected task only through tasks with other names. Before, the
+search stopped at the first task whose name was not one of the requested names.
+
+```yaml
+# core: build
+# mid:  test  (dependencies: ["core#build"])
+# end:  build (dependencies: ["mid#test"])
+```
+
+`omni run build -p core -w` used to run `core#build` only. It now also runs
+`end#build`, and `mid#test` before it, because `end#build` needs it.
+
+The rule: a dependent is **walked through, added only if the name matches**.
+Tasks with other names are not added on their own: `mid#test` and a task such as
+`other#lint` that depends only on `mid#test` do not run unless something added
+needs them. To add them, name them: `omni run build test -p core -w`.
+
+See what a run will do with `omni run build -p core -w -d`.
+
+## What changes
+
+- **More tasks run.** Workspaces that chain through a differently named task
+  between two tasks with the requested name run more tasks, and CI times grow
+  with them. A failing added task now fails a run that used to pass.
+- **Intermediate tasks run.** An intermediate task such as `mid#test` runs as a
+  dependency of an added task, with its own dependencies and its `with`
+  siblings (and their prerequisites). Persistent tasks are never walked through,
+  but a same-name persistent dependent reached this way is now started.
+- **Newly surfaced errors.** The added tasks and their prerequisites can raise
+  errors that did not appear before:
+    - `executor.cache_contradiction`, for a `with` task with an explicit
+      `cache.enabled: true` whose prerequisite has `cache.enabled: false`.
+    - `task.sibling_cycle`, when a prerequisite depends back on a task that runs
+      together with it.
+    - `CacheDependencyDemoted`, when an added task depends on an uncached task
+      and becomes uncached.
+- **Unchanged.** The starting tasks, `--project`, `--dir`, `--meta` and
+  `--scm-affected` (they choose the starting tasks only), the `project#task`
+  qualifier, aliases (matched per project), `with` siblings (not followed while
+  searching), `--ignore-dependencies` (still rejected with `-w`), and the MCP
+  tool (always `false`). Cache keys do not change.
+
+Pre-v1, so there is no flag to keep the old behavior.
+
+## Rollback
+
+Nothing stored changes, so an older binary reads every cache and report.
+Downgrading brings back the old behavior: the search stops at a differently
+named task again.

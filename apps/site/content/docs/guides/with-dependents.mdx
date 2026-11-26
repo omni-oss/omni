@@ -12,11 +12,11 @@ library does not break its consumers: `omni run build -p lib -w` runs
 ## What is added
 
 - **Dependents with a requested name.** A task is added when it depends on a
-  selected task, directly or through other tasks that are also added, and its
-  name matches one of the requested task names or `--task-pattern` globs. With
-  several requested names, a task with any of them can carry the search on to
-  its own dependents: with `omni run build test -p core -w`, if `mid#test`
-  depends on `core#build` and `end#build` depends on `mid#test`, both are added.
+  selected task, directly or through other tasks (whatever their name), and
+  its name matches one of the requested task names or `--task-pattern` globs.
+  The name only decides what is added; it never stops the search. If
+  `mid#test` depends on `core#build` and `end#build` depends on `mid#test`,
+  `omni run build -p core -w` adds `end#build`.
 - **Their dependencies.** Added tasks run with their own dependencies, as in a
   normal run.
 - **Not added: other tasks.** A dependent with a different name is not added,
@@ -24,10 +24,11 @@ library does not break its consumers: `omni run build -p lib -w` runs
   `app#verify` (which depends on `lib#test`) and `lib#test` (which depends on
   `lib#build`) do not run. Name them too: `omni run lib#test verify -w`, which starts from `lib#test` and adds
   `app#verify`.
-- **Not added: dependents reached through another task.** The search stops at a
-  task whose name is not one of the requested names. If `end#build` depends on `mid#test`, and
-  `mid#test` depends on `core#build`, then `omni run build -p core -w` does not
-  run `end#build`.
+- **Walked through, not added.** `mid#test` in the example is not added by
+  `omni run build -p core -w`. It runs only because `end#build` needs it, and
+  then with its own dependencies and `with` siblings. A task that depends only
+  on `mid#test` and is not named, such as `other#lint`, is not added either.
+  See the "Dependents through other tasks" release note.
 - **Not followed: `with` siblings.** The search follows `dependencies` only. A
   dependent of a task that was pulled in through `with` is not added.
   Prerequisites of the added tasks still run (see the
