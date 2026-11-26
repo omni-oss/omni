@@ -55,7 +55,9 @@ activation-list order (inferred tasks stay activation-scoped and never collide),
   keeps its winner).
 - Explicit masking at leaf and subtree boundaries; equal text with different
   interpretation modes are not equal.
-- Provenance and the notice name the overridden contributors, without raw values.
+- Provenance names the overridden contributors, without raw values. The notice carries
+  counts of overridden fields and projects only (names and details live in provenance
+  and inspection).
 - No behavior change for pure explicit chains except added provenance.
 
 ## Follow-up proposal: separate authored configuration from runtime metadata
