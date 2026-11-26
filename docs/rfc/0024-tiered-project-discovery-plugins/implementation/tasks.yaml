@@ -302,7 +302,7 @@ tasks:
     }
   F05.2:
     {
-      owner: "OpenCode (part 1 detector and deciding_source merged #130; planner wiring follows)",
+      owner: "OpenCode (detector and deciding_source merged #130; planner wiring merged #160)",
       title: "Explicit-contradiction error and deciding_source",
       parent: F05,
       kind: code,
@@ -339,8 +339,11 @@ tasks:
       deps: [F06.2, R05, B01, F05.1],
       touches: [extractor, collector, cache-store, executor],
     }
+  # Plan: features/F07-implementation-plan.md. F07.1 and F07.2 are merged (#172);
+  # mark F07 done only when F07.3-F07.5 land (or split it per slice).
   F07:
     {
+      owner: "OpenCode (F07.1 and F07.2 merged #172; F07.3-F07.5 not started)",
       title: "Conflict detection and provenance",
       parent: F07,
       kind: code,
@@ -400,6 +403,7 @@ tasks:
     }
   F09:
     {
+      owner: "OpenCode (API, CLI and MCP inspection merged #160; field provenance waits on F07.5)",
       title: "Eligibility/provenance inspection output",
       parent: F09,
       kind: code,
@@ -418,9 +422,8 @@ tasks:
       touches: [docs],
     }
   # Plan: features/F10-implementation-plan.md. F10.2 spans slices F10.2a-c;
-  # mark it done only when F10.2c lands (or split it per slice). F10.2a, F10.2b and F10.2c are
-  # built (crate omni_input_view), so F10.2 is done once the F10.2c PR merges;
-  # F10.3 is built in the same crate.
+  # F10.2a (#174) and F10.2b, F10.2c (#176) are merged in crate omni_input_view,
+  # so F10.2 is complete; F10.3 is merged in #176 too.
   # touches [capability] on F10.2/F10.3 is intentional as a review-routing flag:
   # the view is a containment boundary beside the capabilities crates, though
   # those crates are not edited (the plan forbids it).

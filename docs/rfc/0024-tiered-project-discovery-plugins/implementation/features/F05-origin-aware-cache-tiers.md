@@ -6,7 +6,7 @@ Slice 1 ([F05.1](F05.1-origin-tagged-enablement.md), merged in
 [#115](https://github.com/omni-oss/omni/pull/115)) records each task's origin; slice 2
 ([F05.2 part 1](F05.2-contradiction-detector.md), merged in
 [#130](https://github.com/omni-oss/omni/pull/130)) adds the contradiction detector and
-`deciding_source`. Wiring the error into planning remains unimplemented.
+`deciding_source`. The planner error is wired in [#160](https://github.com/omni-oss/omni/pull/160).
 
 ## Problem
 
