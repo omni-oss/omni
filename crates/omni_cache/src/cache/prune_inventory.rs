@@ -39,6 +39,22 @@ impl PruneInventory {
         self.projects.get(project)?.get(task)
     }
 
+    #[cfg(test)]
+    pub(crate) fn is_indeterminate(&self, project: &str, task: &str) -> bool {
+        self.task(project, task).is_some_and(|e| e.indeterminate)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn current_digests(
+        &self,
+        project: &str,
+        task: &str,
+    ) -> Vec<DefaultHash> {
+        self.task(project, task)
+            .map(|e| e.digests.iter().copied().collect())
+            .unwrap_or_default()
+    }
+
     pub(crate) fn is_orphan(&self, project: &str, task: &str) -> bool {
         self.task(project, task).is_none()
     }

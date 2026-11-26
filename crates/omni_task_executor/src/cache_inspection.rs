@@ -490,3 +490,68 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod with_sibling_prerequisite_tests {
+    use super::*;
+    use crate::test_plan::app_plan;
+
+    /// Inspect the planned `with` sibling and its prerequisite, giving each
+    /// task the cache facts from `facts` (`enabled`, source).
+    fn inspect(
+        facts: impl Fn(&str) -> (bool, CacheEnabledSource),
+    ) -> CacheInspection {
+        let nodes = app_plan()
+            .iter()
+            .flatten()
+            .map(|n| {
+                let (cache_enabled, cache_source) = facts(n.full_task_name());
+                InspectionNode {
+                    key: n.key().clone(),
+                    has_command: true,
+                    persistent: false,
+                    enabled: StaticEnabled::Enabled,
+                    cache_enabled,
+                    cache_source,
+                    dependencies: n.dependencies().to_vec(),
+                    cache_enabled_file: None,
+                }
+            })
+            .collect::<Vec<_>>();
+        inspect_nodes(&nodes, false, false)
+    }
+
+    fn status<'a>(i: &'a CacheInspection, task: &str) -> &'a CacheStatus {
+        &i.tasks.iter().find(|t| t.task == task).unwrap().status
+    }
+
+    #[test]
+    fn an_implicitly_uncached_prerequisite_demotes_the_pulled_in_sibling() {
+        let i = inspect(|task| match task {
+            "tool#setup" => (false, CacheEnabledSource::HostFallback),
+            _ => (true, CacheEnabledSource::HostFallback),
+        });
+        assert!(i.tasks.iter().any(|t| t.task == "tool#setup"));
+        assert_eq!(
+            status(&i, "tool#build-native"),
+            &CacheStatus::Demoted {
+                direct_dependency: "tool#setup".into(),
+                root_cause: "tool#setup".into(),
+            }
+        );
+        assert!(i.contradictions.is_empty());
+    }
+
+    #[test]
+    fn explicit_true_against_an_explicit_false_prerequisite_contradicts() {
+        let i = inspect(|task| match task {
+            "tool#setup" => (false, CacheEnabledSource::TaskExplicit),
+            "tool#build-native" => (true, CacheEnabledSource::TaskExplicit),
+            _ => (true, CacheEnabledSource::HostFallback),
+        });
+        assert!(i.tasks.iter().any(|t| t.task == "tool#setup"));
+        assert_eq!(i.contradictions.len(), 1);
+        assert_eq!(i.contradictions[0].dependent, "tool#build-native");
+        assert_eq!(i.contradictions[0].dependency, "tool#setup");
+    }
+}

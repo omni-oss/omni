@@ -7704,6 +7704,184 @@ mod tests {
         ])
     }
 
+    /// `app#t` has `with: [tool#build-native]`, `tool#build-native` depends on
+    /// `tool#setup`. Every task is cached and keyed on nothing but its
+    /// dependencies.
+    struct SiblingCtx {
+        projects: Vec<omni_core::Project>,
+        info: omni_task_context::CacheInfo,
+    }
+
+    impl SiblingCtx {
+        fn new() -> Self {
+            let task =
+                |deps: &[&str], siblings: Vec<omni_core::TaskDependency>| {
+                    omni_core::Task::new(
+                        Some(CommandConfig::Shell("x".into())),
+                        None,
+                        deps.iter()
+                            .map(|d| omni_core::TaskDependency::Own {
+                                task: d.to_string(),
+                            })
+                            .collect(),
+                        None,
+                        omni_configurations::types::TeraExprBoolean::Boolean(
+                            true,
+                        ),
+                        false,
+                        false,
+                        siblings,
+                        Default::default(),
+                    )
+                };
+            let mut app = omni_core::Project::new(
+                "app",
+                "/ws/app".into(),
+                vec!["tool".into()],
+                Default::default(),
+            );
+            app.tasks.insert(
+                "t".into(),
+                task(
+                    &[],
+                    vec![omni_core::TaskDependency::ExplicitProject {
+                        project: "tool".into(),
+                        task: "build-native".into(),
+                    }],
+                ),
+            );
+            let mut tool = omni_core::Project::new(
+                "tool",
+                "/ws/tool".into(),
+                vec![],
+                Default::default(),
+            );
+            tool.tasks.insert("setup".into(), task(&[], vec![]));
+            tool.tasks
+                .insert("build-native".into(), task(&["setup"], vec![]));
+            Self {
+                projects: vec![app, tool],
+                info: omni_task_context::CacheInfo {
+                    cache_enabled: true,
+                    cache_enabled_source: Default::default(),
+                    cache_remote: true,
+                    key_defaults: false,
+                    key_env_keys: vec![],
+                    key_input_files: Default::default(),
+                    cache_output_files: Default::default(),
+                    cache_logs: false,
+                    args: Default::default(),
+                },
+            }
+        }
+    }
+
+    impl Context for SiblingCtx {
+        type Error = std::io::Error;
+        fn get_task_env_vars(
+            &self,
+            _: &omni_core::TaskExecutionNode,
+        ) -> Result<Option<Arc<EnvVars>>, Self::Error> {
+            Ok(Some(Arc::new(Default::default())))
+        }
+        fn get_cache_info(
+            &self,
+            _: &str,
+            _: &str,
+        ) -> Option<&omni_task_context::CacheInfo> {
+            Some(&self.info)
+        }
+        fn get_output_logs(
+            &self,
+            _: &str,
+            _: &str,
+        ) -> Option<&omni_task_output_logs::OutputLogsConfiguration> {
+            None
+        }
+        fn get_task_meta_config(
+            &self,
+            _: &str,
+            _: &str,
+        ) -> Option<&omni_configurations::MetaConfiguration> {
+            None
+        }
+        fn get_project_meta_config(
+            &self,
+            _: &str,
+        ) -> Option<&omni_configurations::MetaConfiguration> {
+            None
+        }
+        fn get_task_override_args(
+            &self,
+            _: &str,
+            _: &str,
+        ) -> Option<&UnorderedMap<String, serde_json::Value>> {
+            None
+        }
+        fn get_project_graph(
+            &self,
+        ) -> Result<omni_core::ProjectGraph, Self::Error> {
+            omni_core::ProjectGraph::from_projects(self.projects.clone())
+                .map_err(std::io::Error::other)
+        }
+        fn projects(&self) -> &[omni_core::Project] {
+            &self.projects
+        }
+        fn root_dir(&self) -> &Path {
+            Path::new("/ws")
+        }
+    }
+
+    #[tokio::test]
+    async fn a_with_sibling_and_its_prerequisite_get_current_digests_in_the_prune_inventory()
+     {
+        let temp = tempfile::tempdir().unwrap();
+        let cache = cache_store(temp.path());
+        let ctx = SiblingCtx::new();
+        let args = PruneCacheArgs::<SiblingCtx> {
+            dry_run: true,
+            stale: true,
+            orphan: false,
+            inventory: None,
+            approved: None,
+            older_than: None,
+            project_names: &[],
+            project_name_globs: &[],
+            task_names: &["t"],
+            task_name_globs: &[],
+            dir_globs: &[],
+            meta_filter: None,
+            larger_than: None,
+            context: None,
+        };
+        let mut inventory = PruneInventory::default();
+        cache
+            .observe_prune_workspace(&mut inventory, &ctx, &args)
+            .await
+            .unwrap();
+
+        // Before the fix the filter `t` planned `build-native` but not `setup`,
+        // so `setup` had no status and no digest, `build-native` could not
+        // take a reusable hash from it, and both were observed without a
+        // digest: indeterminate, so none of their entries could ever be stale.
+        for task in ["setup", "build-native"] {
+            assert!(
+                !inventory.is_indeterminate("tool", task),
+                "tool#{task} is in the plan"
+            );
+            let live = inventory.current_digests("tool", task);
+            assert_eq!(live.len(), 1, "tool#{task} has one live digest");
+            assert!(!inventory.is_stale("tool", task, &live[0]));
+            // An old entry, such as a pre-fix key without `setup`, is stale.
+            assert!(inventory.is_stale("tool", task, &[0xAB; 32]));
+        }
+        // The sibling's key now includes its prerequisite's digest.
+        assert_ne!(
+            inventory.current_digests("tool", "setup"),
+            inventory.current_digests("tool", "build-native")
+        );
+    }
+
     #[test]
     fn dir_and_meta_inventory_filters_keep_direct_canonical_matches_only() {
         let temp = tempfile::tempdir().unwrap();
