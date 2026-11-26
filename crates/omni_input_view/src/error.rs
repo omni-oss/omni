@@ -116,6 +116,7 @@ pub enum InputError {
     #[error("reading beneath the workspace root is not supported here")]
     #[diagnostic(
         code = "input_view.containment_unsupported",
+        audience = environment,
         hint = "this needs Linux 5.6 or newer with `openat2` allowed (not blocked by a sandbox or seccomp filter) or Windows; macOS is not supported yet"
     )]
     ContainmentUnsupported,
@@ -182,6 +183,7 @@ pub enum InputError {
     #[error("i/o error on `{path}`: {kind}")]
     #[diagnostic(
         code = "input_view.io",
+        audience = environment,
         hint = "check that the path is readable and that nothing else is changing it"
     )]
     Io {
@@ -232,41 +234,43 @@ mod tests {
         WorkspacePath::parse(path).unwrap()
     }
 
+    const PATH: &str = "zz/distinct/path";
+
     fn every_variant() -> Vec<InputError> {
         vec![
             InputError::InvalidPath(WorkspacePathError::Empty),
             InputError::Denied(DenyReason {
-                path: wp("a"),
+                path: wp(PATH),
                 cause: crate::auth::DenyCause::NoMatch,
             }),
             InputError::PolicyUnavailable,
-            InputError::Symlink { path: wp("a") },
-            InputError::EscapesRoot { path: wp("a") },
-            InputError::MountCrossing { path: wp("a") },
-            InputError::ReparsePoint { path: wp("a") },
+            InputError::Symlink { path: wp(PATH) },
+            InputError::EscapesRoot { path: wp(PATH) },
+            InputError::MountCrossing { path: wp(PATH) },
+            InputError::ReparsePoint { path: wp(PATH) },
             InputError::ContainmentUnsupported,
             InputError::UnsupportedName {
-                path: "a/b:c".into(),
+                path: PATH.into(),
                 problem: NameProblem::Stream,
             },
-            InputError::CaseMismatch { path: wp("a") },
+            InputError::CaseMismatch { path: wp(PATH) },
             InputError::SymlinkPolicyUnsupported,
             InputError::NotRegular {
-                path: wp("a"),
+                path: wp(PATH),
                 kind: EntryKind::Dir,
             },
             InputError::NotDirectory {
-                path: wp("a"),
+                path: wp(PATH),
                 kind: EntryKind::File,
             },
             InputError::TooLarge {
-                path: wp("a"),
+                path: wp(PATH),
                 len: 2,
                 limit: 1,
             },
             InputError::Budget(BudgetKind::Operations),
             InputError::Io {
-                path: wp("a"),
+                path: wp(PATH),
                 kind: io::ErrorKind::PermissionDenied,
             },
         ]
@@ -279,11 +283,30 @@ mod tests {
             assert!(error.reportable(), "{error}");
             assert!(error.code().starts_with("input_view."), "{error}");
             assert!(!error.hints().is_empty(), "{error}");
+            // Every failure that is about a path says which one.
+            let about_a_path = !matches!(
+                error,
+                InputError::InvalidPath(_)
+                    | InputError::PolicyUnavailable
+                    | InputError::ContainmentUnsupported
+                    | InputError::SymlinkPolicyUnsupported
+                    | InputError::Budget(_)
+            );
+            if about_a_path {
+                assert!(error.to_string().contains(PATH), "{error}");
+            }
+            // The code is registered, so the CLI can look it up.
+            assert!(omni_codes::get(error.code()).is_some(), "{error}");
             codes.push(error.code());
         }
         let unique: std::collections::BTreeSet<_> =
             codes.iter().copied().collect();
         assert_eq!(unique.len(), codes.len(), "codes must be unique");
+    }
+
+    #[test]
+    fn the_registered_codes_are_valid() {
+        omni_codes::validate().unwrap();
     }
 
     #[test]

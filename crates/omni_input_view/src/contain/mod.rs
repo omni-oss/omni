@@ -63,7 +63,7 @@ pub struct ContainedRoot(imp::Root);
 impl ContainedRoot {
     /// Canonicalizes `root` once and holds a handle to it. On platforms
     /// without verified containment this returns
-    /// [`ContainmentViolation::Unsupported`] without touching the filesystem.
+    /// [`InputError::ContainmentUnsupported`] without touching the filesystem.
     pub fn open(root: &Path) -> Result<Self, InputError> {
         imp::Root::open(root)
             .map(Self)

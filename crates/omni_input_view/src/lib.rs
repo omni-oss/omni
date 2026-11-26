@@ -9,10 +9,10 @@
 //!
 //! - Linux: one `openat2` with `RESOLVE_BENEATH | RESOLVE_NO_SYMLINKS |
 //!   RESOLVE_NO_MAGICLINKS | RESOLVE_NO_XDEV`. No fallback: if the syscall is
-//!   unavailable the result is [`ContainmentViolation::Unsupported`].
+//!   unavailable the result is [`InputError::ContainmentUnsupported`].
 //! - Windows: a one-component walk over retained handles that rejects every
 //!   reparse point, then checks the final path of the handle.
-//! - Everything else, including macOS: [`ContainmentViolation::Unsupported`]
+//! - Everything else, including macOS: [`InputError::ContainmentUnsupported`]
 //!   without touching the filesystem.
 #![deny(unsafe_code)]
 

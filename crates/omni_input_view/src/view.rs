@@ -375,7 +375,7 @@ impl InputView {
             }
             check_name(&name).map_err(|problem| {
                 InputError::UnsupportedName {
-                    path: child.to_string(),
+                    path: entry_path(dir, &name),
                     problem,
                 }
             })?;
@@ -620,9 +620,25 @@ impl InputView {
     }
 }
 
+/// A name read from disk, made safe to print: control characters (a newline or
+/// an ANSI escape in a file name) must not forge or garble terminal and log
+/// output.
+fn printable(name: &str) -> String {
+    name.chars()
+        .flat_map(|c| {
+            if c.is_control() {
+                c.escape_default().collect::<Vec<_>>()
+            } else {
+                vec![c]
+            }
+        })
+        .collect()
+}
+
 fn entry_path(dir: &WorkspacePath, name: &str) -> String {
+    let name = printable(name);
     if dir.is_root() {
-        name.to_string()
+        name
     } else {
         format!("{dir}/{name}")
     }

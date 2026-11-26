@@ -753,6 +753,36 @@ fn a_listed_name_failure_says_which_entry_and_why() {
 
 #[cfg(target_os = "linux")]
 #[test]
+fn an_unrepresentable_listed_name_is_reported_and_made_printable() {
+    use omni_diagnostic::Diagnostic as _;
+    // A backslash cannot be part of a workspace path; a newline in a name
+    // must not reach the output raw.
+    let fixture = listing!();
+    fs::write(fixture.root.at("d").join("back\\slash"), "x").unwrap();
+    let error = fixture.view().list(&wp("d"), &cx()).unwrap_err();
+    assert!(matches!(
+        error,
+        InputError::UnsupportedName {
+            problem: NameProblem::NotRepresentable,
+            ..
+        }
+    ));
+    assert!(error.to_string().contains("back\\slash"), "{error}");
+    assert_eq!(error.code(), "input_view.unsupported_name");
+
+    let fixture = listing!();
+    fs::write(fixture.root.at("d").join("line\nbreak:x"), "x").unwrap();
+    let message = fixture
+        .view()
+        .list(&wp("d"), &cx())
+        .unwrap_err()
+        .to_string();
+    assert!(!message.contains('\n'), "{message:?}");
+    assert!(message.contains("line\\nbreak:x"), "{message:?}");
+}
+
+#[cfg(target_os = "linux")]
+#[test]
 fn a_listed_name_that_is_not_supported_fails_the_list() {
     let fixture = listing!();
     fs::write(fixture.root.at("d").join("ab:c"), "x").unwrap();
