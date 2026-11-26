@@ -422,7 +422,13 @@ where
     let started = std::time::Instant::now();
     let mut reads = 0usize;
     let mut overlapped = false;
+    // Also keep going (bounded) until a read succeeded, so a swapper that
+    // keeps the directory out most of the time on a slow runner cannot fail
+    // the "not every read was refused" check by chance.
     while reads < ITERATIONS
+        || (found == 0
+            && !handle.is_finished()
+            && started.elapsed() < std::time::Duration::from_secs(60))
         || (swaps.load(Ordering::SeqCst) == swaps_before
             && !handle.is_finished()
             && started.elapsed() < std::time::Duration::from_secs(60))
