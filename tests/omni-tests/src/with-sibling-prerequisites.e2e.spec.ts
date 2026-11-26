@@ -39,7 +39,7 @@ function markerNames(ws: ReturnType<typeof makeWorkspace>): string[] {
 
 interface Case {
     label: string;
-    spec: WorkspaceSpec["projects"];
+    spec: NonNullable<WorkspaceSpec["projects"]>;
     args: string[];
     /** Tasks that must have run before this task, `setup` before `build-native`. */
     expected: string[];
