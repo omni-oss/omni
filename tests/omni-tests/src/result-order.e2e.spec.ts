@@ -78,7 +78,7 @@ describe("+result-order @output (result file order)", () => {
         expect(runs[1]).toEqual(first);
     });
 
-    it("`exec --result` is sorted by project and stable across runs", async () => {
+    it("`exec --result` is sorted by project and stable across runs (the ad-hoc task name is random per run)", async () => {
         const ws = makeMultiProjectWorkspace();
         const runs: [string, string][][] = [];
 
@@ -88,7 +88,7 @@ describe("+result-order @output (result file order)", () => {
                 { cwd: ws.cwd },
             );
             expect(result).toHaveSucceeded();
-            runs.push(keysOf(ws.read(file)));
+            runs.push(keysOf(ws.read(file)).map(([project]) => [project, ""]));
         }
 
         expect(runs[0]).toHaveLength(PROJECTS.length);
