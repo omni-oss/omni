@@ -301,6 +301,20 @@ impl<V> TaskMap<V> {
         self.inner.into_values().flat_map(HashMap::into_values)
     }
 
+    /// Values ordered by raw `(project, task)` comparison, so the order does
+    /// not depend on hash state.
+    pub fn into_sorted_values(self) -> Vec<V> {
+        let mut entries = self
+            .inner
+            .into_iter()
+            .flat_map(|(p, b)| {
+                b.into_iter().map(move |(t, v)| (p.clone(), t, v))
+            })
+            .collect::<Vec<_>>();
+        entries.sort_unstable_by(|a, b| (&a.0, &a.1).cmp(&(&b.0, &b.1)));
+        entries.into_iter().map(|(_, _, v)| v).collect()
+    }
+
     pub fn values(&self) -> impl Iterator<Item = &V> {
         self.inner.values().flat_map(HashMap::values)
     }

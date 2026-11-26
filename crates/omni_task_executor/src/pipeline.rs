@@ -132,7 +132,7 @@ impl<'a, TSys: TaskExecutorSys, S: ExecutionEventSubscriber>
 }
 
 fn ordered_results<V>(results: TaskMap<V>) -> Vec<V> {
-    results.into_values().collect()
+    results.into_sorted_values()
 }
 
 #[derive(Debug, thiserror::Error, omni_diagnostic::Diagnostic)]
