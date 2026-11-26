@@ -190,7 +190,14 @@ P-series work will wire its own validation and activation boundaries.
   retain their contributors. Different values: the later contributor wins,
   including equal text with different interpretation modes. Compatible task
   declarations merge property by property, later winning; a different declaration
-  kind replaces the earlier one as a whole.
+  kind replaces the earlier one as a whole. This applies only when contributors
+  share a task key (the synthetic same-key contributors of these tests, explicit
+  layers); plugin-inferred tasks stay activation-scoped and an ambiguous automatic
+  alias stays an error ([C20](../../007.04-composition-golden-fixtures.md#c20--alias-and-inheritance-failures-validate-surviving-graphs)).
+- Tiered fields (`cache.enabled`) resolve tiers first; order decides within a tier
+  ([C01](../../007.04-composition-golden-fixtures.md#c01--cache-enablement-tier-matrix)).
+- Plugin output never carries `cache.remote`; reject it at the output boundary
+  (P-series wiring).
 - No conflict markers. Explicit replay, as today, overwrites a leaf or replaces an
   ancestor subtree and always beats every contributor; explicit-only chains keep
   last-wins semantics. Scalar conflicts inside one contributor or between explicit
@@ -222,11 +229,12 @@ explicit-config provenance.
 
 **Depends on F07.3.** Keep this slice, now small, because an override between
 plugins must not be silent. At the composition boundary raise one aggregated
-info-level `omni_diagnostic` notice (declared like `cache.dependency_demoted` in
+info-level `omni_notice::Notice` (RFC 0023; declared like `cache.dependency_demoted` in
 `crates/omni_task_executor/src/notices.rs`; illustrative code
 `composition.plugin_override`) with counts of overridden fields and projects. Raise it
 only when a later contributor's value differs from an earlier one and no explicit
-layer replaces the field; coalesced values and additive lists raise nothing. Never
+layer replaces the field (provenance still lists the overridden contributors
+then); coalesced values and additive lists raise nothing. Never
 put raw values in the message. Details live in the F07.5 inspection field. Do not
 change the existing duplicate-final-project-name check, which stays an error.
 
@@ -243,7 +251,9 @@ deciding tier and safe, workspace-relative file where available, and now also na
 the overridden contributors (plugin ids and declaration locations, never values);
 JSON and MCP share the same fields. Fileless and fallback decisions have no file, and no
 raw values or file contents are returned. Keep F09 inspection non-executing.
-Do not claim comprehensive field provenance before those fields are tracked.
+Do not claim comprehensive field provenance before those fields are tracked:
+F07.5 exposes `cache.enabled` overrides first, and other fields wait for P12
+inspection.
 
 **Gate:** snapshot text, JSON and MCP for inherited, overridden, fallback and
 fileless decisions, and for a decision with overridden contributors. Verify the
@@ -278,16 +288,26 @@ and [§11](../../011.00-alternatives-and-discussion.md#11-alternatives-and-discu
 | 000.00, 010.00, 013.00, 016.00                                                         | Wording only                                                                              |
 | 017.00 §17.1                                                                           | Conflict markers replaced by ordered precedence; fixtures list updated                    |
 | 018.00 §18.1                                                                           | Resolution note; no open decision                                                         |
+| 006.00:223 "no last-writer-wins merge"                                                 | Left: stage state commits, not configuration composition                                  |
+| 008.02 implicit/explicit cache-enablement conflict (dependency demotion)               | Left: dependency eligibility, not plugin precedence                                       |
+| P10 conflicting lockfiles                                                              | Left: package-manager detection, unrelated                                                |
+| 013.00:252 "manufacture conflict precedence"                                           | Reworded to "manufacture precedence"                                                      |
 | 014.00 activation-id order for version negotiation                                     | Left: protocol selection, not composition                                                 |
 | 004.01, 006.02, 006.04 conflicts                                                       | Left: conflicts within one context or one owner's claims, unrelated                       |
 | F07 feature doc, F07.3-F07.5, sequencing                                               | Rewritten here                                                                            |
 | tasks.yaml F07 and P04.5 titles, owner text; SCHEDULE.md                               | Edited; regenerated with `python3 schedule.py` and `oxfmt`                                |
 | README, P04, P08, P16, R04                                                             | Wording only                                                                              |
 
+**Open questions for the maintainer** (also in
+[§7.3](../../007.02-multiple-plugins-and-conflicts.md#73-multiple-plugins-and-conflicts)).
+(1) Ambiguous automatic alias is the one place list order does not decide a winner;
+should it also be resolved by list order? Recommendation: keep the error for now.
+(2) Confirm the conservative exclusion of `cache.remote` from plugin output.
+
 ## Review and sequencing
 
 Approve the plan before changing code. Confirm the proposed collection policy
-before F07.3 (precedence itself is decided, below); it does not block the replay prototype. Keep F06.3 cache-key
+before F07.3 (precedence itself is decided, above); it does not block the replay prototype. Keep F06.3 cache-key
 changes and F03 alias plumbing out of these diffs; use the existing dependency
 resolution contract, with plugin integration and new aliases wired separately.
 For each slice, run scoped formatting, clippy and tests per `CONTRIBUTING.md`;

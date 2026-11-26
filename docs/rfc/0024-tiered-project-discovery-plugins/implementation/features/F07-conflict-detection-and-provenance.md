@@ -32,7 +32,7 @@ order, independent of scheduling order, and the override is visible rather than 
 - Layer types and replay from R04; raw traversal from R07
 - `crates/omni_types` (provenance types)
 - `crates/omni_context/src/context.rs`, `extracted_data_validator.rs`
-- Diagnostics: `crates/omni_diagnostic`
+- Notices: `crates/omni_notice` (RFC 0023), as in `crates/omni_task_executor/src/notices.rs`
 
 ## Work
 
