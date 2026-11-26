@@ -919,24 +919,31 @@ impl TaskExecutionGraph {
             actual_roots.push(*i);
         }
 
-        // Step 3: Get all reachable nodes based from filtered roots
-        let mut reachable = HashSet::new();
+        // Step 3: Schedule the closure of the actual roots under dependency
+        // edges (toward dependencies) and sibling edges (both directions), to
+        // a fixed point. A task pulled in as a sibling brings its own
+        // dependencies, and those bring their siblings in turn. Dependents are
+        // never followed: with `--with-dependents` they were chosen in step 1.5.
+        let sibling_graph = filtered_graph!(&self.di_graph, EdgeType::Sibling);
+
+        let mut scheduled = HashSet::new();
         let mut stack = actual_roots.clone();
         while let Some(i) = stack.pop() {
-            if reachable.insert(i) {
-                for n in dep_graph.neighbors_directed(i, Direction::Incoming) {
-                    stack.push(n);
-                }
+            if scheduled.insert(i) {
+                stack.extend(
+                    dep_graph.neighbors_directed(i, Direction::Incoming),
+                );
+                stack.extend(
+                    sibling_graph.neighbors_directed(i, Direction::Outgoing),
+                );
+                stack.extend(
+                    sibling_graph.neighbors_directed(i, Direction::Incoming),
+                );
             }
         }
 
         // Step 4: Determine sibling-connected components over the scheduled
         // node set.
-        //
-        // The scheduled set is `reachable` plus any task transitively
-        // co-scheduled (sibling-connected) with a reachable task: sibling
-        // ("with") tasks that are not themselves dependency-reachable are
-        // pulled in so they run alongside their peers.
         //
         // Because every task in a component MUST share a batch, levels are
         // computed on the *condensation* of the dependency graph: each
@@ -947,14 +954,12 @@ impl TaskExecutionGraph {
         // co-scheduling "lift" to a member's dependents for free.
         //
         // Components are discovered by an undirected traversal of the sibling
-        // graph seeded from the reachable nodes in sorted order, so the
+        // graph seeded from the scheduled nodes in sorted order, so the
         // result is fully deterministic regardless of hash iteration order.
-        let sibling_graph = filtered_graph!(&self.di_graph, EdgeType::Sibling);
-
         let mut component_of: HashMap<NodeIndex, usize> = HashMap::new();
         let mut components: Vec<Vec<NodeIndex>> = Vec::new();
 
-        let mut seeds = reachable.iter().copied().collect::<Vec<_>>();
+        let mut seeds = scheduled.iter().copied().collect::<Vec<_>>();
         seeds.sort();
 
         for seed in seeds {
@@ -1001,6 +1006,10 @@ impl TaskExecutionGraph {
         for (&node, &cid) in &component_of {
             for dep in dep_graph.neighbors_directed(node, Direction::Incoming) {
                 let Some(&dep_cid) = component_of.get(&dep) else {
+                    debug_assert!(
+                        false,
+                        "dependency of a scheduled task must be scheduled"
+                    );
                     continue;
                 };
 
@@ -1321,7 +1330,7 @@ pub(crate) enum TaskExecutionGraphErrorInner {
     )]
     #[diagnostic(
         code = "task.sibling_cycle",
-        hint = "remove the dependency chain among these sibling tasks so they can run together"
+        hint = "tasks involved in or blocked by the cycle: remove the dependency chain among these sibling tasks so they can run together; the chain may run through a prerequisite of a `with` task"
     )]
     SiblingDependencyCycle {
         #[diagnostic(detail)]
