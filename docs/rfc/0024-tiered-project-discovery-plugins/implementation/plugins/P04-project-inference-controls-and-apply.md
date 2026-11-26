@@ -21,8 +21,8 @@ project authors control inferred projects.
    the concrete discovered file and are **not inherited** from bases; `base: true` still
    excludes templates.
 2. **Restricted plugin-contribution types** in `omni_configurations`: the allowed
-   field subset and additive-only collection profile (plain additions and `append`;
-   reject `prepend`/`replace`/positional `merge`), no host-managed fields, no `extends`
+   field subset and additive-only collection profile (`append` envelope only;
+   reject plain lists, `prepend`/`replace`/positional `merge`), no host-managed fields, no `extends`
    paths, literal-only environment values (uses R03 literal operands).
 3. **Standard `apply`:** workspace-selected files per activation, resolved relative to
    the declaring file; reuse extension-closure traversal and raw-layer replay (R04/R07);
@@ -43,7 +43,8 @@ project authors control inferred projects.
 - Multiple activations' disjoint task patches; activation-local subtraction keeps
   another activation's values; later explicit replacement overrides globally.
 - Applied references survive public alias changes and cache round trips.
-- Rejected plugin `prepend`/`replace` even if later overridden.
+- Rejected plugin plain list and `prepend`/`replace` even if later overridden, with a
+  structured error at the output boundary; authored plain lists still replace.
 - A finalized config holding a plugin-emitted root reference serializes and
   inspects cleanly (`ProjectConfigResponse`, `print-config`), using the internal
   serialization added in [#147](https://github.com/omni-oss/omni/pull/147).
