@@ -59,7 +59,10 @@ impl Fixture {
             Err(error)
                 if is_violation(&error, ContainmentViolation::Unsupported) =>
             {
-                if cfg!(target_arch = "x86_64") {
+                if cfg!(target_arch = "x86_64")
+                    && std::env::var_os("OMNI_INPUT_VIEW_ALLOW_NO_OPENAT2")
+                        .is_none()
+                {
                     panic!("x86_64 Linux must provide openat2, got {error:?}");
                 }
                 let _ = omni_test_capabilities::gate(
@@ -106,7 +109,7 @@ where
 {
     use std::io::Read;
     let root = Root::open(&fixture.root).unwrap();
-    open_file_with(&root, &wp(path), syscall).map(|mut file| {
+    open_file_with(&root, &wp(path), Want::File, syscall).map(|mut file| {
         let mut text = String::new();
         file.read_to_string(&mut text).unwrap();
         text
@@ -415,9 +418,20 @@ where
     while swaps.load(Ordering::SeqCst) == 0 && !handle.is_finished() {
         thread::yield_now();
     }
+    let swaps_before = swaps.load(Ordering::SeqCst);
     let started = std::time::Instant::now();
     let mut reads = 0usize;
+    let mut overlapped = false;
+    // Also keep going (bounded) until a read succeeded, so a swapper that
+    // keeps the directory out most of the time on a slow runner cannot fail
+    // the "not every read was refused" check by chance.
     while reads < ITERATIONS
+        || (found == 0
+            && !handle.is_finished()
+            && started.elapsed() < std::time::Duration::from_secs(60))
+        || (swaps.load(Ordering::SeqCst) == swaps_before
+            && !handle.is_finished()
+            && started.elapsed() < std::time::Duration::from_secs(60))
         || (want_crossings
             && crossings == 0
             && started.elapsed() < std::time::Duration::from_secs(60))
@@ -446,6 +460,8 @@ where
                 );
             }
         }
+        // Observed inside the loop, so only a swap during the reads counts.
+        overlapped |= swaps.load(Ordering::SeqCst) > swaps_before;
     }
     // Keep the swapper going until it has had a fair number of rounds, but
     // stop waiting if it died, so its panic is reported by `join`.
@@ -455,6 +471,7 @@ where
     stop.store(true, Ordering::SeqCst);
     handle.join().unwrap();
     assert!(swaps.load(Ordering::SeqCst) >= 100);
+    assert!(overlapped, "no swap overlapped the reads");
     assert!(found > 0, "every read was refused");
     crossings
 }

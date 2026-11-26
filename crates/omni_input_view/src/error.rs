@@ -64,6 +64,8 @@ pub enum InputError {
     SymlinkPolicyUnsupported,
     #[error("entry is not a regular file ({0:?})")]
     NotRegular(EntryKind),
+    #[error("entry is not a directory ({0:?})")]
+    NotDirectory(EntryKind),
     #[error("file is {len} bytes, limit is {limit}")]
     TooLarge { len: u64, limit: u64 },
     #[error("budget exceeded ({0:?})")]
