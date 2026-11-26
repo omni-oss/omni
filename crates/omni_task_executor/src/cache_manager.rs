@@ -518,6 +518,16 @@ mod tests {
     }
 
     #[test]
+    fn local_only_opt_out_of_a_pulled_in_sibling_reaches_its_prerequisite() {
+        let plan = crate::test_plan::app_plan();
+        let nodes = plan.iter().flatten().cloned().collect::<Vec<_>>();
+        assert_eq!(
+            closure(&nodes, &["tool#build-native"], false, false),
+            ["tool#build-native", "tool#setup"]
+        );
+    }
+
+    #[test]
     fn the_closure_is_the_opted_out_tasks_and_everything_they_depend_on() {
         // build -> test -> release; lint is unrelated; docs depends on build.
         let nodes = [

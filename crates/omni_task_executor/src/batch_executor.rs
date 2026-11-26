@@ -1285,6 +1285,40 @@ mod tests {
         );
     }
 
+    /// What a run has after the batches ran: a result for every planned task.
+    fn results_of_plan(
+        plan: &omni_core::BatchedExecutionPlan,
+    ) -> TaskMap<TaskExecutionResult> {
+        let mut results = TaskMap::new();
+        for node in plan.iter().flatten() {
+            results.insert(
+                node.project_name(),
+                node.task_name(),
+                TaskExecutionResult::new_skipped(
+                    node.clone(),
+                    SkipReason::NoCommand,
+                ),
+            );
+        }
+        results
+    }
+
+    #[test]
+    fn a_pulled_in_sibling_does_not_list_its_prerequisite_as_skipped() {
+        let plan = crate::test_plan::app_plan();
+        let results = results_of_plan(&plan);
+        let build_native = plan
+            .iter()
+            .flatten()
+            .find(|n| n.full_task_name() == "tool#build-native")
+            .expect("the sibling is planned");
+        assert!(
+            plan.iter().flatten().any(|n| n.full_task_name() == "tool#setup"),
+            "the prerequisite of the sibling is planned"
+        );
+        assert!(skipped_output_dependencies(build_native, &results).is_empty());
+    }
+
     /// The built-in default the executor applies when no flag or config sets a
     /// facet.
     const DEFAULT: LogsDisplay = LogsDisplay::Failed;
