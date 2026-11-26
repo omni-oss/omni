@@ -117,7 +117,7 @@ where
 }
 
 fn is_violation(error: &InputError, expected: ContainmentViolation) -> bool {
-    matches!(error, InputError::Containment(found) if *found == expected)
+    error.containment() == Some(expected)
 }
 
 #[test]
@@ -188,7 +188,7 @@ fn names_are_checked_before_any_open() {
     for path in ["ab:c", "a/CON", "a/nul.txt", "a/b./c", "a/trail "] {
         let error = read_inside(&root, path).unwrap_err();
         assert!(
-            is_violation(&error, ContainmentViolation::NameUnsupported),
+            matches!(error, InputError::UnsupportedName { .. }),
             "{path}: {error:?}"
         );
     }

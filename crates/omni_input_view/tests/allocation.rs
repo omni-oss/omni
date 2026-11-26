@@ -12,9 +12,8 @@ use std::{
 };
 
 use omni_input_view::{
-    AuthDecision, AuthError, Cancellation, ContainmentViolation,
-    InputAuthorizer, InputError, InputLimits, InputView, InputViewOptions,
-    SymlinkPolicy,
+    AuthDecision, AuthError, Cancellation, InputAuthorizer, InputError,
+    InputLimits, InputView, InputViewOptions, SymlinkPolicy,
 };
 use omni_path_utils::WorkspacePath;
 
@@ -86,7 +85,7 @@ fn an_oversized_file_is_refused_without_allocating_its_size() {
 
     // A sandbox that blocks `openat2` (the aarch64 `cross` container) answers
     // `Unsupported` and reads nothing; x86_64 Linux must have it.
-    if let Err(InputError::Containment(ContainmentViolation::Unsupported)) =
+    if let Err(InputError::ContainmentUnsupported) =
         view.exists(&WorkspacePath::root(), &Cancellation::new())
     {
         // Only a non-x86_64 Linux sandbox may answer `Unsupported`.
@@ -102,7 +101,7 @@ fn an_oversized_file_is_refused_without_allocating_its_size() {
                 &WorkspacePath::parse("huge").unwrap(),
                 &Cancellation::new()
             ),
-            Err(InputError::Containment(ContainmentViolation::Unsupported))
+            Err(InputError::ContainmentUnsupported)
         ));
         assert!(view.evidence().paths.is_empty());
         let _ = omni_test_capabilities::gate(
@@ -119,7 +118,7 @@ fn an_oversized_file_is_refused_without_allocating_its_size() {
     let largest = LARGEST.load(Ordering::SeqCst);
 
     assert!(
-        matches!(result, Err(InputError::TooLarge { len, limit }) if len == FILE_LEN && limit == 1024 * 1024)
+        matches!(result, Err(InputError::TooLarge { len, limit, .. }) if len == FILE_LEN && limit == 1024 * 1024)
     );
     assert!(
         largest < 1024 * 1024,

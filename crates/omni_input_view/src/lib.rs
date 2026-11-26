@@ -32,7 +32,9 @@ pub use auth::{
 pub use cancel::Cancellation;
 pub use contain::{ContainedRoot, open_beneath};
 pub use digest::{Blake3Digest, Digest, DigestSink};
-pub use error::{BudgetKind, ContainmentViolation, EntryKind, InputError};
+pub use error::{
+    BudgetKind, ContainmentViolation, EntryKind, InputError, NameProblem,
+};
 pub use evidence::{Evidence, FileIdentity, Observation, PathEvidence};
 pub use limits::InputLimits;
 pub use name::check_name;

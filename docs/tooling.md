@@ -33,7 +33,7 @@ on native Linux, Windows and macOS runners. Windows symlink tests follow
 and skip only locally); junction tests never skip. Run it locally with
 `cargo test -p omni_input_view`. The overhead benchmark is
 `cargo bench -p omni_bench --bench input_view`; set `OMNI_BENCH_LOCKFILES` to a
-directory of real lockfiles to include the lockfile group.
+directory of real lockfiles to include the lockfile group. The `aarch64-unknown-linux-gnu` lane runs under `cross`, whose container blocks `openat2`: there the view tests assert `Unsupported` and skip with a named gate, so Linux containment is CI-tested on x86_64 only.
 
 - Rust: `cargo fmt`, `cargo clippy`, `cargo test`; benchmarks use criterion (`crates/omni_bench`).
 - TypeScript: `oxfmt` (`oxfmt.config.ts`), `oxlint` (`oxlint.config.ts`), `tsc`, `vitest` (`vitest.workspace.ts`).

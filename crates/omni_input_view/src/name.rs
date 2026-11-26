@@ -1,26 +1,31 @@
 use omni_path_utils::WorkspacePath;
 
-use crate::error::ContainmentViolation;
+use crate::error::{InputError, NameProblem};
 
 /// D9: names rejected on every OS inside the view, so a discovery run does not
 /// accept on Linux a path that fails on Windows. Rejects `:` (alternate data
 /// streams), Windows reserved device names (with or without an extension, any
 /// case) and a trailing dot or space. Pure: no filesystem access.
-pub fn check_name(segment: &str) -> Result<(), ContainmentViolation> {
-    if segment.contains(':')
-        || segment.ends_with('.')
-        || segment.ends_with(' ')
-        || is_reserved_device_name(segment)
-    {
-        return Err(ContainmentViolation::NameUnsupported);
+pub fn check_name(segment: &str) -> Result<(), NameProblem> {
+    if segment.contains(':') {
+        Err(NameProblem::Stream)
+    } else if is_reserved_device_name(segment) {
+        Err(NameProblem::ReservedDeviceName)
+    } else if segment.ends_with('.') || segment.ends_with(' ') {
+        Err(NameProblem::TrailingDotOrSpace)
+    } else {
+        Ok(())
     }
-    Ok(())
 }
 
-pub(crate) fn check_path(
-    path: &WorkspacePath,
-) -> Result<(), ContainmentViolation> {
-    path.segments().try_for_each(check_name)
+/// Every segment of `path`, reporting the whole path on failure.
+pub(crate) fn check_path(path: &WorkspacePath) -> Result<(), InputError> {
+    path.segments().try_for_each(check_name).map_err(|problem| {
+        InputError::UnsupportedName {
+            path: path.to_string(),
+            problem,
+        }
+    })
 }
 
 fn is_reserved_device_name(segment: &str) -> bool {
@@ -66,11 +71,7 @@ mod tests {
     #[test]
     fn rejects_streams() {
         for name in ["a:b", "file.txt:stream", "a::$DATA", ":x", "x:"] {
-            assert_eq!(
-                check_name(name),
-                Err(ContainmentViolation::NameUnsupported),
-                "{name}"
-            );
+            assert_eq!(check_name(name), Err(NameProblem::Stream), "{name}");
         }
     }
 
@@ -100,7 +101,7 @@ mod tests {
         ] {
             assert_eq!(
                 check_name(name),
-                Err(ContainmentViolation::NameUnsupported),
+                Err(NameProblem::ReservedDeviceName),
                 "{name}"
             );
         }
@@ -111,7 +112,7 @@ mod tests {
         for name in ["a.", "a ", "dir.", "x.txt ", "x.txt."] {
             assert_eq!(
                 check_name(name),
-                Err(ContainmentViolation::NameUnsupported),
+                Err(NameProblem::TrailingDotOrSpace),
                 "{name}"
             );
         }
@@ -120,15 +121,17 @@ mod tests {
     #[test]
     fn checks_every_segment_of_a_path() {
         let ok = WorkspacePath::parse("a/b/c.txt").unwrap();
-        assert_eq!(check_path(&ok), Ok(()));
+        assert!(check_path(&ok).is_ok());
         for bad in ["a/CON/c", "a/b/c.txt:s", "nul", "a/b./c"] {
             let path = WorkspacePath::parse(bad).unwrap();
-            assert_eq!(
-                check_path(&path),
-                Err(ContainmentViolation::NameUnsupported),
+            assert!(
+                matches!(
+                    check_path(&path),
+                    Err(InputError::UnsupportedName { path, .. }) if path == bad
+                ),
                 "{bad}"
             );
         }
-        assert_eq!(check_path(&WorkspacePath::root()), Ok(()));
+        assert!(check_path(&WorkspacePath::root()).is_ok());
     }
 }

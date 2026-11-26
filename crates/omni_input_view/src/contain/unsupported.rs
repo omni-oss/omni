@@ -37,10 +37,7 @@ pub(crate) fn entries(
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        ContainedRoot,
-        error::{ContainmentViolation, InputError},
-    };
+    use crate::{ContainedRoot, error::InputError};
 
     #[test]
     fn root_is_unsupported_without_touching_the_filesystem() {
@@ -49,7 +46,7 @@ mod tests {
         for root in [dir.path(), std::path::Path::new("/does/not/exist")] {
             assert!(matches!(
                 ContainedRoot::open(root),
-                Err(InputError::Containment(ContainmentViolation::Unsupported))
+                Err(InputError::ContainmentUnsupported)
             ));
         }
     }
