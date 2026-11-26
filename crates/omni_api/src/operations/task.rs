@@ -78,9 +78,9 @@ pub struct TaskRunRequest {
     pub exact_tasks: Vec<String>,
     /// Skip dependency resolution and run only the requested tasks.
     pub ignore_dependencies: bool,
-    /// Also run the dependents of the matching tasks that have the same task
-    /// name, directly or through other tasks of that name. Filters choose the
-    /// starting tasks only.
+    /// Also run the dependents of the matching tasks whose task name is one of
+    /// the requested task names, directly or through other tasks whose name is
+    /// one of the requested names. Filters choose the starting tasks only.
     pub with_dependents: bool,
     /// How to handle task failures.
     #[schemars(with = "String")]

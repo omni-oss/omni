@@ -4,24 +4,28 @@ description: "Which tasks `omni run --with-dependents` adds, and how it combines
 ---
 
 `omni run <task> --with-dependents` (`-w`) runs the selected tasks and then the
-tasks that depend on them. It adds only dependents that have the **same task
-name** as one of the requested tasks. Use it to check that a change to a
+tasks that depend on them. It adds only dependents whose **task name** is one
+of the requested task names. Use it to check that a change to a
 library does not break its consumers: `omni run build -p lib -w` runs
 `lib#build` and `build` in every project that depends on `lib`.
 
 ## What is added
 
-- **Dependents of the same name.** A task is added when it depends on a
+- **Dependents with a requested name.** A task is added when it depends on a
   selected task, directly or through other tasks that are also added, and its
-  name matches one of the requested task names or `--task-pattern` globs.
+  name matches one of the requested task names or `--task-pattern` globs. With
+  several requested names, a task with any of them can carry the search on to
+  its own dependents: with `omni run build test -p core -w`, if `mid#test`
+  depends on `core#build` and `end#build` depends on `mid#test`, both are added.
 - **Their dependencies.** Added tasks run with their own dependencies, as in a
   normal run.
 - **Not added: other tasks.** A dependent with a different name is not added,
   even when it depends on the selected task. With `omni run build -p lib -w`,
   `app#verify` (which depends on `lib#test`) and `lib#test` (which depends on
-  `lib#build`) do not run. Name them too: `omni run build test -p lib -w`.
+  `lib#build`) do not run. Name them too: `omni run lib#test verify -w`, which starts from `lib#test` and adds
+  `app#verify`.
 - **Not added: dependents reached through another task.** The search stops at a
-  task whose name does not match. If `end#build` depends on `mid#test`, and
+  task whose name is not one of the requested names. If `end#build` depends on `mid#test`, and
   `mid#test` depends on `core#build`, then `omni run build -p core -w` does not
   run `end#build`.
 - **Not followed: `with` siblings.** The search follows `dependencies` only. A
