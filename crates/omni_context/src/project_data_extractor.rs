@@ -1476,4 +1476,120 @@ mod tests {
         ("t", "x7qpHaig4Ba8GCn7uhJHFCYPS6sXsYhv6Gwf5Y7ZnPY"),
         ("n", "BtEuC55R6uckLLP73xRMq5KqNtzyk1yENCVjMNSB64PW"),
     ];
+
+    // RFC 0024 F06.3 proof. The final key must follow the *effective* task:
+    // what composition and inheritance leave after the raw text is gone. Both
+    // tasks turn the default config-file inputs off, so no file content can
+    // stand in for the definition: only an effective-task contribution can.
+    const NO_DEFAULTS: &str = r#""cache":{"key":{"defaults":false}}"#;
+
+    fn effective_app(app_meta: &str, t_description: &str) -> String {
+        format!(
+            r#"{{"name":"app","extends":["ROOT/lib/base.yaml"]{app_meta},"tasks":{{
+                "t":{{"exec":"echo {{{{ meta.flavor }}}}",{NO_DEFAULTS}{t_description}}},
+                "n":{{"exec":"x",{NO_DEFAULTS}}}}}}}"#
+        )
+    }
+
+    fn effective_files(
+        base_flavor: &str,
+        app: &str,
+    ) -> Vec<(&'static str, String)> {
+        vec![
+            (
+                "lib/base.yaml",
+                format!(
+                    r#"{{"base":true,"meta":{{"flavor":"{base_flavor}"}}}}"#
+                ),
+            ),
+            ("app/project.omni.yaml", app.to_string()),
+        ]
+    }
+
+    async fn effective_digests(
+        base_flavor: &str,
+        app: &str,
+    ) -> Vec<(String, String)> {
+        digests_for(effective_files(base_flavor, app), keep).await
+    }
+
+    fn digest_of<'a>(all: &'a [(String, String)], task: &str) -> &'a str {
+        all.iter()
+            .find(|(t, _)| t == task)
+            .map(|(_, d)| d.as_str())
+            .unwrap()
+    }
+
+    /// FAILS on the base: the collector hashes the raw command text, which is
+    /// the same, and nothing else sees the inherited metadata it consumes.
+    #[tokio::test]
+    async fn an_inherited_setting_change_changes_the_final_key() {
+        let app = effective_app("", "");
+        let one = effective_digests("one", &app).await;
+        let two = effective_digests("two", &app).await;
+        assert_ne!(
+            digest_of(&one, "t"),
+            digest_of(&two, "t"),
+            "inherited metadata consumed by the command must reach the key"
+        );
+    }
+
+    /// FAILS on the base. The unchanged-command guard of the same defect: a
+    /// definition change must invalidate even with `cache.key.defaults: false`.
+    #[tokio::test]
+    async fn defaults_off_still_invalidates_on_a_definition_change() {
+        let one = effective_digests("one", &effective_app("", "")).await;
+        let other = effective_digests(
+            "one",
+            &effective_app(r#","meta":{"flavor":"local"}"#, ""),
+        )
+        .await;
+        assert_ne!(digest_of(&one, "t"), digest_of(&other, "t"));
+    }
+
+    /// Guard, passes on the base and must keep passing: a change to one task's
+    /// own definition does not move an unrelated sibling's key.
+    #[tokio::test]
+    async fn an_unrelated_sibling_change_keeps_this_tasks_key() {
+        let before = effective_digests("one", &effective_app("", "")).await;
+        let changed =
+            effective_app("", "").replace(r#""exec":"x""#, r#""exec":"y""#);
+        let after = effective_digests("one", &changed).await;
+        assert_eq!(digest_of(&before, "t"), digest_of(&after, "t"));
+        assert_ne!(digest_of(&before, "n"), digest_of(&after, "n"));
+    }
+
+    /// Guard: description is presentation, not execution.
+    #[tokio::test]
+    async fn a_presentation_only_change_keeps_the_key() {
+        let before = effective_digests("one", &effective_app("", "")).await;
+        let after = effective_digests(
+            "one",
+            &effective_app("", r#","description":"a new description""#),
+        )
+        .await;
+        assert_eq!(before, after);
+    }
+
+    /// Guard: the same effective semantics reached two ways share a key.
+    #[tokio::test]
+    async fn identical_effective_semantics_keep_the_key() {
+        let inherited = effective_digests("one", &effective_app("", "")).await;
+        let restated = effective_digests(
+            "zzz",
+            &effective_app(r#","meta":{"flavor":"one"}"#, ""),
+        )
+        .await;
+        assert_eq!(digest_of(&inherited, "t"), digest_of(&restated, "t"));
+    }
+
+    /// Guard: an explicit override masks an inherited change that no longer
+    /// reaches the effective task.
+    #[tokio::test]
+    async fn an_explicit_override_masks_an_irrelevant_inherited_change() {
+        let app = effective_app(r#","meta":{"flavor":"mine"}"#, "");
+        let one = effective_digests("one", &app).await;
+        let two = effective_digests("two", &app).await;
+        assert_eq!(digest_of(&one, "t"), digest_of(&two, "t"));
+    }
 }

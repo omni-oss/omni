@@ -1051,4 +1051,223 @@ mod tests {
             assert!(!eligible(&node(false), Some(off)), "{source:?}");
         }
     }
+
+    // RFC 0024 F06.3 proof: the final key must follow the effective task, not
+    // only the raw text the collector hashes today. The helpers take the digest
+    // from the two paths that exist for one task context: the dry run in this
+    // module, and the hybrid store's own write path (the same `collect` that
+    // lookup and stale pruning use).
+    mod effective_key {
+        use omni_cache::{
+            NewCacheInfo, TaskExecutionCacheStore as _,
+            impls::{HybridTaskExecutionCacheStore, RemoteConfig},
+        };
+        use omni_hasher::impls::DefaultHash;
+        use omni_retry_config::RetryConfiguration;
+
+        use super::*;
+        use crate::cache_manager::{CacheManager, TaskResultContext};
+
+        struct Fixture {
+            temp: tempfile::TempDir,
+        }
+
+        impl Fixture {
+            fn new() -> Self {
+                let temp = tempfile::tempdir().unwrap();
+                std::fs::create_dir_all(temp.path().join("p")).unwrap();
+                Self { temp }
+            }
+
+            fn node(
+                &self,
+                retry: serde_json::Value,
+                enabled: TeraExprBoolean,
+            ) -> TaskExecutionNode {
+                TaskExecutionNode::new(
+                    TaskKey::new("p", "t"),
+                    Some(CommandConfig::Shell("echo".to_string())),
+                    None,
+                    self.temp.path().join("p"),
+                    vec![],
+                    enabled,
+                    false,
+                    false,
+                    serde_json::from_value::<RetryConfiguration>(retry)
+                        .unwrap(),
+                )
+            }
+
+            fn plain_node(&self) -> TaskExecutionNode {
+                self.node(serde_json::json!({}), TeraExprBoolean::Boolean(true))
+            }
+
+            /// The digest the dry run reports for this context.
+            async fn dry_run_digest(
+                &self,
+                ctx: &TaskContext<'_>,
+            ) -> DefaultHash {
+                let manager = CacheManager::<
+                    SpyStore,
+                    system_traits::impls::RealSys,
+                >::builder()
+                .store(SpyStore::default())
+                .dry_run(true)
+                .sys(system_traits::impls::RealSys)
+                .root_dir(self.temp.path().to_path_buf())
+                .cache_dir(self.temp.path().join("dry-cache"))
+                .build();
+                let result = TaskResultContext::Completed {
+                    task_context: ctx,
+                    result: omni_process::TaskChildProcessResult::new(
+                        ctx.node.clone(),
+                        0u32,
+                        std::time::Duration::ZERO,
+                        None::<bytes::Bytes>,
+                    ),
+                    tries: 1,
+                };
+                let results = [result];
+                let hashes = manager.cache_results(&results).await.unwrap();
+                hashes.get("p", "t").expect("a digest").digest
+            }
+
+            /// The digest the real store writes under for this context.
+            async fn stored_digest(
+                &self,
+                ctx: &TaskContext<'_>,
+            ) -> DefaultHash {
+                let store = HybridTaskExecutionCacheStore::new(
+                    self.temp.path().join("real-cache"),
+                    self.temp.path(),
+                    RemoteConfig::new_disabled(),
+                );
+                let task = ctx.execution_info().expect("cache info");
+                let hashes = store
+                    .cache_many(&[NewCacheInfo::new(
+                        task,
+                        None,
+                        std::time::Duration::ZERO,
+                        0,
+                        1,
+                    )])
+                    .await
+                    .unwrap();
+                hashes[0].digest
+            }
+        }
+
+        fn eligible_info() -> CacheInfo {
+            CacheInfo {
+                key_defaults: false,
+                ..info(true)
+            }
+        }
+
+        /// A changed effective setting that no ordinary input records: the
+        /// task's retry policy.
+        #[tokio::test]
+        async fn a_retry_policy_change_changes_the_dry_run_key() {
+            let f = Fixture::new();
+            let (plain, retried) = (
+                f.plain_node(),
+                f.node(
+                    serde_json::json!({"max_retries": 3}),
+                    TeraExprBoolean::Boolean(true),
+                ),
+            );
+            let a = f.dry_run_digest(&context(&plain, eligible_info())).await;
+            let b = f.dry_run_digest(&context(&retried, eligible_info())).await;
+            assert_ne!(
+                a, b,
+                "retry is effective semantics and must reach the key"
+            );
+        }
+
+        #[tokio::test]
+        async fn an_enabled_expression_change_changes_the_dry_run_key() {
+            let f = Fixture::new();
+            let (on, conditional) = (
+                f.plain_node(),
+                f.node(
+                    serde_json::json!({}),
+                    TeraExprBoolean::Expr("{{ env.CI }}".into()),
+                ),
+            );
+            let a = f.dry_run_digest(&context(&on, eligible_info())).await;
+            let b = f
+                .dry_run_digest(&context(&conditional, eligible_info()))
+                .await;
+            assert_ne!(
+                a, b,
+                "enabled is effective semantics and must reach the key"
+            );
+        }
+
+        /// The same change through the store's own path, which lookup, write
+        /// and stale pruning share.
+        #[tokio::test]
+        async fn a_retry_policy_change_changes_the_stores_key() {
+            let f = Fixture::new();
+            let (plain, retried) = (
+                f.plain_node(),
+                f.node(
+                    serde_json::json!({"max_retries": 3}),
+                    TeraExprBoolean::Boolean(true),
+                ),
+            );
+            let a = f.stored_digest(&context(&plain, eligible_info())).await;
+            let b = f.stored_digest(&context(&retried, eligible_info())).await;
+            assert_ne!(a, b, "the store's collect must see the effective task");
+        }
+
+        /// Parity: for the same task context the dry run and the store agree
+        /// on the key. Holds on the base (neither sees the effective task) and
+        /// must keep holding when both do; the retried variant is the case a
+        /// half-plumbed change would break.
+        #[tokio::test]
+        async fn the_dry_run_and_the_store_agree_on_the_key() {
+            let f = Fixture::new();
+            let retried = f.node(
+                serde_json::json!({"max_retries": 3}),
+                TeraExprBoolean::Boolean(true),
+            );
+            for node in [f.plain_node(), retried] {
+                let ctx = context(&node, eligible_info());
+                assert_eq!(
+                    f.dry_run_digest(&ctx).await,
+                    f.stored_digest(&ctx).await
+                );
+            }
+        }
+
+        /// Guards (pass on the base and must keep passing): presentation and
+        /// provenance never reach the key, identical semantics keep it.
+        #[tokio::test]
+        async fn presentation_only_differences_keep_the_key() {
+            let f = Fixture::new();
+            let node = f.plain_node();
+            let reference =
+                f.dry_run_digest(&context(&node, eligible_info())).await;
+            for source in SOURCES {
+                let info = CacheInfo {
+                    cache_enabled_source: source,
+                    ..eligible_info()
+                };
+                assert_eq!(
+                    f.dry_run_digest(&context(&node, info)).await,
+                    reference,
+                    "{source:?}"
+                );
+            }
+            let remote_off = CacheInfo {
+                cache_remote: false,
+                ..eligible_info()
+            };
+            assert_eq!(
+                f.dry_run_digest(&context(&node, remote_off)).await,
+                reference
+            );
+        }
+    }
 }

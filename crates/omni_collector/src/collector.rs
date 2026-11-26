@@ -1255,6 +1255,7 @@ mod tests {
         info: &ProjectTaskInfo<'_>,
         resolved_inputs: &[OmniPath],
         identity_leaf: DefaultHash,
+        effective_leaf: Option<DefaultHash>,
     ) -> DefaultHash {
         let mut tree = collector
             .dir_hasher
@@ -1335,8 +1336,21 @@ mod tests {
         }
 
         tree.insert(identity_leaf);
+        if let Some(leaf) = effective_leaf {
+            tree.insert(leaf);
+        }
         tree.commit();
         tree.root().expect("root")
+    }
+
+    /// RFC 0024 F06.3 proposal, as a test-only oracle until the production
+    /// leaf exists: `b"omni.effective-task\0" || 0x01 || digest(32)`. It sits
+    /// after the identity leaf, so every earlier leaf keeps its position.
+    fn effective_leaf_v1(effective_digest: DefaultHash) -> DefaultHash {
+        omni_hasher::impls::hash_parts([
+            b"omni.effective-task\0\x01".as_slice(),
+            effective_digest.as_slice(),
+        ])
     }
 
     /// An ordinary undecorated task with controlled inputs, env, args, output
@@ -1403,9 +1417,11 @@ mod tests {
                 &info,
                 &inputs,
                 legacy_leaf,
+                None,
             )
             .await,
-            v1_recipe: recipe_digest(&collector, &info, &inputs, v1_leaf).await,
+            v1_recipe: recipe_digest(&collector, &info, &inputs, v1_leaf, None)
+                .await,
         }
     }
 
@@ -1469,6 +1485,74 @@ mod tests {
         );
         assert_ne!(digests.v1_recipe, digests.legacy_recipe);
         assert_eq!(digests.collector, digests.v1_recipe);
+    }
+
+    /// RFC 0024 F06.3 proof (FAILS on the base): the final key is the v1
+    /// recipe plus the effective-task leaf, inserted after the identity leaf.
+    /// `digests_for` passes no effective task today, because the collector has
+    /// no way to receive one; F06.3 changes that helper to pass `config`.
+    #[tokio::test]
+    async fn the_final_key_carries_the_effective_task_leaf() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let project = ordinary_task(root, "proj", "build");
+        let command = CommandConfig::shell("echo build");
+        let config = crate::effective_task::EffectiveTaskConfig::default();
+
+        let digests = digests_for(root, &project, &command).await;
+        let expected = {
+            let cache_dir = fresh_cache_dir(root);
+            let collector = Collector::new(root, &cache_dir, RealSys);
+            let info = ProjectTaskInfo {
+                task_exec: Some(&command),
+                ..project.info()
+            };
+            let inputs = collector
+                .collect(
+                    &[info],
+                    &CollectConfig {
+                        digests: true,
+                        ..Default::default()
+                    },
+                )
+                .await
+                .unwrap()
+                .remove(0)
+                .input_files
+                .unwrap();
+            recipe_digest(
+                &collector,
+                &info,
+                &inputs,
+                identity_leaf_v1("proj", "build").unwrap(),
+                Some(effective_leaf_v1(config.digest())),
+            )
+            .await
+        };
+
+        assert_eq!(
+            digests.collector, expected,
+            "the collector must insert the effective leaf after the identity leaf"
+        );
+        assert_ne!(expected, digests.v1_recipe);
+    }
+
+    /// RFC 0024 F06.3 proof (FAILS on the base): golden vector of the final
+    /// key for the ordinary task with a default effective config, computed from
+    /// the oracle recipe above. Pinned so the key cannot change by accident.
+    #[tokio::test]
+    async fn the_final_key_golden_vector_for_the_ordinary_task() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let project = ordinary_task(root, "proj", "build");
+        let command = CommandConfig::shell("echo build");
+
+        let digests = digests_for(root, &project, &command).await;
+
+        assert_eq!(
+            hex32(digests.collector),
+            "af976dd4c62cb1da98b4d87206b12b52c1112640c78f499c5507ef55a1eee1d1",
+        );
     }
 
     /// Two pairs with equal non-identity inputs shared a digest on the base
