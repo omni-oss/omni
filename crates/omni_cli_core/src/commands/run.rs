@@ -44,7 +44,7 @@ pub struct RunCommand {
     #[arg(
         long,
         short,
-        help = "Also run the dependents of the selected tasks whose task name is one of the requested task names, directly or through other tasks whose name is one of the requested names. Filters such as --project, --dir, --meta and --scm-affected choose the starting tasks only. Not compatible with --ignore-deps",
+        help = "Also run the dependents of the selected tasks, directly or through other tasks. Only dependents whose task name is one of the requested task names are added; a differently named task is walked through but not added. Filters such as --project, --dir, --meta and --scm-affected choose the starting tasks only. Not compatible with --ignore-deps",
         default_value_t = false
     )]
     pub with_dependents: bool,
