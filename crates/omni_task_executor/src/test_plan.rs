@@ -14,7 +14,9 @@ fn task(deps: &[&str], siblings: &[&str]) -> Task {
     let own = |names: &[&str]| {
         names
             .iter()
-            .map(|t| TaskDependency::Own { task: t.to_string() })
+            .map(|t| TaskDependency::Own {
+                task: t.to_string(),
+            })
             .collect::<Vec<_>>()
     };
     Task::new(
@@ -44,8 +46,7 @@ pub(crate) fn app_plan() -> BatchedExecutionPlan {
     });
     let mut tool_tasks = OrderedMap::default();
     tool_tasks.insert("setup".to_string(), task(&[], &[]));
-    tool_tasks
-        .insert("build-native".to_string(), task(&["setup"], &[]));
+    tool_tasks.insert("build-native".to_string(), task(&["setup"], &[]));
     let graph = ProjectGraph::from_projects(vec![
         Project::new(
             "app",

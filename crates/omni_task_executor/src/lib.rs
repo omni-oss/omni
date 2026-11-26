@@ -17,9 +17,9 @@ mod pipeline;
 mod result;
 mod serde_impls;
 mod sys;
+mod task_context_provider;
 #[cfg(test)]
 mod test_plan;
-mod task_context_provider;
 mod utils;
 
 pub use cache_contradiction::{

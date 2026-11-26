@@ -1313,7 +1313,9 @@ mod tests {
             .find(|n| n.full_task_name() == "tool#build-native")
             .expect("the sibling is planned");
         assert!(
-            plan.iter().flatten().any(|n| n.full_task_name() == "tool#setup"),
+            plan.iter()
+                .flatten()
+                .any(|n| n.full_task_name() == "tool#setup"),
             "the prerequisite of the sibling is planned"
         );
         assert!(skipped_output_dependencies(build_native, &results).is_empty());
