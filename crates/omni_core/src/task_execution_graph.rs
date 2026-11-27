@@ -346,7 +346,7 @@ impl TaskExecutionGraph {
                 let task_execution_node = TaskExecutionNode::new(
                     TaskKey::new(project_name, task_name),
                     task.1.exec.clone(),
-                    None,
+                    task.1.retry_exec.clone(),
                     project_dir.to_path_buf(),
                     vec![],
                     task.1.enabled.clone(),
@@ -1464,6 +1464,35 @@ mod tests {
             TaskExecutionGraph::from_project_graph(&project_graph).unwrap();
 
         assert_eq!(task_graph.count(), 19, "Should have 19 nodes");
+    }
+
+    #[test]
+    fn test_graph_node_carries_task_retry_exec() {
+        let retry = CommandConfig::Shell("echo retry".to_string());
+        let mut project = create_project("project1");
+        project.tasks = TasksBuilder::new()
+            .task("with-retry", "echo main", |b| b)
+            .task("without-retry", "echo main", |b| b)
+            .build();
+        project
+            .tasks
+            .get_mut("with-retry")
+            .expect("task")
+            .retry_exec = Some(retry.clone());
+
+        let project_graph = ProjectGraph::from_projects(vec![project])
+            .expect("Can't create graph");
+        let task_graph =
+            TaskExecutionGraph::from_project_graph(&project_graph).unwrap();
+
+        let with = task_graph
+            .get_task_by_name("project1", "with-retry")
+            .unwrap();
+        assert_eq!(with.task_retry_exec_config(), Some(&retry));
+        let without = task_graph
+            .get_task_by_name("project1", "without-retry")
+            .unwrap();
+        assert_eq!(without.task_retry_exec_config(), None);
     }
 
     #[test]

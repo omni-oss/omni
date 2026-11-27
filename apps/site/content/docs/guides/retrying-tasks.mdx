@@ -36,6 +36,23 @@ With the defaults and `max_retries: 5`, omni waits 1s, 2s, 4s, 8s and 16s.
 from another configuration layer, but are an error next to a conflicting
 `strategy` in the same layer.
 
+## Running a different command on retries
+
+`retry_exec` is a command that runs instead of `exec` on every retry attempt.
+The first attempt always runs `exec`. Without `retry_exec`, retries run `exec`
+again.
+
+```yaml
+tasks:
+    test:
+        exec: node run-tests.js
+        retry_exec: node run-tests.js --only-failed
+        retry:
+            max_retries: 2
+```
+
+`retry_exec` is part of the task's cache key.
+
 ## From the command line
 
 `-r, --retry` takes `COUNT[,strategy][,key=value...]` and is merged per field over
@@ -64,3 +81,7 @@ Tasks that set `max_retries` without an interval used to retry at once. They now
 wait 1s, 2s, 4s... by default. Set `strategy: fixed` and `base: 0s` to keep the
 old behavior. The retry event is also emitted before the wait instead of after
 it, and reports the delay that was actually used.
+
+`retry_exec` used to be ignored unless `--ignore-dependencies` was used. Tasks
+that set it now run it on retries, and an invalid `retry_exec` now fails the run
+instead of being ignored. Their cache entries are recomputed once.
