@@ -225,6 +225,9 @@ fn deciding(p: &FinalizedProject, task: &str) -> Option<String> {
             DeclarationSource::Fileless { id } => {
                 format!("fileless:{}", id.as_str())
             }
+            DeclarationSource::Contributor { id } => {
+                format!("contributor:{}", id.as_str())
+            }
         })
 }
 

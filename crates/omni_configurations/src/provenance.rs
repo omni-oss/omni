@@ -21,12 +21,35 @@ impl LayerId {
     }
 }
 
+/// The stable identifier of an ordered contributor (an activation). It names
+/// the contributor in provenance; it never orders contributors.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct ContributorId(Arc<str>);
+
+impl ContributorId {
+    pub fn new(id: impl Into<Arc<str>>) -> Self {
+        Self(id.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
 /// What declared a value. The kind is explicit rather than inferred from an
 /// optional file path.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DeclarationSource {
-    File { path: Arc<OmniPath> },
-    Fileless { id: LayerId },
+    File {
+        path: Arc<OmniPath>,
+    },
+    Fileless {
+        id: LayerId,
+    },
+    /// An ordered contributor's own emitted declaration (plugin tier).
+    Contributor {
+        id: ContributorId,
+    },
 }
 
 impl Default for DeclarationSource {
@@ -45,11 +68,23 @@ impl DeclarationSource {
         }
     }
 
+    pub fn contributor(id: ContributorId) -> Self {
+        Self::Contributor { id }
+    }
+
+    /// The declaring contributor, if the source is one.
+    pub fn contributor_id(&self) -> Option<&ContributorId> {
+        match self {
+            Self::Contributor { id } => Some(id),
+            Self::File { .. } | Self::Fileless { .. } => None,
+        }
+    }
+
     /// The declaring file, if the source is one.
     pub fn file_path(&self) -> Option<&Arc<OmniPath>> {
         match self {
             Self::File { path } => Some(path),
-            Self::Fileless { .. } => None,
+            Self::Fileless { .. } | Self::Contributor { .. } => None,
         }
     }
 }
@@ -151,5 +186,41 @@ mod tests {
         let declared = slot.unwrap();
         assert!(!declared.value);
         assert!(declared.origin.source.file_path().is_none());
+    }
+
+    #[test]
+    fn a_contributor_winner_has_an_origin_but_no_file() {
+        let mut slot = None;
+        replace_if_present(&mut slot, Some(true), &origin("a.yaml"));
+        let contributor = Arc::new(Origin::new(
+            DeclarationSource::contributor(ContributorId::new("native")),
+            OmniPath::default(),
+        ));
+        replace_if_present(&mut slot, Some(false), &contributor);
+        let declared = slot.unwrap();
+        assert!(!declared.value);
+        assert!(declared.origin.source.file_path().is_none());
+        assert_eq!(
+            declared.origin.source.contributor_id().unwrap().as_str(),
+            "native"
+        );
+    }
+
+    #[test]
+    fn contributor_identity_is_not_a_file_or_an_anonymous_fileless_id() {
+        let contributor =
+            DeclarationSource::contributor(ContributorId::new("a"));
+        assert_ne!(
+            contributor,
+            DeclarationSource::Fileless {
+                id: LayerId::new("a")
+            }
+        );
+        assert_ne!(contributor, DeclarationSource::default());
+        assert!(
+            DeclarationSource::file(OmniPath::new("a"))
+                .contributor_id()
+                .is_none()
+        );
     }
 }

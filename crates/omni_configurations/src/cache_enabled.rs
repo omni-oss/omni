@@ -14,6 +14,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::Declared;
+
 /// The tier that decided a task's `cache.enabled`, ordered from lowest to highest
 /// precedence: `HostFallback < ActivationDefaults < Plugin < ProjectExplicit <
 /// TaskExplicit`.
@@ -37,7 +39,7 @@ pub enum CacheEnabledSource {
     HostFallback,
     /// A plugin activation's `defaults`. Not produced yet.
     ActivationDefaults,
-    /// A value a plugin emitted. Not produced yet.
+    /// A value a plugin emitted, produced by ordered contributor composition.
     Plugin,
     /// The project's `cache.enabled`, inherited by the task.
     ProjectExplicit,
@@ -89,7 +91,10 @@ pub const INFERRED_TASK_CACHE_ENABLED_FALLBACK: bool = false;
 
 impl CacheEnabled {
     /// The highest tier that has a value wins; with none, `host_fallback` applies.
-    /// Candidates may come in any order.
+    /// Candidates of different sources may come in any order. Of several
+    /// candidates with the same source the last one wins, so callers pass at
+    /// most one per source and resolve ties themselves (ordered contributors use
+    /// `resolve_plugin_tier`).
     pub fn resolve(
         candidates: impl IntoIterator<Item = (CacheEnabledSource, Option<bool>)>,
         host_fallback: bool,
@@ -121,6 +126,26 @@ impl CacheEnabled {
             host_fallback,
         )
     }
+}
+
+/// The level a `cache.enabled` declaration applies at. Plugin and authored tiers
+/// both have a task level and a project level (C01).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum CacheScope {
+    Project,
+    Task,
+}
+
+/// Resolve the plugin tier: a plugin's task-level value beats its project-level
+/// value. Each argument is already the last contributor's value for that scope,
+/// so list order has been applied before this runs. Returns the deciding scope
+/// with the declaration, or `None` when the tier has no value.
+pub fn resolve_plugin_tier(
+    task: Option<Declared<bool>>,
+    project: Option<Declared<bool>>,
+) -> Option<(CacheScope, Declared<bool>)> {
+    task.map(|declared| (CacheScope::Task, declared))
+        .or_else(|| project.map(|declared| (CacheScope::Project, declared)))
 }
 
 #[cfg(test)]
@@ -264,6 +289,37 @@ mod tests {
             ),
             decided(true, TaskExplicit)
         );
+    }
+
+    #[test]
+    fn of_equal_sources_the_last_candidate_wins() {
+        let r = |a, b| {
+            CacheEnabled::resolve([(Plugin, Some(a)), (Plugin, Some(b))], true)
+        };
+        assert_eq!(r(true, false), decided(false, Plugin));
+        assert_eq!(r(false, true), decided(true, Plugin));
+    }
+
+    #[test]
+    fn the_plugin_task_beats_the_plugin_project() {
+        use crate::Origin;
+        use std::sync::Arc;
+        let declared = |value| Declared {
+            value,
+            origin: Arc::new(Origin::unattributed()),
+        };
+        let both =
+            resolve_plugin_tier(Some(declared(true)), Some(declared(false)));
+        assert_eq!(
+            both.map(|(scope, d)| (scope, d.value)),
+            Some((CacheScope::Task, true))
+        );
+        let project = resolve_plugin_tier(None, Some(declared(false)));
+        assert_eq!(
+            project.map(|(scope, d)| (scope, d.value)),
+            Some((CacheScope::Project, false))
+        );
+        assert!(resolve_plugin_tier(None, None).is_none());
     }
 
     #[test]
