@@ -384,6 +384,21 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
                                     .collect::<Map<_, _>>()
                             })
                             .unwrap_or_default(),
+                        env: {
+                            // The configured definitions, raw: workspace, then
+                            // project, then task, each over the one before.
+                            let mut env =
+                                self.workspace_configuration.env.vars.clone();
+                            env.extend(
+                                project_config.env.vars.to_map_to_inner(),
+                            );
+                            if let Some(vars) =
+                                task.env().and_then(|e| e.vars.as_ref())
+                            {
+                                env.extend(vars.to_map_to_inner());
+                            }
+                            env
+                        },
                     },
                 );
 

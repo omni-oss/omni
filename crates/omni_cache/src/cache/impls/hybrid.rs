@@ -7773,6 +7773,7 @@ mod tests {
                     cache_output_files: Default::default(),
                     cache_logs: false,
                     args: Default::default(),
+                    env: Default::default(),
                 },
             }
         }

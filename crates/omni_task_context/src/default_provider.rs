@@ -45,10 +45,10 @@ impl<'a, THashProvider: TaskHashProvider, TContext: Context>
                 self.context.get_project_meta_config(node.project_name())
             });
 
-        let cache_info = self
+        let cache_info_ref = self
             .context
-            .get_cache_info(node.project_name(), node.task_name())
-            .map(Cow::Borrowed);
+            .get_cache_info(node.project_name(), node.task_name());
+        let cache_info = cache_info_ref.map(Cow::Borrowed);
 
         let output_logs = self
             .context
@@ -65,18 +65,21 @@ impl<'a, THashProvider: TaskHashProvider, TContext: Context>
         } else {
             vec![]
         };
-        let template_context = create_template_context(
-            &env_vars,
-            meta,
-            cache_info.as_ref().map(|c| &c.args),
+        let effective_digest =
+            crate::effective_task::build(node, cache_info_ref, meta).digest();
+        let args = merge_args(
+            cache_info_ref.map(|c| &c.args),
             self.context
                 .get_task_override_args(node.project_name(), node.task_name()),
         );
+        let template_context = create_template_context(&env_vars, meta, &args);
 
         let ctx = TaskContext {
             node,
             env_vars,
             cache_info,
+            args,
+            effective_digest,
             output_logs,
             dependency_hashes,
             template_context,
@@ -86,11 +89,31 @@ impl<'a, THashProvider: TaskHashProvider, TContext: Context>
     }
 }
 
-fn create_template_context<'a>(
-    env_vars: &'a Map<String, String>,
-    meta: Option<&MetaConfiguration>,
+/// The configured args overlaid with the invocation overrides. Computed once
+/// and used by both the template context and the cache key, so they cannot
+/// diverge.
+fn merge_args<'a>(
     args: Option<&'a Map<String, serde_json::Value>>,
-    override_args: Option<&'a UnorderedMap<String, serde_json::Value>>,
+    override_args: Option<&UnorderedMap<String, serde_json::Value>>,
+) -> Cow<'a, Map<String, serde_json::Value>> {
+    let overrides = override_args.filter(|o| !o.is_empty());
+    match (args, overrides) {
+        (Some(args), None) => Cow::Borrowed(args),
+        (args, Some(overrides)) => {
+            let mut merged = args.cloned().unwrap_or_default();
+            for (k, v) in overrides {
+                merged.insert(k.to_owned(), v.to_owned());
+            }
+            Cow::Owned(merged)
+        }
+        (None, None) => Cow::Owned(Map::default()),
+    }
+}
+
+fn create_template_context(
+    env_vars: &Map<String, String>,
+    meta: Option<&MetaConfiguration>,
+    args: &Map<String, serde_json::Value>,
 ) -> omni_tera::Context {
     let mut context = omni_tera::context::STANDARD.clone();
 
@@ -100,24 +123,7 @@ fn create_template_context<'a>(
     } else {
         context.insert("meta", &MetaConfiguration::default());
     }
-
-    if let Some(args) = args {
-        if let Some(override_args) = override_args
-            && !override_args.is_empty()
-        {
-            let mut merged = args.clone();
-
-            for (k, v) in override_args {
-                merged.insert(k.to_owned(), v.to_owned());
-            }
-
-            context.insert("args", &merged);
-        } else {
-            context.insert("args", args);
-        }
-    } else {
-        context.insert("args", override_args.unwrap_or(&Default::default()));
-    }
+    context.insert("args", args);
 
     context
 }
@@ -196,5 +202,55 @@ mod diagnostic_tests {
             TaskContextProviderErrorInner::Custom(eyre::eyre!("boom")),
         ));
         assert!(find(&plain).is_none());
+    }
+}
+
+#[cfg(test)]
+mod merge_args_tests {
+    use super::*;
+
+    fn map(pairs: &[(&str, &str)]) -> Map<String, serde_json::Value> {
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), serde_json::json!(v)))
+            .collect()
+    }
+
+    fn overrides(
+        pairs: &[(&str, &str)],
+    ) -> UnorderedMap<String, serde_json::Value> {
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), serde_json::json!(v)))
+            .collect()
+    }
+
+    #[test]
+    fn no_override_borrows_the_configured_args() {
+        let configured = map(&[("a", "1")]);
+        for none in [None, Some(&overrides(&[]))] {
+            let merged = merge_args(Some(&configured), none);
+            assert!(matches!(merged, Cow::Borrowed(_)));
+            assert_eq!(*merged, configured);
+        }
+    }
+
+    #[test]
+    fn an_override_wins_and_adds() {
+        let configured = map(&[("a", "1"), ("b", "2")]);
+        let merged = merge_args(
+            Some(&configured),
+            Some(&overrides(&[("b", "x"), ("c", "3")])),
+        );
+        assert_eq!(*merged, map(&[("a", "1"), ("b", "x"), ("c", "3")]));
+    }
+
+    #[test]
+    fn without_configured_args_the_overrides_stand_alone() {
+        assert!(merge_args(None, None).is_empty());
+        assert_eq!(
+            *merge_args(None, Some(&overrides(&[("k", "v")]))),
+            map(&[("k", "v")])
+        );
     }
 }

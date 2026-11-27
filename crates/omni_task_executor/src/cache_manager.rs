@@ -464,7 +464,16 @@ mod tests {
             cache_output_files: Default::default(),
             cache_logs: false,
             args: Default::default(),
+            env: Default::default(),
         }
+    }
+
+    /// The digest the provider would compute for this node and info.
+    fn digest_of(
+        node: &TaskExecutionNode,
+        info: Option<&CacheInfo>,
+    ) -> omni_hasher::impls::DefaultHash {
+        omni_task_context::effective_task::build(node, info, None).digest()
     }
 
     fn eligible(node: &TaskExecutionNode, info: Option<CacheInfo>) -> bool {
@@ -472,6 +481,8 @@ mod tests {
             node,
             dependency_hashes: vec![],
             env_vars: Arc::new(Default::default()),
+            args: Default::default(),
+            effective_digest: digest_of(node, info.as_ref()),
             cache_info: info.map(Cow::Owned),
             output_logs: None,
             template_context: Default::default(),
@@ -791,6 +802,8 @@ mod tests {
                     node,
                     dependency_hashes: vec![],
                     env_vars: Arc::new(Default::default()),
+                    args: Default::default(),
+                    effective_digest: digest_of(node, Some(&info(true))),
                     cache_info: Some(Cow::Owned(info(true))),
                     output_logs: None,
                     template_context: Default::default(),
@@ -837,6 +850,8 @@ mod tests {
                     node,
                     dependency_hashes: vec![],
                     env_vars: Arc::new(Default::default()),
+                    args: Default::default(),
+                    effective_digest: digest_of(node, Some(&info(true))),
                     cache_info: Some(Cow::Owned(info(true))),
                     output_logs: None,
                     template_context: Default::default(),
@@ -905,6 +920,8 @@ mod tests {
                     node,
                     dependency_hashes: vec![],
                     env_vars: Arc::new(Default::default()),
+                    args: Default::default(),
+                    effective_digest: digest_of(node, Some(&info(true))),
                     cache_info: Some(Cow::Owned(info(true))),
                     output_logs: None,
                     template_context: Default::default(),
@@ -962,6 +979,8 @@ mod tests {
                     node,
                     dependency_hashes: vec![],
                     env_vars: Arc::new(Default::default()),
+                    args: Default::default(),
+                    effective_digest: digest_of(node, Some(&info(true))),
                     cache_info: Some(Cow::Owned(info(true))),
                     output_logs: None,
                     template_context: Default::default(),
@@ -1000,6 +1019,8 @@ mod tests {
             node,
             dependency_hashes: vec![],
             env_vars: Arc::new(Default::default()),
+            args: Cow::Owned(info.args.clone()),
+            effective_digest: digest_of(node, Some(&info)),
             cache_info: Some(Cow::Owned(info)),
             output_logs: None,
             template_context: Default::default(),

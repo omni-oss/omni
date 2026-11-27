@@ -21,6 +21,13 @@ pub struct CacheInfo {
     pub cache_output_files: GlobPatterns<OmniPath>,
     pub cache_logs: bool,
     pub args: Map<String, serde_json::Value>,
+    /// The configured `env.vars` definitions, raw and before expansion:
+    /// workspace, then project, then task, each overriding the one before.
+    /// Part of the effective task, not of the key's env leaf (which records the
+    /// values of `cache.key.env` only). Never loaded values: `.env` files and
+    /// the process environment are not here.
+    #[serde(default)]
+    pub env: Map<String, String>,
 }
 
 fn default_remote() -> bool {

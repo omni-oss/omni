@@ -235,9 +235,32 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
                     };
 
                 let mut nodes = vec![];
+                // Built only when a task has siblings: the common case needs
+                // no project graph on this path.
+                let mut project_graph = None;
 
                 for project in projects {
                     for (task_name, task) in project.tasks.iter() {
+                        let siblings = if task.siblings.is_empty() {
+                            vec![]
+                        } else {
+                            if project_graph.is_none() {
+                                project_graph = Some(
+                                    self.context.get_project_graph().map_err(
+                                        |e| {
+                                            ExecutionPlanProviderErrorInner::Context(
+                                                e.into(),
+                                            )
+                                        },
+                                    )?,
+                                );
+                            }
+                            omni_core::resolve_reference_keys(
+                                project_graph.as_ref().expect("just built"),
+                                project,
+                                &task.siblings,
+                            )?
+                        };
                         let node = TaskExecutionNode::new(
                             try_task_key(
                                 project.name.as_str(),
@@ -251,7 +274,8 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
                             task.interactive,
                             task.persistent,
                             task.retry.clone(),
-                        );
+                        )
+                        .with_siblings(siblings);
 
                         if passes_tf(&node)? {
                             nodes.push(node);
@@ -1649,5 +1673,81 @@ mod tests {
         for bad in ["^up", "native::build", "a#b#c", "bad\\q", ""] {
             assert!(TaskSelector::parse_exact(bad).is_err(), "{bad}");
         }
+    }
+
+    /// A node built outside the task graph (`--ignore-dependencies`) carries
+    /// the same configured siblings as the graph's node, also for a sibling in
+    /// another project that no filter selected.
+    #[test]
+    fn ignore_dependencies_nodes_carry_the_same_siblings_as_the_graph() {
+        let task = |siblings: Vec<TaskDependency>| {
+            Task::new(
+                Some(CommandConfig::Shell("echo".into())),
+                None,
+                vec![],
+                None,
+                TeraExprBoolean::Boolean(true),
+                false,
+                false,
+                siblings,
+                Default::default(),
+            )
+        };
+        let mut app = omni_core::Project::new(
+            "app",
+            "/ws/app".into(),
+            vec!["tool".to_string()],
+            Default::default(),
+        );
+        app.tasks.insert(
+            "t".to_string(),
+            task(vec![
+                TaskDependency::ExplicitProject {
+                    project: "tool".into(),
+                    task: "setup".into(),
+                },
+                TaskDependency::Own { task: "u".into() },
+            ]),
+        );
+        app.tasks.insert("u".to_string(), task(vec![]));
+        let mut tool = omni_core::Project::new(
+            "tool",
+            "/ws/tool".into(),
+            vec![],
+            Default::default(),
+        );
+        tool.tasks.insert("setup".to_string(), task(vec![]));
+        let ctx = FixtureContext {
+            projects: vec![app, tool],
+            patterns: GlobPatterns::default(),
+        };
+        let provider = DefaultExecutionPlanProvider::new(ctx);
+        let siblings = |ignore_deps: bool| {
+            let plan = provider
+                .get_execution_plan(
+                    &Call::exact_tasks(["t"]),
+                    &[ProjectSelector::exact("app")],
+                    &[],
+                    None,
+                    None,
+                    ignore_deps,
+                    false,
+                )
+                .unwrap();
+            let node = plan
+                .into_iter()
+                .flatten()
+                .find(|n| n.project_name() == "app" && n.task_name() == "t")
+                .unwrap();
+            let mut labels = node
+                .siblings()
+                .iter()
+                .map(|k| k.label().into_string())
+                .collect::<Vec<_>>();
+            labels.sort();
+            labels
+        };
+        assert_eq!(siblings(true), ["app#u", "tool#setup"]);
+        assert_eq!(siblings(true), siblings(false));
     }
 }
