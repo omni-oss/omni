@@ -17,7 +17,7 @@ use omni_configurations::{
 use omni_core::{ExtensionGraph, ExtensionGraphError, Project, Task};
 use omni_glob_config::MergeGlobConfig;
 use omni_path_utils::{ProjectRootId, WorkspacePath};
-use omni_task_context::CacheInfo;
+use omni_task_context::{CacheInfo, EnvLayers};
 use omni_task_output_logs::OutputLogsConfiguration;
 use omni_types::{OmniPath, OmniPathError, TaskMap, task_label};
 use serde::{Deserialize, Serialize};
@@ -384,23 +384,18 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
                                     .collect::<Map<_, _>>()
                             })
                             .unwrap_or_default(),
-                        env: {
-                            // The configured definitions, raw, in the order
-                            // the task environment is built: project, then
-                            // workspace over it, then task over both. A key
-                            // both the project and the workspace define takes
-                            // the workspace value, as at runtime.
-                            let mut env =
-                                project_config.env.vars.to_map_to_inner();
-                            env.extend(
-                                self.workspace_configuration.env.vars.clone(),
-                            );
-                            if let Some(vars) =
-                                task.env().and_then(|e| e.vars.as_ref())
-                            {
-                                env.extend(vars.to_map_to_inner());
-                            }
-                            env
+                        env: EnvLayers {
+                            workspace: self
+                                .workspace_configuration
+                                .env
+                                .vars
+                                .clone(),
+                            project: project_config.env.vars.to_map_to_inner(),
+                            task: task
+                                .env()
+                                .and_then(|e| e.vars.as_ref())
+                                .map(|v| v.to_map_to_inner())
+                                .unwrap_or_default(),
                         },
                     },
                 );
@@ -1515,15 +1510,19 @@ mod tests {
     // Re-pinned for the cache key version and effective-task leaves (RFC 0024
     // F06.3). Before: chain t EkZdvw62..., n BtEuC55R...; diamond t x7qpHaig...,
     // n BtEuC55R.... The old values reproduce with the two leaves switched off.
+    // Re-pinned again when the env definitions became three unmerged layers
+    // (fix round 2, new encoding bytes). Before: chain t 2ZN4BeGR..., n
+    // m2Yfawkt...; diamond t GgerQQzk..., n m2Yfawkt.... They reproduce with the
+    // layers merged into the single env field.
     #[cfg(unix)]
     const CHAIN_DIGESTS: [(&str, &str); 2] = [
-        ("t", "2ZN4BeGRjbiabxrwRrwmfAM7dZLRS2sFULB3dyZdQgvg"),
-        ("n", "m2YfawktaZ7RYQAPPPXqUkGBG9KLcWmQzqhiXZwDQHo"),
+        ("t", "Gf1zXEUfnGTFGvE9M1K6fXkYEuBWXXvwRPW1YwGnE749"),
+        ("n", "9noLmyciPdkxSAuNkhiWx8KHx8fVbLTH5r2GePusza9F"),
     ];
     #[cfg(unix)]
     const DIAMOND_DIGESTS: [(&str, &str); 2] = [
-        ("t", "GgerQQzkVE9P99YgkGKShwNW8hx7dDe9U7Pd9iwbLq4i"),
-        ("n", "m2YfawktaZ7RYQAPPPXqUkGBG9KLcWmQzqhiXZwDQHo"),
+        ("t", "CbyWCFVZP7UEBtDba6xem58oDzgswenaBmDEqBXd9juo"),
+        ("n", "9noLmyciPdkxSAuNkhiWx8KHx8fVbLTH5r2GePusza9F"),
     ];
 
     // RFC 0024 F06.3 proof. The final key must follow the *effective* task:
@@ -1745,16 +1744,46 @@ mod tests {
         assert_ne!(one, two, "the winning workspace value must reach the key");
     }
 
-    /// FAILS before the fix. The project value of a colliding key loses to
-    /// the workspace value, so the task never sees it: the key must not move.
+    /// FAILS before the fix. Expansion starts from the project's raw
+    /// definitions and only afterwards do the expanded workspace values
+    /// overwrite colliding keys, so a project variable reading a key the
+    /// workspace also defines (`Y: ${X}`) sees the PROJECT's `X`. Changing the
+    /// shadowed project value therefore changes the task's `Y` and must change
+    /// the key. The layers are keyed unmerged: this over-invalidates when the
+    /// shadowed value is not read, which is the safe direction.
     #[tokio::test]
-    async fn a_shadowed_project_value_change_keeps_the_final_key() {
+    async fn a_shadowed_project_value_change_changes_the_final_key() {
         let one = layered_env_digest(Some("w"), Some("p1"), None).await;
         let two = layered_env_digest(Some("w"), Some("p2"), None).await;
-        assert_eq!(one, two, "a shadowed project value is not semantic");
+        assert_ne!(one, two, "the layers are keyed unmerged");
     }
 
-    /// Guards: a key only one layer defines, and a task value over both.
+    /// FAILS before the fix: the same case with the reading variable present,
+    /// as at runtime (`X` and `Y: ${X}` in the project, `X` in the workspace).
+    #[tokio::test]
+    async fn a_project_variable_reading_a_workspace_key_follows_the_project_value()
+     {
+        let key = |p: &'static str| async move {
+            let app = effective_app(
+                &format!(r#","env":{{"vars":{{"X":"{p}","Y":"${{X}}"}}}}"#),
+                "",
+            );
+            let ws =
+                r#"{"projects":["**"],"env":{"vars":{"X":"w"}}}"#.to_string();
+            let files = effective_files("one", &app);
+            let refs = files
+                .iter()
+                .map(|(n, j)| (*n, j.as_str()))
+                .collect::<Vec<_>>();
+            let all =
+                task_digests_in(&refs, "app/project.omni.yaml", &ws, keep)
+                    .await;
+            digest_of(&all, "t").to_string()
+        };
+        assert_ne!(key("p1").await, key("p2").await);
+    }
+
+    /// Guards: a key only one layer defines, and the task layer.
     #[tokio::test]
     async fn non_colliding_and_task_layers_keep_following_the_key() {
         let project_only = |p| layered_env_digest(None, Some(p), None);
@@ -1763,6 +1792,9 @@ mod tests {
         assert_ne!(workspace_only("w1").await, workspace_only("w2").await);
         let task = |w, p, t| layered_env_digest(Some(w), Some(p), Some(t));
         assert_ne!(task("w", "p", "t1").await, task("w", "p", "t2").await);
-        assert_eq!(task("w1", "p1", "t").await, task("w2", "p2", "t").await);
+        // Unmerged: a task value does not hide the lower layers either, since
+        // an expansion in the task can still read them.
+        assert_ne!(task("w1", "p", "t").await, task("w2", "p", "t").await);
+        assert_ne!(task("w", "p1", "t").await, task("w", "p2", "t").await);
     }
 }

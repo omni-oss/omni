@@ -165,8 +165,14 @@ pub struct EffectiveTaskConfig {
     pub retry: RetryPolicy,
     /// Configured arguments, not the merged invocation arguments.
     pub args: BTreeMap<String, EffectiveValue>,
-    /// Effective environment variable definitions, before expansion.
-    pub env: BTreeMap<String, String>,
+    /// Workspace `env.vars` definitions, before expansion.
+    pub env_workspace: BTreeMap<String, String>,
+    /// Project `env.vars` definitions (composed through `extends`), before
+    /// expansion. Kept apart from the workspace's: a project variable can read
+    /// a key the workspace also defines and sees the project's own value of it.
+    pub env_project: BTreeMap<String, String>,
+    /// Task `env.vars` definitions, before expansion.
+    pub env_task: BTreeMap<String, String>,
     /// Effective merged project and task metadata. Included because command
     /// expressions can read it; narrowing is unproven.
     pub meta: BTreeMap<String, EffectiveValue>,
@@ -187,12 +193,14 @@ mod field {
     pub const PERSISTENT: u8 = 5;
     pub const RETRY: u8 = 6;
     pub const ARGS: u8 = 7;
-    pub const ENV: u8 = 8;
+    pub const ENV_WORKSPACE: u8 = 8;
     pub const META: u8 = 9;
     pub const DEPENDENCIES: u8 = 10;
     pub const SIBLINGS: u8 = 11;
     pub const INPUT: u8 = 12;
     pub const OUTPUT: u8 = 13;
+    pub const ENV_PROJECT: u8 = 14;
+    pub const ENV_TASK: u8 = 15;
 }
 
 impl EffectiveTaskConfig {
@@ -233,8 +241,12 @@ impl EffectiveTaskConfig {
         e.retry(&self.retry);
         e.u8(field::ARGS);
         e.map(&self.args, Encoder::value);
-        e.u8(field::ENV);
-        e.map(&self.env, |e, s| e.str(s));
+        e.u8(field::ENV_WORKSPACE);
+        e.map(&self.env_workspace, |e, s| e.str(s));
+        e.u8(field::ENV_PROJECT);
+        e.map(&self.env_project, |e, s| e.str(s));
+        e.u8(field::ENV_TASK);
+        e.map(&self.env_task, |e, s| e.str(s));
         e.u8(field::META);
         e.map(&self.meta, Encoder::value);
         e.u8(field::DEPENDENCIES);

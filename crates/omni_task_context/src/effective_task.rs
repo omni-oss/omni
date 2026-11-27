@@ -64,11 +64,14 @@ pub fn build(
             .iter()
             .map(|(k, v)| (k.clone(), EffectiveValue::from(v.clone())))
             .collect();
-        config.env = info
-            .env
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
+        let layer = |m: &maps::Map<String, String>| {
+            m.iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect::<BTreeMap<_, _>>()
+        };
+        config.env_workspace = layer(&info.env.workspace);
+        config.env_project = layer(&info.env.project);
+        config.env_task = layer(&info.env.task);
         config.input = InputPolicy {
             key_defaults: info.key_defaults,
             include: rules(&info.key_input_files),
@@ -210,8 +213,14 @@ mod tests {
         v.args.insert("k".into(), serde_json::json!("v"));
         variants.push(("configured args", v));
         let mut v = info();
-        v.env.insert("X".into(), "1".into());
-        variants.push(("env definitions", v));
+        v.env.workspace.insert("X".into(), "1".into());
+        variants.push(("workspace env definitions", v));
+        let mut v = info();
+        v.env.project.insert("X".into(), "1".into());
+        variants.push(("project env definitions", v));
+        let mut v = info();
+        v.env.task.insert("X".into(), "1".into());
+        variants.push(("task env definitions", v));
         let mut v = info();
         v.key_input_files.include = vec![OmniPath::new("src/**")];
         variants.push(("input include", v));
@@ -345,15 +354,68 @@ mod tests {
     #[test]
     fn env_definitions_are_raw_and_order_independent() {
         let mut a = info();
-        a.env.insert("A".into(), "{{ x }}".into());
-        a.env.insert("B".into(), "2".into());
+        a.env.project.insert("A".into(), "{{ x }}".into());
+        a.env.project.insert("B".into(), "2".into());
         let mut b = info();
-        b.env.insert("B".into(), "2".into());
-        b.env.insert("A".into(), "{{ x }}".into());
+        b.env.project.insert("B".into(), "2".into());
+        b.env.project.insert("A".into(), "{{ x }}".into());
         assert_eq!(digest(&node(), &a, None), digest(&node(), &b, None));
         let mut c = a.clone();
-        c.env.insert("A".into(), "{{ y }}".into());
+        c.env.project.insert("A".into(), "{{ y }}".into());
         assert_ne!(digest(&node(), &a, None), digest(&node(), &c, None));
+    }
+
+    #[test]
+    fn the_three_env_layers_are_all_in_the_digest_and_unmerged() {
+        let with =
+            |ws: &[(&str, &str)], pr: &[(&str, &str)], t: &[(&str, &str)]| {
+                let mut v = info();
+                for (k, x) in ws {
+                    v.env.workspace.insert((*k).into(), (*x).into());
+                }
+                for (k, x) in pr {
+                    v.env.project.insert((*k).into(), (*x).into());
+                }
+                for (k, x) in t {
+                    v.env.task.insert((*k).into(), (*x).into());
+                }
+                digest(&node(), &v, None)
+            };
+        let base =
+            with(&[("X", "w")], &[("X", "p1"), ("Y", "${X}")], &[("T", "t")]);
+        // Every layer's definitions reach the digest.
+        assert_ne!(
+            base,
+            with(&[("X", "w2")], &[("X", "p1"), ("Y", "${X}")], &[("T", "t")])
+        );
+        assert_ne!(
+            base,
+            with(&[("X", "w")], &[("X", "p2"), ("Y", "${X}")], &[("T", "t")])
+        );
+        assert_ne!(
+            base,
+            with(&[("X", "w")], &[("X", "p1"), ("Y", "${X}")], &[("T", "t2")])
+        );
+        // A shadowed project value (workspace wins the merge) is still keyed.
+        assert_ne!(
+            with(&[("X", "w")], &[("X", "p1")], &[]),
+            with(&[("X", "w")], &[("X", "p2")], &[])
+        );
+        // The same merged result with different attribution is a different
+        // definition (`Y: ${X}` reads the project's `X`, not the workspace's).
+        assert_ne!(
+            with(&[("X", "v")], &[], &[]),
+            with(&[], &[("X", "v")], &[])
+        );
+        assert_ne!(
+            with(&[], &[("X", "v")], &[]),
+            with(&[], &[], &[("X", "v")])
+        );
+        // An identical layering digests the same.
+        assert_eq!(
+            base,
+            with(&[("X", "w")], &[("Y", "${X}"), ("X", "p1")], &[("T", "t")])
+        );
     }
 
     #[test]

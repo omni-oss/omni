@@ -1606,9 +1606,12 @@ mod tests {
 
         let digests = digests_for(root, &project, &command).await;
 
+        // Re-pinned for the three unmerged env layers (new encoding bytes).
+        // Before: e5e46763eebbd009eba7d973a96e6f3296a6b52bfad1e45f83f88ceef27168cd,
+        // which reproduces with the layers merged into one env field.
         assert_eq!(
             hex32(digests.collector),
-            "e5e46763eebbd009eba7d973a96e6f3296a6b52bfad1e45f83f88ceef27168cd",
+            "506bf3a26d95e8083a453e1483325c1fcb3b39b88611b6988002e73f2d2a0074",
         );
     }
 
@@ -1707,7 +1710,7 @@ mod tests {
         // (RFC 0024 F06.3). Before F06.3: [226, 33, 98, 53, ..., 47, 76, 56].
         assert_eq!(
             format!("{sorted:?}"),
-            "[107, 72, 249, 161, 224, 231, 90, 65, 87, 22, 71, 170, 226, 111, 167, 174, 253, 162, 33, 46, 31, 74, 191, 0, 185, 236, 12, 203, 243, 237, 59, 160]"
+            "[11, 70, 242, 132, 104, 105, 225, 181, 135, 78, 116, 85, 56, 12, 201, 180, 198, 252, 117, 29, 241, 218, 135, 229, 56, 59, 106, 59, 168, 231, 65, 81]"
         );
     }
 
