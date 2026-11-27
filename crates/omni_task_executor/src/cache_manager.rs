@@ -1382,6 +1382,12 @@ mod tests {
             };
             assert_eq!(digest(Some("v1")).await, digest(Some("v1")).await);
             assert_eq!(digest(None).await, digest(None).await);
+            // No override: the key is the one built from the configured
+            // `CacheInfo.args` alone, which `hash project` also uses.
+            assert_eq!(
+                digest(None).await,
+                f.dry_run_digest(&context(&node, eligible_info())).await,
+            );
         }
 
         /// Guards (pass on the base and must keep passing): presentation and

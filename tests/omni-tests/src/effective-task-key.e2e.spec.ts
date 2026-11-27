@@ -214,7 +214,10 @@ describe("+cache @cache @e2e (F06.3 the key follows the effective task)", () => 
 
     it("re-runs a task when only an invocation argument changed (Q1)", async () => {
         const ws = makeWorkspace(spec());
-        await runOmni(["run", "greet", "-a", "k=v1"], { cwd: ws.cwd });
+        const first = await runOmni(["run", "greet", "-a", "k=v1"], {
+            cwd: ws.cwd,
+        });
+        expect(first).toHaveSucceeded();
         const second = await runOmni(["run", "greet", "-a", "k=v2"], {
             cwd: ws.cwd,
         });
@@ -226,7 +229,10 @@ describe("+cache @cache @e2e (F06.3 the key follows the effective task)", () => 
 
     it("guard: the same invocation argument hits the cache (Q1)", async () => {
         const ws = makeWorkspace(spec());
-        await runOmni(["run", "greet", "-a", "k=v1"], { cwd: ws.cwd });
+        const first = await runOmni(["run", "greet", "-a", "k=v1"], {
+            cwd: ws.cwd,
+        });
+        expect(first).toHaveSucceeded();
         const second = await runOmni(["run", "greet", "-a", "k=v1"], {
             cwd: ws.cwd,
         });
