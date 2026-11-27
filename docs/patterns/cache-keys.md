@@ -9,11 +9,20 @@ it. Keys are **not a store format** and are never migrated.
 A change to what a key is computed from (a new, removed or re-encoded input, a different
 leaf order, a different input collection rule) is a **key change**. A PR that makes one:
 
-1. **Bumps a version tag.** Add a named, versioned leaf (the identity leaf
-   `omni.task-id\0\x01` and the effective-task leaf `omni.effective-task\0\x01` are the
-   model) or bump the version byte of the leaf you changed. An encoding owned by another
-   module (`effective_task::VERSION`) bumps its own tag too. Never change an unversioned
-   leaf's bytes silently; wrap the new behavior in a versioned leaf.
+1. **Bumps a version tag.** Add a named, versioned leaf (today the identity leaf
+   `omni.task-id\0\x01` is the model) or bump the version byte of the leaf you changed.
+   An encoding owned by another module (`effective_task::VERSION`) bumps its own tag
+   too. Never change an unversioned leaf's bytes silently; wrap the new behavior in a
+   versioned leaf.
+
+    **Recipe-wide tag (lands with the F06.3 cutover, slice 2; not in the code yet).**
+    The cutover adds one constant, `KEY_RECIPE_VERSION`, in `omni_collector`, and a leaf
+    `BLAKE3(b"omni.key-recipe\0" || u32_le(KEY_RECIPE_VERSION))` inserted after the
+    identity leaf. From then on rule 1 is enforceable: **any change to any key input or
+    to the recipe bumps `KEY_RECIPE_VERSION`**, besides the leaf you touch, and the
+    golden vectors move with it. Until the cutover lands, only the identity leaf's own
+    byte is a version; do not cite the recipe leaf as existing.
+
 2. **Is a cold start, never a migration.** Old entries become unreachable; they are not
    rewritten, promoted, dual-read or probed for under the old key. A fallback read is safe
    only for a pure re-encoding of _identical_ inputs. A new input is never that: an old
@@ -22,10 +31,28 @@ leaf order, a different input collection rule) is a **key change**. A PR that ma
    what changes, that old entries are not matched, `omni cache prune --stale` once the
    fleet is aligned, how to see it, and rollback.
 4. **Batches with other key changes in the same release.** Before adding one, list the
-   key changes already unreleased since the last tag (`git log <last-tag>..HEAD --
-   crates/omni_collector crates/omni_hasher crates/omni_task_context
-   crates/omni_cache/src/cache/impls/hybrid.rs`) and land it in the same release if
-   one is pending, so users get one cold start. Say in the PR what the epoch holds.
+   key changes already unreleased since the last tag and land it in the same release if
+   one is pending, so users get one cold start. Say in the PR what the epoch holds. The
+   audit must cover every place a key input is built, not only the collector:
+
+    ```
+    git log --oneline <last-tag>..HEAD -- \
+      crates/omni_collector crates/omni_hasher crates/omni_task_context \
+      crates/omni_cache/src/cache/impls/hybrid.rs crates/omni_cache/src/exts.rs \
+      crates/omni_context/src/project_data_extractor.rs \
+      crates/omni_context/src/project_hasher.rs \
+      crates/omni_context/src/workspace_hasher.rs \
+      crates/omni_context/src/loaded_context.rs crates/omni_context/src/env_loader \
+      crates/omni_glob_config crates/dir_walker \
+      crates/omni_task_executor/src/cache_manager.rs \
+      crates/omni_task_executor/src/batch_executor.rs \
+      crates/omni_core/src/task_execution_graph.rs
+    ```
+
+    Read the diffs, not the subjects: aggregate digest forwarding, glob sides and the
+    task graph changed keys without saying so. Say honestly how many cold starts the
+    release holds; the list is a best effort, not a proof.
+
 5. **Moves the pinned vectors**: the collector's golden keys and the e2e hash goldens
    change in the same commit, and the commit is `feat!`/`fix!` so the release notes
    catch it.
@@ -34,8 +61,12 @@ leaf order, a different input collection rule) is a **key change**. A PR that ma
    the input as a non-optional field so the compiler finds them; a key change must not
    leave two recipes in one binary.
 
-Platform, the invocation and display data are **not** key inputs unless a decision says
-so; do not add them to make a test pass.
+Platform and display data are **not** key inputs unless a decision says so; do not add
+them to make a test pass. The **merged invocation args** (`omni run t --arg k=v`) **are**
+key inputs (F06.3 decision Q1, through `TaskExecutionInfo.args`; the effective digest
+itself stays invocation-free); until the cutover lands they are not, which is a known
+wrong hit. The loaded environment (`.env` contents, process environment) is not keyed;
+users opt in with `cache.key.env` and `cache.key.files`.
 
 ## Rehearsing mixed versions
 
@@ -43,9 +74,11 @@ Rollback is by binary, so rehearse both directions against one disposable store:
 
 1. Build the previous binary from the base SHA in a temporary `git worktree`.
 2. Set `OMNI_TEST_BASELINE_BIN` to it and `OMNI_TEST_BIN` to the new one, then run
-   `tests/omni-tests/src/cache-cross-version.e2e.spec.ts`. After a key change it must
-   assert that neither side hits the other's entry and that each side still hits its
-   own; update its expectations in the same PR.
+   `tests/omni-tests/src/cache-cross-version.e2e.spec.ts`. Across a key change set
+   `OMNI_TEST_EXPECT_COLD_START=1` (phase 2 of F06.3 adds the switch): neither side hits
+   the other's entry; by default it asserts sharing. Either way each side must hit its
+   **own** entry. Flip the switch off again for the first release whose baseline is
+   after the key change.
 3. For a remote, use the fake remote in `omni_cache` tests: the new binary must make no
    request under the old key.
 4. Check `omni cache prune --stale --dry-run` from each binary: it classifies the other
