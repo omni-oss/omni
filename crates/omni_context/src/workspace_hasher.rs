@@ -283,9 +283,12 @@ mod tests {
         }
     }
 
+    /// `(task, exec, dependencies)`.
+    type TaskSpec<'a> = (&'a str, &'a str, &'a [&'a str]);
+
     fn extracted(
         dir: &Path,
-        projects: &[(&str, &[(&str, &str, &[&str])])],
+        projects: &[(&str, &[TaskSpec])],
     ) -> ProjectDataExtractions {
         let mut cache_infos = TaskMap::new();
         let projects = projects
@@ -348,10 +351,8 @@ mod tests {
     async fn a_dependency_change_moves_the_workspace_hash() {
         let temp = tempfile::tempdir().unwrap();
         let dir = temp.path();
-        let tasks: &[(&str, &str, &[&str])] =
-            &[("t", "x", &[]), ("u", "x", &[])];
-        let with_dep: &[(&str, &str, &[&str])] =
-            &[("t", "x", &["u"]), ("u", "x", &[])];
+        let tasks: &[TaskSpec] = &[("t", "x", &[]), ("u", "x", &[])];
+        let with_dep: &[TaskSpec] = &[("t", "x", &["u"]), ("u", "x", &[])];
         let a = extracted(dir, &[("a", tasks)]);
         let b = extracted(dir, &[("a", with_dep)]);
         assert_ne!(hash(dir, &a).await.unwrap(), hash(dir, &b).await.unwrap());
@@ -385,8 +386,7 @@ mod tests {
     async fn a_cyclic_task_graph_fails_instead_of_hashing_a_partial_set() {
         let temp = tempfile::tempdir().unwrap();
         let dir = temp.path();
-        let cyclic: &[(&str, &str, &[&str])] =
-            &[("t", "x", &["u"]), ("u", "x", &["t"])];
+        let cyclic: &[TaskSpec] = &[("t", "x", &["u"]), ("u", "x", &["t"])];
         let data = extracted(dir, &[("a", cyclic)]);
         let error = hash(dir, &data).await.unwrap_err();
         assert!(error.kind().is_task_graph(), "{error}");
