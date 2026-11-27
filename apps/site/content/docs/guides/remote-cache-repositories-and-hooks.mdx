@@ -239,8 +239,11 @@ Existing regular output files are replaced by the cached content (written to a
 fresh sibling file and renamed over them, so a hardlink is never written
 through, including read-only files); an existing non-file at an output path, or
 a parent directory that cannot be written, fails the restore. Files are
-copied, not hardlinked to the cache, so later workspace edits cannot mutate the
-cached inode. This is not a sandbox for task execution.
+copied, not hardlinked to the cache, so editing a restored file cannot mutate the
+cached inode. Outputs a task has just built are different: they are hardlinked
+into the cache when saved (copied only where hardlinks are unavailable), so
+editing one in place before it is replaced also changes the cached copy.
+This is not a sandbox for task execution.
 
 Downloaded archives are limited to 200,000 logical entries, 8 GiB of total
 expanded tar data (including headers and padding), and 1 MiB per extension
