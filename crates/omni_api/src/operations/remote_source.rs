@@ -374,6 +374,18 @@ mod tests {
                     "../../../omni_remote_source_contributors/src/lib.rs"
                 ),
             ),
+            (
+                "pack contributor",
+                include_str!(
+                    "../../../omni_remote_source_contributors/src/pack.rs"
+                ),
+            ),
+            (
+                "projection contributor",
+                include_str!(
+                    "../../../omni_remote_source_contributors/src/projection.rs"
+                ),
+            ),
             ("tool", include_str!("tool.rs")),
             ("projection", include_str!("projection.rs")),
             (
