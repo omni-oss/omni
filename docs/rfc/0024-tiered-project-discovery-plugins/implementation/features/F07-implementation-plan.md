@@ -1,6 +1,6 @@
 # F07 implementation plan: composition provenance and ordered precedence
 
-**Status:** approved (#164). F07.1 and F07.2 are merged ([#172](https://github.com/omni-oss/omni/pull/172); final review PASS per the PR); F07.3 onward is not started. **Size:** Large.
+**Status:** approved (#164). F07.1 and F07.2 are merged ([#172](https://github.com/omni-oss/omni/pull/172); final review PASS per the PR); F07.3 is built (see [its plan](F07.3-ordered-composition-plan.md), pending merge); F07.4 and F07.5 are not started. **Size:** Large.
 **Risk:** High: composition and location changes can affect task behavior and
 cache keys. The chosen direction is to finish the metadata redesign before
 building ordered composition, rather than ship a parallel provenance walk.
@@ -233,6 +233,22 @@ and [C17](../../007.04-composition-golden-fixtures.md#c17--normalize-duplicates-
 Also cover equal values with distinct origins (no overridden entry), interpretation
 modes, leaf and subtree masks by explicit layers, and unrelated overrides. Revert this entry point without undoing
 explicit-config provenance.
+
+**Implemented (F07.3).** `compose_ordered` in `omni_configurations` (`ordered.rs`,
+`overrides.rs`); nothing in production calls it yet. Public additions, all new
+names: `ContributorId`, `DeclarationSource::Contributor`, `Contribution`,
+`Composed { layer, overrides }`, `ComposeError`, `EnabledDecl`, `EnabledScope`,
+`CacheScope`, `resolve_plugin_tier`, `FieldOverride`, `FieldPath`, `OverrideTier`
+and `FinalizedProject::task_cache_enabled_scope`. **Migration note for Rust
+callers:** `FinalizedProject` gains a public field, so struct literals and
+destructuring without `..` break; a `match` on `DeclarationSource` needs a
+`Contributor` arm. No config-file migration; explicit-only finalized values,
+cache keys and hashes are unchanged (pinned by `tests/explicit_only_parity.rs`
+and the collector, context and executor goldens).
+Differences from the plan: `FieldOverride` carries a `tier` (`Emitted` or
+`Applied`) because applied and plugin-emitted `cache.enabled` values are compared
+within their own tier; the guard error for a bad contributor form names the field
+as diagnostic text (`ComposeError::ForbiddenForm`), not a provenance key.
 
 ## F07.4 — Notify when a later contributor overrides
 

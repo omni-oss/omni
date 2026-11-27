@@ -38,6 +38,9 @@ pub struct Contribution {
 #[derive(Debug, Clone)]
 pub struct Composed {
     pub layer: LoadedLayer,
+    /// Earlier contributors a later one overrode, by tracked field. Holds ids
+    /// and paths only.
+    pub overrides: Vec<crate::FieldOverride>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -137,6 +140,7 @@ pub fn compose_ordered(
         }
     }
 
+    let overrides = crate::overrides::compute(&root, &contributions, &explicit);
     let explicit_empty = explicit.is_empty();
     let layers = contributions
         .into_iter()
@@ -156,7 +160,7 @@ pub fn compose_ordered(
     if explicit_empty {
         layer = layer.with_dir(root);
     }
-    Ok(Composed { layer })
+    Ok(Composed { layer, overrides })
 }
 
 fn declared_task_names(layer: &ProjectLayer) -> Vec<String> {

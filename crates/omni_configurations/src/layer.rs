@@ -373,6 +373,24 @@ impl Merge for TaskLayer {
 }
 
 impl TaskLayer {
+    /// Whether any declaration of this task sets its own `cache.enabled`.
+    pub(crate) fn declares_cache_enabled(&self) -> bool {
+        let sets = |task: &TaskLongFormLayer| {
+            task.cache
+                .as_ref()
+                .is_some_and(|cache| cache.enabled.is_some())
+        };
+        match self {
+            TaskLayer::LongForm(task) => sets(task),
+            TaskLayer::Composed(declarations) => {
+                declarations.0.iter().any(|d| sets(&d.task))
+            }
+            TaskLayer::ShortForm(_) | TaskLayer::Alias(_) => false,
+        }
+    }
+}
+
+impl TaskLayer {
     /// Resolve this task to a long-form layer without applying inherited
     /// project settings. An alias has no long form.
     pub fn into_long_form(self, name: &str) -> Option<TaskLongFormLayer> {
