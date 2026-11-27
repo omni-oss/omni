@@ -11,6 +11,10 @@ In CI, the first run on the new version repopulates the cache and later runs hit
 Remove the old entries with `omni cache prune --stale` once every checkout and CI
 job runs the new version (see [Pruning](#pruning)).
 
+Tasks that have a `retry_exec` get a new key for one more reason: `retry_exec` now
+reaches every planned task, so it is part of their key. It is the same one miss, not a
+second one.
+
 Before, an edit that changed what a task does without changing its input files
 could replay an old result: an inherited setting changed in a base file, a `with`
 sibling added, a retry policy or an `env.vars` definition edited, or a different
