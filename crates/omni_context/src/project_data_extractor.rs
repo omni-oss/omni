@@ -1301,6 +1301,16 @@ mod tests {
         app: &str,
         closure_order: fn(&mut Vec<OmniPath>),
     ) -> Vec<(String, String)> {
+        task_digests_in(files, app, r#"{"projects":["**"]}"#, closure_order)
+            .await
+    }
+
+    async fn task_digests_in(
+        files: &[(&str, &str)],
+        app: &str,
+        workspace_json: &str,
+        closure_order: fn(&mut Vec<OmniPath>),
+    ) -> Vec<(String, String)> {
         use omni_collector::{CollectConfig, Collector, ProjectTaskInfo};
 
         let temp = tempfile::tempdir().unwrap();
@@ -1326,7 +1336,7 @@ mod tests {
             .find(|l| l.file().path().unwrap() == root.join(app))
             .unwrap();
         let finalized = app_layer.finalize_composed().unwrap();
-        let workspace = serde_json::from_str(r#"{"projects":["**"]}"#).unwrap();
+        let workspace = serde_json::from_str(workspace_json).unwrap();
         let mut env_loader = EnvLoader::new(RealSys, root.to_owned(), vec![]);
         let data = ProjectDataExtractor::new(
             &RealSys,
@@ -1591,5 +1601,66 @@ mod tests {
         let one = effective_digests("one", &app).await;
         let two = effective_digests("two", &app).await;
         assert_eq!(digest_of(&one, "t"), digest_of(&two, "t"));
+    }
+
+    fn env_files(base_env: &str, app: &str) -> Vec<(&'static str, String)> {
+        vec![
+            (
+                "lib/base.yaml",
+                format!(
+                    r#"{{"base":true,"env":{{"vars":{{"X":"{base_env}"}}}}}}"#
+                ),
+            ),
+            ("app/project.omni.yaml", app.to_string()),
+        ]
+    }
+
+    /// FAILS on the base (Q3): an `env.vars` definition inherited from a base
+    /// file is part of the effective task. The key records only the values of
+    /// the keys listed under `cache.key.env`, so the change is invisible.
+    #[tokio::test]
+    async fn an_inherited_project_env_definition_change_changes_the_final_key()
+    {
+        let app = effective_app("", "");
+        let one = digests_for(env_files("one", &app), keep).await;
+        let two = digests_for(env_files("two", &app), keep).await;
+        assert_ne!(
+            digest_of(&one, "t"),
+            digest_of(&two, "t"),
+            "inherited project env.vars must reach the key"
+        );
+    }
+
+    /// FAILS on the base (Q3): the workspace `env.vars` definition.
+    #[tokio::test]
+    async fn a_workspace_env_definition_change_changes_the_final_key() {
+        let app = effective_app("", "");
+        let files = effective_files("one", &app);
+        let refs = files
+            .iter()
+            .map(|(n, j)| (*n, j.as_str()))
+            .collect::<Vec<_>>();
+        let digests = |value: &str| {
+            let workspace = format!(
+                r#"{{"projects":["**"],"env":{{"vars":{{"X":"{value}"}}}}}}"#
+            );
+            let refs = refs.clone();
+            async move {
+                task_digests_in(
+                    &refs,
+                    "app/project.omni.yaml",
+                    &workspace,
+                    keep,
+                )
+                .await
+            }
+        };
+        let one = digests("one").await;
+        let two = digests("two").await;
+        assert_ne!(
+            digest_of(&one, "t"),
+            digest_of(&two, "t"),
+            "workspace env.vars must reach the key"
+        );
     }
 }

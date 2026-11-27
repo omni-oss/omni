@@ -7714,6 +7714,17 @@ mod tests {
 
     impl SiblingCtx {
         fn new() -> Self {
+            Self::with_app_siblings(vec![
+                omni_core::TaskDependency::ExplicitProject {
+                    project: "tool".into(),
+                    task: "build-native".into(),
+                },
+            ])
+        }
+
+        fn with_app_siblings(
+            app_siblings: Vec<omni_core::TaskDependency>,
+        ) -> Self {
             let task =
                 |deps: &[&str], siblings: Vec<omni_core::TaskDependency>| {
                     omni_core::Task::new(
@@ -7740,16 +7751,7 @@ mod tests {
                 vec!["tool".into()],
                 Default::default(),
             );
-            app.tasks.insert(
-                "t".into(),
-                task(
-                    &[],
-                    vec![omni_core::TaskDependency::ExplicitProject {
-                        project: "tool".into(),
-                        task: "build-native".into(),
-                    }],
-                ),
-            );
+            app.tasks.insert("t".into(), task(&[], app_siblings));
             let mut tool = omni_core::Project::new(
                 "tool",
                 "/ws/tool".into(),
@@ -7880,6 +7882,52 @@ mod tests {
             inventory.current_digests("tool", "setup"),
             inventory.current_digests("tool", "build-native")
         );
+    }
+
+    /// FAILS on the base (Q2): the `with` siblings of a task are part of its
+    /// effective definition. Two tasks that differ only in the set of siblings
+    /// they pull in (and have the same command, dependencies and inputs) get
+    /// the same key today.
+    #[tokio::test]
+    async fn a_sibling_set_change_changes_the_prune_key() {
+        let live_digests = |ctx: SiblingCtx| async move {
+            let temp = tempfile::tempdir().unwrap();
+            let cache = cache_store(temp.path());
+            let args = PruneCacheArgs::<SiblingCtx> {
+                dry_run: true,
+                stale: true,
+                orphan: false,
+                inventory: None,
+                approved: None,
+                older_than: None,
+                project_names: &[],
+                project_name_globs: &[],
+                task_names: &["t"],
+                task_name_globs: &[],
+                dir_globs: &[],
+                meta_filter: None,
+                larger_than: None,
+                context: None,
+            };
+            let mut inventory = PruneInventory::default();
+            cache
+                .observe_prune_workspace(&mut inventory, &ctx, &args)
+                .await
+                .unwrap();
+            inventory.current_digests("app", "t").to_vec()
+        };
+        let with_build_native = live_digests(SiblingCtx::new()).await;
+        let with_setup = live_digests(SiblingCtx::with_app_siblings(vec![
+            omni_core::TaskDependency::ExplicitProject {
+                project: "tool".into(),
+                task: "setup".into(),
+            },
+        ]))
+        .await;
+        let without = live_digests(SiblingCtx::with_app_siblings(vec![])).await;
+        assert_eq!(with_build_native.len(), 1);
+        assert_ne!(with_build_native, with_setup, "a different sibling");
+        assert_ne!(with_build_native, without, "no sibling");
     }
 
     #[test]

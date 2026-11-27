@@ -1255,7 +1255,7 @@ mod tests {
         info: &ProjectTaskInfo<'_>,
         resolved_inputs: &[OmniPath],
         identity_leaf: DefaultHash,
-        effective_leaf: Option<DefaultHash>,
+        trailing_leaves: &[DefaultHash],
     ) -> DefaultHash {
         let mut tree = collector
             .dir_hasher
@@ -1336,11 +1336,22 @@ mod tests {
         }
 
         tree.insert(identity_leaf);
-        if let Some(leaf) = effective_leaf {
-            tree.insert(leaf);
+        for leaf in trailing_leaves {
+            tree.insert(*leaf);
         }
         tree.commit();
         tree.root().expect("root")
+    }
+
+    /// RFC 0024 F06.3 (decision D1): the recipe-wide version leaf,
+    /// `BLAKE3(b"omni.key-recipe\0" || u32_le(version))`, inserted after the
+    /// identity leaf and before the effective-task leaf. Test-only oracle until
+    /// the production constant `KEY_RECIPE_VERSION` exists.
+    fn key_recipe_leaf_v1(version: u32) -> DefaultHash {
+        omni_hasher::impls::hash_parts([
+            b"omni.key-recipe\0".as_slice(),
+            version.to_le_bytes().as_slice(),
+        ])
     }
 
     /// RFC 0024 F06.3 proposal, as a test-only oracle until the production
@@ -1417,10 +1428,10 @@ mod tests {
                 &info,
                 &inputs,
                 legacy_leaf,
-                None,
+                &[],
             )
             .await,
-            v1_recipe: recipe_digest(&collector, &info, &inputs, v1_leaf, None)
+            v1_recipe: recipe_digest(&collector, &info, &inputs, v1_leaf, &[])
                 .await,
         }
     }
@@ -1488,7 +1499,8 @@ mod tests {
     }
 
     /// RFC 0024 F06.3 proof (FAILS on the base): the final key is the v1
-    /// recipe plus the effective-task leaf, inserted after the identity leaf.
+    /// recipe plus the recipe-version leaf (D1) and the effective-task leaf,
+    /// in that order, inserted after the identity leaf.
     /// `digests_for` passes no effective task today, because the collector has
     /// no way to receive one; F06.3 changes that helper to pass `config`.
     #[tokio::test]
@@ -1525,7 +1537,7 @@ mod tests {
                 &info,
                 &inputs,
                 identity_leaf_v1("proj", "build").unwrap(),
-                Some(effective_leaf_v1(config.digest())),
+                &[key_recipe_leaf_v1(1), effective_leaf_v1(config.digest())],
             )
             .await
         };
@@ -1551,7 +1563,7 @@ mod tests {
 
         assert_eq!(
             hex32(digests.collector),
-            "af976dd4c62cb1da98b4d87206b12b52c1112640c78f499c5507ef55a1eee1d1",
+            "5eecc23955014a7166759230ede2b74a9b5c117498e9656426024b6ec74abfe5",
         );
     }
 

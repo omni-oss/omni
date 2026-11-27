@@ -28,6 +28,7 @@ const RAW_HASH_PATTERN = /^[A-Za-z0-9]{40,}$/;
 
 const HIT_BUILD = "Cache hit for task 'app#build'";
 const HIT_LINT = "Cache hit for task 'app#lint'";
+const HIT_GREET = "Cache hit for task 'app#greet'";
 
 /** Appends its first argument to `runs.txt`: one line per real execution. */
 const MARKER = [
@@ -41,6 +42,16 @@ interface Options {
     baseDescription?: string;
     /** The app restates the flavor itself, masking the inherited one. */
     appFlavor?: string;
+    /** A setting scoped to the `build` task only (`meta.note`). */
+    buildNote?: string;
+    /** Sibling tasks `lint` pulls in (`with`). */
+    lintWith?: string[];
+    /** Project-level `env.vars.X` (the app's own definition). */
+    projectEnv?: string;
+    /** `env.vars.X` in the base file the app extends. */
+    baseEnv?: string;
+    /** Workspace-level `env.vars.X`. */
+    workspaceEnv?: string;
 }
 
 function baseFile(options: Options) {
@@ -51,6 +62,7 @@ function baseFile(options: Options) {
             ? { description: options.baseDescription }
             : {}),
         meta: { flavor: options.baseFlavor ?? "one" },
+        ...(options.baseEnv ? { env: { vars: { X: options.baseEnv } } } : {}),
     };
 }
 
@@ -59,7 +71,12 @@ function spec(options: Options = {}): WorkspaceSpec {
     // input never changes, so no content can stand in for the definition.
     const cache = { key: { defaults: false, files: ["src/**"] } };
     return {
-        workspace: { projects: ["**"] },
+        workspace: {
+            projects: ["**"],
+            ...(options.workspaceEnv
+                ? { env: { vars: { X: options.workspaceEnv } } }
+                : {}),
+        },
         projects: {
             "base.omni.yaml": baseFile(options),
             app: {
@@ -68,13 +85,28 @@ function spec(options: Options = {}): WorkspaceSpec {
                 ...(options.appFlavor
                     ? { meta: { flavor: options.appFlavor } }
                     : {}),
+                ...(options.projectEnv
+                    ? { env: { vars: { X: options.projectEnv } } }
+                    : {}),
                 tasks: {
                     build: {
                         exec: "node marker.js {{ meta.flavor }}",
                         cache,
+                        ...(options.buildNote
+                            ? { meta: { note: options.buildNote } }
+                            : {}),
                     },
                     lint: {
                         exec: "node marker.js lint",
+                        cache,
+                        ...(options.lintWith ? { with: options.lintWith } : {}),
+                    },
+                    side: {
+                        exec: "node marker.js side",
+                        cache,
+                    },
+                    greet: {
+                        exec: "node marker.js {{ args.k }}",
                         cache,
                     },
                 },
@@ -85,6 +117,16 @@ function spec(options: Options = {}): WorkspaceSpec {
             "app/src/a.txt": "a\n",
         },
     };
+}
+
+function appFile(options: Options) {
+    return spec(options).projects?.app as NonNullable<
+        WorkspaceSpec["projects"]
+    >[string];
+}
+
+function workspaceFile(options: Options) {
+    return spec(options).workspace as NonNullable<WorkspaceSpec["workspace"]>;
 }
 
 function runs(ws: Workspace): string[] {
@@ -156,16 +198,81 @@ describe("+cache @cache @e2e (F06.3 the key follows the effective task)", () => 
         expect(dry).toOutputContaining("build");
     });
 
-    it("guard: a task that does not read the changed setting keeps its entry", async () => {
-        const ws = makeWorkspace(spec({ baseFlavor: "one" }));
+    it("guard: a task keeps its entry when only another task's own setting changes", async () => {
+        // F06 includes the full merged project and task `meta` of the task
+        // itself, so the guard edits a setting scoped to `build` alone: `lint`
+        // does not inherit it and its own definition is unchanged.
+        const ws = makeWorkspace(spec({ buildNote: "one" }));
         await run(ws, "lint");
 
-        // `lint` never reads the flavor and its own definition is unchanged.
-        ws.write("base.omni.yaml", baseFile({ baseFlavor: "two" }));
+        ws.write("app/project.omni.yaml", appFile({ buildNote: "two" }));
         const second = await run(ws, "lint");
 
         expect(second).toHaveStderrContaining(HIT_LINT);
         expect(runs(ws)).toEqual(["lint"]);
+    });
+
+    it("re-runs a task when only an invocation argument changed (Q1)", async () => {
+        const ws = makeWorkspace(spec());
+        await runOmni(["run", "greet", "-a", "k=v1"], { cwd: ws.cwd });
+        const second = await runOmni(["run", "greet", "-a", "k=v2"], {
+            cwd: ws.cwd,
+        });
+
+        expect(second).toHaveSucceeded();
+        expect(second.stderr).not.toContain(HIT_GREET);
+        expect(runs(ws)).toEqual(["v1", "v2"]);
+    });
+
+    it("guard: the same invocation argument hits the cache (Q1)", async () => {
+        const ws = makeWorkspace(spec());
+        await runOmni(["run", "greet", "-a", "k=v1"], { cwd: ws.cwd });
+        const second = await runOmni(["run", "greet", "-a", "k=v1"], {
+            cwd: ws.cwd,
+        });
+
+        expect(second).toHaveStderrContaining(HIT_GREET);
+        expect(runs(ws)).toEqual(["v1"]);
+    });
+
+    it("re-runs a task whose `with` sibling set changed (Q2)", async () => {
+        const ws = makeWorkspace(spec());
+        await run(ws, "lint");
+
+        ws.write("app/project.omni.yaml", appFile({ lintWith: ["side"] }));
+        const second = await run(ws, "lint");
+
+        expect(second.stderr).not.toContain(HIT_LINT);
+    });
+
+    it("re-runs a task whose inherited project env definition changed (Q3)", async () => {
+        const ws = makeWorkspace(spec({ baseEnv: "one" }));
+        await run(ws, "lint");
+
+        ws.write("base.omni.yaml", baseFile({ baseEnv: "two" }));
+        const second = await run(ws, "lint");
+
+        expect(second.stderr).not.toContain(HIT_LINT);
+    });
+
+    it("re-runs a task whose project env definition changed (Q3)", async () => {
+        const ws = makeWorkspace(spec({ projectEnv: "one" }));
+        await run(ws, "lint");
+
+        ws.write("app/project.omni.yaml", appFile({ projectEnv: "two" }));
+        const second = await run(ws, "lint");
+
+        expect(second.stderr).not.toContain(HIT_LINT);
+    });
+
+    it("re-runs a task whose workspace env definition changed (Q3)", async () => {
+        const ws = makeWorkspace(spec({ workspaceEnv: "one" }));
+        await run(ws, "lint");
+
+        ws.write("workspace.omni.yaml", workspaceFile({ workspaceEnv: "two" }));
+        const second = await run(ws, "lint");
+
+        expect(second.stderr).not.toContain(HIT_LINT);
     });
 
     it("guard: a presentation-only change in the base file keeps the entry", async () => {

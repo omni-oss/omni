@@ -1241,6 +1241,149 @@ mod tests {
             }
         }
 
+        /// A context that returns the same configured task info and, per run,
+        /// the invocation overrides (`omni run t --arg k=v`).
+        struct ArgsCtx {
+            info: CacheInfo,
+            overrides: maps::UnorderedMap<String, serde_json::Value>,
+        }
+
+        impl omni_task_context::Context for ArgsCtx {
+            type Error = std::io::Error;
+
+            fn get_task_env_vars(
+                &self,
+                _: &TaskExecutionNode,
+            ) -> Result<
+                Option<std::sync::Arc<omni_task_context::EnvVars>>,
+                Self::Error,
+            > {
+                Ok(Some(Default::default()))
+            }
+
+            fn get_task_meta_config(
+                &self,
+                _: &str,
+                _: &str,
+            ) -> Option<&omni_configurations::MetaConfiguration> {
+                None
+            }
+
+            fn get_project_meta_config(
+                &self,
+                _: &str,
+            ) -> Option<&omni_configurations::MetaConfiguration> {
+                None
+            }
+
+            fn get_cache_info(&self, _: &str, _: &str) -> Option<&CacheInfo> {
+                Some(&self.info)
+            }
+
+            fn get_output_logs(
+                &self,
+                _: &str,
+                _: &str,
+            ) -> Option<&omni_task_output_logs::OutputLogsConfiguration>
+            {
+                None
+            }
+
+            fn get_task_override_args(
+                &self,
+                _: &str,
+                _: &str,
+            ) -> Option<&maps::UnorderedMap<String, serde_json::Value>>
+            {
+                Some(&self.overrides)
+            }
+        }
+
+        struct NoHashes;
+
+        impl omni_task_context::TaskHashProvider for NoHashes {
+            fn get_task_hash(
+                &self,
+                _: omni_types::TaskKeyRef<'_>,
+            ) -> Option<DefaultHash> {
+                None
+            }
+        }
+
+        fn arg_override(
+            value: Option<&str>,
+        ) -> maps::UnorderedMap<String, serde_json::Value> {
+            let mut map = maps::UnorderedMap::default();
+            if let Some(value) = value {
+                map.insert("k".to_string(), serde_json::json!(value));
+            }
+            map
+        }
+
+        /// FAILS on the base (Q1): `omni run t --arg k=v1` then `--arg k=v2`
+        /// merges the override into the template context but not into the key,
+        /// which sees only the configured `CacheInfo.args`. The second run
+        /// replays the first result: an existing wrong hit.
+        #[tokio::test]
+        async fn a_changed_invocation_arg_changes_the_key() {
+            let f = Fixture::new();
+            let node = f.plain_node();
+            let digest = |value: Option<&str>| {
+                let provider =
+                    omni_task_context::DefaultTaskContextProvider::new(
+                        NoHashes,
+                        ArgsCtx {
+                            info: eligible_info(),
+                            overrides: arg_override(value),
+                        },
+                    );
+                let f = &f;
+                let node = &node;
+                async move {
+                    use omni_task_context::TaskContextProvider as _;
+                    let ctx = provider
+                        .get_task_context(node, false)
+                        .expect("a context");
+                    (f.dry_run_digest(&ctx).await, f.stored_digest(&ctx).await)
+                }
+            };
+            let none = digest(None).await;
+            let v1 = digest(Some("v1")).await;
+            let v2 = digest(Some("v2")).await;
+            assert_ne!(v1.0, v2.0, "dry run: the merged args must be keyed");
+            assert_ne!(v1.1, v2.1, "store: the merged args must be keyed");
+            assert_ne!(none.1, v1.1, "an override is a different invocation");
+        }
+
+        /// Guard: with no override the key is today's key (hash project parity
+        /// holds), and a repeated identical override is stable.
+        #[tokio::test]
+        async fn the_same_invocation_args_keep_the_key() {
+            let f = Fixture::new();
+            let node = f.plain_node();
+            let digest = |value: Option<&str>| {
+                let provider =
+                    omni_task_context::DefaultTaskContextProvider::new(
+                        NoHashes,
+                        ArgsCtx {
+                            info: eligible_info(),
+                            overrides: arg_override(value),
+                        },
+                    );
+                let f = &f;
+                let node = &node;
+                async move {
+                    use omni_task_context::TaskContextProvider as _;
+                    let ctx = provider
+                        .get_task_context(node, false)
+                        .expect("a context");
+                    f.dry_run_digest(&ctx).await
+                }
+            };
+            assert_eq!(digest(Some("v1")).await, digest(Some("v1")).await);
+            assert_eq!(digest(None).await, digest(None).await);
+        }
+
         /// Guards (pass on the base and must keep passing): presentation and
         /// provenance never reach the key, identical semantics keep it.
         #[tokio::test]
