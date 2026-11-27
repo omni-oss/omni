@@ -1,0 +1,137 @@
+---
+title: "Effective task cache keys"
+description: "Release note (pre-v1): task caches start cold once more, the cache key now follows the whole effective task, the --arg values of a run are keyed, and project and workspace hashes change"
+---
+
+**Every task cache entry misses once after you upgrade, local and remote.** The
+cache key of a task is now computed from the task as it actually runs, not only
+from its inputs, so every key changes. The first run misses and fills the cache,
+the second hits. Old entries are never matched again and are not converted.
+In CI, the first run on the new version repopulates the cache and later runs hit.
+Remove the old entries with `omni cache prune --stale` once every checkout and CI
+job runs the new version (see [Pruning](#pruning)).
+
+Before, an edit that changed what a task does without changing its input files
+could replay an old result: an inherited setting changed in a base file, a `with`
+sibling added, a retry policy or an `env.vars` definition edited, or a different
+`--arg` value. Those edits now miss.
+
+## What is in the key now
+
+These are part of every task's key, also with `cache.key.defaults: false`:
+
+- **The effective task**: its command and retry command, `enabled`, `interactive`,
+  `persistent`, the retry policy (with defaults filled in, so an explicit value
+  equal to a default is the same as leaving it out), and the project and task
+  `meta` it inherits.
+- **Its relations**: resolved dependencies and `with` siblings. A sibling is keyed
+  whether or not the run selected it, so the key does not depend on which tasks
+  you asked for.
+- **Environment definitions**: the merged `env.vars` of the workspace, the project
+  and the task (task over project over workspace), as written, before
+  expansion.
+- **Configured `args`** and the **`--arg` values of the run**, merged the way the
+  task sees them. `omni run build --arg mode=fast` and `--arg mode=slow` are
+  different entries. This fixes a stale replay: the second run used to hit the
+  first run's entry.
+- **Cache rules**: the input and output include and exclude rules (as written,
+  not as expanded), `cache.key.env` names and whether logs are captured.
+- **`enabled`** is keyed by its text. `enabled: true` and an expression that
+  renders to true are different definitions.
+
+Presentation is not in the key: descriptions, where a setting came from, notices,
+redaction and display options, and `cache.enabled` itself.
+
+## What is not in the key
+
+- **The platform.** Set it explicitly through `env` or `meta` if a task depends
+  on it.
+- **The contents of `.env` files and the process environment.** The _definitions_
+  under `env.vars` are keyed, but a value a task reads from a `.env` file or from
+  the environment of the process is not. List it under `cache.key.env` (values) or
+  `cache.key.files` (files) to opt in.
+- **`--retry` overrides on the command line.** Only the configured retry policy is
+  keyed. A retry policy that does not resolve fails the run before any key is
+  used.
+- **Nondeterministic expressions** such as `now` or `get_random`.
+
+## If you ran `main` between #171 and this change
+
+Builds of `main` since the identity change (the "Task identity and cache keys"
+note, 2026-11-25) already had one cold start. This change is a **second** cold start for them, and their entries are now
+stale. Upgrading from `v0.21.0` straight to a release that contains both changes
+is **one** cold start.
+
+## What else changes
+
+- **Hashes change once.** `omni hash project`, `omni hash workspace` and the `hash`
+  field of `--result` output take new values, and now move with an effective-only
+  edit. `omni hash workspace` also builds the task graph to fold each task's real
+  digest, so a workspace with a task cycle reports the graph error instead of a
+  hash.
+- Storage, the remote cache protocol and servers do not change. Old artifacts
+  stay on a remote server until its own retention removes them. Old and new
+  runners can share one server without affecting each other: their keys differ.
+- Keys are still not portable between operating systems (input paths are hashed
+  as the operating system writes them).
+
+No configuration changes are needed.
+
+## See it
+
+1. `omni run build` twice: a miss, then a hit.
+2. Edit a setting the task inherits (for example in an `extends` base file) or add
+   a `with` sibling, then run again: a miss.
+3. `omni hash project <project>` prints a new value, and changes with the edit.
+4. `omni cache eligibility` shows why a task is or is not cached.
+5. `omni cache prune --stale --dry-run` lists the old entries without removing
+   them.
+
+## Pruning
+
+Run `omni cache prune --stale --dry-run` first, then `omni cache prune --stale`
+once every checkout and CI job runs the new version. Stale means: not reachable
+by a task of the binary that runs the command, so each version marks the other's
+entries stale. Do not prune while old and new versions share a cache and you want
+to keep the old version's warm entries.
+
+Stale pruning computes keys **without** `--arg`. An entry written by
+`omni run <task> --arg k=v` has a different key, so it is judged stale and may be
+removed, even though running again with the same `--arg` would still hit it. That
+costs a future hit, never a wrong one. The dry run shows which entries match.
+
+## Rolling back
+
+Install the previous version. Its own entries are still on disk unless you pruned
+them, so it hits them again; entries written by the new version are left in
+place and are not reused. Do not remove them as part of the rollback. Entries
+that were already pruned cannot be recovered. Project and workspace hashes
+return to the old values.
+
+Rolling back restores the old behavior along with the old cache: the previous
+version does not see edits to inherited settings, retry, `enabled`, `env.vars`
+definitions, siblings or `--arg`, so its entries hit again for those edits and
+replay stale results. Roll back only for a real defect.
+
+## Rust API changes (pre-v1)
+
+For crates that embed these types:
+
+- `TaskExecutionInfo::new` takes a new positional parameter, and the merged
+  `args` and the `effective_digest` are required. `effective_digest` is
+  non-optional on `ProjectTaskInfo`, `TaskExecutionInfo` and `TaskContext`, so a
+  constructor cannot leave it out.
+- `CacheInfo` has a new `env` field (`serde(default)`, so older serialized values
+  still read).
+- `TaskExecutionNode` has a new `siblings` field. Its derived equality and
+  ordering include it. Report formats are unchanged: the report conversion
+  ignores it.
+- `omni_collector` exports `CACHE_KEY_VERSION`, the version of the whole key.
+  `omni_task_context::effective_task::build` builds the effective task, and
+  `omni_task_context` depends on `omni_collector`.
+
+## For contributors
+
+Any change to any cache key input bumps `CACHE_KEY_VERSION` and ships with a
+release note like this one. See the key-change policy in
+`docs/patterns/cache-keys.md`.
