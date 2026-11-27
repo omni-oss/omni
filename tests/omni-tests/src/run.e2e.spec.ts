@@ -418,6 +418,9 @@ describe("+run @e2e (retries & persistence)", () => {
                         flaky: {
                             exec: ["node", "main.js"],
                             retry_exec: ["node", retryScript],
+                            cache: {
+                                key: { defaults: false, files: ["src/**"] },
+                            },
                             retry: {
                                 max_retries: 1,
                                 strategy: "fixed",
@@ -431,6 +434,7 @@ describe("+run @e2e (retries & persistence)", () => {
                 "app/main.js":
                     'console.log("MAIN-ATTEMPT"); process.exit(1);\n',
                 "app/retry.js": 'console.log("RETRY-ATTEMPT");\n',
+                "app/src/in.txt": "in\n",
                 "app/retry2.js": 'console.log("RETRY-ATTEMPT");\n',
             },
         });
