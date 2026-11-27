@@ -6,7 +6,7 @@
 
 use omni_hasher::impls::{DefaultHash, hash_parts};
 
-/// Domain separator and recipe version, in that order, ahead of the names.
+/// Domain separator and leaf version, in that order, ahead of the names.
 pub(crate) const IDENTITY_LEAF_V1_PREFIX: &[u8] = b"omni.task-id\0\x01";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]

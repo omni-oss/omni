@@ -1248,9 +1248,9 @@ mod tests {
     }
 
     /// Test-only copy of `Collector::get_digest` with the identity leaf
-    /// supplied by the caller, so one recipe can be evaluated with the legacy
+    /// supplied by the caller, so one key can be evaluated with the legacy
     /// joined-label leaf and with the v1 leaf over identical other inputs.
-    async fn recipe_digest(
+    async fn reference_digest(
         collector: &Collector<'_>,
         info: &ProjectTaskInfo<'_>,
         resolved_inputs: &[OmniPath],
@@ -1343,13 +1343,13 @@ mod tests {
         tree.root().expect("root")
     }
 
-    /// RFC 0024 F06.3 (decision D1): the recipe-wide version leaf,
-    /// `BLAKE3(b"omni.key-recipe\0" || u32_le(version))`, inserted after the
+    /// RFC 0024 F06.3 (decision D1): the cache key version leaf,
+    /// `BLAKE3(b"omni.cache-key\0" || u32_le(version))`, inserted after the
     /// identity leaf and before the effective-task leaf. Test-only oracle until
-    /// the production constant `KEY_RECIPE_VERSION` exists.
-    fn key_recipe_leaf_v1(version: u32) -> DefaultHash {
+    /// the production constant `CACHE_KEY_VERSION` exists.
+    fn cache_key_version_leaf_v1(version: u32) -> DefaultHash {
         omni_hasher::impls::hash_parts([
-            b"omni.key-recipe\0".as_slice(),
+            b"omni.cache-key\0".as_slice(),
             version.to_le_bytes().as_slice(),
         ])
     }
@@ -1385,8 +1385,8 @@ mod tests {
 
     struct Digests {
         collector: DefaultHash,
-        legacy_recipe: DefaultHash,
-        v1_recipe: DefaultHash,
+        legacy_key: DefaultHash,
+        v1_key: DefaultHash,
     }
 
     async fn digests_for(
@@ -1423,7 +1423,7 @@ mod tests {
 
         Digests {
             collector: result.digest.expect("digest"),
-            legacy_recipe: recipe_digest(
+            legacy_key: reference_digest(
                 &collector,
                 &info,
                 &inputs,
@@ -1431,7 +1431,7 @@ mod tests {
                 &[],
             )
             .await,
-            v1_recipe: recipe_digest(&collector, &info, &inputs, v1_leaf, &[])
+            v1_key: reference_digest(&collector, &info, &inputs, v1_leaf, &[])
                 .await,
         }
     }
@@ -1441,7 +1441,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn legacy_recipe_still_reproduces_the_base_digest_and_leaf() {
+    async fn legacy_key_still_reproduces_the_base_digest_and_leaf() {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path();
         let project = ordinary_task(root, "proj", "build");
@@ -1454,14 +1454,14 @@ mod tests {
             "3a89953840fde7533a43a03184a9864798d00017163735990a8a93d7caf39338"
         );
         assert_eq!(
-            hex32(digests.legacy_recipe),
+            hex32(digests.legacy_key),
             "38f3811e830a6572f5b6d9dd7e4ccf4c15c565b80f745524a34715f2f140518c"
         );
-        assert_ne!(digests.collector, digests.legacy_recipe);
+        assert_ne!(digests.collector, digests.legacy_key);
     }
 
     #[tokio::test]
-    async fn recipe_with_output_excludes_matches_the_collector() {
+    async fn key_with_output_excludes_matches_the_collector() {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path();
         let mut project = ordinary_task(root, "proj", "build");
@@ -1473,12 +1473,12 @@ mod tests {
             digests_for(root, &ordinary_task(root, "proj", "build"), &command)
                 .await;
 
-        assert_eq!(with.collector, with.v1_recipe);
+        assert_eq!(with.collector, with.v1_key);
         assert_ne!(with.collector, plain.collector);
     }
 
     #[tokio::test]
-    async fn v1_recipe_changes_only_the_identity_leaf() {
+    async fn v1_key_changes_only_the_identity_leaf() {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path();
         let project = ordinary_task(root, "proj", "build");
@@ -1491,15 +1491,15 @@ mod tests {
             "262db1a029777c8c34df7d061a04e010c943bb983c789b8a302619e8352d111e"
         );
         assert_eq!(
-            hex32(digests.v1_recipe),
+            hex32(digests.v1_key),
             "baccd2c423a6c8afbd93c453f56926ea0e49c3d837fe0909f9ecc24cd085e174"
         );
-        assert_ne!(digests.v1_recipe, digests.legacy_recipe);
-        assert_eq!(digests.collector, digests.v1_recipe);
+        assert_ne!(digests.v1_key, digests.legacy_key);
+        assert_eq!(digests.collector, digests.v1_key);
     }
 
     /// RFC 0024 F06.3 proof (FAILS on the base): the final key is the v1
-    /// recipe plus the recipe-version leaf (D1) and the effective-task leaf,
+    /// key inputs plus the cache key version leaf (D1) and the effective-task leaf,
     /// in that order, inserted after the identity leaf.
     /// `digests_for` passes no effective task today, because the collector has
     /// no way to receive one; F06.3 changes that helper to pass `config`.
@@ -1532,12 +1532,15 @@ mod tests {
                 .remove(0)
                 .input_files
                 .unwrap();
-            recipe_digest(
+            reference_digest(
                 &collector,
                 &info,
                 &inputs,
                 identity_leaf_v1("proj", "build").unwrap(),
-                &[key_recipe_leaf_v1(1), effective_leaf_v1(config.digest())],
+                &[
+                    cache_key_version_leaf_v1(1),
+                    effective_leaf_v1(config.digest()),
+                ],
             )
             .await
         };
@@ -1546,12 +1549,12 @@ mod tests {
             digests.collector, expected,
             "the collector must insert the effective leaf after the identity leaf"
         );
-        assert_ne!(expected, digests.v1_recipe);
+        assert_ne!(expected, digests.v1_key);
     }
 
     /// RFC 0024 F06.3 proof (FAILS on the base): golden vector of the final
     /// key for the ordinary task with a default effective config, computed from
-    /// the oracle recipe above. Pinned so the key cannot change by accident.
+    /// the oracle above. Pinned so the key cannot change by accident.
     #[tokio::test]
     async fn the_final_key_golden_vector_for_the_ordinary_task() {
         let temp = tempfile::tempdir().unwrap();
@@ -1563,7 +1566,7 @@ mod tests {
 
         assert_eq!(
             hex32(digests.collector),
-            "5eecc23955014a7166759230ede2b74a9b5c117498e9656426024b6ec74abfe5",
+            "e5e46763eebbd009eba7d973a96e6f3296a6b52bfad1e45f83f88ceef27168cd",
         );
     }
 
@@ -1583,9 +1586,9 @@ mod tests {
         assert_ne!(first_digests.collector, second_digests.collector);
     }
 
-    /// Documents the base collision through the test-only recipe and shows the v1 leaf separates the pair.
+    /// Documents the base collision through the test-only oracle and shows the v1 leaf separates the pair.
     #[tokio::test]
-    async fn base_recipe_collides_and_v1_recipe_separates_the_pair() {
+    async fn base_key_collides_and_v1_key_separates_the_pair() {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path();
         let command = CommandConfig::shell("echo same");
@@ -1595,8 +1598,8 @@ mod tests {
         let first_digests = digests_for(root, &first, &command).await;
         let second_digests = digests_for(root, &second, &command).await;
 
-        assert_eq!(first_digests.legacy_recipe, second_digests.legacy_recipe);
-        assert_ne!(first_digests.v1_recipe, second_digests.v1_recipe);
+        assert_eq!(first_digests.legacy_key, second_digests.legacy_key);
+        assert_ne!(first_digests.v1_key, second_digests.v1_key);
     }
 
     #[tokio::test]

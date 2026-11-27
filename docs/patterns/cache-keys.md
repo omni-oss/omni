@@ -15,13 +15,13 @@ leaf order, a different input collection rule) is a **key change**. A PR that ma
    too. Never change an unversioned leaf's bytes silently; wrap the new behavior in a
    versioned leaf.
 
-    **Recipe-wide tag (lands with the F06.3 cutover, slice 2; not in the code yet).**
-    The cutover adds one constant, `KEY_RECIPE_VERSION`, in `omni_collector`, and a leaf
-    `BLAKE3(b"omni.key-recipe\0" || u32_le(KEY_RECIPE_VERSION))` inserted after the
-    identity leaf. From then on rule 1 is enforceable: **any change to any key input or
-    to the recipe bumps `KEY_RECIPE_VERSION`**, besides the leaf you touch, and the
+    **Cache key version tag (lands with the F06.3 cutover, slice 2; not in the code yet).**
+    The cutover adds one constant, `CACHE_KEY_VERSION`, in `omni_collector`, and a leaf
+    `BLAKE3(b"omni.cache-key\0" || u32_le(CACHE_KEY_VERSION))` inserted after the
+    identity leaf. From then on rule 1 is enforceable: **bump the cache key version (`CACHE_KEY_VERSION`) when any key input or the key
+    construction changes**, besides the leaf you touch, and the
     golden vectors move with it. Until the cutover lands, only the identity leaf's own
-    byte is a version; do not cite the recipe leaf as existing.
+    byte is a version; do not cite the cache key version leaf as existing.
 
 2. **Is a cold start, never a migration.** Old entries become unreachable; they are not
    rewritten, promoted, dual-read or probed for under the old key. A fallback read is safe
@@ -59,7 +59,7 @@ leaf order, a different input collection rule) is a **key change**. A PR that ma
 6. **Changes every constructor at once.** Every place that builds the inputs (collector
    callers, the dry run, the hash commands, the hybrid store and stale pruning) takes
    the input as a non-optional field so the compiler finds them; a key change must not
-   leave two recipes in one binary.
+   leave two cache key versions in one binary.
 
 Platform and display data are **not** key inputs unless a decision says so; do not add
 them to make a test pass. The **merged invocation args** (`omni run t --arg k=v`) **are**

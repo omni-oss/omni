@@ -961,7 +961,7 @@ describe("+run @e2e (an entry stored at a different address is never reused)", (
         // arbitrary address, not an entry written by the base binary. True v0
         // non-reuse against a base-produced entry stays a recorded gap (see
         // the F03.4 slice 0 plan); no base binary is available to this harness.
-        const foreign = "LegacyRecipeDigestFor";
+        const foreign = "LegacyKeyDigestFor";
         renameSync(join(projectDir, digest), join(projectDir, foreign));
 
         const second = await runResult(ws, ["x", "-p", "app"]);
