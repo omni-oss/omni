@@ -31,11 +31,12 @@ use system_traits::FsReadAsync;
 
 use crate::{
     CONFIGURED_TASK_CACHE_ENABLED_FALLBACK, CacheConfiguration, CacheEnabled,
-    CacheEnabledSource, CacheKeyConfiguration, DeclarationSource, Declared,
-    LayerId, LoadConfigError, MetaConfiguration, Origin, ProjectConfiguration,
-    ProjectEnvConfiguration, RedactConfiguration, TaskConfiguration,
-    TaskConfigurationLongForm, TaskDependencyConfiguration,
-    TaskEnvConfiguration, TaskOutputConfiguration, replace_if_present, utils,
+    CacheEnabledSource, CacheKeyConfiguration, CacheScope, DeclarationSource,
+    Declared, LayerId, LoadConfigError, MetaConfiguration, Origin,
+    ProjectConfiguration, ProjectEnvConfiguration, RedactConfiguration,
+    TaskConfiguration, TaskConfigurationLongForm, TaskDependencyConfiguration,
+    TaskEnvConfiguration, TaskOutputConfiguration, replace_if_present,
+    resolve_plugin_tier, utils,
 };
 
 #[derive(
@@ -685,6 +686,25 @@ impl ProjectLayer {
     }
 }
 
+/// The level of a declared `cache.enabled` value.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EnabledScope {
+    Project,
+    /// A canonical task name.
+    Task(String),
+}
+
+/// A `cache.enabled` declaration that travels beside a layer, so its tier comes
+/// from its origin and it never merges into the replayed `cache`. A
+/// `DeclarationSource::Contributor` origin is plugin tier; any other origin is
+/// authored tier (an applied file).
+#[derive(Debug, Clone, PartialEq)]
+pub struct EnabledDecl {
+    pub scope: EnabledScope,
+    pub value: bool,
+    pub origin: Arc<Origin>,
+}
+
 /// A project layer with the file it was read from and that file's directory.
 /// The directory is the layer's path origin; the effective project root of a
 /// composed project is the directory of the concrete (last) layer.
@@ -701,6 +721,9 @@ pub struct LoadedLayer {
     /// The winning project-level `cache.enabled` and who declared it.
     /// Maintained only by composition.
     pub(crate) cache_enabled: Option<Declared<bool>>,
+    /// Side `cache.enabled` declarations in composition order. Never part of
+    /// `layer`; empty for explicit-only composition.
+    pub(crate) enabled: Vec<EnabledDecl>,
 }
 
 impl LoadedLayer {
@@ -715,6 +738,7 @@ impl LoadedLayer {
             dir,
             layer,
             cache_enabled: None,
+            enabled: Vec::new(),
         }
     }
 
@@ -725,6 +749,7 @@ impl LoadedLayer {
             dir,
             layer,
             cache_enabled: None,
+            enabled: Vec::new(),
         }
     }
 
@@ -741,6 +766,16 @@ impl LoadedLayer {
     pub fn with_layer(mut self, layer: ProjectLayer) -> Self {
         self.layer = layer;
         self.cache_enabled = None;
+        self
+    }
+
+    /// The same layer with side `cache.enabled` declarations appended.
+    #[allow(dead_code)]
+    pub(crate) fn with_enabled(
+        mut self,
+        decls: impl IntoIterator<Item = EnabledDecl>,
+    ) -> Self {
+        self.enabled.extend(decls);
         self
     }
 
@@ -818,6 +853,7 @@ impl Merge for LoadedLayer {
         if other.cache_enabled.is_some() {
             self.cache_enabled = other.cache_enabled;
         }
+        self.enabled.extend(other.enabled);
         self.dir = other.dir;
         self.source = other.source;
         self.layer.merge(other.layer);
@@ -870,6 +906,9 @@ pub struct FinalizedProject {
     /// The origin of each task's effective authored `cache.enabled`, whether
     /// or not it is a file. A host fallback has no entry.
     pub task_cache_enabled_origin: maps::Map<String, Arc<Origin>>,
+    /// The level (task or project) of each task's `cache.enabled` when the plugin
+    /// tier decided it. Authored decisions carry it in their source instead.
+    pub task_cache_enabled_scope: maps::Map<String, CacheScope>,
     /// Each task's effective `meta`: the project's, with every declaration of
     /// the task replayed over it. Empty for `base` projects.
     pub task_meta: maps::Map<String, MetaConfiguration>,
@@ -894,6 +933,69 @@ pub enum FinalizeError {
     ProvenanceMismatch { task: String },
 }
 
+/// Side `cache.enabled` declarations folded into per-tier slots: the last
+/// declaration of a slot, in composition order, wins.
+#[derive(Default)]
+struct SideSlots {
+    plugin_project: Option<Declared<bool>>,
+    applied_project: Option<Declared<bool>>,
+    plugin_tasks: std::collections::HashMap<String, Declared<bool>>,
+    applied_tasks: std::collections::HashMap<String, Declared<bool>>,
+}
+
+struct TaskSideSlots<'a> {
+    plugin_task: Option<&'a Declared<bool>>,
+    plugin_project: Option<&'a Declared<bool>>,
+    applied_task: Option<&'a Declared<bool>>,
+    applied_project: Option<&'a Declared<bool>>,
+}
+
+impl TaskSideSlots<'_> {
+    fn is_empty(&self) -> bool {
+        self.plugin_task.is_none()
+            && self.plugin_project.is_none()
+            && self.applied_task.is_none()
+            && self.applied_project.is_none()
+    }
+}
+
+impl SideSlots {
+    fn fold(decls: Vec<EnabledDecl>) -> Self {
+        let mut slots = Self::default();
+        for decl in decls {
+            let plugin = decl.origin.source.contributor_id().is_some();
+            let declared = Declared {
+                value: decl.value,
+                origin: decl.origin,
+            };
+            match (decl.scope, plugin) {
+                (EnabledScope::Project, true) => {
+                    slots.plugin_project = Some(declared)
+                }
+                (EnabledScope::Project, false) => {
+                    slots.applied_project = Some(declared)
+                }
+                (EnabledScope::Task(name), true) => {
+                    slots.plugin_tasks.insert(name, declared);
+                }
+                (EnabledScope::Task(name), false) => {
+                    slots.applied_tasks.insert(name, declared);
+                }
+            }
+        }
+        slots
+    }
+
+    fn for_task(&self, name: &str) -> TaskSideSlots<'_> {
+        TaskSideSlots {
+            plugin_task: self.plugin_tasks.get(name),
+            plugin_project: self.plugin_project.as_ref(),
+            applied_task: self.applied_tasks.get(name),
+            applied_project: self.applied_project.as_ref(),
+        }
+    }
+}
+
 impl LoadedLayer {
     /// Finalize a fully composed layer: resolve task extensions and inherit
     /// project-level cache settings into each task on the presence-aware
@@ -907,8 +1009,10 @@ impl LoadedLayer {
             dir,
             mut layer,
             cache_enabled: project_declared,
+            enabled: side_decls,
             ..
         } = self;
+        let side_slots = SideSlots::fold(side_decls);
         if layer.name.is_none() {
             return Err(MissingProjectName.into());
         }
@@ -916,6 +1020,7 @@ impl LoadedLayer {
         let mut task_cache_enabled = maps::Map::default();
         let mut task_cache_enabled_file = maps::Map::default();
         let mut task_cache_enabled_origin = maps::Map::default();
+        let mut task_cache_enabled_scope = maps::Map::default();
         let mut task_meta = maps::Map::default();
         let mut aliases = TaskAliases::default();
         let mut provenance_mismatch: Option<String> = None;
@@ -963,7 +1068,7 @@ impl LoadedLayer {
                 )?;
                 // The value and tier the program uses come from the replayed
                 // declarations. The merged value must agree with them.
-                let decided = match (&task_declared, &project_declared) {
+                let replay_decided = match (&task_declared, &project_declared) {
                     (Some(declared), _) => Some((
                         CacheEnabledSource::TaskExplicit,
                         declared.clone(),
@@ -978,16 +1083,75 @@ impl LoadedLayer {
                     .as_ref()
                     .and_then(|cache| cache.enabled.as_ref())
                     .map(|enabled| *enabled.as_ref());
-                if decided.as_ref().map(|(_, declared)| declared.value)
+                if replay_decided.as_ref().map(|(_, declared)| declared.value)
                     != merged
                 {
                     provenance_mismatch.get_or_insert_with(|| name.to_owned());
                 }
+                let side = side_slots.for_task(name);
+                let decided = if side.is_empty() {
+                    replay_decided
+                        .map(|(source, declared)| (source, declared, None))
+                } else {
+                    // Side declarations take part: authored is the replayed
+                    // (explicit) value, else the applied one; the plugin tier
+                    // resolves task over project before it competes.
+                    let task_auth = task_declared
+                        .clone()
+                        .or_else(|| side.applied_task.cloned());
+                    let project_auth = project_declared
+                        .clone()
+                        .or_else(|| side.applied_project.cloned());
+                    let plugin = resolve_plugin_tier(
+                        side.plugin_task.cloned(),
+                        side.plugin_project.cloned(),
+                    );
+                    let resolved = CacheEnabled::resolve(
+                        [
+                            (
+                                CacheEnabledSource::TaskExplicit,
+                                task_auth.as_ref().map(|d| d.value),
+                            ),
+                            (
+                                CacheEnabledSource::ProjectExplicit,
+                                project_auth.as_ref().map(|d| d.value),
+                            ),
+                            (
+                                CacheEnabledSource::Plugin,
+                                plugin.as_ref().map(|(_, d)| d.value),
+                            ),
+                        ],
+                        CONFIGURED_TASK_CACHE_ENABLED_FALLBACK,
+                    );
+                    let winner = match resolved.source {
+                        CacheEnabledSource::TaskExplicit => {
+                            task_auth.map(|d| (d, None))
+                        }
+                        CacheEnabledSource::ProjectExplicit => {
+                            project_auth.map(|d| (d, None))
+                        }
+                        CacheEnabledSource::Plugin => {
+                            plugin.map(|(scope, d)| (d, Some(scope)))
+                        }
+                        _ => None,
+                    };
+                    winner.map(|(declared, scope)| {
+                        // The merged `cache` holds replayed values only, so
+                        // write the decided value into the effective cache.
+                        cache.get_or_insert_with(Default::default).enabled =
+                            Some(Replace::new(declared.value));
+                        (resolved.source, declared, scope)
+                    })
+                };
                 let enabled = match decided {
-                    Some((source, declared)) => {
+                    Some((source, declared, scope)) => {
                         if let Some(file) = declared.origin.source.file_path() {
                             task_cache_enabled_file
                                 .insert(name.to_owned(), Arc::clone(file));
+                        }
+                        if let Some(scope) = scope {
+                            task_cache_enabled_scope
+                                .insert(name.to_owned(), scope);
                         }
                         task_cache_enabled_origin
                             .insert(name.to_owned(), declared.origin);
@@ -1023,6 +1187,7 @@ impl LoadedLayer {
             task_cache_enabled,
             task_cache_enabled_file,
             task_cache_enabled_origin,
+            task_cache_enabled_scope,
             task_meta,
             aliases,
         })
@@ -1766,5 +1931,264 @@ mod tests {
             l.finalize_composed(),
             Err(FinalizeError::TaskExtension(_))
         ));
+    }
+
+    mod side_enabled {
+        use super::*;
+        use crate::ContributorId;
+
+        fn plugin(id: &str) -> Arc<Origin> {
+            Arc::new(Origin::new(
+                DeclarationSource::contributor(ContributorId::new(id)),
+                OmniPath::default(),
+            ))
+        }
+
+        fn applied(file: &str) -> Arc<Origin> {
+            Arc::new(Origin::new(
+                DeclarationSource::file(OmniPath::new(file)),
+                OmniPath::default(),
+            ))
+        }
+
+        fn task_decl(
+            task: &str,
+            value: bool,
+            origin: Arc<Origin>,
+        ) -> EnabledDecl {
+            EnabledDecl {
+                scope: EnabledScope::Task(task.into()),
+                value,
+                origin,
+            }
+        }
+
+        fn project_decl(value: bool, origin: Arc<Origin>) -> EnabledDecl {
+            EnabledDecl {
+                scope: EnabledScope::Project,
+                value,
+                origin,
+            }
+        }
+
+        /// The explicit layer is `doc`; `decls` are side declarations.
+        fn finalize(doc: &str, decls: Vec<EnabledDecl>) -> FinalizedProject {
+            LoadedLayer::unattributed(layer(doc))
+                .with_enabled(decls)
+                .finalize_composed()
+                .unwrap()
+        }
+
+        fn decided(p: &FinalizedProject) -> (bool, CacheEnabledSource) {
+            let d = p.task_cache_enabled["t"];
+            (d.value, d.source)
+        }
+
+        fn effective(p: &FinalizedProject) -> Option<bool> {
+            p.task_cache["t"].enabled.map(|e| *e.as_ref())
+        }
+
+        const BARE: &str = r#"{"name":"a","tasks":{"t":"echo"}}"#;
+        const PROJECT_FALSE: &str =
+            r#"{"name":"a","cache":{"enabled":false},"tasks":{"t":"echo"}}"#;
+
+        use CacheEnabledSource::*;
+
+        #[test]
+        fn c01_row3_plugin_task_false() {
+            let p = finalize(BARE, vec![task_decl("t", false, plugin("a"))]);
+            assert_eq!(decided(&p), (false, Plugin));
+            assert_eq!(effective(&p), Some(false));
+            assert_eq!(p.task_cache_enabled_scope["t"], CacheScope::Task);
+        }
+
+        #[test]
+        fn c01_row4_plugin_task_true() {
+            let p = finalize(BARE, vec![task_decl("t", true, plugin("a"))]);
+            assert_eq!(decided(&p), (true, Plugin));
+            assert_eq!(effective(&p), Some(true));
+        }
+
+        #[test]
+        fn c01_row5_plugin_project_false() {
+            let p = finalize(BARE, vec![project_decl(false, plugin("a"))]);
+            assert_eq!(decided(&p), (false, Plugin));
+            assert_eq!(p.task_cache_enabled_scope["t"], CacheScope::Project);
+        }
+
+        #[test]
+        fn c01_row6_plugin_task_beats_plugin_project() {
+            let p = finalize(
+                BARE,
+                vec![
+                    task_decl("t", true, plugin("a")),
+                    project_decl(false, plugin("a")),
+                ],
+            );
+            assert_eq!(decided(&p), (true, Plugin));
+            assert_eq!(p.task_cache_enabled_scope["t"], CacheScope::Task);
+        }
+
+        #[test]
+        fn c01_row7_authored_project_beats_plugin_task() {
+            let p = finalize(
+                PROJECT_FALSE,
+                vec![
+                    task_decl("t", true, plugin("a")),
+                    project_decl(true, plugin("a")),
+                ],
+            );
+            assert_eq!(decided(&p), (false, ProjectExplicit));
+            assert_eq!(effective(&p), Some(false));
+            assert!(p.task_cache_enabled_scope.is_empty());
+        }
+
+        #[test]
+        fn c01_row8_authored_task_beats_everything() {
+            let p = finalize(
+                r#"{"name":"a","cache":{"enabled":true},"tasks":{"t":{"exec":"x","cache":{"enabled":false}}}}"#,
+                vec![
+                    task_decl("t", true, plugin("a")),
+                    project_decl(true, plugin("a")),
+                ],
+            );
+            assert_eq!(decided(&p), (false, TaskExplicit));
+            assert_eq!(effective(&p), Some(false));
+        }
+
+        #[test]
+        fn c01_row9_authored_task_true_over_false_project_and_plugins() {
+            let p = finalize(
+                r#"{"name":"a","cache":{"enabled":false},"tasks":{"t":{"exec":"x","cache":{"enabled":true}}}}"#,
+                vec![
+                    task_decl("t", false, plugin("a")),
+                    project_decl(false, plugin("a")),
+                ],
+            );
+            assert_eq!(decided(&p), (true, TaskExplicit));
+        }
+
+        #[test]
+        fn an_applied_task_value_beats_an_explicit_project_value() {
+            let p = finalize(
+                PROJECT_FALSE,
+                vec![task_decl("t", true, applied("apply.yaml"))],
+            );
+            assert_eq!(decided(&p), (true, TaskExplicit));
+            // The replayed project value is replaced in the effective cache.
+            assert_eq!(effective(&p), Some(true));
+            assert!(p.task_cache_enabled_scope.is_empty());
+            assert!(p.task_cache_enabled_file.contains_key("t"));
+        }
+
+        #[test]
+        fn an_explicit_task_value_beats_an_applied_task_value() {
+            let p = finalize(
+                r#"{"name":"a","tasks":{"t":{"exec":"x","cache":{"enabled":false}}}}"#,
+                vec![task_decl("t", true, applied("apply.yaml"))],
+            );
+            assert_eq!(decided(&p), (false, TaskExplicit));
+            assert_eq!(effective(&p), Some(false));
+        }
+
+        #[test]
+        fn an_explicit_project_value_beats_an_applied_project_value() {
+            let p = finalize(
+                PROJECT_FALSE,
+                vec![project_decl(true, applied("apply.yaml"))],
+            );
+            assert_eq!(decided(&p), (false, ProjectExplicit));
+        }
+
+        #[test]
+        fn an_applied_project_value_beats_a_plugin_task_value() {
+            let p = finalize(
+                BARE,
+                vec![
+                    task_decl("t", true, plugin("a")),
+                    project_decl(false, applied("apply.yaml")),
+                ],
+            );
+            assert_eq!(decided(&p), (false, ProjectExplicit));
+        }
+
+        #[test]
+        fn the_later_plugin_wins_within_a_tier_and_scope() {
+            let forward = finalize(
+                BARE,
+                vec![
+                    project_decl(true, plugin("a")),
+                    project_decl(false, plugin("b")),
+                ],
+            );
+            assert_eq!(decided(&forward), (false, Plugin));
+            let reversed = finalize(
+                BARE,
+                vec![
+                    project_decl(false, plugin("b")),
+                    project_decl(true, plugin("a")),
+                ],
+            );
+            assert_eq!(decided(&reversed), (true, Plugin));
+        }
+
+        #[test]
+        fn an_earlier_plugin_task_beats_a_later_plugin_project() {
+            let p = finalize(
+                BARE,
+                vec![
+                    task_decl("t", true, plugin("a")),
+                    project_decl(false, plugin("b")),
+                ],
+            );
+            assert_eq!(decided(&p), (true, Plugin));
+        }
+
+        #[test]
+        fn a_plugin_decision_has_an_origin_and_no_file() {
+            let p = finalize(BARE, vec![task_decl("t", true, plugin("a"))]);
+            assert!(!p.task_cache_enabled_file.contains_key("t"));
+            let origin = &p.task_cache_enabled_origin["t"];
+            assert_eq!(origin.source.contributor_id().unwrap().as_str(), "a");
+        }
+
+        #[test]
+        fn a_side_declaration_for_another_task_changes_nothing() {
+            let p = finalize(
+                r#"{"name":"a","tasks":{"t":"echo","u":"echo"}}"#,
+                vec![task_decl("u", false, plugin("a"))],
+            );
+            assert_eq!(decided(&p), (true, HostFallback));
+            assert_eq!(effective(&p), None);
+            assert_eq!(p.task_cache_enabled["u"].source, Plugin);
+        }
+
+        #[test]
+        fn side_declarations_are_not_inherited_through_task_extends() {
+            let p = finalize(
+                r#"{"name":"a","tasks":{"base":{"base":true,"exec":"x"},"t":{"extends":"base","exec":"y"}}}"#,
+                vec![task_decl("base", false, plugin("a"))],
+            );
+            assert_eq!(decided(&p), (true, HostFallback));
+        }
+
+        #[test]
+        fn without_side_declarations_the_host_fallback_keeps_none() {
+            let p = finalize(BARE, vec![]);
+            assert_eq!(decided(&p), (true, HostFallback));
+            assert_eq!(effective(&p), None);
+        }
+
+        #[test]
+        fn merging_layers_keeps_side_declarations_in_order() {
+            let mut a = LoadedLayer::unattributed(layer(BARE))
+                .with_enabled([project_decl(true, plugin("a"))]);
+            a.merge(
+                LoadedLayer::unattributed(layer("{}"))
+                    .with_enabled([project_decl(false, plugin("b"))]),
+            );
+            let p = a.finalize_composed().unwrap();
+            assert_eq!(decided(&p), (false, Plugin));
+        }
     }
 }
