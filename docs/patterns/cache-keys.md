@@ -6,8 +6,10 @@ it. Keys are **not a store format** and are never migrated.
 
 ## Key-change policy
 
-A change to what a key is computed from (a new, removed or re-encoded input, a different
-leaf order, a different input collection rule) is a **key change**. A PR that makes one:
+**The rule: any change to any cache key input bumps `CACHE_KEY_VERSION` and ships with a
+release note.** A change to what a key is computed from (a new, removed or re-encoded
+input, a different leaf order, a different input collection rule, a different
+contribution of `TaskExecutionInfo`) is a **key change**. A PR that makes one:
 
 1. **Bumps a version tag.** Add a named, versioned leaf (today the identity leaf
    `omni.task-id\0\x01` is the model) or bump the version byte of the leaf you changed.
@@ -75,10 +77,11 @@ Rollback is by binary, so rehearse both directions against one disposable store:
 1. Build the previous binary from the base SHA in a temporary `git worktree`.
 2. Set `OMNI_TEST_BASELINE_BIN` to it and `OMNI_TEST_BIN` to the new one, then run
    `tests/omni-tests/src/cache-cross-version.e2e.spec.ts`. Across a key change set
-   `OMNI_TEST_EXPECT_COLD_START=1` (phase 2 of F06.3 adds the switch): neither side hits
-   the other's entry; by default it asserts sharing. Either way each side must hit its
-   **own** entry. Flip the switch off again for the first release whose baseline is
-   after the key change.
+   `OMNI_TEST_EXPECT_COLD_START=1`: neither side hits the other's entry, and each side
+   still hits its **own** (and the baseline still hits its own entry after the new binary
+   ran: the rollback case). Without the switch the spec asserts sharing, for a baseline
+   whose key equals the new one. Unset the switch for the first release whose baseline is
+   after the key change; a baseline older than the last key change needs it.
 3. For a remote, use the fake remote in `omni_cache` tests: the new binary must make no
    request under the old key.
 4. Check `omni cache prune --stale --dry-run` from each binary: it classifies the other
