@@ -1,6 +1,6 @@
 # F07 implementation plan: composition provenance and ordered precedence
 
-**Status:** approved (#164). F07.1 and F07.2 are merged ([#172](https://github.com/omni-oss/omni/pull/172); final review PASS per the PR); F07.3 is built (see [its plan](F07.3-ordered-composition-plan.md), pending merge); F07.4 and F07.5 are not started. **Size:** Large.
+**Status:** approved (#164). F07.1 and F07.2 are merged ([#172](https://github.com/omni-oss/omni/pull/172); final review PASS per the PR); F07.3 is merged ([#194](https://github.com/omni-oss/omni/pull/194); see [its plan](F07.3-ordered-composition-plan.md)); F07.4 and F07.5 are not started. **Size:** Large.
 **Risk:** High: composition and location changes can affect task behavior and
 cache keys. The chosen direction is to finish the metadata redesign before
 building ordered composition, rather than ship a parallel provenance walk.
