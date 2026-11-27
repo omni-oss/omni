@@ -556,3 +556,83 @@ fn an_applied_task_value_from_a_contributor_beats_an_explicit_project_value() {
         (true, CacheEnabledSource::TaskExplicit)
     );
 }
+
+#[test]
+fn task_level_forms_are_guarded_too() {
+    let cases = [
+        (
+            r#"{"tasks":{"t":{"exec":"x","with":["u"]}}}"#,
+            "tasks.t.with",
+        ),
+        (
+            r#"{"tasks":{"t":{"exec":"x","env":{"vars":{"replace":{}}}}}}"#,
+            "tasks.t.env.vars",
+        ),
+        (
+            r#"{"tasks":{"t":{"exec":"x","meta":{"replace":{}}}}}"#,
+            "tasks.t.meta",
+        ),
+        (
+            r#"{"tasks":{"t":{"exec":"x","cache":{"key":{"env":["A"]}}}}}"#,
+            "tasks.t.cache.key.env",
+        ),
+        (
+            r#"{"tasks":{"t":{"exec":"x","cache":{"key":{"files":"a"}}}}}"#,
+            "tasks.t.cache.key.files",
+        ),
+        (
+            r#"{"tasks":{"t":{"exec":"x","cache":{"output":{"files":["a"]}}}}}"#,
+            "tasks.t.cache.output.files",
+        ),
+    ];
+    for (json, field) in cases {
+        assert_eq!(field_of(forbidden(json)), field, "{json}");
+    }
+}
+
+#[test]
+fn a_contribution_layer_that_was_already_composed_is_still_guarded() {
+    let mut layer = LoadedLayer::unattributed(
+        serde_json::from_str::<ProjectLayer>(r#"{"tasks":{"t":{"exec":"x"}}}"#)
+            .unwrap(),
+    );
+    layer.merge(LoadedLayer::unattributed(
+        serde_json::from_str::<ProjectLayer>(
+            r#"{"tasks":{"t":{"cache":{"enabled":true}}}}"#,
+        )
+        .unwrap(),
+    ));
+    let contribution = Contribution {
+        id: id("a"),
+        layer: layer.layer().clone(),
+        base_dir: OmniPath::new("a"),
+        enabled: Vec::new(),
+    };
+    assert!(matches!(
+        try_compose(&["a"], vec![contribution], vec![named()]).unwrap_err(),
+        ComposeError::ForbiddenForm { field, .. } if field == "tasks.t.cache.enabled"
+    ));
+}
+
+#[test]
+fn a_declaration_for_a_task_dropped_by_an_explicit_layer_is_ignored() {
+    let mut c = contribution("p", r#"{"tasks":{"t":"x"}}"#);
+    c.enabled
+        .push(emitted("p", EnabledScope::Task("t".into()), true));
+    let dropped = explicit(
+        "app/project.yaml",
+        r#"{"name":"web","tasks":{"replace":{"u":"y"}}}"#,
+    );
+    let p = compose(&["p"], vec![c], vec![dropped]);
+    assert!(!p.task_cache_enabled.contains_key("t"));
+}
+
+#[test]
+fn alias_cycles_surface_when_the_composed_layer_is_finalized() {
+    let cyclic = explicit(
+        "app/project.yaml",
+        r#"{"name":"web","tasks":{"a":{"alias":"b"},"b":{"alias":"a"}}}"#,
+    );
+    let composed = try_compose(&[], vec![], vec![cyclic]).unwrap();
+    assert!(composed.layer.finalize_composed().is_err());
+}

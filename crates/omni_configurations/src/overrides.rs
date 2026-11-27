@@ -146,8 +146,11 @@ struct Masks {
     /// Paths an explicit layer sets to a non-dictionary value.
     meta_set: BTreeSet<Vec<String>>,
     meta_replaced_at: BTreeSet<Vec<String>>,
+    /// Paths an explicit layer sets to a dictionary.
+    meta_dict_at: BTreeSet<Vec<String>>,
     key_defaults: bool,
-    output_logs: bool,
+    logs_new: bool,
+    logs_cached: bool,
     tasks_replaced: bool,
     explicit_project_enabled: bool,
     explicit_tasks_enabled: BTreeSet<String>,
@@ -166,7 +169,10 @@ fn meta_masks(
     for (key, value) in dict.as_map() {
         path.push(key.clone());
         match value {
-            DynValue::Dict(inner) => meta_masks(masks, path, inner),
+            DynValue::Dict(inner) => {
+                masks.meta_dict_at.insert(path.clone());
+                meta_masks(masks, path, inner);
+            }
             _ => {
                 masks.meta_set.insert(path.clone());
             }
@@ -199,7 +205,11 @@ impl Masks {
                     cache.key.as_ref().is_some_and(|k| k.defaults.is_some());
                 masks.explicit_project_enabled |= cache.enabled.is_some();
             }
-            masks.output_logs |= layer.output_logs.is_some();
+            if let Some(logs) = &layer.output_logs {
+                let split = logs.to_split();
+                masks.logs_new |= split.new.is_some();
+                masks.logs_cached |= split.cached.is_some();
+            }
             if let Some(tasks) = &layer.tasks {
                 masks.tasks_replaced |=
                     matches!(tasks, DictConfig::Replace { .. });
@@ -215,7 +225,17 @@ impl Masks {
         masks
     }
 
-    fn masks(&self, field: &FieldPath, tier: OverrideTier) -> bool {
+    /// Whether explicit configuration decides the field regardless of the
+    /// contributors. `winner_is_dict` says whether the winning `meta` node is a
+    /// dictionary (an explicit dictionary merges into it; over anything else it
+    /// replaces it). `logs` lists the facets that are overridden.
+    fn masks(
+        &self,
+        field: &FieldPath,
+        tier: OverrideTier,
+        winner_is_dict: bool,
+        logs: (bool, bool),
+    ) -> bool {
         match field {
             FieldPath::Description => self.description,
             FieldPath::EnvVar(key) => {
@@ -226,12 +246,18 @@ impl Masks {
                     || self
                         .meta_replaced_at
                         .iter()
-                        .any(|at| path.len() > at.len() && path.starts_with(at))
+                        .any(|at| path.starts_with(at))
                     || (1..=path.len())
                         .any(|n| self.meta_set.contains(&path[..n]))
+                    || (!winner_is_dict && self.meta_dict_at.contains(path))
             }
             FieldPath::CacheKeyDefaults => self.key_defaults,
-            FieldPath::OutputLogs => self.output_logs,
+            FieldPath::OutputLogs => {
+                let (new, cached) = logs;
+                (new || cached)
+                    && (!new || self.logs_new)
+                    && (!cached || self.logs_cached)
+            }
             FieldPath::ProjectCacheEnabled => match tier {
                 OverrideTier::Emitted => self.authored_project_enabled,
                 OverrideTier::Applied => self.explicit_project_enabled,
@@ -296,45 +322,127 @@ pub(crate) fn compute(
                 .push((contribution.id.clone(), Leaf::Bool(decl.value)));
         }
     }
-    groups
+    let mut records: Vec<(FieldOverride, bool)> = groups
         .into_iter()
         .filter_map(|((field, tier), entries)| {
-            let (winner, last) = entries.last()?.clone();
-            let effective = match last {
-                Leaf::Logs(_) => entries.iter().fold(
-                    OutputLogsSplit::default(),
-                    |mut acc, (_, leaf)| {
-                        if let Leaf::Logs(split) = leaf {
-                            merge::Merge::merge(&mut acc, *split);
-                        }
-                        acc
-                    },
-                ),
-                _ => OutputLogsSplit::default(),
-            };
-            let effective = match &last {
-                Leaf::Logs(_) => Leaf::Logs(effective),
-                other => other.clone(),
-            };
-            let mut overridden: Vec<ContributorId> = Vec::new();
-            for (id, leaf) in &entries {
-                if leaf.differs_from(&effective) && !overridden.contains(id) {
-                    overridden.push(id.clone());
-                }
-            }
-            overridden.retain(|id| id != &winner);
-            if overridden.is_empty() {
-                return None;
-            }
-            let masked_by_explicit = masks.masks(&field, tier);
-            Some(FieldOverride {
-                root: root.clone(),
-                field,
+            let found = decide(&entries)?;
+            let masked_by_explicit = masks.masks(
+                &field,
                 tier,
-                winner,
-                overridden,
-                masked_by_explicit,
-            })
+                found.winner_is_dict,
+                found.logs_facets,
+            );
+            Some((
+                FieldOverride {
+                    root: root.clone(),
+                    field,
+                    tier,
+                    winner: found.winner,
+                    overridden: found.overridden,
+                    masked_by_explicit,
+                },
+                found.winner_is_dict,
+            ))
         })
-        .collect()
+        .collect();
+    // A nested `meta` record is stale when a proper ancestor ends up as a
+    // non-dictionary value: the nested keys are not in the composed result.
+    let scalar_ancestors: Vec<Vec<String>> = records
+        .iter()
+        .filter_map(|(record, is_dict)| match &record.field {
+            FieldPath::Meta(path) if !is_dict => Some(path.clone()),
+            _ => None,
+        })
+        .collect();
+    records.retain(|(record, _)| match &record.field {
+        FieldPath::Meta(path) => !scalar_ancestors.iter().any(|ancestor| {
+            path.len() > ancestor.len() && path.starts_with(ancestor)
+        }),
+        _ => true,
+    });
+    records.into_iter().map(|(record, _)| record).collect()
+}
+
+struct Decided {
+    winner: ContributorId,
+    overridden: Vec<ContributorId>,
+    winner_is_dict: bool,
+    logs_facets: (bool, bool),
+}
+
+/// The winner and overridden contributors of one field. `entries` are in
+/// composition order.
+fn decide(entries: &[(ContributorId, Leaf)]) -> Option<Decided> {
+    let (last_id, last) = entries.last()?;
+    if let Leaf::Logs(_) = last {
+        return decide_logs(entries);
+    }
+    let mut overridden: Vec<ContributorId> = Vec::new();
+    for (id, leaf) in entries {
+        if leaf.differs_from(last) && !overridden.contains(id) {
+            overridden.push(id.clone());
+        }
+    }
+    overridden.retain(|id| id != last_id);
+    if overridden.is_empty() {
+        return None;
+    }
+    Some(Decided {
+        winner: last_id.clone(),
+        overridden,
+        winner_is_dict: matches!(last, Leaf::DictNode),
+        logs_facets: (false, false),
+    })
+}
+
+/// `output_logs` facets (`new`, `cached`) are separate leaves: a contributor is
+/// overridden when it set a facet that a later one set differently, and the
+/// winner is the last contributor that set an overridden facet.
+fn decide_logs(entries: &[(ContributorId, Leaf)]) -> Option<Decided> {
+    type Facet =
+        fn(&OutputLogsSplit) -> Option<omni_task_output_logs::LogsDisplay>;
+    let facets: [Facet; 2] = [|s| s.new, |s| s.cached];
+    let mut flags = [false; 2];
+    let mut winner: Option<usize> = None;
+    let mut overridden: Vec<ContributorId> = Vec::new();
+    for (slot, facet) in facets.iter().enumerate() {
+        let setters: Vec<(usize, &ContributorId, _)> = entries
+            .iter()
+            .enumerate()
+            .filter_map(|(index, (id, leaf))| match leaf {
+                Leaf::Logs(split) => {
+                    facet(split).map(|value| (index, id, value))
+                }
+                _ => None,
+            })
+            .collect();
+        let Some(&(last_index, last_id, last_value)) = setters.last() else {
+            continue;
+        };
+        for (_, id, value) in &setters {
+            if *value != last_value
+                && *id != last_id
+                && !overridden.contains(id)
+            {
+                overridden.push((*id).clone());
+            }
+            if *value != last_value && *id != last_id {
+                flags[slot] = true;
+            }
+        }
+        if flags[slot] {
+            winner = Some(winner.map_or(last_index, |w| w.max(last_index)));
+        }
+    }
+    let winner = entries[winner?].0.clone();
+    overridden.retain(|id| id != &winner);
+    if overridden.is_empty() {
+        return None;
+    }
+    Some(Decided {
+        winner,
+        overridden,
+        winner_is_dict: false,
+        logs_facets: (flags[0], flags[1]),
+    })
 }

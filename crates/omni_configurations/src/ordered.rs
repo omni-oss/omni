@@ -328,8 +328,8 @@ fn guard(contribution: &Contribution) -> Result<(), ComposeError> {
     if let Some(tasks) = &layer.tasks {
         g.dict_value("tasks", tasks)?;
         for (name, task) in tasks.as_map() {
-            if let TaskLayer::LongForm(task) = task {
-                g.task(name, task)?;
+            for declaration in task.long_forms() {
+                g.task(name, declaration)?;
             }
         }
     }

@@ -363,6 +363,120 @@ fn applied_values_are_compared_among_themselves() {
     assert!(masked[0].masked_by_explicit);
 }
 
+fn nested(name: &str, n: &str) -> Contribution {
+    meta(name, &format!(r#"{{"n":{n}}}"#))
+}
+
+#[test]
+fn an_explicit_dictionary_replace_at_the_exact_path_masks_it() {
+    let all = overrides(
+        &["a", "b"],
+        vec![nested("a", r#"{"a":1}"#), nested("b", "5")],
+        vec![explicit(r#"{"name":"w","meta":{"n":{"replace":{}}}}"#)],
+    );
+    assert!(find(&all, &meta_path(&["n"])).unwrap().masked_by_explicit);
+}
+
+#[test]
+fn an_explicit_meta_replace_masks_every_meta_override() {
+    let all = overrides(
+        &["a", "b"],
+        vec![nested("a", "1"), nested("b", "2")],
+        vec![explicit(r#"{"name":"w","meta":{"replace":{}}}"#)],
+    );
+    assert!(all[0].masked_by_explicit);
+}
+
+#[test]
+fn an_explicit_dictionary_replaces_a_scalar_winner_but_merges_into_a_dictionary()
+ {
+    let scalar = overrides(
+        &["a", "b"],
+        vec![nested("a", "1"), nested("b", "5")],
+        vec![explicit(r#"{"name":"w","meta":{"n":{"x":1}}}"#)],
+    );
+    assert!(
+        find(&scalar, &meta_path(&["n"]))
+            .unwrap()
+            .masked_by_explicit
+    );
+    let dict = overrides(
+        &["a", "b"],
+        vec![nested("a", "1"), nested("b", r#"{"x":1}"#)],
+        vec![explicit(r#"{"name":"w","meta":{"n":{"y":1}}}"#)],
+    );
+    assert!(!find(&dict, &meta_path(&["n"])).unwrap().masked_by_explicit);
+}
+
+#[test]
+fn a_nested_record_is_dropped_when_a_later_contributor_makes_the_parent_a_scalar()
+ {
+    let all = overrides(
+        &["a", "b", "c"],
+        vec![
+            nested("a", r#"{"x":1}"#),
+            nested("b", r#"{"x":2}"#),
+            nested("c", "5"),
+        ],
+        vec![],
+    );
+    assert_eq!(all.len(), 1);
+    assert_eq!(all[0].field, meta_path(&["n"]));
+    assert_eq!(all[0].overridden, ids(&["a", "b"]));
+}
+
+#[test]
+fn output_logs_masks_need_every_overridden_facet_set_explicitly() {
+    let pair = || {
+        vec![
+            logs("a", r#"{"new":"all"}"#),
+            logs("b", r#"{"new":"never"}"#),
+        ]
+    };
+    let other_facet = overrides(
+        &["a", "b"],
+        pair(),
+        vec![explicit(
+            r#"{"name":"w","output_logs":{"cached":"failed"}}"#,
+        )],
+    );
+    assert!(!other_facet[0].masked_by_explicit);
+    let same_facet = overrides(
+        &["a", "b"],
+        pair(),
+        vec![explicit(r#"{"name":"w","output_logs":{"new":"failed"}}"#)],
+    );
+    assert!(same_facet[0].masked_by_explicit);
+}
+
+#[test]
+fn the_output_logs_winner_is_the_last_contributor_that_set_an_overridden_facet()
+{
+    let all = overrides(
+        &["a", "b", "c"],
+        vec![
+            logs("a", r#"{"new":"all"}"#),
+            logs("b", r#"{"new":"never"}"#),
+            logs("c", r#"{"cached":"failed"}"#),
+        ],
+        vec![],
+    );
+    assert_eq!(all.len(), 1);
+    assert_eq!(all[0].winner, id("b"));
+    assert_eq!(all[0].overridden, ids(&["a"]));
+}
+
+#[test]
+fn an_explicit_tasks_replace_masks_task_cache_enabled_overrides() {
+    let task = |n, v| with_enabled(n, EnabledScope::Task("t".into()), v, None);
+    let all = overrides(
+        &["a", "b"],
+        vec![task("a", true), task("b", false)],
+        vec![explicit(r#"{"name":"w","tasks":{"replace":{"t":"x"}}}"#)],
+    );
+    assert!(all[0].masked_by_explicit);
+}
+
 #[test]
 fn records_never_carry_values() {
     let all = overrides(

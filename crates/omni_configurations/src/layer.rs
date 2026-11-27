@@ -373,6 +373,18 @@ impl Merge for TaskLayer {
 }
 
 impl TaskLayer {
+    /// Every long-form declaration of this task: the form itself, or each
+    /// declaration of a composed task.
+    pub(crate) fn long_forms(&self) -> Vec<&TaskLongFormLayer> {
+        match self {
+            TaskLayer::LongForm(task) => vec![task.as_ref()],
+            TaskLayer::Composed(declarations) => {
+                declarations.0.iter().map(|d| d.task.as_ref()).collect()
+            }
+            TaskLayer::ShortForm(_) | TaskLayer::Alias(_) => Vec::new(),
+        }
+    }
+
     /// Whether any declaration of this task sets its own `cache.enabled`.
     pub(crate) fn declares_cache_enabled(&self) -> bool {
         let sets = |task: &TaskLongFormLayer| {
