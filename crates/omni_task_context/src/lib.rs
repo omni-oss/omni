@@ -4,6 +4,7 @@ mod aliases;
 mod cache_info;
 pub mod cache_status;
 mod default_provider;
+pub mod effective_task;
 mod task_context;
 mod traits;
 

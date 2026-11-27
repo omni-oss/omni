@@ -221,6 +221,7 @@ where
                     env_vars: info.task.env_vars,
                     input_env_keys: info.task.input_env_keys,
                     args: info.task.args,
+                    effective_digest: info.task.effective_digest,
                 })
                 .collect::<Vec<_>>();
 
@@ -464,7 +465,16 @@ mod tests {
             cache_output_files: Default::default(),
             cache_logs: false,
             args: Default::default(),
+            env: Default::default(),
         }
+    }
+
+    /// The digest the provider would compute for this node and info.
+    fn digest_of(
+        node: &TaskExecutionNode,
+        info: Option<&CacheInfo>,
+    ) -> omni_hasher::impls::DefaultHash {
+        omni_task_context::effective_task::build(node, info, None).digest()
     }
 
     fn eligible(node: &TaskExecutionNode, info: Option<CacheInfo>) -> bool {
@@ -472,6 +482,8 @@ mod tests {
             node,
             dependency_hashes: vec![],
             env_vars: Arc::new(Default::default()),
+            args: Default::default(),
+            effective_digest: digest_of(node, info.as_ref()),
             cache_info: info.map(Cow::Owned),
             output_logs: None,
             template_context: Default::default(),
@@ -791,6 +803,8 @@ mod tests {
                     node,
                     dependency_hashes: vec![],
                     env_vars: Arc::new(Default::default()),
+                    args: Default::default(),
+                    effective_digest: digest_of(node, Some(&info(true))),
                     cache_info: Some(Cow::Owned(info(true))),
                     output_logs: None,
                     template_context: Default::default(),
@@ -837,6 +851,8 @@ mod tests {
                     node,
                     dependency_hashes: vec![],
                     env_vars: Arc::new(Default::default()),
+                    args: Default::default(),
+                    effective_digest: digest_of(node, Some(&info(true))),
                     cache_info: Some(Cow::Owned(info(true))),
                     output_logs: None,
                     template_context: Default::default(),
@@ -905,6 +921,8 @@ mod tests {
                     node,
                     dependency_hashes: vec![],
                     env_vars: Arc::new(Default::default()),
+                    args: Default::default(),
+                    effective_digest: digest_of(node, Some(&info(true))),
                     cache_info: Some(Cow::Owned(info(true))),
                     output_logs: None,
                     template_context: Default::default(),
@@ -962,6 +980,8 @@ mod tests {
                     node,
                     dependency_hashes: vec![],
                     env_vars: Arc::new(Default::default()),
+                    args: Default::default(),
+                    effective_digest: digest_of(node, Some(&info(true))),
                     cache_info: Some(Cow::Owned(info(true))),
                     output_logs: None,
                     template_context: Default::default(),
@@ -1000,6 +1020,8 @@ mod tests {
             node,
             dependency_hashes: vec![],
             env_vars: Arc::new(Default::default()),
+            args: Cow::Owned(info.args.clone()),
+            effective_digest: digest_of(node, Some(&info)),
             cache_info: Some(Cow::Owned(info)),
             output_logs: None,
             template_context: Default::default(),
@@ -1049,6 +1071,374 @@ mod tests {
             };
             assert!(eligible(&node(false), Some(on)), "{source:?}");
             assert!(!eligible(&node(false), Some(off)), "{source:?}");
+        }
+    }
+
+    // RFC 0024 F06.3 proof: the final key must follow the effective task, not
+    // only the raw text the collector hashes today. The helpers take the digest
+    // from the two paths that exist for one task context: the dry run in this
+    // module, and the hybrid store's own write path (the same `collect` that
+    // lookup and stale pruning use).
+    mod effective_key {
+        use omni_cache::{
+            NewCacheInfo, TaskExecutionCacheStore as _,
+            impls::{HybridTaskExecutionCacheStore, RemoteConfig},
+        };
+        use omni_hasher::impls::DefaultHash;
+        use omni_retry_config::RetryConfiguration;
+
+        use super::*;
+        use crate::cache_manager::{CacheManager, TaskResultContext};
+
+        struct Fixture {
+            temp: tempfile::TempDir,
+        }
+
+        impl Fixture {
+            fn new() -> Self {
+                let temp = tempfile::tempdir().unwrap();
+                std::fs::create_dir_all(temp.path().join("p")).unwrap();
+                Self { temp }
+            }
+
+            fn node(
+                &self,
+                retry: serde_json::Value,
+                enabled: TeraExprBoolean,
+            ) -> TaskExecutionNode {
+                TaskExecutionNode::new(
+                    TaskKey::new("p", "t"),
+                    Some(CommandConfig::Shell("echo".to_string())),
+                    None,
+                    self.temp.path().join("p"),
+                    vec![],
+                    enabled,
+                    false,
+                    false,
+                    serde_json::from_value::<RetryConfiguration>(retry)
+                        .unwrap(),
+                )
+            }
+
+            fn plain_node(&self) -> TaskExecutionNode {
+                self.node(serde_json::json!({}), TeraExprBoolean::Boolean(true))
+            }
+
+            /// The digest the dry run reports for this context.
+            async fn dry_run_digest(
+                &self,
+                ctx: &TaskContext<'_>,
+            ) -> DefaultHash {
+                let manager = CacheManager::<
+                    SpyStore,
+                    system_traits::impls::RealSys,
+                >::builder()
+                .store(SpyStore::default())
+                .dry_run(true)
+                .sys(system_traits::impls::RealSys)
+                .root_dir(self.temp.path().to_path_buf())
+                .cache_dir(self.temp.path().join("dry-cache"))
+                .build();
+                let result = TaskResultContext::Completed {
+                    task_context: ctx,
+                    result: omni_process::TaskChildProcessResult::new(
+                        ctx.node.clone(),
+                        0u32,
+                        std::time::Duration::ZERO,
+                        None::<bytes::Bytes>,
+                    ),
+                    tries: 1,
+                };
+                let results = [result];
+                let hashes = manager.cache_results(&results).await.unwrap();
+                hashes.get("p", "t").expect("a digest").digest
+            }
+
+            /// The digest the real store writes under for this context.
+            async fn stored_digest(
+                &self,
+                ctx: &TaskContext<'_>,
+            ) -> DefaultHash {
+                let store = HybridTaskExecutionCacheStore::new(
+                    self.temp.path().join("real-cache"),
+                    self.temp.path(),
+                    RemoteConfig::new_disabled(),
+                );
+                let task = ctx.execution_info().expect("cache info");
+                let hashes = store
+                    .cache_many(&[NewCacheInfo::new(
+                        task,
+                        None,
+                        std::time::Duration::ZERO,
+                        0,
+                        1,
+                    )])
+                    .await
+                    .unwrap();
+                hashes[0].digest
+            }
+        }
+
+        fn eligible_info() -> CacheInfo {
+            CacheInfo {
+                key_defaults: false,
+                ..info(true)
+            }
+        }
+
+        /// A changed effective setting that no ordinary input records: the
+        /// task's retry policy.
+        #[tokio::test]
+        async fn a_retry_policy_change_changes_the_dry_run_key() {
+            let f = Fixture::new();
+            let (plain, retried) = (
+                f.plain_node(),
+                f.node(
+                    serde_json::json!({"max_retries": 3}),
+                    TeraExprBoolean::Boolean(true),
+                ),
+            );
+            let a = f.dry_run_digest(&context(&plain, eligible_info())).await;
+            let b = f.dry_run_digest(&context(&retried, eligible_info())).await;
+            assert_ne!(
+                a, b,
+                "retry is effective semantics and must reach the key"
+            );
+        }
+
+        #[tokio::test]
+        async fn an_enabled_expression_change_changes_the_dry_run_key() {
+            let f = Fixture::new();
+            let (on, conditional) = (
+                f.plain_node(),
+                f.node(
+                    serde_json::json!({}),
+                    TeraExprBoolean::Expr("{{ env.CI }}".into()),
+                ),
+            );
+            let a = f.dry_run_digest(&context(&on, eligible_info())).await;
+            let b = f
+                .dry_run_digest(&context(&conditional, eligible_info()))
+                .await;
+            assert_ne!(
+                a, b,
+                "enabled is effective semantics and must reach the key"
+            );
+        }
+
+        /// The same change through the store's own path, which lookup, write
+        /// and stale pruning share.
+        #[tokio::test]
+        async fn a_retry_policy_change_changes_the_stores_key() {
+            let f = Fixture::new();
+            let (plain, retried) = (
+                f.plain_node(),
+                f.node(
+                    serde_json::json!({"max_retries": 3}),
+                    TeraExprBoolean::Boolean(true),
+                ),
+            );
+            let a = f.stored_digest(&context(&plain, eligible_info())).await;
+            let b = f.stored_digest(&context(&retried, eligible_info())).await;
+            assert_ne!(a, b, "the store's collect must see the effective task");
+        }
+
+        /// Parity: for the same task context the dry run and the store agree
+        /// on the key. Holds on the base (neither sees the effective task) and
+        /// must keep holding when both do; the retried variant is the case a
+        /// half-plumbed change would break.
+        #[tokio::test]
+        async fn the_dry_run_and_the_store_agree_on_the_key() {
+            let f = Fixture::new();
+            let retried = f.node(
+                serde_json::json!({"max_retries": 3}),
+                TeraExprBoolean::Boolean(true),
+            );
+            for node in [f.plain_node(), retried] {
+                let ctx = context(&node, eligible_info());
+                assert_eq!(
+                    f.dry_run_digest(&ctx).await,
+                    f.stored_digest(&ctx).await
+                );
+            }
+        }
+
+        /// A context that returns the same configured task info and, per run,
+        /// the invocation overrides (`omni run t --arg k=v`).
+        struct ArgsCtx {
+            info: CacheInfo,
+            overrides: maps::UnorderedMap<String, serde_json::Value>,
+        }
+
+        impl omni_task_context::Context for ArgsCtx {
+            type Error = std::io::Error;
+
+            fn get_task_env_vars(
+                &self,
+                _: &TaskExecutionNode,
+            ) -> Result<
+                Option<std::sync::Arc<omni_task_context::EnvVars>>,
+                Self::Error,
+            > {
+                Ok(Some(Default::default()))
+            }
+
+            fn get_task_meta_config(
+                &self,
+                _: &str,
+                _: &str,
+            ) -> Option<&omni_configurations::MetaConfiguration> {
+                None
+            }
+
+            fn get_project_meta_config(
+                &self,
+                _: &str,
+            ) -> Option<&omni_configurations::MetaConfiguration> {
+                None
+            }
+
+            fn get_cache_info(&self, _: &str, _: &str) -> Option<&CacheInfo> {
+                Some(&self.info)
+            }
+
+            fn get_output_logs(
+                &self,
+                _: &str,
+                _: &str,
+            ) -> Option<&omni_task_output_logs::OutputLogsConfiguration>
+            {
+                None
+            }
+
+            fn get_task_override_args(
+                &self,
+                _: &str,
+                _: &str,
+            ) -> Option<&maps::UnorderedMap<String, serde_json::Value>>
+            {
+                Some(&self.overrides)
+            }
+        }
+
+        struct NoHashes;
+
+        impl omni_task_context::TaskHashProvider for NoHashes {
+            fn get_task_hash(
+                &self,
+                _: omni_types::TaskKeyRef<'_>,
+            ) -> Option<DefaultHash> {
+                None
+            }
+        }
+
+        fn arg_override(
+            value: Option<&str>,
+        ) -> maps::UnorderedMap<String, serde_json::Value> {
+            let mut map = maps::UnorderedMap::default();
+            if let Some(value) = value {
+                map.insert("k".to_string(), serde_json::json!(value));
+            }
+            map
+        }
+
+        /// FAILS on the base (Q1): `omni run t --arg k=v1` then `--arg k=v2`
+        /// merges the override into the template context but not into the key,
+        /// which sees only the configured `CacheInfo.args`. The second run
+        /// replays the first result: an existing wrong hit.
+        #[tokio::test]
+        async fn a_changed_invocation_arg_changes_the_key() {
+            let f = Fixture::new();
+            let node = f.plain_node();
+            let digest = |value: Option<&str>| {
+                let provider =
+                    omni_task_context::DefaultTaskContextProvider::new(
+                        NoHashes,
+                        ArgsCtx {
+                            info: eligible_info(),
+                            overrides: arg_override(value),
+                        },
+                    );
+                let f = &f;
+                let node = &node;
+                async move {
+                    use omni_task_context::TaskContextProvider as _;
+                    let ctx = provider
+                        .get_task_context(node, false)
+                        .expect("a context");
+                    (f.dry_run_digest(&ctx).await, f.stored_digest(&ctx).await)
+                }
+            };
+            let none = digest(None).await;
+            let v1 = digest(Some("v1")).await;
+            let v2 = digest(Some("v2")).await;
+            assert_ne!(v1.0, v2.0, "dry run: the merged args must be keyed");
+            assert_ne!(v1.1, v2.1, "store: the merged args must be keyed");
+            assert_ne!(none.1, v1.1, "an override is a different invocation");
+        }
+
+        /// Guard: with no override the key is today's key (hash project parity
+        /// holds), and a repeated identical override is stable.
+        #[tokio::test]
+        async fn the_same_invocation_args_keep_the_key() {
+            let f = Fixture::new();
+            let node = f.plain_node();
+            let digest = |value: Option<&str>| {
+                let provider =
+                    omni_task_context::DefaultTaskContextProvider::new(
+                        NoHashes,
+                        ArgsCtx {
+                            info: eligible_info(),
+                            overrides: arg_override(value),
+                        },
+                    );
+                let f = &f;
+                let node = &node;
+                async move {
+                    use omni_task_context::TaskContextProvider as _;
+                    let ctx = provider
+                        .get_task_context(node, false)
+                        .expect("a context");
+                    f.dry_run_digest(&ctx).await
+                }
+            };
+            assert_eq!(digest(Some("v1")).await, digest(Some("v1")).await);
+            assert_eq!(digest(None).await, digest(None).await);
+            // No override: the key is the one built from the configured
+            // `CacheInfo.args` alone, which `hash project` also uses.
+            assert_eq!(
+                digest(None).await,
+                f.dry_run_digest(&context(&node, eligible_info())).await,
+            );
+        }
+
+        /// Guards (pass on the base and must keep passing): presentation and
+        /// provenance never reach the key, identical semantics keep it.
+        #[tokio::test]
+        async fn presentation_only_differences_keep_the_key() {
+            let f = Fixture::new();
+            let node = f.plain_node();
+            let reference =
+                f.dry_run_digest(&context(&node, eligible_info())).await;
+            for source in SOURCES {
+                let info = CacheInfo {
+                    cache_enabled_source: source,
+                    ..eligible_info()
+                };
+                assert_eq!(
+                    f.dry_run_digest(&context(&node, info)).await,
+                    reference,
+                    "{source:?}"
+                );
+            }
+            let remote_off = CacheInfo {
+                cache_remote: false,
+                ..eligible_info()
+            };
+            assert_eq!(
+                f.dry_run_digest(&context(&node, remote_off)).await,
+                reference
+            );
         }
     }
 }

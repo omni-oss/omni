@@ -42,7 +42,7 @@ display spelling, never an identity.
   executed.
 - The cache key contributes the identity through
   `identity_leaf_v1` in `crates/omni_collector/src/identity_leaf.rs`
-  (length-prefixed project and task bytes). Changing that recipe invalidates every task cache; version it and
+  (length-prefixed project and task bytes). Changing that encoding invalidates every task cache; version it and
   add pinned vectors.
 - Registries that must route by an object rather than a name (for example the
   terminal presenter's streams) use a unique handle, not a label.

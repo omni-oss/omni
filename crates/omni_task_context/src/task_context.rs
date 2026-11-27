@@ -1,5 +1,6 @@
 use std::{borrow::Cow, sync::Arc};
 
+use maps::Map;
 use omni_config_types::TeraExprBoolean;
 use omni_core::TaskExecutionNode;
 use omni_hasher::impls::DefaultHash;
@@ -13,6 +14,13 @@ pub struct TaskContext<'a> {
     pub dependency_hashes: Vec<DefaultHash>,
     pub env_vars: Arc<EnvVars>,
     pub cache_info: Option<Cow<'a, CacheInfo>>,
+    /// The configured args overlaid with the invocation overrides: the set the
+    /// template context renders and the cache key records.
+    pub args: Cow<'a, Map<String, serde_json::Value>>,
+    /// The digest of the task's effective definition, built once per task from
+    /// the **unexpanded** rules. Equal digests do not mean equal expansions;
+    /// the collector hashes the expanded files and output globs itself.
+    pub effective_digest: DefaultHash,
     pub output_logs: Option<omni_task_output_logs::OutputLogsConfiguration>,
     pub template_context: omni_tera::Context,
 }

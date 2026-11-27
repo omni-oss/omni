@@ -64,6 +64,11 @@ pub struct TaskExecutionNode {
     project_dir: PathBuf,
     full_task_name: String,
     dependencies: Vec<TaskKey>,
+    /// The configured `with` siblings, resolved to canonical tasks. Not a
+    /// scheduling input: it is the whole configured set whatever the selection
+    /// filtered out, so a cache key can follow the definition. The report
+    /// conversion ignores it, which keeps the report formats unchanged.
+    siblings: Vec<TaskKey>,
     enabled: TeraExprBoolean,
     interactive: bool,
     persistent: bool,
@@ -130,11 +135,20 @@ impl TaskExecutionNode {
             task_retry_exec,
             project_dir: project_dir.into(),
             dependencies,
+            siblings: vec![],
             enabled,
             interactive,
             persistent,
             retry,
         }
+    }
+
+    /// Sets the configured `with` siblings. Every builder of an executable
+    /// node that has configured siblings must call it; the synthetic `exec`
+    /// nodes have none.
+    pub fn with_siblings(mut self, siblings: Vec<TaskKey>) -> Self {
+        self.siblings = siblings;
+        self
     }
 }
 
@@ -176,6 +190,12 @@ impl TaskExecutionNode {
     /// duplicates kept.
     pub fn dependencies(&self) -> &[TaskKey] {
         &self.dependencies
+    }
+
+    /// The configured `with` siblings, resolved to canonical tasks, in
+    /// declaration order. Independent of which tasks were selected.
+    pub fn siblings(&self) -> &[TaskKey] {
+        &self.siblings
     }
 
     pub fn enabled(&self) -> &TeraExprBoolean {
@@ -608,6 +628,59 @@ fn add_references(
     Ok(())
 }
 
+/// The canonical tasks a task's `references` resolve to, without building the
+/// task graph: the same set the graph builder turns into edges of one kind
+/// (aliases collapse to the canonical task, `^name` walks upstream). Used where
+/// a node is built outside the graph (`--ignore-dependencies`) and still has to
+/// carry its configured siblings. A name that resolves to no task is skipped
+/// here; only the graph build reports it.
+pub fn resolve_reference_keys(
+    project_graph: &ProjectGraph,
+    project: &Project,
+    references: &[crate::TaskDependency],
+) -> Result<Vec<TaskKey>, TaskExecutionGraphError> {
+    let mut keys: Vec<TaskKey> = Vec::with_capacity(references.len());
+    let mut push = |resolved: ResolvedReference<'_>| {
+        let key = TaskKey::new(resolved.project, resolved.task);
+        if !keys.contains(&key) {
+            keys.push(key);
+        }
+    };
+    for reference in references {
+        match reference {
+            crate::TaskDependency::Own { task } => {
+                if let Some(resolved) = resolve_in(project, task) {
+                    push(resolved);
+                }
+            }
+            crate::TaskDependency::ExplicitProject {
+                project: target,
+                task,
+            } => {
+                if let Some(resolved) = project_graph
+                    .get_project_by_name(target)
+                    .ok()
+                    .and_then(|p| resolve_in(p, task))
+                {
+                    push(resolved);
+                }
+            }
+            crate::TaskDependency::Upstream { task } => {
+                let mut found = vec![];
+                collect_upstream(
+                    project_graph,
+                    project,
+                    task,
+                    &mut found,
+                    &mut None,
+                )?;
+                found.into_iter().for_each(&mut push);
+            }
+        }
+    }
+    Ok(keys)
+}
+
 pub type BatchedExecutionPlan = Vec<Vec<TaskExecutionNode>>;
 
 macro_rules! filtered_graph {
@@ -723,6 +796,12 @@ impl TaskExecutionGraph {
         if edge_type == EdgeType::Dependency {
             let to_key = self.di_graph[to_idx].key.clone();
             self.di_graph[from_idx].dependencies.push(to_key);
+        } else {
+            let to_key = self.di_graph[to_idx].key.clone();
+            let siblings = &mut self.di_graph[from_idx].siblings;
+            if !siblings.contains(&to_key) {
+                siblings.push(to_key);
+            }
         }
 
         Ok(())
@@ -1720,12 +1799,19 @@ mod tests {
                     "project1",
                     &["project3#p3t1", "project1#shared-task-3"],
                 ),
-                node("sibling-2", "echo sibling-2", "project2"),
-                node("sibling-2.1", "echo sibling-2.1", "project2"),
-                node("sibling-3", "echo sibling-3", "project3"),
+                node_mut("sibling-2", "echo sibling-2", "project2", |n| {
+                    n.siblings = vec![TaskKey::new("project2", "sibling-2.1")]
+                }),
+                node_mut("sibling-2.1", "echo sibling-2.1", "project2", |n| {
+                    n.siblings = vec![TaskKey::new("project3", "sibling-3")]
+                }),
+                node_mut("sibling-3", "echo sibling-3", "project3", |n| {
+                    n.siblings = vec![TaskKey::new("project4", "sibling-4")]
+                }),
                 node("sibling-4", "echo sibling-4", "project4"),
                 node_mut("sibling-1", "echo sibling-1", "project1", |n| {
-                    n.persistent = true
+                    n.persistent = true;
+                    n.siblings = vec![TaskKey::new("project2", "sibling-2")]
                 }),
             ],
         ];
@@ -3448,6 +3534,114 @@ mod with_sibling_prerequisites_tests {
     fn sibling_reached_through_upstream_brings_its_prerequisite() {
         let g = app_with(|b| b.upstream_sibling("build-native"));
         assert_eq!(app_plan(&g), strs(PREREQ_FIRST));
+    }
+
+    fn sibling_keys(g: &TaskExecutionGraph, p: &str, t: &str) -> Vec<String> {
+        g.get_task_by_name(p, t)
+            .unwrap()
+            .siblings()
+            .iter()
+            .map(|k| k.label().into_string())
+            .collect()
+    }
+
+    /// The node carries the configured siblings: canonical, across projects,
+    /// through an alias and through `^`, and whatever the selection filtered.
+    #[test]
+    fn nodes_carry_the_configured_siblings_in_every_reference_form() {
+        let g =
+            app_with(|b| b.explicit_project_sibling("tool", "build-native"));
+        assert_eq!(sibling_keys(&g, "app", "t"), ["tool#build-native"]);
+        let g = app_with(|b| b.upstream_sibling("build-native"));
+        assert_eq!(sibling_keys(&g, "app", "t"), ["tool#build-native"]);
+        let aliases = TaskAliases::new(
+            [("native".to_string(), "build-native".to_string())]
+                .into_iter()
+                .collect::<OrderedMap<_, _>>(),
+        );
+        let g = build(vec![
+            project(
+                "app",
+                &["tool"],
+                TasksBuilder::new()
+                    .task("t", "x", |b| {
+                        b.explicit_project_sibling("tool", "native")
+                    })
+                    .build(),
+            ),
+            project("tool", &[], tool_tasks()).with_aliases(aliases),
+        ]);
+        assert_eq!(sibling_keys(&g, "app", "t"), ["tool#build-native"]);
+        // A task with no siblings has none; the reverse edge adds none.
+        assert!(sibling_keys(&g, "tool", "build-native").is_empty());
+    }
+
+    #[test]
+    fn a_filtered_out_sibling_is_still_on_the_selected_node() {
+        let g = build(vec![project(
+            "proj",
+            &[],
+            TasksBuilder::new()
+                .task("t", "x", |b| b.own_sibling("helper"))
+                .task("helper", "x", |b| b)
+                .build(),
+        )]);
+        let plan = g
+            .get_batched_execution_plan(|n| Ok(n.task_name() == "t"))
+            .unwrap();
+        let t = plan
+            .iter()
+            .flatten()
+            .find(|n| n.task_name() == "t")
+            .unwrap();
+        assert_eq!(
+            t.siblings().iter().map(|k| k.task()).collect::<Vec<_>>(),
+            ["helper"]
+        );
+    }
+
+    /// The graphless resolver (the `--ignore-dependencies` path) agrees with
+    /// the sibling set the graph builder records.
+    #[test]
+    fn resolve_reference_keys_matches_the_graph_siblings() {
+        let aliases = TaskAliases::new(
+            [("native".to_string(), "build-native".to_string())]
+                .into_iter()
+                .collect::<OrderedMap<_, _>>(),
+        );
+        let projects = vec![
+            project(
+                "app",
+                &["tool"],
+                TasksBuilder::new()
+                    .task("t", "x", |b| {
+                        b.explicit_project_sibling("tool", "native")
+                            .upstream_sibling("setup")
+                            .own_sibling("local")
+                            .own_sibling("local")
+                    })
+                    .task("local", "x", |b| b)
+                    .build(),
+            ),
+            project("tool", &[], tool_tasks()).with_aliases(aliases),
+        ];
+        let project_graph = ProjectGraph::from_projects(projects).unwrap();
+        let g = project_graph.get_task_execution_graph().unwrap();
+        let app = project_graph.get_project_by_name("app").unwrap();
+        let mut resolved = resolve_reference_keys(
+            &project_graph,
+            app,
+            &app.tasks["t"].siblings,
+        )
+        .unwrap()
+        .iter()
+        .map(|k| k.label().into_string())
+        .collect::<Vec<_>>();
+        let mut recorded = sibling_keys(&g, "app", "t");
+        resolved.sort();
+        recorded.sort();
+        assert_eq!(resolved, recorded);
+        assert_eq!(resolved.len(), 3, "{resolved:?}");
     }
 
     #[test]

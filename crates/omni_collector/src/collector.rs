@@ -29,7 +29,16 @@ use tracing::Level;
 use crate::{
     error::{Error, ErrorInner},
     identity_leaf::identity_leaf_v1,
+    key_leaves::{cache_key_version_leaf, effective_task_leaf_v1},
 };
+
+/// The version of the whole cache key: its inputs and how they are combined.
+///
+/// A change to **any** key input or to the construction (a leaf, an order, a
+/// collection rule, what the execution info contributes) bumps this constant in
+/// the same change, besides any leaf version the change touches. Every bump is
+/// a cold start; see `docs/patterns/cache-keys.md`.
+pub const CACHE_KEY_VERSION: u32 = 1;
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct CollectConfig {
@@ -55,6 +64,10 @@ pub struct ProjectTaskInfo<'a> {
     pub env_vars: &'a Map<String, String>,
     pub dependency_digests: &'a [DefaultHash],
     pub args: &'a Map<String, serde_json::Value>,
+    /// The digest of the task's effective definition (F06.3). Mandatory: it is
+    /// in every key, whatever the input collection flags and
+    /// `cache.key.defaults` say, so a constructor cannot leave it out.
+    pub effective_digest: DefaultHash,
 }
 
 #[auto_impl]
@@ -86,6 +99,7 @@ struct HashInput<'a> {
     pub env_vars: &'a Map<String, String>,
     pub dependency_digests: &'a [DefaultHash],
     pub args: &'a Map<String, serde_json::Value>,
+    pub effective_digest: DefaultHash,
 }
 
 struct Holder<'a> {
@@ -339,6 +353,12 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
             identity_leaf_v1(hash_input.project_name, hash_input.task_name)
                 .map_err(|e| ErrorInner::Unknown(eyre::eyre!(e)))?,
         );
+
+        // The last two leaves, in this order, after the identity leaf: the key
+        // version (any change to the key's inputs or construction bumps
+        // `CACHE_KEY_VERSION`), then the effective task.
+        tree.insert(cache_key_version_leaf(CACHE_KEY_VERSION));
+        tree.insert(effective_task_leaf_v1(&hash_input.effective_digest));
 
         tree.commit();
 
@@ -765,6 +785,7 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
                         cached_output_files_exclude_glob: &holder
                             .output_files_exclude_glob,
                         args: holder.task.args,
+                        effective_digest: holder.task.effective_digest,
                     })
                     .await?;
 
@@ -1133,6 +1154,7 @@ mod tests {
         env_vars: Map<String, String>,
         dependency_digests: Vec<DefaultHash>,
         args: Map<String, serde_json::Value>,
+        effective_digest: DefaultHash,
     }
 
     impl Project {
@@ -1149,6 +1171,9 @@ mod tests {
                 env_vars: Map::default(),
                 dependency_digests: vec![],
                 args: Map::default(),
+                effective_digest:
+                    crate::effective_task::EffectiveTaskConfig::default()
+                        .digest(),
             }
         }
 
@@ -1167,6 +1192,7 @@ mod tests {
                 env_vars: &self.env_vars,
                 dependency_digests: &self.dependency_digests,
                 args: &self.args,
+                effective_digest: self.effective_digest,
             }
         }
     }
@@ -1248,13 +1274,14 @@ mod tests {
     }
 
     /// Test-only copy of `Collector::get_digest` with the identity leaf
-    /// supplied by the caller, so one recipe can be evaluated with the legacy
+    /// supplied by the caller, so one key can be evaluated with the legacy
     /// joined-label leaf and with the v1 leaf over identical other inputs.
-    async fn recipe_digest(
+    async fn reference_digest(
         collector: &Collector<'_>,
         info: &ProjectTaskInfo<'_>,
         resolved_inputs: &[OmniPath],
         identity_leaf: DefaultHash,
+        trailing_leaves: &[DefaultHash],
     ) -> DefaultHash {
         let mut tree = collector
             .dir_hasher
@@ -1335,8 +1362,32 @@ mod tests {
         }
 
         tree.insert(identity_leaf);
+        for leaf in trailing_leaves {
+            tree.insert(*leaf);
+        }
         tree.commit();
         tree.root().expect("root")
+    }
+
+    /// RFC 0024 F06.3 (decision D1): the cache key version leaf,
+    /// `BLAKE3(b"omni.cache-key\0" || u32_le(version))`, inserted after the
+    /// identity leaf and before the effective-task leaf. Test-only oracle,
+    /// independent of the production leaf functions.
+    fn cache_key_version_leaf_v1(version: u32) -> DefaultHash {
+        omni_hasher::impls::hash_parts([
+            b"omni.cache-key\0".as_slice(),
+            version.to_le_bytes().as_slice(),
+        ])
+    }
+
+    /// RFC 0024 F06.3, as a test-only oracle independent of the production
+    /// leaf function: `b"omni.effective-task\0" || 0x01 || digest(32)`. It sits
+    /// after the identity leaf, so every earlier leaf keeps its position.
+    fn effective_leaf_v1(effective_digest: DefaultHash) -> DefaultHash {
+        omni_hasher::impls::hash_parts([
+            b"omni.effective-task\0\x01".as_slice(),
+            effective_digest.as_slice(),
+        ])
     }
 
     /// An ordinary undecorated task with controlled inputs, env, args, output
@@ -1360,8 +1411,12 @@ mod tests {
 
     struct Digests {
         collector: DefaultHash,
-        legacy_recipe: DefaultHash,
-        v1_recipe: DefaultHash,
+        legacy_key: DefaultHash,
+        /// The identity-v1 key without the F06.3 trailing leaves.
+        v1_key: DefaultHash,
+        /// The v1 key plus the cache key version leaf and the effective leaf
+        /// of the project's effective digest, from the test-only oracle.
+        final_key: DefaultHash,
     }
 
     async fn digests_for(
@@ -1398,14 +1453,27 @@ mod tests {
 
         Digests {
             collector: result.digest.expect("digest"),
-            legacy_recipe: recipe_digest(
+            legacy_key: reference_digest(
                 &collector,
                 &info,
                 &inputs,
                 legacy_leaf,
+                &[],
             )
             .await,
-            v1_recipe: recipe_digest(&collector, &info, &inputs, v1_leaf).await,
+            v1_key: reference_digest(&collector, &info, &inputs, v1_leaf, &[])
+                .await,
+            final_key: reference_digest(
+                &collector,
+                &info,
+                &inputs,
+                v1_leaf,
+                &[
+                    cache_key_version_leaf_v1(1),
+                    effective_leaf_v1(info.effective_digest),
+                ],
+            )
+            .await,
         }
     }
 
@@ -1414,7 +1482,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn legacy_recipe_still_reproduces_the_base_digest_and_leaf() {
+    async fn legacy_key_still_reproduces_the_base_digest_and_leaf() {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path();
         let project = ordinary_task(root, "proj", "build");
@@ -1427,14 +1495,14 @@ mod tests {
             "3a89953840fde7533a43a03184a9864798d00017163735990a8a93d7caf39338"
         );
         assert_eq!(
-            hex32(digests.legacy_recipe),
+            hex32(digests.legacy_key),
             "38f3811e830a6572f5b6d9dd7e4ccf4c15c565b80f745524a34715f2f140518c"
         );
-        assert_ne!(digests.collector, digests.legacy_recipe);
+        assert_ne!(digests.collector, digests.legacy_key);
     }
 
     #[tokio::test]
-    async fn recipe_with_output_excludes_matches_the_collector() {
+    async fn key_with_output_excludes_matches_the_collector() {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path();
         let mut project = ordinary_task(root, "proj", "build");
@@ -1446,12 +1514,12 @@ mod tests {
             digests_for(root, &ordinary_task(root, "proj", "build"), &command)
                 .await;
 
-        assert_eq!(with.collector, with.v1_recipe);
+        assert_eq!(with.collector, with.final_key);
         assert_ne!(with.collector, plain.collector);
     }
 
     #[tokio::test]
-    async fn v1_recipe_changes_only_the_identity_leaf() {
+    async fn v1_key_changes_only_the_identity_leaf() {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path();
         let project = ordinary_task(root, "proj", "build");
@@ -1464,11 +1532,122 @@ mod tests {
             "262db1a029777c8c34df7d061a04e010c943bb983c789b8a302619e8352d111e"
         );
         assert_eq!(
-            hex32(digests.v1_recipe),
+            hex32(digests.v1_key),
             "baccd2c423a6c8afbd93c453f56926ea0e49c3d837fe0909f9ecc24cd085e174"
         );
-        assert_ne!(digests.v1_recipe, digests.legacy_recipe);
-        assert_eq!(digests.collector, digests.v1_recipe);
+        assert_ne!(digests.v1_key, digests.legacy_key);
+        // The collector's key is the v1 key plus the two trailing leaves.
+        assert_ne!(digests.collector, digests.v1_key);
+        assert_eq!(digests.collector, digests.final_key);
+    }
+
+    /// RFC 0024 F06.3 proof: the final key is the v1 key inputs plus the cache
+    /// key version leaf (D1) and the effective-task leaf, in that order,
+    /// inserted after the identity leaf. The fixture's effective digest is that
+    /// of the default config.
+    #[tokio::test]
+    async fn the_final_key_carries_the_effective_task_leaf() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let project = ordinary_task(root, "proj", "build");
+        let command = CommandConfig::shell("echo build");
+        let config = crate::effective_task::EffectiveTaskConfig::default();
+
+        let digests = digests_for(root, &project, &command).await;
+        let expected = {
+            let cache_dir = fresh_cache_dir(root);
+            let collector = Collector::new(root, &cache_dir, RealSys);
+            let info = ProjectTaskInfo {
+                task_exec: Some(&command),
+                ..project.info()
+            };
+            let inputs = collector
+                .collect(
+                    &[info],
+                    &CollectConfig {
+                        digests: true,
+                        ..Default::default()
+                    },
+                )
+                .await
+                .unwrap()
+                .remove(0)
+                .input_files
+                .unwrap();
+            reference_digest(
+                &collector,
+                &info,
+                &inputs,
+                identity_leaf_v1("proj", "build").unwrap(),
+                &[
+                    cache_key_version_leaf_v1(1),
+                    effective_leaf_v1(config.digest()),
+                ],
+            )
+            .await
+        };
+
+        assert_eq!(
+            digests.collector, expected,
+            "the collector must insert the effective leaf after the identity leaf"
+        );
+        assert_ne!(expected, digests.v1_key);
+    }
+
+    /// RFC 0024 F06.3 proof (FAILS on the base): golden vector of the final
+    /// key for the ordinary task with a default effective config, computed from
+    /// the oracle above. Pinned so the key cannot change by accident.
+    #[tokio::test]
+    async fn the_final_key_golden_vector_for_the_ordinary_task() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let project = ordinary_task(root, "proj", "build");
+        let command = CommandConfig::shell("echo build");
+
+        let digests = digests_for(root, &project, &command).await;
+
+        // Re-pinned for the three unmerged env layers (new encoding bytes).
+        // Before: e5e46763eebbd009eba7d973a96e6f3296a6b52bfad1e45f83f88ceef27168cd,
+        // which reproduces with the layers merged into one env field.
+        assert_eq!(
+            hex32(digests.collector),
+            "506bf3a26d95e8083a453e1483325c1fcb3b39b88611b6988002e73f2d2a0074",
+        );
+    }
+
+    /// The effective digest is a mandatory key input: with no input files, no
+    /// env, no args and no output globs (everything `cache.key.defaults: false`
+    /// can switch off) a different effective digest is a different key.
+    #[tokio::test]
+    async fn the_effective_digest_alone_changes_the_key() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let config = CollectConfig {
+            digests: true,
+            ..Default::default()
+        };
+        let digest_for = |effective: DefaultHash| {
+            let mut project = Project::new(root, "proj");
+            project.effective_digest = effective;
+            let cache_dir = fresh_cache_dir(root);
+            async move {
+                collect_one(root, &cache_dir, &project, &config)
+                    .await
+                    .digest
+                    .expect("digest")
+            }
+        };
+        let one = digest_for([1; 32]).await;
+        assert_eq!(one, digest_for([1; 32]).await);
+        assert_ne!(one, digest_for([2; 32]).await);
+    }
+
+    /// Bumping the cache key version is deliberate: it is a cold start for
+    /// every user (`docs/patterns/cache-keys.md`). Change this pin only with
+    /// the change that bumps the constant.
+    #[test]
+    fn the_cache_key_version_is_pinned() {
+        assert_eq!(CACHE_KEY_VERSION, 1);
     }
 
     /// Two pairs with equal non-identity inputs shared a digest on the base
@@ -1487,9 +1666,9 @@ mod tests {
         assert_ne!(first_digests.collector, second_digests.collector);
     }
 
-    /// Documents the base collision through the test-only recipe and shows the v1 leaf separates the pair.
+    /// Documents the base collision through the test-only oracle and shows the v1 leaf separates the pair.
     #[tokio::test]
-    async fn base_recipe_collides_and_v1_recipe_separates_the_pair() {
+    async fn base_key_collides_and_v1_key_separates_the_pair() {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path();
         let command = CommandConfig::shell("echo same");
@@ -1499,8 +1678,8 @@ mod tests {
         let first_digests = digests_for(root, &first, &command).await;
         let second_digests = digests_for(root, &second, &command).await;
 
-        assert_eq!(first_digests.legacy_recipe, second_digests.legacy_recipe);
-        assert_ne!(first_digests.v1_recipe, second_digests.v1_recipe);
+        assert_eq!(first_digests.legacy_key, second_digests.legacy_key);
+        assert_ne!(first_digests.v1_key, second_digests.v1_key);
     }
 
     #[tokio::test]
@@ -1527,10 +1706,11 @@ mod tests {
         let sorted = digest_for(&["a", "b", "z"]).await;
         assert_eq!(sorted, digest_for(&["z", "a", "b"]).await);
         assert_eq!(sorted, digest_for(&["b", "z", "a"]).await);
-        // Golden, re-pinned to the identity leaf v1 (RFC 0024 F03.4 slice 0).
+        // Golden, re-pinned to the cache key version and effective-task leaves
+        // (RFC 0024 F06.3). Before F06.3: [226, 33, 98, 53, ..., 47, 76, 56].
         assert_eq!(
             format!("{sorted:?}"),
-            "[226, 33, 98, 53, 0, 238, 12, 193, 175, 99, 66, 42, 159, 41, 191, 158, 223, 188, 238, 99, 145, 20, 131, 125, 255, 115, 106, 246, 60, 47, 76, 56]"
+            "[11, 70, 242, 132, 104, 105, 225, 181, 135, 78, 116, 85, 56, 12, 201, 180, 198, 252, 117, 29, 241, 218, 135, 229, 56, 59, 106, 59, 168, 231, 65, 81]"
         );
     }
 

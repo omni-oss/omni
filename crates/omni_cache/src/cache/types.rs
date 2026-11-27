@@ -28,7 +28,11 @@ pub struct TaskExecutionInfo<'a> {
     pub input_env_keys: &'a [String],
     pub env_vars: &'a Map<String, String>,
     pub dependency_digests: &'a [DefaultHash],
+    /// The merged args: configured overlaid with the invocation overrides.
     pub args: &'a Map<String, serde_json::Value>,
+    /// The digest of the task's effective definition. Not optional: a new
+    /// constructor must supply it, so no key can be built without it.
+    pub effective_digest: DefaultHash,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, new)]

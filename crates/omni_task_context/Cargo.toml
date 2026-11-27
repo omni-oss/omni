@@ -19,6 +19,8 @@ omni_glob = { workspace = true, features = ["serde"] }
 tracing = { workspace = true }
 maps = { workspace = true }
 omni_core = { workspace = true }
+omni_collector = { workspace = true }
+omni_command_config = { workspace = true }
 omni_config_types = { workspace = true }
 omni_types = { workspace = true }
 omni_hasher = { workspace = true }
@@ -26,6 +28,13 @@ omni_tera = { workspace = true }
 omni_configurations = { workspace = true }
 omni_task_output_logs = { workspace = true }
 serde_json = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "effective_digest"
+harness = false
 
 [lints]
 workspace = true

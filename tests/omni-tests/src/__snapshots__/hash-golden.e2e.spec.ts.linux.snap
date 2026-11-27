@@ -1,3 +1,3 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`+hash @hashing (golden workspace hash) > hashes a fixed multi-project workspace to a committed value 1`] = `"Ag3c5H7mL54DT9xHv8gTRuBrbr5k2NYPMJjag8jPY6iq"`;
+exports[`+hash @hashing (golden workspace hash) > hashes a fixed multi-project workspace to a committed value 1`] = `"6KqaQohzMkLtwnwmz5oUvjN5dXovKgxxu1Kv3kK1Hanv"`;

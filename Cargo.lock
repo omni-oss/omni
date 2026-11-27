@@ -8363,11 +8363,14 @@ dependencies = [
 name = "omni_task_context"
 version = "0.8.0"
 dependencies = [
+ "criterion",
  "derive-new",
  "derive_builder",
  "eyre",
  "globset",
  "maps",
+ "omni_collector",
+ "omni_command_config",
  "omni_config_types",
  "omni_configurations",
  "omni_core",

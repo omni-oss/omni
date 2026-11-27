@@ -17,7 +17,7 @@ use omni_configurations::{
 use omni_core::{ExtensionGraph, ExtensionGraphError, Project, Task};
 use omni_glob_config::MergeGlobConfig;
 use omni_path_utils::{ProjectRootId, WorkspacePath};
-use omni_task_context::CacheInfo;
+use omni_task_context::{CacheInfo, EnvLayers};
 use omni_task_output_logs::OutputLogsConfiguration;
 use omni_types::{OmniPath, OmniPathError, TaskMap, task_label};
 use serde::{Deserialize, Serialize};
@@ -386,6 +386,19 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
                                     .collect::<Map<_, _>>()
                             })
                             .unwrap_or_default(),
+                        env: EnvLayers {
+                            workspace: self
+                                .workspace_configuration
+                                .env
+                                .vars
+                                .clone(),
+                            project: project_config.env.vars.to_map_to_inner(),
+                            task: task
+                                .env()
+                                .and_then(|e| e.vars.as_ref())
+                                .map(|v| v.to_map_to_inner())
+                                .unwrap_or_default(),
+                        },
                     },
                 );
 
@@ -1436,6 +1449,16 @@ mod tests {
         app: &str,
         closure_order: fn(&mut Vec<OmniPath>),
     ) -> Vec<(String, String)> {
+        task_digests_in(files, app, r#"{"projects":["**"]}"#, closure_order)
+            .await
+    }
+
+    async fn task_digests_in(
+        files: &[(&str, &str)],
+        app: &str,
+        workspace_json: &str,
+        closure_order: fn(&mut Vec<OmniPath>),
+    ) -> Vec<(String, String)> {
         use omni_collector::{CollectConfig, Collector, ProjectTaskInfo};
 
         let temp = tempfile::tempdir().unwrap();
@@ -1455,13 +1478,17 @@ mod tests {
                     .unwrap(),
             ));
         }
-        let graph = ExtensionGraph::from_nodes(layers.clone()).unwrap();
-        let app_layer = layers
+        let mut graph = ExtensionGraph::from_nodes(layers).unwrap();
+        // Compose the extension closure the way the loader does, so inherited
+        // settings reach the finalized project.
+        let app_layer = graph
+            .get_or_process_all_nodes()
+            .unwrap()
             .into_iter()
             .find(|l| l.file().path().unwrap() == root.join(app))
             .unwrap();
         let finalized = app_layer.finalize_composed().unwrap();
-        let workspace = serde_json::from_str(r#"{"projects":["**"]}"#).unwrap();
+        let workspace = serde_json::from_str(workspace_json).unwrap();
         let mut env_loader = EnvLoader::new(RealSys, root.to_owned(), vec![]);
         let data = ProjectDataExtractor::new(
             &RealSys,
@@ -1474,20 +1501,33 @@ mod tests {
         .unwrap();
         let project = data.projects.iter().find(|p| p.name == "app").unwrap();
         let no_env = Map::default();
+        // The per-task call `ProjectHasher::hash` makes: the plan node, the
+        // unexpanded cache info and the meta fallback feed the one builder.
+        let task_graph =
+            omni_core::ProjectGraph::from_projects(data.projects.clone())
+                .unwrap()
+                .get_task_execution_graph()
+                .unwrap();
         let mut out = vec![];
         for task in ["t", "n"] {
             let info = data.cache_infos.get("app", task).unwrap();
+            let node = task_graph.get_task_by_name("app", task).unwrap();
+            let effective_digest = omni_task_context::effective_task::build(
+                node,
+                Some(info),
+                data.task_meta_configs
+                    .get("app", task)
+                    .or_else(|| data.project_meta_configs.get("app")),
+            )
+            .digest();
             let mut include = info.key_input_files.include.clone();
             closure_order(&mut include);
             let task_info = ProjectTaskInfo {
                 project_name: "app",
                 project_dir: &project.dir,
                 task_name: task,
-                task_exec: project
-                    .tasks
-                    .get(task)
-                    .and_then(|t| t.exec.as_ref()),
-                task_retry_exec: None,
+                task_exec: node.task_exec_config(),
+                task_retry_exec: node.task_retry_exec_config(),
                 output_files: &info.cache_output_files.include,
                 output_files_exclude: &info.cache_output_files.exclude,
                 input_files: &include,
@@ -1496,6 +1536,7 @@ mod tests {
                 env_vars: &no_env,
                 dependency_digests: &[],
                 args: &info.args,
+                effective_digest,
             };
             let collected = Collector::new(root, cache.path(), RealSys)
                 .collect(
@@ -1601,14 +1642,294 @@ mod tests {
         );
     }
 
+    // Re-pinned for the cache key version and effective-task leaves (RFC 0024
+    // F06.3). Before: chain t EkZdvw62..., n BtEuC55R...; diamond t x7qpHaig...,
+    // n BtEuC55R.... The old values reproduce with the two leaves switched off.
+    // Re-pinned again when the env definitions became three unmerged layers
+    // (fix round 2, new encoding bytes). Before: chain t 2ZN4BeGR..., n
+    // m2Yfawkt...; diamond t GgerQQzk..., n m2Yfawkt.... They reproduce with the
+    // layers merged into the single env field.
     #[cfg(unix)]
     const CHAIN_DIGESTS: [(&str, &str); 2] = [
-        ("t", "EkZdvw624oSWRh3dptTHur953cdeGPeQEK7ggUjFHVSo"),
-        ("n", "BtEuC55R6uckLLP73xRMq5KqNtzyk1yENCVjMNSB64PW"),
+        ("t", "Gf1zXEUfnGTFGvE9M1K6fXkYEuBWXXvwRPW1YwGnE749"),
+        ("n", "9noLmyciPdkxSAuNkhiWx8KHx8fVbLTH5r2GePusza9F"),
     ];
     #[cfg(unix)]
     const DIAMOND_DIGESTS: [(&str, &str); 2] = [
-        ("t", "x7qpHaig4Ba8GCn7uhJHFCYPS6sXsYhv6Gwf5Y7ZnPY"),
-        ("n", "BtEuC55R6uckLLP73xRMq5KqNtzyk1yENCVjMNSB64PW"),
+        ("t", "CbyWCFVZP7UEBtDba6xem58oDzgswenaBmDEqBXd9juo"),
+        ("n", "9noLmyciPdkxSAuNkhiWx8KHx8fVbLTH5r2GePusza9F"),
     ];
+
+    // RFC 0024 F06.3 proof. The final key must follow the *effective* task:
+    // what composition and inheritance leave after the raw text is gone. Both
+    // tasks turn the default config-file inputs off, so no file content can
+    // stand in for the definition: only an effective-task contribution can.
+    const NO_DEFAULTS: &str = r#""cache":{"key":{"defaults":false}}"#;
+
+    fn effective_app(app_meta: &str, t_description: &str) -> String {
+        format!(
+            r#"{{"name":"app","extends":["ROOT/lib/base.yaml"]{app_meta},"tasks":{{
+                "t":{{"exec":"echo {{{{ meta.flavor }}}}",{NO_DEFAULTS}{t_description}}},
+                "n":{{"exec":"x",{NO_DEFAULTS}}}}}}}"#
+        )
+    }
+
+    fn effective_files(
+        base_flavor: &str,
+        app: &str,
+    ) -> Vec<(&'static str, String)> {
+        vec![
+            (
+                "lib/base.yaml",
+                format!(
+                    r#"{{"base":true,"meta":{{"flavor":"{base_flavor}"}}}}"#
+                ),
+            ),
+            ("app/project.omni.yaml", app.to_string()),
+        ]
+    }
+
+    async fn effective_digests(
+        base_flavor: &str,
+        app: &str,
+    ) -> Vec<(String, String)> {
+        digests_for(effective_files(base_flavor, app), keep).await
+    }
+
+    fn digest_of<'a>(all: &'a [(String, String)], task: &str) -> &'a str {
+        all.iter()
+            .find(|(t, _)| t == task)
+            .map(|(_, d)| d.as_str())
+            .unwrap()
+    }
+
+    /// FAILS on the base: the collector hashes the raw command text, which is
+    /// the same, and nothing else sees the inherited metadata it consumes.
+    #[tokio::test]
+    async fn an_inherited_setting_change_changes_the_final_key() {
+        let app = effective_app("", "");
+        let one = effective_digests("one", &app).await;
+        let two = effective_digests("two", &app).await;
+        assert_ne!(
+            digest_of(&one, "t"),
+            digest_of(&two, "t"),
+            "inherited metadata consumed by the command must reach the key"
+        );
+    }
+
+    /// FAILS on the base. The unchanged-command guard of the same defect: a
+    /// definition change must invalidate even with `cache.key.defaults: false`.
+    #[tokio::test]
+    async fn defaults_off_still_invalidates_on_a_definition_change() {
+        let one = effective_digests("one", &effective_app("", "")).await;
+        let other = effective_digests(
+            "one",
+            &effective_app(r#","meta":{"flavor":"local"}"#, ""),
+        )
+        .await;
+        assert_ne!(digest_of(&one, "t"), digest_of(&other, "t"));
+    }
+
+    /// Guard, passes on the base and must keep passing: a change to one task's
+    /// own definition does not move an unrelated sibling's key.
+    #[tokio::test]
+    async fn an_unrelated_sibling_change_keeps_this_tasks_key() {
+        let before = effective_digests("one", &effective_app("", "")).await;
+        let changed =
+            effective_app("", "").replace(r#""exec":"x""#, r#""exec":"y""#);
+        let after = effective_digests("one", &changed).await;
+        assert_eq!(digest_of(&before, "t"), digest_of(&after, "t"));
+        assert_ne!(digest_of(&before, "n"), digest_of(&after, "n"));
+    }
+
+    /// Guard: description is presentation, not execution.
+    #[tokio::test]
+    async fn a_presentation_only_change_keeps_the_key() {
+        let before = effective_digests("one", &effective_app("", "")).await;
+        let after = effective_digests(
+            "one",
+            &effective_app("", r#","description":"a new description""#),
+        )
+        .await;
+        assert_eq!(before, after);
+    }
+
+    /// Guard: the same effective semantics reached two ways share a key.
+    #[tokio::test]
+    async fn identical_effective_semantics_keep_the_key() {
+        let inherited = effective_digests("one", &effective_app("", "")).await;
+        let restated = effective_digests(
+            "zzz",
+            &effective_app(r#","meta":{"flavor":"one"}"#, ""),
+        )
+        .await;
+        assert_eq!(digest_of(&inherited, "t"), digest_of(&restated, "t"));
+    }
+
+    /// Guard: an explicit override masks an inherited change that no longer
+    /// reaches the effective task.
+    #[tokio::test]
+    async fn an_explicit_override_masks_an_irrelevant_inherited_change() {
+        let app = effective_app(r#","meta":{"flavor":"mine"}"#, "");
+        let one = effective_digests("one", &app).await;
+        let two = effective_digests("two", &app).await;
+        assert_eq!(digest_of(&one, "t"), digest_of(&two, "t"));
+    }
+
+    fn env_files(base_env: &str, app: &str) -> Vec<(&'static str, String)> {
+        vec![
+            (
+                "lib/base.yaml",
+                format!(
+                    r#"{{"base":true,"env":{{"vars":{{"X":"{base_env}"}}}}}}"#
+                ),
+            ),
+            ("app/project.omni.yaml", app.to_string()),
+        ]
+    }
+
+    /// FAILS on the base (Q3): an `env.vars` definition inherited from a base
+    /// file is part of the effective task. The key records only the values of
+    /// the keys listed under `cache.key.env`, so the change is invisible.
+    #[tokio::test]
+    async fn an_inherited_project_env_definition_change_changes_the_final_key()
+    {
+        let app = effective_app("", "");
+        let one = digests_for(env_files("one", &app), keep).await;
+        let two = digests_for(env_files("two", &app), keep).await;
+        assert_ne!(
+            digest_of(&one, "t"),
+            digest_of(&two, "t"),
+            "inherited project env.vars must reach the key"
+        );
+    }
+
+    /// FAILS on the base (Q3): the workspace `env.vars` definition.
+    #[tokio::test]
+    async fn a_workspace_env_definition_change_changes_the_final_key() {
+        let app = effective_app("", "");
+        let files = effective_files("one", &app);
+        let refs = files
+            .iter()
+            .map(|(n, j)| (*n, j.as_str()))
+            .collect::<Vec<_>>();
+        let digests = |value: &str| {
+            let workspace = format!(
+                r#"{{"projects":["**"],"env":{{"vars":{{"X":"{value}"}}}}}}"#
+            );
+            let refs = refs.clone();
+            async move {
+                task_digests_in(
+                    &refs,
+                    "app/project.omni.yaml",
+                    &workspace,
+                    keep,
+                )
+                .await
+            }
+        };
+        let one = digests("one").await;
+        let two = digests("two").await;
+        assert_ne!(
+            digest_of(&one, "t"),
+            digest_of(&two, "t"),
+            "workspace env.vars must reach the key"
+        );
+    }
+
+    /// The `t` digest for a workspace, a project and a task that each may
+    /// define `X`. `None` leaves that layer without any `env.vars`.
+    async fn layered_env_digest(
+        workspace: Option<&str>,
+        project: Option<&str>,
+        task: Option<&str>,
+    ) -> String {
+        let project_env = project
+            .map(|v| format!(r#","env":{{"vars":{{"X":"{v}"}}}}"#))
+            .unwrap_or_default();
+        let task_env = task
+            .map(|v| format!(r#""env":{{"vars":{{"X":"{v}"}}}},"#))
+            .unwrap_or_default();
+        let app = effective_app(&project_env, "")
+            .replace(r#""t":{"#, &format!(r#""t":{{{task_env}"#));
+        let workspace = match workspace {
+            Some(v) => format!(
+                r#"{{"projects":["**"],"env":{{"vars":{{"X":"{v}"}}}}}}"#
+            ),
+            None => r#"{"projects":["**"]}"#.to_string(),
+        };
+        let files = effective_files("one", &app);
+        let refs = files
+            .iter()
+            .map(|(n, j)| (*n, j.as_str()))
+            .collect::<Vec<_>>();
+        let all =
+            task_digests_in(&refs, "app/project.omni.yaml", &workspace, keep)
+                .await;
+        digest_of(&all, "t").to_string()
+    }
+
+    /// FAILS before the fix. At runtime the workspace value wins over the
+    /// project value of a key both define, so changing only the workspace
+    /// value changes the task environment and must change the key.
+    #[tokio::test]
+    async fn a_colliding_workspace_value_change_changes_the_final_key() {
+        let one = layered_env_digest(Some("w1"), Some("p"), None).await;
+        let two = layered_env_digest(Some("w2"), Some("p"), None).await;
+        assert_ne!(one, two, "the winning workspace value must reach the key");
+    }
+
+    /// FAILS before the fix. Expansion starts from the project's raw
+    /// definitions and only afterwards do the expanded workspace values
+    /// overwrite colliding keys, so a project variable reading a key the
+    /// workspace also defines (`Y: ${X}`) sees the PROJECT's `X`. Changing the
+    /// shadowed project value therefore changes the task's `Y` and must change
+    /// the key. The layers are keyed unmerged: this over-invalidates when the
+    /// shadowed value is not read, which is the safe direction.
+    #[tokio::test]
+    async fn a_shadowed_project_value_change_changes_the_final_key() {
+        let one = layered_env_digest(Some("w"), Some("p1"), None).await;
+        let two = layered_env_digest(Some("w"), Some("p2"), None).await;
+        assert_ne!(one, two, "the layers are keyed unmerged");
+    }
+
+    /// FAILS before the fix: the same case with the reading variable present,
+    /// as at runtime (`X` and `Y: ${X}` in the project, `X` in the workspace).
+    #[tokio::test]
+    async fn a_project_variable_reading_a_workspace_key_follows_the_project_value()
+     {
+        let key = |p: &'static str| async move {
+            let app = effective_app(
+                &format!(r#","env":{{"vars":{{"X":"{p}","Y":"${{X}}"}}}}"#),
+                "",
+            );
+            let ws =
+                r#"{"projects":["**"],"env":{"vars":{"X":"w"}}}"#.to_string();
+            let files = effective_files("one", &app);
+            let refs = files
+                .iter()
+                .map(|(n, j)| (*n, j.as_str()))
+                .collect::<Vec<_>>();
+            let all =
+                task_digests_in(&refs, "app/project.omni.yaml", &ws, keep)
+                    .await;
+            digest_of(&all, "t").to_string()
+        };
+        assert_ne!(key("p1").await, key("p2").await);
+    }
+
+    /// Guards: a key only one layer defines, and the task layer.
+    #[tokio::test]
+    async fn non_colliding_and_task_layers_keep_following_the_key() {
+        let project_only = |p| layered_env_digest(None, Some(p), None);
+        assert_ne!(project_only("p1").await, project_only("p2").await);
+        let workspace_only = |w| layered_env_digest(Some(w), None, None);
+        assert_ne!(workspace_only("w1").await, workspace_only("w2").await);
+        let task = |w, p, t| layered_env_digest(Some(w), Some(p), Some(t));
+        assert_ne!(task("w", "p", "t1").await, task("w", "p", "t2").await);
+        // Unmerged: a task value does not hide the lower layers either, since
+        // an expansion in the task can still read them.
+        assert_ne!(task("w1", "p", "t").await, task("w2", "p", "t").await);
+        assert_ne!(task("w", "p1", "t").await, task("w", "p2", "t").await);
+    }
 }
