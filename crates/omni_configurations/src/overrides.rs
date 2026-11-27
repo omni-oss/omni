@@ -4,7 +4,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use config_utils::{DictConfig, DynValue};
+use config_utils::{DictConfig, DynValue, ListConfig};
 use omni_task_output_logs::OutputLogsSplit;
 use omni_types::OmniPath;
 
@@ -61,18 +61,7 @@ enum Leaf {
 impl Leaf {
     /// Whether this value is overridden by the effective one.
     fn differs_from(&self, effective: &Leaf) -> bool {
-        match (self, effective) {
-            (Leaf::Logs(mine), Leaf::Logs(effective)) => {
-                [(mine.new, effective.new), (mine.cached, effective.cached)]
-                    .into_iter()
-                    .any(|(mine, effective)| {
-                        mine.is_some()
-                            && effective.is_some()
-                            && mine != effective
-                    })
-            }
-            _ => self != effective,
-        }
+        self != effective
     }
 }
 
@@ -173,6 +162,12 @@ fn meta_masks(
                 masks.meta_dict_at.insert(path.clone());
                 meta_masks(masks, path, inner);
             }
+            // An explicit additive list merges into the contributors' list.
+            DynValue::List(
+                ListConfig::Append { .. }
+                | ListConfig::Prepend { .. }
+                | ListConfig::Merge { .. },
+            ) => {}
             _ => {
                 masks.meta_set.insert(path.clone());
             }
@@ -436,6 +431,7 @@ fn decide_logs(entries: &[(ContributorId, Leaf)]) -> Option<Decided> {
     }
     let winner = entries[winner?].0.clone();
     overridden.retain(|id| id != &winner);
+    overridden.sort_by_key(|id| entries.iter().position(|(e, _)| e == id));
     if overridden.is_empty() {
         return None;
     }

@@ -478,6 +478,30 @@ fn an_explicit_tasks_replace_masks_task_cache_enabled_overrides() {
 }
 
 #[test]
+fn output_logs_overridden_contributors_keep_composition_order() {
+    let all = overrides(
+        &["a", "b", "c"],
+        vec![
+            logs("a", r#"{"cached":"all"}"#),
+            logs("b", r#"{"new":"all"}"#),
+            logs("c", r#"{"new":"never","cached":"never"}"#),
+        ],
+        vec![],
+    );
+    assert_eq!(all[0].overridden, ids(&["a", "b"]));
+}
+
+#[test]
+fn an_explicit_additive_list_does_not_mask_a_meta_override() {
+    let all = overrides(
+        &["a", "b"],
+        vec![nested("a", "1"), nested("b", r#"{"append":[2]}"#)],
+        vec![explicit(r#"{"name":"w","meta":{"n":{"append":[3]}}}"#)],
+    );
+    assert!(!all[0].masked_by_explicit);
+}
+
+#[test]
 fn records_never_carry_values() {
     let all = overrides(
         &["p1", "p2"],

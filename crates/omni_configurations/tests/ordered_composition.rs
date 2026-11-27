@@ -636,3 +636,51 @@ fn alias_cycles_surface_when_the_composed_layer_is_finalized() {
     let composed = try_compose(&[], vec![], vec![cyclic]).unwrap();
     assert!(composed.layer.finalize_composed().is_err());
 }
+
+fn plugin_decls(task: &str) -> Vec<Contribution> {
+    let mut a = contribution("a", "{}");
+    a.enabled
+        .push(emitted("a", EnabledScope::Task(task.into()), false));
+    let mut b = contribution("b", "{}");
+    b.enabled
+        .push(emitted("b", EnabledScope::Task(task.into()), true));
+    vec![a, b]
+}
+
+#[test]
+fn an_explicit_tasks_replace_discards_contributor_task_declarations() {
+    let replaced = explicit(
+        "app/project.yaml",
+        r#"{"name":"web","tasks":{"replace":{"t":"x"}}}"#,
+    );
+    assert_eq!(
+        decided(&["a", "b"], plugin_decls("t"), vec![replaced]),
+        (true, CacheEnabledSource::HostFallback)
+    );
+}
+
+#[test]
+fn an_explicit_alias_discards_contributor_task_declarations_for_that_name() {
+    let mut contributions = plugin_decls("t");
+    contributions[0].layer =
+        serde_json::from_str::<ProjectLayer>(r#"{"tasks":{"t":"x","u":"y"}}"#)
+            .unwrap();
+    let aliased = explicit(
+        "app/project.yaml",
+        r#"{"name":"web","tasks":{"t":{"alias":"u"}}}"#,
+    );
+    let p = compose(&["a", "b"], contributions, vec![aliased]);
+    assert!(!p.task_cache_enabled.contains_key("t"));
+}
+
+#[test]
+fn an_unrelated_explicit_tasks_change_keeps_contributor_task_declarations() {
+    let other = explicit(
+        "app/project.yaml",
+        r#"{"name":"web","tasks":{"t":"x","u":"y"}}"#,
+    );
+    assert_eq!(
+        decided(&["a", "b"], plugin_decls("t"), vec![other]),
+        (true, CacheEnabledSource::Plugin)
+    );
+}

@@ -902,6 +902,21 @@ impl Merge for LoadedLayer {
         if other.cache_enabled.is_some() {
             self.cache_enabled = other.cache_enabled;
         }
+        // An explicit layer that replaces the task map, or turns a task into an
+        // alias, discards what earlier side declarations said about those tasks.
+        match other.layer.tasks.as_ref() {
+            Some(DictConfig::Replace { .. }) => self
+                .enabled
+                .retain(|decl| matches!(decl.scope, EnabledScope::Project)),
+            Some(tasks) => self.enabled.retain(|decl| match &decl.scope {
+                EnabledScope::Task(name) => !matches!(
+                    tasks.as_map().get(name),
+                    Some(TaskLayer::Alias(_))
+                ),
+                EnabledScope::Project => true,
+            }),
+            None => {}
+        }
         self.enabled.extend(other.enabled);
         self.dir = other.dir;
         self.source = other.source;
