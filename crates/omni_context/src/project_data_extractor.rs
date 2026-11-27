@@ -253,6 +253,8 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
 
                     project_extras.extend(ws_vars.clone());
                 }
+            } else if !ws_vars.is_empty() {
+                project_extras.extend(ws_vars.clone());
             }
 
             // load the env vars for the project
@@ -1004,6 +1006,139 @@ mod tests {
         };
         assert_eq!(tags("own"), serde_json::json!(["task"]));
         assert_eq!(tags("plain"), serde_json::json!(["project"]));
+    }
+
+    /// Environment the loader resolved for project `app` after extraction.
+    fn resolved_env(
+        workspace_env: &str,
+        project_env: Option<&str>,
+        at_root: bool,
+        dotenv: Option<&str>,
+        definitions_only: bool,
+    ) -> Option<std::sync::Arc<crate::EnvVarsMap>> {
+        use omni_configurations::ProjectLayer;
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().to_path_buf();
+        let project_dir = if at_root {
+            root.clone()
+        } else {
+            root.join("app")
+        };
+        std::fs::create_dir_all(&project_dir).unwrap();
+        if let Some(dotenv) = dotenv {
+            std::fs::write(project_dir.join(".env"), dotenv).unwrap();
+        }
+        let file = project_dir.join("project.omni.yaml");
+        let env = project_env
+            .map(|vars| format!(r#","env":{{"vars":{vars}}}"#))
+            .unwrap_or_default();
+        let json = format!(r#"{{"name":"app","tasks":{{"t":"x"}}{env}}}"#);
+        let layer = layer(file.to_str().unwrap(), &[])
+            .with_layer(serde_json::from_str::<ProjectLayer>(&json).unwrap());
+        let graph = ExtensionGraph::from_nodes(vec![layer.clone()]).unwrap();
+        let finalized = layer.finalize_composed().unwrap();
+        let workspace: WorkspaceConfiguration = serde_json::from_str(&format!(
+            r#"{{"projects":["**"],"env":{{"vars":{workspace_env}}}}}"#
+        ))
+        .unwrap();
+        let mut env_loader =
+            EnvLoader::new(RealSys, root.clone(), vec![PathBuf::from(".env")]);
+        let extractor = ProjectDataExtractor::new(
+            &RealSys,
+            &root,
+            &mut env_loader,
+            false,
+            &workspace,
+        );
+        let mut extractor = if definitions_only {
+            extractor.definitions_only()
+        } else {
+            extractor
+        };
+        extractor
+            .extract_all(&[finalized], &[file], &graph)
+            .unwrap();
+        env_loader.get_cached(&project_dir)
+    }
+
+    fn var(
+        env: &Option<std::sync::Arc<crate::EnvVarsMap>>,
+        key: &str,
+    ) -> Option<String> {
+        env.as_ref().and_then(|e| e.get(key).cloned())
+    }
+
+    #[test]
+    fn workspace_vars_reach_a_project_without_env_vars() {
+        let env = resolved_env(r#"{"X":"w"}"#, None, false, None, false);
+        assert_eq!(var(&env, "X").as_deref(), Some("w"));
+    }
+
+    #[test]
+    fn workspace_vars_reach_a_project_at_the_workspace_root() {
+        let env = resolved_env(r#"{"X":"w"}"#, None, true, None, false);
+        assert_eq!(var(&env, "X").as_deref(), Some("w"));
+    }
+
+    #[test]
+    fn workspace_and_project_vars_both_reach_the_project() {
+        let env = resolved_env(
+            r#"{"X":"w"}"#,
+            Some(r#"{"Y":"p"}"#),
+            false,
+            None,
+            false,
+        );
+        assert_eq!(var(&env, "X").as_deref(), Some("w"));
+        assert_eq!(var(&env, "Y").as_deref(), Some("p"));
+    }
+
+    #[test]
+    fn a_workspace_value_wins_over_the_project_value() {
+        let env = resolved_env(
+            r#"{"K":"w"}"#,
+            Some(r#"{"K":"p"}"#),
+            false,
+            None,
+            false,
+        );
+        assert_eq!(var(&env, "K").as_deref(), Some("w"));
+    }
+
+    #[test]
+    fn project_vars_expand_from_the_workspace_vars() {
+        let env = resolved_env(
+            r#"{"X":"w"}"#,
+            Some(r#"{"Y":"${X}-p"}"#),
+            false,
+            None,
+            false,
+        );
+        assert_eq!(var(&env, "Y").as_deref(), Some("w-p"));
+        let env = resolved_env(
+            r#"{"X":"w"}"#,
+            Some(r#"{"X":"p","Y":"${X}"}"#),
+            false,
+            None,
+            false,
+        );
+        assert_eq!(var(&env, "X").as_deref(), Some("w"));
+        assert_eq!(var(&env, "Y").as_deref(), Some("p"));
+    }
+
+    #[test]
+    fn a_workspace_var_wins_over_the_dotenv_value_without_project_vars() {
+        let env =
+            resolved_env(r#"{"X":"w"}"#, None, false, Some("X=file\n"), false);
+        assert_eq!(var(&env, "X").as_deref(), Some("w"));
+    }
+
+    #[test]
+    fn no_workspace_vars_adds_nothing_and_definitions_only_loads_nothing() {
+        let env = resolved_env("{}", None, false, None, false);
+        assert_eq!(var(&env, "X"), None);
+        let env = resolved_env(r#"{"X":"w"}"#, None, false, None, true);
+        assert_eq!(var(&env, "X"), None);
     }
 
     /// RFC 0024 F03.4 slice 0: projects `a#b`/`c` and `a`/`b#c` rendered the
