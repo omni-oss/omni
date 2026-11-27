@@ -52,7 +52,9 @@ fn fixture(deps: usize, args: usize, env: usize, globs: usize) -> Fixture {
             .insert(format!("arg{i}"), serde_json::json!(format!("value{i}")));
     }
     for i in 0..env {
-        info.env.insert(format!("VAR_{i}"), format!("value-{i}"));
+        info.env
+            .project
+            .insert(format!("VAR_{i}"), format!("value-{i}"));
     }
     for i in 0..globs {
         info.key_input_files
