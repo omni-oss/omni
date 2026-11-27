@@ -235,9 +235,15 @@ creation, rather than checking an absolute path and later reopening it. Parent
 symlinks that stay inside the workspace are followed to their real directory;
 ones that leave it fail the restore. A restore failure
 is a cache miss and the task executes, not a successful hit with missing outputs.
-Existing regular output files are retained; missing files are copied into fresh
-files, not hardlinked to the cache. This avoids both final-link writes and later
-workspace edits mutating the cached inode. This is not a sandbox for task execution.
+Existing regular output files are replaced by the cached content (written to a
+fresh sibling file and renamed over them, so a hardlink is never written
+through, including read-only files); an existing non-file at an output path, or
+a parent directory that cannot be written, fails the restore. Files are
+copied, not hardlinked to the cache, so editing a restored file cannot mutate the
+cached inode. Outputs a task has just built are different: they are hardlinked
+into the cache when saved (copied only where hardlinks are unavailable), so
+editing one in place before it is replaced also changes the cached copy.
+This is not a sandbox for task execution.
 
 Downloaded archives are limited to 200,000 logical entries, 8 GiB of total
 expanded tar data (including headers and padding), and 1 MiB per extension
