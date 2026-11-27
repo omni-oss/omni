@@ -29,12 +29,23 @@ const RAW_HASH_PATTERN = /^[A-Za-z0-9]{40,}$/;
 const HIT_BUILD = "Cache hit for task 'app#build'";
 const HIT_LINT = "Cache hit for task 'app#lint'";
 const HIT_ENVX = "Cache hit for task 'app#envx'";
+const HIT_ENVXY = "Cache hit for task 'app#envxy'";
 const HIT_GREET = "Cache hit for task 'app#greet'";
 
 /** Appends the value of `X` it sees to `env.txt`: one line per execution. */
 const ENV_MARKER = [
     'const fs = require("node:fs");',
     'fs.appendFileSync("env.txt", `${process.env.X ?? ""}\\n`);',
+    "",
+].join("\n");
+
+/** Appends the values of `X` and `Y` it sees to `envxy.txt`, one line per run. */
+const ENV_XY_MARKER = [
+    'const fs = require("node:fs");',
+    "fs.appendFileSync(",
+    '    "envxy.txt",',
+    '    `${process.env.X ?? ""} ${process.env.Y ?? ""}\\n`,',
+    ");",
     "",
 ].join("\n");
 
@@ -56,6 +67,8 @@ interface Options {
     lintWith?: string[];
     /** Project-level `env.vars.X` (the app's own definition). */
     projectEnv?: string;
+    /** Project-level `env.vars.Y: ${X}`, reading the key the workspace may define. */
+    projectReadsX?: boolean;
     /** `env.vars.X` in the base file the app extends. */
     baseEnv?: string;
     /** Workspace-level `env.vars.X`. */
@@ -100,7 +113,16 @@ function spec(options: Options = {}): WorkspaceSpec {
                     ? { meta: { flavor: options.appFlavor } }
                     : {}),
                 ...(options.projectEnv
-                    ? { env: { vars: { X: options.projectEnv } } }
+                    ? {
+                          env: {
+                              vars: {
+                                  X: options.projectEnv,
+                                  ...(options.projectReadsX
+                                      ? { Y: "${X}" }
+                                      : {}),
+                              },
+                          },
+                      }
                     : {}),
                 tasks: {
                     build: {
@@ -123,6 +145,10 @@ function spec(options: Options = {}): WorkspaceSpec {
                         exec: "node env-marker.js",
                         cache,
                     },
+                    envxy: {
+                        exec: "node env-xy-marker.js",
+                        cache,
+                    },
                     greet: {
                         exec: "node marker.js {{ args.k }}",
                         cache,
@@ -133,6 +159,7 @@ function spec(options: Options = {}): WorkspaceSpec {
         files: {
             "app/marker.js": MARKER,
             "app/env-marker.js": ENV_MARKER,
+            "app/env-xy-marker.js": ENV_XY_MARKER,
             "app/src/a.txt": "a\n",
         },
     };
@@ -157,6 +184,12 @@ function runs(ws: Workspace): string[] {
 function seenEnv(ws: Workspace): string[] {
     return ws.exists("app/env.txt")
         ? ws.read("app/env.txt").split(/\r?\n/).filter(Boolean)
+        : [];
+}
+
+function seenEnvXy(ws: Workspace): string[] {
+    return ws.exists("app/envxy.txt")
+        ? ws.read("app/envxy.txt").split(/\r?\n/).filter(Boolean)
         : [];
 }
 
@@ -320,7 +353,51 @@ describe("+cache @cache @e2e (F06.3 the key follows the effective task)", () => 
         expect(seenEnv(ws)).toEqual(["w1", "w2"]);
     });
 
-    it("guard: a shadowed project value of a colliding env key keeps the entry (Q3)", async () => {
+    // The env layers are keyed unmerged. At runtime the project's raw
+    // definitions are expanded first and the workspace values overwrite the
+    // colliding keys afterwards, so a project variable reading a key the
+    // workspace also defines (`Y: ${X}`) sees the PROJECT's value of it.
+    it("re-runs a task whose shadowed project value of a colliding env key changed (Q3, unmerged layers)", async () => {
+        const options = {
+            workspaceEnv: "w",
+            projectEnv: "p1",
+            projectReadsX: true,
+        };
+        const ws = makeWorkspace(spec(options));
+        await run(ws, "envxy");
+        expect(seenEnvXy(ws)).toEqual(["w p1"]);
+
+        ws.write(
+            "app/project.omni.yaml",
+            appFile({ ...options, projectEnv: "p2" }),
+        );
+        const second = await run(ws, "envxy");
+
+        expect(second.stderr).not.toContain(HIT_ENVXY);
+        expect(seenEnvXy(ws)).toEqual(["w p1", "w p2"]);
+        const forced = await runOmni(["run", "envxy", "-f", "all"], {
+            cwd: ws.cwd,
+        });
+        expect(forced).toHaveSucceeded();
+        expect(seenEnvXy(ws)).toEqual(["w p1", "w p2", "w p2"]);
+    });
+
+    it("guard: an unchanged colliding env definition keeps the entry", async () => {
+        const options = {
+            workspaceEnv: "w",
+            projectEnv: "p1",
+            projectReadsX: true,
+        };
+        const ws = makeWorkspace(spec(options));
+        await run(ws, "envxy");
+
+        const second = await run(ws, "envxy");
+
+        expect(second.stderr).toContain(HIT_ENVXY);
+        expect(seenEnvXy(ws)).toEqual(["w p1"]);
+    });
+
+    it("re-runs a task when a shadowed project value changed even if the task does not read it (over-invalidation by design)", async () => {
         const ws = makeWorkspace(spec({ workspaceEnv: "w", projectEnv: "p1" }));
         await run(ws, "envx");
 
@@ -330,13 +407,7 @@ describe("+cache @cache @e2e (F06.3 the key follows the effective task)", () => 
         );
         const second = await run(ws, "envx");
 
-        expect(second.stderr).toContain(HIT_ENVX);
-        // The task really never sees the project value: a forced run
-        // still gets the workspace one.
-        const forced = await runOmni(["run", "envx", "-f", "all"], {
-            cwd: ws.cwd,
-        });
-        expect(forced).toHaveSucceeded();
+        expect(second.stderr).not.toContain(HIT_ENVX);
         expect(seenEnv(ws)).toEqual(["w", "w"]);
     });
 

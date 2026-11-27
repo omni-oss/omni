@@ -244,8 +244,10 @@ describe("+run @e2e (base behavior of an ordinary task is pinned)", () => {
         );
         const [item] = JSON.parse(readFileSync(resultPath, "utf8"));
         // Re-pinned for the cache key version and effective-task leaves (RFC 0024
-        // F06.3). Before: aZRuysvFOqM9KaWhJwamH3krAObxWkX7VmAHMSE3JUw=.
-        expect(item.hash).toBe("mDVdQZlbaqn6fV42e/g0Y66xVjtvhIznpu6/cRh7xlU=");
+        // F06.3). Before: aZRuysvFOqM9KaWhJwamH3krAObxWkX7VmAHMSE3JUw=. Re-pinned again
+        // for the three unmerged env layers; the previous pin was
+        // mDVdQZlbaqn6fV42e/g0Y66xVjtvhIznpu6/cRh7xlU=.
+        expect(item.hash).toBe("q2MmOQcnAXKUPnt1Pjwp29cJOmiiQP4SVErgaZN7I3s=");
     });
 });
 
