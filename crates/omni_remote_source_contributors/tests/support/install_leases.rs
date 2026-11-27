@@ -191,9 +191,13 @@ async fn projection_read_is_protected(finish: Finish) {
     }))
     .unwrap();
     let contributor = ProjectionRemoteContributor::new(vec![source], ws.path());
-    let mut read = Box::pin(
-        contributor.contribute(&manager, &InstallOptions { update: false }),
-    );
+    // The install owns the set, as `run_contributors` does.
+    let leases = LeaseSet::new();
+    let mut read = Box::pin(contributor.contribute(
+        &manager,
+        &InstallOptions { update: false },
+        &leases,
+    ));
     // Drive the read until the barrier, without a detached task that could
     // survive a failing assertion.
     tokio::select! {
@@ -232,10 +236,22 @@ async fn projection_read_is_protected(finish: Finish) {
             Finish::Cancel => unreachable!(),
         }
         drop(read);
+        // Ending `contribute` must not release the checkout: the install keeps
+        // its set until the references are written.
+        let report = timeout(WAIT, peer.prune_store_report(&all, false))
+            .await
+            .expect("prune blocked after contribution ended")
+            .unwrap();
+        assert_eq!(
+            report.skipped_in_use.len(),
+            1,
+            "the checkout was released before the install finished"
+        );
     }
+    drop(leases);
     let report = timeout(WAIT, peer.prune_store_report(&all, false))
         .await
-        .expect("prune blocked after contribution ended")
+        .expect("prune blocked after the install released its leases")
         .unwrap();
     assert!(report.skipped_in_use.is_empty(), "lease leaked");
     assert!(report.failed.is_empty());

@@ -5,6 +5,7 @@ use bytesize::ByteSize;
 use omni_context::{Context, ContextSys};
 use omni_remote_source::{
     InstallOptions, RemoteSourceContributor,
+    lease::LeaseSet,
     manager::{
         PruneReport, RemoteSourceManager, StoreEntry, StorePruneFilter,
         config::RemoteSourceConfig,
@@ -311,10 +312,14 @@ where
     let mut subsystems = Vec::with_capacity(contributors.len());
     let mut seen: HashSet<(&'static str, String, String)> = HashSet::new();
     let mut resolved = Vec::with_capacity(contributors.len());
+    // Held for the whole install: a checkout is neither leased nor referenced
+    // between its materialization and the reference write, so releasing any
+    // lease earlier would let a concurrent prune delete it.
+    let leases = LeaseSet::new();
 
     for contributor in &contributors {
         let id = contributor.id();
-        let refs = contributor.contribute(manager, options).await?;
+        let refs = contributor.contribute(manager, options, &leases).await?;
 
         let mut materialized = 0;
         let mut deduplicated = 0;
@@ -344,6 +349,7 @@ where
         })
         .collect();
     manager.update_ref_sets(&updates).await?;
+    drop(leases);
     manager.reconcile_pins().await?;
 
     Ok(RemoteSourcesInstallResponse { subsystems })
@@ -362,6 +368,12 @@ mod tests {
     fn runtime_paths_never_materialize_without_a_lease() {
         let runtime = [
             ("generator", include_str!("generator.rs")),
+            (
+                "contributors",
+                include_str!(
+                    "../../../omni_remote_source_contributors/src/lib.rs"
+                ),
+            ),
             ("tool", include_str!("tool.rs")),
             ("projection", include_str!("projection.rs")),
             (
@@ -490,6 +502,7 @@ mod tests {
             &self,
             _manager: &RemoteSourceManager<TSys>,
             _options: &InstallOptions,
+            _leases: &LeaseSet,
         ) -> eyre::Result<Vec<omni_remote_source::RemoteSourceRef>> {
             eyre::bail!("injected later contributor failure")
         }
@@ -589,6 +602,7 @@ mod tests {
             &self,
             _manager: &RemoteSourceManager<TSys>,
             _options: &InstallOptions,
+            _leases: &LeaseSet,
         ) -> eyre::Result<Vec<omni_remote_source::RemoteSourceRef>> {
             Ok(self.refs.clone())
         }
@@ -666,5 +680,139 @@ mod tests {
         let refs_dir = dir.path().join(".omni/sources/refs");
         assert!(refs_dir.join("generator.json").exists());
         assert!(refs_dir.join("tool.json").exists());
+    }
+
+    struct LeasingContributor {
+        url: url::Url,
+    }
+
+    #[async_trait::async_trait]
+    impl<TSys> RemoteSourceContributor<TSys> for LeasingContributor
+    where
+        TSys: RemoteSourceSys,
+    {
+        fn id(&self) -> &'static str {
+            "generator"
+        }
+
+        async fn contribute(
+            &self,
+            manager: &RemoteSourceManager<TSys>,
+            _options: &InstallOptions,
+            leases: &LeaseSet,
+        ) -> eyre::Result<Vec<omni_remote_source::RemoteSourceRef>> {
+            let source = omni_remote_source::RemoteSource::Git {
+                uri: self.url.clone(),
+                rev: "main".into(),
+            };
+            let materialized =
+                manager.materialize_into(&source, leases).await?;
+            Ok(vec![omni_remote_source::RemoteSourceRef {
+                source,
+                pin: materialized.pin,
+            }])
+        }
+    }
+
+    /// Prunes from inside a later contributor, as a concurrent peer could.
+    struct PruningContributor {
+        seen: std::sync::Arc<std::sync::Mutex<Option<PruneReport>>>,
+    }
+
+    #[async_trait::async_trait]
+    impl<TSys> RemoteSourceContributor<TSys> for PruningContributor
+    where
+        TSys: RemoteSourceSys,
+    {
+        fn id(&self) -> &'static str {
+            "tool"
+        }
+
+        async fn contribute(
+            &self,
+            manager: &RemoteSourceManager<TSys>,
+            _options: &InstallOptions,
+            _leases: &LeaseSet,
+        ) -> eyre::Result<Vec<omni_remote_source::RemoteSourceRef>> {
+            let all = StorePruneFilter {
+                all: true,
+                ..Default::default()
+            };
+            *self.seen.lock().unwrap() =
+                Some(manager.prune_store_report(&all, false).await?);
+            Ok(vec![])
+        }
+    }
+
+    fn local_git_repo() -> Option<(tempfile::TempDir, url::Url)> {
+        let git = |dir: &std::path::Path, args: &[&str]| {
+            std::process::Command::new("git")
+                .args(args)
+                .current_dir(dir)
+                .output()
+                .ok()
+                .filter(|out| out.status.success())
+        };
+        let repo = tempfile::tempdir().unwrap();
+        git(repo.path(), &["init", "-q", "-b", "main"])?;
+        std::fs::write(repo.path().join("gen.omni.yaml"), "name: g\n").unwrap();
+        git(repo.path(), &["add", "."])?;
+        git(
+            repo.path(),
+            &[
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@example.com",
+                "commit",
+                "-q",
+                "-m",
+                "init",
+            ],
+        )?;
+        let url = url::Url::from_directory_path(repo.path()).ok()?;
+        Some((repo, url))
+    }
+
+    /// An earlier contributor's checkout is neither leased by a finished
+    /// `contribute` nor yet referenced: the install must keep it leased until
+    /// the references are written, or a concurrent prune deletes it.
+    #[tokio::test]
+    async fn the_install_keeps_every_checkout_leased_until_references_are_written()
+     {
+        let Some((_repo, url)) = local_git_repo() else {
+            eprintln!("skipping: `git` is not available on PATH");
+            return;
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let manager = temp_manager(dir.path()).await;
+        let seen = std::sync::Arc::new(std::sync::Mutex::new(None));
+
+        let contributors: Vec<
+            Box<dyn RemoteSourceContributor<system_traits::impls::RealSys>>,
+        > = vec![
+            Box::new(LeasingContributor { url }),
+            Box::new(PruningContributor { seen: seen.clone() }),
+        ];
+        run_contributors(&manager, contributors, &InstallOptions::default())
+            .await
+            .unwrap();
+
+        let during =
+            seen.lock().unwrap().take().expect("pruned during install");
+        assert!(during.removed.is_empty(), "pruned a checkout mid-install");
+        assert_eq!(during.skipped_in_use.len(), 1);
+
+        // The reference is written, so the lease is no longer needed.
+        let all = StorePruneFilter {
+            all: true,
+            ..Default::default()
+        };
+        let after = manager.prune_store_report(&all, false).await.unwrap();
+        assert!(
+            after.skipped_in_use.is_empty(),
+            "the install leaked a lease"
+        );
+        assert_eq!(after.removed.len(), 1);
     }
 }
