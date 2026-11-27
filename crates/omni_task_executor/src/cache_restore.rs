@@ -80,7 +80,7 @@ impl Restore {
             let (parents, name) = destination(&root, &anchors, &relative)?;
             let parent = parents.last().expect("root is retained");
             match parent.symlink_metadata(&name) {
-                Ok(meta) if meta.is_file() => continue, // Existing outputs are retained.
+                Ok(meta) if meta.is_file() => {}
                 Ok(_) => return Err(unsafe_path()),
                 Err(e) if e.kind() == io::ErrorKind::NotFound => {}
                 Err(e) => return Err(e),
@@ -263,11 +263,39 @@ fn write_output(
     if !source.metadata()?.is_file() {
         return Err(unsafe_path());
     }
-    // Never follow a final symlink or write an existing hardlink.
+    // Never follow a final symlink or write through an existing hardlink: an
+    // existing file is replaced by renaming a fresh sibling over it.
+    match parent.symlink_metadata(name) {
+        Ok(meta) if meta.is_file() => {}
+        Ok(_) => return Err(unsafe_path()),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {
+            return copy_new(&mut source, parent, name);
+        }
+        Err(e) => return Err(e),
+    }
+    static NEXT: std::sync::atomic::AtomicU64 =
+        std::sync::atomic::AtomicU64::new(0);
+    let temp = format!(
+        ".omni-restore-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    );
+    copy_new(&mut source, parent, Path::new(&temp))?;
+    parent.rename(&temp, parent, name).inspect_err(|_| {
+        let _ = parent.remove_file(&temp);
+    })
+}
+
+fn copy_new(
+    source: &mut std::fs::File,
+    parent: &Dir,
+    name: impl AsRef<Path>,
+) -> io::Result<()> {
+    let name = name.as_ref();
     let mut dest = parent
         .open_with(name, OpenOptions::new().write(true).create_new(true))?;
     let result = (|| {
-        io::copy(&mut source, &mut dest)?;
+        io::copy(source, &mut dest)?;
         dest.set_permissions(cap_std::fs::Permissions::from_std(
             source.metadata()?.permissions(),
         ))
@@ -402,7 +430,7 @@ mod tests {
     }
 
     #[test]
-    fn marked_nested_unicode_outputs_restore_and_existing_files_are_kept() {
+    fn marked_nested_unicode_outputs_restore_and_existing_files_are_replaced() {
         for format in [
             omni_cache::PATH_FORMAT_PORTABLE,
             omni_cache::PATH_FORMAT_LEGACY,
@@ -421,7 +449,13 @@ mod tests {
             e.files.push(second);
             Restore::prepare(root.path(), &e).unwrap().write().unwrap();
             assert_eq!(std::fs::read(&fresh).unwrap(), b"cached");
-            assert_eq!(std::fs::read(&existing).unwrap(), b"local");
+            assert_eq!(std::fs::read(&existing).unwrap(), b"cached");
+            assert_eq!(
+                std::fs::read_dir(existing.parent().unwrap())
+                    .unwrap()
+                    .count(),
+                1
+            );
         }
     }
 
@@ -559,7 +593,8 @@ mod tests {
     }
 
     #[test]
-    fn final_hardlink_appearing_after_preparation_is_not_written() {
+    fn final_hardlink_appearing_after_preparation_is_replaced_not_written_through()
+     {
         let root = tempfile::tempdir().unwrap();
         let outside = tempfile::tempdir().unwrap();
         std::fs::write(outside.path().join("victim"), b"keep").unwrap();
@@ -570,7 +605,9 @@ mod tests {
         )
         .unwrap();
         let source = tempfile::NamedTempFile::new().unwrap();
-        assert!(write_output(source.path(), &parents, &name).is_err());
+        std::fs::write(source.path(), b"cached").unwrap();
+        write_output(source.path(), &parents, &name).unwrap();
+        assert_eq!(std::fs::read(root.path().join("out")).unwrap(), b"cached");
         assert_eq!(
             std::fs::read(outside.path().join("victim")).unwrap(),
             b"keep"
