@@ -408,6 +408,81 @@ describe("+run @e2e (retries & persistence)", () => {
         expect(attempts).toBe(2);
     });
 
+    describe("`retry_exec` replaces `exec` on retry attempts", () => {
+        const spec = (retryScript = "retry.js"): WorkspaceSpec => ({
+            workspace: { projects: ["**"] },
+            projects: {
+                app: {
+                    name: "app",
+                    tasks: {
+                        flaky: {
+                            exec: ["node", "main.js"],
+                            retry_exec: ["node", retryScript],
+                            cache: {
+                                key: { defaults: false, files: ["src/**"] },
+                            },
+                            retry: {
+                                max_retries: 1,
+                                strategy: "fixed",
+                                base: "5ms",
+                            },
+                        },
+                    },
+                },
+            },
+            files: {
+                "app/main.js":
+                    'console.log("MAIN-ATTEMPT"); process.exit(1);\n',
+                "app/retry.js": 'console.log("RETRY-ATTEMPT");\n',
+                "app/src/in.txt": "in\n",
+                "app/retry2.js": 'console.log("RETRY-ATTEMPT");\n',
+            },
+        });
+
+        it("`retry_exec` is part of the cache key on the normal path", async () => {
+            const ws = makeWorkspace(spec());
+            const args = ["run", "flaky", "-p", "app"];
+
+            expect(await runOmni(args, { cwd: ws.cwd })).toHaveSucceeded();
+            const hit = await runOmni(args, { cwd: ws.cwd });
+            expect(hit).toHaveSucceeded();
+            expect(hit).toHaveStderrContaining(
+                "Cache hit for task 'app#flaky'",
+            );
+
+            ws.write("app/project.omni.yaml", spec("retry2.js").projects!.app!);
+
+            const changed = await runOmni(args, { cwd: ws.cwd });
+            expect(changed).toHaveSucceeded();
+            expect(changed.stderr).not.toContain(
+                "Cache hit for task 'app#flaky'",
+            );
+        });
+
+        for (const extra of [[], ["--ignore-dependencies"]]) {
+            it(`runs on the retry attempt (${extra.join(" ") || "default"})`, async () => {
+                const ws = makeWorkspace(spec());
+
+                const result = await runOmni(
+                    [
+                        "run",
+                        "flaky",
+                        "-p",
+                        "app",
+                        "--no-cache",
+                        "--output-logs=all",
+                        ...extra,
+                    ],
+                    { cwd: ws.cwd },
+                );
+
+                expect(result).toHaveSucceeded();
+                expect(result).toOutputContaining("MAIN-ATTEMPT");
+                expect(result).toOutputContaining("RETRY-ATTEMPT");
+            });
+        }
+    });
+
     it("a persistent task is never served from the cache", async () => {
         const ws = makeWorkspace({
             workspace: { projects: ["**"] },
