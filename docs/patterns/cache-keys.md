@@ -32,7 +32,10 @@ contribution of `TaskExecutionInfo`) is a **key change**. A PR that makes one:
    entry did not record it, so promoting it could return a wrong hit.
 3. **Ships a release note** (`apps/site/content/docs/guides`) with the cold start:
    what changes, that old entries are not matched, `omni cache prune --stale` once the
-   fleet is aligned, how to see it, and rollback.
+   fleet is aligned, how to see it, and rollback. Warn that fleet alignment does not
+   protect entries created by `--arg` runs: stale pruning computes keys without `--arg`
+   and classifies them stale, so recommend `omni cache prune --stale --dry-run` before
+   pruning.
 4. **Batches with other key changes in the same release.** Before adding one, list the
    key changes already unreleased since the last tag and land it in the same release if
    one is pending, so users get one cold start. Say in the PR what the epoch holds. The
