@@ -706,7 +706,10 @@ async fn prune_reclaims_abandoned_pending_paths_and_skips_live_ones() {
     let held = omni_utils::lock::LockGuard::acquire_exclusive(&live_lock)
         .await
         .unwrap();
-    let filter = StorePruneFilter::default();
+    let filter = StorePruneFilter {
+        all: true,
+        ..Default::default()
+    };
 
     let dry = manager.prune_store_report(&filter, true).await.unwrap();
     assert_eq!(dry.reclaimed_pending, vec![dead.clone()]);

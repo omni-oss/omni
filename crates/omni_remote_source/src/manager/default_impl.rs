@@ -966,6 +966,58 @@ impl StorePruneFilter<'_> {
         self.all || self.older_than.is_some() || self.larger_than.is_some()
     }
 
+    /// Reject filters whose combination is contradictory or selects nothing
+    /// meaningful, so no caller silently gets a different selection than it
+    /// asked for:
+    ///
+    /// - no criterion (`all`, `older_than` or `larger_than`);
+    /// - `all` together with `older_than` or `larger_than`, since `all`
+    ///   cannot be narrowed;
+    /// - a zero `older_than` or `larger_than`, which selects (nearly) every
+    ///   checkout and should be spelled `all`;
+    /// - an empty `only`, or one naming an unsafe path segment.
+    ///
+    /// `older_than` with `larger_than` is allowed and both must match.
+    pub fn validate(&self) -> Result<(), Error> {
+        if !self.has_criteria() {
+            return Err(Error::custom(
+                "a prune needs a criterion: all, older_than or larger_than",
+            ));
+        }
+        if self.all && (self.older_than.is_some() || self.larger_than.is_some())
+        {
+            return Err(Error::custom(
+                "all cannot be combined with older_than or larger_than",
+            ));
+        }
+        if self.older_than.is_some_and(|age| age.is_zero()) {
+            return Err(Error::custom(
+                "older_than must be greater than zero; use all to select every checkout",
+            ));
+        }
+        if self.larger_than == Some(0) {
+            return Err(Error::custom(
+                "larger_than must be greater than zero; use all to select every checkout",
+            ));
+        }
+        if let Some(only) = self.only {
+            if only.is_empty() {
+                return Err(Error::custom(
+                    "only must name at least one checkout",
+                ));
+            }
+            for (kind, remote, pin) in only {
+                if ![kind, remote, pin].into_iter().all(|s| is_safe_segment(s))
+                {
+                    return Err(Error::custom(format!(
+                        "only names an unsafe checkout id: {kind}/{remote}/{pin}"
+                    )));
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn matches(&self, entry: &StoreEntry, now: SystemTime) -> bool {
         if !self.has_criteria() {
             return false;
@@ -1051,7 +1103,8 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
     }
 
     /// Delete the checkouts `filter` selects, or only report them when
-    /// `dry_run`, returning the entries removed (or that would be). Checkouts held
+    /// `dry_run`, returning the entries removed (or that would be). An invalid
+    /// filter is an error (see [`StorePruneFilter::validate`]). Checkouts held
     /// by a [`SourceLease`] are skipped, not an error; use
     /// [`prune_store_report`](Self::prune_store_report) to see which were skipped
     /// or failed, since this returns only the removed entries.
@@ -1086,6 +1139,7 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
         filter: &StorePruneFilter<'_>,
         dry_run: bool,
     ) -> Result<PruneReport, Error> {
+        filter.validate()?;
         let now = SystemTime::now();
         let reclaimed_pending = match reclaim(
             &self.store_root_path,
@@ -1239,6 +1293,138 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
+    use super::StorePruneFilter;
+
+    fn id(s: &str) -> (String, String, String) {
+        (s.into(), s.into(), s.into())
+    }
+
+    #[test]
+    fn prune_filter_combinations_are_validated() {
+        let day = Some(Duration::from_secs(86_400));
+        let only_ok = [id("git")];
+        let only_unsafe = [("git".to_string(), "../x".into(), "c1".into())];
+        let cases: Vec<(&str, StorePruneFilter<'_>, bool)> = vec![
+            ("nothing", StorePruneFilter::default(), false),
+            (
+                "all",
+                StorePruneFilter {
+                    all: true,
+                    ..Default::default()
+                },
+                true,
+            ),
+            (
+                "age",
+                StorePruneFilter {
+                    older_than: day,
+                    ..Default::default()
+                },
+                true,
+            ),
+            (
+                "size",
+                StorePruneFilter {
+                    larger_than: Some(1),
+                    ..Default::default()
+                },
+                true,
+            ),
+            (
+                "age and size",
+                StorePruneFilter {
+                    older_than: day,
+                    larger_than: Some(1),
+                    ..Default::default()
+                },
+                true,
+            ),
+            (
+                "all and age",
+                StorePruneFilter {
+                    all: true,
+                    older_than: day,
+                    ..Default::default()
+                },
+                false,
+            ),
+            (
+                "all and size",
+                StorePruneFilter {
+                    all: true,
+                    larger_than: Some(1),
+                    ..Default::default()
+                },
+                false,
+            ),
+            (
+                "zero age",
+                StorePruneFilter {
+                    older_than: Some(Duration::ZERO),
+                    ..Default::default()
+                },
+                false,
+            ),
+            (
+                "zero size",
+                StorePruneFilter {
+                    larger_than: Some(0),
+                    ..Default::default()
+                },
+                false,
+            ),
+            (
+                "only alone",
+                StorePruneFilter {
+                    only: Some(&only_ok),
+                    ..Default::default()
+                },
+                false,
+            ),
+            (
+                "all and only",
+                StorePruneFilter {
+                    all: true,
+                    only: Some(&only_ok),
+                    ..Default::default()
+                },
+                true,
+            ),
+            (
+                "age and only",
+                StorePruneFilter {
+                    older_than: day,
+                    only: Some(&only_ok),
+                    ..Default::default()
+                },
+                true,
+            ),
+            (
+                "empty only",
+                StorePruneFilter {
+                    all: true,
+                    only: Some(&[]),
+                    ..Default::default()
+                },
+                false,
+            ),
+            (
+                "unsafe only",
+                StorePruneFilter {
+                    all: true,
+                    only: Some(&only_unsafe),
+                    ..Default::default()
+                },
+                false,
+            ),
+        ];
+        for (name, filter, ok) in cases {
+            assert_eq!(filter.validate().is_ok(), ok, "{name}");
+        }
+    }
+
     #[test]
     fn the_store_core_does_not_depend_on_git() {
         let core = include_str!("default_impl.rs");
