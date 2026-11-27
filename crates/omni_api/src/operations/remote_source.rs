@@ -146,6 +146,8 @@ where
         );
     }
 
+    filter.validate()?;
+
     let manager = open_source_store(ctx, sys).await?;
     let report = manager.prune_store_report(&filter, req.dry_run).await?;
     Ok(prune_response(

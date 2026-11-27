@@ -399,12 +399,14 @@ async fn prune_needs_criteria_and_dry_run_deletes_nothing() {
     let ws = Workspace::new();
     let (manager, [(_, dir_a), (_, dir_b)], _repos) = two_checkouts(&ws).await;
 
-    // No filter selects nothing, even for a real run.
-    let none = manager
-        .prune_store(&StorePruneFilter::default(), false)
-        .await
-        .expect("prune");
-    assert!(none.is_empty());
+    // No filter is refused, for a real run and a dry run alike.
+    for dry_run in [false, true] {
+        manager
+            .prune_store(&StorePruneFilter::default(), dry_run)
+            .await
+            .expect_err("a prune without a criterion");
+    }
+    assert!(dir_a.exists() && dir_b.exists());
 
     let all = StorePruneFilter {
         all: true,
