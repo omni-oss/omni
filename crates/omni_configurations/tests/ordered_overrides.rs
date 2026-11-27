@@ -492,13 +492,47 @@ fn output_logs_overridden_contributors_keep_composition_order() {
 }
 
 #[test]
-fn an_explicit_additive_list_does_not_mask_a_meta_override() {
-    let all = overrides(
+fn an_explicit_additive_list_masks_unless_it_merges_into_a_list() {
+    let append = || explicit(r#"{"name":"w","meta":{"n":{"append":[3]}}}"#);
+    // Over a list winner it merges, so contributor order still matters.
+    let list = overrides(
         &["a", "b"],
         vec![nested("a", "1"), nested("b", r#"{"append":[2]}"#)],
-        vec![explicit(r#"{"name":"w","meta":{"n":{"append":[3]}}}"#)],
+        vec![append()],
     );
-    assert!(!all[0].masked_by_explicit);
+    assert!(!list[0].masked_by_explicit);
+    // Over a scalar or dictionary it replaces the value.
+    let scalar = overrides(
+        &["a", "b"],
+        vec![nested("a", "1"), nested("b", "2")],
+        vec![append()],
+    );
+    assert!(scalar[0].masked_by_explicit);
+    let dict = overrides(
+        &["a", "b"],
+        vec![nested("a", r#"{"x":1}"#), nested("b", r#"{"x":2}"#)],
+        vec![append()],
+    );
+    assert!(
+        find(&dict, &meta_path(&["n", "x"]))
+            .unwrap()
+            .masked_by_explicit
+    );
+}
+
+#[test]
+fn an_explicit_alias_masks_task_cache_enabled_overrides() {
+    let task = |n, v| with_enabled(n, EnabledScope::Task("t".into()), v, None);
+    let mut a = task("a", true);
+    a.layer =
+        serde_json::from_str::<ProjectLayer>(r#"{"tasks":{"t":"x","u":"y"}}"#)
+            .unwrap();
+    let all = overrides(
+        &["a", "b"],
+        vec![a, task("b", false)],
+        vec![explicit(r#"{"name":"w","tasks":{"t":{"alias":"u"}}}"#)],
+    );
+    assert!(all[0].masked_by_explicit);
 }
 
 #[test]

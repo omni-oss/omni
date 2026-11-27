@@ -39,7 +39,7 @@ pub enum CacheEnabledSource {
     HostFallback,
     /// A plugin activation's `defaults`. Not produced yet.
     ActivationDefaults,
-    /// A value a plugin emitted. Not produced yet.
+    /// A value a plugin emitted, produced by ordered contributor composition.
     Plugin,
     /// The project's `cache.enabled`, inherited by the task.
     ProjectExplicit,

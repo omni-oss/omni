@@ -669,8 +669,29 @@ fn an_explicit_alias_discards_contributor_task_declarations_for_that_name() {
         "app/project.yaml",
         r#"{"name":"web","tasks":{"t":{"alias":"u"}}}"#,
     );
-    let p = compose(&["a", "b"], contributions, vec![aliased]);
-    assert!(!p.task_cache_enabled.contains_key("t"));
+    // Declaring `t` again afterwards starts fresh: the earlier contributor
+    // declarations about `t` are gone, not revived.
+    let again = explicit("app/again.yaml", r#"{"tasks":{"t":"z"}}"#);
+    assert_eq!(
+        decided(&["a", "b"], contributions, vec![aliased, again]),
+        (true, CacheEnabledSource::HostFallback)
+    );
+}
+
+#[test]
+fn project_scope_declarations_survive_an_explicit_tasks_replace() {
+    let mut contributions = plugin_decls("t");
+    contributions[1]
+        .enabled
+        .push(emitted("b", EnabledScope::Project, false));
+    let replaced = explicit(
+        "app/project.yaml",
+        r#"{"name":"web","tasks":{"replace":{"t":"x"}}}"#,
+    );
+    assert_eq!(
+        decided(&["a", "b"], contributions, vec![replaced]),
+        (false, CacheEnabledSource::Plugin)
+    );
 }
 
 #[test]

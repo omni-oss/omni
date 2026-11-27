@@ -10,6 +10,7 @@ use omni_types::OmniPath;
 
 use crate::{
     Contribution, ContributorId, EnabledScope, LoadedLayer, ProjectLayer,
+    TaskLayer,
 };
 
 /// The tracked fields. Closed: other fields compose by replay without records.
@@ -137,6 +138,10 @@ struct Masks {
     meta_replaced_at: BTreeSet<Vec<String>>,
     /// Paths an explicit layer sets to a dictionary.
     meta_dict_at: BTreeSet<Vec<String>>,
+    /// Paths an explicit layer sets to an additive list. It merges into a list
+    /// and replaces any other value.
+    meta_list_at: BTreeSet<Vec<String>>,
+    tasks_aliased: BTreeSet<String>,
     key_defaults: bool,
     logs_new: bool,
     logs_cached: bool,
@@ -167,7 +172,9 @@ fn meta_masks(
                 ListConfig::Append { .. }
                 | ListConfig::Prepend { .. }
                 | ListConfig::Merge { .. },
-            ) => {}
+            ) => {
+                masks.meta_list_at.insert(path.clone());
+            }
             _ => {
                 masks.meta_set.insert(path.clone());
             }
@@ -209,6 +216,9 @@ impl Masks {
                 masks.tasks_replaced |=
                     matches!(tasks, DictConfig::Replace { .. });
                 for (name, task) in tasks.as_map() {
+                    if matches!(task, TaskLayer::Alias(_)) {
+                        masks.tasks_aliased.insert(name.clone());
+                    }
                     if task.declares_cache_enabled() {
                         masks.explicit_tasks_enabled.insert(name.clone());
                     }
@@ -229,6 +239,7 @@ impl Masks {
         field: &FieldPath,
         tier: OverrideTier,
         winner_is_dict: bool,
+        winner_is_list: bool,
         logs: (bool, bool),
     ) -> bool {
         match field {
@@ -245,6 +256,9 @@ impl Masks {
                     || (1..=path.len())
                         .any(|n| self.meta_set.contains(&path[..n]))
                     || (!winner_is_dict && self.meta_dict_at.contains(path))
+                    || (1..path.len())
+                        .any(|n| self.meta_list_at.contains(&path[..n]))
+                    || (!winner_is_list && self.meta_list_at.contains(path))
             }
             FieldPath::CacheKeyDefaults => self.key_defaults,
             FieldPath::OutputLogs => {
@@ -262,10 +276,12 @@ impl Masks {
                     self.authored_project_enabled
                         || self.authored_tasks_enabled.contains(task)
                         || self.tasks_replaced
+                        || self.tasks_aliased.contains(task)
                 }
                 OverrideTier::Applied => {
                     self.explicit_tasks_enabled.contains(task)
                         || self.tasks_replaced
+                        || self.tasks_aliased.contains(task)
                 }
             },
         }
@@ -325,6 +341,7 @@ pub(crate) fn compute(
                 &field,
                 tier,
                 found.winner_is_dict,
+                found.winner_is_list,
                 found.logs_facets,
             );
             Some((
@@ -362,6 +379,7 @@ struct Decided {
     winner: ContributorId,
     overridden: Vec<ContributorId>,
     winner_is_dict: bool,
+    winner_is_list: bool,
     logs_facets: (bool, bool),
 }
 
@@ -386,6 +404,7 @@ fn decide(entries: &[(ContributorId, Leaf)]) -> Option<Decided> {
         winner: last_id.clone(),
         overridden,
         winner_is_dict: matches!(last, Leaf::DictNode),
+        winner_is_list: matches!(last, Leaf::ListNode),
         logs_facets: (false, false),
     })
 }
@@ -439,6 +458,7 @@ fn decide_logs(entries: &[(ContributorId, Leaf)]) -> Option<Decided> {
         winner,
         overridden,
         winner_is_dict: false,
+        winner_is_list: false,
         logs_facets: (flags[0], flags[1]),
     })
 }
