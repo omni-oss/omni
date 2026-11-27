@@ -31,10 +31,13 @@ These are part of every task's key, also with `cache.key.defaults: false`:
 - **Its relations**: resolved dependencies and `with` siblings. A sibling is keyed
   whether or not the run selected it, so the key does not depend on which tasks
   you asked for.
-- **Environment definitions**: the merged `env.vars` of the workspace, the project
-  and the task, as written, before expansion. For a key both the project and the
-  workspace define, the workspace value is the one the task receives, so it is the
-  one keyed; the task's own value wins over both.
+- **Environment definitions**: the `env.vars` of the workspace, the project and the
+  task, as written, before expansion. The key records the three definitions
+  separately, so editing any of them re-runs the task. That includes a project value
+  that the workspace value of the same key shadows: a project variable such as
+  `Y: ${X}` reads the project's own `X`, so the task can observe it. The key may
+  therefore change when a shadowed value that the task never reads is edited. That
+  is deliberate, the safe direction.
 - **Configured `args`** and the **`--arg` values of the run**, merged the way the
   task sees them. `omni run build --arg mode=fast` and `--arg mode=slow` are
   different entries. This fixes a stale replay: the second run used to hit the

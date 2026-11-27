@@ -73,6 +73,13 @@ key inputs (F06.3 decision Q1, through `TaskExecutionInfo.args`; the effective d
 itself stays invocation-free, so `hash project` does not move with `--arg`). The loaded environment (`.env` contents, process environment) is not keyed;
 users opt in with `cache.key.env` and `cache.key.files`.
 
+Record layered inputs **unmerged** when a later layer can read an earlier one. The
+`env.vars` of the workspace, project and task are three separate fields of the effective
+digest, not one merged map: a project variable that reads a key the workspace also
+defines (`Y: ${X}`) sees the project's own `X`, so a merge that keeps only the winner
+would miss a change the task can observe. Over-invalidating on a value the task never
+reads is the safe direction.
+
 ## Rehearsing mixed versions
 
 Rollback is by binary, so rehearse both directions against one disposable store:
