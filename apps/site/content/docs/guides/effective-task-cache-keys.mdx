@@ -71,8 +71,9 @@ is **one** cold start.
 - **Hashes change once.** `omni hash project`, `omni hash workspace` and the `hash`
   field of `--result` output take new values, and now move with an effective-only
   edit. `omni hash workspace` also builds the task graph to fold each task's real
-  digest, so a workspace with a task cycle reports the graph error instead of a
-  hash.
+  digest, so it now fails for a workspace whose task graph cannot be built, the
+  same graphs `omni run` rejects (for example a task cycle, `task.cycle_detected`),
+  instead of printing a hash.
 - Storage, the remote cache protocol and servers do not change. Old artifacts
   stay on a remote server until its own retention removes them. Old and new
   runners can share one server without affecting each other: their keys differ.
@@ -87,7 +88,7 @@ No configuration changes are needed.
 2. Edit a setting the task inherits (for example in an `extends` base file) or add
    a `with` sibling, then run again: a miss.
 3. `omni hash project <project>` prints a new value, and changes with the edit.
-4. `omni cache eligibility` shows why a task is or is not cached.
+4. `omni cache eligibility -p <project> -t <task>` shows why a task is or is not cached.
 5. `omni cache prune --stale --dry-run` lists the old entries without removing
    them.
 

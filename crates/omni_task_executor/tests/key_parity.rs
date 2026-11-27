@@ -2,6 +2,11 @@
 //! get_project_hash` (the `ProjectHasher`) must produce the same task key for
 //! the same task. Dependency digests flow through the graph, so tasks with
 //! dependencies are covered too.
+//!
+//! This proves the paths AGREE with each other. It does not prove the new
+//! leaves (effective digest, identity) are in the key: that is proven by the
+//! collector, `omni_context` and `cache_manager` tests, so do not rely on this
+//! file alone.
 
 use std::collections::BTreeMap;
 

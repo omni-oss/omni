@@ -52,6 +52,8 @@ interface Options {
     baseEnv?: string;
     /** Workspace-level `env.vars.X`. */
     workspaceEnv?: string;
+    /** Leave `cache.key.defaults` at its default (true): config files are inputs. */
+    defaultInputs?: boolean;
 }
 
 function baseFile(options: Options) {
@@ -69,7 +71,11 @@ function baseFile(options: Options) {
 function spec(options: Options = {}): WorkspaceSpec {
     // The config files are not inputs (`defaults: false`) and the only file
     // input never changes, so no content can stand in for the definition.
-    const cache = { key: { defaults: false, files: ["src/**"] } };
+    const cache = {
+        key: options.defaultInputs
+            ? { files: ["src/**"] }
+            : { defaults: false, files: ["src/**"] },
+    };
     return {
         workspace: {
             projects: ["**"],
@@ -306,5 +312,28 @@ describe("+cache @cache @e2e (F06.3 the key follows the effective task)", () => 
 
         expect(second).toHaveStderrContaining(HIT_BUILD);
         expect(runs(ws)).toEqual(["mine"]);
+    });
+
+    it("the final key does not depend on the checkout path (defaults on)", async () => {
+        const a = makeWorkspace(spec({ defaultInputs: true }));
+        const b = makeWorkspace(spec({ defaultInputs: true }));
+        expect(a.cwd).not.toBe(b.cwd);
+
+        expect(await projectHash(a, "build")).toBe(
+            await projectHash(b, "build"),
+        );
+    });
+
+    it("the final key changes when a default config input the task reads changes (defaults on)", async () => {
+        const ws = makeWorkspace(
+            spec({ defaultInputs: true, baseDescription: "one" }),
+        );
+        const before = await projectHash(ws, "build");
+
+        // A presentation-only edit: only the file content differs, and the
+        // default inputs are what put it in the key.
+        ws.write("base.omni.yaml", baseFile({ baseDescription: "two" }));
+
+        expect(await projectHash(ws, "build")).not.toBe(before);
     });
 });

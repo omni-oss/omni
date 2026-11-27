@@ -4,8 +4,8 @@
 
 Audit prerequisite: [F06.1 effective-field inventory](F06.1-effective-field-audit.md).
 The digest function and golden vectors ([F06.2](F06.2-canonical-digest.md), merged in
-[#114](https://github.com/omni-oss/omni/pull/114)) are not wired into any key;
-F06.3 is built, pending review and merge; see the [plan and build result](F06.3-plumbing-plan.md).
+[#114](https://github.com/omni-oss/omni/pull/114)) were not wired into any key until
+F06.3, which is built and pending review and merge; see the [plan and build result](F06.3-plumbing-plan.md).
 
 ## Problem
 
