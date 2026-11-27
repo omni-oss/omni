@@ -32,8 +32,9 @@ These are part of every task's key, also with `cache.key.defaults: false`:
   whether or not the run selected it, so the key does not depend on which tasks
   you asked for.
 - **Environment definitions**: the merged `env.vars` of the workspace, the project
-  and the task (task over project over workspace), as written, before
-  expansion.
+  and the task, as written, before expansion. For a key both the project and the
+  workspace define, the workspace value is the one the task receives, so it is the
+  one keyed; the task's own value wins over both.
 - **Configured `args`** and the **`--arg` values of the run**, merged the way the
   task sees them. `omni run build --arg mode=fast` and `--arg mode=slow` are
   different entries. This fixes a stale replay: the second run used to hit the

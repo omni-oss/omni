@@ -385,12 +385,15 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
                             })
                             .unwrap_or_default(),
                         env: {
-                            // The configured definitions, raw: workspace, then
-                            // project, then task, each over the one before.
+                            // The configured definitions, raw, in the order
+                            // the task environment is built: project, then
+                            // workspace over it, then task over both. A key
+                            // both the project and the workspace define takes
+                            // the workspace value, as at runtime.
                             let mut env =
-                                self.workspace_configuration.env.vars.clone();
+                                project_config.env.vars.to_map_to_inner();
                             env.extend(
-                                project_config.env.vars.to_map_to_inner(),
+                                self.workspace_configuration.env.vars.clone(),
                             );
                             if let Some(vars) =
                                 task.env().and_then(|e| e.vars.as_ref())
@@ -1698,5 +1701,68 @@ mod tests {
             digest_of(&two, "t"),
             "workspace env.vars must reach the key"
         );
+    }
+
+    /// The `t` digest for a workspace, a project and a task that each may
+    /// define `X`. `None` leaves that layer without any `env.vars`.
+    async fn layered_env_digest(
+        workspace: Option<&str>,
+        project: Option<&str>,
+        task: Option<&str>,
+    ) -> String {
+        let project_env = project
+            .map(|v| format!(r#","env":{{"vars":{{"X":"{v}"}}}}"#))
+            .unwrap_or_default();
+        let task_env = task
+            .map(|v| format!(r#""env":{{"vars":{{"X":"{v}"}}}},"#))
+            .unwrap_or_default();
+        let app = effective_app(&project_env, "")
+            .replace(r#""t":{"#, &format!(r#""t":{{{task_env}"#));
+        let workspace = match workspace {
+            Some(v) => format!(
+                r#"{{"projects":["**"],"env":{{"vars":{{"X":"{v}"}}}}}}"#
+            ),
+            None => r#"{"projects":["**"]}"#.to_string(),
+        };
+        let files = effective_files("one", &app);
+        let refs = files
+            .iter()
+            .map(|(n, j)| (*n, j.as_str()))
+            .collect::<Vec<_>>();
+        let all =
+            task_digests_in(&refs, "app/project.omni.yaml", &workspace, keep)
+                .await;
+        digest_of(&all, "t").to_string()
+    }
+
+    /// FAILS before the fix. At runtime the workspace value wins over the
+    /// project value of a key both define, so changing only the workspace
+    /// value changes the task environment and must change the key.
+    #[tokio::test]
+    async fn a_colliding_workspace_value_change_changes_the_final_key() {
+        let one = layered_env_digest(Some("w1"), Some("p"), None).await;
+        let two = layered_env_digest(Some("w2"), Some("p"), None).await;
+        assert_ne!(one, two, "the winning workspace value must reach the key");
+    }
+
+    /// FAILS before the fix. The project value of a colliding key loses to
+    /// the workspace value, so the task never sees it: the key must not move.
+    #[tokio::test]
+    async fn a_shadowed_project_value_change_keeps_the_final_key() {
+        let one = layered_env_digest(Some("w"), Some("p1"), None).await;
+        let two = layered_env_digest(Some("w"), Some("p2"), None).await;
+        assert_eq!(one, two, "a shadowed project value is not semantic");
+    }
+
+    /// Guards: a key only one layer defines, and a task value over both.
+    #[tokio::test]
+    async fn non_colliding_and_task_layers_keep_following_the_key() {
+        let project_only = |p| layered_env_digest(None, Some(p), None);
+        assert_ne!(project_only("p1").await, project_only("p2").await);
+        let workspace_only = |w| layered_env_digest(Some(w), None, None);
+        assert_ne!(workspace_only("w1").await, workspace_only("w2").await);
+        let task = |w, p, t| layered_env_digest(Some(w), Some(p), Some(t));
+        assert_ne!(task("w", "p", "t1").await, task("w", "p", "t2").await);
+        assert_eq!(task("w1", "p1", "t").await, task("w2", "p2", "t").await);
     }
 }

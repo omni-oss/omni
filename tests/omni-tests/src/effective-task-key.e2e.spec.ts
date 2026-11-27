@@ -28,7 +28,15 @@ const RAW_HASH_PATTERN = /^[A-Za-z0-9]{40,}$/;
 
 const HIT_BUILD = "Cache hit for task 'app#build'";
 const HIT_LINT = "Cache hit for task 'app#lint'";
+const HIT_ENVX = "Cache hit for task 'app#envx'";
 const HIT_GREET = "Cache hit for task 'app#greet'";
+
+/** Appends the value of `X` it sees to `env.txt`: one line per execution. */
+const ENV_MARKER = [
+    'const fs = require("node:fs");',
+    'fs.appendFileSync("env.txt", `${process.env.X ?? ""}\\n`);',
+    "",
+].join("\n");
 
 /** Appends its first argument to `runs.txt`: one line per real execution. */
 const MARKER = [
@@ -111,6 +119,10 @@ function spec(options: Options = {}): WorkspaceSpec {
                         exec: "node marker.js side",
                         cache,
                     },
+                    envx: {
+                        exec: "node env-marker.js",
+                        cache,
+                    },
                     greet: {
                         exec: "node marker.js {{ args.k }}",
                         cache,
@@ -120,6 +132,7 @@ function spec(options: Options = {}): WorkspaceSpec {
         },
         files: {
             "app/marker.js": MARKER,
+            "app/env-marker.js": ENV_MARKER,
             "app/src/a.txt": "a\n",
         },
     };
@@ -138,6 +151,12 @@ function workspaceFile(options: Options) {
 function runs(ws: Workspace): string[] {
     return ws.exists("app/runs.txt")
         ? ws.read("app/runs.txt").split(/\r?\n/).filter(Boolean)
+        : [];
+}
+
+function seenEnv(ws: Workspace): string[] {
+    return ws.exists("app/env.txt")
+        ? ws.read("app/env.txt").split(/\r?\n/).filter(Boolean)
         : [];
 }
 
@@ -285,6 +304,40 @@ describe("+cache @cache @e2e (F06.3 the key follows the effective task)", () => 
         const second = await run(ws, "lint");
 
         expect(second.stderr).not.toContain(HIT_LINT);
+    });
+
+    it("re-runs a task when only the winning workspace value of a colliding env key changed (Q3)", async () => {
+        const ws = makeWorkspace(spec({ workspaceEnv: "w1", projectEnv: "p" }));
+        await run(ws, "envx");
+
+        ws.write(
+            "workspace.omni.yaml",
+            workspaceFile({ workspaceEnv: "w2", projectEnv: "p" }),
+        );
+        const second = await run(ws, "envx");
+
+        expect(second.stderr).not.toContain(HIT_ENVX);
+        expect(seenEnv(ws)).toEqual(["w1", "w2"]);
+    });
+
+    it("guard: a shadowed project value of a colliding env key keeps the entry (Q3)", async () => {
+        const ws = makeWorkspace(spec({ workspaceEnv: "w", projectEnv: "p1" }));
+        await run(ws, "envx");
+
+        ws.write(
+            "app/project.omni.yaml",
+            appFile({ workspaceEnv: "w", projectEnv: "p2" }),
+        );
+        const second = await run(ws, "envx");
+
+        expect(second.stderr).toContain(HIT_ENVX);
+        // The task really never sees the project value: a forced run
+        // still gets the workspace one.
+        const forced = await runOmni(["run", "envx", "-f", "all"], {
+            cwd: ws.cwd,
+        });
+        expect(forced).toHaveSucceeded();
+        expect(seenEnv(ws)).toEqual(["w", "w"]);
     });
 
     it("guard: a presentation-only change in the base file keeps the entry", async () => {
