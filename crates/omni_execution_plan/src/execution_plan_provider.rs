@@ -241,6 +241,27 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
 
                 for project in projects {
                     for (task_name, task) in project.tasks.iter() {
+                        let node = TaskExecutionNode::new(
+                            try_task_key(
+                                project.name.as_str(),
+                                task_name.as_str(),
+                            )?,
+                            task.exec.clone(),
+                            task.retry_exec.clone(),
+                            project.dir.clone(),
+                            vec![],
+                            task.enabled.clone(),
+                            task.interactive,
+                            task.persistent,
+                            task.retry.clone(),
+                        );
+
+                        if !passes_tf(&node)? {
+                            continue;
+                        }
+
+                        // Resolved only for a selected node, so a task the
+                        // filters exclude never needs the project graph.
                         let siblings = if task.siblings.is_empty() {
                             vec![]
                         } else {
@@ -261,25 +282,7 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
                                 &task.siblings,
                             )?
                         };
-                        let node = TaskExecutionNode::new(
-                            try_task_key(
-                                project.name.as_str(),
-                                task_name.as_str(),
-                            )?,
-                            task.exec.clone(),
-                            task.retry_exec.clone(),
-                            project.dir.clone(),
-                            vec![],
-                            task.enabled.clone(),
-                            task.interactive,
-                            task.persistent,
-                            task.retry.clone(),
-                        )
-                        .with_siblings(siblings);
-
-                        if passes_tf(&node)? {
-                            nodes.push(node);
-                        }
+                        nodes.push(node.with_siblings(siblings));
                     }
                 }
 
@@ -1749,5 +1752,88 @@ mod tests {
         };
         assert_eq!(siblings(true), ["app#u", "tool#setup"]);
         assert_eq!(siblings(true), siblings(false));
+    }
+
+    /// A workspace whose projects depend on each other: its project graph
+    /// cannot be built. `a#t` has a sibling; `b#u` has none.
+    fn cyclic_workspace()
+    -> DefaultExecutionPlanProvider<'static, FixtureContext> {
+        let task = |siblings: Vec<TaskDependency>| {
+            Task::new(
+                Some(CommandConfig::Shell("echo".into())),
+                None,
+                vec![],
+                None,
+                TeraExprBoolean::Boolean(true),
+                false,
+                false,
+                siblings,
+                Default::default(),
+            )
+        };
+        let mut a = omni_core::Project::new(
+            "a",
+            "/ws/a".into(),
+            vec!["b".to_string()],
+            Default::default(),
+        );
+        a.tasks.insert(
+            "t".to_string(),
+            task(vec![TaskDependency::Own { task: "s".into() }]),
+        );
+        a.tasks.insert("s".to_string(), task(vec![]));
+        let mut b = omni_core::Project::new(
+            "b",
+            "/ws/b".into(),
+            vec!["a".to_string()],
+            Default::default(),
+        );
+        b.tasks.insert("u".to_string(), task(vec![]));
+        DefaultExecutionPlanProvider::new(FixtureContext {
+            projects: vec![a, b],
+            patterns: GlobPatterns::default(),
+        })
+    }
+
+    /// FAILS before the fix: siblings were resolved (so the project graph was
+    /// built, and a dependency cycle failed it) before the filters ran, even
+    /// for a task the filters exclude.
+    #[test]
+    fn ignore_dependencies_resolves_siblings_only_for_selected_tasks() {
+        let provider = cyclic_workspace();
+        let plan = provider
+            .get_execution_plan(
+                &Call::exact_tasks(["u"]),
+                &[],
+                &[],
+                None,
+                None,
+                true,
+                false,
+            )
+            .expect("an excluded task's siblings must not be resolved");
+        let keys = plan
+            .into_iter()
+            .flatten()
+            .map(|n| n.key().label().into_string())
+            .collect::<Vec<_>>();
+        assert_eq!(keys, ["b#u"]);
+    }
+
+    /// A selected task that has siblings still needs the graph to resolve
+    /// them, so the cycle is still reported for it.
+    #[test]
+    fn ignore_dependencies_still_resolves_siblings_of_a_selected_task() {
+        let provider = cyclic_workspace();
+        let result = provider.get_execution_plan(
+            &Call::exact_tasks(["t"]),
+            &[ProjectSelector::exact("a")],
+            &[],
+            None,
+            None,
+            true,
+            false,
+        );
+        assert!(result.is_err(), "the selected task resolves its siblings");
     }
 }
