@@ -1345,8 +1345,12 @@ mod tests {
                     .unwrap(),
             ));
         }
-        let graph = ExtensionGraph::from_nodes(layers.clone()).unwrap();
-        let app_layer = layers
+        let mut graph = ExtensionGraph::from_nodes(layers).unwrap();
+        // Compose the extension closure the way the loader does, so inherited
+        // settings reach the finalized project.
+        let app_layer = graph
+            .get_or_process_all_nodes()
+            .unwrap()
             .into_iter()
             .find(|l| l.file().path().unwrap() == root.join(app))
             .unwrap();
@@ -1364,20 +1368,33 @@ mod tests {
         .unwrap();
         let project = data.projects.iter().find(|p| p.name == "app").unwrap();
         let no_env = Map::default();
+        // The per-task call `ProjectHasher::hash` makes: the plan node, the
+        // unexpanded cache info and the meta fallback feed the one builder.
+        let task_graph =
+            omni_core::ProjectGraph::from_projects(data.projects.clone())
+                .unwrap()
+                .get_task_execution_graph()
+                .unwrap();
         let mut out = vec![];
         for task in ["t", "n"] {
             let info = data.cache_infos.get("app", task).unwrap();
+            let node = task_graph.get_task_by_name("app", task).unwrap();
+            let effective_digest = omni_task_context::effective_task::build(
+                node,
+                Some(info),
+                data.task_meta_configs
+                    .get("app", task)
+                    .or_else(|| data.project_meta_configs.get("app")),
+            )
+            .digest();
             let mut include = info.key_input_files.include.clone();
             closure_order(&mut include);
             let task_info = ProjectTaskInfo {
                 project_name: "app",
                 project_dir: &project.dir,
                 task_name: task,
-                task_exec: project
-                    .tasks
-                    .get(task)
-                    .and_then(|t| t.exec.as_ref()),
-                task_retry_exec: None,
+                task_exec: node.task_exec_config(),
+                task_retry_exec: node.task_retry_exec_config(),
                 output_files: &info.cache_output_files.include,
                 output_files_exclude: &info.cache_output_files.exclude,
                 input_files: &include,
@@ -1386,6 +1403,7 @@ mod tests {
                 env_vars: &no_env,
                 dependency_digests: &[],
                 args: &info.args,
+                effective_digest,
             };
             let collected = Collector::new(root, cache.path(), RealSys)
                 .collect(
@@ -1491,15 +1509,18 @@ mod tests {
         );
     }
 
+    // Re-pinned for the cache key version and effective-task leaves (RFC 0024
+    // F06.3). Before: chain t EkZdvw62..., n BtEuC55R...; diamond t x7qpHaig...,
+    // n BtEuC55R.... The old values reproduce with the two leaves switched off.
     #[cfg(unix)]
     const CHAIN_DIGESTS: [(&str, &str); 2] = [
-        ("t", "EkZdvw624oSWRh3dptTHur953cdeGPeQEK7ggUjFHVSo"),
-        ("n", "BtEuC55R6uckLLP73xRMq5KqNtzyk1yENCVjMNSB64PW"),
+        ("t", "2ZN4BeGRjbiabxrwRrwmfAM7dZLRS2sFULB3dyZdQgvg"),
+        ("n", "m2YfawktaZ7RYQAPPPXqUkGBG9KLcWmQzqhiXZwDQHo"),
     ];
     #[cfg(unix)]
     const DIAMOND_DIGESTS: [(&str, &str); 2] = [
-        ("t", "x7qpHaig4Ba8GCn7uhJHFCYPS6sXsYhv6Gwf5Y7ZnPY"),
-        ("n", "BtEuC55R6uckLLP73xRMq5KqNtzyk1yENCVjMNSB64PW"),
+        ("t", "GgerQQzkVE9P99YgkGKShwNW8hx7dDe9U7Pd9iwbLq4i"),
+        ("n", "m2YfawktaZ7RYQAPPPXqUkGBG9KLcWmQzqhiXZwDQHo"),
     ];
 
     // RFC 0024 F06.3 proof. The final key must follow the *effective* task:

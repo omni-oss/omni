@@ -91,6 +91,7 @@ impl<'a, TSys: ContextSys> ProjectHasher<'a, TSys> {
             dependency_digests: Vec<DefaultHash>,
             input_env_keys: &'a [String],
             args: &'a Map<String, serde_json::Value>,
+            effective_digest: DefaultHash,
         }
 
         #[derive(Debug, Clone)]
@@ -139,14 +140,10 @@ impl<'a, TSys: ContextSys> ProjectHasher<'a, TSys> {
                     project_dir: &project.dir,
                     project_name: &project.name,
                     task_name: task.task_name(),
-                    task_exec: project
-                        .tasks
-                        .get(task.task_name())
-                        .and_then(|t| t.exec.as_ref()),
-                    task_retry_exec: project
-                        .tasks
-                        .get(task.task_name())
-                        .and_then(|t| t.retry_exec.as_ref()),
+                    // The plan node, as the executor reads it, so the command
+                    // and the effective digest cannot diverge from a run.
+                    task_exec: task.task_exec_config(),
+                    task_retry_exec: task.task_retry_exec_config(),
                     output_files: &ci.cache_output_files.include,
                     output_files_exclude: &ci.cache_output_files.exclude,
                     input_files: &ci.key_input_files.include,
@@ -163,6 +160,21 @@ impl<'a, TSys: ContextSys> ProjectHasher<'a, TSys> {
                     env_vars,
                     input_env_keys: &ci.key_env_keys,
                     args: &ci.args,
+                    effective_digest: omni_task_context::effective_task::build(
+                        task,
+                        Some(ci),
+                        context
+                            .get_task_meta_config(
+                                task.project_name(),
+                                task.task_name(),
+                            )
+                            .or_else(|| {
+                                context.get_project_meta_config(
+                                    task.project_name(),
+                                )
+                            }),
+                    )
+                    .digest(),
                 });
             }
 
@@ -182,6 +194,7 @@ impl<'a, TSys: ContextSys> ProjectHasher<'a, TSys> {
                     env_vars: &p.env_vars,
                     input_env_keys: p.input_env_keys,
                     args: p.args,
+                    effective_digest: p.effective_digest,
                 })
                 .collect::<Vec<_>>();
 

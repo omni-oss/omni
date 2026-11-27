@@ -962,6 +962,7 @@ impl HybridTaskExecutionCacheStore {
                 env_vars: task.env_vars,
                 input_env_keys: task.input_env_keys,
                 args: task.args,
+                effective_digest: task.effective_digest,
             })
             .collect::<Vec<_>>();
 
@@ -2723,6 +2724,7 @@ mod tests {
         input_env_cache_keys: Vec<String>,
         pub dependency_digests: Vec<DefaultHash>,
         pub args: Map<String, serde_json::Value>,
+        pub effective_digest: DefaultHash,
     }
 
     fn task_from_static<'a>(
@@ -2742,6 +2744,7 @@ mod tests {
             &task.env_vars,
             &task.dependency_digests,
             &task.args,
+            task.effective_digest,
         )
     }
 
@@ -2765,6 +2768,7 @@ mod tests {
             input_env_cache_keys: env_cache_keys(),
             dependency_digests: vec![],
             args: Map::default(),
+            effective_digest: [7; 32],
         };
         f(&mut owned);
 

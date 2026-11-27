@@ -221,6 +221,7 @@ where
                     env_vars: info.task.env_vars,
                     input_env_keys: info.task.input_env_keys,
                     args: info.task.args,
+                    effective_digest: info.task.effective_digest,
                 })
                 .collect::<Vec<_>>();
 

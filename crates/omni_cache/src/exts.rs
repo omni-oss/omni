@@ -23,7 +23,8 @@ impl<'a> TaskExecutionInfoExt<'a> for TaskContext<'a> {
             task_exec: self.node.task_exec_config(),
             task_retry_exec: self.node.task_retry_exec_config(),
             task_name: self.node.task_name(),
-            args: &ci.args,
+            args: &self.args,
+            effective_digest: self.effective_digest,
         })
     }
 }

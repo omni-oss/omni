@@ -353,7 +353,7 @@ pub(crate) enum LoadedContextErrorInner {
     EnvLoader(#[from] EnvLoaderError),
 
     #[error(transparent)]
-    #[diagnostic(skip)]
+    #[diagnostic(delegate)]
     WorkspaceHasher(#[from] WorkspaceHasherError),
 
     #[error(transparent)]
