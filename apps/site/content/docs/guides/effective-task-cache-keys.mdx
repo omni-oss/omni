@@ -58,6 +58,11 @@ redaction and display options, and `cache.enabled` itself.
   under `env.vars` are keyed, but a value a task reads from a `.env` file or from
   the environment of the process is not. List it under `cache.key.env` (values) or
   `cache.key.files` (files) to opt in.
+- **The built-in variables an `env.vars` expansion can read**: `WORKSPACE_DIR`,
+  `PROJECT_DIR`, `PROJECT_NAME`, `OMNI_VERSION` and the `PLATFORM_*` values. A
+  definition such as `${OMNI_VERSION}` is keyed as written, not by its value.
+  This follows the platform rule above, and keeps cache entries shareable
+  between checkouts.
 - **`--retry` overrides on the command line.** Only the configured retry policy is
   keyed. A retry policy that does not resolve fails the run before any key is
   used.
