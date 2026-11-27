@@ -15,13 +15,14 @@ leaf order, a different input collection rule) is a **key change**. A PR that ma
    too. Never change an unversioned leaf's bytes silently; wrap the new behavior in a
    versioned leaf.
 
-    **Cache key version tag (lands with the F06.3 cutover, slice 2; not in the code yet).**
-    The cutover adds one constant, `CACHE_KEY_VERSION`, in `omni_collector`, and a leaf
-    `BLAKE3(b"omni.cache-key\0" || u32_le(CACHE_KEY_VERSION))` inserted after the
-    identity leaf. From then on rule 1 is enforceable: **bump the cache key version (`CACHE_KEY_VERSION`) when any key input or the key
-    construction changes**, besides the leaf you touch, and the
-    golden vectors move with it. Until the cutover lands, only the identity leaf's own
-    byte is a version; do not cite the cache key version leaf as existing.
+    **Cache key version tag.** `CACHE_KEY_VERSION` in `omni_collector` names the version of
+    the whole key. The collector inserts the leaf
+    `BLAKE3(b"omni.cache-key\0" || u32_le(CACHE_KEY_VERSION))` after the identity leaf, then
+    the effective-task leaf `BLAKE3(b"omni.effective-task\0" || 0x01 || effective_digest)`;
+    both are mandatory in every key, also with `cache.key.defaults: false`. **Bump
+    `CACHE_KEY_VERSION` when any key input or the key construction changes**, besides the
+    leaf you touch, and move the golden vectors with it (a test pins the constant so the
+    bump is a deliberate edit).
 
 2. **Is a cold start, never a migration.** Old entries become unreachable; they are not
    rewritten, promoted, dual-read or probed for under the old key. A fallback read is safe
@@ -64,8 +65,7 @@ leaf order, a different input collection rule) is a **key change**. A PR that ma
 Platform and display data are **not** key inputs unless a decision says so; do not add
 them to make a test pass. The **merged invocation args** (`omni run t --arg k=v`) **are**
 key inputs (F06.3 decision Q1, through `TaskExecutionInfo.args`; the effective digest
-itself stays invocation-free); until the cutover lands they are not, which is a known
-wrong hit. The loaded environment (`.env` contents, process environment) is not keyed;
+itself stays invocation-free, so `hash project` does not move with `--arg`). The loaded environment (`.env` contents, process environment) is not keyed;
 users opt in with `cache.key.env` and `cache.key.files`.
 
 ## Rehearsing mixed versions

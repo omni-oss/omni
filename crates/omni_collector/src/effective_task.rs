@@ -7,9 +7,9 @@
 //! over exactly those bytes, so the encoding is the contract: any change to it
 //! needs a new [`VERSION`].
 //!
-//! **Nothing here is wired into the cache key yet.** Plumbing the digest through
-//! the executor, dry-run, project hasher and cache store is F06.3, so existing
-//! keys are unchanged by this module.
+//! The digest reaches every cache key as the effective-task leaf the collector
+//! inserts (F06.3). `omni_task_context::effective_task::build` is the one builder
+//! of this value; every site that computes a key reads the digest it produces.
 //!
 //! # Encoding
 //!
@@ -41,12 +41,12 @@
 //! ancestry, output-log display policy, redaction, cache enablement and its
 //! provenance, measured results. See `F06.1-effective-field-audit.md`.
 //!
-//! Carried forward to F06.3 rather than decided here, because they belong to the
-//! invocation and not the finalized definition: merged invocation arguments and
-//! retry overrides, and the platform, environment and path context that command
-//! expressions consume. Putting platform in this per-task digest would also stop
-//! unrelated tasks sharing a remote cache across operating systems, so that needs
-//! a deliberate decision, not a default.
+//! Not in this digest, because they belong to the invocation and not the
+//! finalized definition: the merged invocation arguments (they reach the key
+//! through the execution info instead), invocation retry overrides, and the
+//! platform, loaded environment values and path context that command expressions
+//! consume. Putting platform in this per-task digest would also stop unrelated
+//! tasks sharing a remote cache across operating systems.
 
 use std::collections::{BTreeMap, BTreeSet};
 

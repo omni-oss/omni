@@ -1371,8 +1371,8 @@ mod tests {
 
     /// RFC 0024 F06.3 (decision D1): the cache key version leaf,
     /// `BLAKE3(b"omni.cache-key\0" || u32_le(version))`, inserted after the
-    /// identity leaf and before the effective-task leaf. Test-only oracle until
-    /// the production constant `CACHE_KEY_VERSION` exists.
+    /// identity leaf and before the effective-task leaf. Test-only oracle,
+    /// independent of the production leaf functions.
     fn cache_key_version_leaf_v1(version: u32) -> DefaultHash {
         omni_hasher::impls::hash_parts([
             b"omni.cache-key\0".as_slice(),
@@ -1380,8 +1380,8 @@ mod tests {
         ])
     }
 
-    /// RFC 0024 F06.3 proposal, as a test-only oracle until the production
-    /// leaf exists: `b"omni.effective-task\0" || 0x01 || digest(32)`. It sits
+    /// RFC 0024 F06.3, as a test-only oracle independent of the production
+    /// leaf function: `b"omni.effective-task\0" || 0x01 || digest(32)`. It sits
     /// after the identity leaf, so every earlier leaf keeps its position.
     fn effective_leaf_v1(effective_digest: DefaultHash) -> DefaultHash {
         omni_hasher::impls::hash_parts([
@@ -1541,11 +1541,10 @@ mod tests {
         assert_eq!(digests.collector, digests.final_key);
     }
 
-    /// RFC 0024 F06.3 proof (FAILS on the base): the final key is the v1
-    /// key inputs plus the cache key version leaf (D1) and the effective-task leaf,
-    /// in that order, inserted after the identity leaf.
-    /// `digests_for` passes no effective task today, because the collector has
-    /// no way to receive one; F06.3 changes that helper to pass `config`.
+    /// RFC 0024 F06.3 proof: the final key is the v1 key inputs plus the cache
+    /// key version leaf (D1) and the effective-task leaf, in that order,
+    /// inserted after the identity leaf. The fixture's effective digest is that
+    /// of the default config.
     #[tokio::test]
     async fn the_final_key_carries_the_effective_task_leaf() {
         let temp = tempfile::tempdir().unwrap();
