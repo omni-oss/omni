@@ -237,7 +237,8 @@ ones that leave it fail the restore. A restore failure
 is a cache miss and the task executes, not a successful hit with missing outputs.
 Existing regular output files are replaced by the cached content (written to a
 fresh sibling file and renamed over them, so a hardlink is never written
-through); an existing non-file at an output path fails the restore. Files are
+through, including read-only files); an existing non-file at an output path, or
+a parent directory that cannot be written, fails the restore. Files are
 copied, not hardlinked to the cache, so later workspace edits cannot mutate the
 cached inode. This is not a sandbox for task execution.
 

@@ -273,15 +273,46 @@ fn write_output(
         }
         Err(e) => return Err(e),
     }
+    // A stale temp from a crashed run can share this pid and counter, so
+    // take the next name when `create_new` finds one.
     static NEXT: std::sync::atomic::AtomicU64 =
         std::sync::atomic::AtomicU64::new(0);
-    let temp = format!(
-        ".omni-restore-{}-{}",
-        std::process::id(),
-        NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-    );
-    copy_new(&mut source, parent, Path::new(&temp))?;
-    parent.rename(&temp, parent, name).inspect_err(|_| {
+    let mut attempts = 0;
+    let temp = loop {
+        let temp = format!(
+            ".omni-restore-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        );
+        match copy_new(&mut source, parent, Path::new(&temp)) {
+            Ok(()) => break temp,
+            Err(e)
+                if e.kind() == io::ErrorKind::AlreadyExists && attempts < 8 =>
+            {
+                attempts += 1;
+            }
+            Err(e) => return Err(e),
+        }
+    };
+    // The rename is the guard: it replaces whatever is at `name` (a swapped-in
+    // symlink or directory is never followed) through the retained parent.
+    let renamed = parent.rename(&temp, parent, name);
+    #[cfg(windows)]
+    let renamed = match renamed {
+        // Windows refuses to replace a read-only file; the cached content wins.
+        Err(e) if e.kind() == io::ErrorKind::PermissionDenied => {
+            let mut perms = parent.symlink_metadata(name)?.permissions();
+            if perms.readonly() {
+                perms.set_readonly(false);
+                parent.set_permissions(name, perms)?;
+                parent.rename(&temp, parent, name)
+            } else {
+                Err(e)
+            }
+        }
+        other => other,
+    };
+    renamed.inspect_err(|_| {
         let _ = parent.remove_file(&temp);
     })
 }
@@ -590,6 +621,101 @@ mod tests {
         write_output(source.path(), &parents, &name).unwrap();
         assert!(root.path().join("real/out").exists());
         assert!(test_destination(root.path(), "outside/out").is_err());
+    }
+
+    fn leftovers(dir: &Path) -> usize {
+        std::fs::read_dir(dir)
+            .unwrap()
+            .filter(|e| {
+                e.as_ref()
+                    .unwrap()
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(".omni-restore-")
+            })
+            .count()
+    }
+
+    #[test]
+    fn a_read_only_existing_file_is_replaced() {
+        let root = tempfile::tempdir().unwrap();
+        let source = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(source.path(), b"cached").unwrap();
+        let path = root.path().join("out");
+        std::fs::write(&path, b"local").unwrap();
+        let mut perms = std::fs::metadata(&path).unwrap().permissions();
+        perms.set_readonly(true);
+        std::fs::set_permissions(&path, perms).unwrap();
+        Restore::prepare(root.path(), &entry(source.path(), &path))
+            .unwrap()
+            .write()
+            .unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"cached");
+        assert_eq!(leftovers(root.path()), 0);
+    }
+
+    #[test]
+    fn an_existing_directory_at_the_destination_fails_without_leftovers() {
+        let root = tempfile::tempdir().unwrap();
+        let source = tempfile::NamedTempFile::new().unwrap();
+        std::fs::create_dir(root.path().join("out")).unwrap();
+        let (parents, name) = test_destination(root.path(), "out").unwrap();
+        assert!(write_output(source.path(), &parents, &name).is_err());
+        assert!(root.path().join("out").is_dir());
+        assert_eq!(leftovers(root.path()), 0);
+        let path = root.path().join("out");
+        assert!(
+            Restore::prepare(root.path(), &entry(source.path(), &path))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn a_stale_temp_file_does_not_block_replacement() {
+        let root = tempfile::tempdir().unwrap();
+        let source = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(source.path(), b"cached").unwrap();
+        std::fs::write(root.path().join("out"), b"local").unwrap();
+        for n in 0..4 {
+            std::fs::write(
+                root.path()
+                    .join(format!(".omni-restore-{}-{n}", std::process::id())),
+                b"stale",
+            )
+            .unwrap();
+        }
+        let (parents, name) = test_destination(root.path(), "out").unwrap();
+        write_output(source.path(), &parents, &name).unwrap();
+        assert_eq!(std::fs::read(root.path().join("out")).unwrap(), b"cached");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlink_at_the_destination_is_refused_and_not_followed() {
+        let root = tempfile::tempdir().unwrap();
+        let outside = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(outside.path(), b"keep").unwrap();
+        let source = tempfile::NamedTempFile::new().unwrap();
+        std::os::unix::fs::symlink(outside.path(), root.path().join("out"))
+            .unwrap();
+        let (parents, name) = test_destination(root.path(), "out").unwrap();
+        assert!(write_output(source.path(), &parents, &name).is_err());
+        assert_eq!(std::fs::read(outside.path()).unwrap(), b"keep");
+        assert_eq!(leftovers(root.path()), 0);
+    }
+
+    #[test]
+    fn a_destination_listed_twice_is_written_once_over_the_other() {
+        let root = tempfile::tempdir().unwrap();
+        let source = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(source.path(), b"cached").unwrap();
+        let path = root.path().join("out");
+        std::fs::write(&path, b"local").unwrap();
+        let mut e = entry(source.path(), &path);
+        e.files.push(e.files[0].clone());
+        Restore::prepare(root.path(), &e).unwrap().write().unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"cached");
+        assert_eq!(leftovers(root.path()), 0);
     }
 
     #[test]
