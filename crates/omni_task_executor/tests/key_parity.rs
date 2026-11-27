@@ -75,10 +75,15 @@ async fn the_executor_the_dry_run_and_hash_project_agree_on_every_key() {
     let dir = tempfile::tempdir().expect("tempdir");
     let config = exec_preset(4, 3, DependencyStrategy::Layered);
     generate_workspace(dir.path(), &config).expect("generate");
-    let ctx = Context::new(
+    let ctx = load(dir.path()).await;
+    assert_parity(&ctx).await;
+}
+
+async fn load(dir: &std::path::Path) -> omni_context::LoadedContext<RealSys> {
+    Context::new(
         RealSys,
         "development",
-        dir.path(),
+        dir,
         false,
         "workspace.omni.yaml",
         None,
@@ -87,10 +92,14 @@ async fn the_executor_the_dry_run_and_hash_project_agree_on_every_key() {
     .expect("context")
     .into_loaded()
     .await
-    .expect("load");
+    .expect("load")
+}
 
-    let real = digests(&ctx, false, false, &[]).await;
-    let dry = digests(&ctx, true, false, &[]).await;
+async fn assert_parity(
+    ctx: &omni_context::LoadedContext<RealSys>,
+) -> BTreeMap<(String, String), DefaultHash> {
+    let real = digests(ctx, false, false, &[]).await;
+    let dry = digests(ctx, true, false, &[]).await;
     assert!(real.len() > 3, "tasks with dependencies are in the run");
     assert_eq!(real, dry, "dry run and real run");
 
@@ -104,7 +113,7 @@ async fn the_executor_the_dry_run_and_hash_project_agree_on_every_key() {
 
     // An invocation arg is a key input, and `hash project` (which has no
     // invocation) is unaffected by it.
-    let with_arg = digests(&ctx, true, false, &[("k", "v")]).await;
+    let with_arg = digests(ctx, true, false, &[("k", "v")]).await;
     for (key, digest) in &real {
         assert_ne!(
             with_arg.get(key),
@@ -116,9 +125,64 @@ async fn the_executor_the_dry_run_and_hash_project_agree_on_every_key() {
     // Without dependencies the dependency leaves and the dependency set of the
     // effective definition are gone, so a task with dependencies gets a
     // different key by design.
-    let alone = digests(&ctx, true, true, &[]).await;
+    let alone = digests(ctx, true, true, &[]).await;
     assert_eq!(alone.len(), 4, "one `t2` per project");
     for (key, digest) in &alone {
         assert_ne!(real.get(key), Some(digest), "{key:?} has dependencies");
+    }
+    real
+}
+
+/// Adds `retry_exec` to every `t2` of a generated workspace.
+fn add_retry_exec(dir: &std::path::Path) {
+    for entry in std::fs::read_dir(dir.join("packages")).expect("packages") {
+        let file = entry.expect("entry").path().join("project.omni.yaml");
+        let body = std::fs::read_to_string(&file).expect("read");
+        let mut out = String::new();
+        for line in body.lines() {
+            out.push_str(line);
+            out.push('\n');
+            if line.trim_start().starts_with("exec: ") && line.ends_with(" t2")
+            {
+                out.push_str(&line.replacen("exec: ", "retry_exec: ", 1));
+                out.push('\n');
+            }
+        }
+        std::fs::write(file, out).expect("write");
+    }
+}
+
+/// #189 made graph nodes carry `retry_exec`. The effective-task digest, the
+/// executor key, the dry-run key, `hash project` and so the workspace hasher
+/// must all see it, and it must change the key.
+#[tokio::test]
+async fn a_task_with_retry_exec_has_the_same_key_everywhere() {
+    let plain = tempfile::tempdir().expect("tempdir");
+    let retry = tempfile::tempdir().expect("tempdir");
+    let config = exec_preset(4, 3, DependencyStrategy::Layered);
+    generate_workspace(plain.path(), &config).expect("generate");
+    generate_workspace(retry.path(), &config).expect("generate");
+    add_retry_exec(retry.path());
+    let body = std::fs::read_to_string(
+        retry
+            .path()
+            .join("packages")
+            .join("p-0")
+            .join("project.omni.yaml"),
+    )
+    .expect("read");
+    assert!(
+        body.contains("retry_exec: "),
+        "retry_exec was added: {body}"
+    );
+
+    let before = assert_parity(&load(plain.path()).await).await;
+    let after = assert_parity(&load(retry.path()).await).await;
+    assert_eq!(before.len(), after.len());
+    for (key, digest) in &before {
+        let changed = after.get(key) != Some(digest);
+        if key.1 == "t2" {
+            assert!(changed, "retry_exec must reach the key of {key:?}");
+        }
     }
 }
