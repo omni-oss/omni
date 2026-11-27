@@ -753,6 +753,26 @@ impl LoadedLayer {
         }
     }
 
+    /// A layer emitted by the ordered contributor `id`.
+    pub(crate) fn contributed(
+        id: crate::ContributorId,
+        dir: OmniPath,
+        layer: ProjectLayer,
+    ) -> Self {
+        Self {
+            source: DeclarationSource::contributor(id),
+            dir,
+            layer,
+            cache_enabled: None,
+            enabled: Vec::new(),
+        }
+    }
+
+    pub(crate) fn with_dir(mut self, dir: OmniPath) -> Self {
+        self.dir = dir;
+        self
+    }
+
     /// A layer nothing can attribute: anonymous source, empty directory.
     pub fn unattributed(layer: ProjectLayer) -> Self {
         Self::fileless(LayerId::default(), OmniPath::default(), layer)
@@ -770,7 +790,6 @@ impl LoadedLayer {
     }
 
     /// The same layer with side `cache.enabled` declarations appended.
-    #[allow(dead_code)]
     pub(crate) fn with_enabled(
         mut self,
         decls: impl IntoIterator<Item = EnabledDecl>,
