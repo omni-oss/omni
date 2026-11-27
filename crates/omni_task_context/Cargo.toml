@@ -29,5 +29,12 @@ omni_configurations = { workspace = true }
 omni_task_output_logs = { workspace = true }
 serde_json = { workspace = true }
 
+[dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "effective_digest"
+harness = false
+
 [lints]
 workspace = true
