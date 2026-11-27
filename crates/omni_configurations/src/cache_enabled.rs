@@ -89,7 +89,10 @@ pub const INFERRED_TASK_CACHE_ENABLED_FALLBACK: bool = false;
 
 impl CacheEnabled {
     /// The highest tier that has a value wins; with none, `host_fallback` applies.
-    /// Candidates may come in any order.
+    /// Candidates of different sources may come in any order. Of several
+    /// candidates with the same source the last one wins, so callers pass at
+    /// most one per source and resolve ties themselves (ordered contributors use
+    /// `resolve_plugin_tier`).
     pub fn resolve(
         candidates: impl IntoIterator<Item = (CacheEnabledSource, Option<bool>)>,
         host_fallback: bool,
@@ -264,6 +267,15 @@ mod tests {
             ),
             decided(true, TaskExplicit)
         );
+    }
+
+    #[test]
+    fn of_equal_sources_the_last_candidate_wins() {
+        let r = |a, b| {
+            CacheEnabled::resolve([(Plugin, Some(a)), (Plugin, Some(b))], true)
+        };
+        assert_eq!(r(true, false), decided(false, Plugin));
+        assert_eq!(r(false, true), decided(true, Plugin));
     }
 
     #[test]
