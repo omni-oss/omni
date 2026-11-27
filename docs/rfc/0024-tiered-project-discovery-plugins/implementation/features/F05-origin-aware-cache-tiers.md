@@ -58,7 +58,8 @@ reshaping.
 ## Out of scope
 
 - The activation-level `defaults` config surface (`tasks.cache.enabled`, `key.files`,
-  `key.env`): it is part of plugin activation and lands with the plugin config work.
+  `key.env`): it is part of plugin activation and is tracked in
+  [P04](../plugins/P04-project-inference-controls-and-apply.md) (item 4, standard `defaults`).
   Only the tier seam is here.
 
 ## Acceptance
