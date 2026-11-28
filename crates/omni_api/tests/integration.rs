@@ -1357,6 +1357,23 @@ fn write_colliding_two_source_workspace(dir: &Path) {
 }
 
 #[tokio::test]
+async fn projection_sync_never_overwrites_a_ledger_from_a_newer_omni() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    write_two_source_workspace(tmp.path());
+    let ledger = tmp.path().join(".omni/sources/projection/links.json");
+    std::fs::create_dir_all(ledger.parent().unwrap()).unwrap();
+    let newer = r#"{"version":"2.0.0","links":[],"tracking":{}}"#;
+    std::fs::write(&ledger, newer).unwrap();
+
+    let result = make_api(tmp.path())
+        .projection_sync(omni_api::ProjectionSyncRequest::default())
+        .await;
+
+    assert!(result.is_err(), "sync refuses a ledger it cannot interpret");
+    assert_eq!(std::fs::read_to_string(&ledger).unwrap(), newer);
+}
+
+#[tokio::test]
 async fn projection_run_wide_collision_aborts_before_any_write() {
     let tmp = tempfile::TempDir::new().unwrap();
     write_colliding_two_source_workspace(tmp.path());

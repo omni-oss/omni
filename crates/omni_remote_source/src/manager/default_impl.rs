@@ -330,6 +330,9 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
         // Fast path: a locked pin whose tree is complete needs no lock and no
         // network.
         if let Some(pin) = &locked {
+            // Even the lock-free path must not touch a layout it cannot
+            // interpret: leases are written into the store.
+            self.check_layout_readonly().await?;
             let tree = self.tree_dir(kind, &slug, pin);
             // Lease first, then check: a prune that already won the exclusive
             // lease has deleted the tree (seen as incomplete below), and one
@@ -1222,6 +1225,9 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
         dry_run: bool,
     ) -> Result<PruneReport, Error> {
         filter.validate()?;
+        // Before the pending sweep, which deletes: an older omni must not
+        // delete from a layout it cannot interpret.
+        self.check_layout_readonly().await?;
         let now = SystemTime::now();
         let reclaimed_pending = match reclaim(
             &self.store_root_path,

@@ -1,12 +1,12 @@
 pub macro env {
     ($name:expr) => {{
-        let rt_var = std::env::var("e");
+        let rt_var = std::env::var($name);
 
         match rt_var {
             Ok(o) => Ok(o),
             Err(e) => {
                 if matches!(e, std::env::VarError::NotPresent) {
-                    let cmp_var = option_env!("e").map(|e| e.to_string());
+                    let cmp_var = option_env!($name).map(|e| e.to_string());
 
                     if let Some(var) = cmp_var {
                         Ok(var)
@@ -49,4 +49,25 @@ pub(crate) fn get_service_and_user(
     )?;
 
     Ok((service, user))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::env;
+
+    // Each test owns a distinct variable name, so parallel tests do not race.
+    #[test]
+    fn env_reads_the_named_variable() {
+        unsafe { std::env::set_var("OMNI_SETUP_TEST_NAMED_VAR", "set") };
+        let value = env!("OMNI_SETUP_TEST_NAMED_VAR", "default").unwrap();
+        unsafe { std::env::remove_var("OMNI_SETUP_TEST_NAMED_VAR") };
+        assert_eq!(value, "set");
+    }
+
+    #[test]
+    fn env_falls_back_to_the_default_when_unset() {
+        let value = env!("OMNI_SETUP_TEST_UNSET_VAR", "default").unwrap();
+        assert_eq!(value, "default");
+        assert!(env!("OMNI_SETUP_TEST_UNSET_VAR").is_err());
+    }
 }
