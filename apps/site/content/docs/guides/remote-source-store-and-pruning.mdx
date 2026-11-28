@@ -10,7 +10,8 @@ checkouts live in the store and are reused by path and commit.
 
 `omni remote-sources prune` is the only command that deletes from the store. A
 deleted checkout is fetched again the next time it is used, so pruning costs
-network and breaks offline use until then.
+network and breaks offline use until then. For the unrelated cache that holds task
+results, see [prune a shared worktree cache](/docs/guides/pruning-shared-worktree-caches).
 
 ## What prune keeps
 

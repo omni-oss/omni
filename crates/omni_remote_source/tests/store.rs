@@ -1489,6 +1489,30 @@ async fn a_corrupt_registration_refuses_the_consulting_flags_only() {
 }
 
 #[tokio::test]
+async fn include_referenced_does_not_read_a_corrupt_registry() {
+    if !omni_test_capabilities::gate(
+        "git",
+        git_available(),
+        "git binary not found on PATH",
+    ) {
+        return;
+    }
+    let (shared, _b, _repo, _source, root, _refs) = referenced_checkout().await;
+    std::fs::write(shared.root.join("workspaces/corrupt.json"), b"not json")
+        .expect("write corrupt registration");
+    let a = Workspace::with_store(&shared.root);
+    let manager = a.manager().await;
+    let filter = StorePruneFilter {
+        larger_than: Some(1),
+        include_referenced: true,
+        ..Default::default()
+    };
+    let report = manager.prune_store_report(&filter, false).await.unwrap();
+    assert_eq!(report.removed.len(), 1);
+    assert!(!root.exists());
+}
+
+#[tokio::test]
 async fn a_registration_written_after_the_dry_run_still_protects() {
     if !omni_test_capabilities::gate(
         "git",
@@ -1498,7 +1522,7 @@ async fn a_registration_written_after_the_dry_run_still_protects() {
         return;
     }
     let shared = shared_store();
-    let (repo, url, commit) = build_repo("late registration\n");
+    let (_repo, url, commit) = build_repo("late registration\n");
     let source = source_of(&url, &commit);
     let a = Workspace::with_store(&shared.root);
     let manager = a.manager().await;
@@ -1540,8 +1564,6 @@ async fn a_registration_written_after_the_dry_run_still_protects() {
     assert!(report.removed.is_empty(), "the in-lock re-read missed it");
     assert_eq!(report.skipped_referenced.len(), 1);
     assert!(mat.root.exists());
-
-    let _ = repo;
 }
 
 #[tokio::test]
@@ -1695,6 +1717,4 @@ async fn unused_removes_only_unleased_unreferenced_checkouts() {
     assert_eq!(report.skipped_referenced.len(), 1);
     assert!(!mat_a.root.exists());
     assert!(mat_b.root.exists(), "removed a referenced checkout");
-
-    let _ = (_repo_a, _repo_b);
 }

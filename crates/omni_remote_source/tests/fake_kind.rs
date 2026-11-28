@@ -22,7 +22,7 @@ use omni_remote_source::{
     manager::{
         RemoteSourceManager, StorePruneFilter, config::RemoteSourceConfig,
     },
-    registration::RegistrationData,
+    registration::{RegistrationData, strip_verbatim_prefix},
 };
 use system_traits::impls::RealSys;
 use tempfile::TempDir;

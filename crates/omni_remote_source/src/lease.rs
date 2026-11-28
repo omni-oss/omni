@@ -24,13 +24,10 @@ use crate::{driver::is_safe_segment, error::Error};
 #[must_use = "dropping the lease releases checkout retention"]
 pub struct SourceLease {
     _guard: LockGuard,
-    /// The checkout this lease names, so a [`LeaseSet`] can drop duplicates.
-    key: LeaseKey,
+    /// The lease file this handle locks, so a [`LeaseSet`] can drop duplicates
+    /// by checkout, including the store root.
+    path: PathBuf,
 }
-
-/// The identity of one checkout lease: the same `(kind, slug, pin)` triple the
-/// lease file path is built from.
-type LeaseKey = (String, String, String);
 
 impl std::fmt::Debug for SourceLease {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -54,14 +51,15 @@ impl SourceLease {
         pin: &str,
     ) -> Result<Self, Error> {
         let path = Self::path(store_root, kind, slug, pin)?;
+        let guard = LockGuard::acquire_shared(&path).await?;
         Ok(Self {
-            _guard: LockGuard::acquire_shared(path).await?,
-            key: (kind.to_string(), slug.to_string(), pin.to_string()),
+            _guard: guard,
+            path,
         })
     }
 
-    fn key(&self) -> &LeaseKey {
-        &self.key
+    fn file(&self) -> &Path {
+        &self.path
     }
 
     /// Try an exclusive lease for a collector. `None` means a reader holds it.
@@ -138,7 +136,7 @@ pub struct LeaseSet(Arc<Mutex<LeaseSetInner>>);
 #[derive(Debug, Default)]
 struct LeaseSetInner {
     leases: Vec<Arc<SourceLease>>,
-    keys: HashSet<LeaseKey>,
+    keys: HashSet<PathBuf>,
 }
 
 impl LeaseSet {
@@ -151,7 +149,7 @@ impl LeaseSet {
     pub fn hold(&self, lease: Arc<SourceLease>) {
         // The set is only appended to, so a poisoned lock leaves it consistent.
         let mut inner = self.0.lock().unwrap_or_else(|e| e.into_inner());
-        if inner.keys.insert(lease.key().clone()) {
+        if inner.keys.insert(lease.file().to_path_buf()) {
             inner.leases.push(lease);
         }
     }
@@ -169,7 +167,7 @@ impl LeaseSet {
         );
         let mut inner = self.0.lock().unwrap_or_else(|e| e.into_inner());
         for lease in taken.leases {
-            if inner.keys.insert(lease.key().clone()) {
+            if inner.keys.insert(lease.file().to_path_buf()) {
                 inner.leases.push(lease);
             }
         }

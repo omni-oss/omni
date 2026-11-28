@@ -547,7 +547,7 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
         self.ensure_lockfile_parent().await?;
         let Some(lockfile_path) = self.normalized_lockfile_path().await else {
             tracing::warn!(
-                "not registering this workspace: the lockfile path {} is not absolute",
+                "not registering this workspace: the lockfile path {} could not be resolved to an absolute file path",
                 self.lockfile_path.display()
             );
             return Ok(None);
@@ -1772,6 +1772,40 @@ mod tests {
         ];
         for (name, filter, ok) in cases {
             assert_eq!(filter.validate().is_ok(), ok, "{name}");
+        }
+
+        let day = Some(Duration::from_secs(86_400));
+        assert!(
+            StorePruneFilter {
+                larger_than: Some(1),
+                ..Default::default()
+            }
+            .consults_references()
+        );
+        assert!(
+            StorePruneFilter {
+                unused: true,
+                ..Default::default()
+            }
+            .consults_references()
+        );
+        for filter in [
+            StorePruneFilter {
+                all: true,
+                ..Default::default()
+            },
+            StorePruneFilter {
+                larger_than: Some(1),
+                include_referenced: true,
+                ..Default::default()
+            },
+            StorePruneFilter {
+                older_than: day,
+                include_referenced: true,
+                ..Default::default()
+            },
+        ] {
+            assert!(!filter.consults_references(), "{filter:?}");
         }
     }
 

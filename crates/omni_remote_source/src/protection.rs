@@ -627,6 +627,73 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_listed_file_that_appears_after_a_retry_is_read() {
+        let hall = ScriptedFs::default().read(vec![
+            Err(io::Error::from(io::ErrorKind::NotFound)),
+            Ok(b"ok".to_vec()),
+        ]);
+        let value = retry(SHORT, || hall.read_file(Path::new("x")))
+            .await
+            .unwrap();
+        assert_eq!(value, b"ok");
+        assert_eq!(hall.read_calls.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn a_probe_live_then_listing_not_found_reads_as_empty() {
+        // The directory vanished between the liveness probe and the listing.
+        let hall = ScriptedFs::default()
+            .list(vec![Err(io::Error::from(io::ErrorKind::NotFound))]);
+        read_reference_dir(
+            &hall,
+            &registry(),
+            Path::new("/ws/refs"),
+            SHORT,
+            &mut HashSet::new(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(hall.list_calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn a_timeout_stops_further_reads() {
+        let mut state = RegistryState::default();
+        let key = ("git".into(), "remote".into(), "pin".into());
+        let first = recheck(
+            &HangingFs,
+            &registry(),
+            Path::new("/store"),
+            Path::new("/ws/refs"),
+            SHORT,
+            &mut state,
+            &key,
+        )
+        .await;
+        assert!(
+            matches!(&first, Recheck::Failed(message) if message.contains("timed out")),
+            "{first:?}"
+        );
+        assert!(state.stopped().is_some());
+
+        let second = ScriptedFs::default();
+        assert_eq!(
+            recheck(
+                &second,
+                &registry(),
+                Path::new("/store"),
+                Path::new("/ws/refs"),
+                SHORT,
+                &mut state,
+                &key,
+            )
+            .await,
+            Recheck::Failed(state.stopped().unwrap().to_string())
+        );
+        assert_eq!(second.list_calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
     async fn unknown_kinds_are_ignored_and_unsafe_pins_fail_closed() {
         let mut data = RefSetData::default();
         let RefSetData::V1_0_0(inner) = &mut data;
