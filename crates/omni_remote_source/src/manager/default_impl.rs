@@ -568,15 +568,7 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
             }
             _ => PathBuf::from("."),
         };
-        // `std::fs` on purpose: `RemoteSourceSys` has no canonicalize, and the
-        // fallback below makes a failure here harmless.
-        let canonical = {
-            let parent = parent.clone();
-            tokio::task::spawn_blocking(move || std::fs::canonicalize(parent))
-                .await
-                .ok()
-                .and_then(Result::ok)
-        };
+        let canonical = self.sys.fs_canonicalize_async(&parent).await.ok();
         let mut path = canonical.unwrap_or(parent);
         if let Some(name) = lockfile.file_name() {
             path.push(name);

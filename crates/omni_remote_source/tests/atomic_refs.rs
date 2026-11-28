@@ -565,6 +565,16 @@ impl BaseFsRemoveFileAsync for FaultSys {
 }
 
 #[async_trait::async_trait]
+impl BaseFsCanonicalizeAsync for FaultSys {
+    async fn base_fs_canonicalize_async(
+        &self,
+        path: &Path,
+    ) -> io::Result<PathBuf> {
+        RealSys.fs_canonicalize_async(path).await
+    }
+}
+
+#[async_trait::async_trait]
 impl BaseFsRenameAsync for FaultSys {
     async fn base_fs_rename_async(
         &self,

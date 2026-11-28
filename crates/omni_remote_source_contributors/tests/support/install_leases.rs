@@ -132,6 +132,16 @@ impl BaseFsRemoveFileAsync for ReadingSys {
 }
 
 #[async_trait::async_trait]
+impl BaseFsCanonicalizeAsync for ReadingSys {
+    async fn base_fs_canonicalize_async(
+        &self,
+        path: &Path,
+    ) -> io::Result<PathBuf> {
+        RealSys.fs_canonicalize_async(path).await
+    }
+}
+
+#[async_trait::async_trait]
 impl BaseFsRenameAsync for ReadingSys {
     async fn base_fs_rename_async(
         &self,
