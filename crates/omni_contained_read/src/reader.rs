@@ -33,8 +33,10 @@ pub trait ReadThrough: Send + Sync {
     /// Fails if it cannot.
     async fn resolve(&self, path: &Path) -> io::Result<PathBuf>;
 
-    /// Answer from this sys's own state if it can; otherwise call `real` for
-    /// the (already cleaned, absolute) path.
+    /// Answer from this sys's own state if it can; otherwise call `real`.
+    /// `path` is the absolute path as `resolve` returned it (the form this sys
+    /// keys its own state by); it may still hold a Windows `\\?\` prefix or
+    /// `..`, and the contained read cleans it again before reading.
     async fn read_through(
         &self,
         path: &Path,
@@ -76,9 +78,11 @@ where
 /// - **inside the workspace root**: authorize, ask the seam's own state, and
 ///   on a miss read through a fresh `InputView` (symlinks rejected, limits
 ///   before allocation);
-/// - **wholly outside the root** (`OutsideRoot`, and only that): refused if it
-///   resolves back into the workspace (a best-effort alias check), otherwise
-///   delegated to the broker unchanged;
+/// - **wholly outside the root** (`OutsideRoot`, and only that): refused if
+///   it, in its cleaned or original spelling, resolves back into the
+///   workspace (a best-effort alias check); otherwise the cleaned path (the
+///   form that was judged) is delegated to the broker, so `link/..` means its
+///   lexical parent here, not what the OS would resolve;
 /// - **anything else** that is not a valid workspace path: refused.
 ///
 /// There is no fallback: an unsupported platform fails the read.

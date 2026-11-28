@@ -50,9 +50,13 @@ For a confined script that reads a file inside the workspace:
 | A path that is not valid UTF-8 was readable.                   | It fails with `InvalidInput`.                                                       |
 | On Windows the spelling of the name did not matter.            | The exact spelling is required, or the read fails with `input_view.case_mismatch`.  |
 
+Every other file call (`pathExists`, `readDirectory`, `stat`, writes and so
+on) and the cache keys are unchanged.
+
 Reads of files outside the workspace (for example a generator fetched into the
-shared source store), every other file call (`pathExists`, `readDirectory`,
-`stat`, writes and so on) and the cache keys are unchanged.
+shared source store) still go through the existing policy-checked read, with the
+path cleaned lexically first (`/x/link/../f` reads `/x/f`). A path that reaches
+the workspace through a symlink is refused, so the workspace path has to be used.
 
 A refused read reaches the script as an I/O error whose message starts with the
 code, for example `input_view.symlink: ...`, and names the workspace-relative path. It never contains an absolute host path. Run `omni code explain
