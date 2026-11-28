@@ -547,7 +547,7 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
         self.ensure_lockfile_parent().await?;
         let Some(lockfile_path) = self.normalized_lockfile_path().await else {
             tracing::warn!(
-                "not registering this workspace: the lockfile path {} could not be resolved to an absolute file path",
+                "not registering this workspace: the lockfile path {} could not be normalized to an absolute lockfile path",
                 self.lockfile_path.display()
             );
             return Ok(None);

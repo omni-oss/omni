@@ -379,18 +379,12 @@ async fn prune_protects_a_reference_whose_slug_depends_on_the_selector() {
         &std::fs::read(&registrations[0]).unwrap(),
     )
     .expect("parse the registration");
-    let lockfile = Path::new(registration.lockfile_path());
-    assert_eq!(
-        lockfile.file_name().and_then(|n| n.to_str()),
-        Some("lock.json")
+    let expected_parent =
+        std::fs::canonicalize(&b.sources_root).expect("canonical sources root");
+    let expected = strip_verbatim_prefix(
+        &expected_parent.join("lock.json").to_string_lossy(),
     );
-    assert_eq!(
-        lockfile
-            .parent()
-            .and_then(|p| p.file_name())
-            .and_then(|n| n.to_str()),
-        Some("sources")
-    );
+    assert_eq!(registration.lockfile_path(), expected);
 
     let a = Workspace::with_store(&store);
     let peer = a.manager(&driver).await.unwrap();

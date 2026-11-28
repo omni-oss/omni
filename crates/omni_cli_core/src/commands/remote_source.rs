@@ -149,7 +149,7 @@ async fn run_prune(
     }
     for checkout in &candidates.skipped_referenced {
         println!(
-            "  {} {} {} is referenced by a registered workspace and will be skipped",
+            "  {} {} {} is referenced by a registered workspace or this workspace and will be skipped",
             checkout.kind, checkout.remote, checkout.pin
         );
     }
@@ -234,7 +234,7 @@ async fn run_prune(
     }
     for checkout in &pruned.skipped_referenced {
         println!(
-            "Skipped {} {} {}: referenced by a registered workspace",
+            "Skipped {} {} {}: referenced by a registered workspace or this workspace",
             checkout.kind, checkout.remote, checkout.pin
         );
     }

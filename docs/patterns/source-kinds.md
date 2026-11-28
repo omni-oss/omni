@@ -51,7 +51,10 @@ not a cross-file rollback mechanism.
 `RemoteSourceManager::materialize_leased` returns the checkout plus an
 `Arc<SourceLease>`; hold it for as long as the tree may be read. `prune_store_report`
 skips leased checkouts (`skipped_in_use`), reclaims the others, and reports removal
-failures instead of hiding them; `prune_store` returns only what was removed.
+failures instead of hiding them; `prune_store` returns only what was removed. Under
+`--unused` it also skips checkouts a live workspace registration (or the pruning
+workspace's own refs) names, reporting them as `skipped_referenced`; age and size
+filters still include referenced checkouts.
 Plain `materialize` takes no lease. Lock order is remote lock, then lease, and the
 workspace advisory lock is never held while waiting on either. Leases bind
 cooperating omni processes only. Design: `docs/rfc/0024-tiered-project-discovery-plugins/implementation/features/F08.1-lease-gc-reference-protocol.md`.
