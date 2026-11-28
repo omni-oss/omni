@@ -55,3 +55,9 @@ hold a `LeaseSet` for its whole duration: `manager.materialize_into(&source, &le
 for each source, `leases.absorb(&expanded.leases)` for pack roots, and the set bound
 to a named variable. Never `let _ = ...`. Do not call plain `materialize` in these
 paths; a test in `omni_api` enforces it.
+
+`update_ref_sets` also publishes the workspace's registration
+(`<store>/workspaces/<hash>.json`, see `omni_remote_source::registration`) as the
+first file of the same `write_batch`, so a crash cannot leave references without a
+registration. It is skipped, with the references still written, when the store has
+no `VERSION` marker or is a newer layout. Nothing reads or deletes registrations yet.
