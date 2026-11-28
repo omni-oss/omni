@@ -2,6 +2,7 @@
 
 Keeping this up to date: when a pattern changes, update its example paths and this index in the same PR. Remove entries the code no longer follows.
 
+- [sys-abstraction.md](sys-abstraction.md): route filesystem calls through `*Sys` / `system_traits` handles instead of `std::fs` or `tokio::fs`.
 - [errors.md](errors.md): error types and diagnostics in Rust crates.
 - [diagnostic-prefixes.md](diagnostic-prefixes.md): error and notice code prefix ownership.
 - [source-kinds.md](source-kinds.md): adding a remote-source kind (`SourceDriver`) and publishing staged reference updates.
