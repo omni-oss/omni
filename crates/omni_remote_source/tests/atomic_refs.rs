@@ -565,6 +565,16 @@ impl BaseFsRemoveFileAsync for FaultSys {
 }
 
 #[async_trait::async_trait]
+impl BaseFsCanonicalizeAsync for FaultSys {
+    async fn base_fs_canonicalize_async(
+        &self,
+        path: &Path,
+    ) -> io::Result<PathBuf> {
+        RealSys.fs_canonicalize_async(path).await
+    }
+}
+
+#[async_trait::async_trait]
 impl BaseFsRenameAsync for FaultSys {
     async fn base_fs_rename_async(
         &self,
@@ -1111,4 +1121,48 @@ async fn atomic_refs_process_helper() {
         )
         .await
         .unwrap();
+}
+
+#[tokio::test]
+async fn the_registration_is_published_before_any_reference_set() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = dir.path().join("store");
+    std::fs::create_dir_all(&store).unwrap();
+    std::fs::write(store.join("VERSION"), "1\n").unwrap();
+    let sys = FaultSys::default();
+    let manager = RemoteSourceManager::new(config(dir.path()), sys.clone())
+        .await
+        .unwrap();
+    let refs = [reference("a", "p1")];
+    let updates = [
+        RefSetUpdate {
+            id: "generator",
+            mode: RefUpdate::ReplaceComplete,
+            refs: &refs,
+        },
+        RefSetUpdate {
+            id: "tool",
+            mode: RefUpdate::ReplaceComplete,
+            refs: &refs,
+        },
+    ];
+
+    // The first rename of the batch is the registration; fail the second.
+    sys.fail_rename_at
+        .store(sys.renames.load(Ordering::SeqCst) + 2, Ordering::SeqCst);
+    assert!(manager.update_ref_sets(&updates).await.is_err());
+
+    let registered =
+        std::fs::read_dir(store.join("workspaces")).unwrap().count();
+    assert_eq!(
+        registered, 1,
+        "a crash left references without a registration"
+    );
+    assert!(!dir.path().join("refs/generator.json").exists());
+    assert!(!dir.path().join("refs/tool.json").exists());
+
+    sys.fail_rename_at.store(0, Ordering::SeqCst);
+    manager.update_ref_sets(&updates).await.unwrap();
+    assert!(dir.path().join("refs/generator.json").exists());
+    assert!(dir.path().join("refs/tool.json").exists());
 }

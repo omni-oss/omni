@@ -449,9 +449,15 @@ pub trait RemoteSourceContributor<TSys: RemoteSourceSys>: Send + Sync {
         &self,
         store: &RemoteSourceManager<TSys>,
         opts: &InstallOptions,
+        leases: &LeaseSet,
     ) -> eyre::Result<Vec<RemoteSourceRef>>;
 }
 ```
+
+`leases` is the install's `LeaseSet` (RFC 0024 F08.7). A contributor leases every
+checkout it materializes into it (`materialize_into`). The caller owns the set and
+drops it only after the reference sets are persisted, so no checkout is both
+unleased and unreferenced while the install runs.
 
 Unlike `IgnoreContributor`, the trait is generic over `TSys` and receives the
 shared manager, because a single shared lockfile forbids each contributor owning

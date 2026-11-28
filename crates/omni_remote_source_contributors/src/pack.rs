@@ -598,6 +598,7 @@ where
         &self,
         manager: &RemoteSourceManager<TSys>,
         options: &InstallOptions,
+        leases: &LeaseSet,
     ) -> eyre::Result<Vec<RemoteSourceRef>> {
         let (expanded, mut refs) = expand_packs(
             manager,
@@ -607,6 +608,7 @@ where
             None,
         )
         .await?;
+        leases.absorb(&expanded.leases);
 
         for node in &expanded.nodes {
             refs.extend(
@@ -614,18 +616,25 @@ where
                     manager,
                     &node.generators,
                     options,
+                    leases,
                 )
                 .await?,
             );
             refs.extend(
-                crate::materialize_flat_remote(manager, &node.tools, options)
-                    .await?,
+                crate::materialize_flat_remote(
+                    manager,
+                    &node.tools,
+                    options,
+                    leases,
+                )
+                .await?,
             );
             refs.extend(
                 crate::materialize_flat_remote(
                     manager,
                     &node.projections,
                     options,
+                    leases,
                 )
                 .await?,
             );
