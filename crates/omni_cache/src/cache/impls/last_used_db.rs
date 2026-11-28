@@ -13,16 +13,20 @@ struct LocalLastUsedData {
 }
 
 pub struct LocalLastUsedDb<'a> {
+    sys: &'a system_traits::impls::RealSys,
     path: &'a std::path::Path,
     data: LocalLastUsedData,
 }
 
 impl<'a> LocalLastUsedDb<'a> {
     pub async fn load(
+        sys: &'a system_traits::impls::RealSys,
         path: &'a std::path::Path,
     ) -> Result<Self, LocalLastUsedDbError> {
-        if tokio::fs::try_exists(path).await? {
-            let bytes = tokio::fs::read(path).await?;
+        use system_traits::FsReadAsync as _;
+
+        if super::try_exists_following(sys, path).await? {
+            let bytes = sys.fs_read_async(path).await?;
             // The file only holds an access-time hint, so a layout this build
             // cannot decode (another omni version, a torn write) is reset
             // rather than failing every lookup, stats and prune. The next
@@ -39,9 +43,10 @@ impl<'a> LocalLastUsedDb<'a> {
                 }
             };
 
-            Ok(Self { path, data })
+            Ok(Self { sys, path, data })
         } else {
             Ok(Self {
+                sys,
                 path,
                 data: Default::default(),
             })
@@ -86,7 +91,7 @@ impl<'a> LocalLastUsedDb<'a> {
     pub async fn save(&self) -> Result<(), LocalLastUsedDbError> {
         let bytes = rmp_serde::encode::to_vec(&self.data)?;
 
-        crate::storage::write_atomic(self.path, &bytes).await?;
+        crate::storage::write_atomic(self.sys, self.path, &bytes).await?;
 
         Ok(())
     }
@@ -125,6 +130,8 @@ pub(crate) enum LocalLastUsedDbErrorInner {
 
 #[cfg(test)]
 mod tests {
+    use system_traits::impls::RealSys;
+
     use super::*;
 
     #[tokio::test]
@@ -135,7 +142,8 @@ mod tests {
         // an access-time hint, so the cache must stay usable.
         std::fs::write(&path, b"\xc1 not msgpack").unwrap();
 
-        let mut db = LocalLastUsedDb::load(&path).await.expect("reset");
+        let mut db =
+            LocalLastUsedDb::load(&RealSys, &path).await.expect("reset");
         let hash = DefaultHash::default();
         assert_eq!(
             db.get_last_used_timestamp("p", "t", hash).await.unwrap(),
@@ -147,7 +155,7 @@ mod tests {
             .await
             .unwrap();
         db.save().await.unwrap();
-        let again = LocalLastUsedDb::load(&path).await.unwrap();
+        let again = LocalLastUsedDb::load(&RealSys, &path).await.unwrap();
         assert_eq!(
             again.get_last_used_timestamp("p", "t", hash).await.unwrap(),
             Some(now)
@@ -158,6 +166,6 @@ mod tests {
     async fn a_read_error_other_than_a_bad_decode_is_still_an_error() {
         let dir = tempfile::tempdir().unwrap();
         // A directory where the file should be cannot be read as a file.
-        assert!(LocalLastUsedDb::load(dir.path()).await.is_err());
+        assert!(LocalLastUsedDb::load(&RealSys, dir.path()).await.is_err());
     }
 }

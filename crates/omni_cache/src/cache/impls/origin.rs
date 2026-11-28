@@ -5,6 +5,8 @@
 
 use std::path::Path;
 
+use system_traits::{FsReadAsync as _, impls::RealSys};
+
 pub(crate) const ORIGIN_MARKER: &str = ".omni-origin-remote";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -73,12 +75,15 @@ impl Marker {
 
 /// The marker in `entry_dir`: `None` for an entry with no marker (one built
 /// locally), `Some` otherwise.
-pub(crate) async fn read_marker(entry_dir: &Path) -> Option<Marker> {
+pub(crate) async fn read_marker(
+    sys: &RealSys,
+    entry_dir: &Path,
+) -> Option<Marker> {
     let worst = || Marker {
         origin: Origin::Isolated,
         verified_by: None,
     };
-    match tokio::fs::read(entry_dir.join(ORIGIN_MARKER)).await {
+    match sys.fs_read_async(entry_dir.join(ORIGIN_MARKER)).await {
         Ok(bytes) => {
             // A marker is one short line; anything else is unreadable.
             if bytes.len() > 256 {
@@ -108,7 +113,7 @@ mod tests {
     async fn markers_round_trip_and_anything_odd_is_isolated() {
         let temp = tempfile::tempdir().unwrap();
         let dir = temp.path();
-        assert_eq!(read_marker(dir).await, None);
+        assert_eq!(read_marker(&RealSys, dir).await, None);
         for m in [
             marker(Origin::Shared, None),
             marker(Origin::Shared, Some(KEY)),
@@ -117,7 +122,7 @@ mod tests {
             tokio::fs::write(dir.join(ORIGIN_MARKER), m.text())
                 .await
                 .unwrap();
-            assert_eq!(read_marker(dir).await, Some(m));
+            assert_eq!(read_marker(&RealSys, dir).await, Some(m));
         }
         let worst = Some(marker(Origin::Isolated, None));
         for odd in [
@@ -135,12 +140,12 @@ mod tests {
             tokio::fs::write(dir.join(ORIGIN_MARKER), odd)
                 .await
                 .unwrap();
-            assert_eq!(read_marker(dir).await, worst, "{odd:?}");
+            assert_eq!(read_marker(&RealSys, dir).await, worst, "{odd:?}");
         }
         tokio::fs::write(dir.join(ORIGIN_MARKER), "x".repeat(1000))
             .await
             .unwrap();
-        assert_eq!(read_marker(dir).await, worst);
+        assert_eq!(read_marker(&RealSys, dir).await, worst);
         // A marker that is a directory cannot be read: isolated.
         tokio::fs::remove_file(dir.join(ORIGIN_MARKER))
             .await
@@ -148,6 +153,6 @@ mod tests {
         tokio::fs::create_dir(dir.join(ORIGIN_MARKER))
             .await
             .unwrap();
-        assert_eq!(read_marker(dir).await, worst);
+        assert_eq!(read_marker(&RealSys, dir).await, worst);
     }
 }
