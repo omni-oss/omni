@@ -1,0 +1,38 @@
+[package]
+name = "omni_contained_read"
+rust-version.workspace = true
+edition.workspace = true
+version = "0.1.0"
+authors.workspace = true
+repository.workspace = true
+publish = false
+
+[lib]
+name = "omni_contained_read"
+path = "src/lib.rs"
+
+[dependencies]
+async-trait = { workspace = true }
+omni_capabilities = { workspace = true }
+omni_capability_sys = { workspace = true }
+omni_containment_configurations = { workspace = true }
+omni_diagnostic = { workspace = true }
+omni_input_view = { workspace = true }
+omni_path_utils = { workspace = true }
+omni_utils = { workspace = true }
+system_traits = { workspace = true }
+tokio = { workspace = true, features = ["rt"] }
+tracing = { workspace = true }
+
+[dev-dependencies]
+omni_test_capabilities = { workspace = true }
+serde_json = { workspace = true }
+system_traits = { workspace = true, features = [
+    "real-async-tokio",
+    "memory-async",
+] }
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread"] }
+
+[lints]
+workspace = true

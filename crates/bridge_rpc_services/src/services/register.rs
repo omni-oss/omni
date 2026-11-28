@@ -231,15 +231,31 @@ where
     S: FsSys,
     <S as BaseFsMetadataAsync>::Metadata: Send,
 {
+    register_fs_services_with_reader(router, sys.clone(), sys, prefix);
+}
+
+/// Like [`register_fs_services`], but the two file-read routes
+/// (`read-file-as-string`, `read-file-as-bytes`) read through `reader`; every
+/// other route keeps using `sys`.
+pub fn register_fs_services_with_reader<S, R>(
+    router: &mut Router,
+    sys: Arc<S>,
+    reader: Arc<R>,
+    prefix: &str,
+) where
+    S: FsSys,
+    <S as BaseFsMetadataAsync>::Metadata: Send,
+    R: BaseFsReadAsync + Send + Sync + 'static,
+{
     use fs_routes as r;
 
     router.add_service(
         join(prefix, r::READ_FILE_AS_STRING),
-        ReadFileAsStringService::new(sys.clone()),
+        ReadFileAsStringService::new(reader.clone()),
     );
     router.add_service(
         join(prefix, r::READ_FILE_AS_BYTES),
-        ReadFileAsBytesService::new(sys.clone()),
+        ReadFileAsBytesService::new(reader),
     );
     router.add_service(
         join(prefix, r::WRITE_STRING_TO_FILE),
@@ -352,6 +368,54 @@ pub fn register_services<S, P, L>(
     register_fs_services(router, sys.clone(), &options.fs_prefix);
     register_proc_services(router, sys, args_provider, &options.proc_prefix);
     register_log_service(router, logger, &options.log_path);
+}
+
+/// Like [`register_services`], but the file-read routes read through `reader`
+/// (see [`register_fs_services_with_reader`]).
+pub fn register_services_with_reader<S, R, P, L>(
+    router: &mut Router,
+    sys: Arc<S>,
+    reader: Arc<R>,
+    args_provider: Arc<P>,
+    logger: L,
+    options: RegisterServicesOptions,
+) where
+    S: FsSys + ProcSys,
+    <S as BaseFsMetadataAsync>::Metadata: Send,
+    R: BaseFsReadAsync + Send + Sync + 'static,
+    P: ArgsProvider,
+    L: Log + 'static,
+{
+    register_fs_services_with_reader(
+        router,
+        sys.clone(),
+        reader,
+        &options.fs_prefix,
+    );
+    register_proc_services(router, sys, args_provider, &options.proc_prefix);
+    register_log_service(router, logger, &options.log_path);
+}
+
+/// Like [`register_services_with_defaults`], but the file-read routes read
+/// through `reader`.
+pub fn register_services_with_defaults_and_reader<S, R>(
+    router: &mut Router,
+    sys: Arc<S>,
+    reader: Arc<R>,
+    options: RegisterServicesOptions,
+) where
+    S: FsSys + ProcSys,
+    <S as BaseFsMetadataAsync>::Metadata: Send,
+    R: BaseFsReadAsync + Send + Sync + 'static,
+{
+    register_services_with_reader(
+        router,
+        sys,
+        reader,
+        Arc::new(StdArgsProvider),
+        log::logger(),
+        options,
+    );
 }
 
 /// Convenience variant of [`register_services`] that uses
@@ -517,6 +581,128 @@ mod tests {
         let response = awaiter.wait().await;
         assert_eq!(response.status, ResponseStatusCode::SUCCESS);
         assert!(response.body.is_empty());
+    }
+
+    /// A reader that serves fixed bytes for one path and fails for the rest.
+    struct FixedReader;
+
+    #[async_trait::async_trait]
+    impl system_traits::BaseFsReadAsync for FixedReader {
+        async fn base_fs_read_async(
+            &self,
+            path: &std::path::Path,
+        ) -> std::io::Result<std::borrow::Cow<'static, [u8]>> {
+            if path.ends_with("allowed.txt") {
+                Ok(std::borrow::Cow::Borrowed(b"from the reader"))
+            } else {
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    "input_view.denied: refused by the reader",
+                ))
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn with_reader_only_the_read_routes_use_the_reader() {
+        let mut router = Router::new();
+        register_services_with_reader(
+            &mut router,
+            Arc::new(RealSys),
+            Arc::new(FixedReader),
+            Arc::new(StdArgsProvider),
+            DiscardLogger,
+            RegisterServicesOptions::default(),
+        );
+
+        let tmp = TempDir::new().unwrap();
+        // The file really contains something else: the reader's bytes win.
+        let allowed = tmp.path().join("allowed.txt");
+        std::fs::write(&allowed, b"on disk").unwrap();
+        let denied = tmp.path().join("denied.txt");
+        std::fs::write(&denied, b"on disk").unwrap();
+
+        for route in ["/fs/read-file-as-string", "/fs/read-file-as-bytes"] {
+            let (ctx, awaiter) = ServiceContextBuilder::new(route)
+                .with_headers(params_for(&PathParam {
+                    path: allowed.clone(),
+                }))
+                .build()
+                .await;
+            router.run(ctx).await.expect("router run should succeed");
+            let response = awaiter.wait().await;
+            assert_eq!(response.status, ResponseStatusCode::SUCCESS);
+            assert_eq!(response.body, b"from the reader");
+
+            let (ctx, _awaiter) = ServiceContextBuilder::new(route)
+                .with_headers(params_for(&PathParam {
+                    path: denied.clone(),
+                }))
+                .build()
+                .await;
+            let error = router
+                .run(ctx)
+                .await
+                .expect_err("the reader refuses this path");
+            assert!(
+                format!("{error:?}").contains("input_view.denied"),
+                "{error:?}"
+            );
+        }
+
+        // Every other route still uses the plain sys: it sees the real file
+        // the reader refused to serve.
+        for (route, expect) in
+            [("/fs/path-exists", true), ("/fs/is-file", true)]
+        {
+            let (ctx, awaiter) = ServiceContextBuilder::new(route)
+                .with_headers(params_for(&PathParam {
+                    path: denied.clone(),
+                }))
+                .build()
+                .await;
+            router.run(ctx).await.expect("router run should succeed");
+            let response = awaiter.wait().await;
+            assert_eq!(response.status, ResponseStatusCode::SUCCESS, "{route}");
+            let parsed: BoolResponse = read_response_returns(&response.headers);
+            assert_eq!(parsed.value, expect, "{route}");
+        }
+        let (ctx, awaiter) = ServiceContextBuilder::new("/fs/read-directory")
+            .with_headers(params_for(&PathParam {
+                path: tmp.path().to_path_buf(),
+            }))
+            .build()
+            .await;
+        router.run(ctx).await.expect("router run should succeed");
+        let response = awaiter.wait().await;
+        assert_eq!(response.status, ResponseStatusCode::SUCCESS);
+        let (ctx, awaiter) = ServiceContextBuilder::new("/fs/stat")
+            .with_headers(params_for(&PathParam { path: denied }))
+            .build()
+            .await;
+        router.run(ctx).await.expect("router run should succeed");
+        assert_eq!(awaiter.wait().await.status, ResponseStatusCode::SUCCESS);
+    }
+
+    #[tokio::test]
+    async fn register_services_still_reads_through_the_sys() {
+        let mut router = Router::new();
+        register_services_with_defaults(
+            &mut router,
+            Arc::new(RealSys),
+            RegisterServicesOptions::default(),
+        );
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("allowed.txt");
+        std::fs::write(&path, b"on disk").unwrap();
+        let (ctx, awaiter) =
+            ServiceContextBuilder::new("/fs/read-file-as-bytes")
+                .with_headers(params_for(&PathParam { path }))
+                .build()
+                .await;
+        router.run(ctx).await.expect("router run should succeed");
+        let response = awaiter.wait().await;
+        assert_eq!(response.body, b"on disk");
     }
 
     #[tokio::test]

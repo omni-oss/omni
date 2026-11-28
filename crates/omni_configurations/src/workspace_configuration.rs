@@ -5,6 +5,9 @@ use crate::validators::*;
 use garde::Validate;
 use maps::Map;
 use omni_capabilities::CapabilityPolicyConfig;
+pub use omni_containment_configurations::{
+    ContainedReads, ContainmentConfiguration, FsReadLimits, LimitsError,
+};
 pub use omni_experimental_features::ExperimentalFeatures;
 use omni_glob_config::GlobConfig;
 use schemars::JsonSchema;
@@ -97,6 +100,15 @@ pub struct WorkspaceConfiguration {
     #[serde(default)]
     pub capabilities: CapabilityPolicyConfig<Workspace>,
 
+    /// How the host bounds what scripts it does not fully trust can read.
+    /// Today this holds the file-read budgets under `limits.fs.read`; every key
+    /// is optional (absent means the host default) and a value of `0` or above
+    /// the host ceiling is a configuration error. Only the workspace file can
+    /// set them. They apply only when `enable_experimental.contained_reads`
+    /// and capabilities enforcement are both on.
+    #[serde(default)]
+    pub containment: ContainmentConfiguration,
+
     /// Configures `omni ignore sync`: the ignore files omni maintains a managed
     /// block in, and which pattern sources contribute to it. Absent behaves as
     /// the full default (`.gitignore`, `.ignore`, `.omniignore`; both sources
@@ -116,6 +128,22 @@ pub struct WorkspaceConfiguration {
 }
 
 impl WorkspaceConfiguration {
+    /// The contained-reads setting for a run: `Some` with the resolved file-read
+    /// limits when `enable_experimental.contained_reads` is on, `None`
+    /// otherwise. It only takes effect together with capabilities enforcement.
+    /// The limits are validated when the configuration is loaded, so the error
+    /// is only reachable for a configuration built in code.
+    pub fn contained_reads(
+        &self,
+    ) -> Result<Option<ContainedReads>, LimitsError> {
+        if !self.enable_experimental.contained_reads() {
+            return Ok(None);
+        }
+        Ok(Some(ContainedReads {
+            limits: self.containment.fs_read_limits()?,
+        }))
+    }
+
     #[allow(clippy::result_large_err)]
     pub async fn load_async<'a>(
         path: impl Into<&'a Path>,
@@ -287,6 +315,99 @@ mod tests {
         )
         .expect("valid tools sources");
         assert_eq!(cfg.tools.len(), 2);
+    }
+
+    #[test]
+    fn test_containment_defaults_to_the_host_limits() {
+        let cfg = serde_json::from_str::<WorkspaceConfiguration>(
+            r#"{"projects": []}"#,
+        )
+        .expect("valid");
+        assert_eq!(
+            cfg.containment.fs_read_limits().unwrap(),
+            FsReadLimits::DEFAULT
+        );
+        assert!(!cfg.enable_experimental.contained_reads());
+    }
+
+    #[test]
+    fn test_containment_limits_parse_and_validate_after_the_parse() {
+        let cfg = serde_json::from_str::<WorkspaceConfiguration>(
+            r#"{"projects": [], "containment": {"limits": {"fs": {"read": {"max_file_bytes": 1048576}}}}}"#,
+        )
+        .expect("valid");
+        assert_eq!(
+            cfg.containment.fs_read_limits().unwrap().max_file_bytes,
+            1048576
+        );
+
+        // The loader's parse errors name only the key path, so the bounds are
+        // checked after the parse (by the context load and `contained_reads`),
+        // where the message can name the key and the ceiling.
+        for bad in [
+            r#"{"max_file_bytes": 0}"#,
+            r#"{"max_file_bytes": 67108865, "max_total_bytes": 268435456}"#,
+            r#"{"max_file_bytes": 33554432}"#,
+        ] {
+            let json = format!(
+                r#"{{"projects": [], "enable_experimental": true, "containment": {{"limits": {{"fs": {{"read": {bad}}}}}}}}}"#
+            );
+            let cfg = serde_json::from_str::<WorkspaceConfiguration>(&json)
+                .expect("structurally valid");
+            let err = cfg.containment.fs_read_limits().unwrap_err().to_string();
+            assert!(err.contains("max_"), "{bad}: {err}");
+            assert!(cfg.contained_reads().is_err(), "{bad}");
+        }
+        // unknown keys are structural errors
+        assert!(
+            serde_json::from_str::<WorkspaceConfiguration>(
+                r#"{"projects": [], "containment": {"limits": {"fs": {"read": {"nope": 1}}}}}"#,
+            )
+            .is_err()
+        );
+        // not a containment-level key
+        assert!(
+            serde_json::from_str::<WorkspaceConfiguration>(
+                r#"{"projects": [], "containment": {"max_file_bytes": 1}}"#,
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn test_contained_reads_is_none_unless_the_feature_is_on() {
+        let off = serde_json::from_str::<WorkspaceConfiguration>(
+            r#"{"projects": [], "enable_experimental": {"capabilities": true}}"#,
+        )
+        .expect("valid");
+        assert_eq!(off.contained_reads().unwrap(), None);
+        let on = serde_json::from_str::<WorkspaceConfiguration>(
+            r#"{"projects": [], "enable_experimental": {"contained_reads": true}, "containment": {"limits": {"fs": {"read": {"max_file_bytes": 4096}}}}}"#,
+        )
+        .expect("valid");
+        assert_eq!(
+            on.contained_reads().unwrap().unwrap().limits.max_file_bytes,
+            4096
+        );
+    }
+
+    #[test]
+    fn test_containment_schema_has_per_field_bounds() {
+        let schema = schemars::schema_for!(WorkspaceConfiguration);
+        let value = serde_json::to_value(&schema).unwrap();
+        let containment = &value["properties"]["containment"];
+        assert!(containment.is_object(), "containment is in the schema");
+        let text = value.to_string();
+        // Each limit is an optional integer with a 1..=ceiling range.
+        let read = &value["$defs"]["FsReadLimitsConfiguration"];
+        assert_eq!(read["additionalProperties"], serde_json::json!(false));
+        let file = &read["properties"]["max_file_bytes"];
+        assert_eq!(file["minimum"], serde_json::json!(1));
+        assert_eq!(
+            file["maximum"],
+            serde_json::json!(FsReadLimits::CEILING.max_file_bytes)
+        );
+        assert!(text.contains("max_observations_per_path"));
     }
 
     #[test]

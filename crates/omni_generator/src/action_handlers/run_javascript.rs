@@ -81,6 +81,7 @@ pub async fn run_javascript<'a, S: GeneratorEventSubscriber>(
         // has not opted in, the policy is carried for provenance but the script
         // runs unconfined.
         enforce: ctx.enable_experimental,
+        contained_reads: ctx.contained_reads,
     };
 
     // Only Deno is fully confined on every platform; `node` and `bun` are

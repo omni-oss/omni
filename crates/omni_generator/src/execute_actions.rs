@@ -60,6 +60,9 @@ pub struct ExecuteActionsArgs<'a, S: GeneratorEventSubscriber = NoopSubscriber>
     /// Whether experimental features are enabled. Currently gates capability
     /// enforcement for `run-javascript`: when `false`, scripts run unconfined.
     pub enable_experimental: bool,
+    /// See [`HandlerContext::contained_reads`].
+    pub contained_reads:
+        Option<omni_containment_configurations::ContainedReads>,
     pub use_input_defaults: bool,
     pub js_script_runner: &'a dyn JsScriptRunner,
     pub input_provider: &'a dyn omni_input_provider::InputProvider<
@@ -141,6 +144,7 @@ pub async fn execute_actions<'a, S: GeneratorEventSubscriber>(
             capabilities: args.capabilities,
             capabilities_strictness: args.capabilities_strictness,
             enable_experimental: args.enable_experimental,
+            contained_reads: args.contained_reads,
             gen_session,
             js_script_runner: args.js_script_runner,
             input_provider: args.input_provider,

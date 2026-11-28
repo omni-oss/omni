@@ -117,6 +117,7 @@ pub async fn run_generator<'a, S: GeneratorEventSubscriber>(
         .available_generators(&available_generators)
         .workspace_capabilities(ctx.workspace_capabilities)
         .enable_experimental(ctx.enable_experimental)
+        .contained_reads(ctx.contained_reads)
         .input_provider(ctx.input_provider)
         .subscriber(ctx.subscriber.sink())
         .max_depth(ctx.max_depth)

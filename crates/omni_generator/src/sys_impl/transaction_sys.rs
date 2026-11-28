@@ -347,23 +347,42 @@ impl<S: GeneratorSys> TransactionSys<S> {
 // FsSys trait implementations
 // ---------------------------------------------------------------------------
 
-#[async_trait::async_trait]
-impl<S: GeneratorSys> BaseFsReadAsync for TransactionSys<S> {
-    async fn base_fs_read_async(
+impl<S: GeneratorSys> TransactionSys<S> {
+    /// Like the private resolution used by every operation, but fallible: a
+    /// relative path that cannot be anchored (no buffered cwd and the real cwd
+    /// is unavailable) is an error instead of a still-relative path.
+    pub async fn resolve_checked(&self, path: &Path) -> io::Result<PathBuf> {
+        if path.is_absolute() {
+            return Ok(clean(path));
+        }
+        let override_cwd = self.state.lock().await.cwd.clone();
+        let base = match override_cwd {
+            Some(base) => base,
+            None => self.wrapped_sys.env_current_dir_async().await?,
+        };
+        Ok(clean(&base.join(path)))
+    }
+
+    /// Reads the (already resolved and cleaned) path `cp` from the overlay, or
+    /// calls `real` on a miss. An uncommitted write is served from the overlay,
+    /// a buffered deletion is `NotFound`, and bytes fetched by `real` are
+    /// mirrored into the overlay (not logged as an action) so later reads and
+    /// mutations observe them. The overlay lock is held across `real`.
+    pub async fn read_resolved(
         &self,
-        path: &Path,
+        cp: &Path,
+        real: impl AsyncFnOnce(&Path) -> io::Result<Cow<'static, [u8]>>,
     ) -> io::Result<Cow<'static, [u8]>> {
-        let cp = self.resolve(path).await;
         let st = self.state.lock().await;
 
-        if let Ok(data) = st.overlay.fs_read(&cp) {
+        if let Ok(data) = st.overlay.fs_read(cp) {
             return Ok(Cow::Owned(data.into_owned()));
         }
-        if is_shadowed(&st.deleted, &cp) {
-            return Err(not_found(&cp));
+        if is_shadowed(&st.deleted, cp) {
+            return Err(not_found(cp));
         }
 
-        let content = self.wrapped_sys.base_fs_read_async(&cp).await?;
+        let content = real(cp).await?;
 
         // Mirror the freshly fetched content into the overlay so subsequent
         // reads and mutations are observable. This is *not* logged as an
@@ -371,9 +390,42 @@ impl<S: GeneratorSys> BaseFsReadAsync for TransactionSys<S> {
         if let Some(dir) = cp.parent() {
             let _ = st.overlay.fs_create_dir_all(dir);
         }
-        let _ = st.overlay.fs_write(&cp, &content);
+        let _ = st.overlay.fs_write(cp, &content);
 
         Ok(content)
+    }
+}
+
+/// The seam contained reads use: this overlay answers first (an uncommitted
+/// write, a buffered deletion, dry-run state) and only a miss reaches the disk,
+/// through the contained read.
+#[async_trait::async_trait]
+impl<S: GeneratorSys> omni_contained_read::ReadThrough for TransactionSys<S> {
+    async fn resolve(&self, path: &Path) -> io::Result<PathBuf> {
+        self.resolve_checked(path).await
+    }
+
+    async fn read_through(
+        &self,
+        path: &Path,
+        real: &dyn omni_contained_read::RealRead,
+    ) -> io::Result<Cow<'static, [u8]>> {
+        self.read_resolved(path, async |cp: &Path| real.read(cp).await)
+            .await
+    }
+}
+
+#[async_trait::async_trait]
+impl<S: GeneratorSys> BaseFsReadAsync for TransactionSys<S> {
+    async fn base_fs_read_async(
+        &self,
+        path: &Path,
+    ) -> io::Result<Cow<'static, [u8]>> {
+        let cp = self.resolve(path).await;
+        self.read_resolved(&cp, async |cp: &Path| {
+            self.wrapped_sys.base_fs_read_async(cp).await
+        })
+        .await
     }
 }
 

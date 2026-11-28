@@ -250,6 +250,7 @@ where
             .workspace_configuration()
             .enable_experimental
             .capabilities(),
+        contained_reads: ctx.workspace_configuration().contained_reads()?,
     };
 
     // Notices carry no tool input values, but the operation sanitizes them

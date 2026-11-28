@@ -67,6 +67,8 @@ bridge_rpc_runner = { workspace = true }
 omni_capabilities = { workspace = true }
 omni_capability_enforcement = { workspace = true }
 omni_capability_sys = { workspace = true }
+omni_contained_read = { workspace = true }
+omni_containment_configurations = { workspace = true }
 merge = { workspace = true }
 bridge_rpc_services = { workspace = true }
 bridge_rpc_router = { workspace = true }
@@ -74,6 +76,7 @@ omni_config_types = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+omni_test_capabilities = { workspace = true }
 omni_input_provider = { workspace = true, features = ["test-utils"] }
 
 [lints]

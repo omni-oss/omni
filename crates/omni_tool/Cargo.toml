@@ -38,6 +38,8 @@ bridge_rpc_services = { workspace = true }
 omni_capabilities = { workspace = true }
 omni_capability_enforcement = { workspace = true }
 omni_capability_sys = { workspace = true }
+omni_contained_read = { workspace = true }
+omni_containment_configurations = { workspace = true }
 omni_messages = { workspace = true }
 omni_tera = { workspace = true }
 omni_diagnostic = { workspace = true }

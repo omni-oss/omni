@@ -65,6 +65,21 @@ pub struct CapabilitiesNoFloor {
 )]
 pub struct CapabilitiesIgnored;
 
+/// Contained reads were requested but are not applied.
+///
+/// `enable_experimental.contained_reads` is on, but capabilities enforcement
+/// is not, so scripts run unconfined and their file reads are not contained.
+///
+/// Fix: enable the capabilities feature too, with
+/// `enable_experimental: { capabilities: true, contained_reads: true }`.
+#[derive(Notice)]
+#[notice(
+    code = "capabilities.contained_reads_ignored",
+    level = warn,
+    message = "`contained_reads` is enabled but capabilities enforcement is not, so it has no effect and scripts run unconfined; enable it with `enable_experimental: {{ capabilities: true, contained_reads: true }}` in the workspace configuration"
+)]
+pub struct ContainedReadsIgnored;
+
 /// The import scan reported a note.
 ///
 /// The scan that derives a script's read scope could not fully resolve its

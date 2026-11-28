@@ -153,6 +153,7 @@ fn codes_are_registered_in_the_catalog() {
         "workspace.invalid_sources_directory",
         "workspace.config_load_failed",
         "workspace.worktree_config_load_failed",
+        "workspace.invalid_containment",
         "workspace.validation_failed",
         "workspace.duplicate_project_name",
         "workspace.dangling_task_dependency",
@@ -246,6 +247,31 @@ mod end_to_end {
             .collect::<Vec<_>>()
             .join(" | ");
         assert!(!chain.contains("hunter2"), "{chain}");
+    }
+
+    #[test]
+    fn an_out_of_bounds_containment_limit_names_the_key_and_the_ceiling() {
+        let sys = real_sys();
+        let tmp = tmp();
+        let root = tmp.path();
+        sys.fs_write(
+            root.join("workspace.omni.yaml"),
+            "projects: [\"**\"]\ncontainment:\n  limits:\n    fs:\n      read:\n        max_file_bytes: 999999999999\n",
+        )
+        .unwrap();
+
+        let err = context(root)
+            .err()
+            .expect("an out-of-bounds limit must not load");
+        let r = eyre::Report::new(err);
+        let d = find(&r).expect("diagnostic");
+        assert_eq!(d.code(), "workspace.invalid_containment");
+        let text = r.to_string();
+        assert!(
+            text.contains("containment.limits.fs.read.max_file_bytes"),
+            "{text}"
+        );
+        assert!(text.contains("67108864"), "{text}");
     }
 
     #[test]

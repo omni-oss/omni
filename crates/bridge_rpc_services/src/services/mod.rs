@@ -7,8 +7,9 @@ pub mod register;
 pub use register::{
     DEFAULT_FS_PREFIX, DEFAULT_LOG_PATH, DEFAULT_PROC_PREFIX, FsSys, ProcSys,
     RegisterServicesOptions, fs_routes, proc_routes, register_fs_services,
-    register_log_service, register_proc_services, register_services,
-    register_services_with_defaults,
+    register_fs_services_with_reader, register_log_service,
+    register_proc_services, register_services, register_services_with_defaults,
+    register_services_with_defaults_and_reader, register_services_with_reader,
 };
 
 #[cfg(test)]

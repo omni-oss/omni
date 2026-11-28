@@ -1,0 +1,27 @@
+[package]
+name = "omni_containment_configurations"
+rust-version.workspace = true
+edition.workspace = true
+version = "0.1.0"
+authors.workspace = true
+repository.workspace = true
+publish = false
+
+[lib]
+name = "omni_containment_configurations"
+path = "src/lib.rs"
+
+[features]
+default = ["serde", "schemars"]
+serde = ["dep:serde"]
+schemars = ["dep:schemars"]
+
+[dependencies]
+serde = { workspace = true, optional = true }
+schemars = { workspace = true, optional = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+
+[lints]
+workspace = true

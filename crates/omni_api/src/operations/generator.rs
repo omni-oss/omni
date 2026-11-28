@@ -314,6 +314,8 @@ where
         .enable_experimental
         .capabilities();
 
+    let contained_reads = ctx.workspace_configuration().contained_reads()?;
+
     let redact_policy =
         req.redact
             .apply(omni_configurations::RedactPolicy::resolve(&[&ctx
@@ -335,6 +337,7 @@ where
         .workspace_capabilities(&workspace_capabilities)
         .workspace_strictness(workspace_strictness)
         .enable_experimental(enable_experimental)
+        .contained_reads(contained_reads)
         .input_provider(req.input_provider.as_ref())
         .subscriber(subscriber)
         .maybe_max_depth(req.max_depth)

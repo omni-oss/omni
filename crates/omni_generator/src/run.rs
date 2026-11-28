@@ -82,6 +82,12 @@ pub struct RunConfig<'a, S: GeneratorEventSubscriber = NoopSubscriber> {
     /// [`WorkspaceConfiguration::enable_experimental`].
     #[builder(default)]
     pub enable_experimental: bool,
+    /// The contained-reads setting with its resolved limits, `Some` when
+    /// `enable_experimental.contained_reads` is on. Required (no default) so
+    /// every caller states it; only takes effect with enforcement.
+    #[builder(required)]
+    pub contained_reads:
+        Option<omni_containment_configurations::ContainedReads>,
     pub input_provider: &'a dyn InputProvider<Generator>,
     pub subscriber: &'a S,
     /// Maximum `run-generator` nesting depth before a run is aborted. Use
@@ -498,6 +504,7 @@ pub(crate) async fn run_internal<'a, S: GeneratorEventSubscriber>(
         capabilities_strictness: inherited_strictness
             .max(r#gen.capabilities.strictness),
         enable_experimental: config.enable_experimental,
+        contained_reads: config.contained_reads,
         js_script_runner: runner,
         input_provider: config.input_provider,
         subscriber: &redacting,
@@ -773,6 +780,7 @@ mod nesting_tests {
             .workspace_capabilities(workspace_caps)
             .input_provider(&provider)
             .subscriber(&NoopSubscriber)
+            .contained_reads(None)
             .build();
 
         let mock = MockJsScriptRunner::default();
@@ -883,6 +891,7 @@ mod nesting_tests {
             .workspace_capabilities(&workspace_caps)
             .input_provider(&provider)
             .subscriber(sink)
+            .contained_reads(None)
             .build();
 
         let mock = MockJsScriptRunner::default();
@@ -1283,6 +1292,7 @@ mod nesting_tests {
             .workspace_strictness(workspace_strictness)
             .input_provider(&provider)
             .subscriber(&NoopSubscriber)
+            .contained_reads(None)
             .build();
 
         let mock = MockJsScriptRunner::default();

@@ -196,6 +196,7 @@ omni_capability_enforcement = { path = "crates/omni_capability_enforcement" }
 omni_capability_sys = { path = "crates/omni_capability_sys" }
 bridge_rpc_runner = { path = "crates/bridge_rpc_runner" }
 omni_experimental_features = { path = "crates/omni_experimental_features" }
+omni_containment_configurations = { path = "crates/omni_containment_configurations" }
 omni_tool = { path = "crates/omni_tool" }
 omni_tool_configurations = { path = "crates/omni_tool_configurations" }
 omni_projections = { path = "crates/omni_projections" }
@@ -300,6 +301,7 @@ utoipa = { version = "^6.0.0", features = [
     "non_strict_integers",
 ] }
 omni_input_view = { path = "./crates/omni_input_view" }
+omni_contained_read = { path = "./crates/omni_contained_read" }
 omni_path_utils = { path = "./crates/omni_path_utils" }
 flate2 = { version = "^1.1.11", features = [
     "zlib-rs",

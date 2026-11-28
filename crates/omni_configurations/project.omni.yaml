@@ -15,6 +15,7 @@ dependencies:
   - omni_config_types
   - omni_glob_config
   - omni_experimental_features
+  - omni_containment_configurations
   - serde_validate
   - omni_serde_validators
   - omni_file_data_serde

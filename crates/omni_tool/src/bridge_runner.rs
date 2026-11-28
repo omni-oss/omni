@@ -12,10 +12,14 @@ use bridge_rpc_runner::{
 };
 use bridge_rpc_services::{
     FsSys, ProcSys, RegisterServicesOptions, register_services_with_defaults,
+    register_services_with_defaults_and_reader,
 };
-use omni_capabilities::CapabilityFloors;
+use omni_capabilities::{CapabilityFloors, Root};
 use omni_capability_enforcement::ShimPolicy;
 use omni_capability_sys::{EvaluatingAuthorizer, PolicyEnforcingSys};
+use omni_contained_read::{
+    ContainedReader, PlainReadThrough, SharedAuthorizer, input_limits,
+};
 use omni_tool_configurations::{Tool, ToolJsRuntime};
 use serde_json::Value;
 use system_traits::{BaseFsMetadataAsync, EnvSnapshot, EnvVars};
@@ -193,6 +197,12 @@ where
                     bridge_rpc_runner::CapabilitiesIgnored
                 ));
             }
+            // Contained reads need enforcement; without it they do nothing.
+            if policy.contained_reads.is_some() {
+                self.raise(omni_messages::notice_event!(
+                    bridge_rpc_runner::ContainedReadsIgnored
+                ));
+            }
             (build_unconfined_plan(resolved), ShimPolicy::new())
         };
 
@@ -210,6 +220,19 @@ where
             .roots
             .clone()
             .map_bases(|base| std::fs::canonicalize(&base).unwrap_or(base));
+        // Contained reads apply only to an enforced run; the view root is the
+        // canonical workspace root (absent means every contained read fails
+        // closed).
+        let contained = policy
+            .enforce
+            .then_some(policy.contained_reads)
+            .flatten()
+            .map(|reads| {
+                (
+                    reads.limits,
+                    roots.base(Root::Workspace).map(|root| root.to_path_buf()),
+                )
+            });
         let authorizer = if policy.enforce {
             EvaluatingAuthorizer::layered(policy.effective_levels(), roots, ())
         } else {
@@ -269,18 +292,43 @@ where
                     // Broker every mediated fs operation against the tool's
                     // effective policy before it touches `sys`, and filter
                     // `env` by that same policy.
-                    let enforcing = PolicyEnforcingSys::new(sys, authorizer);
+                    let authorizer = SharedAuthorizer::new(authorizer);
+                    let enforcing = PolicyEnforcingSys::new(
+                        sys.clone(),
+                        authorizer.clone(),
+                    );
 
                     // Scrub the child's ambient environment down to the
                     // policy-allowed snapshot so a script cannot read an
                     // un-mediated variable through `process.env` / `Deno.env`.
                     spawn_policy.env = Some(enforcing.env_snapshot());
 
-                    register_services_with_defaults(
-                        &mut router,
-                        Arc::new(enforcing),
-                        RegisterServicesOptions::default(),
-                    );
+                    match contained {
+                        // Contained reads: the two file-read routes read
+                        // workspace files through the input view; every other
+                        // route, and reads outside the workspace, stay with the
+                        // broker.
+                        Some((limits, root)) => {
+                            let reader = ContainedReader::new(
+                                enforcing.clone(),
+                                PlainReadThrough(sys),
+                                authorizer,
+                                root,
+                                input_limits(&limits),
+                            );
+                            register_services_with_defaults_and_reader(
+                                &mut router,
+                                Arc::new(enforcing),
+                                Arc::new(reader),
+                                RegisterServicesOptions::default(),
+                            );
+                        }
+                        None => register_services_with_defaults(
+                            &mut router,
+                            Arc::new(enforcing),
+                            RegisterServicesOptions::default(),
+                        ),
+                    }
 
                     // The bridge-service CLI expects a `run` subcommand. When
                     // the launch flags could not confine `net`/`process`
@@ -367,6 +415,7 @@ mod tests {
             context: (),
             strictness,
             enforce,
+            contained_reads: None,
         }
     }
 

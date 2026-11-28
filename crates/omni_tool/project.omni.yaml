@@ -19,6 +19,8 @@ dependencies:
   - omni_capabilities
   - omni_capability_enforcement
   - omni_capability_sys
+  - omni_contained_read
+  - omni_containment_configurations
 
 tasks:
   # Compiling `bridge_rpc_runner` embeds `services/bridge-service/dist`.
