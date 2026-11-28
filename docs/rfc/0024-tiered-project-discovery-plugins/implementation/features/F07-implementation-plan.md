@@ -282,6 +282,8 @@ Do not claim comprehensive field provenance before those fields are tracked:
 F07.5 exposes `cache.enabled` overrides first, and other fields wait for P12
 inspection.
 
+**Locations (decided in the [F07.5 plan](F07.5-winning-provenance-plan.md)):** this slice records the declaration location of overridden `cache.enabled` contributors (`Composed::override_locations`, beside `FieldOverride`). Only applied-tier declarations have a file; a plugin-emitted or fileless one reports none, and other fields wait for P12.
+
 **Gate:** snapshot text, JSON and MCP for inherited, overridden, fallback and
 fileless decisions, and for a decision with overridden contributors. Verify the
 inspection still runs no commands or environment substitutions. Revert the output
