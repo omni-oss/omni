@@ -171,7 +171,7 @@ pub async fn setup_remote_caching_config_async<TClient: RemoteCacheClient>(
     Ok(())
 }
 
-async fn write_encrypted_config(
+pub(crate) async fn write_encrypted_config(
     user: &str,
     path: &Path,
     config: &RemoteCacheConfiguration,

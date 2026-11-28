@@ -736,3 +736,60 @@ async fn a_publish_reclaims_abandoned_pending_paths() {
     let left = pending_entries(&ws.store_root);
     assert!(left.is_empty(), "{left:?}");
 }
+
+#[tokio::test]
+async fn the_locked_fast_path_refuses_a_newer_store_layout() {
+    let snaps = snapshots();
+    let ws = Workspace::new();
+    let driver = Arc::new(FakeDriver::default());
+    let manager = ws.manager(&driver).await.unwrap();
+    let spec = spec(snaps.path(), "s1");
+    manager.materialize_with("fake", &spec).await.unwrap();
+    std::fs::write(ws.store_root.join("VERSION"), "2\n").unwrap();
+    let before = files_under(&ws.store_root);
+
+    for leased in [false, true] {
+        let error = if leased {
+            manager
+                .materialize_leased_with("fake", &spec)
+                .await
+                .err()
+                .expect("newer layout")
+        } else {
+            manager
+                .materialize_with("fake", &spec)
+                .await
+                .err()
+                .expect("newer layout")
+        };
+        assert!(format!("{error:#}").contains("layout 2"), "{error:#}");
+    }
+    assert_eq!(files_under(&ws.store_root), before, "nothing was written");
+}
+
+#[tokio::test]
+async fn prune_refuses_a_newer_store_layout_before_reclaiming_pending_paths() {
+    let snaps = snapshots();
+    let ws = Workspace::new();
+    let driver = Arc::new(FakeDriver::default());
+    let manager = ws.manager(&driver).await.unwrap();
+    manager
+        .materialize_with("fake", &spec(snaps.path(), "s1"))
+        .await
+        .unwrap();
+    let (dead, dead_lock) = abandoned_pending(&ws.store_root, "1-1-0");
+    std::fs::write(ws.store_root.join("VERSION"), "2\n").unwrap();
+    let filter = StorePruneFilter {
+        all: true,
+        ..Default::default()
+    };
+
+    for dry_run in [true, false] {
+        let error = manager
+            .prune_store_report(&filter, dry_run)
+            .await
+            .expect_err("newer layout");
+        assert!(format!("{error:#}").contains("layout 2"), "{error:#}");
+    }
+    assert!(dead.exists() && dead_lock.exists(), "pending left in place");
+}

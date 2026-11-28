@@ -23,8 +23,21 @@ impl<'a> LocalLastUsedDb<'a> {
     ) -> Result<Self, LocalLastUsedDbError> {
         if tokio::fs::try_exists(path).await? {
             let bytes = tokio::fs::read(path).await?;
-            let data: LocalLastUsedData =
-                rmp_serde::decode::from_slice(&bytes)?;
+            // The file only holds an access-time hint, so a layout this build
+            // cannot decode (another omni version, a torn write) is reset
+            // rather than failing every lookup, stats and prune. The next
+            // save replaces it.
+            let data = match rmp_serde::decode::from_slice(&bytes) {
+                Ok(data) => data,
+                Err(error) => {
+                    tracing::warn!(
+                        path = %path.display(),
+                        %error,
+                        "last-used timestamps are unreadable; starting empty"
+                    );
+                    LocalLastUsedData::default()
+                }
+            };
 
             Ok(Self { path, data })
         } else {
@@ -108,4 +121,43 @@ pub(crate) enum LocalLastUsedDbErrorInner {
 
     #[error(transparent)]
     RmpSerdeDecode(#[from] rmp_serde::decode::Error),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn an_undecodable_file_is_a_reset_not_an_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("last-used-timestamps.db");
+        // Another omni version's layout, or a torn write: the file only holds
+        // an access-time hint, so the cache must stay usable.
+        std::fs::write(&path, b"\xc1 not msgpack").unwrap();
+
+        let mut db = LocalLastUsedDb::load(&path).await.expect("reset");
+        let hash = DefaultHash::default();
+        assert_eq!(
+            db.get_last_used_timestamp("p", "t", hash).await.unwrap(),
+            None
+        );
+
+        let now = OffsetDateTime::now_utc();
+        db.update_last_used_timestamp("p", "t", hash, now)
+            .await
+            .unwrap();
+        db.save().await.unwrap();
+        let again = LocalLastUsedDb::load(&path).await.unwrap();
+        assert_eq!(
+            again.get_last_used_timestamp("p", "t", hash).await.unwrap(),
+            Some(now)
+        );
+    }
+
+    #[tokio::test]
+    async fn a_read_error_other_than_a_bad_decode_is_still_an_error() {
+        let dir = tempfile::tempdir().unwrap();
+        // A directory where the file should be cannot be read as a file.
+        assert!(LocalLastUsedDb::load(dir.path()).await.is_err());
+    }
 }

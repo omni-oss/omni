@@ -108,9 +108,11 @@ pub async fn load_checked<S: FsReadAsync + Sync>(
 }
 
 /// Like [`load_checked`], also reporting whether reading failed for a reason
-/// other than a missing file (for example permission denied). Callers must not
-/// save over the ledger in that case, because recorded links could be lost.
-/// A parse failure returns a notice but leaves this flag false.
+/// other than a missing file (for example permission denied), or because the
+/// ledger carries a version this build does not know. Callers must not save
+/// over the ledger in that case, because recorded links could be lost. A parse
+/// failure of an unversioned or garbled document returns a notice but leaves
+/// this flag false: the configuration stays authoritative and sync rebuilds it.
 pub async fn load_guarded<S: FsReadAsync + Sync>(
     sys: &S,
     ledger_path: &Path,
@@ -122,15 +124,31 @@ pub async fn load_guarded<S: FsReadAsync + Sync>(
     match sys.fs_read_async(ledger_path).await {
         Ok(bytes) => match serde_json::from_slice(&bytes) {
             Ok(l) => (l, None, false),
-            Err(e) => {
-                (Ledger::default(), Some(unreadable(e.to_string())), false)
-            }
+            Err(e) => match unsupported_version(&bytes) {
+                Some(version) => (
+                    Ledger::default(),
+                    Some(unreadable(format!(
+                        "unsupported ledger version `{version}`; it was written by a newer omni"
+                    ))),
+                    true,
+                ),
+                None => {
+                    (Ledger::default(), Some(unreadable(e.to_string())), false)
+                }
+            },
         },
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             (Ledger::default(), None, false)
         }
         Err(e) => (Ledger::default(), Some(unreadable(e.to_string())), true),
     }
+}
+
+/// The `version` of a well-formed ledger document this build does not know.
+fn unsupported_version(bytes: &[u8]) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_slice(bytes).ok()?;
+    let version = value.get("version")?.as_str()?;
+    (version != "1.0.0").then(|| version.to_string())
 }
 
 /// Persist the ledger to `ledger_path`, creating its parent directory if needed.
@@ -604,6 +622,31 @@ mod tests {
         std::fs::write(&corrupt, "{").unwrap();
         let (_, bad, blocked) = load_guarded(&RealSys, &corrupt).await;
         assert!(bad.is_some() && !blocked);
+    }
+
+    #[tokio::test]
+    async fn a_ledger_from_a_newer_version_blocks_saving() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("links.json");
+        // Valid JSON an older omni cannot interpret: not corruption, and
+        // overwriting it would drop links the newer omni recorded.
+        for doc in [
+            r#"{"version":"2.0.0","links":[],"extra":1}"#,
+            r#"{"version":"2.0.0","entries":{}}"#,
+        ] {
+            std::fs::write(&path, doc).unwrap();
+            let (ledger, bad, blocked) = load_guarded(&RealSys, &path).await;
+            assert!(ledger.links().is_empty());
+            assert!(blocked, "{doc}");
+            let bad = bad.expect("reported");
+            assert!(bad.reason.contains("2.0.0"), "{}", bad.reason);
+        }
+        // Corruption, with no readable version, stays rebuildable.
+        for doc in ["{", "[]", r#"{"links":[]}"#, r#"{"version":7}"#] {
+            std::fs::write(&path, doc).unwrap();
+            let (_, bad, blocked) = load_guarded(&RealSys, &path).await;
+            assert!(bad.is_some() && !blocked, "{doc}");
+        }
     }
 
     #[test]
