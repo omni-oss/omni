@@ -83,6 +83,7 @@ struct Overlay {
     cwd: PathBuf,
     files: Mutex<HashMap<PathBuf, Vec<u8>>>,
     consulted: AtomicUsize,
+    last_path: Mutex<Option<PathBuf>>,
 }
 
 impl Overlay {
@@ -91,6 +92,7 @@ impl Overlay {
             cwd: cwd.to_path_buf(),
             files: Mutex::default(),
             consulted: AtomicUsize::new(0),
+            last_path: Mutex::default(),
         })
     }
 
@@ -117,6 +119,7 @@ impl ReadThrough for Seam {
         real: &dyn RealRead,
     ) -> io::Result<Cow<'static, [u8]>> {
         self.0.consulted.fetch_add(1, Ordering::SeqCst);
+        *self.0.last_path.lock().unwrap() = Some(path.to_path_buf());
         if let Some(bytes) = self.0.files.lock().unwrap().get(path) {
             return Ok(Cow::Owned(bytes.clone()));
         }
@@ -291,6 +294,61 @@ async fn dotdot_inside_the_root_is_cleaned_and_contained() {
 }
 
 #[tokio::test]
+async fn the_seam_is_keyed_by_the_path_it_resolved_not_the_cleaned_one() {
+    let h = harness();
+    if !supported(&h).await {
+        return;
+    }
+    let spelled = h.fx.root.join("a").join("b").join("..").join("other");
+    let bytes = h.reader.base_fs_read_async(&spelled).await.unwrap();
+    assert_eq!(&*bytes, b"other");
+    // The seam keeps its own state under the spelling it resolved (the
+    // generator overlay cleans with its own rules); the view reads the
+    // cleaned form.
+    assert_eq!(
+        h.overlay.last_path.lock().unwrap().as_deref(),
+        Some(spelled.as_path())
+    );
+}
+
+#[tokio::test]
+async fn a_missing_file_is_a_plain_not_found_without_a_host_path() {
+    let h = harness();
+    let error = h
+        .reader
+        .base_fs_read_async(&at(&h.fx.root, "a/none"))
+        .await
+        .unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::NotFound);
+    assert!(
+        !error
+            .to_string()
+            .contains(&h.fx.root.to_string_lossy().to_string())
+    );
+}
+
+#[tokio::test]
+async fn path_depth_is_limited() {
+    let limits = FsReadLimits {
+        max_path_depth: 2,
+        ..FsReadLimits::DEFAULT
+    };
+    let h = harness_with(ALLOW_WORKSPACE, limits, true);
+    // `a/b/file` is three segments deep.
+    let error = h
+        .reader
+        .base_fs_read_async(&at(&h.fx.root, "a/b/file"))
+        .await
+        .unwrap_err();
+    if error.kind() == io::ErrorKind::Unsupported {
+        let _ = supported(&h).await;
+        return;
+    }
+    assert_eq!(error.kind(), io::ErrorKind::InvalidInput, "{error}");
+    assert!(error.to_string().starts_with("input_view."), "{error}");
+}
+
+#[tokio::test]
 async fn a_relative_path_is_resolved_by_the_seam_before_routing() {
     let h = harness();
     if !supported(&h).await {
@@ -388,6 +446,10 @@ mod symlinks {
         }
     }
 
+    fn link_dir(target: &Path, at: &Path) {
+        link(target, at);
+    }
+
     fn allowed(h: &Harness) -> bool {
         omni_test_capabilities::require(Capability::Symlink, &h.fx.root)
     }
@@ -447,6 +509,45 @@ mod symlinks {
             .unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::PermissionDenied, "{error}");
         assert!(error.to_string().contains("alias"), "{error}");
+        assert!(h.broker.served.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn an_outside_link_into_the_workspace_cannot_use_dotdot_to_skip_the_view()
+     {
+        // `outside/link -> root/a/b`; the OS resolves `link/..` to `root/a`,
+        // but the cleaned spelling `outside/other` looks outside. Neither the
+        // cleaned nor the original form may reach the broker.
+        let h = harness();
+        if !allowed(&h) || !supported(&h).await {
+            return;
+        }
+        let link = h.fx.outside.join("link");
+        link_dir(&at(&h.fx.root, "a/b"), &link);
+        let spelled = link.join("..").join("other");
+        let error = h.reader.base_fs_read_async(&spelled).await.unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::PermissionDenied, "{error}");
+        assert!(error.to_string().contains("alias"), "{error}");
+        assert!(h.broker.served.lock().unwrap().is_empty());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn an_alias_path_that_is_not_a_valid_workspace_path_is_refused() {
+        // `alias/a\\b` is inside the workspace but not a valid workspace path
+        // (a backslash); the alias check must refuse it, not delegate it.
+        let h = harness();
+        if !allowed(&h) || !supported(&h).await {
+            return;
+        }
+        let alias = h.fx.root.parent().unwrap().join("alias-of-root");
+        link(&h.fx.root, &alias);
+        let error = h
+            .reader
+            .base_fs_read_async(&alias.join("a\\b"))
+            .await
+            .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::PermissionDenied, "{error}");
         assert!(h.broker.served.lock().unwrap().is_empty());
     }
 

@@ -55,8 +55,7 @@ shared source store), every other file call (`pathExists`, `readDirectory`,
 `stat`, writes and so on) and the cache keys are unchanged.
 
 A refused read reaches the script as an I/O error whose message starts with the
-code, for example `input_view.symlink: ...`, and names the path the script
-passed. It never contains an absolute host path. Run `omni code explain
+code, for example `input_view.symlink: ...`, and names the workspace-relative path. It never contains an absolute host path. Run `omni code explain
 input_view.symlink` for the hint.
 
 Reads served by the generator's uncommitted overlay (a file written, copied or

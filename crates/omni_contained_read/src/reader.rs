@@ -135,8 +135,13 @@ struct ViewRead {
 #[async_trait]
 impl RealRead for ViewRead {
     async fn read(&self, path: &Path) -> io::Result<Cow<'static, [u8]>> {
-        let relative = WorkspacePath::from_os_path(&self.root, path)
-            .map_err(|_| invalid_path())?;
+        // The seam keys its own state by the path it resolved; the view reads
+        // the lexically cleaned form of it.
+        let relative = WorkspacePath::from_os_path(
+            &self.root,
+            &omni_utils::path::clean(path),
+        )
+        .map_err(|_| invalid_path())?;
         let root = self.root.clone();
         let authorizer = Arc::clone(&self.authorizer);
         let limits = self.limits.clone();
@@ -220,18 +225,41 @@ where
                     authorizer: Arc::clone(&self.authorizer),
                     limits: self.limits.clone(),
                 };
-                self.through.read_through(&cleaned, &real).await
+                // The seam gets the path as it resolved it (its own state is
+                // keyed that way); the view cleans it again before reading. A
+                // missing file or a buffered deletion is a plain `NotFound`,
+                // so no absolute host path reaches the script.
+                self.through.read_through(&absolute, &real).await.map_err(
+                    |error| {
+                        if error.kind() == io::ErrorKind::NotFound {
+                            io::Error::from(io::ErrorKind::NotFound)
+                        } else {
+                            error
+                        }
+                    },
+                )
             }
             Err(WorkspacePathError::OutsideRoot { .. }) => {
-                let probe = cleaned.clone();
+                // A path that looks outside the workspace may still reach it
+                // through a symlink, either as the cleaned spelling or as the
+                // OS would resolve the original (`link/..` follows the link
+                // before going up). Refuse unless every resolved form is
+                // provably outside; this is a best-effort, racy pre-check (a
+                // link swapped after it is still subject to the broker's
+                // policy check on the real path, and to the OS sandbox floor).
+                let probes = [cleaned.clone(), absolute.clone()];
                 let root = root.clone();
                 let aliased = tokio::task::spawn_blocking(move || {
-                    resolve_real_path(&probe).is_some_and(|real| {
-                        WorkspacePath::from_os_path(
-                            &root,
-                            &omni_utils::path::clean(real),
-                        )
-                        .is_ok()
+                    probes.iter().any(|probe| {
+                        resolve_real_path(probe).is_some_and(|real| {
+                            !matches!(
+                                WorkspacePath::from_os_path(
+                                    &root,
+                                    &omni_utils::path::clean(real),
+                                ),
+                                Err(WorkspacePathError::OutsideRoot { .. })
+                            )
+                        })
                     })
                 })
                 .await
@@ -245,7 +273,9 @@ where
                          use the workspace path",
                     ));
                 }
-                self.delegate.base_fs_read_async(path).await
+                // Delegate the path that was judged, not the original
+                // spelling, so the broker cannot resolve it differently.
+                self.delegate.base_fs_read_async(&cleaned).await
             }
             Err(_) => Err(invalid_path()),
         }
