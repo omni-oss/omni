@@ -73,4 +73,6 @@ consistent when they share a store.
 
 `--unused` is new. `--all`, `--older-than` and `--larger-than` are unchanged.
 Older omni versions prune without reading registrations; workspaces register on
-their next write of references.
+their next write of references. A workspace whose lockfile path is not valid UTF-8
+cannot register faithfully, so `install`, generator and tool runs fail before writing
+references instead of leaving it silently unprotected.
