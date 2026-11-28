@@ -545,7 +545,7 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
             Err(error) => return Err(error.into()),
         }
         self.ensure_lockfile_parent().await?;
-        let Some(lockfile_path) = self.normalized_lockfile_path().await else {
+        let Some(lockfile_path) = self.normalized_lockfile_path().await? else {
             tracing::warn!(
                 "not registering this workspace: the lockfile path {} could not be normalized to an absolute lockfile path",
                 self.lockfile_path.display()
@@ -570,10 +570,11 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
     /// The lockfile path a registration is keyed on: its parent directory made
     /// absolute, then canonicalized (symlinks resolved, Windows verbatim prefix
     /// stripped), with the file name joined on. The lockfile itself is never
-    /// canonicalized: a first install has not written it yet. `None` when the
-    /// result would not be absolute: the reader rejects such a registration, and
-    /// storing one would refuse every consulting prune of the shared store.
-    async fn normalized_lockfile_path(&self) -> Option<String> {
+    /// canonicalized: a first install has not written it yet. `Ok(None)` when
+    /// the result would not be absolute (the reader rejects such a registration,
+    /// so it is skipped): an `Err` means the path cannot be stored faithfully,
+    /// which fails the update before any reference file is written.
+    async fn normalized_lockfile_path(&self) -> Result<Option<String>, Error> {
         let lockfile = self.lockfile_path.clone();
         let parent = match lockfile.parent() {
             Some(parent) if !parent.as_os_str().is_empty() => {
@@ -581,12 +582,15 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
             }
             _ => PathBuf::from("."),
         };
-        let absolute = std::path::absolute(&parent).ok()?;
+        let Ok(absolute) = std::path::absolute(&parent) else {
+            return Ok(None);
+        };
         let canonical = self.sys.fs_canonicalize_async(&absolute).await.ok();
         normalize_lockfile_path(
             &lockfile,
             canonical.as_deref().unwrap_or(&absolute),
         )
+        .map_err(Error::custom)
     }
 
     async fn prepare_ref_set(
@@ -1054,16 +1058,31 @@ fn checkout_key(entry: &StoreEntry) -> ReferenceKey {
 }
 
 /// Join a lockfile's file name onto an absolute (and, when possible,
-/// canonicalized) parent. `None` when the result would not be absolute: the
-/// reader rejects such a registration, so it is never written.
-fn normalize_lockfile_path(lockfile: &Path, parent: &Path) -> Option<String> {
+/// canonicalized) parent. `Ok(None)` when the result would not be absolute (the
+/// reader rejects such a registration, so it is never written). `Err` when the
+/// path is not valid UTF-8: a registration stores a string, so the only faithful
+/// options are to fail before writing references or store a path that does not
+/// match the directory the references actually live in.
+fn normalize_lockfile_path(
+    lockfile: &Path,
+    parent: &Path,
+) -> Result<Option<String>, String> {
     if !parent.is_absolute() {
-        return None;
+        return Ok(None);
     }
+    let Some(name) = lockfile.file_name() else {
+        return Ok(None);
+    };
     let mut path = parent.to_path_buf();
-    path.push(lockfile.file_name()?);
-    let path = strip_verbatim_prefix(&path.to_string_lossy());
-    Path::new(&path).is_absolute().then_some(path)
+    path.push(name);
+    let Some(text) = path.to_str() else {
+        return Err(format!(
+            "the lockfile path {} is not valid UTF-8",
+            path.display()
+        ));
+    };
+    let text = strip_verbatim_prefix(text);
+    Ok(Path::new(&text).is_absolute().then_some(text))
 }
 
 fn ignore_not_found(result: std::io::Result<()>) -> Result<(), Error> {
@@ -1564,7 +1583,10 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
 
 #[cfg(test)]
 mod tests {
-    use std::{path::Path, time::Duration};
+    use std::{
+        path::{Path, PathBuf},
+        time::Duration,
+    };
 
     use super::{StorePruneFilter, normalize_lockfile_path};
 
@@ -1811,18 +1833,39 @@ mod tests {
 
     #[test]
     fn a_registration_path_is_absolute_or_not_written() {
-        let lockfile = Path::new("/ws/.omni/sources/lock.json");
-        assert!(
-            normalize_lockfile_path(lockfile, Path::new("relative")).is_none()
-        );
+        let parent = std::path::absolute("ws/.omni/sources").unwrap();
+        let lockfile = parent.join("lock.json");
         assert_eq!(
-            normalize_lockfile_path(lockfile, Path::new("/ws/.omni/sources"))
-                .as_deref(),
-            Some("/ws/.omni/sources/lock.json")
+            normalize_lockfile_path(&lockfile, &parent)
+                .unwrap()
+                .map(PathBuf::from),
+            Some(lockfile.clone())
         );
         assert!(
-            normalize_lockfile_path(Path::new("/"), Path::new("/ws")).is_none()
+            normalize_lockfile_path(
+                Path::new("lock.json"),
+                Path::new("relative")
+            )
+            .unwrap()
+            .is_none()
         );
+        assert!(
+            normalize_lockfile_path(Path::new(""), &parent)
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_non_utf8_lockfile_path_is_an_error() {
+        use std::os::unix::ffi::OsStringExt;
+
+        let parent = std::path::absolute("ws/.omni/sources").unwrap();
+        let lockfile = parent
+            .join(std::ffi::OsString::from_vec(b"lock\xff.json".to_vec()));
+        let error = normalize_lockfile_path(&lockfile, &parent).unwrap_err();
+        assert!(error.contains("not valid UTF-8"), "{error}");
     }
 
     #[test]

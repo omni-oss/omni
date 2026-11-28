@@ -172,11 +172,13 @@ before and after step 4.
   [--all] [--dry-run]`, dry-run by default like `omni cache prune`. Deletes trees
   by `.used` age or size, then bare repos with no remaining trees. Takes each
   per-remote lock before removing that remote's entries.
-- Prune reads workspace registrations (`<store>/workspaces/<hash>.json`) and the
-  live reference sets they point at. A checkout a live registration, or the pruning
-  workspace's own `refs/`, names is protected (`skipped_referenced`). `--unused`
-  selects the rest; `--all` and `--include-referenced` (once shipped) do not read
-  registrations. An older omni still prunes without them.
+- `--unused` reads workspace registrations (`<store>/workspaces/<hash>.json`) and
+  the live reference sets they point at. A checkout a live registration, or the
+  pruning workspace's own `refs/`, names is protected (`skipped_referenced`), and
+  `--unused` selects the rest. `--older-than`, `--larger-than` and `--all` do not
+  read registrations, so they can remove referenced checkouts. Protecting
+  referenced checkouts for age and size is step 5 and is not in this PR. An older
+  omni still prunes without registrations.
 - No automatic prune in this RFC.
 
 ### 4.4 Projections
