@@ -445,6 +445,19 @@ tasks:
       deps: [F10.2],
       touches: [capability],
     }
+  # First consumer, contained script reads (#200): crates
+  # omni_containment_configurations (limits under `containment.limits.fs.read`)
+  # and omni_contained_read (policy adapter, ContainedReader). Opt-in, off by
+  # default; `touches [capability]` because it composes with the policy broker.
+  F10.4:
+    {
+      title: "First consumer: contained script reads (opt-in)",
+      parent: F10,
+      kind: code,
+      size: M,
+      deps: [F10.2, F10.3],
+      touches: [capability],
+    }
 
   # ---------- Plugin phases ----------
   P01.1:
