@@ -11,7 +11,8 @@ use omni_contained_read::{ContainedReader, SharedAuthorizer, input_limits};
 use omni_containment_configurations::FsReadLimits;
 use omni_generator::TransactionSys;
 use system_traits::{
-    BaseFsReadAsync, FsRemoveFileAsync, FsWriteAsync, impls::RealSys,
+    BaseFsReadAsync, FsRemoveFileAsync, FsRenameAsync, FsWriteAsync,
+    impls::RealSys,
 };
 
 type Shared = SharedAuthorizer<EvaluatingAuthorizer<(), Root>>;
@@ -214,6 +215,39 @@ async fn a_committed_transaction_does_not_keep_a_path_a_pending_write() {
             "{text}"
         );
     }
+}
+
+/// A rename is a write route: the destination holds this transaction's own
+/// content, so a contained read of it must see the renamed bytes, not the
+/// pre-rename disk state.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_contained_read_sees_a_renamed_file_and_directory() {
+    let setup = tokio::task::spawn_blocking(setup).await.unwrap();
+    if !contained_supported(&setup).await {
+        return;
+    }
+    // Disk-backed source, no pending write.
+    let from = setup.root.join("disk.txt");
+    let to = setup.root.join("renamed.txt");
+    setup.tx.fs_rename_async(&from, &to).await.unwrap();
+    assert!(from.exists(), "the rename is buffered, not on disk");
+    let bytes = setup.reader.base_fs_read_async(&to).await.unwrap();
+    assert_eq!(&*bytes, b"on disk");
+    let gone = setup.reader.base_fs_read_async(&from).await.unwrap_err();
+    assert_eq!(gone.kind(), io::ErrorKind::NotFound);
+
+    // A disk-backed directory rename materializes each descendant.
+    let dir = setup.root.join("tree");
+    fs::create_dir_all(dir.join("nested")).unwrap();
+    fs::write(dir.join("nested").join("leaf"), "leaf bytes").unwrap();
+    let moved = setup.root.join("tree-moved");
+    setup.tx.fs_rename_async(&dir, &moved).await.unwrap();
+    let leaf = setup
+        .reader
+        .base_fs_read_async(&moved.join("nested").join("leaf"))
+        .await
+        .unwrap();
+    assert_eq!(&*leaf, b"leaf bytes");
 }
 
 #[tokio::test(flavor = "multi_thread")]

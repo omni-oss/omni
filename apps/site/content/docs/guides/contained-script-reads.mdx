@@ -73,7 +73,9 @@ Reads served by the generator's uncommitted overlay (a file written, copied or
 deleted earlier in the same run, and dry runs) return the overlay's content. Only
 the run's own writes short-circuit the check: a file that a generator action
 merely read earlier in the run is read again through the check, so the bytes a
-script gets are always the bytes that were checked.
+script gets are always the bytes that were checked. A file the run wrote, copied
+or renamed is served as it now is, and bytes a `copy` or `rename` took from a
+symlinked source are not re-checked on read.
 Bytes that a write route copied from a symlinked source are not re-checked on
 read.
 

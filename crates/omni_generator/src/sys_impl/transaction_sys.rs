@@ -1055,7 +1055,7 @@ async fn apply_overlay<S: GeneratorSys>(
             Ok(0)
         }
         Action::Rename { from, to } => {
-            rename_path(overlay, deleted, real, from, to).await?;
+            rename_path(overlay, deleted, written, real, from, to).await?;
             remap_written(written, from, to);
             Ok(0)
         }
@@ -1280,6 +1280,7 @@ async fn collect_files<S: GeneratorSys>(
 async fn rename_path<S: GeneratorSys>(
     overlay: &InMemorySys,
     deleted: &mut HashSet<PathBuf>,
+    written: &mut BTreeSet<PathBuf>,
     real: &S,
     from: &Path,
     to: &Path,
@@ -1297,6 +1298,12 @@ async fn rename_path<S: GeneratorSys>(
             }
             overlay.fs_write(&dest, &data)?;
             deleted.remove(&dest);
+            // The destination now holds this transaction's own content (the
+            // source was read to materialize it), so a contained read of it is
+            // served from the overlay like any other write target. The bytes
+            // came from the source through this transaction, which is the
+            // documented write-route exception (as for `copy`).
+            written.insert(dest);
         }
         // Ensure the destination directory exists even when empty.
         let _ = overlay.fs_create_dir_all(to);
@@ -1313,6 +1320,8 @@ async fn rename_path<S: GeneratorSys>(
         }
         overlay.fs_write(to, &data)?;
         deleted.remove(to);
+        // See the directory case: a rename target is a write target.
+        written.insert(to.to_path_buf());
 
         if overlay.fs_exists_no_err(from) {
             let _ = overlay.fs_remove_file(from);
