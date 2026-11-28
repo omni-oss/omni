@@ -1,6 +1,6 @@
 # F07 implementation plan: composition provenance and ordered precedence
 
-**Status:** approved (#164). F07.1 and F07.2 are merged ([#172](https://github.com/omni-oss/omni/pull/172); final review PASS per the PR); F07.3 is merged ([#194](https://github.com/omni-oss/omni/pull/194); see [its plan](F07.3-ordered-composition-plan.md)); F07.4 and F07.5 are not started. **Size:** Large.
+**Status:** approved (#164). F07.1 and F07.2 are merged ([#172](https://github.com/omni-oss/omni/pull/172); final review PASS per the PR); F07.3 is merged ([#194](https://github.com/omni-oss/omni/pull/194); see [its plan](F07.3-ordered-composition-plan.md)); F07.4 (override notice) is built in review; F07.5 is not started. **Size:** Large.
 **Risk:** High: composition and location changes can affect task behavior and
 cache keys. The chosen direction is to finish the metadata redesign before
 building ordered composition, rather than ship a parallel provenance walk.
@@ -264,6 +264,8 @@ put raw values in the message. Details for `cache.enabled` overrides live in the
 other fields, such as a description override, wait for P12 inspection, so the notice
 carries counts only until then. Do not
 change the existing duplicate-final-project-name check, which stays an error.
+
+**Implemented (F07.4).** `omni_configurations::PluginOverride` (code `composition.plugin_override`, info, not essential, message `{fields} field(s) in {projects} project(s) were overridden by a later plugin`), `PluginOverride::from_overrides` (aggregates the records of any number of projects) and `Composed::override_notice`. It counts distinct `(root, field)` records that have an overridden contributor and are not `masked_by_explicit`. Nothing in production raises it yet, because nothing calls `compose_ordered`; the future caller passes the value to `notice!`. Counts only: no values, ids or paths. See the [F07.4 plan](F07.4-override-notice-plan.md).
 
 **Gate:** pin the notice code, level and message text; cover differing, equal,
 explicitly replaced and fileless-contributor cases. Revert the notice without

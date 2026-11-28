@@ -27,6 +27,7 @@ recorded here. Test-only prefixes are not listed.
 | `capabilities` | `bridge_rpc_runner` |
 | `capability_policy` | `omni_capabilities` |
 | `code` | `omni_mcp_core` |
+| `composition` | `omni_configurations` |
 | `command` | `omni_command_config` |
 | `config` | `omni_configurations` |
 | `config_discovery` | `omni_configuration_discovery` |
