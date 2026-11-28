@@ -16,11 +16,12 @@ network and breaks offline use until then.
 
 - **Leased checkouts.** A running command holds a lease on every checkout it is
   reading. Prune skips it and lists it under "in use".
-- **Referenced checkouts.** When a workspace installs sources, it writes a small
-  registration into `<store>/workspaces/` pointing at its `refs/` directory.
-  Prune reads every live registration and the reference sets it points at, plus
-  the pruning workspace's own `refs/`, and skips a checkout any of them names.
-  It lists these under "referenced by a registered workspace".
+- **Referenced checkouts, with `--unused`.** When a workspace installs sources,
+  it writes a small registration into `<store>/workspaces/` pointing at its
+  `refs/` directory. `--unused` reads every live registration and the reference
+  sets it points at, plus the pruning workspace's own `refs/`, and skips a
+  checkout any of them names. It lists these under "referenced by a registered
+  workspace".
 - A registration whose reference directory is missing (a moved or removed
   workspace) is not live for that run; its checkouts become prunable. The
   registration file is kept.
@@ -29,7 +30,7 @@ network and breaks offline use until then.
 
 - `--unused` selects checkouts that no lease and no live registration protects.
   It is new; `--all`, `--older-than` and `--larger-than` keep their previous
-  meaning, and age and size still include referenced checkouts for now.
+  meaning, and age and size **still include referenced checkouts** for now.
 - `--all` selects every checkout, leased ones included except that a held lease
   is always skipped. Its meaning is unchanged, and it does not read
   registrations. Use it to reclaim a workspace that no longer exists.

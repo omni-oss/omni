@@ -22,6 +22,7 @@ use omni_remote_source::{
     manager::{
         RemoteSourceManager, StorePruneFilter, config::RemoteSourceConfig,
     },
+    registration::RegistrationData,
 };
 use system_traits::impls::RealSys;
 use tempfile::TempDir;
@@ -364,12 +365,31 @@ async fn prune_protects_a_reference_whose_slug_depends_on_the_selector() {
         .to_string(),
     )
     .unwrap();
-    assert!(
-        store.join("workspaces").join("").exists()
-            || std::fs::read_dir(store.join("workspaces"))
-                .map(|d| d.count() > 0)
-                .unwrap_or(false),
-        "the registration was not written"
+    let registrations: Vec<_> = std::fs::read_dir(store.join("workspaces"))
+        .expect("workspaces dir")
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.extension().and_then(|e| e.to_str()) == Some("json")
+        })
+        .collect();
+    assert_eq!(registrations.len(), 1, "the registration was not written");
+    let registration = RegistrationData::from_file_bytes(
+        &registrations[0],
+        &std::fs::read(&registrations[0]).unwrap(),
+    )
+    .expect("parse the registration");
+    let lockfile = Path::new(registration.lockfile_path());
+    assert_eq!(
+        lockfile.file_name().and_then(|n| n.to_str()),
+        Some("lock.json")
+    );
+    assert_eq!(
+        lockfile
+            .parent()
+            .and_then(|p| p.file_name())
+            .and_then(|n| n.to_str()),
+        Some("sources")
     );
 
     let a = Workspace::with_store(&store);

@@ -138,6 +138,8 @@ impl<TSys: RemoteSourceSys> SourceDriver<TSys> for GitDriver {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::driver::Connection;
+    use system_traits::impls::RealSys;
 
     fn slug(uri: &str) -> String {
         store_slug(&Url::parse(uri).unwrap())
@@ -145,6 +147,27 @@ mod tests {
 
     fn locator(uri: &str) -> String {
         canonical_git_locator(&Url::parse(uri).unwrap())
+    }
+
+    #[test]
+    fn slug_ignores_credentials_in_the_connection() {
+        let uri = Url::parse("https://host/a.git").unwrap();
+        let base = SourceSpec {
+            locator: canonical_git_locator(&uri),
+            selector: "main".into(),
+            connection: Connection::new(uri.as_str()),
+        };
+        let with_credentials = SourceSpec {
+            connection: Connection::new("https://user:token@host/a.git"),
+            ..base.clone()
+        };
+        assert_eq!(
+            <GitDriver as SourceDriver<RealSys>>::slug(&GitDriver, &base),
+            <GitDriver as SourceDriver<RealSys>>::slug(
+                &GitDriver,
+                &with_credentials
+            )
+        );
     }
 
     #[test]

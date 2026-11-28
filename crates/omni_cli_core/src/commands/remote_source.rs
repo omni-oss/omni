@@ -25,7 +25,7 @@ pub enum RemoteSourcesSubcommand {
 
     #[command(
         about = "Delete checkouts from the remote-source store. They are refetched when next used",
-        long_about = "Delete checkouts from the remote-source store. They are refetched when next used.\n\nCheckouts leased by a running command, or referenced by a registered workspace, are skipped and reported. Workspaces register when they write references (install, or a generator or tool run). An older omni version prunes without reading registrations, so it can delete a checkout a newer workspace still references."
+        long_about = "Delete checkouts from the remote-source store. They are refetched when next used.\n\nCheckouts leased by a running command are always skipped and reported. --unused also skips checkouts referenced by a registered workspace; --older-than and --larger-than still select referenced checkouts. Workspaces register when they write references (install, or a generator or tool run). An older omni version prunes without reading registrations, so it can delete a checkout a newer workspace still references."
     )]
     Prune(#[command(flatten)] RemoteSourcesPruneArgs),
 }

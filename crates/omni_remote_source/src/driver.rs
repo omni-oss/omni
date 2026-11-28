@@ -98,12 +98,13 @@ pub trait SourceDriver<TSys: RemoteSourceSys>: Send + Sync {
     /// stable and a safe segment.
     fn kind(&self) -> &'static str;
 
-    /// One path segment naming the place. Must be injective over
-    /// `(spec.locator, spec.selector)`, a pure function of them (no I/O), and
-    /// must not read `spec.connection` or panic on any input: prune maps foreign
-    /// reference files back to store slugs through it, with a placeholder
-    /// connection and an untrusted locator/selector. The core hashes it when it
-    /// is not a safe segment.
+    /// One path segment naming the place. Must be a deterministic pure function
+    /// of `(spec.locator, spec.selector)` (no I/O) that is injective over
+    /// `spec.locator` (distinct remotes never share a directory), and must not
+    /// read `spec.connection` or panic on any input: prune maps foreign reference
+    /// files back to store slugs through it, with a placeholder connection and an
+    /// untrusted locator/selector. The core hashes it when it is not a safe
+    /// segment.
     fn slug(&self, spec: &SourceSpec) -> String;
 
     /// Turn `spec` (and the locked pin, if any) into a pin, fetching into

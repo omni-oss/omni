@@ -583,10 +583,10 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
         };
         let absolute = std::path::absolute(&parent).ok()?;
         let canonical = self.sys.fs_canonicalize_async(&absolute).await.ok();
-        let mut path = canonical.unwrap_or(absolute);
-        path.push(lockfile.file_name()?);
-        let path = strip_verbatim_prefix(&path.to_string_lossy());
-        Path::new(&path).is_absolute().then_some(path)
+        normalize_lockfile_path(
+            &lockfile,
+            canonical.as_deref().unwrap_or(&absolute),
+        )
     }
 
     async fn prepare_ref_set(
@@ -1053,6 +1053,19 @@ fn checkout_key(entry: &StoreEntry) -> ReferenceKey {
     (entry.kind.clone(), entry.remote.clone(), entry.pin.clone())
 }
 
+/// Join a lockfile's file name onto an absolute (and, when possible,
+/// canonicalized) parent. `None` when the result would not be absolute: the
+/// reader rejects such a registration, so it is never written.
+fn normalize_lockfile_path(lockfile: &Path, parent: &Path) -> Option<String> {
+    if !parent.is_absolute() {
+        return None;
+    }
+    let mut path = parent.to_path_buf();
+    path.push(lockfile.file_name()?);
+    let path = strip_verbatim_prefix(&path.to_string_lossy());
+    Path::new(&path).is_absolute().then_some(path)
+}
+
 fn ignore_not_found(result: std::io::Result<()>) -> Result<(), Error> {
     match result {
         Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
@@ -1470,12 +1483,10 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
                 policy,
                 state,
                 &checkout_key(entry),
-                true,
             )
             .await
             {
                 Recheck::Clear => {}
-                Recheck::InUse => return Ok(PruneEntryOutcome::InUse),
                 Recheck::Referenced => {
                     return Ok(PruneEntryOutcome::Referenced);
                 }
@@ -1553,9 +1564,9 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
+    use std::{path::Path, time::Duration};
 
-    use super::StorePruneFilter;
+    use super::{StorePruneFilter, normalize_lockfile_path};
 
     fn id(s: &str) -> (String, String, String) {
         (s.into(), s.into(), s.into())
@@ -1762,6 +1773,22 @@ mod tests {
         for (name, filter, ok) in cases {
             assert_eq!(filter.validate().is_ok(), ok, "{name}");
         }
+    }
+
+    #[test]
+    fn a_registration_path_is_absolute_or_not_written() {
+        let lockfile = Path::new("/ws/.omni/sources/lock.json");
+        assert!(
+            normalize_lockfile_path(lockfile, Path::new("relative")).is_none()
+        );
+        assert_eq!(
+            normalize_lockfile_path(lockfile, Path::new("/ws/.omni/sources"))
+                .as_deref(),
+            Some("/ws/.omni/sources/lock.json")
+        );
+        assert!(
+            normalize_lockfile_path(Path::new("/"), Path::new("/ws")).is_none()
+        );
     }
 
     #[test]

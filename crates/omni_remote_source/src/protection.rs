@@ -150,8 +150,6 @@ impl ProtectedReferences {
 pub(crate) enum Recheck {
     /// Not referenced: the caller may delete it.
     Clear,
-    /// A lease is held by another process; the entry must not be deleted.
-    InUse,
     /// A live registration or the workspace's own refs name this checkout.
     Referenced,
     /// The registry could not be read; the entry must not be deleted.
@@ -179,13 +177,10 @@ impl RegistryState {
     }
 }
 
-/// Decide whether one entry is referenced, in the order prune needs: a lease
-/// the caller could not take wins first, then a stop from an earlier timeout,
-/// then a fresh read of registrations and the workspace's own refs. `leased` is
-/// `true` when the caller holds the exclusive lease, `false` when another
-/// process does.
-// The reader inputs stay explicit so the scripted unit tests can drive them.
-#[allow(clippy::too_many_arguments)]
+/// Decide whether one entry is referenced. The caller has already taken the
+/// exclusive lease (or returned the entry as in use) before calling this, so a
+/// stop from an earlier timeout is checked first, then a fresh read of
+/// registrations and the workspace's own refs.
 pub(crate) async fn recheck<TSys, F>(
     fs: &F,
     registry: &DriverRegistry<TSys>,
@@ -194,15 +189,11 @@ pub(crate) async fn recheck<TSys, F>(
     policy: ReferenceReadPolicy,
     state: &mut RegistryState,
     key: &ReferenceKey,
-    leased: bool,
 ) -> Recheck
 where
     TSys: RemoteSourceSys,
     F: ReaderFs,
 {
-    if !leased {
-        return Recheck::InUse;
-    }
     if let Some(cause) = state.stopped() {
         return Recheck::Failed(cause.to_string());
     }
@@ -662,7 +653,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_stopped_registry_skips_reads_but_a_lease_still_wins() {
+    async fn a_stopped_registry_skips_further_reads() {
         let hall = ScriptedFs::default();
         let mut state = RegistryState::default();
         state.stop("timed out");
@@ -677,23 +668,6 @@ mod tests {
                 SHORT,
                 &mut state,
                 &key,
-                false,
-            )
-            .await,
-            Recheck::InUse
-        );
-        assert_eq!(hall.list_calls.load(Ordering::SeqCst), 0);
-
-        assert_eq!(
-            recheck(
-                &hall,
-                &registry(),
-                Path::new("/store"),
-                Path::new("/ws/refs"),
-                SHORT,
-                &mut state,
-                &key,
-                true,
             )
             .await,
             Recheck::Failed("timed out".into())
