@@ -139,6 +139,42 @@ mod tests {
 
     use super::*;
 
+    /// F07.5: the MCP result carries the same per-task provenance fields as
+    /// the CLI JSON (`InspectedTask`), with ids and paths only.
+    #[test]
+    fn the_eligibility_result_carries_the_task_provenance_fields() {
+        let task = omni_task_executor::InspectedTask {
+            task: "app#build".to_owned(),
+            status: omni_task_executor::CacheStatus::Eligible,
+            cache_enabled_source: "plugin".to_owned(),
+            condition_unevaluated: false,
+            cache_enabled_provenance:
+                omni_task_executor::CacheEnabledProvenance {
+                    scope: Some("task".to_owned()),
+                    declared_by: Some("native".to_owned()),
+                    file: None,
+                    overridden: vec![
+                        omni_task_executor::OverriddenContributor {
+                            contributor: "frontend".to_owned(),
+                            file: None,
+                        },
+                    ],
+                },
+        };
+        let result = CacheEligibilityResult {
+            tasks: vec![task.clone()],
+            contradictions: Vec::new(),
+            unevaluated_conditions: Vec::new(),
+        };
+        let value = serde_json::to_value(&result).unwrap();
+        assert_eq!(value["tasks"][0], serde_json::to_value(&task).unwrap());
+        let wire = &value["tasks"][0]["cache_enabled_provenance"];
+        assert_eq!(wire["scope"], "task");
+        assert_eq!(wire["declared_by"], "native");
+        assert_eq!(wire["overridden"][0]["contributor"], "frontend");
+        assert!(wire["overridden"][0].get("value").is_none());
+    }
+
     #[test]
     fn stats_task_is_exact_and_task_pattern_is_separate() {
         let params: CacheStatsParams = serde_json::from_value(

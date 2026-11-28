@@ -3,14 +3,15 @@
 //! contributor ids and field paths only, never values.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 use config_utils::{DictConfig, DynValue, ListConfig};
 use omni_task_output_logs::OutputLogsSplit;
 use omni_types::OmniPath;
 
 use crate::{
-    Contribution, ContributorId, EnabledScope, LoadedLayer, ProjectLayer,
-    TaskLayer,
+    Contribution, ContributorId, EnabledScope, LoadedLayer, Origin,
+    ProjectLayer, TaskLayer,
 };
 
 /// The tracked fields. Closed: other fields compose by replay without records.
@@ -31,6 +32,16 @@ pub enum FieldPath {
 pub enum OverrideTier {
     Emitted,
     Applied,
+}
+
+/// Where an overridden contributor's `cache.enabled` declaration came from.
+/// Ids and origins only, never values.
+#[derive(Debug, Clone, PartialEq)]
+pub struct OverrideLocation {
+    pub field: FieldPath,
+    pub tier: OverrideTier,
+    pub contributor: ContributorId,
+    pub origin: Arc<Origin>,
 }
 
 /// A later contributor's value for `field` that differs from earlier ones.
@@ -290,14 +301,24 @@ impl Masks {
 
 type Key = (FieldPath, OverrideTier);
 
+/// One `cache.enabled` declaration of a group: contributor, value and origin,
+/// in composition order.
+type Declaration = (ContributorId, bool, Arc<Origin>);
+
 /// Records for contributors already sorted in composition order.
 pub(crate) fn compute(
     root: &OmniPath,
     contributions: &[Contribution],
     explicit: &[LoadedLayer],
-) -> Vec<FieldOverride> {
+) -> (Vec<FieldOverride>, Vec<OverrideLocation>) {
     let mut masks = Masks::from_explicit(explicit);
     let mut groups: BTreeMap<Key, Vec<(ContributorId, Leaf)>> = BTreeMap::new();
+    // The declarations behind each `cache.enabled` group, in composition
+    // order: the location of an overridden contributor comes from here.
+    let mut declarations: BTreeMap<
+        Key,
+        Vec<(ContributorId, bool, Arc<Origin>)>,
+    > = BTreeMap::new();
     for contribution in contributions {
         for (field, leaf) in leaves(&contribution.layer) {
             groups
@@ -328,9 +349,14 @@ pub(crate) fn compute(
                 }
             };
             groups
-                .entry((field, tier))
+                .entry((field.clone(), tier))
                 .or_default()
                 .push((contribution.id.clone(), Leaf::Bool(decl.value)));
+            declarations.entry((field, tier)).or_default().push((
+                contribution.id.clone(),
+                decl.value,
+                Arc::clone(&decl.origin),
+            ));
         }
     }
     let mut records: Vec<(FieldOverride, bool)> = groups
@@ -372,7 +398,49 @@ pub(crate) fn compute(
         }),
         _ => true,
     });
-    records.into_iter().map(|(record, _)| record).collect()
+    let records: Vec<FieldOverride> =
+        records.into_iter().map(|(record, _)| record).collect();
+    let locations = records
+        .iter()
+        .flat_map(|record| locations_of(record, &declarations))
+        .collect();
+    (records, locations)
+}
+
+/// One location per overridden contributor: the contributor's last declaration
+/// of the same field and tier whose value differs from the winner's.
+fn locations_of(
+    record: &FieldOverride,
+    declarations: &BTreeMap<Key, Vec<Declaration>>,
+) -> Vec<OverrideLocation> {
+    if record.overridden.is_empty() {
+        return Vec::new();
+    }
+    let key = (record.field.clone(), record.tier);
+    let Some(decls) = declarations.get(&key) else {
+        return Vec::new();
+    };
+    let Some((_, winner_value, _)) =
+        decls.iter().rev().find(|(id, ..)| id == &record.winner)
+    else {
+        return Vec::new();
+    };
+    record
+        .overridden
+        .iter()
+        .filter_map(|contributor| {
+            let (_, _, origin) =
+                decls.iter().rev().find(|(id, value, _)| {
+                    id == contributor && value != winner_value
+                })?;
+            Some(OverrideLocation {
+                field: record.field.clone(),
+                tier: record.tier,
+                contributor: contributor.clone(),
+                origin: Arc::clone(origin),
+            })
+        })
+        .collect()
 }
 
 struct Decided {

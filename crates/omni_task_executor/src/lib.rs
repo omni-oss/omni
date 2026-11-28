@@ -27,7 +27,8 @@ pub use cache_contradiction::{
     find_explicit_contradictions,
 };
 pub use cache_inspection::{
-    CacheInspection, InspectedContradiction, InspectedTask, InspectionNode,
+    CacheEnabledProvenance, CacheInspection, InspectedContradiction,
+    InspectedTask, InspectionNode, OverriddenContributor,
     inspect_cache_eligibility, inspect_nodes,
 };
 pub use config::*;

@@ -11,7 +11,8 @@ use maps::{Map, OrderedMap, UnorderedMap};
 use merge::Merge as _;
 use omni_config_types::MergeSingleOrMany;
 use omni_configurations::{
-    FinalizedProject, LoadedLayer, MetaConfiguration, ProjectConfiguration,
+    CacheEnabledSource, CacheScope, ContributorId, FinalizedProject,
+    LoadedLayer, MetaConfiguration, OverriddenDecl, ProjectConfiguration,
     RedactPolicy, WorkspaceConfiguration,
 };
 use omni_core::{ExtensionGraph, ExtensionGraphError, Project, Task};
@@ -178,6 +179,8 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
         let mut task_env_var_overrides = TaskMap::new();
         let mut cache_infos = TaskMap::new();
         let mut cache_enabled_files: CacheEnabledFiles = maps::unordered_map![];
+        let mut cache_enabled_provenance: CacheEnabledProvenance =
+            maps::unordered_map![];
         let mut output_logs_configs = TaskMap::new();
         let mut redact_policies = TaskMap::new();
 
@@ -326,6 +329,35 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
                         .insert(name.to_owned(), Arc::clone(file));
                 }
 
+                let scope = match enabled.source {
+                    CacheEnabledSource::TaskExplicit => Some(CacheScope::Task),
+                    CacheEnabledSource::ProjectExplicit => {
+                        Some(CacheScope::Project)
+                    }
+                    CacheEnabledSource::Plugin => {
+                        finalized.task_cache_enabled_scope.get(name).copied()
+                    }
+                    _ => None,
+                };
+                let facts = CacheEnabledFacts {
+                    scope,
+                    contributor: finalized
+                        .task_cache_enabled_origin
+                        .get(name)
+                        .and_then(|origin| {
+                            origin.source.contributor_id().cloned()
+                        }),
+                    overridden: finalized
+                        .task_cache_enabled_overridden
+                        .get(name)
+                        .cloned()
+                        .unwrap_or_default(),
+                };
+                cache_enabled_provenance
+                    .entry(project_config.name.clone())
+                    .or_default()
+                    .insert(name.to_owned(), facts);
+
                 let use_defaults = cache.key.defaults.unwrap_or(true);
 
                 let key_input_files = if use_defaults {
@@ -457,12 +489,31 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
             redact_policies,
         );
         extracted.cache_enabled_files = cache_enabled_files;
+        extracted.cache_enabled_provenance = cache_enabled_provenance;
         Ok(extracted)
     }
 }
 
 type CacheEnabledFiles =
     UnorderedMap<String, UnorderedMap<String, Arc<OmniPath>>>;
+
+/// The winning and overridden provenance of a task's effective
+/// `cache.enabled`: the level that decided it, the contributor for a plugin
+/// decision, and the contributors a later one overrode. Ids and paths only,
+/// never values. Kept out of the serialized extraction, like the declaring
+/// files: inspection data, not a cache-key input.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct CacheEnabledFacts {
+    /// The level that decided the value, when one is known.
+    pub scope: Option<CacheScope>,
+    /// The contributor whose value won, for a plugin decision.
+    pub contributor: Option<ContributorId>,
+    /// Contributors a later one overrode, in contributor order.
+    pub overridden: Vec<OverriddenDecl>,
+}
+
+type CacheEnabledProvenance =
+    UnorderedMap<String, UnorderedMap<String, CacheEnabledFacts>>;
 
 #[derive(Debug, Clone, PartialEq, new, Serialize, Deserialize)]
 pub struct ProjectDataExtractions {
@@ -471,6 +522,9 @@ pub struct ProjectDataExtractions {
     #[new(default)]
     #[serde(skip)]
     pub(crate) cache_enabled_files: CacheEnabledFiles,
+    #[new(default)]
+    #[serde(skip)]
+    pub(crate) cache_enabled_provenance: CacheEnabledProvenance,
     pub task_env_var_overrides: TaskMap<Map<String, String>>,
     pub project_meta_configs: UnorderedMap<String, MetaConfiguration>,
     pub task_meta_configs: TaskMap<MetaConfiguration>,
@@ -965,9 +1019,26 @@ mod tests {
             );
         }
         assert!(
-            serde_json::to_value(extracted)
+            serde_json::to_value(&extracted)
                 .unwrap()
                 .get("cache_enabled_files")
+                .is_none()
+        );
+        for (task, scope) in [
+            ("inherits", omni_configurations::CacheScope::Project),
+            ("own", omni_configurations::CacheScope::Task),
+        ] {
+            let facts = extracted.cache_enabled_provenance["app"]
+                .get(task)
+                .expect("every task has provenance");
+            assert_eq!(facts.scope, Some(scope));
+            assert!(facts.contributor.is_none());
+            assert!(facts.overridden.is_empty());
+        }
+        assert!(
+            serde_json::to_value(&extracted)
+                .unwrap()
+                .get("cache_enabled_provenance")
                 .is_none()
         );
     }

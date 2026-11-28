@@ -122,6 +122,19 @@ impl<TSys: ContextSys> LoadedContext<TSys> {
             .and_then(|file| file.path().ok())
     }
 
+    /// The winning and overridden provenance of a task's effective
+    /// `cache.enabled`. Configuration only: never runs anything.
+    pub fn cache_enabled_provenance(
+        &self,
+        project_name: &str,
+        task_name: &str,
+    ) -> Option<&crate::CacheEnabledFacts> {
+        self.extracted
+            .cache_enabled_provenance
+            .get(project_name)?
+            .get(task_name)
+    }
+
     pub fn get_output_logs(
         &self,
         project_name: &str,

@@ -2143,6 +2143,41 @@ async fn task_cache_inspect_lists_contradiction_without_running_anything() {
             && !root.join("projects/app/envmarker").exists(),
         "inspection must not evaluate environment command substitutions"
     );
+
+    // F07.5: the winning provenance reaches inspection with a
+    // workspace-relative declaring file and the deciding level.
+    let build = i.tasks.iter().find(|t| t.task == "app#build").unwrap();
+    let provenance = &build.cache_enabled_provenance;
+    assert_eq!(provenance.scope.as_deref(), Some("task"));
+    assert!(provenance.declared_by.is_none());
+    assert_eq!(provenance.file, file);
+    assert!(provenance.overridden.is_empty());
+    let plain = i.tasks.iter().find(|t| t.task == "app#plain");
+    if let Some(plain) = plain {
+        assert!(plain.cache_enabled_provenance.file.is_none());
+    }
+    // Names and paths only: no command text or declared values.
+    let wire = serde_json::to_string(i).unwrap();
+    assert!(!wire.contains("touch marker"), "{wire}");
+    let wire = serde_json::to_value(i).unwrap();
+    let build = wire["tasks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["task"] == "app#build")
+        .unwrap();
+    assert_eq!(build["cache_enabled_provenance"]["scope"], "task");
+    let expected_file = serde_json::to_value(
+        Path::new("projects").join("app").join("project.omni.yaml"),
+    )
+    .unwrap();
+    assert_eq!(build["cache_enabled_provenance"]["file"], expected_file);
+    assert!(
+        build["cache_enabled_provenance"]["overridden"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[derive(Default, Clone)]

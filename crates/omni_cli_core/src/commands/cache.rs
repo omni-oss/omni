@@ -720,6 +720,58 @@ fn display_pruned_entries(pruned: &[PrunedCacheEntry]) {
     }
 }
 
+/// One task's text line: status, deciding tier, then the `cache.enabled`
+/// provenance (`scope`, `declared by`, `file`, `overridden`). Names,
+/// workspace-relative paths and ids only; nothing is printed for a part that
+/// is unknown.
+fn task_line(task: &omni_task_executor::InspectedTask, status: &str) -> String {
+    let mut line = format!(
+        "{}: {status} (tier: {})",
+        task.task, task.cache_enabled_source
+    );
+    if let omni_task_executor::CacheStatus::Demoted {
+        direct_dependency,
+        root_cause,
+    } = &task.status
+    {
+        line.push_str(&format!(
+            " (dependency {direct_dependency}, root cause {root_cause})"
+        ));
+    }
+    if task.condition_unevaluated {
+        line.push_str(" [enabled condition not evaluated]");
+    }
+    let provenance = &task.cache_enabled_provenance;
+    let mut parts = Vec::new();
+    if let Some(scope) = &provenance.scope {
+        parts.push(format!("scope: {scope}"));
+    }
+    if let Some(declared_by) = &provenance.declared_by {
+        parts.push(format!("declared by: {declared_by}"));
+    }
+    if let Some(file) = &provenance.file {
+        parts.push(format!("file: {}", file.display()));
+    }
+    if !provenance.overridden.is_empty() {
+        let lost = provenance
+            .overridden
+            .iter()
+            .map(|overridden| match &overridden.file {
+                Some(file) => {
+                    format!("{} ({})", overridden.contributor, file.display())
+                }
+                None => overridden.contributor.clone(),
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        parts.push(format!("overridden: {lost}"));
+    }
+    if !parts.is_empty() {
+        line.push_str(&format!(" [{}]", parts.join(", ")));
+    }
+    line
+}
+
 async fn eligibility(
     api: &OmniApi<system_traits::impls::RealSys, omni_messages::NoopSubscriber>,
     args: &EligibilityArgs,
@@ -750,25 +802,10 @@ async fn eligibility(
     }
 
     for task in &inspection.tasks {
-        let value = serde_json::to_value(&task.status)?;
-        let status = value["status"].as_str().unwrap_or("unknown");
-        let mut line = format!(
-            "{}: {status} (tier: {})",
-            task.task, task.cache_enabled_source
-        );
-        if let omni_task_executor::CacheStatus::Demoted {
-            direct_dependency,
-            root_cause,
-        } = &task.status
-        {
-            line.push_str(&format!(
-                " (dependency {direct_dependency}, root cause {root_cause})"
-            ));
-        }
-        if task.condition_unevaluated {
-            line.push_str(" [enabled condition not evaluated]");
-        }
-        println!("{line}");
+        let status = serde_json::to_value(&task.status)?["status"]
+            .as_str()
+            .map_or_else(|| "unknown".to_owned(), |status| status.to_owned());
+        println!("{}", task_line(task, &status));
     }
     if !inspection.contradictions.is_empty() {
         println!();
@@ -873,5 +910,214 @@ mod pruned_display_tests {
         assert_eq!(grouped["a"]["d"].len(), 1);
         assert_eq!(grouped["a#b"]["c"].len(), 1);
         assert!(!grouped["a"].contains_key("b"));
+    }
+}
+
+#[cfg(test)]
+mod provenance_text_tests {
+    use omni_task_executor::{
+        CacheEnabledProvenance, CacheStatus, InspectedTask,
+        OverriddenContributor,
+    };
+
+    use super::task_line;
+
+    fn task(tier: &str, provenance: CacheEnabledProvenance) -> InspectedTask {
+        InspectedTask {
+            task: "app#build".to_owned(),
+            status: CacheStatus::Eligible,
+            cache_enabled_source: tier.to_owned(),
+            condition_unevaluated: false,
+            cache_enabled_provenance: provenance,
+        }
+    }
+
+    fn file(name: &str) -> std::path::PathBuf {
+        std::iter::once("app")
+            .chain(std::iter::once(name))
+            .collect()
+    }
+
+    #[test]
+    fn a_decided_task_names_scope_declarer_file_and_overridden() {
+        let line = task_line(
+            &task(
+                "plugin",
+                CacheEnabledProvenance {
+                    scope: Some("task".to_owned()),
+                    declared_by: Some("native".to_owned()),
+                    file: Some(file("task.omni.yaml")),
+                    overridden: vec![OverriddenContributor {
+                        contributor: "frontend".to_owned(),
+                        file: Some(file("frontend.omni.yaml")),
+                    }],
+                },
+            ),
+            "eligible",
+        );
+        assert_eq!(
+            line,
+            format!(
+                "app#build: eligible (tier: plugin) [scope: task, declared by: native, file: {}, overridden: frontend ({})]",
+                file("task.omni.yaml").display(),
+                file("frontend.omni.yaml").display()
+            )
+        );
+    }
+
+    #[test]
+    fn a_fallback_task_prints_only_its_status_and_tier() {
+        let line = task_line(
+            &task("host-fallback", CacheEnabledProvenance::default()),
+            "eligible",
+        );
+        assert_eq!(line, "app#build: eligible (tier: host-fallback)");
+    }
+
+    /// The text line, the CLI `--json` shape and the MCP result carry the same
+    /// provenance for every decision kind, with the decision's own tier, and
+    /// never a value.
+    #[test]
+    fn text_json_and_mcp_share_the_provenance_fields() {
+        let overridden_file = file("frontend.omni.yaml");
+        let cases = [
+            (
+                "inherited",
+                "project-explicit",
+                CacheEnabledProvenance {
+                    scope: Some("project".to_owned()),
+                    file: Some(file("project.omni.yaml")),
+                    ..Default::default()
+                },
+                serde_json::json!({
+                    "scope": "project",
+                    "declared_by": null,
+                    "file": file("project.omni.yaml").display().to_string(),
+                    "overridden": []
+                }),
+            ),
+            (
+                "overridden",
+                "plugin",
+                CacheEnabledProvenance {
+                    scope: Some("task".to_owned()),
+                    declared_by: Some("native".to_owned()),
+                    overridden: vec![
+                        OverriddenContributor {
+                            contributor: "frontend".to_owned(),
+                            file: Some(overridden_file.clone()),
+                        },
+                        OverriddenContributor {
+                            contributor: "legacy".to_owned(),
+                            file: None,
+                        },
+                    ],
+                    ..Default::default()
+                },
+                serde_json::json!({
+                    "scope": "task",
+                    "declared_by": "native",
+                    "file": null,
+                    "overridden": [
+                        {
+                            "contributor": "frontend",
+                            "file": overridden_file.display().to_string()
+                        },
+                        { "contributor": "legacy", "file": null }
+                    ]
+                }),
+            ),
+            (
+                "fallback",
+                "host-fallback",
+                CacheEnabledProvenance::default(),
+                serde_json::json!({
+                    "scope": null,
+                    "declared_by": null,
+                    "file": null,
+                    "overridden": []
+                }),
+            ),
+            (
+                "fileless",
+                "task-explicit",
+                CacheEnabledProvenance {
+                    scope: Some("task".to_owned()),
+                    ..Default::default()
+                },
+                serde_json::json!({
+                    "scope": "task",
+                    "declared_by": null,
+                    "file": null,
+                    "overridden": []
+                }),
+            ),
+        ];
+        for (case, tier, provenance, expected) in cases {
+            let mut task = task("plugin", provenance.clone());
+            task.cache_enabled_source = tier.to_owned();
+            let text = task_line(&task, "eligible");
+            let json = serde_json::to_value(&task).unwrap();
+            let mcp = serde_json::to_value(
+                omni_mcp_core::model::CacheEligibilityResult {
+                    tasks: vec![task.clone()],
+                    contradictions: Vec::new(),
+                    unevaluated_conditions: Vec::new(),
+                },
+            )
+            .unwrap();
+            let from_json = &json["cache_enabled_provenance"];
+            let from_mcp = &mcp["tasks"][0]["cache_enabled_provenance"];
+            assert_eq!(from_json, from_mcp, "{case}");
+            assert_eq!(from_json, &expected, "{case}");
+            assert_eq!(
+                from_json.as_object().unwrap().len(),
+                4,
+                "{case}: exactly the four documented fields"
+            );
+            for key in ["scope", "declared_by", "file", "overridden"] {
+                assert!(from_json.get(key).is_some(), "{case}: {key}");
+            }
+            assert!(text.contains(tier), "{case}");
+            if let Some(declared_by) = &provenance.declared_by {
+                assert!(
+                    text.contains(&format!("declared by: {declared_by}")),
+                    "{case}"
+                );
+            }
+            if let Some(file) = &provenance.file {
+                assert!(text.contains(&file.display().to_string()), "{case}");
+            }
+            for lost in &provenance.overridden {
+                assert!(text.contains(&lost.contributor), "{case}");
+                if let Some(file) = &lost.file {
+                    assert!(
+                        text.contains(&file.display().to_string()),
+                        "{case}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_fileless_override_prints_its_id_alone() {
+        let line = task_line(
+            &task(
+                "plugin",
+                CacheEnabledProvenance {
+                    overridden: vec![OverriddenContributor {
+                        contributor: "frontend".to_owned(),
+                        file: None,
+                    }],
+                    ..Default::default()
+                },
+            ),
+            "disabled",
+        );
+        assert_eq!(
+            line,
+            "app#build: disabled (tier: plugin) [overridden: frontend]"
+        );
     }
 }

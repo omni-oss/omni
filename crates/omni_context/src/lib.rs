@@ -33,6 +33,7 @@ pub use loaded_context::*;
 pub use logical_project::{ConfigLocation, LogicalProjectKey};
 pub use maybe_loaded::*;
 pub use project_config_entry::ProjectConfigEntry;
+pub use project_data_extractor::CacheEnabledFacts;
 pub use sources_resolution::SourcesDirectorySource;
 pub use sys::*;
 pub use utils::{EnvVarsMap, EnvVarsOsMap};
