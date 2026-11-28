@@ -66,4 +66,6 @@ paths; a test in `omni_api` enforces it.
 (`<store>/workspaces/<hash>.json`, see `omni_remote_source::registration`) as the
 first file of the same `write_batch`, so a crash cannot leave references without a
 registration. It is skipped, with the references still written, when the store has
-no `VERSION` marker or is a newer layout. Nothing reads or deletes registrations yet.
+no `VERSION` marker or is a newer layout. Prune reads registrations and never
+deletes them (`protection.rs`); the follow-up `workspaces list/forget` command does
+not exist yet.
