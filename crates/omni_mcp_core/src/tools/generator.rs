@@ -37,6 +37,7 @@ use omni_task_output_logs::LogsDisplay;
 impl<TSys> OmniMcpServer<TSys>
 where
     TSys: ContextSys
+        + system_traits::FsCanonicalizeAsync
         + system_traits::FsOpen
         + system_traits::FsRename
         + system_traits::FsRemoveFile
