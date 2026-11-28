@@ -35,6 +35,11 @@ impl ExperimentalFeatures {
     /// enforcement of generator scripts).
     pub const CAPABILITIES: &'static str = "capabilities";
 
+    /// The `contained_reads` feature key (script file reads through the
+    /// contained input view). Only has an effect when `capabilities`
+    /// enforcement is on.
+    pub const CONTAINED_READS: &'static str = "contained_reads";
+
     /// Whether the named experimental feature is enabled. The boolean form
     /// applies to every feature; the map form enables only the keys set to
     /// `true` (an absent key is disabled).
@@ -45,6 +50,11 @@ impl ExperimentalFeatures {
     /// Whether the experimental capabilities subsystem is enabled.
     pub fn capabilities(&self) -> bool {
         self.is_enabled(Self::CAPABILITIES)
+    }
+
+    /// Whether contained script reads are enabled.
+    pub fn contained_reads(&self) -> bool {
+        self.is_enabled(Self::CONTAINED_READS)
     }
 }
 
@@ -79,6 +89,25 @@ mod tests {
             serde_json::from_str(r#"{"capabilities": true}"#).unwrap();
         assert!(features.capabilities());
         assert!(!features.is_enabled("other"));
+    }
+
+    #[test]
+    fn contained_reads_is_off_by_default_and_toggles_by_name() {
+        assert!(!ExperimentalFeatures::default().contained_reads());
+        let all: ExperimentalFeatures = serde_json::from_str("true").unwrap();
+        assert!(all.contained_reads());
+        let only_caps: ExperimentalFeatures =
+            serde_json::from_str(r#"{"capabilities": true}"#).unwrap();
+        assert!(!only_caps.contained_reads());
+        let named: ExperimentalFeatures =
+            serde_json::from_str(r#"{"contained_reads": true}"#).unwrap();
+        assert!(named.contained_reads());
+        assert!(!named.capabilities());
+        let off: ExperimentalFeatures = serde_json::from_str(
+            r#"{"capabilities": true, "contained_reads": false}"#,
+        )
+        .unwrap();
+        assert!(!off.contained_reads());
     }
 
     #[test]

@@ -55,6 +55,12 @@ pub struct HandlerContext<'a, S: GeneratorEventSubscriber = NoopSubscriber> {
     /// its scripts unconfined (declared capabilities are ignored at enforcement
     /// time); when `true`, the effective policy is enforced.
     pub enable_experimental: bool,
+    /// The contained-reads setting (`enable_experimental.contained_reads`) with
+    /// its resolved limits; `None` when the feature is off. Only takes effect
+    /// together with capability enforcement. `Copy`, so the context stays
+    /// `Copy`.
+    pub contained_reads:
+        Option<omni_containment_configurations::ContainedReads>,
     pub env: &'a Map<String, String>,
     /// Hides secret and policy-selected input values in logs.
     pub redactor: &'a omni_redact::Redactor,

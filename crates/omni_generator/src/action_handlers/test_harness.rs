@@ -193,6 +193,7 @@ impl Fixture {
             capabilities: &self.capabilities,
             capabilities_strictness: Default::default(),
             enable_experimental: true,
+            contained_reads: None,
             env: &self.env,
             gen_session: &self.gen_session,
             js_script_runner: self.js_script_runner.as_ref(),

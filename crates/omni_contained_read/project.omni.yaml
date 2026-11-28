@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/json-schemas/refs/heads/main/project.json
+name: omni_contained_read
+
+extends:
+  - "@workspace/omni/presets/rust-lib.omni.yaml"
+  # Reads go through the input view, whose containment runs on native Linux,
+  # Windows and macOS runners.
+  - "@workspace/omni/presets/rust-multiplatform.omni.yaml"
+
+dependencies:
+  - omni_capabilities
+  - omni_capability_sys
+  - omni_containment_configurations
+  - omni_diagnostic
+  - omni_input_view
+  - omni_path_utils
+  - omni_utils
+  - system_traits

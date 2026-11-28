@@ -32,6 +32,11 @@ pub struct ToolEnforcement {
     pub workspace_strictness: CapabilitiesStrictness,
     /// Whether to enforce (the experimental `capabilities` feature is on).
     pub enforce: bool,
+    /// The contained-reads setting with its resolved limits, `Some` when
+    /// `enable_experimental.contained_reads` is on. Only takes effect together
+    /// with `enforce`.
+    pub contained_reads:
+        Option<omni_containment_configurations::ContainedReads>,
 }
 
 /// The `{ path, cwd, inputs }` payload sent to the `/exec-tool` service.
@@ -130,6 +135,7 @@ pub(crate) fn run_named_at_depth<'a, R: ToolRunner>(
                         .workspace_strictness
                         .max(tool.capabilities.strictness),
                     enforce: enforcement.enforce,
+                    contained_reads: enforcement.contained_reads,
                 };
 
                 runner.run_js(&resolved, *runtime, &inputs, &policy).await
@@ -186,6 +192,7 @@ mod tests {
             roots: PathRoots::new(),
             workspace_strictness: CapabilitiesStrictness::Warn,
             enforce: false,
+            contained_reads: None,
         }
     }
 

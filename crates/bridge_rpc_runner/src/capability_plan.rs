@@ -30,6 +30,7 @@ use omni_capability_enforcement::{
     NativeOsSandbox, NodePermissions, ScriptShimBroker, ShimPolicy,
     SpawnPolicy, UnenforceablePolicy, build_plan_layered,
 };
+use omni_containment_configurations::ContainedReads;
 use omni_messages::{NoticeEvent, notice_event};
 
 use crate::notices::{
@@ -73,6 +74,12 @@ pub struct EffectivePolicy<P: CapabilityFloors> {
     /// pass-through broker. The levels/roots/context are still carried so the
     /// policy retains its provenance and can be enforced simply by flipping this.
     pub enforce: bool,
+    /// The contained-reads setting (`enable_experimental.contained_reads`):
+    /// `Some` with the resolved file-read limits whenever the feature is on,
+    /// `None` otherwise. It only takes effect together with `enforce`; a run
+    /// with `Some` and `enforce == false` is unconfined and raises
+    /// `ContainedReadsIgnored`.
+    pub contained_reads: Option<ContainedReads>,
 }
 
 // Manual `Clone`/`Debug`: the derived impls would require `P: Clone`/`Debug`
@@ -89,6 +96,7 @@ where
             context: self.context.clone(),
             strictness: self.strictness,
             enforce: self.enforce,
+            contained_reads: self.contained_reads,
         }
     }
 }
@@ -104,6 +112,7 @@ where
             .field("context", &self.context)
             .field("strictness", &self.strictness)
             .field("enforce", &self.enforce)
+            .field("contained_reads", &self.contained_reads)
             .finish()
     }
 }
@@ -155,8 +164,12 @@ where
         let levels =
             serde_json::to_string(&self.effective_levels()).unwrap_or_default();
         format!(
-            "{levels}|{:?}|{:?}|{:?}|{}",
-            self.roots, self.context, self.strictness, self.enforce
+            "{levels}|{:?}|{:?}|{:?}|{}|{:?}",
+            self.roots,
+            self.context,
+            self.strictness,
+            self.enforce,
+            self.contained_reads
         )
     }
 }

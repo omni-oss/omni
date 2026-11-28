@@ -1,0 +1,139 @@
+---
+title: "Contained script reads"
+description: "Make generator and tool scripts read workspace files through a checked, bounded read that refuses symlinks and oversized files"
+---
+
+Generator and tool scripts read files through `ctx.sys.fs.readFileAsString` and
+`readFileAsBytes`. With **contained reads** on, omni serves those two calls for
+files inside the workspace through a checked read instead of a plain one:
+
+- the path is checked against the capability policy first;
+- the file is opened only inside the workspace, so a symlink swapped in while
+  the script runs cannot lead outside it;
+- symlinks and Windows reparse points are refused;
+- the file size is limited before any memory is allocated.
+
+This is experimental and **off by default**. Nothing changes for a workspace
+that does not turn it on.
+
+## Turn it on
+
+Contained reads apply to scripts that run under capabilities enforcement, so
+both features are needed:
+
+```yaml
+# workspace.omni.yaml
+enable_experimental:
+    capabilities: true
+    contained_reads: true
+```
+
+`enable_experimental: true` (the bare form) turns on every experimental
+feature, including this one. Use the map form above to choose.
+
+If `contained_reads` is on but capabilities enforcement is not, omni runs the
+script unconfined, reads nothing differently, and raises the notice
+`capabilities.contained_reads_ignored`.
+
+## What changes for a script
+
+For a confined script that reads a file inside the workspace:
+
+| Before                                                         | After                                                                               |
+| -------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| A symlink in the path was followed if its target was allowed.  | The read fails with `input_view.symlink` (`input_view.reparse_point` on Windows).   |
+| The check and the open were separate steps.                    | The path is authorized, then opened once inside the workspace.                      |
+| Any file size was read.                                        | A file above `max_file_bytes` (8 MiB by default) fails with `input_view.too_large`. |
+| Names such as `a:b`, `con` or `x.` could be read on Linux.     | They fail with `input_view.unsupported_name` on every OS.                           |
+| A FIFO or device could be read.                                | It fails with `input_view.not_regular`.                                             |
+| `a/../b` was resolved by the OS (through a symlink if `a` is). | The path is cleaned lexically, so it reads `b`.                                     |
+| A path that is not valid UTF-8 was readable.                   | It fails with `InvalidInput`.                                                       |
+| On Windows the spelling of the name did not matter.            | The exact spelling is required, or the read fails with `input_view.case_mismatch`.  |
+
+Every other file call (`pathExists`, `readDirectory`, `stat`, writes and so
+on) and the cache keys are unchanged.
+
+Reads of files outside the workspace (for example a generator fetched into the
+shared source store) still go through the existing policy-checked read, with the
+path cleaned lexically first (`/x/link/../f` reads `/x/f`). A path that looks
+outside but reaches the workspace through a symlink is refused, so use the
+workspace path. That check is best effort: it is a race like any check-then-read,
+so a symlink introduced after the check is not seen by it. Such a read is handed
+to the broker, which resolves the path and checks the policy on the resolved
+target before reading. That narrows the window but does not close it, for the
+same reason, and a path it cannot resolve is checked as the lexical path. The OS
+sandbox remains underneath both.
+
+A refused read reaches the script as an I/O error whose message starts with the
+code, for example `input_view.symlink: ...`, and names the workspace-relative
+path. It never contains an absolute host path. Run
+`omni code explain input_view.symlink` for the hint.
+
+Reads served by the generator's uncommitted overlay (a file written, copied or
+deleted earlier in the same run, and dry runs) return the overlay's content. Only
+the run's own writes short-circuit the check: a file that a generator action
+merely read earlier in the run is read again through the check, so the bytes a
+script gets are always the bytes that were checked. A file the run wrote, copied
+or renamed is served as it now is, and bytes a `copy` or `rename` took from a
+symlinked source are not re-checked on read.
+Bytes that a write route copied from a symlinked source are not re-checked on
+read.
+
+## Limits
+
+The limits are set in the workspace file only. A project, generator, action or
+pack cannot raise them.
+
+```yaml
+containment:
+    limits:
+        fs:
+            read:
+                max_file_bytes: 4194304
+                max_total_bytes: 16777216
+```
+
+Every key is optional; an absent key keeps the default. A value of `0`, above
+the host ceiling, or a `max_file_bytes` above `max_total_bytes` stops omni at
+load with `workspace.invalid_containment`, which names the key and the ceiling.
+A single read is bounded by both `max_file_bytes` and `max_total_bytes`, so
+raise both to read larger files.
+
+| Key                         | Default | Host ceiling |
+| --------------------------- | ------- | ------------ |
+| `max_path_bytes`            | 4096    | 4096         |
+| `max_path_depth`            | 64      | 64           |
+| `max_file_bytes`            | 8 MiB   | 64 MiB       |
+| `max_total_bytes`           | 16 MiB  | 256 MiB      |
+| `max_tracked_inputs`        | 4096    | 32768        |
+| `max_dir_entries`           | 10000   | 100000       |
+| `max_total_dir_entries`     | 50000   | 500000       |
+| `max_dir_scan_entries`      | 100000  | 1000000      |
+| `max_operations`            | 10000   | 100000       |
+| `max_reported_changes`      | 100     | 1000         |
+| `max_observations_per_path` | 16      | 64           |
+
+Each read is checked on its own, so today the path, depth, `max_file_bytes` and
+`max_total_bytes` limits decide what a script can read. The other keys are
+accepted and validated now so that later readers need no new key.
+
+## Where it works
+
+| Platform                | Result                                                                                                                                 |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Linux 5.6 or newer      | Supported (`openat2`).                                                                                                                 |
+| Linux without `openat2` | Every contained read fails with `input_view.containment_unsupported`. This includes a sandbox or seccomp filter that blocks `openat2`. |
+| Windows                 | Supported.                                                                                                                             |
+| macOS                   | Not supported yet: every contained read fails with `input_view.containment_unsupported`.                                               |
+
+There is no fallback to a weaker read. On a platform that cannot contain the
+read, leave `contained_reads` off.
+
+Linux containment is tested in CI on x86_64 only. The aarch64 Linux CI job runs
+inside a container that blocks `openat2`, so it only checks that the read
+fails closed.
+
+## Roll back
+
+Remove `contained_reads` from `enable_experimental` (or set it to `false`).
+Nothing is stored, no cache entry is affected, and the next run reads as before.

@@ -1480,6 +1480,7 @@ dependencies = [
  "omni_capabilities",
  "omni_capability_enforcement",
  "omni_codes",
+ "omni_containment_configurations",
  "omni_messages",
  "omni_notice",
  "omni_utils",
@@ -7206,6 +7207,7 @@ dependencies = [
  "omni_codes",
  "omni_command_config",
  "omni_config_types",
+ "omni_containment_configurations",
  "omni_core",
  "omni_diagnostic",
  "omni_experimental_features",
@@ -7241,6 +7243,36 @@ dependencies = [
 [[package]]
 name = "omni_constants"
 version = "0.1.0"
+
+[[package]]
+name = "omni_contained_read"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "omni_capabilities",
+ "omni_capability_sys",
+ "omni_containment_configurations",
+ "omni_diagnostic",
+ "omni_input_view",
+ "omni_path_utils",
+ "omni_test_capabilities",
+ "omni_utils",
+ "serde_json",
+ "system_traits",
+ "tempfile",
+ "tokio 1.54.1",
+ "tracing",
+]
+
+[[package]]
+name = "omni_containment_configurations"
+version = "0.1.0"
+dependencies = [
+ "schemars",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+]
 
 [[package]]
 name = "omni_context"
@@ -7482,6 +7514,8 @@ dependencies = [
  "omni_configuration_discovery",
  "omni_configurations",
  "omni_constants",
+ "omni_contained_read",
+ "omni_containment_configurations",
  "omni_diagnostic",
  "omni_discovery",
  "omni_file_data_serde",
@@ -7494,6 +7528,7 @@ dependencies = [
  "omni_process",
  "omni_redact",
  "omni_tera",
+ "omni_test_capabilities",
  "omni_types",
  "omni_utils",
  "path-clean",
@@ -8541,6 +8576,8 @@ dependencies = [
  "omni_codes",
  "omni_configuration_discovery",
  "omni_constants",
+ "omni_contained_read",
+ "omni_containment_configurations",
  "omni_diagnostic",
  "omni_discovery",
  "omni_file_data_serde",

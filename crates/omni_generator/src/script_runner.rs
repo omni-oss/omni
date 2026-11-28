@@ -44,16 +44,20 @@ use bridge_rpc_runner::{
     VendoredBridgeService, build_scan_plan,
     build_spawn_plan as build_spawn_plan_generic, build_unconfined_plan,
 };
-use bridge_rpc_runner::{CapabilitiesIgnored, CapabilitiesImportScan};
+use bridge_rpc_runner::{
+    CapabilitiesIgnored, CapabilitiesImportScan, ContainedReadsIgnored,
+};
 use bridge_rpc_services::{
     RegisterServicesOptions,
     log::{CallbackLogger, ScriptLogRecord},
     proc::StdArgsProvider,
-    register_services,
+    register_services, register_services_with_reader,
 };
 use omni_capabilities::{CapabilityFloors, CapabilityRules, PathRoots, Root};
 use omni_capability_enforcement::{ShimPolicy, SpawnPolicy};
 use omni_capability_sys::{EvaluatingAuthorizer, PolicyEnforcingSys};
+use omni_contained_read::{ContainedReader, SharedAuthorizer, input_limits};
+use omni_containment_configurations::FsReadLimits;
 use omni_generator_configurations::Generator;
 use omni_messages::{NoticeEvent, notice_event};
 use serde::Serialize;
@@ -72,6 +76,11 @@ const EXEC_GENERATOR_SCRIPT_PATH: &str = "/exec-generator-script";
 
 /// The standard authorizer used to broker a generator's fs operations.
 type GeneratorAuthorizer = EvaluatingAuthorizer<Generator, Root>;
+
+/// What a runner needs to read workspace files through the input view: the
+/// resolved limits and the canonical workspace root (`None` fails every read
+/// closed). `None` for the whole setting means the broker alone serves reads.
+type ContainedSetup = Option<(FsReadLimits, Option<PathBuf>)>;
 
 /// The capability inputs that determine how a generator `run-javascript`
 /// process is launched and confined, specialized to the [`Generator`] profile.
@@ -117,6 +126,7 @@ type RunnerFactory = Box<
             GeneratorAuthorizer,
             SpawnPolicy,
             String,
+            ContainedSetup,
         ) -> RunnerFuture
         + Send
         + Sync,
@@ -240,7 +250,11 @@ impl LazyScriptRunner {
         let script_logs: ScriptLogBuffer = Default::default();
         let log_buffer = script_logs.clone();
         let factory: RunnerFactory = Box::new(
-            move |runtime, authorizer, mut spawn_policy, shim_json| {
+            move |runtime,
+                  authorizer,
+                  mut spawn_policy,
+                  shim_json,
+                  contained| {
                 let sys = sys.clone();
                 let log_buffer = log_buffer.clone();
                 let context_dir = context_dir.clone();
@@ -271,7 +285,11 @@ impl LazyScriptRunner {
                     // filter `env` by that same policy (`EnvAccess::Filter` is
                     // the default), so the script's `proc.env()` snapshot only
                     // ever sees policy-allowed variables.
-                    let enforcing = PolicyEnforcingSys::new(sys, authorizer);
+                    let authorizer = SharedAuthorizer::new(authorizer);
+                    let enforcing = PolicyEnforcingSys::new(
+                        sys.clone(),
+                        authorizer.clone(),
+                    );
 
                     // Scrub the child's ambient environment down to the
                     // policy-allowed snapshot (read through `sys` and filtered by
@@ -284,15 +302,39 @@ impl LazyScriptRunner {
                     // other ambient variable is dropped.
                     spawn_policy.env = Some(enforcing.env_snapshot());
 
-                    register_services(
-                        &mut router,
-                        Arc::new(enforcing),
-                        Arc::new(StdArgsProvider),
-                        CallbackLogger::new(move |record| {
-                            log_buffer.lock().unwrap().push(record);
-                        }),
-                        RegisterServicesOptions::default(),
-                    );
+                    let logger = CallbackLogger::new(move |record| {
+                        log_buffer.lock().unwrap().push(record);
+                    });
+                    match contained {
+                        // Contained reads: the two file-read routes read
+                        // workspace files through the input view (checked
+                        // against the overlay first); every other route, and
+                        // reads outside the workspace, stay with the broker.
+                        Some((limits, root)) => {
+                            let reader = ContainedReader::new(
+                                enforcing.clone(),
+                                sys,
+                                authorizer,
+                                root,
+                                input_limits(&limits),
+                            );
+                            register_services_with_reader(
+                                &mut router,
+                                Arc::new(enforcing),
+                                Arc::new(reader),
+                                Arc::new(StdArgsProvider),
+                                logger,
+                                RegisterServicesOptions::default(),
+                            );
+                        }
+                        None => register_services(
+                            &mut router,
+                            Arc::new(enforcing),
+                            Arc::new(StdArgsProvider),
+                            logger,
+                            RegisterServicesOptions::default(),
+                        ),
+                    }
 
                     // The bridge-service CLI expects a `run` subcommand after
                     // its entrypoint. When the runtime's launch flags could not
@@ -366,6 +408,10 @@ impl JsScriptRunner for LazyScriptRunner {
             if policy.levels.iter().any(|level| !level.is_empty()) {
                 diagnostics.push(notice_event!(CapabilitiesIgnored));
             }
+            // Contained reads need enforcement; without it they do nothing.
+            if policy.contained_reads.is_some() {
+                diagnostics.push(notice_event!(ContainedReadsIgnored));
+            }
             (
                 build_unconfined_plan(resolved),
                 ShimPolicy::new(),
@@ -387,6 +433,19 @@ impl JsScriptRunner for LazyScriptRunner {
             .roots
             .clone()
             .map_bases(|base| std::fs::canonicalize(&base).unwrap_or(base));
+        // Contained reads apply only to an enforced run; the view root is the
+        // canonical workspace root (absent means every contained read fails
+        // closed).
+        let contained: ContainedSetup = policy
+            .enforce
+            .then_some(policy.contained_reads)
+            .flatten()
+            .map(|reads| {
+                (
+                    reads.limits,
+                    roots.base(Root::Workspace).map(|root| root.to_path_buf()),
+                )
+            });
         let authorizer = if policy.enforce {
             EvaluatingAuthorizer::layered(
                 policy.effective_levels(),
@@ -434,7 +493,13 @@ impl JsScriptRunner for LazyScriptRunner {
         let runner = self
             .pool
             .get_or_try_init(key, move || {
-                factory(resolved, authorizer, spawn_policy, shim_json)
+                factory(
+                    resolved,
+                    authorizer,
+                    spawn_policy,
+                    shim_json,
+                    contained,
+                )
             })
             .await?;
 
@@ -462,6 +527,9 @@ impl JsScriptRunner for LazyScriptRunner {
                         scan_authorizer,
                         scan_spawn,
                         String::new(),
+                        // The unconfined import scan is omni's own tooling and
+                        // never gets a contained reader.
+                        None,
                     )
                 })
                 .await?;
@@ -547,6 +615,7 @@ mod tests {
             context: GeneratorContext::default(),
             strictness,
             enforce: true,
+            contained_reads: None,
         }
     }
 
@@ -605,6 +674,7 @@ mod tests {
             context: ctx,
             strictness: CapabilitiesStrictness::Warn,
             enforce: true,
+            contained_reads: None,
         }
     }
 
@@ -710,6 +780,28 @@ mod tests {
         let mut strict = fs_policy(GeneratorContext::default());
         strict.strictness = CapabilitiesStrictness::RequireFloor;
         assert_ne!(warn.fingerprint(), strict.fingerprint());
+    }
+
+    #[test]
+    fn fingerprint_distinguishes_the_contained_reads_setting_and_its_limits() {
+        use omni_containment_configurations::{ContainedReads, FsReadLimits};
+
+        // A pooled runner registers its read routes once, so a process planned
+        // with contained reads (or with other limits) must not be shared.
+        let mut off = fs_policy(GeneratorContext::default());
+        off.contained_reads = None;
+        let mut on = fs_policy(GeneratorContext::default());
+        on.contained_reads = Some(ContainedReads::default());
+        let mut tighter = fs_policy(GeneratorContext::default());
+        tighter.contained_reads = Some(ContainedReads {
+            limits: FsReadLimits {
+                max_file_bytes: 1024,
+                ..FsReadLimits::DEFAULT
+            },
+        });
+        assert_ne!(off.fingerprint(), on.fingerprint());
+        assert_ne!(on.fingerprint(), tighter.fingerprint());
+        assert_eq!(on.fingerprint(), on.clone().fingerprint());
     }
 
     #[test]

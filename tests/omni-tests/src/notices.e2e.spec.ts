@@ -393,6 +393,7 @@ describe("+notices @cli (tool runs)", () => {
             "runtime.experimental",
             "capabilities.ignored",
             "capabilities.not_enforced",
+            "capabilities.contained_reads_ignored",
         ]) {
             const result = await runOmni(["code", "explain", code]);
             expect(result).toHaveSucceeded();

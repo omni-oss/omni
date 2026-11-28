@@ -45,6 +45,11 @@ fn surviving_notice_sites_are_registered() {
         ("capabilities.no_floor", NoticeLevel::Warn, false),
         ("capabilities.ignored", NoticeLevel::Warn, false),
         ("capabilities.import_scan", NoticeLevel::Warn, false),
+        (
+            "capabilities.contained_reads_ignored",
+            NoticeLevel::Warn,
+            false,
+        ),
         ("runtime.experimental", NoticeLevel::Warn, false),
         ("meta.filter_excluded", NoticeLevel::Error, false),
     ] {
