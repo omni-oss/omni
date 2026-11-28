@@ -266,12 +266,17 @@ mod end_to_end {
         let r = eyre::Report::new(err);
         let d = find(&r).expect("diagnostic");
         assert_eq!(d.code(), "workspace.invalid_containment");
-        let text = r.to_string();
+        // The bound is named once, by the source of the configuration error.
+        let chain = r
+            .chain()
+            .map(|e| e.to_string())
+            .collect::<Vec<_>>()
+            .join(" | ");
         assert!(
-            text.contains("containment.limits.fs.read.max_file_bytes"),
-            "{text}"
+            chain.contains("containment.limits.fs.read.max_file_bytes"),
+            "{chain}"
         );
-        assert!(text.contains("67108864"), "{text}");
+        assert!(chain.contains("67108864"), "{chain}");
     }
 
     #[test]

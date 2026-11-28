@@ -1,49 +1,30 @@
-use std::fmt;
-
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 /// A value is `0`, above its host ceiling, or inconsistent with another limit.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// The message is the user-facing explanation (which key, and the bound); the
+/// workspace load turns it into `workspace.invalid_containment`.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum LimitsError {
-    Zero {
-        key: &'static str,
-    },
-    AboveCeiling {
-        key: &'static str,
-        ceiling: u64,
-    },
+    #[error("`containment.limits.fs.read.{key}` must be at least 1")]
+    Zero { key: &'static str },
+
+    #[error(
+        "`containment.limits.fs.read.{key}` is above the host ceiling of {ceiling}"
+    )]
+    AboveCeiling { key: &'static str, ceiling: u64 },
+
+    #[error(
+        "`containment.limits.fs.read.max_file_bytes` ({max_file_bytes}) is above `max_total_bytes` ({max_total_bytes}); a single read is bounded by both, so raise `max_total_bytes` too"
+    )]
     FileAboveTotal {
         max_file_bytes: u64,
         max_total_bytes: u64,
     },
 }
-
-impl fmt::Display for LimitsError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Zero { key } => write!(
-                f,
-                "`containment.limits.fs.read.{key}` must be at least 1"
-            ),
-            Self::AboveCeiling { key, ceiling } => write!(
-                f,
-                "`containment.limits.fs.read.{key}` is above the host ceiling of {ceiling}"
-            ),
-            Self::FileAboveTotal {
-                max_file_bytes,
-                max_total_bytes,
-            } => write!(
-                f,
-                "`containment.limits.fs.read.max_file_bytes` ({max_file_bytes}) is above `max_total_bytes` ({max_total_bytes}); a single read is bounded by both, so raise `max_total_bytes` too"
-            ),
-        }
-    }
-}
-
-impl std::error::Error for LimitsError {}
 
 const KIB: u64 = 1024;
 const MIB: u64 = 1024 * KIB;

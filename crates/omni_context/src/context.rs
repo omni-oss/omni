@@ -895,7 +895,7 @@ fn get_workspace_configuration(
 
     w.containment
         .fs_read_limits()
-        .map_err(|e| ContextErrorInner::Containment(e.to_string()))?;
+        .map_err(ContextErrorInner::Containment)?;
 
     Ok(w)
 }
@@ -1049,12 +1049,12 @@ pub(crate) enum ContextErrorInner {
     /// A limit is `0`, above its host ceiling, or `max_file_bytes` is above
     /// `max_total_bytes`. The configuration parser reports only the key path, so
     /// the bounds are checked after the parse and this names the key and bound.
-    #[error("invalid `containment` configuration: {0}")]
+    #[error("invalid `containment` configuration")]
     #[diagnostic(
         code = "workspace.invalid_containment",
         hint = "set each `containment.limits.fs.read` value between 1 and its host ceiling, and keep `max_file_bytes` at or below `max_total_bytes`"
     )]
-    Containment(String),
+    Containment(#[source] omni_configurations::LimitsError),
 
     /// The worktree configuration file could not be loaded.
     #[error("failed to load worktree configuration: '{0}'")]
