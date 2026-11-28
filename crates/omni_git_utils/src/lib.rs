@@ -103,7 +103,7 @@ pub async fn fetch_bare(
     let staging = parent.join(name);
     // A leftover from a crashed attempt of this process id is not a repository
     // we trust.
-    let _ = std::fs::remove_dir_all(&staging);
+    let _ = sys.fs_remove_dir_all_async(&staging).await;
     sys.fs_create_dir_all_async(&staging).await?;
 
     let cloned = (|| -> Result<(), Error> {
@@ -115,34 +115,34 @@ pub async fn fetch_bare(
         Ok(())
     })();
     if let Err(error) = cloned {
-        let _ = std::fs::remove_dir_all(&staging);
+        let _ = sys.fs_remove_dir_all_async(&staging).await;
         return Err(error);
     }
     // A directory that is not a repository (its `HEAD` was deleted, say) would
     // block the rename. Set it aside, and put it back if publishing fails so a
     // failed attempt never loses what was there.
-    let aside = if bare_dir.exists() {
+    let aside = if sys.fs_exists_no_err_async(bare_dir).await {
         let mut name = bare_dir
             .file_name()
             .map(|n| n.to_os_string())
             .unwrap_or_default();
         name.push(format!(".invalid-{}", std::process::id()));
         let aside = parent.join(name);
-        let _ = std::fs::remove_dir_all(&aside);
-        std::fs::rename(bare_dir, &aside)?;
+        let _ = sys.fs_remove_dir_all_async(&aside).await;
+        sys.fs_rename_async(bare_dir, &aside).await?;
         Some(aside)
     } else {
         None
     };
-    if let Err(error) = std::fs::rename(&staging, bare_dir) {
-        let _ = std::fs::remove_dir_all(&staging);
+    if let Err(error) = sys.fs_rename_async(&staging, bare_dir).await {
+        let _ = sys.fs_remove_dir_all_async(&staging).await;
         if let Some(aside) = &aside {
-            let _ = std::fs::rename(aside, bare_dir);
+            let _ = sys.fs_rename_async(aside, bare_dir).await;
         }
         return Err(error.into());
     }
     if let Some(aside) = aside {
-        let _ = std::fs::remove_dir_all(aside);
+        let _ = sys.fs_remove_dir_all_async(aside).await;
     }
     Ok(())
 }
