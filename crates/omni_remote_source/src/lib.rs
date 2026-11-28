@@ -4,6 +4,7 @@ pub mod error;
 pub mod git;
 pub mod lease;
 pub mod manager;
+mod protection;
 pub mod refs;
 pub mod registration;
 pub mod source;

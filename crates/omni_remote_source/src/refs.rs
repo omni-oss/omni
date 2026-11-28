@@ -22,8 +22,10 @@ pub struct RefSetUpdate<'a> {
 /// The persisted reference set for a single subsystem, written to
 /// `refs/<id>.json`. It records every remote source the subsystem resolved on
 /// its last run, together with the pin it resolved to. Pin reconciliation unions
-/// these files to decide which lockfile entries to keep. Store pruning does not
-/// consult reference sets.
+/// these files to decide which lockfile entries to keep. Store pruning reads them
+/// through workspace registrations (RFC 0024 F08.7) for `--unused`, which
+/// protects referenced checkouts. Age and size filters still include them;
+/// protecting those by default is a later step.
 ///
 /// Keys are kept in a [`BTreeMap`] so the serialized form is sorted regardless
 /// of the order references were added, keeping committed-adjacent diffs stable.

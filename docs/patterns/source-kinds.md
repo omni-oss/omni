@@ -11,7 +11,13 @@ To add a kind:
 3. Add a `RemoteSource` variant and its arms in `kind()` and `spec()` (`crates/omni_remote_source/src/source.rs`).
 4. Map its `SourceConfig` variant in `remote_source_for` (`crates/omni_remote_source_contributors/src/lib.rs`).
 
-The lockfile, refs, prune and projection code need no change.
+The lockfile, refs and projection code need no change. Prune needs no kind-specific
+code either, but it does rely on `slug`: it reads other workspaces' reference files
+and maps each `(kind, locator, selector, pin)` back to the store directory with the
+pruner's own driver. So `slug` must be a pure, panic-free function of
+`(locator, selector)` that never reads `connection` (which is not stored in a
+reference); changing it between omni versions silently stops matching old
+references.
 
 ## Reference updates
 
@@ -45,7 +51,10 @@ not a cross-file rollback mechanism.
 `RemoteSourceManager::materialize_leased` returns the checkout plus an
 `Arc<SourceLease>`; hold it for as long as the tree may be read. `prune_store_report`
 skips leased checkouts (`skipped_in_use`), reclaims the others, and reports removal
-failures instead of hiding them; `prune_store` returns only what was removed.
+failures instead of hiding them; `prune_store` returns only what was removed. Under
+`--unused` it also skips checkouts a live workspace registration (or the pruning
+workspace's own refs) names, reporting them as `skipped_referenced`; age and size
+filters still include referenced checkouts.
 Plain `materialize` takes no lease. Lock order is remote lock, then lease, and the
 workspace advisory lock is never held while waiting on either. Leases bind
 cooperating omni processes only. Design: `docs/rfc/0024-tiered-project-discovery-plugins/implementation/features/F08.1-lease-gc-reference-protocol.md`.
@@ -60,4 +69,7 @@ paths; a test in `omni_api` enforces it.
 (`<store>/workspaces/<hash>.json`, see `omni_remote_source::registration`) as the
 first file of the same `write_batch`, so a crash cannot leave references without a
 registration. It is skipped, with the references still written, when the store has
-no `VERSION` marker or is a newer layout. Nothing reads or deletes registrations yet.
+no `VERSION` marker or is a newer layout. A lockfile path that is not valid UTF-8
+fails the update before any reference file is written, because a lossy registration
+would point at the wrong directory. Prune reads registrations and never deletes them
+(`protection.rs`); the follow-up `workspaces list/forget` command does not exist yet.

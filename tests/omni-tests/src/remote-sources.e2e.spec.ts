@@ -466,5 +466,71 @@ describe(
             },
             CLONE_TIMEOUT_MS,
         );
+
+        it(
+            "prune --unused keeps a referenced checkout and removes an unreferenced one",
+            async (ctx) => {
+                await skipUnlessGitCliAvailable(ctx);
+
+                const kept = await makeLocalGitRepoWithAnnotatedTag({
+                    files: { "generator.omni.yaml": "name: kept\n" },
+                });
+                const dropped = await makeLocalGitRepoWithAnnotatedTag({
+                    files: { "generator.omni.yaml": "name: dropped\n" },
+                });
+                const keptUri = pathToFileURL(kept.url).href;
+                const droppedUri = pathToFileURL(dropped.url).href;
+                const workspace = {
+                    projects: ["**"],
+                    generators: [
+                        { source: "git", uri: keptUri, rev: "main" },
+                        { source: "git", uri: droppedUri, rev: "main" },
+                    ],
+                };
+                const ws = makeWorkspace({ workspace });
+                const storeGit = ws.path(".omni/sources/store/trees");
+                const run = (args: string[]) =>
+                    runOmni(["remote-sources", ...args], {
+                        cwd: ws.cwd,
+                        timeout: CLONE_TIMEOUT_MS,
+                    });
+
+                expect(await run(["install"])).toHaveSucceeded();
+                expect(countCommitDirs(storeGit)).toBe(2);
+
+                // Drop the second source. Its reference goes away; its checkout
+                // stays in the store until a prune reclaims it.
+                ws.write("workspace.omni.yaml", {
+                    ...workspace,
+                    generators: [{ source: "git", uri: keptUri, rev: "main" }],
+                });
+                expect(await run(["install"])).toHaveSucceeded();
+                expect(countCommitDirs(storeGit)).toBe(2);
+
+                const dry = await run(["prune", "--unused", "--dry-run"]);
+                expect(dry).toHaveSucceeded();
+                expect(dry).toOutputContaining("would prune 1 checkouts");
+                expect(dry).toOutputContaining(
+                    "referenced by a registered workspace",
+                );
+                expect(countCommitDirs(storeGit)).toBe(2);
+
+                const pruned = await run(["prune", "--unused", "--yes"]);
+                expect(pruned).toHaveSucceeded();
+                expect(pruned).toOutputContaining("Pruned 1 checkouts");
+                expect(countCommitDirs(storeGit)).toBe(1);
+
+                // The kept source still lists; the store serves it without a
+                // refetch.
+                const listed = await runOmni(["generator", "list"], {
+                    cwd: ws.cwd,
+                    timeout: CLONE_TIMEOUT_MS,
+                });
+                expect(listed).toHaveSucceeded();
+                expect(listed).toOutputContaining("kept");
+                expect(countCommitDirs(storeGit)).toBe(1);
+            },
+            CLONE_TIMEOUT_MS,
+        );
     },
 );

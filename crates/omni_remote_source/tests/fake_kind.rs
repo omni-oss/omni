@@ -22,6 +22,7 @@ use omni_remote_source::{
     manager::{
         RemoteSourceManager, StorePruneFilter, config::RemoteSourceConfig,
     },
+    registration::{RegistrationData, strip_verbatim_prefix},
 };
 use system_traits::impls::RealSys;
 use tempfile::TempDir;
@@ -34,6 +35,8 @@ struct FakeDriver {
     pin_override: Mutex<Option<String>>,
     /// Use this slug instead of the default.
     slug_override: Mutex<Option<String>>,
+    /// Make the slug depend on the selector as well as the locator.
+    selector_slug: Mutex<bool>,
     /// Fail after writing one file.
     fail_export: Mutex<bool>,
     /// Never finish exporting (for cancellation).
@@ -60,18 +63,22 @@ impl SourceDriver<RealSys> for FakeDriver {
     }
 
     fn slug(&self, spec: &SourceSpec) -> String {
-        self.slug_override
-            .lock()
-            .unwrap()
-            .clone()
-            .unwrap_or_else(|| {
-                Path::new(&spec.locator)
-                    .file_name()
-                    .unwrap()
-                    .to_string_lossy()
+        if let Some(slug) = self.slug_override.lock().unwrap().clone() {
+            return slug;
+        }
+        let base = Path::new(&spec.locator)
+            .file_name()
+            .map(|name| {
+                name.to_string_lossy()
                     .trim_start_matches('.')
                     .to_lowercase()
             })
+            .unwrap_or_else(|| spec.locator.to_lowercase());
+        if *self.selector_slug.lock().unwrap() {
+            format!("{base}-{}", spec.selector.to_lowercase())
+        } else {
+            base
+        }
     }
 
     async fn resolve(
@@ -325,6 +332,78 @@ async fn reconcile_keeps_fake_pins_referenced_by_refs() {
     let fake = &lock["sources"]["fake"][&s1.locator];
     assert!(fake.get("s1").is_some());
     assert!(fake.get("s2").is_none(), "{lock}");
+}
+
+#[tokio::test]
+async fn prune_protects_a_reference_whose_slug_depends_on_the_selector() {
+    let snaps = snapshots();
+    let shared = tempfile::tempdir().unwrap();
+    let store = shared.path().join("store");
+    let driver = Arc::new(FakeDriver::default());
+    *driver.selector_slug.lock().unwrap() = true;
+
+    // The slug must be a pure function of locator and selector; the connection
+    // (and its credentials) must not change it.
+    let base = spec(snaps.path(), "s1");
+    let mut other_connection = base.clone();
+    other_connection.connection =
+        Connection::new("https://user:token@example.com/other");
+    assert_eq!(driver.slug(&base), driver.slug(&other_connection));
+    assert_ne!(driver.slug(&base), driver.slug(&spec(snaps.path(), "s2")));
+
+    let b = Workspace::with_store(&store);
+    let manager = b.manager(&driver).await.unwrap();
+    let mat = manager.materialize_with("fake", &base).await.unwrap();
+    manager.record_refs("generator", &[]).await.unwrap();
+    std::fs::create_dir_all(b.sources_root.join("refs")).unwrap();
+    std::fs::write(
+        b.sources_root.join("refs").join("generator.json"),
+        serde_json::json!({
+            "version": "1.0.0",
+            "sources": {"fake": {base.locator.clone(): {"s1": {"pin": mat.pin.clone()}}}}
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let registrations: Vec<_> = std::fs::read_dir(store.join("workspaces"))
+        .expect("workspaces dir")
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.extension().and_then(|e| e.to_str()) == Some("json")
+        })
+        .collect();
+    assert_eq!(registrations.len(), 1, "the registration was not written");
+    let registration = RegistrationData::from_file_bytes(
+        &registrations[0],
+        &std::fs::read(&registrations[0]).unwrap(),
+    )
+    .expect("parse the registration");
+    let expected_parent =
+        std::fs::canonicalize(&b.sources_root).expect("canonical sources root");
+    let expected = strip_verbatim_prefix(
+        &expected_parent.join("lock.json").to_string_lossy(),
+    );
+    assert_eq!(registration.lockfile_path(), expected);
+
+    let a = Workspace::with_store(&store);
+    let peer = a.manager(&driver).await.unwrap();
+    let filter = StorePruneFilter {
+        larger_than: Some(1),
+        ..Default::default()
+    };
+    let report = peer.prune_store_report(&filter, false).await.unwrap();
+    assert_eq!(report.skipped_referenced.len(), 1, "{report:?}");
+    assert!(report.removed.is_empty());
+    assert!(mat.root.exists());
+
+    let filter = StorePruneFilter {
+        include_referenced: true,
+        ..filter
+    };
+    let report = peer.prune_store_report(&filter, false).await.unwrap();
+    assert_eq!(report.removed.len(), 1);
+    assert!(!mat.root.exists());
 }
 
 #[tokio::test]

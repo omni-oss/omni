@@ -21,6 +21,10 @@ use crate::{
         pending::{PENDING_GRACE, PendingPath, reclaim},
         tree,
     },
+    protection::{
+        ProtectedReferences, Recheck, ReferenceKey, ReferenceReadPolicy,
+        RegistryState,
+    },
     refs::{RefSetData, RefSetDataV1_0_0, RefSetUpdate, RefUpdate},
     registration::{
         REGISTRATIONS_SEGMENT, RegistrationData, registration_file_name,
@@ -541,7 +545,13 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
             Err(error) => return Err(error.into()),
         }
         self.ensure_lockfile_parent().await?;
-        let lockfile_path = self.normalized_lockfile_path().await;
+        let Some(lockfile_path) = self.normalized_lockfile_path().await? else {
+            tracing::warn!(
+                "not registering this workspace: the lockfile path {} could not be normalized to an absolute lockfile path",
+                self.lockfile_path.display()
+            );
+            return Ok(None);
+        };
         let last_seen = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|elapsed| elapsed.as_secs())
@@ -557,13 +567,14 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
         Ok(Some((file, bytes)))
     }
 
-    /// The lockfile path a registration is keyed on: its parent directory
-    /// canonicalized (symlinks resolved, Windows verbatim prefix stripped) with
-    /// the file name joined on. The lockfile itself is never canonicalized: a
-    /// first install has not written it yet. If the parent cannot be
-    /// canonicalized the path is used as given; a duplicate registration for one
-    /// workspace is harmless because protection is a union.
-    async fn normalized_lockfile_path(&self) -> String {
+    /// The lockfile path a registration is keyed on: its parent directory made
+    /// absolute, then canonicalized (symlinks resolved, Windows verbatim prefix
+    /// stripped), with the file name joined on. The lockfile itself is never
+    /// canonicalized: a first install has not written it yet. `Ok(None)` when
+    /// the result would not be absolute (the reader rejects such a registration,
+    /// so it is skipped): an `Err` means the path cannot be stored faithfully,
+    /// which fails the update before any reference file is written.
+    async fn normalized_lockfile_path(&self) -> Result<Option<String>, Error> {
         let lockfile = self.lockfile_path.clone();
         let parent = match lockfile.parent() {
             Some(parent) if !parent.as_os_str().is_empty() => {
@@ -571,12 +582,15 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
             }
             _ => PathBuf::from("."),
         };
-        let canonical = self.sys.fs_canonicalize_async(&parent).await.ok();
-        let mut path = canonical.unwrap_or(parent);
-        if let Some(name) = lockfile.file_name() {
-            path.push(name);
-        }
-        strip_verbatim_prefix(&path.to_string_lossy())
+        let Ok(absolute) = std::path::absolute(&parent) else {
+            return Ok(None);
+        };
+        let canonical = self.sys.fs_canonicalize_async(&absolute).await.ok();
+        normalize_lockfile_path(
+            &lockfile,
+            canonical.as_deref().unwrap_or(&absolute),
+        )
+        .map_err(Error::custom)
     }
 
     async fn prepare_ref_set(
@@ -1010,6 +1024,9 @@ pub struct PruneReport {
     pub removed: Vec<StoreEntry>,
     /// Checkouts a reader holds a lease on; left in place.
     pub skipped_in_use: Vec<StoreEntry>,
+    /// Checkouts a live workspace registration, or the pruning workspace's own
+    /// references, name; left in place.
+    pub skipped_referenced: Vec<StoreEntry>,
     /// Checkouts that could not be removed. A partial removal leaves an
     /// incomplete tree that the next publish or prune clears.
     pub failed: Vec<PruneFailure>,
@@ -1022,6 +1039,50 @@ pub struct PruneReport {
 pub struct PruneFailure {
     pub entry: StoreEntry,
     pub error: String,
+}
+
+/// Why one entry was or was not removed by a real prune.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum PruneEntryOutcome {
+    Removed,
+    /// Another process holds its lease.
+    InUse,
+    /// A live registration or the workspace's own references name it.
+    Referenced,
+    /// The registry could not be read; the entry was left in place.
+    Failed(String),
+}
+
+fn checkout_key(entry: &StoreEntry) -> ReferenceKey {
+    (entry.kind.clone(), entry.remote.clone(), entry.pin.clone())
+}
+
+/// Join a lockfile's file name onto an absolute (and, when possible,
+/// canonicalized) parent. `Ok(None)` when the result would not be absolute (the
+/// reader rejects such a registration, so it is never written). `Err` when the
+/// path is not valid UTF-8: a registration stores a string, so the only faithful
+/// options are to fail before writing references or store a path that does not
+/// match the directory the references actually live in.
+fn normalize_lockfile_path(
+    lockfile: &Path,
+    parent: &Path,
+) -> Result<Option<String>, String> {
+    if !parent.is_absolute() {
+        return Ok(None);
+    }
+    let Some(name) = lockfile.file_name() else {
+        return Ok(None);
+    };
+    let mut path = parent.to_path_buf();
+    path.push(name);
+    let Some(text) = path.to_str() else {
+        return Err(format!(
+            "the lockfile path {} is not valid UTF-8",
+            path.display()
+        ));
+    };
+    let text = strip_verbatim_prefix(text);
+    Ok(Path::new(&text).is_absolute().then_some(text))
 }
 
 fn ignore_not_found(result: std::io::Result<()>) -> Result<(), Error> {
@@ -1038,35 +1099,69 @@ fn ignore_not_found(result: std::io::Result<()>) -> Result<(), Error> {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct StorePruneFilter<'a> {
     pub all: bool,
+    /// Select every checkout that no lease and no live registration protects.
+    pub unused: bool,
     pub older_than: Option<std::time::Duration>,
     pub larger_than: Option<u64>,
     /// Restrict the selection to these `(kind, remote, pin)` entries: the
     /// checkouts a user was shown and confirmed. A checkout added since is
     /// never deleted by a confirmed prune.
     pub only: Option<&'a [(String, String, String)]>,
+    /// Select referenced checkouts too. The default (`false`) protects them;
+    /// `all` ignores registrations entirely.
+    pub include_referenced: bool,
 }
 
 impl StorePruneFilter<'_> {
     pub fn has_criteria(&self) -> bool {
-        self.all || self.older_than.is_some() || self.larger_than.is_some()
+        self.all
+            || self.unused
+            || self.older_than.is_some()
+            || self.larger_than.is_some()
+    }
+
+    /// Whether this filter must read workspace registrations and reference
+    /// sets. `all` includes everything, and `include_referenced` widens an age
+    /// or size filter back to every matching checkout, so neither reads.
+    pub(crate) fn consults_references(&self) -> bool {
+        !self.all && (self.unused || !self.include_referenced)
     }
 
     /// Reject filters whose combination is contradictory or selects nothing
     /// meaningful, so no caller silently gets a different selection than it
     /// asked for:
     ///
-    /// - no criterion (`all`, `older_than` or `larger_than`);
+    /// - no criterion (`all`, `unused`, `older_than` or `larger_than`);
     /// - `all` together with `older_than` or `larger_than`, since `all`
     ///   cannot be narrowed;
     /// - a zero `older_than` or `larger_than`, which selects (nearly) every
     ///   checkout and should be spelled `all`;
-    /// - an empty `only`, or one naming an unsafe path segment.
+    /// - an empty `only`, or one naming an unsafe path segment;
+    /// - `include_referenced` without `older_than` or `larger_than` (nothing to
+    ///   widen), or with `all` (which already includes everything) or `unused`
+    ///   (contradictory);
+    /// - `unused` with `all`, `older_than` or `larger_than` (those already choose
+    ///   a subset, and after F08.7 they protect references too).
     ///
     /// `older_than` with `larger_than` is allowed and both must match.
     pub fn validate(&self) -> Result<(), Error> {
         if !self.has_criteria() {
             return Err(Error::custom(
-                "a prune needs a criterion: all, older_than or larger_than",
+                "a prune needs a criterion: all, unused, older_than or larger_than",
+            ));
+        }
+        if self.unused
+            && (self.all
+                || self.older_than.is_some()
+                || self.larger_than.is_some())
+        {
+            return Err(Error::custom(
+                "unused cannot be combined with all, older_than or larger_than",
+            ));
+        }
+        if self.unused && self.include_referenced {
+            return Err(Error::custom(
+                "include_referenced cannot be combined with unused",
             ));
         }
         if self.all && (self.older_than.is_some() || self.larger_than.is_some())
@@ -1083,6 +1178,18 @@ impl StorePruneFilter<'_> {
         if self.larger_than == Some(0) {
             return Err(Error::custom(
                 "larger_than must be greater than zero; use all to select every checkout",
+            ));
+        }
+        if self.include_referenced
+            && (self.older_than.is_none() && self.larger_than.is_none())
+        {
+            return Err(Error::custom(
+                "include_referenced only widens older_than or larger_than",
+            ));
+        }
+        if self.include_referenced && self.all {
+            return Err(Error::custom(
+                "include_referenced cannot be combined with all",
             ));
         }
         if let Some(only) = self.only {
@@ -1116,7 +1223,7 @@ impl StorePruneFilter<'_> {
         {
             return false;
         }
-        if self.all {
+        if self.all || self.unused {
             return true;
         }
         if let Some(age) = self.older_than {
@@ -1190,7 +1297,8 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
     /// Delete the checkouts `filter` selects, or only report them when
     /// `dry_run`, returning the entries removed (or that would be). An invalid
     /// filter is an error (see [`StorePruneFilter::validate`]). Checkouts held
-    /// by a [`SourceLease`] are skipped, not an error; use
+    /// by a [`SourceLease`], or named by a live workspace registration when the
+    /// filter consults references, are skipped, not an error; use
     /// [`prune_store_report`](Self::prune_store_report) to see which were skipped
     /// or failed, since this returns only the removed entries.
     pub async fn prune_store(
@@ -1207,9 +1315,11 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
     /// needs. Each entry is removed under its remote's lock, so a concurrent
     /// fetch of the same remote waits instead of racing the delete, and only
     /// after taking its lease exclusively without waiting: a checkout a reader
-    /// leases is skipped (`skipped_in_use`) and unrelated ones are still
-    /// reclaimed. A failed removal is recorded in `failed` and the run continues.
-    /// A deleted checkout is refetched the next time it is used.
+    /// leases is skipped (`skipped_in_use`), one a live workspace registration or
+    /// the workspace's own references name is skipped (`skipped_referenced`), and
+    /// unrelated ones are still reclaimed. A failed removal or registry read is
+    /// recorded in `failed` and the run continues. A deleted checkout is
+    /// refetched the next time it is used.
     ///
     /// Once an entry's removal starts it finishes while still holding the remote
     /// lock and lease, even if the caller is cancelled.
@@ -1253,7 +1363,30 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
             reclaimed_pending,
             ..Default::default()
         };
+        let consult = filter.consults_references();
+        let own_refs_dir = if consult {
+            Some(self.absolute_refs_dir().await?)
+        } else {
+            None
+        };
+        let policy = ReferenceReadPolicy::default();
         if dry_run {
+            // The dry run is the early refusal pass: a corrupt or unreadable
+            // registry fails the preview before anything is offered.
+            let protected = match &own_refs_dir {
+                Some(dir) => Some(
+                    ProtectedReferences::collect(
+                        &self.sys,
+                        &self.drivers,
+                        &self.store_root_path,
+                        dir,
+                        policy,
+                    )
+                    .await
+                    .map_err(|error| error.into_error())?,
+                ),
+                None => None,
+            };
             for entry in selected {
                 match SourceLease::is_held(
                     &self.store_root_path,
@@ -1264,7 +1397,17 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
                 .await
                 {
                     Ok(true) => report.skipped_in_use.push(entry),
-                    Ok(false) => report.removed.push(entry),
+                    Ok(false) => {
+                        let referenced =
+                            protected.as_ref().is_some_and(|set| {
+                                set.contains(&checkout_key(&entry))
+                            });
+                        if referenced {
+                            report.skipped_referenced.push(entry);
+                        } else {
+                            report.removed.push(entry);
+                        }
+                    }
                     Err(error) => report.failed.push(PruneFailure {
                         entry,
                         error: error.to_string(),
@@ -1274,10 +1417,27 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
             return Ok(report);
         }
 
+        let mut state = RegistryState::default();
         for entry in selected {
-            match self.prune_entry(&entry).await {
-                Ok(true) => report.removed.push(entry),
-                Ok(false) => report.skipped_in_use.push(entry),
+            match self
+                .prune_entry(
+                    &entry,
+                    own_refs_dir.as_deref(),
+                    policy,
+                    &mut state,
+                )
+                .await
+            {
+                Ok(PruneEntryOutcome::Removed) => report.removed.push(entry),
+                Ok(PruneEntryOutcome::InUse) => {
+                    report.skipped_in_use.push(entry)
+                }
+                Ok(PruneEntryOutcome::Referenced) => {
+                    report.skipped_referenced.push(entry)
+                }
+                Ok(PruneEntryOutcome::Failed(error)) => {
+                    report.failed.push(PruneFailure { entry, error })
+                }
                 Err(error) => {
                     tracing::warn!(
                         "could not prune store checkout {:?}: {error}",
@@ -1293,8 +1453,27 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
         Ok(report)
     }
 
-    /// Remove one entry. `Ok(false)` means a reader holds its lease.
-    async fn prune_entry(&self, entry: &StoreEntry) -> Result<bool, Error> {
+    /// `refs/` as an absolute path, so a relative `lockfile_path` config still
+    /// reads the directory it names.
+    async fn absolute_refs_dir(&self) -> Result<PathBuf, Error> {
+        let refs = self.refs_dir();
+        std::path::absolute(&refs).map_err(|error| {
+            Error::custom(format!(
+                "cannot resolve the workspace reference directory {}: {error}",
+                refs.display()
+            ))
+        })
+    }
+
+    /// Remove one entry. `Referenced` and `InUse` leave it in place; `Failed`
+    /// reports a registry read that could not be trusted.
+    async fn prune_entry(
+        &self,
+        entry: &StoreEntry,
+        own_refs_dir: Option<&Path>,
+        policy: ReferenceReadPolicy,
+        state: &mut RegistryState,
+    ) -> Result<PruneEntryOutcome, Error> {
         // Lock order: remote lock, then the lease (never the reverse).
         let _remote = LockGuard::acquire_exclusive(
             self.remote_lock_path(&entry.kind, &entry.remote),
@@ -1310,8 +1489,31 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
         )
         .await?
         else {
-            return Ok(false);
+            return Ok(PruneEntryOutcome::InUse);
         };
+        if let Some(own_refs_dir) = own_refs_dir {
+            // Still holding the remote lock and the lease: a registration or
+            // reference written between the dry run and now is seen here.
+            match crate::protection::recheck(
+                &self.sys,
+                &self.drivers,
+                &self.store_root_path,
+                own_refs_dir,
+                policy,
+                state,
+                &checkout_key(entry),
+            )
+            .await
+            {
+                Recheck::Clear => {}
+                Recheck::Referenced => {
+                    return Ok(PruneEntryOutcome::Referenced);
+                }
+                Recheck::Failed(error) => {
+                    return Ok(PruneEntryOutcome::Failed(error));
+                }
+            }
+        }
         // From here the work is destructive, so an owned task finishes it while
         // holding both guards even if the caller is cancelled. Otherwise a peer
         // could publish and lease a replacement at this path and then have it
@@ -1343,7 +1545,7 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
         })
         .await
         .map_err(|error| Error::custom(error.to_string()))??;
-        Ok(true)
+        Ok(PruneEntryOutcome::Removed)
     }
 
     async fn last_used(&self, commit_dir: &Path) -> SystemTime {
@@ -1381,9 +1583,12 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
+    use std::{
+        path::{Path, PathBuf},
+        time::Duration,
+    };
 
-    use super::StorePruneFilter;
+    use super::{StorePruneFilter, normalize_lockfile_path};
 
     fn id(s: &str) -> (String, String, String) {
         (s.into(), s.into(), s.into())
@@ -1507,18 +1712,173 @@ mod tests {
                 },
                 false,
             ),
+            (
+                "include referenced alone",
+                StorePruneFilter {
+                    include_referenced: true,
+                    ..Default::default()
+                },
+                false,
+            ),
+            (
+                "all and include referenced",
+                StorePruneFilter {
+                    all: true,
+                    include_referenced: true,
+                    ..Default::default()
+                },
+                false,
+            ),
+            (
+                "age and include referenced",
+                StorePruneFilter {
+                    older_than: day,
+                    include_referenced: true,
+                    ..Default::default()
+                },
+                true,
+            ),
+            (
+                "size and include referenced",
+                StorePruneFilter {
+                    larger_than: Some(1),
+                    include_referenced: true,
+                    ..Default::default()
+                },
+                true,
+            ),
+            (
+                "unused alone",
+                StorePruneFilter {
+                    unused: true,
+                    ..Default::default()
+                },
+                true,
+            ),
+            (
+                "unused and all",
+                StorePruneFilter {
+                    unused: true,
+                    all: true,
+                    ..Default::default()
+                },
+                false,
+            ),
+            (
+                "unused and age",
+                StorePruneFilter {
+                    unused: true,
+                    older_than: day,
+                    ..Default::default()
+                },
+                false,
+            ),
+            (
+                "unused and size",
+                StorePruneFilter {
+                    unused: true,
+                    larger_than: Some(1),
+                    ..Default::default()
+                },
+                false,
+            ),
+            (
+                "unused and include referenced",
+                StorePruneFilter {
+                    unused: true,
+                    include_referenced: true,
+                    ..Default::default()
+                },
+                false,
+            ),
         ];
         for (name, filter, ok) in cases {
             assert_eq!(filter.validate().is_ok(), ok, "{name}");
         }
+
+        let day = Some(Duration::from_secs(86_400));
+        assert!(
+            StorePruneFilter {
+                larger_than: Some(1),
+                ..Default::default()
+            }
+            .consults_references()
+        );
+        assert!(
+            StorePruneFilter {
+                unused: true,
+                ..Default::default()
+            }
+            .consults_references()
+        );
+        for filter in [
+            StorePruneFilter {
+                all: true,
+                ..Default::default()
+            },
+            StorePruneFilter {
+                larger_than: Some(1),
+                include_referenced: true,
+                ..Default::default()
+            },
+            StorePruneFilter {
+                older_than: day,
+                include_referenced: true,
+                ..Default::default()
+            },
+        ] {
+            assert!(!filter.consults_references(), "{filter:?}");
+        }
+    }
+
+    #[test]
+    fn a_registration_path_is_absolute_or_not_written() {
+        let parent = std::path::absolute("ws/.omni/sources").unwrap();
+        let lockfile = parent.join("lock.json");
+        assert_eq!(
+            normalize_lockfile_path(&lockfile, &parent)
+                .unwrap()
+                .map(PathBuf::from),
+            Some(lockfile.clone())
+        );
+        assert!(
+            normalize_lockfile_path(
+                Path::new("lock.json"),
+                Path::new("relative")
+            )
+            .unwrap()
+            .is_none()
+        );
+        assert!(
+            normalize_lockfile_path(Path::new(""), &parent)
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_non_utf8_lockfile_path_is_an_error() {
+        use std::os::unix::ffi::OsStringExt;
+
+        let parent = std::path::absolute("ws/.omni/sources").unwrap();
+        let lockfile = parent
+            .join(std::ffi::OsString::from_vec(b"lock\xff.json".to_vec()));
+        let error = normalize_lockfile_path(&lockfile, &parent).unwrap_err();
+        assert!(error.contains("not valid UTF-8"), "{error}");
     }
 
     #[test]
     fn the_store_core_does_not_depend_on_git() {
-        let core = include_str!("default_impl.rs");
-        let code = &core[..core.find("#[cfg(test)]").unwrap()];
-        for needle in ["omni_git_utils", "crate::git", "GitDriver"] {
-            assert!(!code.contains(needle), "the core mentions {needle}");
+        for (name, source) in [
+            ("default_impl.rs", include_str!("default_impl.rs")),
+            ("protection.rs", include_str!("../protection.rs")),
+        ] {
+            let code =
+                &source[..source.find("#[cfg(test)]").unwrap_or(source.len())];
+            for needle in ["omni_git_utils", "crate::git", "GitDriver"] {
+                assert!(!code.contains(needle), "{name} mentions {needle}");
+            }
         }
     }
 }
