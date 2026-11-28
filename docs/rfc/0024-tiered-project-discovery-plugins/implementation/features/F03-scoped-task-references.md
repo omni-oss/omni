@@ -8,7 +8,7 @@ merged and now parses `dependencies`/`with` ([part 2](F03.2-reference-parser.md#
 (F03.3) is done for internal references ([#143](https://github.com/omni-oss/omni/pull/143)).
 F03.1 ([#103](https://github.com/omni-oss/omni/pull/103)), F03.2 part 1
 ([#116](https://github.com/omni-oss/omni/pull/116)) and part 2
-([#117](https://github.com/omni-oss/omni/pull/117)) are merged. F03.4 is merged: structured task identity and the versioned cache-key identity leaf ([#171](https://github.com/omni-oss/omni/pull/171)), then the handwritten `alias` key, canonical selection and alias hints ([#175](https://github.com/omni-oss/omni/pull/175)). Plugin-scoped variants remain pending.
+([#117](https://github.com/omni-oss/omni/pull/117)) are merged. F03.4 is merged: structured task identity and the versioned cache-key identity leaf ([#171](https://github.com/omni-oss/omni/pull/171)), then the handwritten `alias` key, canonical selection and alias hints ([#175](https://github.com/omni-oss/omni/pull/175)). Everything standalone is done. The plugin-scoped variants are tracked in [P04.3](plugins/P04-project-inference-controls-and-apply.md#f03-plugin-scoped-variants-carried-from-f03) and [P08.3](plugins/P08-pass-integration-and-semantic-identity.md#f03-plugin-scoped-variants-carried-from-f03), not built here: they need inferred declarations and activations that do not exist (checked 2026-11-28: plugin scopes are rejected in `task_dependency_configuration.rs` and `task_alias.rs`, and no code generates automatic aliases).
 
 ## Problem
 

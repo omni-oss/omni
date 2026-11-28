@@ -62,3 +62,7 @@ only for affected/dependent selection, never scheduling or cycle validation
   excluded chain, explicit-only target, full workspace with nothing excluded.
 
 Both adapters (P10.7, P11.5) depend on it.
+
+## F03 plugin-scoped variants (carried from F03)
+
+Task `P08.3` owns the identity half. The structured task identity (`(project, task)`, F03.4 slice 0, [#171](https://github.com/omni-oss/omni/pull/171)) gains the originating activation for plugin-inferred tasks, and the cache-key identity leaf changes with it. That is a new versioned cold start per [cache keys](../../../../patterns/cache-keys.md), never a migration, with a release note, and High risk (`AGENTS.md`). Acceptance: the same local name from two activations hashes differently; an alias request resolves to the canonical identity, so the requested alias never reaches the key; an ambiguous automatic alias still fails at planning (C20) before any key is computed. Alias resolution itself is in [P04.3](P04-project-inference-controls-and-apply.md#f03-plugin-scoped-variants-carried-from-f03).

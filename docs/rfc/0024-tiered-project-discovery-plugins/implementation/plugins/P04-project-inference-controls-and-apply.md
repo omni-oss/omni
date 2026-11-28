@@ -50,3 +50,13 @@ project authors control inferred projects.
   inspects cleanly (`ProjectConfigResponse`, `print-config`), using the internal
   serialization added in [#147](https://github.com/omni-oss/omni/pull/147).
 - `inference.plugins` allowlist errors with `replace`; stale allowlist ids fail clearly.
+
+## F03 plugin-scoped variants (carried from F03)
+
+Not built in F03 because they need inferred declarations and activations. P04.3 owns:
+
+- Activation-scoped tasks: two activations emitting a local `build` stay two distinct tasks and never merge; a plugin cannot emit aliases or touch another activation's tasks ([§7.3](../../007.02-multiple-plugins-and-conflicts.md#73-multiple-plugins-and-conflicts)).
+- Plugin-qualified references (`plugin::project#task`) bind to the originating activation; remove the "plugin scopes are not supported" rejections in `task_dependency_configuration.rs` and `task_alias.rs` with it.
+- Automatic alias resolution for plugin-inferred tasks ([§7.4](../../007.03-task-scoping-aliases-and-selectors.md#74-host-owned-task-scoping-and-aliases) order: compose, generate aliases from surviving declarations and explicit name occupancy, resolve chains, then inheritance). An explicit unqualified task suppresses the automatic alias at that name.
+- An ambiguous automatic alias (two activations infer the same local name, no explicit occupant) stays an error listing both qualified candidates; list order never resolves it ([§7.3 decision 1](../../007.02-multiple-plugins-and-conflicts.md), [C20](../../007.04-composition-golden-fixtures.md#c20--alias-and-inheritance-failures-validate-surviving-graphs)).
+- Tests start failing-first with synthetic contributor layers, as F07.3 did.
