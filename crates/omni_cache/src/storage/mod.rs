@@ -35,6 +35,8 @@ pub fn is_internal_entry(name: &str) -> bool {
 mod tests {
     use std::{path::Path, time::Duration};
 
+    use system_traits::impls::RealSys;
+
     use super::*;
 
     /// A consumer with its own key and record type and no task dependencies.
@@ -46,12 +48,20 @@ mod tests {
         }
 
         async fn put(&self, key: u32, text: &str) -> std::io::Result<()> {
+            let sys = RealSys;
             let dir = self.dir(key);
             let staging = staging_dir_for(&dir);
             tokio::fs::create_dir_all(&staging).await?;
-            write_atomic(&staging.join("note.txt"), text.as_bytes()).await?;
-            publish_staged_dir(&staging, &dir, &dir.join("note.txt"), false)
-                .await
+            write_atomic(&sys, &staging.join("note.txt"), text.as_bytes())
+                .await?;
+            publish_staged_dir(
+                &sys,
+                &staging,
+                &dir,
+                &dir.join("note.txt"),
+                false,
+            )
+            .await
         }
 
         async fn get(&self, key: u32) -> std::io::Result<String> {
@@ -133,8 +143,9 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let dest = tmp.path().join("dest");
         std::fs::create_dir(&dest).unwrap();
+        let sys = RealSys;
 
-        assert!(write_atomic(&dest, b"x").await.is_err());
+        assert!(write_atomic(&sys, &dest, b"x").await.is_err());
 
         let leftovers: Vec<_> = std::fs::read_dir(tmp.path())
             .unwrap()
@@ -147,12 +158,13 @@ mod tests {
     async fn test_write_atomic_replaces_and_leaves_no_temp_files() {
         let tmp = tempfile::tempdir().expect("tempdir");
         let p = tmp.path().join("db");
-        write_atomic(&p, b"a").await.expect("write");
-        write_atomic(&p, b"b").await.expect("write");
+        let sys = RealSys;
+        write_atomic(&sys, &p, b"a").await.expect("write");
+        write_atomic(&sys, &p, b"b").await.expect("write");
         assert_eq!(std::fs::read(&p).expect("read"), b"b");
         assert_eq!(std::fs::read_dir(tmp.path()).expect("ls").count(), 1);
         assert!(
-            write_atomic(&tmp.path().join("no/dir"), b"x")
+            write_atomic(&sys, &tmp.path().join("no/dir"), b"x")
                 .await
                 .is_err()
         );
@@ -160,18 +172,24 @@ mod tests {
 
     #[tokio::test]
     async fn test_reclaim_removes_only_stale_staging_dirs() {
+        let sys = RealSys;
         let tmp = tempfile::tempdir().expect("tempdir");
         let stale = tmp.path().join(format!("{STAGING_PREFIX}crashed"));
         let real = tmp.path().join("entry");
         std::fs::create_dir_all(&stale).expect("mk");
         std::fs::create_dir_all(&real).expect("mk");
-        reclaim_stale_staging_dirs(tmp.path(), Duration::from_secs(3600)).await;
+        reclaim_stale_staging_dirs(&sys, tmp.path(), Duration::from_secs(3600))
+            .await;
         assert!(stale.exists(), "fresh staging dir survives");
-        reclaim_stale_staging_dirs(tmp.path(), Duration::ZERO).await;
+        reclaim_stale_staging_dirs(&sys, tmp.path(), Duration::ZERO).await;
         assert!(!stale.exists());
         assert!(real.exists());
-        reclaim_stale_staging_dirs(&tmp.path().join("missing"), Duration::ZERO)
-            .await;
+        reclaim_stale_staging_dirs(
+            &sys,
+            &tmp.path().join("missing"),
+            Duration::ZERO,
+        )
+        .await;
     }
 
     #[test]

@@ -1489,6 +1489,7 @@ dependencies = [
  "serde",
  "serde_json",
  "strum 0.28.0",
+ "system_traits",
  "tempfile",
  "thiserror 2.0.21",
  "tokio 1.54.1",

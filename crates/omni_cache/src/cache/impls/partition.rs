@@ -17,6 +17,10 @@ use std::path::{Component, Path, PathBuf};
 
 use omni_path_utils::segment;
 use sha2::{Digest as _, Sha256};
+use system_traits::{
+    FileType, FsMetadataAsync as _, FsMetadataValue as _, FsReadDirAsync as _,
+    FsRemoveDirAllAsync as _, impls::RealSys,
+};
 
 pub(crate) const PARTITIONS_DIR: &str = ".partitions";
 
@@ -137,20 +141,21 @@ pub(crate) const UNKNOWN_PARTITION_MAX_AGE: std::time::Duration =
 /// Removes `unknown/*` partitions not modified for `max_age`. Each run gets its
 /// own, so without this they pile up. Best effort: a failure is only logged.
 pub(crate) async fn reclaim_stale_unknown(
+    sys: &RealSys,
     base: &Path,
     max_age: std::time::Duration,
 ) {
     let root = base.join(PARTITIONS_DIR).join("unknown");
-    let Ok(mut entries) = tokio::fs::read_dir(&root).await else {
+    let Ok(entries) = sys.fs_read_dir_async(&root).await else {
         return;
     };
     let now = std::time::SystemTime::now();
-    while let Ok(Some(entry)) = entries.next_entry().await {
-        let candidate = entry
-            .metadata()
+    for entry in entries {
+        let candidate = sys
+            .fs_symlink_metadata_async(&entry)
             .await
             .ok()
-            .filter(|m| m.is_dir())
+            .filter(|m| m.file_type() == FileType::Dir)
             .and_then(|m| m.modified().ok())
             .and_then(|modified| now.duration_since(modified).ok())
             .is_some_and(|age| age >= max_age);
@@ -158,11 +163,11 @@ pub(crate) async fn reclaim_stale_unknown(
         // long-lived run writing deeper down would look idle. Confirm that
         // nothing below it changed within `max_age` either.
         let stale =
-            candidate && !changed_within(&entry.path(), now, max_age).await;
-        if stale && let Err(e) = tokio::fs::remove_dir_all(entry.path()).await {
+            candidate && !changed_within(sys, &entry, now, max_age).await;
+        if stale && let Err(e) = sys.fs_remove_dir_all_async(&entry).await {
             tracing::debug!(
                 "failed to remove a stale unknown partition {}: {e}",
-                entry.path().display()
+                entry.display()
             );
         }
     }
@@ -171,17 +176,18 @@ pub(crate) async fn reclaim_stale_unknown(
 /// True when anything under `dir` (including `dir`) was modified within `max_age`.
 /// Stops at the first recent entry; symlinks are not followed.
 async fn changed_within(
+    sys: &RealSys,
     dir: &Path,
     now: std::time::SystemTime,
     max_age: std::time::Duration,
 ) -> bool {
     let mut pending = vec![dir.to_path_buf()];
     while let Some(current) = pending.pop() {
-        let Ok(mut entries) = tokio::fs::read_dir(&current).await else {
+        let Ok(entries) = sys.fs_read_dir_async(&current).await else {
             continue;
         };
-        while let Ok(Some(entry)) = entries.next_entry().await {
-            let Ok(meta) = entry.metadata().await else {
+        for entry in entries {
+            let Ok(meta) = sys.fs_symlink_metadata_async(&entry).await else {
                 continue;
             };
             let recent = meta
@@ -192,8 +198,8 @@ async fn changed_within(
             if recent {
                 return true;
             }
-            if meta.is_dir() {
-                pending.push(entry.path());
+            if meta.file_type() == FileType::Dir {
+                pending.push(entry);
             }
         }
     }
@@ -214,15 +220,24 @@ pub(crate) fn is_confined(base: &Path, path: &Path) -> bool {
 
 /// Every partition directory under `base`: `trusted/*`, `untrusted/*/*/*` and
 /// `local`. Unreadable directories are skipped.
-pub(crate) async fn existing_partitions(base: &Path) -> Vec<PathBuf> {
-    async fn children(dir: &Path) -> Vec<PathBuf> {
-        let Ok(mut entries) = tokio::fs::read_dir(dir).await else {
+pub(crate) async fn existing_partitions(
+    sys: &RealSys,
+    base: &Path,
+) -> Vec<PathBuf> {
+    async fn children(sys: &RealSys, dir: &Path) -> Vec<PathBuf> {
+        let Ok(entries) = sys.fs_read_dir_async(dir).await else {
             return Vec::new();
         };
         let mut out = Vec::new();
-        while let Ok(Some(entry)) = entries.next_entry().await {
-            if entry.file_type().await.is_ok_and(|t| t.is_dir()) {
-                out.push(entry.path());
+        for entry in entries {
+            // `DirEntry::file_type` never follows a symlink, so a linked
+            // directory is not a partition here.
+            if sys
+                .fs_symlink_metadata_async(&entry)
+                .await
+                .is_ok_and(|meta| meta.file_type() == FileType::Dir)
+            {
+                out.push(entry);
             }
         }
         out
@@ -230,14 +245,14 @@ pub(crate) async fn existing_partitions(base: &Path) -> Vec<PathBuf> {
 
     let root = base.join(PARTITIONS_DIR);
     let mut found = Vec::new();
-    found.extend(children(&root.join("trusted")).await);
-    found.extend(children(&root.join("unknown")).await);
-    for epoch in children(&root.join("untrusted")).await {
-        for principal in children(&epoch).await {
-            found.extend(children(&principal).await);
+    found.extend(children(sys, &root.join("trusted")).await);
+    found.extend(children(sys, &root.join("unknown")).await);
+    for epoch in children(sys, &root.join("untrusted")).await {
+        for principal in children(sys, &epoch).await {
+            found.extend(children(sys, &principal).await);
         }
     }
-    if tokio::fs::try_exists(root.join("local"))
+    if super::try_exists_following(sys, root.join("local"))
         .await
         .unwrap_or(false)
     {
@@ -397,7 +412,7 @@ mod tests {
         tokio::fs::create_dir_all(base.join("someproject/output"))
             .await
             .unwrap();
-        let mut found = existing_partitions(base).await;
+        let mut found = existing_partitions(&RealSys, base).await;
         found.sort();
         assert_eq!(found.len(), 5, "{found:?}");
         assert!(
@@ -418,7 +433,7 @@ mod tests {
         }
         backdate(&old.join("proj"));
         backdate(&old);
-        reclaim_stale_unknown(base, UNKNOWN_PARTITION_MAX_AGE).await;
+        reclaim_stale_unknown(&RealSys, base, UNKNOWN_PARTITION_MAX_AGE).await;
         assert!(!old.exists());
         assert!(fresh.exists());
     }
@@ -447,7 +462,8 @@ mod tests {
         std::fs::write(busy.join("proj/output/entry"), b"x").unwrap();
         // Only the top directory looks old; a file deeper down is recent.
         backdate(&busy);
-        reclaim_stale_unknown(temp.path(), UNKNOWN_PARTITION_MAX_AGE).await;
+        reclaim_stale_unknown(&RealSys, temp.path(), UNKNOWN_PARTITION_MAX_AGE)
+            .await;
         assert!(busy.exists());
     }
 

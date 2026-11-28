@@ -33,8 +33,9 @@ use omni_types::{OmniPath, TaskKey, TaskKeyRef, TaskMap};
 use serde::{Deserialize, Serialize};
 use strum::{EnumDiscriminants, EnumIs, IntoDiscriminant as _};
 use system_traits::{
-    FsCopyAsync as _, FsCreateDirAllAsync, FsHardLinkAsync as _,
-    FsMetadataAsync, FsRemoveDirAllAsync as _, FsWriteAsync as _,
+    FileType, FsCopyAsync as _, FsCreateDirAllAsync, FsHardLinkAsync as _,
+    FsMetadataAsync, FsMetadataValue as _, FsReadAsync as _,
+    FsReadDirAsync as _, FsRemoveDirAllAsync as _, FsWriteAsync as _,
     impls::RealSys,
 };
 use time::OffsetDateTime;
@@ -512,7 +513,9 @@ impl HybridTaskExecutionCacheStore {
             return vec![self.clone()];
         }
         let mut views = vec![self.view(self.cache_dir.clone())];
-        for dir in super::partition::existing_partitions(&self.cache_dir).await
+        for dir in
+            super::partition::existing_partitions(&self.sys, &self.cache_dir)
+                .await
         {
             views.push(self.view(dir));
         }
@@ -555,6 +558,7 @@ impl HybridTaskExecutionCacheStore {
                 // Each run without a usable verdict gets a fresh partition, so
                 // clear out ones nobody has used for a week.
                 super::partition::reclaim_stale_unknown(
+                    &self.sys,
                     &self.base_dir,
                     super::partition::UNKNOWN_PARTITION_MAX_AGE,
                 )
@@ -678,6 +682,7 @@ impl HybridTaskExecutionCacheStore {
 /// extraction never lands in the final directory. A rejected archive
 /// (`InvalidData`) leaves nothing behind.
 async fn restore_staged(
+    sys: &RealSys,
     entry_dir: &Path,
     bytes: Bytes,
     marker: super::origin::Marker,
@@ -693,23 +698,25 @@ async fn restore_staged(
     };
     let staged = async {
         extract?;
-        read_validated_entry(&staging, identity).await?;
+        read_validated_entry(sys, &staging, identity).await?;
         // The marker is ours alone: an archive that ships that name (as a file
         // or directory) is rejected rather than overwritten.
-        if tokio::fs::symlink_metadata(
-            staging.join(super::origin::ORIGIN_MARKER),
-        )
-        .await
-        .is_ok()
+        if sys
+            .fs_symlink_metadata_async(
+                staging.join(super::origin::ORIGIN_MARKER),
+            )
+            .await
+            .is_ok()
         {
             return Err(invalid_entry());
         }
-        tokio::fs::write(
+        sys.fs_write_async(
             staging.join(super::origin::ORIGIN_MARKER),
             marker.text(),
         )
         .await?;
         publish_staged_dir(
+            sys,
             &staging,
             entry_dir,
             &entry_dir.join(CACHE_OUTPUT_METADATA_FILE),
@@ -719,14 +726,14 @@ async fn restore_staged(
     }
     .await;
     if staged.is_err() {
-        let _ = tokio::fs::remove_dir_all(&staging).await;
+        let _ = sys.fs_remove_dir_all_async(&staging).await;
     }
     staged
 }
 
 /// Removes an entry directory; one that another run already removed is fine.
-async fn remove_entry_dir(dir: &Path) -> std::io::Result<()> {
-    match tokio::fs::remove_dir_all(dir).await {
+async fn remove_entry_dir(sys: &RealSys, dir: &Path) -> std::io::Result<()> {
+    match sys.fs_remove_dir_all_async(dir).await {
         Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
         _ => Ok(()),
     }
@@ -745,18 +752,23 @@ fn invalid_entry() -> std::io::Error {
 
 /// Reads an entry's metadata file. A missing, oversized or non-regular file
 /// (an archive can put a directory there) is an invalid entry, not an I/O error.
-async fn read_metadata_bounded(path: &Path) -> std::io::Result<Vec<u8>> {
-    let meta = match tokio::fs::symlink_metadata(path).await {
+async fn read_metadata_bounded(
+    sys: &RealSys,
+    path: &Path,
+) -> std::io::Result<Vec<u8>> {
+    let meta = match sys.fs_symlink_metadata_async(path).await {
         Ok(meta) => meta,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             return Err(invalid_entry());
         }
         Err(e) => return Err(e),
     };
-    if !meta.is_file() || meta.len() > MAX_METADATA_BYTES {
+    if meta.file_type() != FileType::File || meta.len() > MAX_METADATA_BYTES {
         return Err(invalid_entry());
     }
-    tokio::fs::read(path).await
+    sys.fs_read_async(path)
+        .await
+        .map(|bytes| bytes.into_owned())
 }
 
 /// Owned so a remote transfer can validate its metadata before publication.
@@ -788,12 +800,14 @@ impl EntryIdentity {
 }
 
 async fn read_validated_entry(
+    sys: &RealSys,
     dir: &Path,
     identity: &EntryIdentity,
 ) -> std::io::Result<CachedTaskExecution> {
     let invalid = invalid_entry;
     let bytes =
-        read_metadata_bounded(&dir.join(CACHE_OUTPUT_METADATA_FILE)).await?;
+        read_metadata_bounded(sys, &dir.join(CACHE_OUTPUT_METADATA_FILE))
+            .await?;
     let entry: CachedTaskExecution =
         rmp_serde::from_slice(&bytes).map_err(|_| invalid())?;
     if entry.project_name != identity.project
@@ -804,12 +818,12 @@ async fn read_validated_entry(
         return Err(invalid());
     }
     if let Some(log) = &entry.logs_path
-        && !is_regular_file(&dir.join(log)).await
+        && !is_regular_file(sys, &dir.join(log)).await
     {
         return Err(invalid());
     }
     for file in &entry.files {
-        if !is_regular_file(&dir.join(&file.cached_path)).await {
+        if !is_regular_file(sys, &dir.join(&file.cached_path)).await {
             return Err(invalid());
         }
     }
@@ -819,14 +833,17 @@ async fn read_validated_entry(
 /// Called only while holding the partition's shared prune and exclusive
 /// replacement locks. Invalid/partial entries must not block a rebuild's write.
 async fn discard_invalid_entry(
+    sys: &RealSys,
     dir: &Path,
     identity: &EntryIdentity,
 ) -> std::io::Result<()> {
-    if tokio::fs::try_exists(dir).await?
-        && let Err(error) = read_validated_entry(dir, identity).await
+    // No-follow on purpose: a dangling entry link is not a valid entry, and
+    // `remove_dir_all` below unlinks the link itself, never its target.
+    if sys.fs_exists_async(dir).await?
+        && let Err(error) = read_validated_entry(sys, dir, identity).await
     {
         tracing::warn!(%error, "discarding an invalid local cache entry so it can be rebuilt");
-        tokio::fs::remove_dir_all(dir).await?;
+        sys.fs_remove_dir_all_async(dir).await?;
     }
     Ok(())
 }
@@ -853,10 +870,10 @@ fn restore_paths_are_confined(
 /// True only for a regular file. Unlike an existence check this does not follow
 /// a symlink, so a link that an entry smuggled in is a miss and never a source
 /// that restore would read from or copy.
-async fn is_regular_file(path: &Path) -> bool {
-    tokio::fs::symlink_metadata(path)
+async fn is_regular_file(sys: &RealSys, path: &Path) -> bool {
+    sys.fs_symlink_metadata_async(path)
         .await
-        .is_ok_and(|metadata| metadata.is_file())
+        .is_ok_and(|metadata| metadata.file_type() == FileType::File)
 }
 
 /// The plan call for a cache task filter: exact names and patterns union, and
@@ -999,7 +1016,7 @@ impl HybridTaskExecutionCacheStore {
         .await?;
 
         let path = dir.join(LAST_USED_TIMESTAMPS_DB_FILE);
-        let mut last_used_db = LocalLastUsedDb::load(&path).await?;
+        let mut last_used_db = LocalLastUsedDb::load(&self.sys, &path).await?;
         let dir = OffsetDateTime::now_utc();
 
         for exec in tasks.iter().filter_map(|t| t.as_ref()) {
@@ -1033,7 +1050,7 @@ impl HybridTaskExecutionCacheStore {
             return Ok(None);
         }
 
-        let bytes = read_metadata_bounded(metadata_path).await?;
+        let bytes = read_metadata_bounded(&self.sys, metadata_path).await?;
         let metadata: CachedTaskExecution =
             rmp_serde::decode::from_slice(&bytes)?;
 
@@ -1067,7 +1084,9 @@ impl HybridTaskExecutionCacheStore {
         entries: &[PrunedCacheEntry],
     ) -> Result<(), LocalTaskExecutionCacheStoreError> {
         for entry in entries {
-            if !tokio::fs::try_exists(&entry.entry_dir).await? {
+            // No-follow on purpose: a dangling entry link is pruned and only
+            // the link is removed.
+            if !self.sys.fs_exists_async(&entry.entry_dir).await? {
                 tracing::debug!(
                     "Cache entry does not exist: {}",
                     entry.entry_dir.display()
@@ -1075,7 +1094,8 @@ impl HybridTaskExecutionCacheStore {
                 continue;
             }
 
-            tokio::fs::remove_dir_all(&entry.entry_dir)
+            self.sys
+                .fs_remove_dir_all_async(&entry.entry_dir)
                 .await
                 .inspect_err(|e| {
                     tracing::error!("Failed to delete cache entry: {}", e)
@@ -1097,15 +1117,16 @@ impl HybridTaskExecutionCacheStore {
     /// touched. Best-effort: individual failures are logged and skipped.
     async fn prune_stale_staging_dirs(&self, max_age: std::time::Duration) {
         for view in self.views().await {
-            let mut projects = match tokio::fs::read_dir(&view.cache_dir).await
-            {
-                Ok(entries) => entries,
-                Err(_) => continue,
-            };
+            let projects =
+                match self.sys.fs_read_dir_async(&view.cache_dir).await {
+                    Ok(entries) => entries,
+                    Err(_) => continue,
+                };
 
-            while let Ok(Some(project)) = projects.next_entry().await {
+            for project in projects {
                 reclaim_stale_staging_dirs(
-                    &project.path().join("output"),
+                    &self.sys,
+                    &project.join("output"),
                     max_age,
                 )
                 .await;
@@ -1121,11 +1142,15 @@ impl HybridTaskExecutionCacheStore {
 /// present, so a prune that failed partway cannot leave something that archives
 /// as a whole entry. The caller holds the shared prune lock, so a prune cannot
 /// change the answer while it archives.
-async fn still_uploadable(output_dir: &Path, identity: &EntryIdentity) -> bool {
-    read_validated_entry(output_dir, identity)
+async fn still_uploadable(
+    sys: &RealSys,
+    output_dir: &Path,
+    identity: &EntryIdentity,
+) -> bool {
+    read_validated_entry(sys, output_dir, identity)
         .await
         .is_ok_and(|entry| entry.exit_code == 0)
-        && super::origin::read_marker(output_dir).await.is_none()
+        && super::origin::read_marker(sys, output_dir).await.is_none()
 }
 
 const LOGS_CACHE_FILE: &str = "logs.cache";
@@ -1212,8 +1237,12 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                 .get(result.task.project_name, result.task.task_name)
                 .expect("should be some");
             let log_content = new_cache_info.logs;
-            discard_invalid_entry(output_dir, &EntryIdentity::of(&result))
-                .await?;
+            discard_invalid_entry(
+                &self.sys,
+                output_dir,
+                &EntryIdentity::of(&result),
+            )
+            .await?;
 
             // Entries are addressed only by their input digest, which does not
             // encode the execution outcome. A flaky task can therefore produce
@@ -1343,6 +1372,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                 }
 
                 publish_staged_dir(
+                    &self.sys,
                     &staging_dir,
                     output_dir,
                     &metadata_path,
@@ -1362,7 +1392,9 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
             // An entry restored from the remote was fetched, not built here: it
             // carries an origin marker, and re-uploading it would publish a
             // directory the restore rejects.
-            if super::origin::read_marker(output_dir).await.is_none()
+            if super::origin::read_marker(&self.sys, output_dir)
+                .await
+                .is_none()
                 && self
                     .can_upload_cached_result(
                         new_cache_info.exit_code,
@@ -1444,6 +1476,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                 let upload_slots = upload_slots.clone();
                 let signer = signer.clone();
                 let prune_lock = prune_lock.clone();
+                let sys = self.sys.clone();
 
                 tasks.spawn(async move {
                     let _permit = upload_slots
@@ -1474,7 +1507,9 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                             let _prune_guard =
                                 CacheLockGuard::acquire_shared(prune_lock)
                                     .await?;
-                            if !still_uploadable(&output_dir, &identity).await {
+                            if !still_uploadable(&sys, &output_dir, &identity)
+                                .await
+                            {
                                 tracing::debug!(%digest, "the cache entry changed or was removed before upload; skipping the upload");
                                 return Ok(false);
                             }
@@ -1577,6 +1612,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
         .await?;
         for project in &collected {
             discard_invalid_entry(
+                &self.sys,
                 project
                     .cache_output_dir
                     .as_deref()
@@ -1608,7 +1644,8 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                 // cannot be here unless a cache directory was shared against
                 // the guidance, and it is removed so the entry is rebuilt or
                 // fetched like a miss.
-                let marker = super::origin::read_marker(output_dir).await;
+                let marker =
+                    super::origin::read_marker(&self.sys, output_dir).await;
                 if (!untrusted
                     || conf.signing.verify == EffectiveVerify::Require)
                     && marker.as_ref().map(|m| m.origin)
@@ -1618,7 +1655,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                         project = %project.task.project_name,
                         "discarding a local entry restored from an isolated remote namespace"
                     );
-                    remove_entry_dir(output_dir).await?;
+                    remove_entry_dir(&self.sys, output_dir).await?;
                 } else if conf.signing.verify == EffectiveVerify::Require
                     && let Some(m) = &marker
                     && m.origin == super::origin::Origin::Shared
@@ -1632,11 +1669,11 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                         project = %project.task.project_name,
                         "discarding a local remote entry that was not verified by a currently trusted key"
                     );
-                    remove_entry_dir(output_dir).await?;
+                    remove_entry_dir(&self.sys, output_dir).await?;
                 }
 
                 // skip if the output dir already exists/downloaded
-                if tokio::fs::try_exists(output_dir).await? {
+                if super::try_exists_following(&self.sys, output_dir).await? {
                     continue;
                 }
 
@@ -1651,6 +1688,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                 let label = label.clone();
                 let identity = EntryIdentity::of(project);
                 let prune_lock = prune_lock.clone();
+                let sys = self.sys.clone();
 
                 tasks.spawn(async move {
                     let _permit = download_slots
@@ -1754,8 +1792,14 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                                     return Ok(());
                                 }
                             };
-                        match restore_staged(&output_dir, artifact.bytes, marker, &identity)
-                            .await
+                        match restore_staged(
+                            &sys,
+                            &output_dir,
+                            artifact.bytes,
+                            marker,
+                            &identity,
+                        )
+                        .await
                         {
                             Ok(()) => {}
                             // Rejected before anything was written (a link, an
@@ -1815,7 +1859,8 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
             let cache_abs = |p: &Path| std::path::absolute(output_dir.join(p));
 
             let output = if self.sys.fs_exists_async(&file).await? {
-                let bytes = match read_metadata_bounded(&file).await {
+                let bytes = match read_metadata_bounded(&self.sys, &file).await
+                {
                     Ok(bytes) => bytes,
                     Err(e) if e.kind() == std::io::ErrorKind::InvalidData => {
                         tracing::warn!(
@@ -1878,7 +1923,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                 if let Some(logs_path) = cached_output.logs_path.as_mut() {
                     let p = cache_abs(logs_path)?;
 
-                    if !is_regular_file(&p).await {
+                    if !is_regular_file(&self.sys, &p).await {
                         outputs.push(None);
                         continue 'outer_loop;
                     }
@@ -1889,7 +1934,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                 for file in cached_output.files.iter_mut() {
                     let c = cache_abs(&file.cached_path)?;
 
-                    if !is_regular_file(&c).await {
+                    if !is_regular_file(&self.sys, &c).await {
                         outputs.push(None);
                         continue 'outer_loop;
                     }
@@ -1939,7 +1984,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
         let task_names = args.task_names;
         let task_name_globs = args.task_name_globs;
 
-        let mut entries = tokio::fs::read_dir(&self.cache_dir).await?;
+        let entries = self.sys.fs_read_dir_async(&self.cache_dir).await?;
 
         let project_glob = NameMatcher::new(project_names, project_name_globs)?;
         let task_glob = NameMatcher::new(task_names, task_name_globs)?;
@@ -1949,12 +1994,22 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
         let last_used_db_path =
             self.cache_dir.join(LAST_USED_TIMESTAMPS_DB_FILE);
 
-        while let Some(entry) = entries.next_entry().await? {
-            if !entry.file_type().await?.is_dir() {
+        for entry in entries {
+            // `DirEntry::file_type` never follows a symlink, so a linked
+            // directory is not a project directory here. A stat error (an
+            // entry pruned concurrently) is skipped, not fatal.
+            if !self
+                .sys
+                .fs_symlink_metadata_async(&entry)
+                .await
+                .is_ok_and(|meta| meta.file_type() == FileType::Dir)
+            {
                 continue;
             }
 
-            let file_name = entry.file_name();
+            let Some(file_name) = entry.file_name() else {
+                continue;
+            };
             let enc_project_name = file_name.to_string_lossy();
 
             // Skip internal scratch state (the `.locks` folder, staging dirs,
@@ -1973,14 +2028,15 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
             }
 
             let t_task_glob = task_glob.clone();
+            let sys = self.sys.clone();
             futs.spawn(async move {
                 let mut tasks = vec![];
-                let project_output_dir = &entry.path().join("output");
+                let project_output_dir = &entry.join("output");
 
-                if !tokio::fs::try_exists(project_output_dir).await? {
+                if !super::try_exists_following(&sys, project_output_dir).await? {
                     tracing::debug!(
                         "no output dir found for {}",
-                        entry.path().display()
+                        entry.display()
                     );
 
                     return Ok::<_, LocalTaskExecutionCacheStoreError>(
@@ -1991,41 +2047,45 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                     );
                 }
 
-                let mut task_entries =
-                    tokio::fs::read_dir(project_output_dir).await?;
+                let task_entries =
+                    sys.fs_read_dir_async(project_output_dir).await?;
 
-                while let Some(entry) = task_entries.next_entry().await? {
-                    if !entry.file_type().await?.is_dir() {
+                for entry in task_entries {
+                    if !sys
+                        .fs_symlink_metadata_async(&entry)
+                        .await
+                        .is_ok_and(|meta| meta.file_type() == FileType::Dir)
+                    {
                         tracing::debug!(
                             "not a directory: {}",
-                            entry.path().display()
+                            entry.display()
                         );
                         continue;
                     }
 
                     // Skip in-progress staging directories; they are not yet
                     // published cache entries.
-                    if entry
-                        .file_name()
-                        .to_string_lossy()
-                        .starts_with(STAGING_PREFIX)
-                    {
+                    if entry.file_name().is_some_and(|name| {
+                        name.to_string_lossy().starts_with(STAGING_PREFIX)
+                    }) {
                         continue;
                     }
 
                     let cache_meta_path =
-                        entry.path().join(CACHE_OUTPUT_METADATA_FILE);
+                        entry.join(CACHE_OUTPUT_METADATA_FILE);
 
-                    if !tokio::fs::try_exists(&cache_meta_path).await? {
+                    // No-follow on purpose: a dangling metadata link is read
+                    // as invalid metadata and skipped with a warning.
+                    if !sys.fs_exists_async(&cache_meta_path).await? {
                         tracing::debug!(
                             "no cache metadata found for {}",
-                            entry.path().display()
+                            entry.display()
                         );
                         continue;
                     }
 
                     let Ok(cache_meta_bytes) =
-                        read_metadata_bounded(&cache_meta_path).await
+                        read_metadata_bounded(&sys, &cache_meta_path).await
                     else {
                         tracing::warn!("ignoring oversized or invalid metadata while computing cache statistics");
                         continue;
@@ -2052,12 +2112,12 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                         continue;
                     }
 
-                    let meta_file = load_stats(&cache_meta_path);
+                    let meta_file = load_stats(sys.clone(), &cache_meta_path);
 
                     let log_file = async {
                         if let Some(logs_path) = cache_meta.logs_path {
                             Ok(Some(
-                                load_stats(entry.path().join(logs_path))
+                                load_stats(sys.clone(), entry.join(logs_path))
                                     .await?,
                             ))
                         } else {
@@ -2069,7 +2129,8 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
 
                     for file in cache_meta.files {
                         files_set.spawn(load_stats(
-                            entry.path().join(file.cached_path),
+                            sys.clone(),
+                            entry.join(file.cached_path),
                         ));
                     }
 
@@ -2106,7 +2167,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                         last_used_timestamp: None,
                         meta_file,
                         log_file,
-                        entry_dir: entry.path().to_path_buf(),
+                        entry_dir: entry.clone(),
                     });
                 }
 
@@ -2120,7 +2181,8 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
 
         let results = futs.join_all().await;
         let mut projects = vec![];
-        let last_used_db = LocalLastUsedDb::load(&last_used_db_path).await?;
+        let last_used_db =
+            LocalLastUsedDb::load(&self.sys, &last_used_db_path).await?;
         for result in results {
             let mut result = result?;
 
@@ -2482,10 +2544,11 @@ impl<'a, T: Context> omni_task_context::Context for ContextWrapper<'a, T> {
 }
 
 async fn load_stats<P: AsRef<Path> + Clone>(
+    sys: RealSys,
     path: P,
 ) -> Result<FileCacheStats, LocalTaskExecutionCacheStoreError> {
     let path_ref = path.as_ref();
-    let meta = tokio::fs::metadata(path_ref).await.inspect_err(|e| {
+    let meta = sys.fs_metadata_async(path_ref).await.inspect_err(|e| {
         tracing::error!(
             "failed to get metadata for {}: {}",
             path_ref.display(),
@@ -3296,6 +3359,137 @@ mod tests {
         assert_eq!(remote.lines.lock().unwrap().len(), probes_before);
     }
 
+    // Only the Unix symlink tests below use this.
+    #[cfg(unix)]
+    fn copy_dir_all(from: &Path, to: &Path) {
+        std::fs::create_dir_all(to).unwrap();
+        for entry in std::fs::read_dir(from).unwrap() {
+            let entry = entry.unwrap();
+            let target = to.join(entry.file_name());
+            if entry.file_type().unwrap().is_dir() {
+                copy_dir_all(&entry.path(), &target);
+            } else {
+                std::fs::copy(entry.path(), &target).unwrap();
+            }
+        }
+    }
+
+    /// A directory reached through a symlink is not a cache directory: stats
+    /// and prune must ignore it, exactly as `DirEntry::file_type` did.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn symlinked_project_dirs_are_ignored_by_stats_and_prune() {
+        let temp = fixture(&["project1"]).await;
+        let dir = temp.path();
+        let cache = cache_store(dir);
+        let task = task("task", "project1", dir);
+        cache
+            .cache(&new_cache_info(Some(&LOGS_CONTENT), *task.get()))
+            .await
+            .expect("failed to cache");
+
+        let outside = tempfile::tempdir().unwrap();
+
+        // A remote-disabled store writes straight into the cache dir. Mirror
+        // the real project layout under `outside` so a walk that follows the
+        // link would find valid entries there.
+        let cache_root = dir.join(".omni/cache");
+        let real_project =
+            cache_root.join(bs58::encode("project1").into_string());
+        let outside_output = outside.path().join("output");
+        std::fs::create_dir_all(&outside_output).unwrap();
+        let real_entry = std::fs::read_dir(real_project.join("output"))
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .file_name();
+        // The whole entry, so it validates: metadata plus the logs and cached
+        // files it names.
+        copy_dir_all(
+            &real_project.join("output").join(&real_entry),
+            &outside_output.join(&real_entry),
+        );
+        std::fs::write(outside.path().join("keep"), b"keep").unwrap();
+
+        let evil_dir = cache_root.join(bs58::encode("evil").into_string());
+        std::os::unix::fs::symlink(outside.path(), &evil_dir).unwrap();
+
+        // Prune first: its plan comes from the same walk, so this proves the
+        // walk guard without depending on the stats assertion below.
+        let pruned = cache
+            .prune_caches(&PruneCacheArgs::<()> {
+                project_name_globs: &["*"],
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        cache.force_prune_caches(&pruned).await.unwrap();
+        assert!(
+            outside.path().join("keep").exists(),
+            "prune must never delete through a symlinked project dir"
+        );
+        assert!(
+            outside_output.join(&real_entry).is_dir(),
+            "the mirrored entry must survive a prune over the link"
+        );
+        assert!(evil_dir.is_symlink(), "the link itself is left alone");
+
+        let stats = cache
+            .get_stats(&CacheStatsArgs::<()> {
+                project_name_globs: &["*"],
+                ..Default::default()
+            })
+            .await
+            .expect("stats must not follow the link");
+        assert!(
+            stats.projects.iter().all(|p| p.project_name != "evil"),
+            "a symlinked project dir must not be reported"
+        );
+    }
+
+    /// A dangling `output` link is not an output directory: stats keeps the
+    /// `try_exists` tolerance and skips the project instead of failing.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn dangling_output_link_is_skipped_by_stats() {
+        let temp = fixture(&["project1"]).await;
+        let dir = temp.path();
+        let cache = cache_store(dir);
+        let task = task("task", "project1", dir);
+        cache
+            .cache(&new_cache_info(Some(&LOGS_CONTENT), *task.get()))
+            .await
+            .expect("failed to cache");
+
+        let cache_root = dir.join(".omni/cache");
+        let project_dir =
+            cache_root.join(bs58::encode("project1").into_string());
+        std::fs::remove_dir_all(project_dir.join("output")).unwrap();
+        std::os::unix::fs::symlink(
+            dir.join("missing-output-target"),
+            project_dir.join("output"),
+        )
+        .unwrap();
+
+        let stats = cache
+            .get_stats(&CacheStatsArgs::<()> {
+                project_name_globs: &["*"],
+                ..Default::default()
+            })
+            .await
+            .expect("a dangling output link must not fail stats");
+        let project = stats
+            .projects
+            .iter()
+            .find(|p| p.project_name == "project1")
+            .expect("the project is still listed");
+        assert!(
+            project.tasks.is_empty(),
+            "no task survives the dangling link"
+        );
+    }
+
     #[tokio::test]
     async fn a_shared_upload_is_signed_and_the_signature_verifies() {
         let key = signer();
@@ -3989,7 +4183,7 @@ mod tests {
         )
         .await
         .unwrap();
-        publish_staged_dir(&staging, output_dir, &metadata, false)
+        publish_staged_dir(&RealSys, &staging, output_dir, &metadata, false)
             .await
             .unwrap();
         assert_eq!(
@@ -4787,7 +4981,7 @@ mod tests {
         let dir = collected[0].cache_output_dir.clone().unwrap();
         let identity = EntryIdentity::of(&collected[0]);
         assert!(
-            !still_uploadable(&dir, &identity).await,
+            !still_uploadable(&RealSys, &dir, &identity).await,
             "nothing published yet"
         );
 
@@ -4800,7 +4994,7 @@ mod tests {
             .await
             .unwrap();
         assert!(
-            !still_uploadable(&dir, &identity).await,
+            !still_uploadable(&RealSys, &dir, &identity).await,
             "a failed result must never take the create-only remote slot"
         );
 
@@ -4809,7 +5003,7 @@ mod tests {
             .await
             .unwrap();
         assert!(
-            still_uploadable(&dir, &identity).await,
+            still_uploadable(&RealSys, &dir, &identity).await,
             "a local success qualifies"
         );
 
@@ -4824,11 +5018,11 @@ mod tests {
         let kept = std::fs::read(&cached_file).unwrap();
         std::fs::remove_file(&cached_file).unwrap();
         assert!(
-            !still_uploadable(&dir, &identity).await,
+            !still_uploadable(&RealSys, &dir, &identity).await,
             "an entry with a missing file must not be archived"
         );
         std::fs::write(&cached_file, kept).unwrap();
-        assert!(still_uploadable(&dir, &identity).await);
+        assert!(still_uploadable(&RealSys, &dir, &identity).await);
 
         std::fs::write(
             dir.join(".omni-origin-remote"),
@@ -4836,7 +5030,7 @@ mod tests {
         )
         .unwrap();
         assert!(
-            !still_uploadable(&dir, &identity).await,
+            !still_uploadable(&RealSys, &dir, &identity).await,
             "a restored entry is never re-uploaded"
         );
     }
