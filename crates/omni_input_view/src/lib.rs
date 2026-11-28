@@ -3,7 +3,9 @@
 //! F10.2a is the per-OS beneath-root open primitive and the D9 name check;
 //! F10.2b adds the tracked [`InputView`] (read, exists, list, limits,
 //! evidence). F10.2c adds the reject-only [`SymlinkPolicy`] and F10.3 the final-pass
-//! [`InputView::revalidate`]. Nothing here is consumed yet.
+//! [`InputView::revalidate`]. The first consumer is `omni_contained_read`
+//! (F10.4: contained script reads, opt-in); a discovery or plugin host that
+//! uses the evidence and `revalidate` is still to come.
 //!
 //! Containment is only claimed where it is enforced and proven:
 //!
