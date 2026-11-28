@@ -4,7 +4,10 @@
 //! `RemoteSourceManager`, so they need a `git` binary on PATH. They skip
 //! (rather than fail) when it is missing, mirroring the network-gated suites.
 
-use std::{path::Path, process::Command};
+use std::{
+    path::{Path, PathBuf},
+    process::Command,
+};
 
 use omni_remote_source::{
     RemoteSource, RemoteSourceRef,
@@ -12,10 +15,13 @@ use omni_remote_source::{
     manager::{
         RemoteSourceManager, StorePruneFilter, config::RemoteSourceConfig,
     },
+    registration::registration_file_name,
 };
 use system_traits::{FsMetadataAsync, impls::RealSys};
 use tempfile::TempDir;
 use url::Url;
+
+mod support;
 
 fn git(cwd: &Path, args: &[&str]) -> String {
     let output = Command::new("git")
@@ -1072,4 +1078,569 @@ async fn a_lease_set_protects_every_source_until_the_last_handle_drops() {
     let report = manager.prune_store_report(&all, false).await.unwrap();
     assert_eq!(report.removed.len(), 2);
     assert!(!root_a.exists() && !root_b.exists());
+}
+
+#[tokio::test]
+async fn a_lease_set_holds_one_lease_per_checkout() {
+    if !omni_test_capabilities::gate(
+        "git",
+        git_available(),
+        "git binary not found on PATH",
+    ) {
+        return;
+    }
+    let (src, url, first_commit) = build_repo("first\n");
+    std::fs::write(src.path().join("README.md"), "second\n").expect("write");
+    git(src.path(), &["add", "."]);
+    git(src.path(), &["commit", "-q", "-m", "second"]);
+    let second_commit = git(src.path(), &["rev-parse", "HEAD"]);
+
+    let ws = Workspace::new();
+    let manager = ws.manager().await;
+    let all = StorePruneFilter {
+        all: true,
+        ..Default::default()
+    };
+
+    // The same checkout materialized twice is held once, and one prune reports
+    // one protected checkout, not two.
+    let leases = LeaseSet::new();
+    let first = source_of(&url, &first_commit);
+    let root = manager
+        .materialize_into(&first, &leases)
+        .await
+        .expect("first materialization")
+        .root;
+    let again = manager
+        .materialize_into(&first, &leases)
+        .await
+        .expect("second materialization")
+        .root;
+    assert_eq!(root, again);
+    assert_eq!(leases.len(), 1, "the same checkout was held twice");
+    let report = manager.prune_store_report(&all, false).await.unwrap();
+    assert_eq!(report.skipped_in_use.len(), 1);
+    assert!(report.removed.is_empty());
+    assert!(root.exists());
+
+    // A different commit is a different checkout.
+    let second = source_of(&url, &second_commit);
+    let second_root = manager
+        .materialize_into(&second, &leases)
+        .await
+        .expect("second commit")
+        .root;
+    assert_eq!(leases.len(), 2);
+
+    // Absorbing a set that holds an already-held checkout keeps the count and
+    // empties the source set; nothing double-locks.
+    let helper = LeaseSet::new();
+    manager
+        .materialize_into(&first, &helper)
+        .await
+        .expect("helper materialization");
+    assert_eq!(helper.len(), 1);
+    leases.absorb(&helper);
+    assert!(helper.is_empty());
+    assert_eq!(leases.len(), 2, "absorb counted a duplicate");
+
+    // Dropping the target releases every distinct lease.
+    let roots = [root, second_root];
+    drop(leases);
+    let report = manager.prune_store_report(&all, false).await.unwrap();
+    assert_eq!(report.removed.len(), 2);
+    for root in roots {
+        assert!(!root.exists());
+    }
+}
+
+// --- Reference-driven retention (RFC 0024 F08.7 step 3) ---------------------
+
+struct SharedStore {
+    _dir: TempDir,
+    root: PathBuf,
+}
+
+fn shared_store() -> SharedStore {
+    let dir = tempfile::tempdir().expect("shared store tempdir");
+    let root = dir.path().join("store");
+    SharedStore { _dir: dir, root }
+}
+
+fn by_size() -> StorePruneFilter<'static> {
+    StorePruneFilter {
+        larger_than: Some(1),
+        ..Default::default()
+    }
+}
+
+fn registrations(store: &Path) -> Vec<PathBuf> {
+    std::fs::read_dir(store.join("workspaces"))
+        .map(|entries| {
+            entries
+                .flatten()
+                .map(|entry| entry.path())
+                .filter(|path| {
+                    path.extension().and_then(|e| e.to_str()) == Some("json")
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Workspace B installs one checkout and writes a reference to it. Its manager
+/// is dropped (the lease is released) but its workspace (and so `refs/`) stays
+/// alive for the caller.
+async fn referenced_checkout() -> (
+    SharedStore,
+    Workspace,
+    TempDir,
+    RemoteSource,
+    PathBuf,
+    PathBuf,
+) {
+    let shared = shared_store();
+    let b = Workspace::with_store(&shared.root);
+    let (repo, url, commit) = build_repo("protected checkout\n");
+    let source = source_of(&url, &commit);
+    let manager = b.manager().await;
+    let mat = manager.materialize(&source).await.expect("materialize b");
+    manager
+        .record_refs(
+            "generator",
+            &[RemoteSourceRef {
+                source: source.clone(),
+                pin: mat.pin.clone(),
+            }],
+        )
+        .await
+        .expect("record b refs");
+    let refs = b.sources_root.join("refs");
+    (shared, b, repo, source, mat.root, refs)
+}
+
+#[tokio::test]
+async fn prune_protects_checkouts_another_workspace_references() {
+    if !omni_test_capabilities::gate(
+        "git",
+        git_available(),
+        "git binary not found on PATH",
+    ) {
+        return;
+    }
+    let (shared, _b, _repo, _source, root, _refs) = referenced_checkout().await;
+    assert_eq!(registrations(&shared.root).len(), 1);
+    let a = Workspace::with_store(&shared.root);
+    let manager = a.manager().await;
+
+    let dry = manager.prune_store_report(&by_size(), true).await.unwrap();
+    assert!(
+        dry.removed.is_empty(),
+        "dry run would delete a referenced tree"
+    );
+    assert_eq!(dry.skipped_referenced.len(), 1);
+
+    let real = manager.prune_store_report(&by_size(), false).await.unwrap();
+    assert!(real.removed.is_empty(), "deleted a referenced tree");
+    assert_eq!(real.skipped_referenced.len(), 1);
+    assert!(root.exists());
+}
+
+#[tokio::test]
+async fn include_referenced_restores_the_old_selection() {
+    if !omni_test_capabilities::gate(
+        "git",
+        git_available(),
+        "git binary not found on PATH",
+    ) {
+        return;
+    }
+    let (shared, _b, _repo, _source, root, _refs) = referenced_checkout().await;
+    let a = Workspace::with_store(&shared.root);
+    let manager = a.manager().await;
+    let filter = StorePruneFilter {
+        include_referenced: true,
+        ..by_size()
+    };
+    let report = manager.prune_store_report(&filter, false).await.unwrap();
+    assert_eq!(report.removed.len(), 1);
+    assert!(report.skipped_referenced.is_empty());
+    assert!(!root.exists());
+}
+
+#[tokio::test]
+async fn prune_all_ignores_references() {
+    if !omni_test_capabilities::gate(
+        "git",
+        git_available(),
+        "git binary not found on PATH",
+    ) {
+        return;
+    }
+    let (shared, _b, _repo, _source, root, _refs) = referenced_checkout().await;
+    let a = Workspace::with_store(&shared.root);
+    let manager = a.manager().await;
+    let all = StorePruneFilter {
+        all: true,
+        ..Default::default()
+    };
+    let report = manager.prune_store_report(&all, false).await.unwrap();
+    assert_eq!(report.removed.len(), 1);
+    assert!(!root.exists());
+}
+
+#[tokio::test]
+async fn age_filters_protect_referenced_checkouts_by_default() {
+    if !omni_test_capabilities::gate(
+        "git",
+        git_available(),
+        "git binary not found on PATH",
+    ) {
+        return;
+    }
+    let (shared, _b, _repo, _source, root, _refs) = referenced_checkout().await;
+    age_marker(&root, 30);
+    let a = Workspace::with_store(&shared.root);
+    let manager = a.manager().await;
+    let filter = StorePruneFilter {
+        older_than: Some(std::time::Duration::from_secs(7 * 86_400)),
+        ..Default::default()
+    };
+    let report = manager.prune_store_report(&filter, false).await.unwrap();
+    assert_eq!(report.skipped_referenced.len(), 1);
+    assert!(report.removed.is_empty());
+    assert!(root.exists());
+}
+
+#[tokio::test]
+async fn a_registration_without_its_reference_directory_is_not_live() {
+    if !omni_test_capabilities::gate(
+        "git",
+        git_available(),
+        "git binary not found on PATH",
+    ) {
+        return;
+    }
+    let (shared, _b, _repo, _source, root, refs) = referenced_checkout().await;
+    std::fs::remove_dir_all(&refs).expect("remove refs");
+    let a = Workspace::with_store(&shared.root);
+    let manager = a.manager().await;
+    let report = manager.prune_store_report(&by_size(), false).await.unwrap();
+    assert_eq!(report.removed.len(), 1, "{report:?}");
+    assert!(!root.exists());
+    assert_eq!(registrations(&shared.root).len(), 1, "registration deleted");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn an_unreadable_registration_fails_closed() {
+    use support::unix::{permissions_are_enforced, set_mode};
+    if !omni_test_capabilities::gate(
+        "git",
+        git_available(),
+        "git binary not found on PATH",
+    ) {
+        return;
+    }
+    let (shared, _b, _repo, _source, root, refs) = referenced_checkout().await;
+    if !permissions_are_enforced(shared.root.parent().unwrap()) {
+        return;
+    }
+    let a = Workspace::with_store(&shared.root);
+    let manager = a.manager().await;
+
+    set_mode(&refs, 0o000);
+    let dry = manager.prune_store_report(&by_size(), true).await;
+    set_mode(&refs, 0o755);
+    assert!(dry.is_err(), "a dry run must fail closed");
+
+    set_mode(&refs, 0o000);
+    let real = manager.prune_store_report(&by_size(), false).await.unwrap();
+    set_mode(&refs, 0o755);
+    assert!(real.removed.is_empty());
+    assert_eq!(real.failed.len(), 1);
+    assert!(root.exists());
+}
+
+#[tokio::test]
+async fn a_moved_pin_only_protects_the_referenced_pin() {
+    if !omni_test_capabilities::gate(
+        "git",
+        git_available(),
+        "git binary not found on PATH",
+    ) {
+        return;
+    }
+    let shared = shared_store();
+    let b = Workspace::with_store(&shared.root);
+    let (repo, url, first) = build_repo("first\n");
+    std::fs::write(repo.path().join("README.md"), "second\n").expect("write");
+    git(repo.path(), &["add", "."]);
+    git(repo.path(), &["commit", "-q", "-m", "second"]);
+    let second = git(repo.path(), &["rev-parse", "HEAD"]);
+
+    let manager = b.manager().await;
+    let old = manager
+        .materialize(&source_of(&url, &first))
+        .await
+        .expect("old pin");
+    let new = manager
+        .materialize(&source_of(&url, &second))
+        .await
+        .expect("new pin");
+    manager
+        .record_refs(
+            "generator",
+            &[RemoteSourceRef {
+                source: source_of(&url, &second),
+                pin: new.pin.clone(),
+            }],
+        )
+        .await
+        .expect("record refs");
+
+    let a = Workspace::with_store(&shared.root);
+    let peer = a.manager().await;
+    let report = peer.prune_store_report(&by_size(), false).await.unwrap();
+    assert_eq!(report.removed.len(), 1);
+    assert_eq!(report.removed[0].pin, old.pin);
+    assert_eq!(report.skipped_referenced.len(), 1);
+    assert!(!old.root.exists());
+    assert!(new.root.exists());
+}
+
+#[tokio::test]
+async fn unknown_kinds_are_ignored_and_unsafe_pins_fail_closed() {
+    if !omni_test_capabilities::gate(
+        "git",
+        git_available(),
+        "git binary not found on PATH",
+    ) {
+        return;
+    }
+    let (shared, _b, _repo, _source, root, refs) = referenced_checkout().await;
+    let a = Workspace::with_store(&shared.root);
+    let manager = a.manager().await;
+
+    std::fs::write(
+        refs.join("generator.json"),
+        r#"{"version":"1.0.0","sources":{"unknown":{"loc":{"sel":{"pin":"../unsafe"}}}}}"#,
+    )
+    .expect("write unknown refs");
+    let report = manager.prune_store_report(&by_size(), false).await.unwrap();
+    assert_eq!(report.removed.len(), 1, "unknown kind blocked the prune");
+    assert!(!root.exists());
+
+    let (shared, _b, _repo, _source, root, refs) = referenced_checkout().await;
+    let a = Workspace::with_store(&shared.root);
+    let manager = a.manager().await;
+    std::fs::write(
+        refs.join("generator.json"),
+        r#"{"version":"1.0.0","sources":{"git":{"https://example.com/r.git":{"main":{"pin":"../unsafe"}}}}}"#,
+    )
+    .expect("write unsafe refs");
+    let dry = manager.prune_store_report(&by_size(), true).await;
+    assert!(dry.is_err(), "an unsafe pin must fail closed");
+    let all = StorePruneFilter {
+        all: true,
+        ..Default::default()
+    };
+    let report = manager.prune_store_report(&all, false).await.unwrap();
+    assert_eq!(report.removed.len(), 1);
+    assert!(!root.exists());
+}
+
+#[tokio::test]
+async fn a_corrupt_registration_refuses_the_consulting_flags_only() {
+    if !omni_test_capabilities::gate(
+        "git",
+        git_available(),
+        "git binary not found on PATH",
+    ) {
+        return;
+    }
+    let (shared, _b, _repo, _source, root, _refs) = referenced_checkout().await;
+    std::fs::write(shared.root.join("workspaces/corrupt.json"), b"not json")
+        .expect("write corrupt registration");
+    let a = Workspace::with_store(&shared.root);
+    let manager = a.manager().await;
+
+    let dry = manager.prune_store_report(&by_size(), true).await;
+    assert!(dry.is_err(), "dry run must name the corrupt file");
+    let none = StorePruneFilter {
+        larger_than: Some(u64::MAX),
+        ..Default::default()
+    };
+    assert!(
+        manager.prune_store_report(&none, true).await.is_err(),
+        "the dry run builds the registry regardless of selection"
+    );
+    let real = manager.prune_store_report(&by_size(), false).await.unwrap();
+    assert!(real.removed.is_empty());
+    assert_eq!(real.failed.len(), 1);
+
+    let all = StorePruneFilter {
+        all: true,
+        ..Default::default()
+    };
+    let report = manager.prune_store_report(&all, false).await.unwrap();
+    assert_eq!(report.removed.len(), 1);
+    assert!(!root.exists());
+}
+
+#[tokio::test]
+async fn a_registration_written_after_the_dry_run_still_protects() {
+    if !omni_test_capabilities::gate(
+        "git",
+        git_available(),
+        "git binary not found on PATH",
+    ) {
+        return;
+    }
+    let shared = shared_store();
+    let (repo, url, commit) = build_repo("late registration\n");
+    let source = source_of(&url, &commit);
+    let a = Workspace::with_store(&shared.root);
+    let manager = a.manager().await;
+    let mat = manager.materialize(&source).await.expect("materialize a");
+    let entry = manager
+        .store_entries()
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|entry| entry.pin == mat.pin)
+        .expect("the checkout is listed");
+
+    // The dry run has nothing to protect yet.
+    let dry = manager.prune_store_report(&by_size(), true).await.unwrap();
+    assert_eq!(dry.removed.len(), 1);
+    assert!(dry.skipped_referenced.is_empty());
+
+    // A second workspace registers the same checkout between the dry run and
+    // the confirmed pass.
+    let b = Workspace::with_store(&shared.root);
+    let bm = b.manager().await;
+    bm.materialize(&source).await.expect("materialize b");
+    bm.record_refs(
+        "generator",
+        &[RemoteSourceRef {
+            source: source.clone(),
+            pin: mat.pin.clone(),
+        }],
+    )
+    .await
+    .expect("record b refs");
+
+    let only = [(entry.kind, entry.remote, entry.pin)];
+    let confirmed = StorePruneFilter {
+        only: Some(&only),
+        ..by_size()
+    };
+    let report = manager.prune_store_report(&confirmed, false).await.unwrap();
+    assert!(report.removed.is_empty(), "the in-lock re-read missed it");
+    assert_eq!(report.skipped_referenced.len(), 1);
+    assert!(mat.root.exists());
+
+    let _ = repo;
+}
+
+#[tokio::test]
+async fn the_workspaces_own_refs_protect_it_without_a_registration() {
+    if !omni_test_capabilities::gate(
+        "git",
+        git_available(),
+        "git binary not found on PATH",
+    ) {
+        return;
+    }
+    let shared = shared_store();
+    let a = Workspace::with_store(&shared.root);
+    let (_repo, url, commit) = build_repo("own refs\n");
+    let source = source_of(&url, &commit);
+    let manager = a.manager().await;
+    let mat = manager.materialize(&source).await.expect("materialize");
+    manager
+        .record_refs(
+            "generator",
+            &[RemoteSourceRef {
+                source: source.clone(),
+                pin: mat.pin.clone(),
+            }],
+        )
+        .await
+        .expect("record refs");
+    std::fs::remove_dir_all(shared.root.join("workspaces"))
+        .expect("remove registrations");
+
+    let report = manager.prune_store_report(&by_size(), false).await.unwrap();
+    assert_eq!(report.skipped_referenced.len(), 1);
+    assert!(report.removed.is_empty());
+    assert!(mat.root.exists());
+}
+
+#[tokio::test]
+async fn a_lease_wins_over_a_reference() {
+    if !omni_test_capabilities::gate(
+        "git",
+        git_available(),
+        "git binary not found on PATH",
+    ) {
+        return;
+    }
+    let (shared, _b, _repo, source, root, _refs) = referenced_checkout().await;
+    let holder = Workspace::with_store(&shared.root);
+    let holder_manager = holder.manager().await;
+    let leases = LeaseSet::new();
+    holder_manager
+        .materialize_into(&source, &leases)
+        .await
+        .expect("hold a lease");
+
+    let a = Workspace::with_store(&shared.root);
+    let manager = a.manager().await;
+    let report = manager.prune_store_report(&by_size(), false).await.unwrap();
+    assert_eq!(report.skipped_in_use.len(), 1);
+    assert!(report.skipped_referenced.is_empty());
+    assert!(root.exists());
+}
+
+#[tokio::test]
+async fn a_non_absolute_registration_fails_closed() {
+    if !omni_test_capabilities::gate(
+        "git",
+        git_available(),
+        "git binary not found on PATH",
+    ) {
+        return;
+    }
+    let (shared, _b, _repo, _source, root, _refs) = referenced_checkout().await;
+    let relative = "relative/lock.json";
+    std::fs::remove_dir_all(shared.root.join("workspaces")).expect("clear");
+    std::fs::create_dir_all(shared.root.join("workspaces")).expect("mkdir");
+    std::fs::write(
+        shared
+            .root
+            .join("workspaces")
+            .join(registration_file_name(relative)),
+        format!(
+            r#"{{"version":"1.0.0","lockfile_path":"{relative}","last_seen":1}}"#
+        ),
+    )
+    .expect("write relative registration");
+
+    let a = Workspace::with_store(&shared.root);
+    let manager = a.manager().await;
+    let dry = manager.prune_store_report(&by_size(), true).await;
+    let error = dry.expect_err("a non-absolute registration must fail closed");
+    assert!(
+        error.to_string().contains("non-absolute"),
+        "unexpected error: {error}"
+    );
+    let all = StorePruneFilter {
+        all: true,
+        ..Default::default()
+    };
+    let report = manager.prune_store_report(&all, false).await.unwrap();
+    assert_eq!(report.removed.len(), 1);
+    assert!(!root.exists());
 }

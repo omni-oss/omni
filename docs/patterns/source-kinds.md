@@ -11,7 +11,13 @@ To add a kind:
 3. Add a `RemoteSource` variant and its arms in `kind()` and `spec()` (`crates/omni_remote_source/src/source.rs`).
 4. Map its `SourceConfig` variant in `remote_source_for` (`crates/omni_remote_source_contributors/src/lib.rs`).
 
-The lockfile, refs, prune and projection code need no change.
+The lockfile, refs and projection code need no change. Prune needs no kind-specific
+code either, but it does rely on `slug`: it reads other workspaces' reference files
+and maps each `(kind, locator, selector, pin)` back to the store directory with the
+pruner's own driver. So `slug` must be a pure, panic-free function of
+`(locator, selector)` that never reads `connection` (which is not stored in a
+reference); changing it between omni versions silently stops matching old
+references.
 
 ## Reference updates
 

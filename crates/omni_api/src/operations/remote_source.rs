@@ -110,6 +110,10 @@ pub struct RemoteSourcesPruneResponse {
     /// prune them again once the holder is done.
     #[serde(default)]
     pub skipped_in_use: Vec<StoreCheckoutView>,
+    /// Checkouts a registered workspace (or this workspace's own references)
+    /// names. They were left in place.
+    #[serde(default)]
+    pub skipped_referenced: Vec<StoreCheckoutView>,
     /// Checkouts that could not be removed. A partly removed checkout reads as
     /// incomplete and is cleared by the next prune or publish.
     #[serde(default)]
@@ -139,6 +143,10 @@ where
         older_than: req.older_than,
         larger_than: req.larger_than.map(|size| size.as_u64()),
         only: only.as_deref(),
+        // Existing flags keep their behavior: age and size include referenced
+        // checkouts. `--unused` (step 4) is where protection becomes visible.
+        include_referenced: req.older_than.is_some()
+            || req.larger_than.is_some(),
     };
     if !filter.has_criteria() {
         eyre::bail!(
@@ -177,6 +185,11 @@ fn prune_response(
         checkouts: report.removed.into_iter().map(view).collect(),
         deleted,
         skipped_in_use: report.skipped_in_use.into_iter().map(view).collect(),
+        skipped_referenced: report
+            .skipped_referenced
+            .into_iter()
+            .map(view)
+            .collect(),
         failed: report
             .failed
             .into_iter()
@@ -423,6 +436,7 @@ mod tests {
         let report = PruneReport {
             removed: vec![entry("a")],
             skipped_in_use: vec![entry("b")],
+            skipped_referenced: vec![entry("d")],
             failed: vec![PruneFailure {
                 entry: entry("c"),
                 error: "permission denied".into(),

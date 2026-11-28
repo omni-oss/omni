@@ -24,6 +24,8 @@ use omni_remote_source::{
 use system_traits::impls::RealSys;
 use tempfile::TempDir;
 
+mod support;
+
 const KIND: &str = "fake";
 const REMOTE: &str = "remote";
 
@@ -301,24 +303,10 @@ async fn a_reader_never_loses_a_tree_it_holds_a_lease_on() {
 
 #[cfg(unix)]
 mod failures {
-    use std::os::unix::fs::PermissionsExt;
-
-    use super::*;
-
-    fn set_mode(path: &Path, mode: u32) {
-        std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode))
-            .unwrap();
-    }
-
-    /// Root ignores directory permissions, so the failure cannot be injected.
-    fn permissions_are_enforced(dir: &Path) -> bool {
-        let probe = dir.join("probe");
-        std::fs::create_dir(&probe).unwrap();
-        set_mode(&probe, 0o555);
-        let enforced = std::fs::write(probe.join("f"), b"").is_err();
-        set_mode(&probe, 0o755);
-        enforced
-    }
+    use super::{
+        support::unix::{permissions_are_enforced, set_mode},
+        *,
+    };
 
     #[tokio::test]
     async fn a_failed_removal_is_reported_and_never_reads_as_complete() {

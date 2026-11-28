@@ -174,6 +174,51 @@ async fn generator_contributor_leases_its_checkouts_into_the_install_set() {
     assert_eq!(released.removed.len(), 1, "the released checkout was kept");
 }
 
+/// The registration a contributor install writes is read by another
+/// workspace's prune: a peer `larger_than` prune keeps the referenced checkout.
+/// The existing prunes in this crate use `all`, which never reads references.
+#[tokio::test]
+async fn a_peer_prune_protects_a_contributors_references() {
+    if !git_available() {
+        eprintln!("skipping: `git` is not available on PATH");
+        return;
+    }
+
+    let (_src, url, _commit) = build_repo(&[("gen.omni.yaml", "name: g\n")]);
+    let (_ws_b, sources_root) = workspace();
+    let store = sources_root.join("store");
+    let manager_b = manager(&sources_root).await;
+    let contributor = GeneratorRemoteContributor::new(vec![git_source(&url)]);
+    let refs = contributor
+        .contribute(&manager_b, &InstallOptions::default(), &LeaseSet::new())
+        .await
+        .expect("contribute");
+    manager_b
+        .record_refs("generator", &refs)
+        .await
+        .expect("refs");
+
+    let (ws_a, _) = workspace();
+    let a_sources = ws_a.path().join(".omni/sources");
+    std::fs::create_dir_all(&a_sources).expect("a sources root");
+    let peer = RemoteSourceManager::new(
+        RemoteSourceConfig::builder()
+            .lockfile_path(a_sources.join("lock.json"))
+            .store_root_path(store)
+            .build(),
+        RealSys,
+    )
+    .await
+    .expect("peer manager");
+    let filter = StorePruneFilter {
+        larger_than: Some(1),
+        ..Default::default()
+    };
+    let report = peer.prune_store_report(&filter, false).await.unwrap();
+    assert_eq!(report.skipped_referenced.len(), 1, "{report:?}");
+    assert!(report.removed.is_empty());
+}
+
 #[tokio::test]
 async fn projection_contributor_recurses_meta_bundles_to_git_children() {
     if !git_available() {
