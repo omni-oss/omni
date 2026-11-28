@@ -601,12 +601,11 @@ fn an_applied_tier_decision_matches_applied_records_only() {
     assert_eq!(ids, ["a"], "only the Applied contributor is attached");
 }
 
-/// F07.3 limit, pinned: an explicit task that inherits `cache.enabled`
-/// through `extends` is not seen by the mask, so an applied record says it
-/// overrode, although the explicit value decided. F07.5 reports it as the
-/// plan says; a real fix tracks the decision in finalization.
+/// An explicit task that inherits `cache.enabled` through `extends` decides
+/// the value, so an applied record is not attributed to it. Both paths report
+/// an authored tier, so the record's tier alone cannot tell them apart.
 #[test]
-fn an_inherited_explicit_decision_is_attributed_the_known_limit() {
+fn an_inherited_explicit_decision_attaches_nothing() {
     let composed = compose_ordered(
         OmniPath::new(Path::new("app")),
         &[id("a"), id("b")],
@@ -635,17 +634,65 @@ fn an_inherited_explicit_decision_is_attributed_the_known_limit() {
         omni_configurations::CacheEnabledSource::TaskExplicit
     );
     assert!(
-        composed.overrides.iter().all(|o| !o.masked_by_explicit),
-        "the mask does not see the inherited declaration"
+        !project
+            .task_cache_enabled_applied
+            .get("t")
+            .copied()
+            .unwrap_or(false),
+        "the explicit inherited declaration decided"
+    );
+    // The record exists and is unmasked: only the applied-slot check excludes it.
+    assert!(composed.overrides.iter().any(|o| matches!(
+        o.field,
+        omni_configurations::FieldPath::TaskCacheEnabled(_)
+    ) && !o.masked_by_explicit));
+    attach_cache_enabled_overrides(
+        &mut project,
+        &composed.overrides,
+        &composed.override_locations,
+    );
+    assert!(
+        project.task_cache_enabled_overridden.get("t").is_none(),
+        "an explicit inherited value is not overridden by an applied record"
+    );
+}
+
+/// A task decided by an applied declaration still reports its overridden
+/// contributors, so the fix does not silence genuine applied overrides.
+#[test]
+fn an_applied_decision_attaches_its_overridden_contributors() {
+    let composed = compose_ordered(
+        OmniPath::new(Path::new("app")),
+        &[id("a"), id("b")],
+        vec![
+            with_enabled(
+                "a",
+                EnabledScope::Project,
+                true,
+                Some(&["a", "omni.yaml"]),
+            ),
+            with_enabled(
+                "b",
+                EnabledScope::Project,
+                false,
+                Some(&["b", "omni.yaml"]),
+            ),
+        ],
+        vec![project()],
+    )
+    .unwrap();
+    let mut project = composed.layer.clone().finalize_composed().unwrap();
+    assert!(
+        project
+            .task_cache_enabled_applied
+            .get("t")
+            .copied()
+            .unwrap_or(false)
     );
     attach_cache_enabled_overrides(
         &mut project,
         &composed.overrides,
         &composed.override_locations,
     );
-    assert_eq!(
-        project.task_cache_enabled_overridden["t"].len(),
-        1,
-        "the known limit: the contributors are listed although the explicit          inherited value decided"
-    );
+    assert_eq!(project.task_cache_enabled_overridden["t"].len(), 1);
 }
