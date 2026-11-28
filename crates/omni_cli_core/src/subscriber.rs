@@ -680,6 +680,8 @@ impl CliSubscriber {
                 if task_output_capture::should_display(captured.facet, failed) {
                     self.replay_file(&path).await;
                 }
+                // Raw `tokio::fs` on purpose: the subscriber holds no Sys and
+                // owns this scratch file.
                 let _ = tokio::fs::remove_file(&path).await;
             }
         }
@@ -689,6 +691,9 @@ impl CliSubscriber {
 
     /// Replay a capture file to stdout, using `multi.suspend` in `progress`
     /// mode and a direct copy otherwise.
+    ///
+    /// Raw `tokio::fs` on purpose: the subscriber holds no Sys, and this is a
+    /// read of a scratch file it owns.
     async fn replay_file(&self, path: &Path) {
         if self.resolved_mode() == CliUiMode::Progress {
             if let Ok(bytes) = tokio::fs::read(path).await {
@@ -796,7 +801,8 @@ impl ExecutionEventSubscriber for CliSubscriber {
     async fn on_execution_plan_ready(&self, e: ExecutionPlanReadyEvent) {
         // Best-effort sweep of any capture files leaked by a previously crashed
         // run, before this run starts writing its own. Runs before any capture
-        // is created, so it never races this run's output.
+        // is created, so it never races this run's output. Raw `tokio::fs` on
+        // purpose: the subscriber holds no Sys.
         let _ = tokio::fs::remove_dir_all(self.scratch_dir.join("logs")).await;
 
         let is_tty = atty::is(atty::Stream::Stdout);

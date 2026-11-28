@@ -88,6 +88,9 @@ pub async fn drain(
         Some(path) => {
             let mut path = path;
             let file = async {
+                // Raw calls on purpose: the subscriber that calls `drain` holds
+                // no Sys, and `system_traits` has no streaming create-new open,
+                // which capture depends on.
                 if let Some(parent) = path.parent() {
                     tokio::fs::create_dir_all(parent).await?;
                 }

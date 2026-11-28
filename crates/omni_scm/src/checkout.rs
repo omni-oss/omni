@@ -1,3 +1,8 @@
+//! Checkout discovery runs synchronously around `gix`, which only accepts real
+//! filesystem paths, so these calls stay raw `std::fs`: there is no sync Sys in
+//! scope, and routing them would not move any decision behind a testable
+//! handle.
+
 use std::path::{Path, PathBuf};
 
 /// Authoritative local checkout relationships, independent of affected-file SCM
