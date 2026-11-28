@@ -339,11 +339,11 @@ tasks:
       deps: [F06.2, R05, B01, F05.1],
       touches: [extractor, collector, cache-store, executor],
     }
-  # Plan: features/F07-implementation-plan.md. F07.1 and F07.2 are merged (#172);
-  # mark F07 done only when F07.3-F07.5 land (or split it per slice).
+  # Plan: features/F07-implementation-plan.md. F07.1-F07.5 are merged (#172, #194,
+  # #199, #203); the P-series caller of compose_ordered is still open.
   F07:
     {
-      owner: "OpenCode (F07.1 and F07.2 merged #172; F07.3-F07.5 not started; composition is ordered, not conflict-keeping)",
+      owner: "OpenCode (F07.1-F07.5 merged #172, #194, #199, #203; composition is ordered, not conflict-keeping)",
       title: "Ordered contributor composition and provenance",
       parent: F07,
       kind: code,
@@ -403,7 +403,7 @@ tasks:
     }
   F09:
     {
-      owner: "OpenCode (API, CLI and MCP inspection merged #160; field provenance waits on F07.5)",
+      owner: "OpenCode (API, CLI and MCP inspection merged #160; cache.enabled field provenance merged #203)",
       title: "Eligibility/provenance inspection output",
       parent: F09,
       kind: code,
