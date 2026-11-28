@@ -1,0 +1,74 @@
+---
+title: "The remote-source store and pruning"
+description: "How Omni shares fetched sources between workspaces, what prune keeps, and how to reclaim space without deleting a checkout another workspace needs."
+---
+
+Remote sources (git repositories used by generators, tools and projections) are
+fetched into one per-user **store**, shared by every workspace on the machine.
+The workspace keeps only `lock.json` and `refs/` under `.omni/sources`; the
+checkouts live in the store and are reused by path and commit.
+
+`omni remote-sources prune` is the only command that deletes from the store. A
+deleted checkout is fetched again the next time it is used, so pruning costs
+network and breaks offline use until then.
+
+## What prune keeps
+
+- **Leased checkouts.** A running command holds a lease on every checkout it is
+  reading. Prune skips it and lists it under "in use".
+- **Referenced checkouts.** When a workspace installs sources, it writes a small
+  registration into `<store>/workspaces/` pointing at its `refs/` directory.
+  Prune reads every live registration and the reference sets it points at, plus
+  the pruning workspace's own `refs/`, and skips a checkout any of them names.
+  It lists these under "referenced by a registered workspace".
+- A registration whose reference directory is missing (a moved or removed
+  workspace) is not live for that run; its checkouts become prunable. The
+  registration file is kept.
+
+## Flags
+
+- `--unused` selects checkouts that no lease and no live registration protects.
+  It is new; `--all`, `--older-than` and `--larger-than` keep their previous
+  meaning, and age and size still include referenced checkouts for now.
+- `--all` selects every checkout, leased ones included except that a held lease
+  is always skipped. Its meaning is unchanged, and it does not read
+  registrations. Use it to reclaim a workspace that no longer exists.
+- `--dry-run` lists what would be removed and deletes nothing.
+
+`--unused` conflicts with `--all`, `--older-than` and `--larger-than`.
+
+## Registrations and the cache
+
+Registrations hold an absolute lockfile path and are refreshed whenever the
+workspace writes references (install, or a generator or tool run). Workspaces
+that only ran an older omni, or a targeted projection sync, may not have
+registered yet; their checkouts are protected only while a lease is held.
+
+Registrations are tiny and accumulate for removed worktrees and ephemeral CI
+workspaces. There is no automatic expiry and no `workspaces` cleanup command
+yet; deleting `<store>/workspaces/<hash>.json` releases that workspace's
+protection. Clearing the cache removes registrations too, so protection falls
+back to leases.
+
+## Failures and limits
+
+A corrupt, newer-version or unreadable live registration refuses `--unused` (and
+later the consulting age/size runs) instead of guessing: protection fails closed.
+`--all` is the escape hatch. A corrupt registration for a live workspace is
+replaced by that workspace's next write of references; a foreign or
+relative-named file may need to be deleted by hand under `<store>/workspaces/`.
+
+A `NotFound` reference directory is treated as a removed workspace, so an
+unmounted drive looks the same as a move and its checkouts become prunable. A
+workspace whose files another machine cannot see (a container, WSL or CI runner
+sharing the store) cannot protect its checkouts from there either.
+
+Omni prunes only cooperating processes: `rm -rf` and an older omni that does not
+read registrations can still delete a referenced checkout. Keep omni versions
+consistent when they share a store.
+
+## Release notes
+
+`--unused` is new. `--all`, `--older-than` and `--larger-than` are unchanged.
+Older omni versions prune without reading registrations; workspaces register on
+their next write of references.

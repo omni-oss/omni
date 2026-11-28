@@ -122,7 +122,7 @@ the same single read of the worktree files.
   trees/<slug>/<commit>.used   # mtime = last use (for prune)
   .pending/<pid>-<nanos>-<seq>/ # in-flight exports, renamed into trees/
   workspaces/<hash>.json       # a workspace's registration: a pointer to its
-                               # refs/ directory (RFC 0024 F08.7); prune ignores it until F08.7 step 3
+                               # refs/ directory; prune reads it (RFC 0024 F08.7)
 ```
 
 - Fetch: under `locks/<slug>.lock` (required: unlocked concurrent fetches
@@ -165,12 +165,18 @@ before and after step 4.
 
 ### 4.3 Garbage collection
 
-- `omni remote-sources install` **no longer deletes from the store.** `retain()`
-  keeps pruning the workspace lockfile pins and reference sets only.
-- New `omni remote-sources prune [--older-than <dur>] [--larger-than <size>]
+- `omni remote-sources install` **no longer deletes from the store.** `reconcile_pins`
+  prunes the workspace lockfile pins only; install also writes the workspace's
+  registration and reference sets.
+- New `omni remote-sources prune [--unused] [--older-than <dur>] [--larger-than <size>]
   [--all] [--dry-run]`, dry-run by default like `omni cache prune`. Deletes trees
-  by `.used` age, then bare repos with no remaining trees. Takes each per-remote
-  lock before removing that remote's entries.
+  by `.used` age or size, then bare repos with no remaining trees. Takes each
+  per-remote lock before removing that remote's entries.
+- Prune reads workspace registrations (`<store>/workspaces/<hash>.json`) and the
+  live reference sets they point at. A checkout a live registration, or the pruning
+  workspace's own `refs/`, names is protected (`skipped_referenced`). `--unused`
+  selects the rest; `--all` and `--include-referenced` (once shipped) do not read
+  registrations. An older omni still prunes without them.
 - No automatic prune in this RFC.
 
 ### 4.4 Projections

@@ -6,7 +6,7 @@ Design prerequisite: [F08.1 lease, GC and reference protocol](F08.1-lease-gc-ref
 **Status: done.** F08.1 ([#108](https://github.com/omni-oss/omni/pull/108)), F08.2 ([#109](https://github.com/omni-oss/omni/pull/109)),
 F08.4 ([#110](https://github.com/omni-oss/omni/pull/110)), F08.3 ([#111](https://github.com/omni-oss/omni/pull/111)) and F08.5
 ([#112](https://github.com/omni-oss/omni/pull/112), [#113](https://github.com/omni-oss/omni/pull/113),
-[#131](https://github.com/omni-oss/omni/pull/131)) are merged. `.pending` cleanup (D7, F08.6) is done ([#165](https://github.com/omni-oss/omni/pull/165)). Store `VERSION` compatibility (D1) is decided: no bump now. Reference-driven retention (D3) is planned in [F08.7](F08.7-reference-driven-retention.md).
+[#131](https://github.com/omni-oss/omni/pull/131)) are merged. `.pending` cleanup (D7, F08.6) is done ([#165](https://github.com/omni-oss/omni/pull/165)). Store `VERSION` compatibility (D1) is decided: no bump now. Reference-driven retention (D3) is implemented by [F08.7](F08.7-reference-driven-retention.md) (2026-11-28).
 
 ## Problem
 
