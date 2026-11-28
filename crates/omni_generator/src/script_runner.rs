@@ -263,7 +263,10 @@ impl LazyScriptRunner {
                 Box::pin(async move {
                     let vendored =
                         VendoredBridgeService::new(version, None::<String>)
-                            .ensure(&context_dir)
+                            // The bundle must reach the real filesystem before
+                            // the child starts; overlay writes stay buffered
+                            // until commit.
+                            .ensure(sys.real_sys(), &context_dir)
                             .await
                             .map_err(|e| Error::custom(e.to_string()))?;
 

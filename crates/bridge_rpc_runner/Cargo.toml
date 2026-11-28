@@ -39,9 +39,11 @@ omni_messages = { workspace = true }
 omni_notice = { workspace = true }
 omni_codes = { workspace = true }
 omni_utils = { workspace = true }
+system_traits = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+system_traits = { workspace = true, features = ["real-async-tokio"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 
 [lints]

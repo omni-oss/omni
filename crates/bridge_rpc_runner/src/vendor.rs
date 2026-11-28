@@ -33,8 +33,27 @@ use std::{
 };
 
 use rust_embed::RustEmbed;
+use system_traits::{
+    FsCreateDirAllAsync, FsMetadataAsync, FsReadAsync, FsRemoveDirAllAsync,
+    FsWriteAsync, auto_impl,
+};
 
 use crate::{BridgeRunnerError, error};
+
+/// System capabilities the vendoring step needs: create directories, read
+/// metadata and the version marker, write files, and clear a stale
+/// destination.
+#[auto_impl]
+pub trait VendorSys:
+    FsCreateDirAllAsync
+    + FsMetadataAsync
+    + FsReadAsync
+    + FsRemoveDirAllAsync
+    + FsWriteAsync
+    + Send
+    + Sync
+{
+}
 
 /// The package name used for the restored bundle when written into a
 /// `node_modules` directory.
@@ -128,9 +147,13 @@ impl VendoredBridgeService {
     }
 
     /// Resolves the destination directory for `context_dir`.
-    fn resolve_target(&self, context_dir: &Path) -> PathBuf {
+    async fn resolve_target<S: VendorSys>(
+        &self,
+        sys: &S,
+        context_dir: &Path,
+    ) -> PathBuf {
         let node_modules = context_dir.join("node_modules");
-        if node_modules.is_dir() {
+        if sys.fs_is_dir_no_err_async(&node_modules).await {
             node_modules
                 .join("@omni-oss")
                 .join("bridge-service-vendored")
@@ -147,14 +170,15 @@ impl VendoredBridgeService {
     ///
     /// Files are only (re)written when the on-disk version marker does not match
     /// the baked [`version`](Self::new) or the entrypoint is missing.
-    pub async fn ensure(
+    pub async fn ensure<S: VendorSys>(
         &self,
+        sys: &S,
         context_dir: &Path,
     ) -> Result<VendoredLocation, BridgeRunnerError> {
-        let root = self.resolve_target(context_dir);
+        let root = self.resolve_target(sys, context_dir).await;
         let entrypoint = root.join(ENTRYPOINT_REL);
 
-        if self.is_up_to_date(&root, &entrypoint).await {
+        if self.is_up_to_date(sys, &root, &entrypoint).await {
             tracing::trace!(
                 root = %root.display(),
                 "vendored bridge-service already up to date"
@@ -172,9 +196,12 @@ impl VendoredBridgeService {
             "materializing vendored bridge-service"
         );
 
-        // Start from a clean slate so removed files don't linger.
-        if tokio::fs::try_exists(&root).await.unwrap_or(false) {
-            tokio::fs::remove_dir_all(&root).await.map_err(|e| {
+        // Start from a clean slate so removed files don't linger. The metadata
+        // call follows a link (as `try_exists` did) to decide existence;
+        // `remove_dir_all` then removes the link itself and leaves its target
+        // untouched.
+        if sys.fs_metadata_async(&root).await.is_ok() {
+            sys.fs_remove_dir_all_async(&root).await.map_err(|e| {
                 error::error!(
                     "failed to clear vendored dir {}: {e}",
                     root.display()
@@ -183,13 +210,13 @@ impl VendoredBridgeService {
         }
 
         let dist_root = root.join("dist");
-        tokio::fs::create_dir_all(&dist_root).await.map_err(|e| {
+        sys.fs_create_dir_all_async(&dist_root).await.map_err(|e| {
             error::error!("failed to create dir {}: {e}", dist_root.display())
         })?;
 
         // Write the (renamed) package.json at the bundle root.
         let package_json = rewrite_package_name(PACKAGE_JSON)?;
-        tokio::fs::write(root.join("package.json"), &package_json)
+        sys.fs_write_async(root.join("package.json"), &package_json)
             .await
             .map_err(|e| error::error!("failed to write package.json: {e}"))?;
 
@@ -202,7 +229,7 @@ impl VendoredBridgeService {
 
             let dest = dist_root.join(path.as_ref());
             if let Some(parent) = dest.parent() {
-                tokio::fs::create_dir_all(parent).await.map_err(|e| {
+                sys.fs_create_dir_all_async(parent).await.map_err(|e| {
                     error::error!(
                         "failed to create dir {}: {e}",
                         parent.display()
@@ -210,7 +237,7 @@ impl VendoredBridgeService {
                 })?;
             }
 
-            tokio::fs::write(&dest, &file.data).await.map_err(|e| {
+            sys.fs_write_async(&dest, &file.data).await.map_err(|e| {
                 error::error!("failed to write {}: {e}", dest.display())
             })?;
 
@@ -227,7 +254,7 @@ impl VendoredBridgeService {
             .into());
         }
 
-        tokio::fs::write(
+        sys.fs_write_async(
             root.join(&self.version_file_name),
             self.version_with_hash.as_bytes(),
         )
@@ -240,11 +267,20 @@ impl VendoredBridgeService {
         })
     }
 
-    async fn is_up_to_date(&self, root: &Path, entrypoint: &Path) -> bool {
-        if !tokio::fs::try_exists(entrypoint).await.unwrap_or(false) {
+    async fn is_up_to_date<S: VendorSys>(
+        &self,
+        sys: &S,
+        root: &Path,
+        entrypoint: &Path,
+    ) -> bool {
+        // Follow the link (as `try_exists` did): a dangling entrypoint link is
+        // not a materialized bundle.
+        if sys.fs_metadata_async(entrypoint).await.is_err() {
             return false;
         }
-        match tokio::fs::read_to_string(root.join(DEFAULT_VERSION_MARKER)).await
+        match sys
+            .fs_read_to_string_lossy_async(root.join(DEFAULT_VERSION_MARKER))
+            .await
         {
             Ok(marker) => marker.trim() == self.version_with_hash,
             Err(_) => false,
@@ -279,7 +315,7 @@ mod tests {
         let tmp = tempfile::tempdir().expect("tempdir");
 
         let loc = VendoredBridgeService::new("test-version", None::<String>)
-            .ensure(tmp.path())
+            .ensure(&system_traits::impls::RealSys, tmp.path())
             .await
             .expect(
                 "ensure should succeed (run the bridge-service build first)",
@@ -310,7 +346,7 @@ mod tests {
             .expect("create node_modules");
 
         let loc = VendoredBridgeService::new("v1", None::<String>)
-            .ensure(tmp.path())
+            .ensure(&system_traits::impls::RealSys, tmp.path())
             .await
             .expect("ensure should succeed");
 
@@ -327,7 +363,7 @@ mod tests {
         let tmp = tempfile::tempdir().expect("tempdir");
 
         let first = VendoredBridgeService::new("v1", None::<String>)
-            .ensure(tmp.path())
+            .ensure(&system_traits::impls::RealSys, tmp.path())
             .await
             .expect("first ensure");
         let marker = first.root.join(DEFAULT_VERSION_MARKER);
@@ -337,7 +373,7 @@ mod tests {
             .expect("marker mtime");
 
         let second = VendoredBridgeService::new("v1", None::<String>)
-            .ensure(tmp.path())
+            .ensure(&system_traits::impls::RealSys, tmp.path())
             .await
             .expect("second ensure");
 

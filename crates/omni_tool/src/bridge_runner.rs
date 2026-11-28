@@ -22,7 +22,10 @@ use omni_contained_read::{
 };
 use omni_tool_configurations::{Tool, ToolJsRuntime};
 use serde_json::Value;
-use system_traits::{BaseFsMetadataAsync, EnvSnapshot, EnvVars};
+use system_traits::{
+    BaseFsMetadataAsync, EnvSnapshot, EnvVars, FsCanonicalize,
+    FsCreateDirAllAsync,
+};
 
 use crate::{
     error::{Error, ErrorInner},
@@ -129,7 +132,15 @@ fn runtime_name(runtime: DelegatingJsRuntimeOption) -> &'static str {
 #[async_trait]
 impl<S> ToolRunner for LazyToolRunner<S>
 where
-    S: FsSys + ProcSys + EnvVars + Clone + Send + Sync + 'static,
+    S: FsSys
+        + ProcSys
+        + EnvVars
+        + FsCanonicalize
+        + FsCreateDirAllAsync
+        + Clone
+        + Send
+        + Sync
+        + 'static,
     <S as BaseFsMetadataAsync>::Metadata: Send,
 {
     async fn run_js(
@@ -219,7 +230,7 @@ where
         let roots = policy
             .roots
             .clone()
-            .map_bases(|base| std::fs::canonicalize(&base).unwrap_or(base));
+            .map_bases(|base| self.sys.fs_canonicalize(&base).unwrap_or(base));
         // Contained reads apply only to an enforced run; the view root is the
         // canonical workspace root (absent means every contained read fails
         // closed).
@@ -255,7 +266,9 @@ where
         let extra_read = policy
             .enforce
             .then(|| {
-                let entry = std::fs::canonicalize(entrypoint)
+                let entry = self
+                    .sys
+                    .fs_canonicalize(entrypoint)
                     .unwrap_or_else(|_| entrypoint.to_path_buf());
                 omni_capability_enforcement::load_root(&entry)
             })
@@ -268,7 +281,7 @@ where
                 Box::pin(async move {
                     let vendored =
                         VendoredBridgeService::new(version, None::<String>)
-                            .ensure(&context_dir)
+                            .ensure(&sys, &context_dir)
                             .await
                             .map_err(Error::from)?;
 

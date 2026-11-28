@@ -183,6 +183,15 @@ impl<S: GeneratorSys> TransactionSys<S> {
         }
     }
 
+    /// The real system this overlay sits on.
+    ///
+    /// Use it for infrastructure that must reach the real filesystem before the
+    /// transaction commits, such as materializing the vendored bridge bundle a
+    /// spawned child process reads. Overlay writes are invisible to a child.
+    pub(crate) fn real_sys(&self) -> &S {
+        self.wrapped_sys.as_ref()
+    }
+
     // -- transaction control ------------------------------------------------
 
     /// Opens a new (possibly nested) transaction.
@@ -1484,6 +1493,30 @@ mod tests {
     }
 
     // -- individual filesystem actions --------------------------------------
+
+    /// Infrastructure that a spawned child process must read cannot go through
+    /// the overlay: buffered writes stay invisible until commit.
+    #[tokio::test]
+    async fn real_sys_writes_reach_disk_before_commit() {
+        use bridge_rpc_runner::VendoredBridgeService;
+
+        let dir = temp();
+        let sys = TransactionSys::new(RealSys);
+        let vendor =
+            VendoredBridgeService::new("v1-real-sys-test", None::<String>);
+
+        let buffered = vendor.ensure(&sys, dir.path()).await.unwrap();
+        assert!(
+            !buffered.entrypoint.exists(),
+            "overlay writes must not reach disk before commit"
+        );
+
+        let real = vendor.ensure(sys.real_sys(), dir.path()).await.unwrap();
+        assert!(
+            real.entrypoint.exists(),
+            "the real system materializes the bundle for a child"
+        );
+    }
 
     #[tokio::test]
     async fn write_is_buffered_until_commit() {
