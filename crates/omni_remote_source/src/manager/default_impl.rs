@@ -22,6 +22,10 @@ use crate::{
         tree,
     },
     refs::{RefSetData, RefSetDataV1_0_0, RefSetUpdate, RefUpdate},
+    registration::{
+        REGISTRATIONS_SEGMENT, RegistrationData, registration_file_name,
+        strip_verbatim_prefix,
+    },
     source::{LeasedSource, MaterializedSource, RemoteSource, RemoteSourceRef},
     sys::RemoteSourceSys,
 };
@@ -449,6 +453,10 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
     /// prefix replaced: each file is complete, and re-running install converges.
     /// The workspace lock covers preparation, staging and all renames, including
     /// after cancellation of the waiting caller.
+    ///
+    /// The batch also publishes this workspace's registration in the store (see
+    /// [`crate::registration`]), first, when the store exists and is a layout
+    /// this omni may write to.
     pub async fn update_ref_sets(
         &self,
         updates: &[RefSetUpdate<'_>],
@@ -471,7 +479,10 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
         let guard =
             LockGuard::acquire_exclusive(self.advisory_lock_path()).await?;
         let refs_dir = self.refs_dir();
-        let mut files = Vec::with_capacity(updates.len());
+        let mut files = Vec::with_capacity(updates.len() + 1);
+        // First in the batch, so a crash part-way can leave a registration with
+        // no references (harmless) but never references with no registration.
+        files.extend(self.prepare_registration().await?);
         for update in updates {
             let path = refs_dir.join(format!("{}.json", update.id));
             let bytes = self
@@ -492,6 +503,85 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
         .await
         .map_err(|error| Error::custom(error.to_string()))??;
         Ok(())
+    }
+
+    /// The registration to publish with a reference batch, or `None` when the
+    /// store has nothing to protect (no `VERSION` marker, so no checkout was
+    /// ever published) or is a newer layout this omni must not write to. Any
+    /// other trouble reading the marker is an error, as it would be for
+    /// `materialize`. The registration directory and the lockfile's parent are
+    /// created only when a registration is written.
+    async fn prepare_registration(
+        &self,
+    ) -> Result<Option<(PathBuf, Vec<u8>)>, Error> {
+        let marker = self.store_root_path.join(LAYOUT_VERSION_FILE);
+        match self.sys.fs_read_to_string_async(&marker).await {
+            Ok(text) => match text.trim().parse::<u32>() {
+                Ok(found) if found > LAYOUT_VERSION => {
+                    tracing::warn!(
+                        "not registering this workspace: the store at {} uses layout {found}, newer than this omni supports ({LAYOUT_VERSION})",
+                        self.store_root_path.display()
+                    );
+                    return Ok(None);
+                }
+                Ok(_) => {}
+                Err(_) => {
+                    return Err(Error::custom(format!(
+                        "unrecognized store layout marker in {}",
+                        marker.display()
+                    )));
+                }
+            },
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(None);
+            }
+            Err(error) => return Err(error.into()),
+        }
+        self.ensure_lockfile_parent().await?;
+        let lockfile_path = self.normalized_lockfile_path().await;
+        let last_seen = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|elapsed| elapsed.as_secs())
+            .unwrap_or_default();
+        let file = self
+            .store_root_path
+            .join(REGISTRATIONS_SEGMENT)
+            .join(registration_file_name(&lockfile_path));
+        let bytes = RegistrationData::new(lockfile_path, last_seen).to_vec()?;
+        if let Some(parent) = file.parent() {
+            self.sys.fs_create_dir_all_async(parent).await?;
+        }
+        Ok(Some((file, bytes)))
+    }
+
+    /// The lockfile path a registration is keyed on: its parent directory
+    /// canonicalized (symlinks resolved, Windows verbatim prefix stripped) with
+    /// the file name joined on. The lockfile itself is never canonicalized: a
+    /// first install has not written it yet. If the parent cannot be
+    /// canonicalized the path is used as given; a duplicate registration for one
+    /// workspace is harmless because protection is a union.
+    async fn normalized_lockfile_path(&self) -> String {
+        let lockfile = self.lockfile_path.clone();
+        let parent = match lockfile.parent() {
+            Some(parent) if !parent.as_os_str().is_empty() => {
+                parent.to_path_buf()
+            }
+            _ => PathBuf::from("."),
+        };
+        // `std::fs` on purpose: `RemoteSourceSys` has no canonicalize, and the
+        // fallback below makes a failure here harmless.
+        let canonical = {
+            let parent = parent.clone();
+            tokio::task::spawn_blocking(move || std::fs::canonicalize(parent))
+                .await
+                .ok()
+                .and_then(Result::ok)
+        };
+        let mut path = canonical.unwrap_or(parent);
+        if let Some(name) = lockfile.file_name() {
+            path.push(name);
+        }
+        strip_verbatim_prefix(&path.to_string_lossy())
     }
 
     async fn prepare_ref_set(

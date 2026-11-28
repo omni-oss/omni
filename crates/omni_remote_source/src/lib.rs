@@ -5,6 +5,7 @@ pub mod git;
 pub mod lease;
 pub mod manager;
 pub mod refs;
+pub mod registration;
 pub mod source;
 pub mod sys;
 

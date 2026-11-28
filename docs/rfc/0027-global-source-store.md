@@ -121,6 +121,8 @@ the same single read of the worktree files.
   trees/<slug>/<commit>.manifest # files and sizes; the completeness marker
   trees/<slug>/<commit>.used   # mtime = last use (for prune)
   .pending/<pid>-<nanos>-<seq>/ # in-flight exports, renamed into trees/
+  workspaces/<hash>.json       # a workspace's registration: a pointer to its
+                               # refs/ directory (RFC 0024 F08.7); prune ignores it until F08.7 step 3
 ```
 
 - Fetch: under `locks/<slug>.lock` (required: unlocked concurrent fetches
