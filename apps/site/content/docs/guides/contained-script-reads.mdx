@@ -55,15 +55,23 @@ on) and the cache keys are unchanged.
 
 Reads of files outside the workspace (for example a generator fetched into the
 shared source store) still go through the existing policy-checked read, with the
-path cleaned lexically first (`/x/link/../f` reads `/x/f`). A path that reaches
-the workspace through a symlink is refused, so the workspace path has to be used.
+path cleaned lexically first (`/x/link/../f` reads `/x/f`). A path that looks
+outside but reaches the workspace through a symlink is refused, so use the
+workspace path. That check is best effort: it is a race like any check-then-read,
+so a symlink introduced after the check is not seen by it. Such a read is still
+policy-checked against its real path by the broker, and the OS sandbox remains
+underneath.
 
 A refused read reaches the script as an I/O error whose message starts with the
-code, for example `input_view.symlink: ...`, and names the workspace-relative path. It never contains an absolute host path. Run `omni code explain
-input_view.symlink` for the hint.
+code, for example `input_view.symlink: ...`, and names the workspace-relative
+path. It never contains an absolute host path. Run
+`omni code explain input_view.symlink` for the hint.
 
 Reads served by the generator's uncommitted overlay (a file written, copied or
-deleted earlier in the same run, and dry runs) return the overlay's content.
+deleted earlier in the same run, and dry runs) return the overlay's content. Only
+the run's own writes short-circuit the check: a file that a generator action
+merely read earlier in the run is read again through the check, so the bytes a
+script gets are always the bytes that were checked.
 Bytes that a write route copied from a symlinked source are not re-checked on
 read.
 

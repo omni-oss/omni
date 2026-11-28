@@ -368,14 +368,46 @@ impl<S: GeneratorSys> TransactionSys<S> {
     /// a buffered deletion is `NotFound`, and bytes fetched by `real` are
     /// mirrored into the overlay (not logged as an action) so later reads and
     /// mutations observe them. The overlay lock is held across `real`.
+    ///
+    /// A mirrored entry is **not** proof that the path was checked: the mirror
+    /// can hold bytes a host action read through a symlink. A caller that
+    /// enforces its own checks on the bytes must use
+    /// [`read_resolved_written`](Self::read_resolved_written).
     pub async fn read_resolved(
         &self,
         cp: &Path,
         real: impl AsyncFnOnce(&Path) -> io::Result<Cow<'static, [u8]>>,
     ) -> io::Result<Cow<'static, [u8]>> {
+        self.read_resolved_with(cp, real, false).await
+    }
+
+    /// Like [`read_resolved`](Self::read_resolved), but an overlay entry is
+    /// served only when the transaction itself wrote it (a write, append, copy
+    /// or rename target). Anything a fall-through read merely mirrored is
+    /// re-read through `real`, so the caller's checks (containment, symlink
+    /// rejection, size limits) apply to the bytes a script receives.
+    ///
+    /// Buffered deletions still shadow, and read-after-write still works.
+    pub async fn read_resolved_written(
+        &self,
+        cp: &Path,
+        real: impl AsyncFnOnce(&Path) -> io::Result<Cow<'static, [u8]>>,
+    ) -> io::Result<Cow<'static, [u8]>> {
+        self.read_resolved_with(cp, real, true).await
+    }
+
+    async fn read_resolved_with(
+        &self,
+        cp: &Path,
+        real: impl AsyncFnOnce(&Path) -> io::Result<Cow<'static, [u8]>>,
+        written_only: bool,
+    ) -> io::Result<Cow<'static, [u8]>> {
         let st = self.state.lock().await;
 
-        if let Ok(data) = st.overlay.fs_read(cp) {
+        if let Some(data) = (!written_only || st.written.contains(cp))
+            .then(|| st.overlay.fs_read(cp).ok())
+            .flatten()
+        {
             return Ok(Cow::Owned(data.into_owned()));
         }
         if is_shadowed(&st.deleted, cp) {
@@ -410,7 +442,10 @@ impl<S: GeneratorSys> omni_contained_read::ReadThrough for TransactionSys<S> {
         path: &Path,
         real: &dyn omni_contained_read::RealRead,
     ) -> io::Result<Cow<'static, [u8]>> {
-        self.read_resolved(path, async |cp: &Path| real.read(cp).await)
+        // Only the transaction's own writes short-circuit the contained read:
+        // a mirrored entry can hold bytes a host action read through a symlink,
+        // and the contained read is what rejects that.
+        self.read_resolved_written(path, async |cp: &Path| real.read(cp).await)
             .await
     }
 }

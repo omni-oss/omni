@@ -89,6 +89,78 @@ async fn contained_supported(setup: &Setup) -> bool {
     }
 }
 
+/// A host action's read mirrors the bytes it fetched into the overlay under the
+/// path it read. Those bytes are not proof of anything: a symlink can point
+/// outside the workspace, so a contained read must re-read them through the
+/// view instead of serving the mirror.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_host_read_of_a_symlink_does_not_hand_outside_bytes_to_a_script() {
+    let setup = tokio::task::spawn_blocking(setup).await.unwrap();
+    if !contained_supported(&setup).await
+        || !omni_test_capabilities::require(
+            omni_test_capabilities::Capability::Symlink,
+            &setup.root,
+        )
+    {
+        return;
+    }
+    let outside = setup.root.parent().unwrap().join("outside-secret.txt");
+    fs::write(&outside, "OUTSIDE").unwrap();
+    let link = setup.root.join("link.txt");
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&outside, &link).unwrap();
+    #[cfg(windows)]
+    std::os::windows::fs::symlink_file(&outside, &link).unwrap();
+
+    // The generator reads its template through the transaction (this is what a
+    // native `add` action does): the bytes land in the overlay mirror.
+    let mirrored = setup.tx.base_fs_read_async(&link).await.unwrap();
+    assert_eq!(&*mirrored, b"OUTSIDE", "the host read follows the link");
+    assert_eq!(
+        &*setup.tx.base_fs_read_async(&link).await.unwrap(),
+        b"OUTSIDE"
+    );
+
+    // A script read of the same path must be refused, not served from the
+    // mirror.
+    let error = setup.reader.base_fs_read_async(&link).await.unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::PermissionDenied, "{error}");
+    let text = error.to_string();
+    assert!(
+        text.starts_with("input_view.symlink")
+            || text.starts_with("input_view.reparse_point"),
+        "{text}"
+    );
+    assert!(!text.contains("OUTSIDE"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_host_read_of_an_oversized_file_is_still_limited_for_a_script() {
+    let setup = tokio::task::spawn_blocking(setup).await.unwrap();
+    if !contained_supported(&setup).await {
+        return;
+    }
+    // One byte above the default `max_file_bytes` (8 MiB).
+    let big = setup.root.join("big.bin");
+    fs::write(&big, vec![b'a'; 8 * 1024 * 1024 + 1]).unwrap();
+    // A host action reads it: the mirror now holds the whole file.
+    let mirrored = setup.tx.base_fs_read_async(&big).await.unwrap();
+    assert_eq!(mirrored.len(), 8 * 1024 * 1024 + 1);
+
+    // The script read goes through the view, so the limit applies.
+    let error = setup.reader.base_fs_read_async(&big).await.unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::InvalidInput, "{error}");
+    assert!(
+        error.to_string().starts_with("input_view.too_large"),
+        "{error}"
+    );
+
+    // A buffered deletion still shadows, even with a mirror in place.
+    setup.tx.fs_remove_file_async(&big).await.unwrap();
+    let error = setup.reader.base_fs_read_async(&big).await.unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::NotFound);
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_write_is_read_back_from_the_overlay_not_the_disk() {
     let setup = tokio::task::spawn_blocking(setup).await.unwrap();
@@ -124,7 +196,7 @@ async fn a_buffered_deletion_reads_as_not_found() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn an_overlay_miss_reads_the_disk_through_the_view_and_mirrors_it() {
+async fn a_contained_read_observes_the_disk_and_mirrors_it_for_host_reads() {
     let setup = tokio::task::spawn_blocking(setup).await.unwrap();
     if !contained_supported(&setup).await {
         return;
@@ -132,11 +204,14 @@ async fn an_overlay_miss_reads_the_disk_through_the_view_and_mirrors_it() {
     let path = setup.root.join("disk.txt");
     let bytes = setup.reader.base_fs_read_async(&path).await.unwrap();
     assert_eq!(&*bytes, b"on disk");
-    // The fetched content is mirrored into the overlay (as for a plain read):
-    // after the file changes on disk the overlay still answers.
+    // A check-free mirror is never served to a script: each contained read
+    // observes the file as it is now, so a change on disk is visible.
     fs::write(&path, "changed on disk").unwrap();
     let again = setup.reader.base_fs_read_async(&path).await.unwrap();
-    assert_eq!(&*again, b"on disk");
+    assert_eq!(&*again, b"changed on disk");
+    // The bytes a contained read fetched are still mirrored for host readers.
+    let host = setup.tx.base_fs_read_async(&path).await.unwrap();
+    assert_eq!(&*host, b"changed on disk");
 }
 
 #[tokio::test(flavor = "multi_thread")]
