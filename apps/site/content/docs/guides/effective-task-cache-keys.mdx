@@ -98,6 +98,13 @@ No configuration changes are needed.
    a `with` sibling, then run again: a miss.
 3. `omni hash project <project>` prints a new value, and changes with the edit.
 4. `omni cache eligibility -p <project> -t <task>` shows why a task is or is not cached.
+   The line also names the level that decided `cache.enabled` (`scope`), the
+   declaring file when one exists, and, once plugins compose configuration, the
+   plugin that won (`declared by`) and the plugins it overrode (`overridden`).
+   Nothing composes plugins yet, so those two are empty today. It prints names and
+   workspace-relative paths only, never values. The `--json` output and
+   the `cache_eligibility` MCP tool carry the same `cache_enabled_provenance`
+   fields.
 5. `omni cache prune --stale --dry-run` lists the old entries without removing
    them.
 

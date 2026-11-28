@@ -40,7 +40,7 @@ pub use notices::PluginOverride;
 pub use omni_config_types as types;
 pub use omni_source_configurations::*;
 pub use ordered::*;
-pub use overrides::{FieldOverride, FieldPath, OverrideTier};
+pub use overrides::{FieldOverride, FieldPath, OverrideLocation, OverrideTier};
 pub use owned_projection::*;
 pub use pack::*;
 pub use project_configuration::*;

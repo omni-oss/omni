@@ -28,6 +28,30 @@ use crate::{
     find_explicit_contradictions,
 };
 
+/// The winning and overridden provenance of a task's `cache.enabled`: the
+/// level that decided it, the contributor for a plugin decision, the declaring
+/// file when one exists, and the contributors a later one overrode. Names,
+/// workspace-relative paths and ids only, never values.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct CacheEnabledProvenance {
+    /// `task` or `project` when the decider's level is known.
+    pub scope: Option<String>,
+    /// The contributor whose value won, for a plugin decision.
+    pub declared_by: Option<String>,
+    /// Workspace-relative declaring file, when the decision has one.
+    pub file: Option<PathBuf>,
+    /// Contributors a later one overrode, in contributor order.
+    pub overridden: Vec<OverriddenContributor>,
+}
+
+/// One contributor whose `cache.enabled` value lost to a later one.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OverriddenContributor {
+    pub contributor: String,
+    /// Workspace-relative applied file, when the value came from one.
+    pub file: Option<PathBuf>,
+}
+
 /// One task of the planned graph, as configuration describes it.
 #[derive(Debug, Clone)]
 pub struct InspectionNode {
@@ -39,6 +63,7 @@ pub struct InspectionNode {
     pub cache_source: CacheEnabledSource,
     pub dependencies: Vec<TaskKey>,
     pub cache_enabled_file: Option<PathBuf>,
+    pub cache_enabled_provenance: CacheEnabledProvenance,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -51,6 +76,10 @@ pub struct InspectedTask {
     /// `enabled` is a template expression only known at execution time, so the
     /// task may be skipped there and the status here is as-if enabled.
     pub condition_unevaluated: bool,
+    /// The winning and overridden provenance of `cache.enabled`. Always
+    /// present; every field is empty when nothing is known.
+    #[serde(default)]
+    pub cache_enabled_provenance: CacheEnabledProvenance,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -124,6 +153,7 @@ pub fn inspect_nodes(
             status,
             cache_enabled_source: node.cache_source.as_str().to_string(),
             condition_unevaluated: node.enabled == StaticEnabled::Conditional,
+            cache_enabled_provenance: node.cache_enabled_provenance.clone(),
         });
     }
 
@@ -195,6 +225,49 @@ pub(crate) fn nodes_from_plan<TSys: TaskExecutorSys>(
                 context.get_cache_info(node.project_name(), node.task_name());
             let source =
                 info.map(|i| i.cache_enabled_source).unwrap_or_default();
+            let relative = |path: &std::path::Path| {
+                path.strip_prefix(context.root_dir())
+                    .unwrap_or(path)
+                    .to_path_buf()
+            };
+            let file = context
+                .cache_enabled_file(node.project_name(), node.task_name())
+                .map(relative);
+            let facts = context.cache_enabled_provenance(
+                node.project_name(),
+                node.task_name(),
+            );
+            let cache_enabled_provenance = CacheEnabledProvenance {
+                scope: facts.and_then(|f| f.scope).map(|scope| {
+                    match scope {
+                        omni_configurations::CacheScope::Task => "task",
+                        omni_configurations::CacheScope::Project => "project",
+                    }
+                    .to_owned()
+                }),
+                declared_by: facts
+                    .and_then(|f| f.contributor.as_ref())
+                    .map(|id| id.as_str().to_owned()),
+                file,
+                overridden: facts
+                    .map(|f| {
+                        f.overridden
+                            .iter()
+                            .map(|lost| OverriddenContributor {
+                                contributor: lost
+                                    .contributor
+                                    .as_str()
+                                    .to_owned(),
+                                file: lost
+                                    .file
+                                    .as_ref()
+                                    .and_then(|p| p.path().ok())
+                                    .map(relative),
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+            };
             InspectionNode {
                 key: node.key().clone(),
                 has_command: node.task_exec_config().is_some(),
@@ -205,11 +278,8 @@ pub(crate) fn nodes_from_plan<TSys: TaskExecutorSys>(
                 dependencies: node.dependencies().to_vec(),
                 cache_enabled_file: context
                     .cache_enabled_file(node.project_name(), node.task_name())
-                    .map(|p| {
-                        p.strip_prefix(context.root_dir())
-                            .unwrap_or(p)
-                            .to_path_buf()
-                    }),
+                    .map(relative),
+                cache_enabled_provenance,
             }
         })
         .collect()
@@ -278,12 +348,51 @@ mod tests {
             cache_source: source,
             dependencies: deps.iter().map(|s| TaskKey::new("p", *s)).collect(),
             cache_enabled_file: Some(PathBuf::from(format!("{name}.yaml"))),
+            cache_enabled_provenance: CacheEnabledProvenance::default(),
         }
     }
 
     fn status<'a>(i: &'a CacheInspection, t: &str) -> &'a CacheStatus {
         let label = format!("p#{t}");
         &i.tasks.iter().find(|x| x.task == label).unwrap().status
+    }
+
+    #[test]
+    fn provenance_reaches_the_inspected_task_as_names_and_paths_only() {
+        let mut n = node("app", true, Plugin, &[]);
+        n.cache_enabled_provenance = CacheEnabledProvenance {
+            scope: Some("project".to_owned()),
+            declared_by: Some("native".to_owned()),
+            file: None,
+            overridden: vec![OverriddenContributor {
+                contributor: "frontend".to_owned(),
+                file: None,
+            }],
+        };
+        let i = inspect_nodes(&[n], false, false);
+        let provenance = &i.tasks[0].cache_enabled_provenance;
+        assert_eq!(provenance.scope.as_deref(), Some("project"));
+        assert_eq!(provenance.declared_by.as_deref(), Some("native"));
+        let value = serde_json::to_value(&i.tasks[0]).unwrap();
+        let wire = &value["cache_enabled_provenance"];
+        assert_eq!(wire["scope"], "project");
+        assert_eq!(wire["declared_by"], "native");
+        assert!(wire["file"].is_null());
+        assert_eq!(wire["overridden"][0]["contributor"], "frontend");
+        assert!(wire["overridden"][0].get("value").is_none());
+        assert_eq!(wire.as_object().unwrap().len(), 4);
+    }
+
+    #[test]
+    fn a_task_without_a_decision_keeps_an_empty_provenance_object() {
+        let i =
+            inspect_nodes(&[node("a", true, HostFallback, &[])], false, false);
+        let value = serde_json::to_value(&i.tasks[0]).unwrap();
+        let wire = &value["cache_enabled_provenance"];
+        assert!(wire["scope"].is_null());
+        assert!(wire["declared_by"].is_null());
+        assert!(wire["file"].is_null());
+        assert!(wire["overridden"].as_array().unwrap().is_empty());
     }
 
     #[test]
@@ -450,7 +559,13 @@ mod tests {
                 "task": "p#a",
                 "status": "eligible",
                 "cache_enabled_source": "host-fallback",
-                "condition_unevaluated": false
+                "condition_unevaluated": false,
+                "cache_enabled_provenance": {
+                    "scope": null,
+                    "declared_by": null,
+                    "file": null,
+                    "overridden": []
+                }
             })
         );
     }
@@ -515,6 +630,7 @@ mod with_sibling_prerequisite_tests {
                     cache_source,
                     dependencies: n.dependencies().to_vec(),
                     cache_enabled_file: None,
+                    cache_enabled_provenance: CacheEnabledProvenance::default(),
                 }
             })
             .collect::<Vec<_>>();

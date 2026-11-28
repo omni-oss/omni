@@ -31,8 +31,9 @@ use system_traits::FsReadAsync;
 
 use crate::{
     CONFIGURED_TASK_CACHE_ENABLED_FALLBACK, CacheConfiguration, CacheEnabled,
-    CacheEnabledSource, CacheKeyConfiguration, CacheScope, DeclarationSource,
-    Declared, LayerId, LoadConfigError, MetaConfiguration, Origin,
+    CacheEnabledSource, CacheKeyConfiguration, CacheScope, ContributorId,
+    DeclarationSource, Declared, FieldOverride, FieldPath, LayerId,
+    LoadConfigError, MetaConfiguration, Origin, OverrideLocation, OverrideTier,
     ProjectConfiguration, ProjectEnvConfiguration, RedactConfiguration,
     TaskConfiguration, TaskConfigurationLongForm, TaskDependencyConfiguration,
     TaskEnvConfiguration, TaskOutputConfiguration, replace_if_present,
@@ -973,6 +974,10 @@ pub struct FinalizedProject {
     /// The level (task or project) of each task's `cache.enabled` when the plugin
     /// tier decided it. Authored decisions carry it in their source instead.
     pub task_cache_enabled_scope: maps::Map<String, CacheScope>,
+    /// The contributors a later one overrode for each task's effective
+    /// `cache.enabled`, in contributor order. Empty unless a plugin
+    /// composition was attached; ids and applied files only, never values.
+    pub task_cache_enabled_overridden: maps::Map<String, Vec<OverriddenDecl>>,
     /// Each task's effective `meta`: the project's, with every declaration of
     /// the task replayed over it. Empty for `base` projects.
     pub task_meta: maps::Map<String, MetaConfiguration>,
@@ -980,6 +985,95 @@ pub struct FinalizedProject {
     /// `base` projects: their aliases are only validated once composed into a
     /// concrete project. Aliases are not tasks and never appear in `config`.
     pub aliases: TaskAliases,
+}
+
+/// One contributor whose `cache.enabled` value lost to a later one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OverriddenDecl {
+    pub contributor: ContributorId,
+    /// The applied file that declared the overridden value, when the value came
+    /// from one. A plugin-emitted or fileless declaration has none.
+    pub file: Option<Arc<OmniPath>>,
+}
+
+/// Record for `project` which contributors a later one overrode for its
+/// `cache.enabled` decisions. `overrides` and `locations` come from the same
+/// `Composed`; a record is attributed only to a task whose decision it made
+/// (same project root, same field and tier, not masked by an explicit layer).
+pub fn attach_cache_enabled_overrides(
+    project: &mut FinalizedProject,
+    overrides: &[FieldOverride],
+    locations: &[OverrideLocation],
+) {
+    let root = project.dir.clone();
+    for record in overrides {
+        if record.masked_by_explicit
+            || record.overridden.is_empty()
+            || record.root != root
+        {
+            continue;
+        }
+        let tasks: Vec<String> = project
+            .task_cache_enabled
+            .iter()
+            .filter(|(task, enabled)| decides(record, task, enabled, project))
+            .map(|(task, _)| task.clone())
+            .collect();
+        let lost: Vec<OverriddenDecl> = record
+            .overridden
+            .iter()
+            .map(|contributor| OverriddenDecl {
+                contributor: contributor.clone(),
+                file: locations
+                    .iter()
+                    .find(|location| {
+                        location.field == record.field
+                            && location.tier == record.tier
+                            && &location.contributor == contributor
+                    })
+                    .and_then(|location| {
+                        location.origin.source.file_path().map(Arc::clone)
+                    }),
+            })
+            .collect();
+        for task in tasks {
+            project
+                .task_cache_enabled_overridden
+                .insert(task, lost.clone());
+        }
+    }
+}
+
+/// Whether `record` is the decision of `task`'s effective `cache.enabled`.
+fn decides(
+    record: &FieldOverride,
+    task: &str,
+    enabled: &CacheEnabled,
+    project: &FinalizedProject,
+) -> bool {
+    let (field, tier) = match enabled.source {
+        CacheEnabledSource::Plugin => {
+            match project.task_cache_enabled_scope.get(task) {
+                Some(CacheScope::Task) => (
+                    FieldPath::TaskCacheEnabled(task.to_owned()),
+                    OverrideTier::Emitted,
+                ),
+                Some(CacheScope::Project) => {
+                    (FieldPath::ProjectCacheEnabled, OverrideTier::Emitted)
+                }
+                None => return false,
+            }
+        }
+        CacheEnabledSource::TaskExplicit => (
+            FieldPath::TaskCacheEnabled(task.to_owned()),
+            OverrideTier::Applied,
+        ),
+        CacheEnabledSource::ProjectExplicit => {
+            (FieldPath::ProjectCacheEnabled, OverrideTier::Applied)
+        }
+        _ => return false,
+    };
+    record.field == field && record.tier == tier
 }
 
 /// Why a composed project cannot be finalized.
@@ -1252,6 +1346,7 @@ impl LoadedLayer {
             task_cache_enabled_file,
             task_cache_enabled_origin,
             task_cache_enabled_scope,
+            task_cache_enabled_overridden: maps::Map::default(),
             task_meta,
             aliases,
         })

@@ -1,6 +1,6 @@
 # F07 implementation plan: composition provenance and ordered precedence
 
-**Status:** approved (#164). F07.1 and F07.2 are merged ([#172](https://github.com/omni-oss/omni/pull/172); final review PASS per the PR); F07.3 is merged ([#194](https://github.com/omni-oss/omni/pull/194); see [its plan](F07.3-ordered-composition-plan.md)); F07.4 (override notice) is built in review; F07.5 is not started. **Size:** Large.
+**Status:** approved (#164). F07.1 and F07.2 are merged ([#172](https://github.com/omni-oss/omni/pull/172); final review PASS per the PR); F07.3 is merged ([#194](https://github.com/omni-oss/omni/pull/194); see [its plan](F07.3-ordered-composition-plan.md)); F07.4 (override notice) merged in [#199](https://github.com/omni-oss/omni/pull/199); F07.5 (winning provenance) is built in review. **Size:** Large.
 **Risk:** High: composition and location changes can affect task behavior and
 cache keys. The chosen direction is to finish the metadata redesign before
 building ordered composition, rather than ship a parallel provenance walk.
@@ -285,6 +285,8 @@ F07.5 exposes `cache.enabled` overrides first, and other fields wait for P12
 inspection.
 
 **Locations (decided in the [F07.5 plan](F07.5-winning-provenance-plan.md)):** this slice records the declaration location of overridden `cache.enabled` contributors (`Composed::override_locations`, beside `FieldOverride`). Only applied-tier declarations have a file; a plugin-emitted or fileless one reports none, and other fields wait for P12.
+
+**Implemented (F07.5).** `Composed::override_locations` records where each overridden contributor declared its `cache.enabled`; `FinalizedProject::task_cache_enabled_overridden` and `attach_cache_enabled_overrides` attribute them to tasks whose decision they made; `omni cache eligibility` and the `cache_eligibility` MCP tool report `cache_enabled_provenance` (`scope`, `declared_by`, `file`, `overridden`). Ids and workspace-relative paths only, never values; the inspection still runs nothing. Locations exist only for applied-tier declarations, and an explicit task that inherits `cache.enabled` through `extends` can be mis-attributed (the F07.3 masking limit, pinned by a test). With nothing calling `compose_ordered` yet, a real run reports an empty `overridden` list. See the [F07.5 plan](F07.5-winning-provenance-plan.md).
 
 **Gate:** snapshot text, JSON and MCP for inherited, overridden, fallback and
 fileless decisions, and for a decision with overridden contributors. Verify the

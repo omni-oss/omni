@@ -1,7 +1,7 @@
 # F09: Cache-eligibility and provenance inspection (CLI/MCP)
 
 **Type:** feature · **Size:** M · **Depends on:** B04, F05 (F07 for field provenance)
-**Status:** slices 1 (API operation), 2 (CLI) and 3 (MCP) done and merged ([#160](https://github.com/omni-oss/omni/pull/160)). Field provenance waits on F07.5.
+**Status:** slices 1 (API operation), 2 (CLI) and 3 (MCP) done and merged ([#160](https://github.com/omni-oss/omni/pull/160)). Field provenance for `cache.enabled` is added by F07.5; other fields wait for P12.
 
 ## Goal
 

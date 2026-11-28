@@ -41,6 +41,9 @@ pub struct Composed {
     /// Earlier contributors a later one overrode, by tracked field. Holds ids
     /// and paths only.
     pub overrides: Vec<crate::FieldOverride>,
+    /// Where each overridden contributor of a `cache.enabled` record declared
+    /// its value. Ids and origins only.
+    pub override_locations: Vec<crate::OverrideLocation>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -140,7 +143,8 @@ pub fn compose_ordered(
         }
     }
 
-    let overrides = crate::overrides::compute(&root, &contributions, &explicit);
+    let (overrides, override_locations) =
+        crate::overrides::compute(&root, &contributions, &explicit);
     let explicit_empty = explicit.is_empty();
     let layers = contributions
         .into_iter()
@@ -160,7 +164,11 @@ pub fn compose_ordered(
     if explicit_empty {
         layer = layer.with_dir(root);
     }
-    Ok(Composed { layer, overrides })
+    Ok(Composed {
+        layer,
+        overrides,
+        override_locations,
+    })
 }
 
 fn declared_task_names(layer: &ProjectLayer) -> Vec<String> {
