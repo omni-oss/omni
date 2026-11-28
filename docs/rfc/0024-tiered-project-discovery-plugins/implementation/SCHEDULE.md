@@ -75,7 +75,7 @@ Do not edit between the markers; run `python3 schedule.py`.
 
 <!-- BEGIN GENERATED -->
 
-Tasks: 97 · waves: 16 · widest wave: 16 · critical path ≈ 100 working days
+Tasks: 98 · waves: 16 · widest wave: 16 · critical path ≈ 100 working days
 
 **Critical path:** B02 → R04.1 → R04.2 → R04.3 → R07.3 → P05 → P06.2 → P06.5 → P06.6 → P08.1 → P08.2 → P08.4 → P10.7 → P13.7 → P15 → P16
 
@@ -167,6 +167,7 @@ A task may start once every dependency is merged. All tasks in a wave are depend
 | ------- | ----------------------------------------------------- | ---- | ----------------- | --------------------- |
 | F05.1   | Origin-tagged cache enablement through CacheInfo      | M    | R04.3             | extractor             |
 | F07 ⚠   | Ordered contributor composition and provenance        | L    | R04.3, R07.2      | loader, config-types  |
+| F10.4   | First consumer: contained script reads (opt-in)       | M    | F10.2, F10.3      | capability            |
 | P04.1 ⚠ | Project inference controls                            | M    | R04.3, P02        | config-types          |
 | P04.2 ⚠ | Restricted additive plugin contribution types         | M    | R04.3, R03.2, B03 | config-types          |
 | P09.2   | Static manifest validation and descriptors            | M    | P09.1             | plugin-config, source |
