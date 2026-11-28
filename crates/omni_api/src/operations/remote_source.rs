@@ -48,13 +48,17 @@ where
     .await?)
 }
 
-/// Filters for [`handle_remote_sources_prune`]. At least one of `all`,
+/// Filters for [`handle_remote_sources_prune`]. At least one of `all`, `unused`,
 /// `older_than` and `larger_than` is required; an entry must satisfy every
 /// filter that is set.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct RemoteSourcesPruneRequest {
     /// Select every checkout in the store.
     pub all: bool,
+    /// Select only checkouts no lease and no registered workspace reference
+    /// protects. New in RFC 0024 F08.7.
+    #[serde(default)]
+    pub unused: bool,
     /// Only checkouts last used longer ago than this.
     pub older_than: Option<Duration>,
     /// Only checkouts larger than this.
@@ -140,6 +144,7 @@ where
         });
     let filter = StorePruneFilter {
         all: req.all,
+        unused: req.unused,
         older_than: req.older_than,
         larger_than: req.larger_than.map(|size| size.as_u64()),
         only: only.as_deref(),
@@ -150,7 +155,7 @@ where
     };
     if !filter.has_criteria() {
         eyre::bail!(
-            "refusing to prune without a filter: pass --older-than, \
+            "refusing to prune without a filter: pass --unused, --older-than, \
              --larger-than or --all"
         );
     }
@@ -461,7 +466,21 @@ mod tests {
         let old = r#"{"checkouts":[],"deleted":false}"#;
         let parsed: RemoteSourcesPruneResponse =
             serde_json::from_str(old).unwrap();
-        assert!(parsed.skipped_in_use.is_empty() && parsed.failed.is_empty());
+        assert!(
+            parsed.skipped_in_use.is_empty()
+                && parsed.skipped_referenced.is_empty()
+                && parsed.failed.is_empty()
+        );
+    }
+
+    #[test]
+    fn a_prune_request_defaults_unused_to_false() {
+        let req: RemoteSourcesPruneRequest = serde_json::from_value(
+            serde_json::json!({"all": true, "dry_run": false}),
+        )
+        .unwrap();
+        assert!(!req.unused);
+        assert!(req.older_than.is_none() && req.larger_than.is_none());
     }
 
     #[test]

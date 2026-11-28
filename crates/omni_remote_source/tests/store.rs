@@ -1644,3 +1644,57 @@ async fn a_non_absolute_registration_fails_closed() {
     assert_eq!(report.removed.len(), 1);
     assert!(!root.exists());
 }
+
+#[tokio::test]
+async fn unused_removes_only_unleased_unreferenced_checkouts() {
+    if !omni_test_capabilities::gate(
+        "git",
+        git_available(),
+        "git binary not found on PATH",
+    ) {
+        return;
+    }
+    let shared = shared_store();
+
+    // B installs and references one checkout.
+    let (_repo_b, url_b, commit_b) = build_repo("referenced\n");
+    let b = Workspace::with_store(&shared.root);
+    let source_b = source_of(&url_b, &commit_b);
+    let bm = b.manager().await;
+    let mat_b = bm.materialize(&source_b).await.expect("b materialize");
+    bm.record_refs(
+        "generator",
+        &[RemoteSourceRef {
+            source: source_b,
+            pin: mat_b.pin.clone(),
+        }],
+    )
+    .await
+    .expect("b refs");
+
+    // A installs a second checkout and references nothing.
+    let (_repo_a, url_a, commit_a) = build_repo("unreferenced\n");
+    let a = Workspace::with_store(&shared.root);
+    let source_a = source_of(&url_a, &commit_a);
+    let am = a.manager().await;
+    let mat_a = am.materialize(&source_a).await.expect("a materialize");
+
+    let filter = StorePruneFilter {
+        unused: true,
+        ..Default::default()
+    };
+    let dry = am.prune_store_report(&filter, true).await.unwrap();
+    assert_eq!(dry.removed.len(), 1);
+    assert_eq!(dry.removed[0].dir, mat_a.root);
+    assert_eq!(dry.skipped_referenced.len(), 1);
+    assert!(mat_a.root.exists() && mat_b.root.exists());
+
+    let report = am.prune_store_report(&filter, false).await.unwrap();
+    assert_eq!(report.removed.len(), 1);
+    assert_eq!(report.removed[0].dir, mat_a.root);
+    assert_eq!(report.skipped_referenced.len(), 1);
+    assert!(!mat_a.root.exists());
+    assert!(mat_b.root.exists(), "removed a referenced checkout");
+
+    let _ = (_repo_a, _repo_b);
+}

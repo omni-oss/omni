@@ -24,13 +24,22 @@ pub enum RemoteSourcesSubcommand {
     Install(#[command(flatten)] RemoteSourcesInstallArgs),
 
     #[command(
-        about = "Delete checkouts from the remote-source store by age or size. They are refetched when next used"
+        about = "Delete checkouts from the remote-source store. They are refetched when next used",
+        long_about = "Delete checkouts from the remote-source store. They are refetched when next used.\n\nCheckouts leased by a running command, or referenced by a registered workspace, are skipped and reported. Workspaces register when they write references (install, or a generator or tool run). An older omni version prunes without reading registrations, so it can delete a checkout a newer workspace still references."
     )]
     Prune(#[command(flatten)] RemoteSourcesPruneArgs),
 }
 
 #[derive(Debug, Clone, clap::Args)]
 pub struct RemoteSourcesPruneArgs {
+    #[arg(
+        long,
+        action = clap::ArgAction::SetTrue,
+        conflicts_with_all = ["all", "older_than", "larger_than"],
+        help = "Select checkouts that no running command holds and no registered workspace references. Workspaces register when they write references (install, or a generator or tool run)."
+    )]
+    pub unused: bool,
+
     #[arg(
         long,
         short,
@@ -124,6 +133,7 @@ async fn run_prune(
     let api = OmniApi::new_with_sys(ctx.clone(), NoopSubscriber);
     let request = |dry_run, only| RemoteSourcesPruneRequest {
         all: args.all,
+        unused: args.unused,
         older_than: args.older_than,
         larger_than: args.larger_than,
         dry_run,
@@ -137,6 +147,12 @@ async fn run_prune(
             checkout.kind, checkout.remote, checkout.pin
         );
     }
+    for checkout in &candidates.skipped_referenced {
+        println!(
+            "  {} {} {} is referenced by a registered workspace and will be skipped",
+            checkout.kind, checkout.remote, checkout.pin
+        );
+    }
     // A checkout that failed the preview stays on disk and is not offered for
     // deletion, so it fails the command on every path below.
     report_failures("Cannot prune", &candidates.failed);
@@ -146,12 +162,14 @@ async fn run_prune(
         ExitCode::FAILURE
     };
     if candidates.checkouts.is_empty() {
-        if candidates.skipped_in_use.is_empty() && candidates.failed.is_empty()
+        if candidates.skipped_in_use.is_empty()
+            && candidates.skipped_referenced.is_empty()
+            && candidates.failed.is_empty()
         {
             println!("No store checkouts matched the given filters");
         } else {
             println!(
-                "Nothing to prune: every matching checkout is in use or failed"
+                "Nothing to prune: every matching checkout is in use, referenced or failed"
             );
         }
         return Ok(failed_status);
@@ -211,6 +229,12 @@ async fn run_prune(
     for checkout in &pruned.skipped_in_use {
         println!(
             "Skipped {} {} {}: in use by a running process",
+            checkout.kind, checkout.remote, checkout.pin
+        );
+    }
+    for checkout in &pruned.skipped_referenced {
+        println!(
+            "Skipped {} {} {}: referenced by a registered workspace",
             checkout.kind, checkout.remote, checkout.pin
         );
     }
@@ -294,7 +318,7 @@ mod tests {
     #[test]
     fn prune_flags_default_to_no_criteria() {
         let args = parse_prune(&["omni", "prune"]);
-        assert!(!args.all && !args.yes && !args.dry_run);
+        assert!(!args.all && !args.unused && !args.yes && !args.dry_run);
         assert!(args.older_than.is_none() && args.larger_than.is_none());
     }
 
@@ -321,6 +345,21 @@ mod tests {
             argv.extend(extra);
             assert!(TestCli::try_parse_from(argv).is_err(), "{extra:?}");
         }
+    }
+
+    #[test]
+    fn prune_unused_conflicts_with_every_narrowing_filter() {
+        for extra in [
+            &["--all"][..],
+            &["--older-than", "30d"],
+            &["--larger-than", "1MB"],
+        ] {
+            let mut argv = vec!["omni", "prune", "--unused"];
+            argv.extend(extra);
+            assert!(TestCli::try_parse_from(argv).is_err(), "{extra:?}");
+        }
+        let args = parse_prune(&["omni", "prune", "--unused", "--yes"]);
+        assert!(args.unused && args.yes);
     }
 
     #[test]

@@ -1067,6 +1067,8 @@ fn ignore_not_found(result: std::io::Result<()>) -> Result<(), Error> {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct StorePruneFilter<'a> {
     pub all: bool,
+    /// Select every checkout that no lease and no live registration protects.
+    pub unused: bool,
     pub older_than: Option<std::time::Duration>,
     pub larger_than: Option<u64>,
     /// Restrict the selection to these `(kind, remote, pin)` entries: the
@@ -1080,34 +1082,54 @@ pub struct StorePruneFilter<'a> {
 
 impl StorePruneFilter<'_> {
     pub fn has_criteria(&self) -> bool {
-        self.all || self.older_than.is_some() || self.larger_than.is_some()
+        self.all
+            || self.unused
+            || self.older_than.is_some()
+            || self.larger_than.is_some()
     }
 
     /// Whether this filter must read workspace registrations and reference
     /// sets. `all` includes everything, and `include_referenced` widens an age
     /// or size filter back to every matching checkout, so neither reads.
     pub(crate) fn consults_references(&self) -> bool {
-        !self.all && !self.include_referenced
+        !self.all && (self.unused || !self.include_referenced)
     }
 
     /// Reject filters whose combination is contradictory or selects nothing
     /// meaningful, so no caller silently gets a different selection than it
     /// asked for:
     ///
-    /// - no criterion (`all`, `older_than` or `larger_than`);
+    /// - no criterion (`all`, `unused`, `older_than` or `larger_than`);
     /// - `all` together with `older_than` or `larger_than`, since `all`
     ///   cannot be narrowed;
     /// - a zero `older_than` or `larger_than`, which selects (nearly) every
     ///   checkout and should be spelled `all`;
     /// - an empty `only`, or one naming an unsafe path segment;
     /// - `include_referenced` without `older_than` or `larger_than` (nothing to
-    ///   widen), or with `all` (which already includes everything).
+    ///   widen), or with `all` (which already includes everything) or `unused`
+    ///   (contradictory);
+    /// - `unused` with `all`, `older_than` or `larger_than` (those already choose
+    ///   a subset, and after F08.7 they protect references too).
     ///
     /// `older_than` with `larger_than` is allowed and both must match.
     pub fn validate(&self) -> Result<(), Error> {
         if !self.has_criteria() {
             return Err(Error::custom(
-                "a prune needs a criterion: all, older_than or larger_than",
+                "a prune needs a criterion: all, unused, older_than or larger_than",
+            ));
+        }
+        if self.unused
+            && (self.all
+                || self.older_than.is_some()
+                || self.larger_than.is_some())
+        {
+            return Err(Error::custom(
+                "unused cannot be combined with all, older_than or larger_than",
+            ));
+        }
+        if self.unused && self.include_referenced {
+            return Err(Error::custom(
+                "include_referenced cannot be combined with unused",
             ));
         }
         if self.all && (self.older_than.is_some() || self.larger_than.is_some())
@@ -1169,7 +1191,7 @@ impl StorePruneFilter<'_> {
         {
             return false;
         }
-        if self.all {
+        if self.all || self.unused {
             return true;
         }
         if let Some(age) = self.older_than {
@@ -1691,6 +1713,50 @@ mod tests {
                     ..Default::default()
                 },
                 true,
+            ),
+            (
+                "unused alone",
+                StorePruneFilter {
+                    unused: true,
+                    ..Default::default()
+                },
+                true,
+            ),
+            (
+                "unused and all",
+                StorePruneFilter {
+                    unused: true,
+                    all: true,
+                    ..Default::default()
+                },
+                false,
+            ),
+            (
+                "unused and age",
+                StorePruneFilter {
+                    unused: true,
+                    older_than: day,
+                    ..Default::default()
+                },
+                false,
+            ),
+            (
+                "unused and size",
+                StorePruneFilter {
+                    unused: true,
+                    larger_than: Some(1),
+                    ..Default::default()
+                },
+                false,
+            ),
+            (
+                "unused and include referenced",
+                StorePruneFilter {
+                    unused: true,
+                    include_referenced: true,
+                    ..Default::default()
+                },
+                false,
             ),
         ];
         for (name, filter, ok) in cases {
