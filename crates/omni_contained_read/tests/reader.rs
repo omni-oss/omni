@@ -364,12 +364,18 @@ async fn a_relative_path_is_resolved_by_the_seam_before_routing() {
 }
 
 #[tokio::test]
-async fn a_path_wholly_outside_the_root_is_delegated_unchanged() {
+async fn a_path_wholly_outside_the_root_is_delegated_cleaned() {
     let h = harness();
     let target = at(&h.fx.outside, "secret");
     let bytes = h.reader.base_fs_read_async(&target).await.unwrap();
     assert_eq!(&*bytes, b"delegated");
-    assert_eq!(*h.broker.served.lock().unwrap(), vec![target]);
+    // The broker gets the cleaned form of the path that was judged, never the
+    // script's spelling (which the OS could resolve differently). On Windows
+    // the cleaned form is also the non-verbatim one.
+    assert_eq!(
+        *h.broker.served.lock().unwrap(),
+        vec![omni_utils::path::clean(&target)]
+    );
 }
 
 #[tokio::test]
@@ -446,6 +452,7 @@ mod symlinks {
         }
     }
 
+    #[cfg(unix)]
     fn link_dir(target: &Path, at: &Path) {
         link(target, at);
     }
@@ -512,6 +519,12 @@ mod symlinks {
         assert!(h.broker.served.lock().unwrap().is_empty());
     }
 
+    // Unix resolves `..` after following the link, so `outside/link/..` can
+    // reach into the workspace. Windows normalizes `..` lexically before it
+    // follows anything, so the same spelling already means `outside/...`;
+    // there is nothing to catch there, and what matters on every OS is that
+    // only the cleaned form is delegated (covered above).
+    #[cfg(unix)]
     #[tokio::test]
     async fn an_outside_link_into_the_workspace_cannot_use_dotdot_to_skip_the_view()
      {
