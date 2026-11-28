@@ -161,6 +161,61 @@ async fn a_host_read_of_an_oversized_file_is_still_limited_for_a_script() {
     assert_eq!(error.kind(), io::ErrorKind::NotFound);
 }
 
+/// A committed transaction drops its buffered view, so a path it once wrote is
+/// no longer a pending write. If the file is later replaced by a symlink, a
+/// host read mirrors the target's bytes; a contained read must still check it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_committed_transaction_does_not_keep_a_path_a_pending_write() {
+    for use_transaction_commit in [false, true] {
+        let setup = tokio::task::spawn_blocking(setup).await.unwrap();
+        if !contained_supported(&setup).await
+            || !omni_test_capabilities::require(
+                omni_test_capabilities::Capability::Symlink,
+                &setup.root,
+            )
+        {
+            return;
+        }
+        let outside = setup.root.parent().unwrap().join("outside-commit.txt");
+        fs::write(&outside, "OUTSIDE").unwrap();
+        let path = setup.root.join("reused.txt");
+
+        setup.tx.fs_write_async(&path, b"written").await.unwrap();
+        if use_transaction_commit {
+            setup.tx.begin_transaction().await;
+            setup.tx.fs_write_async(&path, b"written").await.unwrap();
+            setup.tx.commit_transaction().await.unwrap();
+        } else {
+            setup.tx.commit().await.unwrap();
+        }
+        assert_eq!(fs::read(&path).unwrap(), b"written", "flushed to disk");
+
+        // The committed path is no longer buffered; replace it with a link.
+        fs::remove_file(&path).unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&outside, &path).unwrap();
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_file(&outside, &path).unwrap();
+
+        let mirrored = setup.tx.base_fs_read_async(&path).await.unwrap();
+        assert_eq!(&*mirrored, b"OUTSIDE");
+
+        let error = setup.reader.base_fs_read_async(&path).await.unwrap_err();
+        assert_eq!(
+            error.kind(),
+            io::ErrorKind::PermissionDenied,
+            "commit mode {use_transaction_commit}: {error}"
+        );
+        assert!(!error.to_string().contains("OUTSIDE"));
+        let text = error.to_string();
+        assert!(
+            text.starts_with("input_view.symlink")
+                || text.starts_with("input_view.reparse_point"),
+            "{text}"
+        );
+    }
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_write_is_read_back_from_the_overlay_not_the_disk() {
     let setup = tokio::task::spawn_blocking(setup).await.unwrap();

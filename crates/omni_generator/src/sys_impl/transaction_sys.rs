@@ -253,6 +253,10 @@ impl<S: GeneratorSys> TransactionSys<S> {
             st.checkpoints.clear();
             st.overlay = InMemorySys::default();
             st.deleted.clear();
+            // The buffered view is gone, so nothing is a pending write any
+            // more; a stale entry would let a later host-read mirror pass for
+            // one and skip the contained read's checks.
+            st.written.clear();
             st.cwd = None;
             actions
         };
@@ -293,6 +297,10 @@ impl<S: GeneratorSys> TransactionSys<S> {
             st.checkpoints.clear();
             st.overlay = InMemorySys::default();
             st.deleted.clear();
+            // The buffered view is gone, so nothing is a pending write any
+            // more; a stale entry would let a later host-read mirror pass for
+            // one and skip the contained read's checks.
+            st.written.clear();
             st.cwd = None;
             actions
         };
