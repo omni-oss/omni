@@ -55,6 +55,7 @@ where
         &self,
         manager: &RemoteSourceManager<TSys>,
         options: &InstallOptions,
+        leases: &LeaseSet,
     ) -> eyre::Result<Vec<RemoteSourceRef>> {
         let expander = MaterializeOnlyExpand {
             sys: manager.sys(),
@@ -65,14 +66,18 @@ where
             leases: LeaseSet::new(),
         };
 
-        expand(
+        let expanded = expand(
             &expander,
             &self.sources,
             &self.workspace_root,
             DEFAULT_META_PROJECTION_DEPTH,
             None,
         )
-        .await?;
+        .await;
+        // Hand the expander's leases to the install even when expansion failed,
+        // so nothing it fetched is unprotected while the caller unwinds.
+        leases.absorb(&expander.leases);
+        expanded?;
 
         Ok(expander.refs.into_inner().expect("refs mutex poisoned"))
     }

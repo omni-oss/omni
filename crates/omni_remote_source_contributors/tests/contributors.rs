@@ -10,6 +10,7 @@ use omni_configurations::{
 };
 use omni_remote_source::{
     InstallOptions, RemoteSource, RemoteSourceContributor,
+    lease::LeaseSet,
     manager::{
         RemoteSourceManager, StorePruneFilter, config::RemoteSourceConfig,
     },
@@ -121,7 +122,7 @@ async fn generator_contributor_materializes_git_sources() {
     let contributor = GeneratorRemoteContributor::new(vec![git_source(&url)]);
 
     let refs = contributor
-        .contribute(&manager, &InstallOptions::default())
+        .contribute(&manager, &InstallOptions::default(), &LeaseSet::new())
         .await
         .expect("contribute");
 
@@ -136,6 +137,41 @@ async fn generator_contributor_materializes_git_sources() {
             .await,
         Some(commit)
     );
+}
+
+/// A generator or tool install materializes through the flat path, which took no
+/// lease at all: the checkout was prunable the moment it was fetched. It must be
+/// leased into the install's set and stay protected until the set is dropped.
+#[tokio::test]
+async fn generator_contributor_leases_its_checkouts_into_the_install_set() {
+    if !git_available() {
+        eprintln!("skipping: `git` is not available on PATH");
+        return;
+    }
+
+    let (_src, url, _commit) = build_repo(&[("gen.omni.yaml", "name: g\n")]);
+    let (_ws, sources_root) = workspace();
+    let manager = manager(&sources_root).await;
+    let contributor = GeneratorRemoteContributor::new(vec![git_source(&url)]);
+    let leases = LeaseSet::new();
+
+    contributor
+        .contribute(&manager, &InstallOptions::default(), &leases)
+        .await
+        .expect("contribute");
+
+    assert_eq!(leases.len(), 1, "the checkout was not leased");
+    let all = StorePruneFilter {
+        all: true,
+        ..Default::default()
+    };
+    let held = manager.prune_store_report(&all, false).await.unwrap();
+    assert_eq!(held.skipped_in_use.len(), 1, "a held checkout was pruned");
+    assert!(held.removed.is_empty());
+
+    drop(leases);
+    let released = manager.prune_store_report(&all, false).await.unwrap();
+    assert_eq!(released.removed.len(), 1, "the released checkout was kept");
 }
 
 #[tokio::test]
@@ -177,7 +213,7 @@ async fn projection_contributor_recurses_meta_bundles_to_git_children() {
         ProjectionRemoteContributor::new(vec![top], ws.path().to_path_buf());
 
     let refs = contributor
-        .contribute(&manager, &InstallOptions::default())
+        .contribute(&manager, &InstallOptions::default(), &LeaseSet::new())
         .await
         .expect("contribute");
 

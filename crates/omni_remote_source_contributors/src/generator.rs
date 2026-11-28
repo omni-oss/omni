@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use omni_configurations::SourceConfig;
 use omni_remote_source::{
-    InstallOptions, RemoteSourceContributor, RemoteSourceRef,
+    InstallOptions, RemoteSourceContributor, RemoteSourceRef, lease::LeaseSet,
     manager::RemoteSourceManager, sys::RemoteSourceSys,
 };
 
@@ -30,7 +30,9 @@ where
         &self,
         manager: &RemoteSourceManager<TSys>,
         options: &InstallOptions,
+        leases: &LeaseSet,
     ) -> eyre::Result<Vec<RemoteSourceRef>> {
-        crate::materialize_flat_remote(manager, &self.sources, options).await
+        crate::materialize_flat_remote(manager, &self.sources, options, leases)
+            .await
     }
 }

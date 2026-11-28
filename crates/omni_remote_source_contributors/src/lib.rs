@@ -21,7 +21,7 @@ pub use tool::ToolRemoteContributor;
 
 use omni_configurations::{GitSource, SourceConfig, SourceConfigProfile};
 use omni_remote_source::{
-    InstallOptions, RemoteSource, RemoteSourceRef,
+    InstallOptions, RemoteSource, RemoteSourceRef, lease::LeaseSet,
     manager::RemoteSourceManager, sys::RemoteSourceSys,
 };
 
@@ -52,10 +52,12 @@ pub fn remote_source_for_git<P: SourceConfigProfile>(
 /// Materialize every remote source in a flat source list, invalidating locked
 /// commits first when the caller asked to advance mutable refs. Shared by the
 /// generator and tool contributors, whose source lists carry no extra fields.
+/// Each checkout is leased into `leases`.
 async fn materialize_flat_remote<TSys, P>(
     manager: &RemoteSourceManager<TSys>,
     sources: &[SourceConfig<P>],
     options: &InstallOptions,
+    leases: &LeaseSet,
 ) -> eyre::Result<Vec<RemoteSourceRef>>
 where
     TSys: RemoteSourceSys,
@@ -69,7 +71,8 @@ where
                 manager.invalidate(&remote).await?;
             }
 
-            let materialized = manager.materialize(&remote).await?;
+            let materialized =
+                manager.materialize_into(&remote, leases).await?;
             refs.push(RemoteSourceRef {
                 source: remote,
                 pin: materialized.pin,

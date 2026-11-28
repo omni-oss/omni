@@ -1,5 +1,6 @@
 use crate::{
-    manager::RemoteSourceManager, source::RemoteSourceRef, sys::RemoteSourceSys,
+    lease::LeaseSet, manager::RemoteSourceManager, source::RemoteSourceRef,
+    sys::RemoteSourceSys,
 };
 
 /// Options that steer an install pass across all contributors.
@@ -25,10 +26,17 @@ pub trait RemoteSourceContributor<TSys: RemoteSourceSys>: Send + Sync {
     /// Materialize this subsystem's remote sources through the shared manager
     /// and return every reference resolved, for the manager to persist as a
     /// garbage-collection root.
+    ///
+    /// Every checkout the contributor materializes must be leased into `leases`
+    /// (`materialize_into`), not dropped when this call returns. The caller owns
+    /// the set for the whole install and releases it only after the references
+    /// are persisted, so a prune cannot delete a checkout that is neither leased
+    /// nor yet referenced.
     async fn contribute(
         &self,
         manager: &RemoteSourceManager<TSys>,
         options: &InstallOptions,
+        leases: &LeaseSet,
     ) -> eyre::Result<Vec<RemoteSourceRef>>;
 }
 
