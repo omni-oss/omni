@@ -314,6 +314,9 @@ async fn the_seam_is_keyed_by_the_path_it_resolved_not_the_cleaned_one() {
 #[tokio::test]
 async fn a_missing_file_is_a_plain_not_found_without_a_host_path() {
     let h = harness();
+    if !supported(&h).await {
+        return;
+    }
     let error = h
         .reader
         .base_fs_read_async(&at(&h.fx.root, "a/none"))
